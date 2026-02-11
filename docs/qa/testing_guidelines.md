@@ -1,0 +1,112 @@
+# VRS Nesting – Tesztelési irányelvek (testing_guidelines.md)
+
+## 🎯 Funkció
+
+Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput** (Sparrow build + IO smoketest + validator), a determinisztikus futtatási elveket, és azt, mit kell a Codexnek mindig lefuttatnia és dokumentálnia.
+
+---
+
+## 🧠 Fejlesztési részletek
+
+## 1) Minőségkapu (kötelező)
+
+### 1.1 Standard (lokál)
+
+* `./scripts/check.sh`
+
+### 1.2 Codex/report (kötelező)
+
+* `./scripts/verify.sh --report codex/reports/[<AREA>/]<TASK_SLUG>.md`
+  * futtatja: `./scripts/check.sh`
+  * menti: `codex/reports/.../<TASK_SLUG>.verify.log`
+  * frissíti a report AUTO_VERIFY blokkot
+
+**Szabály:** Codex futás végén mindig a `verify.sh` az elvárt.
+
+---
+
+## 2) Mi számít tesztnek ebben a repóban?
+
+A repó jelenlegi „tesztje” script-alapú:
+
+* Sparrow futtatás egy rögzített POC bemeneten (alapértelmezés: `poc/sparrow_io/swim.json`)
+* Output contract ellenőrzés: `scripts/validate_sparrow_io.py`
+* (ha elérhető) overlap-check shapely-vel
+
+A belépési pont: `scripts/run_sparrow_smoketest.sh`.
+
+---
+
+## 3) Determinizmus és stabilitás
+
+### 3.1 Fix bemenet + seed + time limit
+
+A smoketest célja nem a „legjobb nesting”, hanem a **stabil contract és a reprodukálhatóság**.
+
+* `SEED` környezeti változóval fixáljuk (alap: `0`)
+* `TIME_LIMIT` környezeti változóval korlátozzuk (alap: `60`)
+
+### 3.2 Sparrow verzió pin
+
+Ha létezik: `poc/sparrow_io/sparrow_commit.txt`, akkor a buildnek ezt kell használni.
+
+**Szabály:** ha a CI-ben flakiness jelenik meg, az első lépés a commit pin és a seed/time limit felülvizsgálata.
+
+### 3.3 IO contract változás
+
+Ha módosul a `scripts/validate_sparrow_io.py` vagy bármely POC minta:
+
+* legyen új/extra invariáns dokumentálva a canvasban,
+* legyen a reportban DoD→Evidence bizonyíték,
+* és fusson a gate.
+
+---
+
+## 4) Mikor kell plusz teszt / minta?
+
+* Geometria algoritmus módosítás → legalább 1 új POC input a `poc/` alatt.
+* Parser / export változás → input + expected output struktúra frissítése, validator bővítés.
+* Több sheet / multi-run wrapper → legalább 1 „multi” POC minta.
+
+---
+
+## 5) Codex kötelező dokumentálás (checklist + report)
+
+### 5.1 Checklist minimum
+
+* [ ] Releváns fájlok azonosítva (felderítés)
+* [ ] Canvas elkészült (kockázat + rollback + DoD)
+* [ ] YAML steps + outputs pontos (outputs szabály betartva)
+* [ ] `./scripts/verify.sh --report ...` lefutott
+* [ ] Report DoD→Evidence Matrix kitöltve
+
+### 5.2 Report minimum
+
+A reportot **kötelezően** a `docs/codex/report_standard.md` szerint kell kitölteni:
+
+* státusz: PASS / FAIL / PASS_WITH_NOTES
+* futtatott parancsok + eredmény
+* változások összefoglalója
+* DoD → Evidence Matrix (bizonyítékokkal)
+
+---
+
+## 🧪 Tesztállapot
+
+A feladat akkor kész, ha a gate zöld, és a reportban minden DoD ponthoz van bizonyíték.
+
+---
+
+## 🌍 Lokalizáció
+
+Nem releváns.
+
+---
+
+## 📎 Kapcsolódások
+
+* `AGENTS.md`
+* `scripts/check.sh`
+* `scripts/run_sparrow_smoketest.sh`
+* `scripts/validate_sparrow_io.py`
+* `docs/codex/report_standard.md`

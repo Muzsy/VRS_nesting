@@ -1,0 +1,24 @@
+steps:
+  - name: "Checklist + report skeleton létrehozása"
+    description: >
+      Hozd létre a checklistet és a reportot a VRS report standard szerint.
+      A reportban hagyd meg az AUTO_VERIFY blokk helyét (üresen), azt majd a verify.sh tölti.
+    outputs:
+      - "codex/codex_checklist/codex_bootstrap.md"
+      - "codex/reports/codex_bootstrap.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/codex_bootstrap.md
+    outputs:
+      - "codex/reports/codex_bootstrap.md"
+      - "codex/reports/codex_bootstrap.verify.log"
+
+  - name: "Checklist + report lezárása"
+    description: >
+      Töltsd ki a reportban a Meta/Scope/Change summary/DoD→Evidence részeket minimálisan,
+      és a checklistben pipáld ki a teljesült pontokat.
+    outputs:
+      - "codex/codex_checklist/codex_bootstrap.md"
+      - "codex/reports/codex_bootstrap.md"
