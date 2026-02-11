@@ -1,0 +1,61 @@
+name: sparrow-io-smoketest
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoketest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: System deps (Python + Shapely)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-shapely git
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare Sparrow source
+        run: |
+          rm -rf .cache/sparrow
+          mkdir -p .cache
+          git clone https://github.com/JeroenGar/sparrow.git .cache/sparrow
+
+          if [ -f "poc/sparrow_io/sparrow_commit.txt" ]; then
+            COMMIT="$(cat poc/sparrow_io/sparrow_commit.txt | tr -d '\n' | tr -d '\r')"
+            echo "Using pinned Sparrow commit: $COMMIT"
+            cd .cache/sparrow
+            git checkout "$COMMIT"
+            cd -
+          else
+            echo "No pinned commit file found (poc/sparrow_io/sparrow_commit.txt). Using default branch."
+          fi
+
+      - name: Build Sparrow (release)
+        run: |
+          cd .cache/sparrow
+          cargo build --release
+          cd -
+          echo "SPARROW_BIN=${GITHUB_WORKSPACE}/.cache/sparrow/target/release/sparrow" >> $GITHUB_ENV
+
+      - name: Run smoketest
+        run: |
+          chmod +x scripts/run_sparrow_smoketest.sh scripts/validate_sparrow_io.py
+          ./scripts/run_sparrow_smoketest.sh poc/sparrow_io/swim.json
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparrow-smoketest-artifacts
+          path: |
+            output/final_*.json
+            output/final_*.svg
+            poc/sparrow_io/*.json
+            poc/sparrow_io/*.svg
