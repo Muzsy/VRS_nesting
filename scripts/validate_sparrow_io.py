@@ -7,6 +7,7 @@ from collections import Counter
 from typing import Dict, List, Tuple
 
 EPS = 1e-3  # mm tolerancia
+ROT_EPS = 1e-6  # fok tolerancia
 
 def rot_norm_deg(deg: float) -> float:
     # -180 -> 180, 540 -> 180, stb.
@@ -87,6 +88,7 @@ def main():
         require("data" in it["shape"] and isinstance(it["shape"]["data"], list), f"Input item {it.get('id')}: shape.data hiányzik")
 
         item_id = str(it["id"])
+        require(item_id not in item_map, f"Input: duplikált item id: {item_id}")
         item_map[item_id] = {
             "demand": int(it["demand"]),
             "allowed": [rot_norm_deg(float(a)) for a in it["allowed_orientations"]],
@@ -123,7 +125,11 @@ def main():
         rot_raw = float(tr["rotation"])
         rot = rot_norm_deg(rot_raw)
         allowed = item_map[item_id]["allowed"]
-        require(rot in allowed, f"Rotáció nem engedélyezett: item={item_id} rot_raw={rot_raw} rot_norm={rot} allowed={allowed}")
+        is_allowed_rotation = any(math.isclose(rot, a, rel_tol=0.0, abs_tol=ROT_EPS) for a in allowed)
+        require(
+            is_allowed_rotation,
+            f"Rotáció nem engedélyezett: item={item_id} rot_raw={rot_raw} rot_norm={rot} allowed={allowed}",
+        )
 
         trans = tr["translation"]
         require(isinstance(trans, list) and len(trans) == 2, f"Translation invalid: item={item_id} translation={trans}")

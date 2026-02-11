@@ -18,15 +18,40 @@ OVERLAP_AREA_EPS="${OVERLAP_AREA_EPS:-1e-6}"
 # Sparrow output tipikusan ./output/final_<stem>.json
 STEM="$(basename "$INPUT_JSON" .json)"
 OUT_JSON_GUESS="output/final_${STEM}.json"
+RUN_START_EPOCH="$(date +%s)"
+PRE_GUESS_MTIME=""
+if [[ -f "$OUT_JSON_GUESS" ]]; then
+  PRE_GUESS_MTIME="$(stat -c %Y "$OUT_JSON_GUESS")"
+fi
 
 echo "[1/2] Sparrow run: $SPARROW_BIN -i $INPUT_JSON -t $TIME_LIMIT -s $SEED"
 "$SPARROW_BIN" -i "$INPUT_JSON" -t "$TIME_LIMIT" -s "$SEED"
 
-# Ha nem ott van, keressük a legfrissebb final_*.json-t
+# Friss outputot várunk a mostani futásból, hogy ne validáljunk régi fájlt.
+OUT_JSON=""
 if [[ -f "$OUT_JSON_GUESS" ]]; then
-  OUT_JSON="$OUT_JSON_GUESS"
-else
-  OUT_JSON="$(ls -t output/final_*.json | head -n 1)"
+  POST_GUESS_MTIME="$(stat -c %Y "$OUT_JSON_GUESS")"
+  if [[ -z "$PRE_GUESS_MTIME" || "$POST_GUESS_MTIME" -gt "$PRE_GUESS_MTIME" || "$POST_GUESS_MTIME" -ge "$RUN_START_EPOCH" ]]; then
+    OUT_JSON="$OUT_JSON_GUESS"
+  fi
+fi
+
+if [[ -z "$OUT_JSON" ]]; then
+  shopt -s nullglob
+  BEST_MTIME=0
+  for CANDIDATE in output/final_*.json; do
+    MTIME="$(stat -c %Y "$CANDIDATE")"
+    if [[ "$MTIME" -ge "$RUN_START_EPOCH" && "$MTIME" -gt "$BEST_MTIME" ]]; then
+      OUT_JSON="$CANDIDATE"
+      BEST_MTIME="$MTIME"
+    fi
+  done
+  shopt -u nullglob
+fi
+
+if [[ -z "$OUT_JSON" ]]; then
+  echo "ERROR: Nem található friss output/final_*.json a mostani Sparrow futásból." >&2
+  exit 2
 fi
 
 VALIDATE_ARGS=(--input "$INPUT_JSON" --output "$OUT_JSON")

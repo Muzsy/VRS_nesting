@@ -44,7 +44,20 @@ if [[ -z "$SPARROW_BIN" ]]; then
     COMMIT="$(tr -d '\n\r' < poc/sparrow_io/sparrow_commit.txt)"
     if [[ -n "$COMMIT" ]]; then
       echo "[1/3] Sparrow pin: $COMMIT"
-      ( cd "$CACHE_DIR" && git fetch --all --tags --prune && git checkout "$COMMIT" )
+      (
+        cd "$CACHE_DIR"
+        if git rev-parse --verify "${COMMIT}^{commit}" >/dev/null 2>&1; then
+          git checkout "$COMMIT"
+        else
+          echo "[1/3] Pinned commit nincs lokálisan, fetch szükséges."
+          if git fetch --all --tags --prune; then
+            git checkout "$COMMIT"
+          else
+            echo "ERROR: Nem sikerült fetch-elni és a pinned commit nem elérhető lokálisan: $COMMIT" >&2
+            exit 2
+          fi
+        fi
+      )
     fi
   fi
 
