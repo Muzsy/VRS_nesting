@@ -1,3 +1,5 @@
 output/
 .cache/
 tmp/sparrow/
+__pycache__/
+tmp/
