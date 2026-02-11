@@ -56,7 +56,6 @@ jobs:
         with:
           name: sparrow-smoketest-artifacts
           path: |
-            output/final_*.json
-            output/final_*.svg
+            runs/**
             poc/sparrow_io/*.json
             poc/sparrow_io/*.svg

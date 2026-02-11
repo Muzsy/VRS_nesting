@@ -1,0 +1,74 @@
+steps:
+  - name: "Felderítés és canvas véglegesítése"
+    description: >
+      Olvasd el a releváns repó szabályokat és belépési pontokat (AGENTS.md,
+      scripts/check.sh, scripts/run_sparrow_smoketest.sh, docs/sparrow_modul/
+      dokumentáció). Ellenőrizd, hogy a canvas (canvases/sparrow_runner_module.md)
+      pontosan a valós fájlokra hivatkozik, és szükség esetén pontosítsd.
+    inputs:
+      - "AGENTS.md"
+      - "scripts/check.sh"
+      - "scripts/run_sparrow_smoketest.sh"
+      - "docs/sparrow_modul/sparrow_runner_modul_komplett_dokumentacio.md"
+    outputs:
+      - "canvases/sparrow_runner_module.md"
+
+  - name: "Python csomag váz létrehozása"
+    description: >
+      Hozd létre a vrs_nesting python csomag minimális vázát, hogy a runner
+      modul importálható legyen telepítés nélkül is (repo gyökérből futtatva).
+    outputs:
+      - "vrs_nesting/__init__.py"
+      - "vrs_nesting/runner/__init__.py"
+
+  - name: "Sparrow runner modul implementálása"
+    description: >
+      Implementáld a vrs_nesting/runner/sparrow_runner.py modult a canvas szerint:
+      - SPARROW_BIN feloldás (env/explicit/PATH)
+      - runs/<run_id>/ könyvtár + instance.json snapshot
+      - Sparrow futtatás (cwd=run_dir), stdout/stderr fájlba
+      - output felderítés (final_<name>.json / final_<stem>.json / newest final_*.json)
+      - runner_meta.json mentése (cmd, seed, time_limit, sha256, strip_width, density, placed_count, pathok)
+      - CLI: python3 -m vrs_nesting.runner.sparrow_runner ... → stdout-on csak run_dir
+      A modul ne vezessen be új külső python függőséget.
+    outputs:
+      - "vrs_nesting/runner/sparrow_runner.py"
+
+  - name: "Smoketest script integráció"
+    description: >
+      Frissítsd a scripts/run_sparrow_smoketest.sh-t, hogy a Sparrow futtatás
+      a runneren keresztül menjen. A script:
+      - futtassa a runnert és kapja meg a run_dir-t
+      - olvassa ki a runner_meta.json-ból a snapshot input és final_json pathokat
+      - ugyanazzal az overlap-check logikával hívja a scripts/validate_sparrow_io.py-t
+      A script hiba esetén írja ki a run_dir-t a debughoz.
+    outputs:
+      - "scripts/run_sparrow_smoketest.sh"
+
+  - name: "Gitignore és CI failure artefaktok frissítése"
+    description: >
+      - Add hozzá a runs/ könyvtárat a .gitignore-hoz.
+      - Frissítsd a .github/workflows/sparrow-smoketest.yml-t, hogy failure esetén
+        a runs/** kerüljön feltöltésre (output/ helyett).
+    outputs:
+      - ".gitignore"
+      - ".github/workflows/sparrow-smoketest.yml"
+
+  - name: "Checklist + report váz létrehozása"
+    description: >
+      Hozd létre/frissítsd a feladat checklistjét és reportját a repó szabvány szerint.
+      A reportban legyen meg a Report Standard v2 szerinti szerkezet és a kötelező
+      AUTO_VERIFY blokk helye.
+    inputs:
+      - "docs/codex/report_standard.md"
+    outputs:
+      - "codex/codex_checklist/sparrow_runner_module.md"
+      - "codex/reports/sparrow_runner_module.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard minőségkaput wrapperrel, és frissítsd a report AUTO_VERIFY blokkját.
+      Parancs: ./scripts/verify.sh --report codex/reports/sparrow_runner_module.md
+    outputs:
+      - "codex/reports/sparrow_runner_module.md"
+      - "codex/reports/sparrow_runner_module.verify.log"
