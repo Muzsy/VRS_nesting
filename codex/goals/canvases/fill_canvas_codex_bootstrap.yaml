@@ -4,6 +4,7 @@ steps:
       Hozd létre a checklistet és a reportot a VRS report standard szerint.
       A reportban hagyd meg az AUTO_VERIFY blokk helyét (üresen), azt majd a verify.sh tölti.
     outputs:
+      - "canvases/codex_bootstrap.md"
       - "codex/codex_checklist/codex_bootstrap.md"
       - "codex/reports/codex_bootstrap.md"
 
