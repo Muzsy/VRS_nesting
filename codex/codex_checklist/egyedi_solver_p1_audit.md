@@ -6,22 +6,24 @@
 - [x] P0 baseline beolvasva: `codex/reports/egyedi_solver_p0_audit.md`
 - [x] Kotelezo 4 db `tmp/egyedi_solver` dokumentum beolvasva
 
-## Kotelezo audit tartalom
+## Audit tartalom
 
-- [x] Scope + Inputs blokk kitoltve
-- [x] Evidence lista kitoltve
-- [x] P1 Requirement Matrix letrehozva
-- [x] P1 task-artefakt ellenorzes elvegezve
-- [x] Kod/integracios pontok req mappinggel listazva
-- [x] Findings severity szerint listazva
-- [x] Javitasi javaslatok DoD-vel megadva
+- [x] Scope + Inputs szekcio kitoltve
+- [x] Evidence szekcio path-szintu bizonyitekokkal kitoltve
+- [x] P1 Requirement Matrix kitoltve (Req ID, forras, lefedettseg, bizonyitek)
+- [x] P1 task-artefakt ellenorzes (canvas/yaml/report/checklist/prompt) elvegezve
+- [x] Kod/integracios pontok req mappinggel rogzitve
+- [x] Findings severity szerint listazva (BLOCKER/MAJOR/MINOR)
+- [x] Minden findinghez van javasolt fix + DoD + regresszios kockazat
 
-## Kapuk
+## Kapuk es futtatasok
 
-- [x] Standard verify futtatva a P1 audit reporton
-- [x] Verify log hivatkozas szerepel a reportban
-- [x] P0 regresszio baseline ellenorzes dokumentalva
+- [x] `python3 scripts/smoke_dxf_import_convention.py` lefutott
+- [x] `python3 scripts/smoke_geometry_pipeline.py` lefutott
+- [x] `python3 scripts/smoke_time_budget_guard.py --require-real-solver` lefutott
+- [x] `./scripts/verify.sh --report codex/reports/egyedi_solver_p1_audit.md` lefutott
+- [x] Verify log hivatkozas szerepel a report AUTO_VERIFY blokkjaban
 
 ## Vegso allapot
 
-- [x] Verdict szerepel: `P1 coverage: NEM OK`
+- [x] Verdict szerepel a reportban: `P1 coverage: RESZLEGES`
