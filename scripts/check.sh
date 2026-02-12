@@ -83,6 +83,9 @@ echo "[3/3] Sparrow IO smoketest"
 echo "[DXF] Import convention smoke"
 python3 scripts/smoke_dxf_import_convention.py
 
+echo "[GEO] Polygonize + offset robustness smoke"
+python3 scripts/smoke_geometry_pipeline.py
+
 if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
   echo "[4/5] Nesting solution validator smoke"
   cargo build --release --manifest-path rust/vrs_solver/Cargo.toml

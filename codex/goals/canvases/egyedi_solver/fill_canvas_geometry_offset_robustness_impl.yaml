@@ -1,0 +1,40 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Rovid felderitessel ellenorizd a P1-GEO-01 es P1-GEO-02 kovetelmenyeket,
+      majd veglegesitsd a canvas scope-jat, DoD-jat, erintett fajljait es
+      regresszio-orseget valos implementacios celokra.
+    outputs:
+      - "canvases/egyedi_solver/geometry_offset_robustness_impl.md"
+
+  - name: "Geometry pipeline modulok implementalasa"
+    description: >
+      Hozd letre a geometry package moduljait (clean, polygonize, offset),
+      valamint a deterministicus smoke scriptet es fixtureket. Kodd be a
+      check gate-be a geometry smoke futtatast ugy, hogy a meglevo P0/P1 gate-ek
+      valtozatlanul lefussanak.
+    outputs:
+      - "vrs_nesting/geometry/__init__.py"
+      - "vrs_nesting/geometry/clean.py"
+      - "vrs_nesting/geometry/polygonize.py"
+      - "vrs_nesting/geometry/offset.py"
+      - "scripts/smoke_geometry_pipeline.py"
+      - "samples/geometry/part_raw_dirty.json"
+      - "samples/geometry/stock_raw_shape.json"
+      - "scripts/check.sh"
+
+  - name: "Checklist es report kitoltese"
+    description: >
+      Frissitsd a checklistet es reportot a tenyleges allapottal, es toltsd ki
+      a DoD -> Evidence matrixot konkret path+line bizonyitekokkal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/geometry_offset_robustness_impl.md"
+      - "codex/reports/egyedi_solver/geometry_offset_robustness_impl.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/geometry_offset_robustness_impl.md
+    outputs:
+      - "codex/reports/egyedi_solver/geometry_offset_robustness_impl.md"
+      - "codex/reports/egyedi_solver/geometry_offset_robustness_impl.verify.log"
