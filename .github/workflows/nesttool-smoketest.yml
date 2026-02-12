@@ -56,12 +56,58 @@ jobs:
           python3 -m vrs_nesting.runner.vrs_solver_runner \
             --input /tmp/nesttool_smoke_input.json \
             --solver-bin ./rust/vrs_solver/target/release/vrs_solver \
+            --seed 0 \
+            --time-limit 60 \
             --run-root runs
 
       - name: Validate latest run
         run: |
           RUN_DIR="$(ls -1dt runs/* | head -n1)"
           python3 scripts/validate_nesting_solution.py --run-dir "$RUN_DIR"
+
+      - name: Determinism hash stability smoke
+        run: |
+          RUN_A="$(python3 -m vrs_nesting.runner.vrs_solver_runner \
+            --input /tmp/nesttool_smoke_input.json \
+            --solver-bin ./rust/vrs_solver/target/release/vrs_solver \
+            --seed 0 \
+            --time-limit 60 \
+            --run-root runs)"
+          RUN_B="$(python3 -m vrs_nesting.runner.vrs_solver_runner \
+            --input /tmp/nesttool_smoke_input.json \
+            --solver-bin ./rust/vrs_solver/target/release/vrs_solver \
+            --seed 0 \
+            --time-limit 60 \
+            --run-root runs)"
+          HASH_A="$(python3 - "$RUN_A/runner_meta.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          meta = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          print(str(meta.get('output_sha256', '')).strip())
+          PY
+          )"
+          HASH_B="$(python3 - "$RUN_B/runner_meta.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          meta = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          print(str(meta.get('output_sha256', '')).strip())
+          PY
+          )"
+          if [ -z "$HASH_A" ] || [ -z "$HASH_B" ]; then
+            echo "Missing output_sha256 in runner_meta"
+            exit 2
+          fi
+          if [ "$HASH_A" != "$HASH_B" ]; then
+            echo "Determinism hash mismatch"
+            echo "run_a=$RUN_A hash=$HASH_A"
+            echo "run_b=$RUN_B hash=$HASH_B"
+            exit 1
+          fi
+          echo "Determinism hash stable: $HASH_A"
 
       - name: Upload artifacts on failure
         if: failure()

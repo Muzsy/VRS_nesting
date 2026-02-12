@@ -81,7 +81,7 @@ echo "[3/3] Sparrow IO smoketest"
 ./scripts/run_sparrow_smoketest.sh "$INPUT_JSON"
 
 if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
-  echo "[4/4] Nesting solution validator smoke"
+  echo "[4/5] Nesting solution validator smoke"
   cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
   VRS_SOLVER_BIN_PATH="$ROOT_DIR/rust/vrs_solver/target/release/vrs_solver"
 
@@ -117,10 +117,59 @@ JSON
   VRS_RUN_DIR="$(python3 -m vrs_nesting.runner.vrs_solver_runner \
     --input "$TMP_NEST_INPUT" \
     --solver-bin "$VRS_SOLVER_BIN_PATH" \
+    --seed "$SEED" \
+    --time-limit "$TIME_LIMIT" \
     --run-root runs)"
 
   echo "[INFO] vrs_run_dir: $VRS_RUN_DIR"
   python3 scripts/validate_nesting_solution.py --run-dir "$VRS_RUN_DIR"
+
+  echo "[5/5] Determinism hash stability smoke"
+  VRS_RUN_DIR_A="$(python3 -m vrs_nesting.runner.vrs_solver_runner \
+    --input "$TMP_NEST_INPUT" \
+    --solver-bin "$VRS_SOLVER_BIN_PATH" \
+    --seed "$SEED" \
+    --time-limit "$TIME_LIMIT" \
+    --run-root runs)"
+  VRS_RUN_DIR_B="$(python3 -m vrs_nesting.runner.vrs_solver_runner \
+    --input "$TMP_NEST_INPUT" \
+    --solver-bin "$VRS_SOLVER_BIN_PATH" \
+    --seed "$SEED" \
+    --time-limit "$TIME_LIMIT" \
+    --run-root runs)"
+
+  HASH_A="$(python3 - "$VRS_RUN_DIR_A/runner_meta.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+meta = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(str(meta.get("output_sha256", "")).strip())
+PY
+)"
+  HASH_B="$(python3 - "$VRS_RUN_DIR_B/runner_meta.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+meta = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(str(meta.get("output_sha256", "")).strip())
+PY
+)"
+
+  if [[ -z "$HASH_A" || -z "$HASH_B" ]]; then
+    echo "ERROR: Missing output_sha256 in determinism smoke meta" >&2
+    echo " run_a=$VRS_RUN_DIR_A" >&2
+    echo " run_b=$VRS_RUN_DIR_B" >&2
+    exit 2
+  fi
+  if [[ "$HASH_A" != "$HASH_B" ]]; then
+    echo "ERROR: Determinism hash mismatch" >&2
+    echo " run_a=$VRS_RUN_DIR_A hash=$HASH_A" >&2
+    echo " run_b=$VRS_RUN_DIR_B hash=$HASH_B" >&2
+    exit 2
+  fi
+  echo "[INFO] Determinism hash stable: $HASH_A"
 fi
 
 echo "[DONE] smoketest OK"

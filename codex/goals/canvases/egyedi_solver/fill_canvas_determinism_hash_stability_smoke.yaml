@@ -1,0 +1,33 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a P0 audit determinizmus findingjat es a jelenlegi check/CI
+      futasi lancot, majd veglegesitsd a canvas DoD es kockazat pontjait.
+    outputs:
+      - "canvases/egyedi_solver/determinism_hash_stability_smoke.md"
+
+  - name: "Determinism hash smoke implementalasa"
+    description: >
+      Bovitd a local gate-et (`scripts/check.sh`) es a CI workflow-t ugy, hogy
+      ket egymast koveto, azonos input+seed parameterekkel futtatott solver run
+      output hash-e egyezzen. Hash mismatch eseten a gate legyen FAIL.
+    outputs:
+      - "scripts/check.sh"
+      - ".github/workflows/nesttool-smoketest.yml"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es reportot a report standard szerint,
+      DoD -> Evidence matrix szerkezettel, es rogzitsd a futtatott
+      ellenorzeseket.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/determinism_hash_stability_smoke.md"
+      - "codex/reports/egyedi_solver/determinism_hash_stability_smoke.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/determinism_hash_stability_smoke.md
+    outputs:
+      - "codex/reports/egyedi_solver/determinism_hash_stability_smoke.md"
+      - "codex/reports/egyedi_solver/determinism_hash_stability_smoke.verify.log"
