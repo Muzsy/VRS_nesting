@@ -1,0 +1,39 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Nezd at a jelenlegi CLI (vrs_nesting/cli.py), a runner (vrs_nesting/runner/vrs_solver_runner.py),
+      a validator (vrs_nesting/validate/solution_validator.py) es az exporter (vrs_nesting/dxf/exporter.py)
+      aktualis API-jat. Pontositsd a canvasban a futasi artifact listat, a stdout/stderr szabalyokat,
+      es a report.json minimalis tartalmat ugy, hogy az a repoban levo modulokkal konzisztens legyen.
+    outputs:
+      - "canvases/egyedi_solver/cli_run_solver_pipeline.md"
+
+  - name: "CLI run pipeline implementalasa"
+    description: >
+      Implementald az end-to-end CLI run pipeline-t:
+      - vrs_nesting/cli.py run: project validate -> run_dir create -> solver_input build -> runner futtatas ugyanabba a run_dir-be
+        -> validator -> exporter out/ ala -> report.json.
+      - A runnerben vezess be egy uj, meglevo run_dir-t hasznalo API-t (pl. run_solver_in_dir),
+        de a jelenlegi python -m vrs_nesting.runner.vrs_solver_runner CLI viselkedese maradjon kompatibilis.
+      - A CLI stdout-on kizarolag a run_dir-t irja ki; minden egyeb menjen stderr/run.log-ba.
+      - Tedd a samples/project_rect_1000x2000.json-t strict schema kompatibilissa (ismeretlen top-level mezok eltavolitasa vagy szetvalasztasa).
+    outputs:
+      - "vrs_nesting/cli.py"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "samples/project_rect_1000x2000.json"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es report vazat a standard report format szerint
+      (docs/codex/report_standard.md). A reportban legyen hely az AUTO_VERIFY blokk szamara is.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/cli_run_solver_pipeline.md"
+      - "codex/reports/egyedi_solver/cli_run_solver_pipeline.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/cli_run_solver_pipeline.md
+    outputs:
+      - "codex/reports/egyedi_solver/cli_run_solver_pipeline.md"
+      - "codex/reports/egyedi_solver/cli_run_solver_pipeline.verify.log"

@@ -111,29 +111,19 @@ def _validate_contract_fields(input_json: Path, output_json: Path) -> None:
     validate_multi_sheet_output(inp, out)
 
 
-def run_solver(
-    input_path: str,
+def _run_solver_with_paths(
     *,
+    run_dir: Path,
+    snapshot_path: Path,
     seed: int,
     time_limit_s: int,
-    run_root: str = "runs",
-    solver_bin: str | None = None,
+    solver_bin: str | None,
 ) -> tuple[Path, dict[str, Any]]:
-    input_json = Path(input_path).resolve()
-    if not input_json.is_file():
-        raise VrsSolverRunnerError(f"Input JSON not found: {input_json}")
-
     bin_path = resolve_solver_bin(solver_bin)
-
-    run_ctx = create_run_dir(run_root=run_root)
-    run_dir = run_ctx.run_dir
-    snapshot_path = run_dir / "solver_input.json"
     output_path = run_dir / "solver_output.json"
     stdout_log = run_dir / "solver_stdout.log"
     stderr_log = run_dir / "solver_stderr.log"
     meta_path = run_dir / "runner_meta.json"
-
-    shutil.copy2(input_json, snapshot_path)
 
     cmd = [
         bin_path,
@@ -230,6 +220,60 @@ def run_solver(
 
     _write_json(meta_path, meta)
     return run_dir, meta
+
+
+def run_solver_in_dir(
+    input_path: str,
+    *,
+    run_dir: str | Path,
+    seed: int,
+    time_limit_s: int,
+    solver_bin: str | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    input_json = Path(input_path).resolve()
+    if not input_json.is_file():
+        raise VrsSolverRunnerError(f"Input JSON not found: {input_json}")
+
+    target_run_dir = Path(run_dir).resolve()
+    if not target_run_dir.is_dir():
+        raise VrsSolverRunnerError(f"Run directory not found: {target_run_dir}")
+
+    snapshot_path = target_run_dir / "solver_input.json"
+    if input_json != snapshot_path:
+        shutil.copy2(input_json, snapshot_path)
+
+    return _run_solver_with_paths(
+        run_dir=target_run_dir,
+        snapshot_path=snapshot_path,
+        seed=seed,
+        time_limit_s=time_limit_s,
+        solver_bin=solver_bin,
+    )
+
+
+def run_solver(
+    input_path: str,
+    *,
+    seed: int,
+    time_limit_s: int,
+    run_root: str = "runs",
+    solver_bin: str | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    input_json = Path(input_path).resolve()
+    if not input_json.is_file():
+        raise VrsSolverRunnerError(f"Input JSON not found: {input_json}")
+
+    run_ctx = create_run_dir(run_root=run_root)
+    run_dir = run_ctx.run_dir
+    snapshot_path = run_dir / "solver_input.json"
+    shutil.copy2(input_json, snapshot_path)
+    return _run_solver_with_paths(
+        run_dir=run_dir,
+        snapshot_path=snapshot_path,
+        seed=seed,
+        time_limit_s=time_limit_s,
+        solver_bin=solver_bin,
+    )
 
 
 def _default_seed() -> int:
