@@ -1,0 +1,41 @@
+steps:
+  - name: "Canvas veglegesitese"
+    description: >
+      Rogzitsd a P1-VAL-01 javitas konkret scope-jat, DoD-jat, erintett
+      fajljait es regresszio-orseget a modulutvonal-egysegesiteshez.
+    outputs:
+      - "canvases/egyedi_solver/validator_module_path_alignment_impl.md"
+
+  - name: "Validator modulpath implementalasa"
+    description: >
+      Hozd letre a vrs_nesting validator modult, emeld at a validacios logikat,
+      es alakitsd a scripts entrypointot kompatibilis wrapperre.
+    outputs:
+      - "vrs_nesting/validate/__init__.py"
+      - "vrs_nesting/validate/solution_validator.py"
+      - "scripts/validate_nesting_solution.py"
+
+  - name: "Hivatkozasok egysegesitese canvas/reportokban"
+    description: >
+      Frissitsd a relevans canvas/report dokumentumokat, hogy a validator
+      modulutvonal-kep konzisztens legyen es ne maradjon NINCS ellentmondas.
+    outputs:
+      - "canvases/egyedi_solver/rotation_policy_and_instance_regression.md"
+      - "codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md"
+      - "codex/reports/egyedi_solver_p1_audit.md"
+
+  - name: "Checklist es report kitoltese"
+    description: >
+      Toltse ki a task checklistet es reportot DoD -> Evidence matrixszal,
+      a futtatott parancsokkal es eredmenyekkel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/validator_module_path_alignment_impl.md"
+      - "codex/reports/egyedi_solver/validator_module_path_alignment_impl.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/validator_module_path_alignment_impl.md
+    outputs:
+      - "codex/reports/egyedi_solver/validator_module_path_alignment_impl.md"
+      - "codex/reports/egyedi_solver/validator_module_path_alignment_impl.verify.log"

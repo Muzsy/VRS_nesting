@@ -42,7 +42,9 @@ BLOCKER: nincs.
 ### 3.2 Kulcs kod- es gate pontok
 - `scripts/check.sh:83`
 - `scripts/check.sh:127`
-- `scripts/validate_nesting_solution.py:42`
+- `scripts/validate_nesting_solution.py:13`
+- `vrs_nesting/validate/solution_validator.py:11`
+- `vrs_nesting/validate/solution_validator.py:52`
 - `vrs_nesting/runner/vrs_solver_runner.py:165`
 - `vrs_nesting/runner/vrs_solver_runner.py:171`
 - `vrs_nesting/runner/vrs_solver_runner.py:199`
@@ -58,7 +60,6 @@ BLOCKER: nincs.
 - NINCS: `vrs_nesting/geometry/polygonize.py`
 - NINCS: `vrs_nesting/geometry/clean.py`
 - NINCS: `vrs_nesting/geometry/offset.py`
-- NINCS: `vrs_nesting/validate/solution_validator.py`
 
 ## 4) P1 Requirement Matrix
 
@@ -72,7 +73,7 @@ BLOCKER: nincs.
 | P1-ROT-02 | `tmp/egyedi_solver/mvp_terv_...md:170`, `tmp/egyedi_solver/uj_tablas_solver_...md:158` | `allowed_rotations_deg` policy enforce + regresszio coverage. | P1 (`rotation_policy_and_instance_regression`) | RESZLEGES | `vrs_nesting/project/model.py:135`; `vrs_nesting/nesting/instances.py:123`; `scripts/check.sh:111` | Enforce van, de kulon P1 regresszios tesztcsomag nincs. |
 | P1-DET-01 | `tmp/egyedi_solver/tablas_optimalizacios_...md:286`, `tmp/egyedi_solver/uj_tablas_solver_...md:252` | Azonos input+seed -> azonos output hash smoke. | P1 (`determinism_and_time_budget`) | OK | `scripts/check.sh:127`; `scripts/check.sh:166`; `.github/workflows/nesttool-smoketest.yml:68`; `vrs_nesting/runner/vrs_solver_runner.py:199` | Determinizmus smoke local + CI szinten bizonyitott. |
 | P1-DET-02 | `tmp/egyedi_solver/mvp_terv_...md:67`, `tmp/egyedi_solver/uj_tablas_solver_...md:73`, `tmp/egyedi_solver/dxf_nesting_app_7_...md:205` | Idokeret (time budget) enforced viselkedes + timeout regresszio. | P1 (`determinism_and_time_budget`) | RESZLEGES | `vrs_nesting/runner/vrs_solver_runner.py:171`; `vrs_nesting/runner/vrs_solver_runner.py:226`; `scripts/check.sh:121` | Time-limit parameter kezelt, de explicit timeout scenario teszt/evidence nincs. |
-| P1-VAL-01 | `tmp/egyedi_solver/mvp_terv_...md:222`, `tmp/egyedi_solver/tablas_optimalizacios_...md:58` | Kulon validator modul (`vrs_nesting/validate/solution_validator.py`) elvart. | P1 (rotation/determinism stabilitas) | RESZLEGES | NINCS: `vrs_nesting/validate/solution_validator.py`; letezik: `scripts/validate_nesting_solution.py:42` | Funkcio scriptben van, de elvart modulpath nincs. |
+| P1-VAL-01 | `tmp/egyedi_solver/mvp_terv_...md:222`, `tmp/egyedi_solver/tablas_optimalizacios_...md:58` | Kulon validator modul (`vrs_nesting/validate/solution_validator.py`) elvart. | P1 (rotation/determinism stabilitas) | OK | `vrs_nesting/validate/solution_validator.py:11`; `vrs_nesting/validate/solution_validator.py:52`; `scripts/validate_nesting_solution.py:13` | A dedikalt validator modul letrehozva, a script entrypoint kompatibilis wrapperkent erre mutat. |
 
 Eltérés jeloles:
 - A backlogban P1-re sorolt `rotation_policy_and_instance_regression` es `determinism_and_time_budget` kovetelmenyek egy resze mar P0/P0-fix runokban implementalt; ez a matrixban `OK/RESZLEGES` formaban szerepel.
@@ -167,15 +168,7 @@ P0 regresszio baseline ellenorzes:
 
 ### MINOR
 
-1. Doksi-modul elteres: validator modul elvart pathja es a valos script belépési pont nem azonos.
-- Bizonyitek: NINCS: `vrs_nesting/validate/solution_validator.py`; letezik: `scripts/validate_nesting_solution.py:42`
-- Erintett Req ID-k: `P1-VAL-01`
-- Javasolt fix:
-  - Vagy letrehozni a dokumentalt modulpathot, vagy frissiteni a doksit a valos script entrypointra.
-- DoD:
-  - [ ] Doki es kodpath konzisztens.
-  - [ ] CI/check.sh ugyanarra az entrypointra hivatkozik.
-- Kockazat/regresszio: onboarding es karbantartasi felreertesek.
+- Nincs nyitott MINOR finding.
 
 ## 9) Verdict
 

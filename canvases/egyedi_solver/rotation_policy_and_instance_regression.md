@@ -18,7 +18,7 @@ Ez a P1 task a rotacios policy es instance-kezeles regresszio-biztositasi kerete
 - `vrs_nesting/nesting/instances.py`
 - `rust/vrs_solver/src/main.rs`
 - `vrs_nesting/dxf/exporter.py`
-- `NINCS: vrs_nesting/validate/solution_validator.py`
+- `vrs_nesting/validate/solution_validator.py`
 - `scripts/validate_nesting_solution.py`
 - `codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md`
 - `codex/codex_checklist/egyedi_solver/rotation_policy_and_instance_regression.md`
@@ -31,7 +31,7 @@ Ez a P1 task a rotacios policy es instance-kezeles regresszio-biztositasi kerete
 
 ### Kockazat + mitigacio + rollback
 - Kockazat: policy drift solver es validator kozott inkonzisztens hibakat okoz.
-- Mitigacio: kozos fixture + kozos invarians lista (`scripts/validate_nesting_solution.py`).
+- Mitigacio: kozos fixture + kozos invarians lista (`vrs_nesting/validate/solution_validator.py`, `scripts/validate_nesting_solution.py`).
 - Rollback: policy ellenorzesek fokozatos kapcsolasa, gyors visszaallassal.
 
 ### Regresszio-orseg (P0 nem romolhat)
