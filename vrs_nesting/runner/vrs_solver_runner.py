@@ -15,6 +15,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
+from vrs_nesting.nesting.instances import validate_multi_sheet_output
 from vrs_nesting.run_artifacts.run_dir import create_run_dir
 
 
@@ -103,6 +104,7 @@ def _validate_contract_fields(input_json: Path, output_json: Path) -> None:
         raise VrsSolverOutputParseError("solver_input.json contract_version must be v1")
     if out.get("contract_version") != "v1":
         raise VrsSolverOutputParseError("solver_output.json contract_version must be v1")
+    validate_multi_sheet_output(inp, out)
 
 
 def run_solver(
@@ -173,6 +175,9 @@ def run_solver(
         "stderr_log_path": str(stderr_log.resolve()),
         "input_sha256": _sha256_file(snapshot_path),
         "output_sha256": "",
+        "placements_count": None,
+        "unplaced_count": None,
+        "sheet_count_used": None,
         "started_at_utc": started,
         "ended_at_utc": ended,
         "duration_sec": duration_sec,
@@ -190,7 +195,18 @@ def run_solver(
         raise VrsSolverOutputNotFoundError(f"Missing solver output: {output_path}")
 
     _validate_contract_fields(snapshot_path, output_path)
+    output_data = _read_json(output_path)
     meta["output_sha256"] = _sha256_file(output_path)
+    placements = output_data.get("placements")
+    unplaced = output_data.get("unplaced")
+    if isinstance(placements, list):
+        meta["placements_count"] = len(placements)
+        sheet_ids = [p.get("sheet_index") for p in placements if isinstance(p, dict)]
+        numeric_sheet_ids = [sid for sid in sheet_ids if isinstance(sid, int)]
+        meta["sheet_count_used"] = (max(numeric_sheet_ids) + 1) if numeric_sheet_ids else 0
+    if isinstance(unplaced, list):
+        meta["unplaced_count"] = len(unplaced)
+
     _write_json(meta_path, meta)
     return run_dir, meta
 

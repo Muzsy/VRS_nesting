@@ -15,9 +15,9 @@ Ez a task a tablas MVP solver alapot es a multi-sheet iteraciot rogzitit, hogy a
   - Vegleges teljesitmeny optimalizacio.
 
 ### Erintett fajlok
-- `NINCS: rust/vrs_solver`
+- `rust/vrs_solver`
 - `NINCS: vrs_nesting/nesting/instances.py`
-- `NINCS: vrs_nesting/runner/vrs_solver_runner.py`
+- `vrs_nesting/runner/vrs_solver_runner.py`
 - `codex/codex_checklist/egyedi_solver/table_solver_mvp_multisheet.md`
 - `codex/reports/egyedi_solver/table_solver_mvp_multisheet.md`
 
