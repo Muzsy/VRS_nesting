@@ -80,4 +80,40 @@ export TIME_LIMIT
 echo "[3/3] Sparrow IO smoketest"
 ./scripts/run_sparrow_smoketest.sh "$INPUT_JSON"
 
+if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
+  echo "[4/4] Nesting solution validator smoke"
+  cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
+  VRS_SOLVER_BIN_PATH="$ROOT_DIR/rust/vrs_solver/target/release/vrs_solver"
+
+  if [[ ! -x "$VRS_SOLVER_BIN_PATH" ]]; then
+    echo "ERROR: VRS solver binary missing or not executable: $VRS_SOLVER_BIN_PATH" >&2
+    exit 2
+  fi
+
+  TMP_NEST_INPUT="$(mktemp /tmp/vrs_nest_input_XXXXXX.json)"
+  cat > "$TMP_NEST_INPUT" <<'JSON'
+{
+  "contract_version": "v1",
+  "project_name": "check_gate_smoke",
+  "seed": 0,
+  "time_limit_s": 60,
+  "stocks": [
+    {"id": "SHEET_A", "width": 100, "height": 100, "quantity": 2}
+  ],
+  "parts": [
+    {"id": "PART_A", "width": 70, "height": 60, "quantity": 2, "allow_rotation": false},
+    {"id": "PART_B", "width": 120, "height": 20, "quantity": 1, "allow_rotation": false}
+  ]
+}
+JSON
+
+  VRS_RUN_DIR="$(python3 -m vrs_nesting.runner.vrs_solver_runner \
+    --input "$TMP_NEST_INPUT" \
+    --solver-bin "$VRS_SOLVER_BIN_PATH" \
+    --run-root runs)"
+
+  echo "[INFO] vrs_run_dir: $VRS_RUN_DIR"
+  python3 scripts/validate_nesting_solution.py --run-dir "$VRS_RUN_DIR"
+fi
+
 echo "[DONE] smoketest OK"

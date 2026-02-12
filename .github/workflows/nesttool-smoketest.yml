@@ -1,0 +1,66 @@
+name: nesttool-smoketest
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  nesttool_smoketest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 git
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build VRS solver (release)
+        run: |
+          cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
+
+      - name: Prepare smoke input
+        run: |
+          cat > /tmp/nesttool_smoke_input.json <<'JSON'
+          {
+            "contract_version": "v1",
+            "project_name": "ci_smoke",
+            "seed": 0,
+            "time_limit_s": 60,
+            "stocks": [
+              {"id": "SHEET_A", "width": 100, "height": 100, "quantity": 2}
+            ],
+            "parts": [
+              {"id": "PART_1", "width": 70, "height": 60, "quantity": 2, "allow_rotation": false},
+              {"id": "PART_2", "width": 120, "height": 20, "quantity": 1, "allow_rotation": false}
+            ]
+          }
+          JSON
+
+      - name: Run solver via runner
+        run: |
+          python3 -m vrs_nesting.runner.vrs_solver_runner \
+            --input /tmp/nesttool_smoke_input.json \
+            --solver-bin ./rust/vrs_solver/target/release/vrs_solver \
+            --run-root runs
+
+      - name: Validate latest run
+        run: |
+          RUN_DIR="$(ls -1dt runs/* | head -n1)"
+          python3 scripts/validate_nesting_solution.py --run-dir "$RUN_DIR"
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nesttool-smoketest-artifacts
+          path: |
+            runs/**
+            rust/vrs_solver/target/**

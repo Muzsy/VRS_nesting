@@ -15,8 +15,8 @@ Ez a task egy uj tablas solution validatort es hozza tartozo smoke gate-et defin
   - UI riport felulet.
 
 ### Erintett fajlok
-- `NINCS: scripts/validate_nesting_solution.py`
-- `NINCS: .github/workflows/nesttool-smoketest.yml`
+- `scripts/validate_nesting_solution.py`
+- `.github/workflows/nesttool-smoketest.yml`
 - `scripts/check.sh`
 - `codex/codex_checklist/egyedi_solver/nesting_solution_validator_and_smoke.md`
 - `codex/reports/egyedi_solver/nesting_solution_validator_and_smoke.md`
