@@ -15,8 +15,8 @@ Ez a task az MVP szintu gyartasi kimenetet rogziti: sheet-enkenti DXF export a s
   - CAD interoperabilitasi teljes matrix.
 
 ### Erintett fajlok
-- `NINCS: vrs_nesting/dxf/exporter.py`
-- `NINCS: samples/project_rect_1000x2000.json`
+- `vrs_nesting/dxf/exporter.py`
+- `samples/project_rect_1000x2000.json`
 - `codex/codex_checklist/egyedi_solver/dxf_export_per_sheet_mvp.md`
 - `codex/reports/egyedi_solver/dxf_export_per_sheet_mvp.md`
 

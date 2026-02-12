@@ -1,0 +1,25 @@
+{
+  "version": "v1",
+  "name": "project_rect_1000x2000",
+  "seed": 0,
+  "time_limit_s": 60,
+  "stocks": [
+    {"id": "SHEET_A", "width": 1000, "height": 2000, "quantity": 2}
+  ],
+  "parts": [
+    {"id": "PANEL_A", "width": 400, "height": 500, "quantity": 3, "allow_rotation": false},
+    {"id": "PANEL_B", "width": 1100, "height": 200, "quantity": 1, "allow_rotation": false}
+  ],
+  "solver_output_example": {
+    "contract_version": "v1",
+    "status": "partial",
+    "placements": [
+      {"instance_id": "PANEL_A__0001", "part_id": "PANEL_A", "sheet_index": 0, "x": 0, "y": 0, "rotation_deg": 0},
+      {"instance_id": "PANEL_A__0002", "part_id": "PANEL_A", "sheet_index": 0, "x": 400, "y": 0, "rotation_deg": 0},
+      {"instance_id": "PANEL_A__0003", "part_id": "PANEL_A", "sheet_index": 1, "x": 0, "y": 0, "rotation_deg": 0}
+    ],
+    "unplaced": [
+      {"instance_id": "PANEL_B__0001", "part_id": "PANEL_B", "reason": "PART_NEVER_FITS_STOCK"}
+    ]
+  }
+}
