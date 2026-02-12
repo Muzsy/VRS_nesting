@@ -39,6 +39,10 @@ class VrsSolverOutputParseError(VrsSolverRunnerError):
     """Raised when solver_output.json is invalid JSON."""
 
 
+class VrsSolverTimeoutError(VrsSolverRunnerError):
+    """Raised when solver execution exceeds configured time limit."""
+
+
 def _eprint(msg: str) -> None:
     print(msg, file=sys.stderr)
 
@@ -149,15 +153,25 @@ def run_solver(
     _eprint(f"[vrs-runner] run_dir={run_dir}")
     _eprint(f"[vrs-runner] cmd={' '.join(cmd)}")
 
-    with stdout_log.open("w", encoding="utf-8") as out_handle, stderr_log.open("w", encoding="utf-8") as err_handle:
-        proc = subprocess.run(
-            cmd,
-            cwd=run_dir,
-            stdout=out_handle,
-            stderr=err_handle,
-            text=True,
-            check=False,
-        )
+    timeout_grace = float(os.environ.get("VRS_SOLVER_TIMEOUT_GRACE_S", "1.0"))
+    effective_timeout = max(1.0, float(int(time_limit_s)) + timeout_grace)
+    timed_out = False
+    return_code = 0
+    try:
+        with stdout_log.open("w", encoding="utf-8") as out_handle, stderr_log.open("w", encoding="utf-8") as err_handle:
+            proc = subprocess.run(
+                cmd,
+                cwd=run_dir,
+                stdout=out_handle,
+                stderr=err_handle,
+                text=True,
+                check=False,
+                timeout=effective_timeout,
+            )
+            return_code = int(proc.returncode)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        return_code = 124
 
     duration_sec = round(monotonic() - started_mono, 3)
     ended = _utc_now_iso()
@@ -169,6 +183,7 @@ def run_solver(
         "cmd": cmd,
         "seed": int(seed),
         "time_limit_s": int(time_limit_s),
+        "effective_timeout_s": effective_timeout,
         "input_snapshot_path": str(snapshot_path.resolve()),
         "output_path": str(output_path.resolve()),
         "stdout_log_path": str(stdout_log.resolve()),
@@ -181,13 +196,19 @@ def run_solver(
         "started_at_utc": started,
         "ended_at_utc": ended,
         "duration_sec": duration_sec,
-        "return_code": proc.returncode,
+        "return_code": return_code,
     }
 
-    if proc.returncode != 0:
+    if timed_out:
+        _write_json(meta_path, meta)
+        raise VrsSolverTimeoutError(
+            f"Solver process timed out after {effective_timeout:.3f}s (time_limit_s={time_limit_s}). run_dir={run_dir}"
+        )
+
+    if return_code != 0:
         _write_json(meta_path, meta)
         raise VrsSolverNonZeroExitError(
-            f"Solver process failed (exit={proc.returncode}). run_dir={run_dir}"
+            f"Solver process failed (exit={return_code}). run_dir={run_dir}"
         )
 
     if not output_path.is_file():

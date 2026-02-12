@@ -1,0 +1,18 @@
+{
+  "contract_version": "v1",
+  "project_name": "timeout_guard_smoke",
+  "seed": 0,
+  "time_limit_s": 60,
+  "stocks": [
+    {
+      "id": "SHEET_GUARD",
+      "quantity": 1,
+      "outer_points": [[0, 0], [120, 0], [120, 80], [0, 80]],
+      "holes_points": []
+    }
+  ],
+  "parts": [
+    {"id": "PART_G1", "width": 40, "height": 30, "quantity": 2, "allowed_rotations_deg": [0, 90]},
+    {"id": "PART_G2", "width": 30, "height": 20, "quantity": 1, "allowed_rotations_deg": [0]}
+  ]
+}

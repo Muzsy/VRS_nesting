@@ -176,6 +176,9 @@ PY
     exit 2
   fi
   echo "[INFO] Determinism hash stable: $HASH_A"
+
+  echo "[6/6] Timeout/perf guard smoke"
+  python3 scripts/smoke_time_budget_guard.py --require-real-solver
 fi
 
 echo "[DONE] smoketest OK"

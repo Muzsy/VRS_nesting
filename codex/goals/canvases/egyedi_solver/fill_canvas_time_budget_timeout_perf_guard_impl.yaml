@@ -1,0 +1,51 @@
+steps:
+  - name: "Canvas veglegesitese"
+    description: >
+      Rogzitsd a P1-DET-02 timeout/perf guard javitas konkret scope-jat,
+      DoD-jat, erintett fajljait es regresszio-orseget a valos implementacios
+      lepesekhez.
+    outputs:
+      - "canvases/egyedi_solver/time_budget_timeout_perf_guard_impl.md"
+
+  - name: "Runner timeout enforce es smoke teszt implementalasa"
+    description: >
+      Bovitsd a runner subprocess futtatasat timeout enforce logikaval,
+      keszits reprodukalhato timeout/perf guard smoke scriptet minta inputpal,
+      es kodd be a standard check gate-be.
+    outputs:
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "scripts/smoke_time_budget_guard.py"
+      - "samples/time_budget/timeout_guard_input.json"
+      - "scripts/check.sh"
+      - ".github/workflows/nesttool-smoketest.yml"
+
+  - name: "Determinism task artefaktok frissitese"
+    description: >
+      Frissitsd a determinism task reportot es checklistet explicit timeout
+      bizonyitekkal (P1-DET-02), valos kod- es teszt hivatkozasokkal.
+    outputs:
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.md"
+      - "codex/codex_checklist/egyedi_solver/determinism_and_time_budget.md"
+
+  - name: "Task checklist es report kitoltese"
+    description: >
+      Toltse ki a task sajat checklistet es reportot DoD -> Evidence matrixszal,
+      majd keszitse elo a verify futtatast.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/time_budget_timeout_perf_guard_impl.md"
+      - "codex/reports/egyedi_solver/time_budget_timeout_perf_guard_impl.md"
+
+  - name: "Verify: determinism_and_time_budget report"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/determinism_and_time_budget.md
+    outputs:
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.md"
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.verify.log"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/time_budget_timeout_perf_guard_impl.md
+    outputs:
+      - "codex/reports/egyedi_solver/time_budget_timeout_perf_guard_impl.md"
+      - "codex/reports/egyedi_solver/time_budget_timeout_perf_guard_impl.verify.log"
