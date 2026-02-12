@@ -1,0 +1,37 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a DXF import kovetelmenyeket a backlog, audit report es kapcsolodo
+      doksik alapjan, majd veglegesitsd a task canvas scope-jat, DoD-jat es
+      erintett fajljait a tenyleges implementacios munkara.
+    outputs:
+      - "canvases/egyedi_solver/dxf_import_convention_layers_impl.md"
+
+  - name: "DXF importer es smoke ellenorzes implementalasa"
+    description: >
+      Keszitsd el a konvencios layer-feldolgozo import modult, add hozza a
+      determinisztikus fixtureket es smoke scriptet, valamint kodd be a standard
+      check gate-be a futtatast ugy, hogy a jelenlegi P0/P1 kapuk ne seruljenek.
+    outputs:
+      - "vrs_nesting/dxf/importer.py"
+      - "scripts/smoke_dxf_import_convention.py"
+      - "samples/dxf_import/part_contract_ok.json"
+      - "samples/dxf_import/part_missing_outer.json"
+      - "samples/dxf_import/part_open_outer.json"
+      - "scripts/check.sh"
+
+  - name: "Checklist es report kitoltese"
+    description: >
+      Frissitsd a task checklistet es reportot a valos implementacios allapottal,
+      majd toltsd ki a DoD -> Evidence matrixot konkret fajl- es sorhivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/dxf_import_convention_layers_impl.md"
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers_impl.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/dxf_import_convention_layers_impl.md
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers_impl.md"
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers_impl.verify.log"

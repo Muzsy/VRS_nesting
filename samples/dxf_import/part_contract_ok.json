@@ -1,0 +1,22 @@
+{
+  "entities": [
+    {
+      "layer": "CUT_OUTER",
+      "type": "LWPOLYLINE",
+      "closed": true,
+      "points": [[0, 0], [100, 0], [100, 60], [0, 60], [0, 0]]
+    },
+    {
+      "layer": "CUT_INNER",
+      "type": "LWPOLYLINE",
+      "closed": true,
+      "points": [[20, 20], [40, 20], [40, 30], [20, 30], [20, 20]]
+    },
+    {
+      "layer": "ANNOTATION",
+      "type": "TEXT",
+      "closed": false,
+      "points": [[0, 0], [1, 0], [1, 1]]
+    }
+  ]
+}

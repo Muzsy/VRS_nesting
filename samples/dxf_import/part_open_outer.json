@@ -1,0 +1,16 @@
+{
+  "entities": [
+    {
+      "layer": "CUT_OUTER",
+      "type": "LWPOLYLINE",
+      "closed": false,
+      "points": [[0, 0], [100, 0], [100, 60], [0, 60]]
+    },
+    {
+      "layer": "CUT_INNER",
+      "type": "LWPOLYLINE",
+      "closed": true,
+      "points": [[20, 20], [40, 20], [40, 30], [20, 30], [20, 20]]
+    }
+  ]
+}
