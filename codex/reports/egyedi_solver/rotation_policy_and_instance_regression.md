@@ -28,3 +28,22 @@ PASS_WITH_NOTES
 
 - `./scripts/verify.sh --report codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md`
 - Vart log: `codex/reports/egyedi_solver/rotation_policy_and_instance_regression.verify.log`
+
+<!-- AUTO_VERIFY_START -->
+### Automatikus repo gate (verify.sh)
+
+- eredmény: **PASS**
+- check.sh exit kód: `0`
+- futás: 2026-02-12T21:47:09+01:00 → 2026-02-12T21:48:16+01:00 (67s)
+- parancs: `./scripts/check.sh`
+- log: `/home/muszy/projects/VRS_nesting/codex/reports/egyedi_solver/rotation_policy_and_instance_regression.verify.log`
+- git: `main@7aabc83`
+- módosított fájlok (git status): 1
+
+**git status --porcelain (preview)**
+
+```text
+?? codex/reports/egyedi_solver/rotation_policy_and_instance_regression.verify.log
+```
+
+<!-- AUTO_VERIFY_END -->
