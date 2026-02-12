@@ -40,7 +40,8 @@ Part item fields:
 - `width` (number, `> 0`)
 - `height` (number, `> 0`)
 - `quantity` (integer, `> 0`)
-- `allow_rotation` (boolean)
+- `allowed_rotations_deg` (array of integer degrees, non-empty)
+  - allowed values: `0`, `90`, `180`, `270`
 
 ## Output file: `solver_output.json`
 The solver must produce `runs/<run_id>/solver_output.json`.

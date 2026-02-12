@@ -120,26 +120,45 @@ def _build_sheet_shapes(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
     return sheet_shapes
 
 
-def _part_dims(payload: dict[str, Any]) -> dict[str, tuple[float, float, bool]]:
+def _normalize_allowed_rotations(part: dict[str, Any], where: str) -> list[int]:
+    raw = part.get("allowed_rotations_deg", [0])
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{where}.allowed_rotations_deg must be non-empty list")
+
+    out: list[int] = []
+    seen: set[int] = set()
+    for idx, value in enumerate(raw):
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{where}.allowed_rotations_deg[{idx}] must be integer")
+        rot = value % 360
+        if rot not in (0, 90, 180, 270):
+            raise ValueError(f"{where}.allowed_rotations_deg[{idx}] must be one of 0,90,180,270")
+        if rot not in seen:
+            seen.add(rot)
+            out.append(rot)
+    return out
+
+
+def _part_dims(payload: dict[str, Any]) -> dict[str, tuple[float, float, list[int]]]:
     parts = payload.get("parts")
     if not isinstance(parts, list):
         raise ValueError("parts must be list")
 
-    out: dict[str, tuple[float, float, bool]] = {}
+    out: dict[str, tuple[float, float, list[int]]] = {}
     for part in parts:
         if not isinstance(part, dict):
             raise ValueError("part must be object")
         part_id = str(part.get("id", "")).strip()
         width = part.get("width")
         height = part.get("height")
-        allow_rotation = bool(part.get("allow_rotation", False))
+        allowed_rotations = _normalize_allowed_rotations(part, f"parts[{part_id}]")
         if not part_id:
             raise ValueError("part.id must be non-empty")
         if not isinstance(width, (int, float)) or width <= 0:
             raise ValueError(f"part.width invalid for {part_id}")
         if not isinstance(height, (int, float)) or height <= 0:
             raise ValueError(f"part.height invalid for {part_id}")
-        out[part_id] = (float(width), float(height), allow_rotation)
+        out[part_id] = (float(width), float(height), allowed_rotations)
 
     return out
 
@@ -280,13 +299,13 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
         if not isinstance(rot, (int, float)):
             raise ValueError("placement.rotation_deg must be number")
 
-        base_w, base_h, allow_rotation = part_dims[part_id]
+        base_w, base_h, allowed_rotations = part_dims[part_id]
         rot_norm = int(rot) % 360
+        if rot_norm not in allowed_rotations:
+            raise ValueError(f"rotation {rot_norm} not allowed for part {part_id}")
         if rot_norm in (0, 180):
             w, h = base_w, base_h
         elif rot_norm in (90, 270):
-            if not allow_rotation:
-                raise ValueError(f"rotation not allowed for part {part_id}")
             w, h = base_h, base_w
         else:
             raise ValueError(f"unsupported rotation_deg: {rot}")
@@ -322,15 +341,20 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
         seen_counts[part_id] += 1
 
         if reason == "PART_NEVER_FITS_STOCK":
-            bw, bh, allow_rot = part_dims.get(part_id, (None, None, None))
+            bw, bh, allowed_rot = part_dims.get(part_id, (None, None, None))
             if bw is None:
                 raise ValueError(f"unknown part in unplaced: {part_id}")
             fits_any = False
             for sheet in sheet_shapes.values():
-                if bw <= sheet["bbox_w"] and bh <= sheet["bbox_h"]:
-                    fits_any = True
-                if allow_rot and bh <= sheet["bbox_w"] and bw <= sheet["bbox_h"]:
-                    fits_any = True
+                for rot in allowed_rot:
+                    if rot in (0, 180):
+                        rw, rh = bw, bh
+                    elif rot in (90, 270):
+                        rw, rh = bh, bw
+                    else:
+                        continue
+                    if rw <= sheet["bbox_w"] and rh <= sheet["bbox_h"]:
+                        fits_any = True
             if fits_any:
                 raise ValueError(f"invalid PART_NEVER_FITS_STOCK reason for part {part_id}")
 

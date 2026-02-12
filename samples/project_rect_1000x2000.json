@@ -7,8 +7,8 @@
     {"id": "SHEET_A", "width": 1000, "height": 2000, "quantity": 2}
   ],
   "parts": [
-    {"id": "PANEL_A", "width": 400, "height": 500, "quantity": 3, "allow_rotation": false},
-    {"id": "PANEL_B", "width": 1100, "height": 200, "quantity": 1, "allow_rotation": false}
+    {"id": "PANEL_A", "width": 400, "height": 500, "quantity": 3, "allowed_rotations_deg": [0]},
+    {"id": "PANEL_B", "width": 1100, "height": 200, "quantity": 1, "allowed_rotations_deg": [0]}
   ],
   "solver_output_example": {
     "contract_version": "v1",

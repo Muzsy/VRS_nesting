@@ -108,8 +108,8 @@ if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
     }
   ],
   "parts": [
-    {"id": "PART_A", "width": 70, "height": 60, "quantity": 2, "allow_rotation": false},
-    {"id": "PART_B", "width": 120, "height": 20, "quantity": 1, "allow_rotation": false}
+    {"id": "PART_A", "width": 70, "height": 60, "quantity": 2, "allowed_rotations_deg": [0]},
+    {"id": "PART_B", "width": 120, "height": 20, "quantity": 1, "allowed_rotations_deg": [0]}
   ]
 }
 JSON

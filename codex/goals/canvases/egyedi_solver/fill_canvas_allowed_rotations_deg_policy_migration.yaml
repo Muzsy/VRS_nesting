@@ -1,0 +1,41 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a P0 audit rotacios policy hianyossagat, es veglegesitsd a
+      task canvas scope/DoD pontjait a repo aktualis allapota alapjan.
+    outputs:
+      - "canvases/egyedi_solver/allowed_rotations_deg_policy_migration.md"
+
+  - name: "Listaalapu rotacios policy implementalasa"
+    description: >
+      Vezesd be a parts.allowed_rotations_deg listat a project schema es solver
+      IO contract szintjen, majd allitsd at a Rust solver, a Python validator es
+      a DXF exporter rotacios ellenorzeseit erre a modellre. Frissitsd a smoke
+      inputokat es a sample fajlt az uj mezore.
+    outputs:
+      - "docs/mvp_project_schema.md"
+      - "docs/solver_io_contract.md"
+      - "vrs_nesting/project/model.py"
+      - "rust/vrs_solver/src/main.rs"
+      - "vrs_nesting/nesting/instances.py"
+      - "vrs_nesting/dxf/exporter.py"
+      - "scripts/check.sh"
+      - ".github/workflows/nesttool-smoketest.yml"
+      - "samples/project_rect_1000x2000.json"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es reportot a report standard szerint,
+      DoD -> Evidence matrix szerkezettel, es rogzitsd a futtatott
+      ellenorzeseket.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/allowed_rotations_deg_policy_migration.md"
+      - "codex/reports/egyedi_solver/allowed_rotations_deg_policy_migration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/allowed_rotations_deg_policy_migration.md
+    outputs:
+      - "codex/reports/egyedi_solver/allowed_rotations_deg_policy_migration.md"
+      - "codex/reports/egyedi_solver/allowed_rotations_deg_policy_migration.verify.log"

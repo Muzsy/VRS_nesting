@@ -33,7 +33,9 @@ Each part item is an object with required fields:
 - `quantity` (integer): demand count, `> 0`
 
 Optional part fields:
-- `allow_rotation` (boolean, default: `false`)
+- `allowed_rotations_deg` (array of integer degrees, default: `[0]`)
+  - allowed values: `0`, `90`, `180`, `270`
+  - duplicates are normalized out
 
 Unknown part fields are rejected.
 

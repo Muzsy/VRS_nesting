@@ -32,7 +32,7 @@ class Part:
     width: float
     height: float
     quantity: int
-    allow_rotation: bool
+    allowed_rotations_deg: list[int]
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,7 @@ class ProjectModel:
                     "width": part.width,
                     "height": part.height,
                     "quantity": part.quantity,
-                    "allow_rotation": part.allow_rotation,
+                    "allowed_rotations_deg": part.allowed_rotations_deg,
                 }
                 for part in self.parts
             ],
@@ -132,18 +132,39 @@ def _parse_stock(value: Any, index: int) -> Stock:
 
 def _parse_part(value: Any, index: int) -> Part:
     obj = _require_object(value, f"parts[{index}]")
-    _validate_keys(obj, {"id", "width", "height", "quantity"}, {"allow_rotation"}, f"parts[{index}]")
+    _validate_keys(obj, {"id", "width", "height", "quantity"}, {"allowed_rotations_deg"}, f"parts[{index}]")
 
-    allow_rotation = obj.get("allow_rotation", False)
-    if not isinstance(allow_rotation, bool):
-        raise ProjectValidationError("E_SCHEMA_TYPE", f"parts[{index}].allow_rotation must be boolean")
+    raw_rotations = obj.get("allowed_rotations_deg", [0])
+    if not isinstance(raw_rotations, list) or not raw_rotations:
+        raise ProjectValidationError(
+            "E_SCHEMA_TYPE",
+            f"parts[{index}].allowed_rotations_deg must be non-empty array",
+        )
+
+    allowed_set: set[int] = set()
+    allowed_rotations_deg: list[int] = []
+    for ridx, raw in enumerate(raw_rotations):
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise ProjectValidationError(
+                "E_SCHEMA_TYPE",
+                f"parts[{index}].allowed_rotations_deg[{ridx}] must be integer",
+            )
+        rot = raw % 360
+        if rot not in {0, 90, 180, 270}:
+            raise ProjectValidationError(
+                "E_SCHEMA_RANGE",
+                f"parts[{index}].allowed_rotations_deg[{ridx}] must be one of 0,90,180,270",
+            )
+        if rot not in allowed_set:
+            allowed_set.add(rot)
+            allowed_rotations_deg.append(rot)
 
     return Part(
         id=_require_non_empty_string(obj["id"], f"parts[{index}].id"),
         width=_require_positive_number(obj["width"], f"parts[{index}].width"),
         height=_require_positive_number(obj["height"], f"parts[{index}].height"),
         quantity=_require_positive_int(obj["quantity"], f"parts[{index}].quantity"),
-        allow_rotation=allow_rotation,
+        allowed_rotations_deg=allowed_rotations_deg,
     )
 
 

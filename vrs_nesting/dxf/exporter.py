@@ -26,26 +26,45 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _part_dims(input_payload: dict[str, Any]) -> dict[str, tuple[float, float, bool]]:
+def _normalize_allowed_rotations(part: dict[str, Any], where: str) -> list[int]:
+    raw = part.get("allowed_rotations_deg", [0])
+    if not isinstance(raw, list) or not raw:
+        raise DxfExportError(f"{where}.allowed_rotations_deg must be non-empty list")
+
+    out: list[int] = []
+    seen: set[int] = set()
+    for idx, value in enumerate(raw):
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise DxfExportError(f"{where}.allowed_rotations_deg[{idx}] must be integer")
+        rot = value % 360
+        if rot not in (0, 90, 180, 270):
+            raise DxfExportError(f"{where}.allowed_rotations_deg[{idx}] must be one of 0,90,180,270")
+        if rot not in seen:
+            seen.add(rot)
+            out.append(rot)
+    return out
+
+
+def _part_dims(input_payload: dict[str, Any]) -> dict[str, tuple[float, float, list[int]]]:
     parts = input_payload.get("parts")
     if not isinstance(parts, list):
         raise DxfExportError("input.parts must be a list")
 
-    out: dict[str, tuple[float, float, bool]] = {}
+    out: dict[str, tuple[float, float, list[int]]] = {}
     for part in parts:
         if not isinstance(part, dict):
             raise DxfExportError("part entry must be object")
         part_id = str(part.get("id", "")).strip()
         width = part.get("width")
         height = part.get("height")
-        allow_rotation = bool(part.get("allow_rotation", False))
+        allowed_rotations = _normalize_allowed_rotations(part, f"parts[{part_id}]")
         if not part_id:
             raise DxfExportError("part.id must be non-empty")
         if not isinstance(width, (int, float)) or width <= 0:
             raise DxfExportError(f"invalid width for part {part_id}")
         if not isinstance(height, (int, float)) or height <= 0:
             raise DxfExportError(f"invalid height for part {part_id}")
-        out[part_id] = (float(width), float(height), allow_rotation)
+        out[part_id] = (float(width), float(height), allowed_rotations)
 
     return out
 
@@ -76,7 +95,7 @@ def _sheet_sizes(input_payload: dict[str, Any]) -> dict[int, tuple[float, float]
     return out
 
 
-def _placement_rect(placement: dict[str, Any], dims: dict[str, tuple[float, float, bool]]) -> tuple[float, float, float, float]:
+def _placement_rect(placement: dict[str, Any], dims: dict[str, tuple[float, float, list[int]]]) -> tuple[float, float, float, float]:
     part_id = str(placement.get("part_id", "")).strip()
     if part_id not in dims:
         raise DxfExportError(f"unknown part_id in placement: {part_id}")
@@ -89,13 +108,13 @@ def _placement_rect(placement: dict[str, Any], dims: dict[str, tuple[float, floa
     if not isinstance(rot, (int, float)):
         raise DxfExportError("placement.rotation_deg must be numeric")
 
-    base_w, base_h, allow_rotation = dims[part_id]
+    base_w, base_h, allowed_rotations = dims[part_id]
     rot_norm = int(rot) % 360
+    if rot_norm not in allowed_rotations:
+        raise DxfExportError(f"rotation {rot_norm} not allowed for part {part_id}")
     if rot_norm in (0, 180):
         w, h = base_w, base_h
     elif rot_norm in (90, 270):
-        if not allow_rotation:
-            raise DxfExportError(f"rotation not allowed for part {part_id}")
         w, h = base_h, base_w
     else:
         raise DxfExportError(f"unsupported rotation_deg: {rot}")

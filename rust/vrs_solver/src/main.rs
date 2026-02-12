@@ -33,7 +33,7 @@ struct Part {
     height: f64,
     quantity: i64,
     #[serde(default)]
-    allow_rotation: bool,
+    allowed_rotations_deg: Vec<i64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -99,7 +99,7 @@ struct Instance {
     part_id: String,
     width: f64,
     height: f64,
-    allow_rotation: bool,
+    allowed_rotations_deg: Vec<i64>,
 }
 
 #[derive(Debug)]
@@ -250,33 +250,65 @@ fn expand_sheets(stocks: &[Stock]) -> Result<Vec<SheetShape>, String> {
     Ok(out)
 }
 
-fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> bool {
-    for sheet in sheets {
-        if part.width <= sheet.width + EPS && part.height <= sheet.height + EPS {
-            return true;
+fn normalize_allowed_rotations(raw: &[i64]) -> Result<Vec<i64>, String> {
+    if raw.is_empty() {
+        return Err("part.allowed_rotations_deg must be non-empty".to_string());
+    }
+
+    let mut out = Vec::new();
+    for r in raw {
+        let rot = r.rem_euclid(360);
+        if !matches!(rot, 0 | 90 | 180 | 270) {
+            return Err(format!(
+                "unsupported rotation in allowed_rotations_deg: {r} (normalized: {rot})"
+            ));
         }
-        if part.allow_rotation && part.height <= sheet.width + EPS && part.width <= sheet.height + EPS {
-            return true;
+        if !out.contains(&rot) {
+            out.push(rot);
         }
     }
-    false
+    Ok(out)
 }
 
-fn expand_instances(parts: &[Part]) -> Vec<Instance> {
+fn dims_for_rotation(width: f64, height: f64, rot: i64) -> Option<(f64, f64)> {
+    match rot.rem_euclid(360) {
+        0 | 180 => Some((width, height)),
+        90 | 270 => Some((height, width)),
+        _ => None,
+    }
+}
+
+fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> Result<bool, String> {
+    let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg)?;
+    for sheet in sheets {
+        for rot in &allowed_rotations {
+            let Some((w, h)) = dims_for_rotation(part.width, part.height, *rot) else {
+                continue;
+            };
+            if w <= sheet.width + EPS && h <= sheet.height + EPS {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn expand_instances(parts: &[Part]) -> Result<Vec<Instance>, String> {
     let mut instances = Vec::new();
     for part in parts {
+        let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg)?;
         for idx in 0..part.quantity {
             instances.push(Instance {
                 instance_id: format!("{}__{:04}", part.id, idx + 1),
                 part_id: part.id.clone(),
                 width: part.width,
                 height: part.height,
-                allow_rotation: part.allow_rotation,
+                allowed_rotations_deg: allowed_rotations.clone(),
             });
         }
     }
     instances.sort_by(|a, b| a.instance_id.cmp(&b.instance_id));
-    instances
+    Ok(instances)
 }
 
 fn jag_edge_from_points(a: Point, b: Point) -> Option<JagEdge> {
@@ -334,12 +366,10 @@ fn try_place_on_sheet(
     cursor: &mut SheetCursor,
     sheet_index: usize,
 ) -> Option<Placement> {
-    let mut variants = vec![(instance.width, instance.height, 0i64)];
-    if instance.allow_rotation && (instance.width - instance.height).abs() > EPS {
-        variants.push((instance.height, instance.width, 90));
-    }
-
-    for (w, h, rot) in variants {
+    for rot in &instance.allowed_rotations_deg {
+        let Some((w, h)) = dims_for_rotation(instance.width, instance.height, *rot) else {
+            continue;
+        };
         let mut x = cursor.x;
         let mut y = cursor.y;
         let mut row_h = cursor.row_h;
@@ -371,7 +401,7 @@ fn try_place_on_sheet(
             sheet_index,
             x,
             y,
-            rotation_deg: rot,
+            rotation_deg: *rot,
         };
 
         cursor.x = x + w;
@@ -405,7 +435,7 @@ fn main() -> Result<(), String> {
     }
 
     let sheets = expand_sheets(&input.stocks)?;
-    let instances = expand_instances(&input.parts);
+    let instances = expand_instances(&input.parts)?;
     let mut placements: Vec<Placement> = Vec::new();
     let mut unplaced: Vec<Unplaced> = Vec::new();
 
@@ -425,7 +455,7 @@ fn main() -> Result<(), String> {
             .find(|p| p.id == instance.part_id)
             .ok_or_else(|| format!("internal error: part not found: {}", instance.part_id))?;
 
-        if !can_fit_any_stock(part, &sheets) {
+        if !can_fit_any_stock(part, &sheets)? {
             unplaced.push(Unplaced {
                 instance_id: instance.instance_id.clone(),
                 part_id: instance.part_id.clone(),
