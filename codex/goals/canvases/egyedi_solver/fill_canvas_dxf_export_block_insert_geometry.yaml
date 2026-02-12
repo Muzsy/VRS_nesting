@@ -1,0 +1,34 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a P0 audit negyedik javitando pontjat es a tmp doksik DXF export
+      elvarasait, majd veglegesitsd a canvas scope/DoD pontjait.
+    outputs:
+      - "canvases/egyedi_solver/dxf_export_block_insert_geometry.md"
+
+  - name: "BLOCK+INSERT exporter implementalasa"
+    description: >
+      Frissitsd a DXF exportert ugy, hogy partonként BLOCK definiciokat es
+      sheet-enkenti INSERT entitasokat generaljon. Tamaszd meg az exportot
+      opcionális part geometriamezokkel (`outer_points`, `holes_points`),
+      rectangle fallback megtartasaval.
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+      - "docs/solver_io_contract.md"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es reportot a report standard szerint,
+      DoD -> Evidence matrix szerkezettel, es rogzitsd a futtatott
+      ellenorzeseket.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/dxf_export_block_insert_geometry.md"
+      - "codex/reports/egyedi_solver/dxf_export_block_insert_geometry.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/dxf_export_block_insert_geometry.md
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_export_block_insert_geometry.md"
+      - "codex/reports/egyedi_solver/dxf_export_block_insert_geometry.verify.log"

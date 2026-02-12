@@ -42,6 +42,9 @@ Part item fields:
 - `quantity` (integer, `> 0`)
 - `allowed_rotations_deg` (array of integer degrees, non-empty)
   - allowed values: `0`, `90`, `180`, `270`
+- optional geometry fields (for geometry-based export and advanced flows):
+  - `outer_points` (array of points, 3+)
+  - `holes_points` (array of polygon point arrays, optional)
 
 ## Output file: `solver_output.json`
 The solver must produce `runs/<run_id>/solver_output.json`.
