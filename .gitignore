@@ -4,3 +4,4 @@ tmp/sparrow/
 __pycache__/
 tmp/
 runs/
+rust/vrs_solver/target/
