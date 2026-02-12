@@ -98,7 +98,14 @@ if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
   "seed": 0,
   "time_limit_s": 60,
   "stocks": [
-    {"id": "SHEET_A", "width": 100, "height": 100, "quantity": 2}
+    {
+      "id": "SHEET_A",
+      "quantity": 2,
+      "outer_points": [[0, 0], [100, 0], [100, 100], [0, 100]],
+      "holes_points": [
+        [[70, 70], [80, 70], [80, 80], [70, 80]]
+      ]
+    }
   ],
   "parts": [
     {"id": "PART_A", "width": 70, "height": 60, "quantity": 2, "allow_rotation": false},

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate VRS nesting solver output invariants for MVP table-solver flow."""
+"""Validate VRS nesting solver output invariants for table-solver flow."""
 
 from __future__ import annotations
 
@@ -39,25 +39,9 @@ def _resolve_paths(run_dir: Path | None, input_path: Path | None, output_path: P
     return input_path, output_path
 
 
-def _enforce_hole_policy(input_payload: dict) -> None:
-    parts = input_payload.get("parts")
-    if not isinstance(parts, list):
-        raise ValidationError("input.parts must be list")
-
-    # MVP policy: holes are explicitly unsupported for now.
-    for part in parts:
-        if not isinstance(part, dict):
-            raise ValidationError("input.parts items must be objects")
-        if "holes" in part and part["holes"]:
-            part_id = part.get("id", "<unknown>")
-            raise ValidationError(f"hole policy violation: part has holes but MVP forbids holes ({part_id})")
-
-
 def validate_nesting_solution(input_path: Path, output_path: Path) -> None:
     input_payload = _read_json(input_path)
     output_payload = _read_json(output_path)
-
-    _enforce_hole_policy(input_payload)
     validate_multi_sheet_output(input_payload, output_payload)
 
 

@@ -23,9 +23,17 @@ Required top-level fields:
 
 Stock item fields:
 - `id` (string)
-- `width` (number, `> 0`)
-- `height` (number, `> 0`)
 - `quantity` (integer, `> 0`)
+- rectangle mode (required if `outer_points` not present):
+  - `width` (number, `> 0`)
+  - `height` (number, `> 0`)
+- shaped mode (recommended):
+  - `outer_points` (array of points, 3+)
+  - `holes_points` (array of polygon point arrays, optional)
+
+Point format:
+- `[x, y]`
+- or `{ "x": <number>, "y": <number> }`
 
 Part item fields:
 - `id` (string)
@@ -78,3 +86,4 @@ The Python runner records:
 - Missing binary -> deterministic runner error
 - Non-zero solver exit -> runner writes `runner_meta.json` and exits error
 - Missing or invalid output JSON -> deterministic runner error with path context
+- Invalid shape geometry (outer/holes) -> deterministic runner or validator error

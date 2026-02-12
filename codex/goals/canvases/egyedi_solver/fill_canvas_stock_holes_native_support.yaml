@@ -1,0 +1,39 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a P0 audit megallapitasait es a shape+holes kovetelmenyeket a
+      tmp/egyedi_solver doksikban, majd pontositsd a canvas DoD es kockazat
+      pontjait a valos repó allapothoz.
+    outputs:
+      - "canvases/egyedi_solver/stock_holes_native_support.md"
+
+  - name: "Implementacios lepesek vegrehajtasa"
+    description: >
+      Vezesd be a shape+holes natív tamogatast a belső solver IO contractban,
+      a Rust solverben es a Python validacioban. Frissitsd a check.sh gate
+      shape+holes smoke inputját, es a CI nesttool-smoketest workflow inputjat,
+      hogy a gate valoban lefedje ezt az agat.
+    outputs:
+      - "docs/solver_io_contract.md"
+      - "rust/vrs_solver/src/main.rs"
+      - "vrs_nesting/nesting/instances.py"
+      - "scripts/validate_nesting_solution.py"
+      - "scripts/check.sh"
+      - ".github/workflows/nesttool-smoketest.yml"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es reportot a report standard szerint,
+      DoD -> Evidence matrix szerkezettel, es rogzitsd a futtatott
+      ellenorzeseket.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/stock_holes_native_support.md"
+      - "codex/reports/egyedi_solver/stock_holes_native_support.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/stock_holes_native_support.md
+    outputs:
+      - "codex/reports/egyedi_solver/stock_holes_native_support.md"
+      - "codex/reports/egyedi_solver/stock_holes_native_support.verify.log"
