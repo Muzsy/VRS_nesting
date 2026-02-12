@@ -1,0 +1,29 @@
+steps:
+  - name: "Canvas es erintett fajlok veglegesitese"
+    description: >
+      Olvasd at a backlog P1 kovetelmenyet es pontositsd a canvas scope-jat,
+      erintett moduljait, DoD pontjait es P0 regresszio-orseget.
+    outputs:
+      - "canvases/egyedi_solver/dxf_import_convention_layers.md"
+
+  - name: "Ellenorzesi terv es regresszio guard leirasa"
+    description: >
+      Keszits riport vazat, amely rogzitett teszttervvel irja le, hogyan vedjuk
+      a P0 gate-eket a DXF import pipeline bovitese kozben.
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers.md"
+
+  - name: "Checklist es report vaz letrehozasa"
+    description: >
+      Toltse fel a checklistet es reportot a scaffold allapotnak megfeleloen,
+      hogy a kovetkezo run mar vegrehajthato implementacios alapot kapjon.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/dxf_import_convention_layers.md"
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers.md"
+
+  - name: "Verify futtatas elokeszitese"
+    description: >
+      Rogzitsd a reportban a kotelezo wrapper kapu parancsot es a vart verify log
+      hivatkozasat. A tenyleges verify futtatas a kesobbi task-run futasban tortenik.
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers.md"
