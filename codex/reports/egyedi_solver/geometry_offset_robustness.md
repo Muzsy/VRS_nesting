@@ -28,3 +28,22 @@ PASS_WITH_NOTES
 
 - `./scripts/verify.sh --report codex/reports/egyedi_solver/geometry_offset_robustness.md`
 - Vart log: `codex/reports/egyedi_solver/geometry_offset_robustness.verify.log`
+
+<!-- AUTO_VERIFY_START -->
+### Automatikus repo gate (verify.sh)
+
+- eredmény: **PASS**
+- check.sh exit kód: `0`
+- futás: 2026-02-12T21:45:02+01:00 → 2026-02-12T21:46:07+01:00 (65s)
+- parancs: `./scripts/check.sh`
+- log: `/home/muszy/projects/VRS_nesting/codex/reports/egyedi_solver/geometry_offset_robustness.verify.log`
+- git: `main@ead0e23`
+- módosított fájlok (git status): 1
+
+**git status --porcelain (preview)**
+
+```text
+?? codex/reports/egyedi_solver/geometry_offset_robustness.verify.log
+```
+
+<!-- AUTO_VERIFY_END -->

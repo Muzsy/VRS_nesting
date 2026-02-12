@@ -1,0 +1,30 @@
+[1/3] Sparrow pin: c95454e390276231b278c879d25b39708398b7d3
+HEAD is now at c95454e Merge pull request #132 from JeroenGar/rand-0.10
+[2/3] Build Sparrow (release)
+    Finished `release` profile [optimized] target(s) in 0.12s
+[3/3] Sparrow IO smoketest
+[1/2] Sparrow run via runner module
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260212T204503Z_be512332
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260212T204503Z_be512332/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260212T204503Z_be512332
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260212T204503Z_be512332/output/final_swim.json
+PASS ✅
+ strip_height=5752.0
+ strip_width =5930.312
+ placed_items=48 (demand_sum=48)
+ overlap-check: PASS
+[4/5] Nesting solution validator smoke
+    Finished `release` profile [optimized] target(s) in 0.07s
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260212T204607Z_3782acf1
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260212T204607Z_3782acf1/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260212T204607Z_3782acf1/solver_output.json --seed 0 --time-limit 60
+[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260212T204607Z_3782acf1
+PASS: nesting solution is valid
+ input=/home/muszy/projects/VRS_nesting/runs/20260212T204607Z_3782acf1/solver_input.json
+ output=/home/muszy/projects/VRS_nesting/runs/20260212T204607Z_3782acf1/solver_output.json
+[5/5] Determinism hash stability smoke
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260212T204607Z_1d4dda40
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260212T204607Z_1d4dda40/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260212T204607Z_1d4dda40/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260212T204607Z_48163882
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260212T204607Z_48163882/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260212T204607Z_48163882/solver_output.json --seed 0 --time-limit 60
+[INFO] Determinism hash stable: 6fa835403323f854933aadd5e00de5807aeff5225dd923b5d2844e28a9f6a8f7
+[DONE] smoketest OK
