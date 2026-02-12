@@ -1,0 +1,33 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a P0 audit masodik blocker pontjat es a jagua-rs kovetelmenyeket,
+      majd veglegesitsd a canvas scope/DoD pontjait a valos repó allapothoz.
+    outputs:
+      - "canvases/egyedi_solver/jagua_rs_feasibility_integration.md"
+
+  - name: "jagua-rs feasibility integracio implementalasa"
+    description: >
+      Add hozza a pinned jagua-rs dependencyt a Rust solver crate-hez, es allitsd at
+      a solver geometriai feasibility ellenorzeseit jagua primitivekre es
+      CollidesWith alapu checkekre (containment, hole exclusion, edge metszes).
+    outputs:
+      - "rust/vrs_solver/Cargo.toml"
+      - "rust/vrs_solver/Cargo.lock"
+      - "rust/vrs_solver/src/main.rs"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es reportot a report standard szerint,
+      DoD -> Evidence matrix szerkezettel, es rogzitsd a futtatott ellenorzeseket.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_rs_feasibility_integration.md"
+      - "codex/reports/egyedi_solver/jagua_rs_feasibility_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_rs_feasibility_integration.md
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_rs_feasibility_integration.md"
+      - "codex/reports/egyedi_solver/jagua_rs_feasibility_integration.verify.log"

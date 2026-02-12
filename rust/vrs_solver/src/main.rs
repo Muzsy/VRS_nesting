@@ -1,3 +1,5 @@
+use jagua_rs::geometry::geo_traits::CollidesWith;
+use jagua_rs::geometry::primitives::{Edge as JagEdge, Point as JagPoint, SPolygon};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -51,8 +53,8 @@ struct Point {
 struct SheetShape {
     width: f64,
     height: f64,
-    outer: Vec<Point>,
-    holes: Vec<Vec<Point>>,
+    outer_poly: SPolygon,
+    hole_polys: Vec<SPolygon>,
 }
 
 #[derive(Debug, Serialize)]
@@ -162,6 +164,15 @@ fn polygon_bbox(points: &[Point]) -> Option<(f64, f64, f64, f64)> {
     Some((min_x, min_y, max_x, max_y))
 }
 
+fn to_jag_point(p: Point) -> JagPoint {
+    JagPoint(p.x as f32, p.y as f32)
+}
+
+fn to_jag_polygon(points: &[Point], label: &str) -> Result<SPolygon, String> {
+    let vertices: Vec<JagPoint> = points.iter().copied().map(to_jag_point).collect();
+    SPolygon::new(vertices).map_err(|e| format!("{label}: {e}"))
+}
+
 fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
     let outer: Vec<Point> = if let Some(raw_outer) = &stock.outer_points {
         if raw_outer.len() < 3 {
@@ -208,11 +219,20 @@ fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
         return Err(format!("stock {} outer polygon has invalid bbox", stock.id));
     }
 
+    let outer_poly = to_jag_polygon(&outer, &format!("stock {} outer_points", stock.id))?;
+    let mut hole_polys = Vec::new();
+    for (idx, hole) in holes.iter().enumerate() {
+        hole_polys.push(to_jag_polygon(
+            hole,
+            &format!("stock {} holes_points[{idx}]", stock.id),
+        )?);
+    }
+
     Ok(SheetShape {
         width: bbox_w,
         height: bbox_h,
-        outer,
-        holes,
+        outer_poly,
+        hole_polys,
     })
 }
 
@@ -259,70 +279,8 @@ fn expand_instances(parts: &[Part]) -> Vec<Instance> {
     instances
 }
 
-fn point_on_segment(p: Point, a: Point, b: Point) -> bool {
-    let cross = (p.y - a.y) * (b.x - a.x) - (p.x - a.x) * (b.y - a.y);
-    if cross.abs() > EPS {
-        return false;
-    }
-    let dot = (p.x - a.x) * (p.x - b.x) + (p.y - a.y) * (p.y - b.y);
-    dot <= EPS
-}
-
-fn point_in_polygon(p: Point, poly: &[Point]) -> bool {
-    let mut inside = false;
-    for i in 0..poly.len() {
-        let a = poly[i];
-        let b = poly[(i + 1) % poly.len()];
-        if point_on_segment(p, a, b) {
-            return true;
-        }
-        let intersects = ((a.y > p.y) != (b.y > p.y))
-            && (p.x < (b.x - a.x) * (p.y - a.y) / ((b.y - a.y) + EPS) + a.x);
-        if intersects {
-            inside = !inside;
-        }
-    }
-    inside
-}
-
-fn orientation(a: Point, b: Point, c: Point) -> f64 {
-    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
-}
-
-fn segments_intersect(a1: Point, a2: Point, b1: Point, b2: Point) -> bool {
-    let o1 = orientation(a1, a2, b1);
-    let o2 = orientation(a1, a2, b2);
-    let o3 = orientation(b1, b2, a1);
-    let o4 = orientation(b1, b2, a2);
-
-    if ((o1 > EPS && o2 < -EPS) || (o1 < -EPS && o2 > EPS))
-        && ((o3 > EPS && o4 < -EPS) || (o3 < -EPS && o4 > EPS))
-    {
-        return true;
-    }
-
-    if o1.abs() <= EPS && point_on_segment(b1, a1, a2) {
-        return true;
-    }
-    if o2.abs() <= EPS && point_on_segment(b2, a1, a2) {
-        return true;
-    }
-    if o3.abs() <= EPS && point_on_segment(a1, b1, b2) {
-        return true;
-    }
-    if o4.abs() <= EPS && point_on_segment(a2, b1, b2) {
-        return true;
-    }
-
-    false
-}
-
-fn polygon_edges(poly: &[Point]) -> Vec<(Point, Point)> {
-    let mut out = Vec::new();
-    for i in 0..poly.len() {
-        out.push((poly[i], poly[(i + 1) % poly.len()]));
-    }
-    out
+fn jag_edge_from_points(a: Point, b: Point) -> Option<JagEdge> {
+    JagEdge::try_new(to_jag_point(a), to_jag_point(b)).ok()
 }
 
 fn rect_corners(rect: Rect) -> [Point; 4] {
@@ -342,22 +300,25 @@ fn rect_edges(rect: Rect) -> [(Point, Point); 4] {
 fn rect_inside_sheet_shape(rect: Rect, sheet: &SheetShape) -> bool {
     let corners = rect_corners(rect);
     for c in corners {
-        if !point_in_polygon(c, &sheet.outer) {
+        if !sheet.outer_poly.collides_with(&to_jag_point(c)) {
             return false;
         }
     }
 
     let rect_edges_arr = rect_edges(rect);
-    for hole in &sheet.holes {
+    for hole in &sheet.hole_polys {
         for c in corners {
-            if point_in_polygon(c, hole) {
+            if hole.collides_with(&to_jag_point(c)) {
                 return false;
             }
         }
-        let hole_edges = polygon_edges(hole);
+
         for re in rect_edges_arr {
-            for he in &hole_edges {
-                if segments_intersect(re.0, re.1, he.0, he.1) {
+            let Some(rect_edge) = jag_edge_from_points(re.0, re.1) else {
+                continue;
+            };
+            for hole_edge in hole.edge_iter() {
+                if rect_edge.collides_with(&hole_edge) {
                     return false;
                 }
             }
