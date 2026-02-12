@@ -1,0 +1,33 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex szabalyokat es a meglvo
+      vrs_nesting/runner/sparrow_runner.py mintat. Pontositsd a canvasban a
+      solver IO contract kovetelmenyeket, runner hatarkoroket es DoD pontokat.
+    outputs:
+      - "canvases/egyedi_solver/solver_io_contract_and_runner.md"
+
+  - name: "Implementacios lepesek vegrehajtasa"
+    description: >
+      Hozd letre a solver IO contract dokumentaciot es a vrs solver runner
+      modult. Valositsd meg a solver processz futtatast, input/output artifact
+      kezeleset, diagnosztikus hibakezelest es metadata menteset.
+    outputs:
+      - "docs/solver_io_contract.md"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a checklistet es a report vazat a taskhoz, benne a DoD ->
+      Evidence matrix alap szerkezetevel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/solver_io_contract_and_runner.md"
+      - "codex/reports/egyedi_solver/solver_io_contract_and_runner.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/solver_io_contract_and_runner.md
+    outputs:
+      - "codex/reports/egyedi_solver/solver_io_contract_and_runner.md"
+      - "codex/reports/egyedi_solver/solver_io_contract_and_runner.verify.log"

@@ -1,0 +1,36 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a repo jelenlegi belepesi pontjait es dokumentacios szabalyait
+      (AGENTS.md, docs/codex/*, vrs_nesting/runner/sparrow_runner.py), majd
+      pontositsd a canvas scope-jat, DoD pontjait es kapcsolodasait.
+    outputs:
+      - "canvases/egyedi_solver/project_schema_and_cli_skeleton.md"
+
+  - name: "Implementacios lepesek vegrehajtasa"
+    description: >
+      Keszitsd el a projekt schema dokumentaciot es a CLI skeleton alapokat.
+      Hozd letre a project modell validaciot, run_dir kezelo segedet, es a
+      minimalis `python3 -m vrs_nesting.cli run <project.json>` futasi agat a
+      canvasban rogzitett kovetelmenyek szerint.
+    outputs:
+      - "docs/mvp_project_schema.md"
+      - "vrs_nesting/project/model.py"
+      - "vrs_nesting/run_artifacts/run_dir.py"
+      - "vrs_nesting/cli.py"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre es toltsd ki a task checklistjet es report vazat a repo
+      report standard szerint, DoD -> Evidence matrix helyekkel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/project_schema_and_cli_skeleton.md"
+      - "codex/reports/egyedi_solver/project_schema_and_cli_skeleton.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/project_schema_and_cli_skeleton.md
+    outputs:
+      - "codex/reports/egyedi_solver/project_schema_and_cli_skeleton.md"
+      - "codex/reports/egyedi_solver/project_schema_and_cli_skeleton.verify.log"

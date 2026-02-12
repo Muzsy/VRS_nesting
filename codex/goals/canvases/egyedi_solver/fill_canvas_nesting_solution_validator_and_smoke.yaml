@@ -1,0 +1,34 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Nezd at a meglvo check/verify/smoke script belépési pontokat es a
+      workflow mintakat. Pontositsd a canvasban a validator invariansokat, smoke
+      gate kovetelmenyeket es a CI kapcsolodasokat.
+    outputs:
+      - "canvases/egyedi_solver/nesting_solution_validator_and_smoke.md"
+
+  - name: "Implementacios lepesek vegrehajtasa"
+    description: >
+      Hozd letre a tablas solution validatort es az uj smoke workflowt.
+      Integrald az uj ellenorzest a scripts/check.sh gate-be, hogy local es CI
+      futasban is auditably fusson a validator.
+    outputs:
+      - "scripts/validate_nesting_solution.py"
+      - ".github/workflows/nesttool-smoketest.yml"
+      - "scripts/check.sh"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a checklistet es reportot a taskhoz, DoD -> Evidence matrix
+      szerkezettel es a report standard fejezeteivel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/nesting_solution_validator_and_smoke.md"
+      - "codex/reports/egyedi_solver/nesting_solution_validator_and_smoke.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/nesting_solution_validator_and_smoke.md
+    outputs:
+      - "codex/reports/egyedi_solver/nesting_solution_validator_and_smoke.md"
+      - "codex/reports/egyedi_solver/nesting_solution_validator_and_smoke.verify.log"

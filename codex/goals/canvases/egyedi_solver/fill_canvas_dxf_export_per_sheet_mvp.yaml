@@ -1,0 +1,33 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Ellenorizd a meglvo DXF dokumentacios mintakat es futasi artifact
+      konvenciokat. Pontositsd a canvasban a sheet-enkenti export kovetelmenyeket,
+      naminget es DoD pontokat.
+    outputs:
+      - "canvases/egyedi_solver/dxf_export_per_sheet_mvp.md"
+
+  - name: "Implementacios lepesek vegrehajtasa"
+    description: >
+      Keszitsd el az MVP DXF exporter modult es egy reprodukalhato sample
+      projektet. Gondoskodj rola, hogy a run outputban sheet-enkenti DXF fajlok
+      keszuljenek, es a report metadata tartalmazza az export metrikakat.
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+      - "samples/project_rect_1000x2000.json"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre es toltsd ki a checklistet/report vazat a taskhoz a standard
+      fejezetekkel es DoD -> Evidence matrix szerkezettel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/dxf_export_per_sheet_mvp.md"
+      - "codex/reports/egyedi_solver/dxf_export_per_sheet_mvp.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/dxf_export_per_sheet_mvp.md
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_export_per_sheet_mvp.md"
+      - "codex/reports/egyedi_solver/dxf_export_per_sheet_mvp.verify.log"
