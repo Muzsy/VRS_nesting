@@ -1,0 +1,29 @@
+steps:
+  - name: "Canvas es erintett fajlok veglegesitese"
+    description: >
+      Veglegesitsd a rotacios policy es instance regresszio canvasat,
+      konkret DoD pontokkal es P0 nem-romolhat guarddal.
+    outputs:
+      - "canvases/egyedi_solver/rotation_policy_and_instance_regression.md"
+
+  - name: "Ellenorzesi terv es regresszio guard leirasa"
+    description: >
+      Keszits report vazat a policy-konformitas es duplicate instance
+      regresszio tesztelesi tervvel, P0 gate osszeegyeztetessel.
+    outputs:
+      - "codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md"
+
+  - name: "Checklist es report vaz letrehozasa"
+    description: >
+      Toltse fel a checklistet es reportot scaffold allapotban,
+      hogy a kovetkezo run implementacios ellenorzesei egyertelmuek legyenek.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/rotation_policy_and_instance_regression.md"
+      - "codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md"
+
+  - name: "Verify futtatas elokeszitese"
+    description: >
+      Rogzitsd a reportban a kotelezo verify parancsot es log hivatkozast,
+      tenyleges gate futtatas nelkul (scaffold run szerint).
+    outputs:
+      - "codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md"

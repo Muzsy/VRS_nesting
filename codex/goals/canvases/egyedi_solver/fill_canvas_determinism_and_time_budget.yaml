@@ -1,0 +1,29 @@
+steps:
+  - name: "Canvas es erintett fajlok veglegesitese"
+    description: >
+      Veglegesitsd a determinism/time-budget canvasat, egyertelmu scope-pal,
+      DoD-vel, kockazatkezelessel es P0 regresszio vedelmi pontokkal.
+    outputs:
+      - "canvases/egyedi_solver/determinism_and_time_budget.md"
+
+  - name: "Ellenorzesi terv es regresszio guard leirasa"
+    description: >
+      Keszits report vazat, amely rogzitett determinism hash es timeout
+      regresszio ellenorzesi tervet tartalmaz.
+    outputs:
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.md"
+
+  - name: "Checklist es report vaz letrehozasa"
+    description: >
+      Keszitsd el a checklistet es reportot scaffold allapotban,
+      hogy a kovetkezo run implementacios futasa auditolhato legyen.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/determinism_and_time_budget.md"
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.md"
+
+  - name: "Verify futtatas elokeszitese"
+    description: >
+      Ird bele a reportba a kotelezo verify wrapper hasznalatat
+      es a vart verify.log hivatkozast a kesobbi runhoz.
+    outputs:
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.md"

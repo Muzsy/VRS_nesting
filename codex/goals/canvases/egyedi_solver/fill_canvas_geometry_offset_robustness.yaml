@@ -1,0 +1,29 @@
+steps:
+  - name: "Canvas es erintett fajlok veglegesitese"
+    description: >
+      Pontositsd a geometry offset task canvasat: scope, nem-cel, DoD,
+      kockazat/rollback es P0 regresszio-orseg kovetelmenyekkel.
+    outputs:
+      - "canvases/egyedi_solver/geometry_offset_robustness.md"
+
+  - name: "Ellenorzesi terv es regresszio guard leirasa"
+    description: >
+      Keszits report vazat a polygonize/offset regresszio tervvel,
+      kulon hangsullyal a P0 validator gate valtozatlan zold allapotara.
+    outputs:
+      - "codex/reports/egyedi_solver/geometry_offset_robustness.md"
+
+  - name: "Checklist es report vaz letrehozasa"
+    description: >
+      Keszitsd el a scaffold checklistet es reportot,
+      hogy a kovetkezo futas implementaciosan kovetheto legyen.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/geometry_offset_robustness.md"
+      - "codex/reports/egyedi_solver/geometry_offset_robustness.md"
+
+  - name: "Verify futtatas elokeszitese"
+    description: >
+      Rogzitsd a reportban a kotelezo verify wrapper futtatasi utmutatot
+      es a vart verify.log hivatkozast, implementacio nelkuli scaffold kontextusban.
+    outputs:
+      - "codex/reports/egyedi_solver/geometry_offset_robustness.md"
