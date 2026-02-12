@@ -1,0 +1,65 @@
+steps:
+  - name: "Canvas veglegesitese"
+    description: >
+      Rogzitsd a scaffold-lezaro futas celjat, scope-jat, DoD-jat, erintett
+      report/checklist fajljait es a kotelezo verify futasokat.
+    outputs:
+      - "canvases/egyedi_solver/p1_scaffold_tasks_run_closure.md"
+
+  - name: "P1 reportok es checklistek implementacios frissitese"
+    description: >
+      Frissitsd a 4 P1 task reportot es checklistet scaffold statuszrol valos,
+      bizonyitek-alapu implementacios statuszra, konkret path+line hivatkozasokkal.
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers.md"
+      - "codex/reports/egyedi_solver/geometry_offset_robustness.md"
+      - "codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md"
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.md"
+      - "codex/codex_checklist/egyedi_solver/dxf_import_convention_layers.md"
+      - "codex/codex_checklist/egyedi_solver/geometry_offset_robustness.md"
+      - "codex/codex_checklist/egyedi_solver/rotation_policy_and_instance_regression.md"
+      - "codex/codex_checklist/egyedi_solver/determinism_and_time_budget.md"
+
+  - name: "Task checklist es lezaro report kitoltese"
+    description: >
+      Keszitsd el a lezaro task checklistet es reportot, benne a valtozaslista,
+      futtatott verify parancsok es DoD statusz osszefoglalasaval.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/p1_scaffold_tasks_run_closure.md"
+      - "codex/reports/egyedi_solver/p1_scaffold_tasks_run_closure.md"
+
+  - name: "Verify: dxf_import_convention_layers"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/dxf_import_convention_layers.md
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers.md"
+      - "codex/reports/egyedi_solver/dxf_import_convention_layers.verify.log"
+
+  - name: "Verify: geometry_offset_robustness"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/geometry_offset_robustness.md
+    outputs:
+      - "codex/reports/egyedi_solver/geometry_offset_robustness.md"
+      - "codex/reports/egyedi_solver/geometry_offset_robustness.verify.log"
+
+  - name: "Verify: rotation_policy_and_instance_regression"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md
+    outputs:
+      - "codex/reports/egyedi_solver/rotation_policy_and_instance_regression.md"
+      - "codex/reports/egyedi_solver/rotation_policy_and_instance_regression.verify.log"
+
+  - name: "Verify: determinism_and_time_budget"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/determinism_and_time_budget.md
+    outputs:
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.md"
+      - "codex/reports/egyedi_solver/determinism_and_time_budget.verify.log"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/p1_scaffold_tasks_run_closure.md
+    outputs:
+      - "codex/reports/egyedi_solver/p1_scaffold_tasks_run_closure.md"
+      - "codex/reports/egyedi_solver/p1_scaffold_tasks_run_closure.verify.log"

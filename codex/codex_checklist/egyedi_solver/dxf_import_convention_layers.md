@@ -1,9 +1,8 @@
 # Codex checklist - dxf_import_convention_layers
 
-## Scaffold DoD
-
-- [x] P1 canvas letrehozva kotelezo szekciokkal
-- [x] Goal YAML letrehozva steps semaval
-- [x] Runner prompt letrehozva template alapjan
-- [x] P0 regresszio-orseg rogzitve
-- [x] Verify parancs rogzitve a reportban
+- [x] Konvencios DXF importer implementalva (`vrs_nesting/dxf/importer.py`)
+- [x] `CUT_OUTER`/`CUT_INNER` validacio es determinisztikus hibakodok dokumentaltan elerhetok
+- [x] DXF import smoke script + fixturek futnak
+- [x] `scripts/check.sh` gate futtatja a DXF import smoke lepeset
+- [x] Task report implementacios DoD -> Evidence matrixszal frissitve
+- [x] `./scripts/verify.sh --report codex/reports/egyedi_solver/dxf_import_convention_layers.md` PASS

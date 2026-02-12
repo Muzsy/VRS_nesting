@@ -1,9 +1,9 @@
 # Codex checklist - geometry_offset_robustness
 
-## Scaffold DoD
-
-- [x] P1 canvas letrehozva kotelezo szekciokkal
-- [x] Goal YAML letrehozva steps semaval
-- [x] Runner prompt letrehozva template alapjan
-- [x] P0 regresszio-orseg rogzitve
-- [x] Verify parancs rogzitve a reportban
+- [x] Geometry clean modul implementalva (`vrs_nesting/geometry/clean.py`)
+- [x] Polygonize modul implementalva (`vrs_nesting/geometry/polygonize.py`)
+- [x] Offset modul implementalva (`vrs_nesting/geometry/offset.py`)
+- [x] Geometry smoke script + fixturek futnak
+- [x] `scripts/check.sh` gate futtatja a geometry smoke lepest
+- [x] Task report implementacios DoD -> Evidence matrixszal frissitve
+- [x] `./scripts/verify.sh --report codex/reports/egyedi_solver/geometry_offset_robustness.md` PASS
