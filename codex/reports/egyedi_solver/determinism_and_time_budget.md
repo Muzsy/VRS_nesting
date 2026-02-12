@@ -28,3 +28,22 @@ PASS_WITH_NOTES
 
 - `./scripts/verify.sh --report codex/reports/egyedi_solver/determinism_and_time_budget.md`
 - Vart log: `codex/reports/egyedi_solver/determinism_and_time_budget.verify.log`
+
+<!-- AUTO_VERIFY_START -->
+### Automatikus repo gate (verify.sh)
+
+- eredmény: **PASS**
+- check.sh exit kód: `0`
+- futás: 2026-02-12T21:50:07+01:00 → 2026-02-12T21:51:12+01:00 (65s)
+- parancs: `./scripts/check.sh`
+- log: `/home/muszy/projects/VRS_nesting/codex/reports/egyedi_solver/determinism_and_time_budget.verify.log`
+- git: `main@c1675d6`
+- módosított fájlok (git status): 1
+
+**git status --porcelain (preview)**
+
+```text
+?? codex/reports/egyedi_solver/determinism_and_time_budget.verify.log
+```
+
+<!-- AUTO_VERIFY_END -->
