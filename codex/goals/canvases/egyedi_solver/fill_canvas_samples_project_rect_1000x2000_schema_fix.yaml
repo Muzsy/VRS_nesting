@@ -1,0 +1,34 @@
+steps:
+  - name: "Felderites: project schema + sample valos elteres"
+    description: >
+      Nezd at a project schema implementaciojat (vrs_nesting/project/model.py) es a
+      samples/project_rect_1000x2000.json tartalmat. Azonositsd a strict validaciot toro kulcsokat,
+      hianyzo kotelezo mezoket vagy tipuseltreseket. A canvasban rogzitsd a pontos okot(okokat).
+    outputs:
+      - "canvases/egyedi_solver/samples_project_rect_1000x2000_schema_fix.md"
+
+  - name: "Sample javitasa strict schema-kompatibilissa"
+    description: >
+      Alakitsd at a samples/project_rect_1000x2000.json-t ugy, hogy strict schema-valid legyen.
+      Ne lazitsd fel a schemat. Ha extra pelda/debug adat volt a fajlban (pl. solver output pelda),
+      mentsd at egy uj fajlba (pl. samples/project_rect_1000x2000_with_examples.json), hogy ne vesszen el,
+      de a futtathato sample tiszta maradjon.
+    outputs:
+      - "samples/project_rect_1000x2000.json"
+      - "samples/project_rect_1000x2000_with_examples.json"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es report vazat a standard report format szerint
+      (docs/codex/report_standard.md). A reportban legyen hely az AUTO_VERIFY blokk szamara is.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/samples_project_rect_1000x2000_schema_fix.md"
+      - "codex/reports/egyedi_solver/samples_project_rect_1000x2000_schema_fix.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/samples_project_rect_1000x2000_schema_fix.md
+    outputs:
+      - "codex/reports/egyedi_solver/samples_project_rect_1000x2000_schema_fix.md"
+      - "codex/reports/egyedi_solver/samples_project_rect_1000x2000_schema_fix.verify.log"
