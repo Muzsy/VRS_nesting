@@ -15,6 +15,7 @@ from typing import Any
 class RunContext:
     run_id: str
     run_dir: Path
+    out_dir: Path
     run_log_path: Path
 
 
@@ -31,9 +32,11 @@ def create_run_dir(run_root: str = "runs") -> RunContext:
         run_dir = root / run_id
         try:
             run_dir.mkdir(parents=False, exist_ok=False)
+            out_dir = run_dir / "out"
+            out_dir.mkdir(parents=False, exist_ok=False)
             run_log_path = run_dir / "run.log"
             run_log_path.touch()
-            return RunContext(run_id=run_id, run_dir=run_dir, run_log_path=run_log_path)
+            return RunContext(run_id=run_id, run_dir=run_dir, out_dir=out_dir, run_log_path=run_log_path)
         except FileExistsError:
             continue
 

@@ -26,7 +26,7 @@ if [[ -z "$SPARROW_BIN" ]]; then
   need_cmd cargo
 fi
 
-chmod +x scripts/run_sparrow_smoketest.sh scripts/validate_sparrow_io.py || true
+chmod +x scripts/run_sparrow_smoketest.sh scripts/validate_sparrow_io.py scripts/smoke_export_run_dir_out.py || true
 
 # --- Sparrow build (ha nincs előre megadott bináris) ---
 if [[ -z "$SPARROW_BIN" ]]; then
@@ -85,6 +85,9 @@ python3 scripts/smoke_dxf_import_convention.py
 
 echo "[GEO] Polygonize + offset robustness smoke"
 python3 scripts/smoke_geometry_pipeline.py
+
+echo "[DXF] Export --run-dir smoke"
+python3 scripts/smoke_export_run_dir_out.py
 
 if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
   echo "[4/5] Nesting solution validator smoke"

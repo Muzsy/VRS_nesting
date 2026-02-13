@@ -369,21 +369,41 @@ def export_per_sheet(input_payload: dict[str, Any], output_payload: dict[str, An
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export table-solver placements into per-sheet DXF files")
-    parser.add_argument("--input", required=True, help="Path to solver_input.json")
-    parser.add_argument("--output", required=True, help="Path to solver_output.json")
-    parser.add_argument("--out-dir", required=True, help="Directory for generated sheet_XXX.dxf files")
+    parser.add_argument("--run-dir", default="", help="Run directory containing solver_input.json/solver_output.json/out/")
+    parser.add_argument("--input", default="", help="Path to solver_input.json")
+    parser.add_argument("--output", default="", help="Path to solver_output.json")
+    parser.add_argument("--out-dir", default="", help="Directory for generated sheet_XXX.dxf files")
     parser.add_argument("--summary-json", default="", help="Optional path to write export summary json")
     return parser
+
+
+def _resolve_cli_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple[Path, Path, Path]:
+    run_dir_raw = str(args.run_dir or "").strip()
+    input_raw = str(args.input or "").strip()
+    output_raw = str(args.output or "").strip()
+    out_dir_raw = str(args.out_dir or "").strip()
+
+    if run_dir_raw:
+        if input_raw or output_raw or out_dir_raw:
+            parser.error("--run-dir cannot be used with --input/--output/--out-dir")
+        run_dir = Path(run_dir_raw).resolve()
+        return run_dir / "solver_input.json", run_dir / "solver_output.json", run_dir / "out"
+
+    if not input_raw or not output_raw or not out_dir_raw:
+        parser.error("either --run-dir or all of --input/--output/--out-dir must be provided")
+
+    return Path(input_raw).resolve(), Path(output_raw).resolve(), Path(out_dir_raw).resolve()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    input_path, output_path, out_dir = _resolve_cli_paths(args, parser)
 
     try:
-        input_payload = _read_json(Path(args.input).resolve())
-        output_payload = _read_json(Path(args.output).resolve())
-        summary = export_per_sheet(input_payload, output_payload, args.out_dir)
+        input_payload = _read_json(input_path)
+        output_payload = _read_json(output_path)
+        summary = export_per_sheet(input_payload, output_payload, out_dir)
     except DxfExportError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
