@@ -1,0 +1,63 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Olvasd at a run_dir artefakt mintat es az exporter jelenlegi CLI-t.
+      Pontositsd a canvas DoD pontjait ugy, hogy a run_dir/out struktura es a
+      --run-dir CLI support egyertelmu legyen.
+    outputs:
+      - "canvases/egyedi_solver/exporter_out_dir_integration.md"
+
+  - name: "RunContext out_dir bekotese"
+    description: >
+      Frissitsd a vrs_nesting/run_artifacts/run_dir.py modult:
+      - a create_run_dir hozzon letre run_dir/out konyvtarat is
+      - a RunContext expose-olja az out_dir path-ot (pl. out_dir: Path)
+      Ugyelj arra, hogy a meglvo call site-ok (vrs_nesting/cli.py, vrs_nesting/runner/vrs_solver_runner.py)
+      ne torjenek: a run_dir es run_log_path viselkedes maradjon valtozatlan.
+    outputs:
+      - "vrs_nesting/run_artifacts/run_dir.py"
+
+  - name: "Exporter CLI --run-dir tamogatas"
+    description: >
+      Frissitsd a vrs_nesting/dxf/exporter.py CLI parseret:
+      - uj opcio: --run-dir <path>
+      - ha --run-dir adott, akkor default:
+        --input=<run_dir>/solver_input.json
+        --output=<run_dir>/solver_output.json
+        --out-dir=<run_dir>/out
+      - maradjon kompatibilis a jelenlegi explicit --input/--output/--out-dir hasznalat
+      - kezeld mutual-exclusion logikaval, hogy ne legyen ketertelmu (pl. --run-dir es --input egyutt)
+      A viselkedes legyen determinisztikus es ertelmes hiba-uzenetekkel jelezzen.
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+
+  - name: "Smoke script + gate-be kotese"
+    description: >
+      Hozz letre uj smoke scriptet: scripts/smoke_export_run_dir_out.py.
+      Feladata:
+      - hozzon letre ideiglenes run_root-ot (pl. tempfile) es azon belul run_dir-t create_run_dir-ral
+      - irjon minimalis solver_input.json + solver_output.json-t a run_dir-be (rect stock: width/height)
+      - futtassa az exportert: python3 vrs_nesting/dxf/exporter.py --run-dir <run_dir>
+      - ellenorizze, hogy letrejott: <run_dir>/out/sheet_001.dxf
+      Ezutan kossed be a scripts/check.sh-ba egy uj sorral (hasonloan a tobbi smoke-hoz),
+      hogy a standard gate mindig lefuttassa.
+    outputs:
+      - "scripts/smoke_export_run_dir_out.py"
+      - "scripts/check.sh"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre es toltsd ki a checklistet es a report vazat a standard szerint.
+      A reportban legyen DoD -> Evidence Matrix, es hivatkozz konkret file pathokra
+      (es ahol lehet: sorsavokra).
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/exporter_out_dir_integration.md"
+      - "codex/reports/egyedi_solver/exporter_out_dir_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/exporter_out_dir_integration.md
+    outputs:
+      - "codex/reports/egyedi_solver/exporter_out_dir_integration.md"
+      - "codex/reports/egyedi_solver/exporter_out_dir_integration.verify.log"
