@@ -1,0 +1,71 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_real_dxf_fixture_smoke_arc_spline_chaining_impl.yaml
+
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Olvasd at a kapcsolodo DXF import/pipeline doksikat es a jelenlegi smoke-okat.
+      Roviditsd/finomitsd a scope-ot es a DoD-t, hogy egyertelmu legyen:
+      mi a pozitiv/negativ DXF fixture es mit ellenorzunk (ARC/SPLINE + chaining).
+    outputs:
+      - "canvases/egyedi_solver/real_dxf_fixture_smoke_arc_spline_chaining_impl.md"
+
+  - name: "Valodi DXF fixture keszlet letrehozasa (samples/dxf_demo)"
+    description: >
+      Hozd letre a minimal, de celzott DXF fixture fajlokat a repo alatt:
+      - stock_rect_1000x2000.dxf (CUT_OUTER, zart LWPOLYLINE)
+      - part_arc_spline_chaining_ok.dxf (CUT_OUTER: LINE+ARC szegmensek chaininggel; CUT_INNER: zart SPLINE hole)
+      - part_chain_open_fail.dxf (CUT_OUTER: hianyos chaining -> DXF_OPEN_OUTER_PATH)
+      Frissitsd a samples/dxf_demo/README.md-t a konvenciokkal es a futtatas modjaval.
+      Figyelj ra, hogy a fixture-ek determinisztikusan, kis meretben legyenek commitolva.
+    outputs:
+      - "samples/dxf_demo/README.md"
+      - "samples/dxf_demo/stock_rect_1000x2000.dxf"
+      - "samples/dxf_demo/part_arc_spline_chaining_ok.dxf"
+      - "samples/dxf_demo/part_chain_open_fail.dxf"
+
+  - name: "Uj smoke: valodi DXF import lefedese (ARC/SPLINE + chaining)"
+    description: >
+      Keszits uj smoke scriptet: scripts/smoke_real_dxf_fixtures.py.
+      A script:
+      - betolti a pozitiv fixture-t import_part_raw-val (vrs_nesting/dxf/importer.py)
+      - ellenorzi: outer pontok >= 3, hole-ok szama >= 1
+      - ellenorzi: source_entities-ben van ARC es SPLINE tipus (legalabb 1-1)
+      - a negativ fixture-re DxfImportError-t var, es a kod legyen DXF_OPEN_OUTER_PATH
+      A script legyen gyors, determinisztikus, es adjon [OK] jellegu veget.
+    outputs:
+      - "scripts/smoke_real_dxf_fixtures.py"
+
+  - name: "Real DXF Sparrow pipeline smoke frissitese (JSON -> DXF)"
+    description: >
+      Frissitsd a scripts/smoke_real_dxf_sparrow_pipeline.py-t, hogy
+      a project_dxf_v1.json mar a samples/dxf_demo/*.dxf fajlokat hasznalja
+      (stock + part), ne a samples/dxf_import/*.json fixture-t.
+      Tartsd meg a jelenlegi artifact ellenorzeseket (run_dir/out/sheet_001.dxf, stb.).
+    outputs:
+      - "scripts/smoke_real_dxf_sparrow_pipeline.py"
+
+  - name: "Gate-be kotes (scripts/check.sh)"
+    description: >
+      Kodd be a standard gate-be az uj smoke futtatasat:
+      - python3 scripts/smoke_real_dxf_fixtures.py
+      Ezen felul a real_dxf pipeline smoke mar DXF-en fusson a frissites miatt.
+      Figyelj ra, hogy a meglvo check.sh lepesek ne seruljenek.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist es report kitoltese"
+    description: >
+      Hozd letre/frissitsd a task checklistet es reportot.
+      Toltsd ki a DoD -> Evidence matrixot konkret fajl- es sorhivatkozasokkal,
+      es irj rovid megjegyzest, hogy most mar tenyleges DXF-en fut a smoke.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/real_dxf_fixture_smoke_arc_spline_chaining_impl.md"
+      - "codex/reports/egyedi_solver/real_dxf_fixture_smoke_arc_spline_chaining_impl.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/real_dxf_fixture_smoke_arc_spline_chaining_impl.md
+    outputs:
+      - "codex/reports/egyedi_solver/real_dxf_fixture_smoke_arc_spline_chaining_impl.md"
+      - "codex/reports/egyedi_solver/real_dxf_fixture_smoke_arc_spline_chaining_impl.verify.log"
