@@ -1,0 +1,73 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_export_original_geometry_block_insert_impl.yaml
+
+steps:
+  - name: "Felderites es canvas pontositas"
+    description: >
+      Nezd at a jelenlegi DXF exporter implementaciot es azt, hogy a dxf pipeline milyen output/mapping adatokat ment a run_dir-be.
+      Pontositsd a canvasban: melyik file(oka)t olvassa az exporter (nesting_output vs solver_output, mapping file), es milyen CLI opciokkal fog mukodni.
+      Ne torje a meglvo approx export modot.
+    outputs:
+      - "canvases/egyedi_solver/export_original_geometry_block_insert_impl.md"
+
+  - name: "Source geometry mapping stabilizalasa (run_dir artefakt)"
+    description: >
+      Gondoskodj rola, hogy export idoben stabilan elerheto legyen a part_id -> forras DXF meta.
+      Valaszd a repo mintaihoz illo megoldast:
+      - vagy a nesting outputba kerul be source_dxf_path + layer policy
+      - vagy kulon mapping file a run_dir-ben (pl. source_geometry_map.json)
+      Fail-fast legyen, ha hianyzik.
+    outputs:
+      - "vrs_nesting/sparrow/input_generator.py"
+      - "vrs_nesting/sparrow/multi_sheet_wrapper.py"
+
+  - name: "Exporter: geometry-mode source (BLOCK/INSERT) implementalasa"
+    description: >
+      Egeszitsd ki a vrs_nesting/dxf/exporter.py-t:
+      - uj kapcsolo: --geometry-mode approx|source
+      - source modban:
+        - nyisd meg a forras DXF-eket, masold az engedelyezett entitasokat BLOCK definicioba (determin. block nev)
+        - sheet modelspace-be INSERT-eket tegyel a placement szerint (x,y,rotation)
+        - kezeld a source_base_offset_mm-et, ha a pipeline ad ilyet
+      - approx mod maradjon valtozatlan es default.
+      - ha --run-dir hasznalat van, a dxf pipeline esetere legyen lehetoseg default source modra (repo konvencio szerint).
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+
+  - name: "Smoke teszt: export eredeti geometriaval (INSERT + ARC/SPLINE jelenlet)"
+    description: >
+      Hozz letre uj smoke scriptet: scripts/smoke_export_original_geometry_block_insert.py.
+      A script:
+      - hasznalja a samples/dxf_demo fixture part-ot, amiben van ARC + SPLINE
+      - letrehoz minimal run_dir-t (vagy ideiglenes run rootot) a szukseges output/mapping file-okkal
+      - lefuttatja az exportert
+      - betolti a kimeneti sheet_001.dxf-et, es ellenorzi:
+        - van INSERT a modelspace-ben
+        - a beszurt blockban van ARC vagy SPLINE entitas
+      Legyen gyors, determinisztikus, es [OK] vegu.
+    outputs:
+      - "scripts/smoke_export_original_geometry_block_insert.py"
+
+  - name: "Gate-be kotes (scripts/check.sh)"
+    description: >
+      Kossed be a standard gate-be az uj smoke futtatasat:
+      - python3 scripts/smoke_export_original_geometry_block_insert.py
+      Ugyelj ra, hogy a meglvo check.sh lepesek ne seruljenek.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report (standard szerint)"
+    description: >
+      Hozd letre/frissitsd a task checklistet es reportot.
+      A reportban legyen DoD -> Evidence matrix konkret file+line hivatkozasokkal,
+      es legyen AUTO_VERIFY blokk helye.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/export_original_geometry_block_insert_impl.md"
+      - "codex/reports/egyedi_solver/export_original_geometry_block_insert_impl.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/export_original_geometry_block_insert_impl.md
+    outputs:
+      - "codex/reports/egyedi_solver/export_original_geometry_block_insert_impl.md"
+      - "codex/reports/egyedi_solver/export_original_geometry_block_insert_impl.verify.log"
