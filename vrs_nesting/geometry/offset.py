@@ -88,6 +88,16 @@ def _polygon_to_payload(poly: Polygon) -> dict[str, Any]:
     }
 
 
+def polygon_bbox(payload: dict[str, Any]) -> tuple[float, float, float, float]:
+    outer = payload.get("outer_points_mm")
+    if not isinstance(outer, list) or not outer:
+        raise GeometryOffsetError("GEO_POLYGON_TYPE", "outer_points_mm must be non-empty list")
+    ring = _to_closed_ring(outer, "bbox.outer")
+    xs = [pt[0] for pt in ring[:-1]]
+    ys = [pt[1] for pt in ring[:-1]]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def offset_part_geometry(
     payload: dict[str, Any],
     *,

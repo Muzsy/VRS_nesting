@@ -165,23 +165,16 @@ def _extract_metrics(final_json: Path) -> tuple[float | None, float | None, int 
     return strip_width, density, placed_count
 
 
-def run_sparrow(
-    input_path: str,
+def _run_sparrow_with_snapshot(
     *,
+    input_json: Path,
+    snapshot_json: Path,
+    run_dir: Path,
     seed: int,
     time_limit: int,
-    run_root: str = "runs",
-    sparrow_bin: str | None = None,
+    sparrow_bin: str | None,
 ) -> tuple[Path, dict[str, Any]]:
-    input_json = Path(input_path).resolve()
-    if not input_json.is_file():
-        raise SparrowRunnerError(f"Input JSON nem található: {input_json}")
-
     bin_path = resolve_sparrow_bin(sparrow_bin)
-    run_dir = _new_run_dir(Path(run_root).resolve())
-
-    snapshot_json = run_dir / "instance.json"
-    shutil.copy2(input_json, snapshot_json)
 
     stdout_log = run_dir / "sparrow_stdout.log"
     stderr_log = run_dir / "sparrow_stderr.log"
@@ -247,6 +240,60 @@ def run_sparrow(
 
     _write_json(meta_path, meta)
     return run_dir, meta
+
+
+def run_sparrow(
+    input_path: str,
+    *,
+    seed: int,
+    time_limit: int,
+    run_root: str = "runs",
+    sparrow_bin: str | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    input_json = Path(input_path).resolve()
+    if not input_json.is_file():
+        raise SparrowRunnerError(f"Input JSON nem található: {input_json}")
+
+    run_dir = _new_run_dir(Path(run_root).resolve())
+    snapshot_json = run_dir / "instance.json"
+    shutil.copy2(input_json, snapshot_json)
+    return _run_sparrow_with_snapshot(
+        input_json=input_json,
+        snapshot_json=snapshot_json,
+        run_dir=run_dir,
+        seed=seed,
+        time_limit=time_limit,
+        sparrow_bin=sparrow_bin,
+    )
+
+
+def run_sparrow_in_dir(
+    input_path: str,
+    *,
+    run_dir: str | Path,
+    seed: int,
+    time_limit: int,
+    sparrow_bin: str | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    input_json = Path(input_path).resolve()
+    if not input_json.is_file():
+        raise SparrowRunnerError(f"Input JSON nem található: {input_json}")
+
+    target_dir = Path(run_dir).resolve()
+    if not target_dir.is_dir():
+        raise SparrowRunnerError(f"run_dir nem létezik: {target_dir}")
+
+    snapshot_json = target_dir / "instance.json"
+    if snapshot_json.resolve() != input_json:
+        shutil.copy2(input_json, snapshot_json)
+    return _run_sparrow_with_snapshot(
+        input_json=input_json,
+        snapshot_json=snapshot_json,
+        run_dir=target_dir,
+        seed=seed,
+        time_limit=time_limit,
+        sparrow_bin=sparrow_bin,
+    )
 
 
 def _default_seed() -> int:

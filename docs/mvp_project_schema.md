@@ -4,7 +4,9 @@
 This document defines the minimal project JSON contract for the first table-solver CLI flow.
 
 ## Version
-- Current schema version: `v1`
+- Table-solver schema version: `v1`
+- Real DXF + Sparrow flow uses a separate strict schema: `dxf_v1`
+  - See `docs/dxf_project_schema.md`
 
 ## Required top-level fields
 - `version` (string): must be `v1`
@@ -42,3 +44,4 @@ Unknown part fields are rejected.
 ## Notes
 - This is an MVP schema for deterministic bootstrap flow.
 - Geometry references, nesting options, and export config are out of scope for this version.
+- Do not mix `v1` and `dxf_v1` fields in one project file.

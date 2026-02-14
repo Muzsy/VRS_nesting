@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from vrs_nesting.geometry.clean import clean_ring
@@ -52,3 +53,45 @@ def polygonize_stock_raw(
         "outer_points_mm": outer,
         "holes_points_mm": holes,
     }
+
+
+def arc_to_points(
+    *,
+    center_x: float,
+    center_y: float,
+    radius: float,
+    start_angle_deg: float,
+    end_angle_deg: float,
+    max_chord_error_mm: float = 0.2,
+    min_segments: int = 12,
+) -> list[list[float]]:
+    if radius <= 0:
+        raise ValueError("radius must be > 0")
+    if max_chord_error_mm <= 0:
+        raise ValueError("max_chord_error_mm must be > 0")
+    if min_segments < 2:
+        raise ValueError("min_segments must be >= 2")
+
+    span_deg = float(end_angle_deg) - float(start_angle_deg)
+    if abs(span_deg) < 1e-9:
+        span_deg = 360.0
+    span_rad = math.radians(abs(span_deg))
+
+    if max_chord_error_mm >= 2 * radius:
+        max_step = span_rad
+    else:
+        max_step = 2.0 * math.acos(max(0.0, 1.0 - (max_chord_error_mm / radius)))
+    max_step = max(max_step, 1e-6)
+
+    segments = max(min_segments, int(math.ceil(span_rad / max_step)))
+    direction = 1.0 if span_deg >= 0 else -1.0
+
+    points: list[list[float]] = []
+    start_rad = math.radians(start_angle_deg)
+    step = span_rad / float(segments)
+    for idx in range(segments + 1):
+        angle = start_rad + (direction * step * idx)
+        x = center_x + (radius * math.cos(angle))
+        y = center_y + (radius * math.sin(angle))
+        points.append([float(x), float(y)])
+    return points

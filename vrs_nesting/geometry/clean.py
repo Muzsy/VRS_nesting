@@ -29,6 +29,12 @@ def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
+def points_are_close(a: tuple[float, float], b: tuple[float, float], epsilon: float) -> bool:
+    if epsilon < 0:
+        raise GeometryCleanError("GEO_PARAM_RANGE", "epsilon must be >= 0")
+    return _dist(a, b) <= epsilon
+
+
 def normalize_input_ring(points: Iterable[object], *, where: str = "ring") -> list[tuple[float, float]]:
     parsed = [_as_point(point, f"{where}[{idx}]") for idx, point in enumerate(points)]
     if len(parsed) < 3:
@@ -107,4 +113,19 @@ def clean_ring(
     ring = dedupe_and_prune_ring(points, min_edge_len=min_edge_len, where=where)
     if ccw is not None:
         ring = orient_ring(ring, ccw=ccw, where=where)
+    return [[x, y] for x, y in ring]
+
+
+def close_ring_if_needed(
+    points: Iterable[object],
+    *,
+    close_epsilon: float = 1e-6,
+    where: str = "ring",
+) -> list[list[float]]:
+    if close_epsilon < 0:
+        raise GeometryCleanError("GEO_PARAM_RANGE", "close_epsilon must be >= 0")
+
+    ring = normalize_input_ring(points, where=where)
+    if not points_are_close(ring[0], ring[-1], close_epsilon):
+        raise GeometryCleanError("GEO_RING_OPEN", f"{where} is not closed within epsilon={close_epsilon}")
     return [[x, y] for x, y in ring]

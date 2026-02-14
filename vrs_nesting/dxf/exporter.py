@@ -108,8 +108,8 @@ def _part_defs(input_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
         allowed_rotations = _normalize_allowed_rotations(part, f"parts[{idx}]")
 
-        outer_raw = part.get("outer_points")
-        holes_raw = part.get("holes_points", [])
+        outer_raw = part.get("source_outer_points", part.get("outer_points"))
+        holes_raw = part.get("source_holes_points", part.get("holes_points", []))
         if outer_raw is None:
             outer = [(0.0, 0.0), (float(width), 0.0), (float(width), float(height)), (0.0, float(height))]
             holes: list[list[tuple[float, float]]] = []
