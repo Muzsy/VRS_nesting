@@ -1,0 +1,60 @@
+steps:
+  - name: "Felderites es canvas veglegesitese"
+    description: >
+      Olvasd at a DXF pipeline jelenlegi belepesi pontjait es a run_dir kezeleset:
+      - vrs_nesting/cli.py (dxf-run)
+      - scripts/run_real_dxf_sparrow_pipeline.py
+      - vrs_nesting/run_artifacts/run_dir.py
+      - vrs_nesting/sparrow/multi_sheet_wrapper.py
+      Pontositsd a canvasban a szerzodes pontokat a repo valos allapota szerint:
+      stdout 1 sor, kotelezo artefakt lista, report.json kulcsok, out/sheet_001.dxf elvaras.
+    outputs:
+      - "canvases/egyedi_solver/dxf_pipeline_entrypoint_and_run_artifacts_contract.md"
+
+  - name: "Run artefakt contract doksi letrehozasa"
+    description: >
+      Hozz letre egy dedikalt doksit: docs/dxf_run_artifacts_contract.md.
+      Tartalmazza:
+      - hivatalos belepesi pontok (CLI + wrapper script)
+      - stdout/stderr szerzodes (success/fail)
+      - run_id/run_dir policy (run_root resolve, run_id formatum)
+      - run_dir tree (required vs optional files)
+      - report.json minimalis schema (dxf_v1) + mezok rovid leirasa
+      A doksi a repo jelenlegi kodjahoz igazodjon (ne historical docs mintajara).
+    outputs:
+      - "docs/dxf_run_artifacts_contract.md"
+
+  - name: "Smoke teszt megerositese: contract enforcement"
+    description: >
+      Frissitsd a scripts/smoke_real_dxf_sparrow_pipeline.py scriptet, hogy a wrapper
+      futtatasa utan (scripts/run_real_dxf_sparrow_pipeline.py):
+      - ellenorizze: stdout csak 1 nem-ures sor (run_dir path)
+      - run_dir letezik es az altalunk adott --run-root alatt van
+      - kotelezo artefaktok leteznek (project.json, run.log, report.json, sparrow_instance.json,
+        solver_input.json, sparrow_input_meta.json, sparrow_output.json, solver_output.json,
+        source_geometry_map.json, sparrow_stdout.log, sparrow_stderr.log, out/sheet_001.dxf)
+      - report.json parse-olhato es tartalmazza a minimalis kulcsokat:
+        contract_version=dxf_v1, paths.*, metrics, export_summary
+      - paths.* altal mutatott fajlok tenylegesen leteznek (legalabb a kotelezoek)
+      - out/sheet_001.dxf nem ures fajl
+      Ne vezess be uj E2E futast: ezt a meglvo smoke scriptet harden-eld.
+    outputs:
+      - "scripts/smoke_real_dxf_sparrow_pipeline.py"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre es toltsd ki a checklistet es a report vazat a standard szerint.
+      A reportban legyen DoD -> Evidence Matrix, es hivatkozz konkret file pathokra
+      (es ahol lehet: sorsavokra).
+      A reportban hivatkozd a docs/dxf_run_artifacts_contract.md doksit mint a szerzodes forrasat.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/dxf_pipeline_entrypoint_and_run_artifacts_contract.md"
+      - "codex/reports/egyedi_solver/dxf_pipeline_entrypoint_and_run_artifacts_contract.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/dxf_pipeline_entrypoint_and_run_artifacts_contract.md
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_pipeline_entrypoint_and_run_artifacts_contract.md"
+      - "codex/reports/egyedi_solver/dxf_pipeline_entrypoint_and_run_artifacts_contract.verify.log"
