@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -210,6 +211,14 @@ def _cmd_dxf_run(project_path: str, run_root: str, sparrow_bin: str | None) -> i
             "metrics": {
                 "placements_count": len(solver_output.get("placements", [])),
                 "unplaced_count": len(solver_output.get("unplaced", [])),
+                "unplaced_reasons": {
+                    str(reason): int(count)
+                    for reason, count in Counter(
+                        str(item.get("reason", "unknown"))
+                        for item in solver_output.get("unplaced", [])
+                        if isinstance(item, dict)
+                    ).items()
+                },
             },
             "export_summary": export_summary,
         }

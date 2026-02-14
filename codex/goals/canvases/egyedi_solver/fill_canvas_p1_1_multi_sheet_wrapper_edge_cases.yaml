@@ -1,0 +1,82 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_p1_1_multi_sheet_wrapper_edge_cases.yaml
+
+goal: >
+  P1-1: Multi-sheet wrapper „éles” edge-case-ek.
+  Normalizált unplaced okok, determinisztikus kimenet, globális + per-sheet időbudget,
+  és új smoke a regressziók ellen (check.sh gate-be kötve).
+
+deadline: "n/a"
+
+outputs:
+  - canvases/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.md
+  - vrs_nesting/sparrow/multi_sheet_wrapper.py
+  - vrs_nesting/cli.py
+  - scripts/smoke_multisheet_wrapper_edge_cases.py
+  - scripts/check.sh
+  - codex/codex_checklist/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.md
+  - codex/reports/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.md
+  - codex/reports/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.verify.log
+
+steps:
+  - name: Canvas létrehozás (P1-1 specifikáció + DoD)
+    description: >
+      Hozd létre a canvas fájlt a repo konvenciói szerint, és rögzítsd benne a pontos DoD pontokat.
+      A canvasnak a jelenlegi valós implementációra kell hivatkoznia (multi_sheet_wrapper.py),
+      és konkrét teszt/gate elvárásokat kell tartalmaznia.
+    outputs:
+      - canvases/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.md
+
+  - name: Multi-sheet wrapper stabilizálás (okok + determinisztika + budget)
+    description: >
+      Módosítsd a vrs_nesting/sparrow/multi_sheet_wrapper.py-t:
+      1) unplaced.reason normalizálás:
+         - too_large / invalid_geometry / timeout / no_feasible_position
+      2) determinisztika:
+         - remaining stabil rendezése (part_id, instance_id)
+         - placements + unplaced stabil rendezése a végén
+      3) időbudget:
+         - globális time_limit_s determinisztikus felosztása sheet-enként
+         - per sheet a run_sparrow_in_dir(...) time_limit_s paramétere a kiosztott budget legyen
+         - ha nincs budget sheet-re, ne fusson
+      4) 0 placement / no progress:
+         - ne legyen alapértelmezett hard-crash; normál „no solution” esetben partial + okok
+         - hard error csak valódi IO/parse/NonZeroExit jellegű problémáknál maradjon
+      Ügyelj rá, hogy a meglévő artefakt írások (sparrow_stdout/stderr összefűzés, sparrow_output.json, solver_output.json)
+      ne sérüljenek.
+    outputs:
+      - vrs_nesting/sparrow/multi_sheet_wrapper.py
+
+  - name: DXF report.json bővítés (unplaced_reasons) – opcionális, de ajánlott
+    description: >
+      A vrs_nesting/cli.py dxf-run report.json payloadjába (metrics alá) vezess be egy opcionális
+      unplaced_reasons mezőt (reason -> count), a solver_output.unplaced alapján.
+      Backward compatible legyen (csak új mező, ne törj meg meglévőket).
+    outputs:
+      - vrs_nesting/cli.py
+
+  - name: Új smoke – Multi-sheet edge-case-ek
+    description: >
+      Hozz létre scripts/smoke_multisheet_wrapper_edge_cases.py-t:
+      - építs minimális solver_input + sparrow_instance payloadot programból
+      - hívd a run_multi_sheet_wrapper(...) függvényt (SPARROW_BIN env alapján)
+      - ellenőrizd:
+        * nem dob kivételt invalid_geometry + too_large itemekkel
+        * solver_output.status == "partial"
+        * unplaced okok tartalmazzák: invalid_geometry és too_large
+        * a sparrow_output.json raw_outputs runner_meta.time_limit_s sheet-enként <= global time_limit_s
+        * determinisztika: két futás ugyanazzal a seed-del azonos solver_output-ot ad (rendezett JSON dump összehasonlítás)
+    outputs:
+      - scripts/smoke_multisheet_wrapper_edge_cases.py
+
+  - name: Gate bekötés (check.sh) + verifikáció
+    description: >
+      Kösd be az új smoke scriptet a scripts/check.sh DXF blokkja alá.
+      Futtasd a repo standard gate-et és rögzítsd:
+      - ./scripts/verify.sh --report codex/reports/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.md
+      Készítsd el/frissítsd a checklistet és a reportot a szokásos repo konvenciók szerint,
+      és generáld a .verify.log fájlt is.
+    outputs:
+      - scripts/check.sh
+      - codex/codex_checklist/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.md
+      - codex/reports/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.md
+      - codex/reports/egyedi_solver/p1_1_multi_sheet_wrapper_edge_cases.verify.log
