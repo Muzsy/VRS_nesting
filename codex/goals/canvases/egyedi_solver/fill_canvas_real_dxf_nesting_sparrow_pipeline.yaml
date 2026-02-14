@@ -1,0 +1,105 @@
+steps:
+  - name: "Felderites + canvas pontositas"
+    description: >
+      Olvasd at a vonatkozo docs szekciokat (docs/dxf_nesting_app_2..8) es a jelenlegi implementaciot:
+      vrs_nesting/dxf/importer.py, vrs_nesting/geometry/*, vrs_nesting/runner/sparrow_runner.py,
+      vrs_nesting/dxf/exporter.py.
+      Pontositsd a canvasban a valasztott CLI belépési pontot (uj subcommand vs script),
+      a DXF project schema nevét/verziojat, es a run artefakt listat.
+    outputs:
+      - "canvases/egyedi_solver/real_dxf_nesting_sparrow_pipeline.md"
+
+  - name: "DXF project schema bevezetese (strict, kulon verzio)"
+    description: >
+      Vezess be egy uj schema verziót DXF flow-hoz (pl. version=dxf_v1) a vrs_nesting/project/model.py-ban.
+      A version=v1 (table-solver) valtozatlan maradjon.
+      Dokumentald az uj schema-t egy uj doksiban (pl. docs/dxf_project_schema.md),
+      es frissitsd a docs/mvp_project_schema.md-et csak annyiban, hogy jelezze: dxf_v1 kulon flow.
+    outputs:
+      - "vrs_nesting/project/model.py"
+      - "docs/dxf_project_schema.md"
+      - "docs/mvp_project_schema.md"
+
+  - name: "DXF import bovitese: ARC/SPLINE poligonizalas + chaining"
+    description: >
+      Implementald az ARC es SPLINE elemek poligonizalasat es a kontur chaininget a
+      vrs_nesting/dxf/importer.py-ban a docs/dxf_nesting_app_2..3 szerint.
+      Legyen tolerancia policy (epsilon) es ertelmes hibauzenetek, ha nincs zart outer kontur.
+      A geometry/polygonize.py es geometry/clean.py modulokat hasznald/egeszitsd ki, ha kell.
+    outputs:
+      - "vrs_nesting/dxf/importer.py"
+      - "vrs_nesting/geometry/polygonize.py"
+      - "vrs_nesting/geometry/clean.py"
+
+  - name: "Sparrow instance generator modul"
+    description: >
+      Hozz letre egy uj modult (pl. vrs_nesting/sparrow/input_generator.py), ami:
+      - beolvassa a dxf_v1 projectet
+      - importal DXF-eket (outer+holes)
+      - spacing/margin offsetet alkalmaz (vrs_nesting/geometry/offset.py)
+      - eloallitja a sparrow_instance.json-t es meta-t a run_dir-be.
+      A generator legyen unit-szeru, tesztelheto API-val (pure function + IO wrapper).
+    outputs:
+      - "vrs_nesting/sparrow/input_generator.py"
+      - "vrs_nesting/geometry/offset.py"
+
+  - name: "Multi-sheet wrapper Sparrowhoz + output parse"
+    description: >
+      Implementald a multi-sheet wrappert (pl. vrs_nesting/sparrow/multi_sheet_wrapper.py) a docs/7 szerint.
+      Hasznalja a vrs_nesting/runner/sparrow_runner.py-t a Sparrow futtatasra.
+      Output parse legyen stabil: placementek + unplaced lista.
+      A run_dir-be ments:
+      - sparrow_output.json (raw)
+      - nesting_output.json vagy solver_output.json (stabil, dokumentalt formatum)
+      - sparrow_stdout.log, sparrow_stderr.log
+    outputs:
+      - "vrs_nesting/sparrow/multi_sheet_wrapper.py"
+      - "vrs_nesting/runner/sparrow_runner.py"
+
+  - name: "Export eredeti geometriaval (BLOCK/INSERT preferalt)"
+    description: >
+      Egeszitsd ki a vrs_nesting/dxf/exporter.py-t, hogy tudjon eredeti geometriat exportalni:
+      - a forras DXF geometriat BLOCK-ba menti
+      - placementenkent INSERT-et hasznal (eltolas + forgatas)
+      Kapcsolodj a generator/import altal tarolt source reference-hez.
+      A kimenet sheet_XXX.dxf per tablankent a run_dir/out/ ala menjen.
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+
+  - name: "CLI/scriptek: dxf end-to-end belépési pont"
+    description: >
+      Keszits egy belépési pontot a valos DXF pipeline-ra:
+      - vagy uj subcommand a vrs_nesting/cli.py-ban (pl. dxf-run)
+      - vagy uj script scripts/run_real_dxf_sparrow_pipeline.py
+      Kovetelmeny: stdout-on csak run_dir path, artefaktok a run_dir alatt.
+    outputs:
+      - "vrs_nesting/cli.py"
+      - "scripts/run_real_dxf_sparrow_pipeline.py"
+
+  - name: "Smoke teszt + gate-be kotese"
+    description: >
+      Hozz letre egy smoke tesztet (scripts/smoke_real_dxf_sparrow_pipeline.py), ami:
+      - egy repo alatti minimal demo DXF keszlettel (uj samples/dxf_demo/ ha kell) lefut
+      - futtatja a dxf pipeline belépési pontot
+      - ellenorzi: run_dir/out/sheet_001.dxf letrejott + van sparrow_instance.json
+      Kossed be a scripts/check.sh-ba, hogy a standard gate mindig lefussa.
+    outputs:
+      - "scripts/smoke_real_dxf_sparrow_pipeline.py"
+      - "scripts/check.sh"
+      - "samples/dxf_demo/README.md"
+
+  - name: "Checklist + report vaz letrehozasa"
+    description: >
+      Hozd letre a task checklistet es report vazat a standard report format szerint
+      (docs/codex/report_standard.md). A reportban legyen AUTO_VERIFY blokk helye is.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/real_dxf_nesting_sparrow_pipeline.md"
+      - "codex/reports/egyedi_solver/real_dxf_nesting_sparrow_pipeline.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/real_dxf_nesting_sparrow_pipeline.md
+    outputs:
+      - "codex/reports/egyedi_solver/real_dxf_nesting_sparrow_pipeline.md"
+      - "codex/reports/egyedi_solver/real_dxf_nesting_sparrow_pipeline.verify.log"
