@@ -37,6 +37,50 @@ def _sheet_sizes_from_solver_input(payload: dict[str, Any]) -> list[tuple[float,
     return out
 
 
+def _build_source_geometry_map(solver_input: dict[str, Any]) -> dict[str, Any]:
+    parts = solver_input.get("parts")
+    if not isinstance(parts, list):
+        raise MultiSheetWrapperError("solver_input.parts must be list")
+
+    entries: list[dict[str, Any]] = []
+    for idx, part in enumerate(parts):
+        if not isinstance(part, dict):
+            raise MultiSheetWrapperError(f"solver_input.parts[{idx}] must be object")
+
+        part_id = str(part.get("id", "")).strip()
+        source_dxf_path = str(part.get("source_dxf_path", part.get("source_path", ""))).strip()
+        source_layers = part.get("source_layers")
+        source_base_offset = part.get("source_base_offset_mm", {"x": 0.0, "y": 0.0})
+
+        if not part_id:
+            raise MultiSheetWrapperError(f"solver_input.parts[{idx}].id must be non-empty")
+        if not source_dxf_path:
+            continue
+        if not isinstance(source_layers, dict):
+            raise MultiSheetWrapperError(f"solver_input.parts[{idx}].source_layers must be object")
+        outer_layer = str(source_layers.get("outer", "")).strip()
+        inner_layer = str(source_layers.get("inner", "")).strip()
+        if not outer_layer or not inner_layer:
+            raise MultiSheetWrapperError(f"solver_input.parts[{idx}].source_layers must include outer+inner")
+        if not isinstance(source_base_offset, dict):
+            raise MultiSheetWrapperError(f"solver_input.parts[{idx}].source_base_offset_mm must be object")
+        base_x = source_base_offset.get("x", 0.0)
+        base_y = source_base_offset.get("y", 0.0)
+        if not isinstance(base_x, (int, float)) or not isinstance(base_y, (int, float)):
+            raise MultiSheetWrapperError(f"solver_input.parts[{idx}].source_base_offset_mm.x/y must be numeric")
+
+        entries.append(
+            {
+                "part_id": part_id,
+                "source_dxf_path": source_dxf_path,
+                "source_layers": {"outer": outer_layer, "inner": inner_layer},
+                "source_base_offset_mm": {"x": float(base_x), "y": float(base_y)},
+            }
+        )
+
+    return {"contract_version": "v1", "parts": entries}
+
+
 def _expand_remaining_items(sparrow_instance: dict[str, Any]) -> list[dict[str, Any]]:
     items = sparrow_instance.get("items")
     if not isinstance(items, list) or not items:
@@ -219,12 +263,16 @@ def run_multi_sheet_wrapper(
     solver_output = {
         "contract_version": "v1",
         "status": status,
+        "geometry_mode": "source",
         "placements": all_placements,
         "unplaced": unplaced,
     }
 
+    source_geometry_map = _build_source_geometry_map(solver_input)
+
     (root / "sparrow_output.json").write_text(json.dumps(raw_outputs, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (root / "solver_output.json").write_text(json.dumps(solver_output, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (root / "source_geometry_map.json").write_text(json.dumps(source_geometry_map, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (root / "sparrow_stdout.log").write_text("\n".join(stdout_chunks), encoding="utf-8")
     (root / "sparrow_stderr.log").write_text("\n".join(stderr_chunks), encoding="utf-8")
 

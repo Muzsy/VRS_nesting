@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Per-sheet DXF exporter using BLOCK+INSERT with optional part geometry."""
+"""Per-sheet DXF exporter using approx polygons or source geometry BLOCK+INSERT."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from vrs_nesting.dxf.importer import import_part_raw
 
 
 class DxfExportError(RuntimeError):
@@ -163,11 +170,26 @@ def _sheet_sizes(input_payload: dict[str, Any]) -> dict[int, tuple[float, float]
     return out
 
 
-def _block_name(part_id: str) -> str:
+def _approx_block_name(part_id: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_]", "_", part_id)
     if not safe:
         safe = "PART"
     return f"PART_{safe.upper()}"
+
+
+def _source_block_name(part_id: str, source_meta: dict[str, Any]) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_]", "_", part_id)
+    if not safe:
+        safe = "PART"
+
+    stable_source = {
+        "part_id": part_id,
+        "source_dxf_path": str(Path(source_meta["source_dxf_path"]).resolve()),
+        "source_layers": source_meta["source_layers"],
+        "source_base_offset_mm": source_meta["source_base_offset_mm"],
+    }
+    digest = hashlib.sha1(json.dumps(stable_source, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:10]
+    return f"P_{safe.upper()}_{digest.upper()}"
 
 
 def _add_line_entity(lines: list[str], x1: float, y1: float, x2: float, y2: float, layer: str) -> None:
@@ -200,13 +222,13 @@ def _loop_to_lines(lines: list[str], loop: list[tuple[float, float]], layer: str
         _add_line_entity(lines, x1, y1, x2, y2, layer)
 
 
-def _write_dxf(
+def _write_dxf_approx(
     path: Path,
     sheet_w: float,
     sheet_h: float,
     part_defs: dict[str, dict[str, Any]],
     sheet_placements: list[dict[str, Any]],
-) -> None:
+) -> dict[str, Any]:
     lines: list[str] = [
         "0",
         "SECTION",
@@ -223,7 +245,7 @@ def _write_dxf(
     used_parts = sorted({str(p["part_id"]) for p in sheet_placements})
     for part_id in used_parts:
         pdef = part_defs[part_id]
-        block = _block_name(part_id)
+        block = _approx_block_name(part_id)
 
         lines.extend([
             "0",
@@ -261,7 +283,7 @@ def _write_dxf(
 
     for placement in sheet_placements:
         part_id = str(placement["part_id"])
-        block = _block_name(part_id)
+        block = _approx_block_name(part_id)
         lines.extend(
             [
                 "0",
@@ -283,9 +305,306 @@ def _write_dxf(
 
     lines.extend(["0", "ENDSEC", "0", "EOF"])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {
+        "export_mode": "block_insert",
+        "used_part_blocks": sorted({_approx_block_name(str(p["part_id"])) for p in sheet_placements}),
+    }
 
 
-def export_per_sheet(input_payload: dict[str, Any], output_payload: dict[str, Any], out_dir: str | Path) -> dict[str, Any]:
+def _validate_source_meta(part_id: str, entry: dict[str, Any], *, where: str) -> dict[str, Any]:
+    source_dxf_path = str(entry.get("source_dxf_path", entry.get("source_path", ""))).strip()
+    if not source_dxf_path:
+        raise DxfExportError(f"missing source_dxf_path for part {part_id} at {where}")
+
+    source_layers = entry.get("source_layers")
+    if not isinstance(source_layers, dict):
+        raise DxfExportError(f"missing source_layers for part {part_id} at {where}")
+    outer = str(source_layers.get("outer", "")).strip()
+    inner = str(source_layers.get("inner", "")).strip()
+    if not outer or not inner:
+        raise DxfExportError(f"invalid source_layers for part {part_id} at {where}")
+
+    source_base_offset = entry.get("source_base_offset_mm", {"x": 0.0, "y": 0.0})
+    if not isinstance(source_base_offset, dict):
+        raise DxfExportError(f"invalid source_base_offset_mm for part {part_id} at {where}")
+    base_x = source_base_offset.get("x", 0.0)
+    base_y = source_base_offset.get("y", 0.0)
+    if not isinstance(base_x, (int, float)) or not isinstance(base_y, (int, float)):
+        raise DxfExportError(f"invalid source_base_offset_mm.x/y for part {part_id} at {where}")
+
+    return {
+        "part_id": part_id,
+        "source_dxf_path": str(Path(source_dxf_path).resolve()),
+        "source_layers": {"outer": outer, "inner": inner},
+        "source_base_offset_mm": {"x": float(base_x), "y": float(base_y)},
+    }
+
+
+def _source_meta_from_input(input_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    parts = input_payload.get("parts")
+    if not isinstance(parts, list):
+        raise DxfExportError("input.parts must be list")
+
+    out: dict[str, dict[str, Any]] = {}
+    for idx, part in enumerate(parts):
+        if not isinstance(part, dict):
+            raise DxfExportError(f"input.parts[{idx}] must be object")
+        part_id = str(part.get("id", "")).strip()
+        if not part_id:
+            continue
+
+        source_dxf_path = str(part.get("source_dxf_path", part.get("source_path", ""))).strip()
+        if not source_dxf_path:
+            continue
+
+        source_layers = part.get("source_layers")
+        if not isinstance(source_layers, dict):
+            raise DxfExportError(f"input.parts[{idx}].source_layers must be object for source geometry export")
+        out[part_id] = _validate_source_meta(part_id, part, where=f"input.parts[{idx}]")
+
+    return out
+
+
+def _source_meta_from_map_file(source_map_path: Path) -> dict[str, dict[str, Any]]:
+    payload = _read_json(source_map_path)
+    parts = payload.get("parts")
+    if not isinstance(parts, list):
+        raise DxfExportError(f"source map must contain parts list: {source_map_path}")
+
+    out: dict[str, dict[str, Any]] = {}
+    for idx, part in enumerate(parts):
+        if not isinstance(part, dict):
+            raise DxfExportError(f"source map part entry must be object at parts[{idx}]")
+        part_id = str(part.get("part_id", part.get("id", ""))).strip()
+        if not part_id:
+            raise DxfExportError(f"source map missing part_id at parts[{idx}]")
+        out[part_id] = _validate_source_meta(part_id, part, where=f"source_geometry_map.parts[{idx}]")
+    return out
+
+
+def _load_source_geometry_map(run_dir: Path | None, input_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    fallback = _source_meta_from_input(input_payload)
+    if run_dir is None:
+        return fallback
+
+    source_map_path = run_dir / "source_geometry_map.json"
+    if not source_map_path.is_file():
+        return fallback
+
+    explicit = _source_meta_from_map_file(source_map_path)
+    merged = dict(fallback)
+    merged.update(explicit)
+    return merged
+
+
+def _entity_points(entity: dict[str, Any], *, where: str) -> list[tuple[float, float]]:
+    points = entity.get("points")
+    if not isinstance(points, list):
+        raise DxfExportError(f"{where}.points must be list")
+
+    out: list[tuple[float, float]] = []
+    for idx, point in enumerate(points):
+        out.append(_parse_point(point, f"{where}.points[{idx}]"))
+    return out
+
+
+def _require_ezdxf() -> Any:
+    try:
+        import ezdxf  # type: ignore
+    except ImportError as exc:
+        raise DxfExportError("source geometry export requires 'ezdxf' dependency") from exc
+    return ezdxf
+
+
+def _add_source_entities_to_block(block: Any, source_entities: list[dict[str, Any]], base_x: float, base_y: float) -> None:
+    unsupported_types: set[str] = set()
+
+    for idx, entity in enumerate(source_entities):
+        if not isinstance(entity, dict):
+            raise DxfExportError(f"source_entities[{idx}] must be object")
+
+        etype = str(entity.get("type", "")).upper().strip()
+        layer = str(entity.get("layer", "PART_SRC")).strip() or "PART_SRC"
+        where = f"source_entities[{idx}]"
+
+        if etype == "LINE":
+            points = _entity_points(entity, where=where)
+            if len(points) < 2:
+                continue
+            for pidx in range(len(points) - 1):
+                x1, y1 = points[pidx]
+                x2, y2 = points[pidx + 1]
+                block.add_line((x1 - base_x, y1 - base_y, 0.0), (x2 - base_x, y2 - base_y, 0.0), dxfattribs={"layer": layer})
+            continue
+
+        if etype in {"LWPOLYLINE", "POLYLINE"}:
+            points = _entity_points(entity, where=where)
+            if len(points) < 2:
+                continue
+            block.add_lwpolyline(
+                [(x - base_x, y - base_y) for x, y in points],
+                close=bool(entity.get("closed", False)),
+                dxfattribs={"layer": layer},
+            )
+            continue
+
+        if etype == "ARC":
+            center_raw = entity.get("center")
+            if not isinstance(center_raw, (list, tuple)) or len(center_raw) != 2:
+                raise DxfExportError(f"{where}.center must be [x, y]")
+            cx = float(center_raw[0]) - base_x
+            cy = float(center_raw[1]) - base_y
+            radius = entity.get("radius")
+            start = entity.get("start_angle")
+            end = entity.get("end_angle")
+            if not isinstance(radius, (int, float)):
+                raise DxfExportError(f"{where}.radius must be numeric")
+            if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+                raise DxfExportError(f"{where}.start_angle/end_angle must be numeric")
+            block.add_arc((cx, cy, 0.0), float(radius), float(start), float(end), dxfattribs={"layer": layer})
+            continue
+
+        if etype == "CIRCLE":
+            center_raw = entity.get("center")
+            if not isinstance(center_raw, (list, tuple)) or len(center_raw) != 2:
+                raise DxfExportError(f"{where}.center must be [x, y]")
+            cx = float(center_raw[0]) - base_x
+            cy = float(center_raw[1]) - base_y
+            radius = entity.get("radius")
+            if not isinstance(radius, (int, float)):
+                raise DxfExportError(f"{where}.radius must be numeric")
+            block.add_circle((cx, cy, 0.0), float(radius), dxfattribs={"layer": layer})
+            continue
+
+        if etype == "SPLINE":
+            points = _entity_points(entity, where=where)
+            if len(points) < 2:
+                continue
+            spline = block.add_spline(
+                fit_points=[(x - base_x, y - base_y, 0.0) for x, y in points],
+                dxfattribs={"layer": layer},
+            )
+            if bool(entity.get("closed", False)):
+                spline.dxf.flags = int(getattr(spline.dxf, "flags", 0)) | 1
+            continue
+
+        if etype:
+            unsupported_types.add(etype)
+
+    if unsupported_types:
+        unsupported_sorted = ",".join(sorted(unsupported_types))
+        print(f"WARN: skipped unsupported source entity types: {unsupported_sorted}", file=sys.stderr)
+
+
+def _write_dxf_source(
+    path: Path,
+    sheet_w: float,
+    sheet_h: float,
+    source_meta_by_part: dict[str, dict[str, Any]],
+    sheet_placements: list[dict[str, Any]],
+    source_entity_cache: dict[tuple[str, str, str], list[dict[str, Any]]],
+) -> dict[str, Any]:
+    ezdxf = _require_ezdxf()
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+
+    msp.add_line((0.0, 0.0, 0.0), (sheet_w, 0.0, 0.0), dxfattribs={"layer": "SHEET"})
+    msp.add_line((sheet_w, 0.0, 0.0), (sheet_w, sheet_h, 0.0), dxfattribs={"layer": "SHEET"})
+    msp.add_line((sheet_w, sheet_h, 0.0), (0.0, sheet_h, 0.0), dxfattribs={"layer": "SHEET"})
+    msp.add_line((0.0, sheet_h, 0.0), (0.0, 0.0, 0.0), dxfattribs={"layer": "SHEET"})
+
+    block_names: dict[str, str] = {}
+    used_parts = sorted({str(p["part_id"]) for p in sheet_placements})
+    for part_id in used_parts:
+        if part_id not in source_meta_by_part:
+            raise DxfExportError(f"missing source geometry mapping for part_id={part_id}")
+
+        source_meta = source_meta_by_part[part_id]
+        block_name = _source_block_name(part_id, source_meta)
+        block_names[part_id] = block_name
+
+        if block_name in doc.blocks:
+            continue
+
+        outer_layer = source_meta["source_layers"]["outer"]
+        inner_layer = source_meta["source_layers"]["inner"]
+        source_path = source_meta["source_dxf_path"]
+        cache_key = (source_path, outer_layer, inner_layer)
+        if cache_key not in source_entity_cache:
+            part_raw = import_part_raw(source_path, outer_layer=outer_layer, inner_layer=inner_layer)
+            source_entity_cache[cache_key] = list(part_raw.source_entities)
+
+        block = doc.blocks.new(name=block_name, base_point=(0.0, 0.0, 0.0))
+        base_x = float(source_meta["source_base_offset_mm"]["x"])
+        base_y = float(source_meta["source_base_offset_mm"]["y"])
+        _add_source_entities_to_block(block, source_entity_cache[cache_key], base_x, base_y)
+
+    for placement in sheet_placements:
+        part_id = str(placement["part_id"])
+        msp.add_blockref(
+            block_names[part_id],
+            (float(placement["x"]), float(placement["y"]), 0.0),
+            dxfattribs={
+                "layer": "PART_INSERT",
+                "rotation": float(placement["rotation_deg"]),
+            },
+        )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.saveas(path)
+    return {
+        "export_mode": "source_block_insert",
+        "used_part_blocks": [block_names[part_id] for part_id in used_parts],
+    }
+
+
+def _looks_like_dxf_flow(input_payload: dict[str, Any], run_dir: Path | None) -> bool:
+    if run_dir is not None and (run_dir / "source_geometry_map.json").is_file():
+        return True
+
+    parts = input_payload.get("parts")
+    if not isinstance(parts, list):
+        return False
+
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        source_path = str(part.get("source_dxf_path", part.get("source_path", ""))).strip()
+        source_layers = part.get("source_layers")
+        if source_path and isinstance(source_layers, dict):
+            return True
+    return False
+
+
+def _resolve_geometry_mode(
+    requested_mode: str,
+    *,
+    run_dir: Path | None,
+    input_payload: dict[str, Any],
+    output_payload: dict[str, Any],
+) -> str:
+    mode = requested_mode.strip().lower()
+    if mode not in {"approx", "source"}:
+        raise DxfExportError(f"unsupported geometry mode: {requested_mode}")
+
+    if run_dir is not None and mode == "approx":
+        output_mode = str(output_payload.get("geometry_mode", "")).strip().lower()
+        if output_mode in {"approx", "source"}:
+            return output_mode
+        if _looks_like_dxf_flow(input_payload, run_dir):
+            return "source"
+
+    return mode
+
+
+def export_per_sheet(
+    input_payload: dict[str, Any],
+    output_payload: dict[str, Any],
+    out_dir: str | Path,
+    *,
+    geometry_mode: str = "approx",
+    run_dir: str | Path | None = None,
+) -> dict[str, Any]:
     if output_payload.get("contract_version") != "v1":
         raise DxfExportError("output.contract_version must be v1")
 
@@ -295,6 +614,14 @@ def export_per_sheet(input_payload: dict[str, Any], output_payload: dict[str, An
 
     part_defs = _part_defs(input_payload)
     sheet_sizes = _sheet_sizes(input_payload)
+
+    run_root = Path(run_dir).resolve() if run_dir else None
+    effective_mode = _resolve_geometry_mode(
+        geometry_mode,
+        run_dir=run_root,
+        input_payload=input_payload,
+        output_payload=output_payload,
+    )
 
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for pidx, placement in enumerate(placements):
@@ -333,6 +660,9 @@ def export_per_sheet(input_payload: dict[str, Any], output_payload: dict[str, An
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
+    source_meta_by_part = _load_source_geometry_map(run_root, input_payload) if effective_mode == "source" else {}
+    source_entity_cache: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+
     exported_files: list[str] = []
     sheet_metrics: list[dict[str, Any]] = []
 
@@ -344,7 +674,22 @@ def export_per_sheet(input_payload: dict[str, Any], output_payload: dict[str, An
         sheet_w, sheet_h = sheet_sizes[sheet_index]
         file_name = f"sheet_{sheet_index + 1:03d}.dxf"
         file_path = out_path / file_name
-        _write_dxf(file_path, sheet_w, sheet_h, part_defs, sheet_placements)
+
+        if effective_mode == "source":
+            source_metric = _write_dxf_source(
+                file_path,
+                sheet_w,
+                sheet_h,
+                source_meta_by_part,
+                sheet_placements,
+                source_entity_cache,
+            )
+            export_mode = source_metric["export_mode"]
+            used_part_blocks = source_metric["used_part_blocks"]
+        else:
+            approx_metric = _write_dxf_approx(file_path, sheet_w, sheet_h, part_defs, sheet_placements)
+            export_mode = approx_metric["export_mode"]
+            used_part_blocks = approx_metric["used_part_blocks"]
 
         exported_files.append(str(file_path.resolve()))
         sheet_metrics.append(
@@ -354,12 +699,13 @@ def export_per_sheet(input_payload: dict[str, Any], output_payload: dict[str, An
                 "stock_width": sheet_w,
                 "stock_height": sheet_h,
                 "placed_count": len(sheet_placements),
-                "export_mode": "block_insert",
-                "used_part_blocks": sorted({_block_name(str(p["part_id"])) for p in sheet_placements}),
+                "export_mode": export_mode,
+                "used_part_blocks": used_part_blocks,
             }
         )
 
     summary = {
+        "geometry_mode": effective_mode,
         "exported_count": len(exported_files),
         "exported_files": exported_files,
         "sheet_metrics": sheet_metrics,
@@ -374,10 +720,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", default="", help="Path to solver_output.json")
     parser.add_argument("--out-dir", default="", help="Directory for generated sheet_XXX.dxf files")
     parser.add_argument("--summary-json", default="", help="Optional path to write export summary json")
+    parser.add_argument("--geometry-mode", choices=["approx", "source"], default="approx", help="Geometry export mode (default: approx)")
     return parser
 
 
-def _resolve_cli_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple[Path, Path, Path]:
+def _resolve_cli_paths(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple[Path, Path, Path, Path | None]:
     run_dir_raw = str(args.run_dir or "").strip()
     input_raw = str(args.input or "").strip()
     output_raw = str(args.output or "").strip()
@@ -387,23 +734,29 @@ def _resolve_cli_paths(args: argparse.Namespace, parser: argparse.ArgumentParser
         if input_raw or output_raw or out_dir_raw:
             parser.error("--run-dir cannot be used with --input/--output/--out-dir")
         run_dir = Path(run_dir_raw).resolve()
-        return run_dir / "solver_input.json", run_dir / "solver_output.json", run_dir / "out"
+        return run_dir / "solver_input.json", run_dir / "solver_output.json", run_dir / "out", run_dir
 
     if not input_raw or not output_raw or not out_dir_raw:
         parser.error("either --run-dir or all of --input/--output/--out-dir must be provided")
 
-    return Path(input_raw).resolve(), Path(output_raw).resolve(), Path(out_dir_raw).resolve()
+    return Path(input_raw).resolve(), Path(output_raw).resolve(), Path(out_dir_raw).resolve(), None
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    input_path, output_path, out_dir = _resolve_cli_paths(args, parser)
+    input_path, output_path, out_dir, run_dir = _resolve_cli_paths(args, parser)
 
     try:
         input_payload = _read_json(input_path)
         output_payload = _read_json(output_path)
-        summary = export_per_sheet(input_payload, output_payload, out_dir)
+        summary = export_per_sheet(
+            input_payload,
+            output_payload,
+            out_dir,
+            geometry_mode=args.geometry_mode,
+            run_dir=run_dir,
+        )
     except DxfExportError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -420,4 +773,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

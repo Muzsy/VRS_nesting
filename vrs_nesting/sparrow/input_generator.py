@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from vrs_nesting.dxf.importer import import_part_raw
+from vrs_nesting.dxf.importer import INNER_LAYER_DEFAULT, OUTER_LAYER_DEFAULT, import_part_raw
 from vrs_nesting.geometry.offset import offset_part_geometry, offset_stock_geometry, polygon_bbox
 from vrs_nesting.geometry.polygonize import polygonize_part_raw, polygonize_stock_raw
 from vrs_nesting.project.model import DxfAssetSpec, DxfProjectModel
@@ -53,10 +53,15 @@ def _load_asset_geometry(
         prepared = offset_part_geometry(poly, spacing_mm=spacing_mm)
 
     min_x, min_y, max_x, max_y = polygon_bbox(prepared)
+    source_base_x = min(float(point[0]) for point in raw.outer_points_mm)
+    source_base_y = min(float(point[1]) for point in raw.outer_points_mm)
     return {
         "id": asset.id,
         "quantity": asset.quantity,
         "source_path": str(source),
+        "source_dxf_path": str(source),
+        "source_layers": {"outer": OUTER_LAYER_DEFAULT, "inner": INNER_LAYER_DEFAULT},
+        "source_base_offset_mm": {"x": source_base_x, "y": source_base_y},
         "allowed_rotations_deg": list(asset.allowed_rotations_deg),
         "raw_outer_points": raw.outer_points_mm,
         "raw_holes_points": raw.holes_points_mm,
@@ -150,6 +155,9 @@ def build_sparrow_inputs(project: DxfProjectModel, *, project_dir: Path) -> tupl
                 "source_holes_points": part["raw_holes_points"],
                 "source_entities": part["source_entities"],
                 "source_path": part["source_path"],
+                "source_dxf_path": part["source_dxf_path"],
+                "source_layers": part["source_layers"],
+                "source_base_offset_mm": part["source_base_offset_mm"],
             }
             for part in parts
         ],

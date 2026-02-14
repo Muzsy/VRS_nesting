@@ -30,6 +30,7 @@ chmod +x \
   scripts/run_sparrow_smoketest.sh \
   scripts/validate_sparrow_io.py \
   scripts/smoke_export_run_dir_out.py \
+  scripts/smoke_export_original_geometry_block_insert.py \
   scripts/smoke_real_dxf_fixtures.py \
   scripts/run_real_dxf_sparrow_pipeline.py \
   scripts/smoke_real_dxf_sparrow_pipeline.py || true
@@ -94,6 +95,9 @@ python3 scripts/smoke_geometry_pipeline.py
 
 echo "[DXF] Export --run-dir smoke"
 python3 scripts/smoke_export_run_dir_out.py
+
+echo "[DXF] Source geometry BLOCK/INSERT export smoke"
+python3 scripts/smoke_export_original_geometry_block_insert.py
 
 echo "[DXF] Real fixture import smoke"
 python3 scripts/smoke_real_dxf_fixtures.py
