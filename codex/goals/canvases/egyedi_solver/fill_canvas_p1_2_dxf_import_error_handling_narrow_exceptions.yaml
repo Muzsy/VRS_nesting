@@ -1,0 +1,63 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_p1_2_dxf_import_error_handling_narrow_exceptions.yaml
+
+goal: >
+  Szűkítsük célzott kivételekre a DXF import hibakezelését (ne `except Exception`),
+  tartsuk meg a stabil DxfImportError kódokat, és adjunk hozzá unit teszteket.
+deadline: n/a
+outputs:
+  - canvases/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.md
+  - vrs_nesting/dxf/importer.py
+  - tests/test_dxf_importer_error_handling.py
+  - codex/codex_checklist/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.md
+  - codex/reports/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.md
+  - codex/reports/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.verify.log
+
+steps:
+  - name: Felderítés – `except Exception` előfordulások a DXF import útvonalon
+    description: >
+      Keresd meg a `vrs_nesting/dxf/importer.py` fájlban az összes `except Exception` ágat,
+      és sorold be őket: (1) DXF readfile, (2) SPLINE flattening fallback, (3) clean_ring környéke, (4) egyéb.
+      A módosítás célja: `except Exception` teljes eliminálása az import útvonalon.
+    outputs: []
+
+  - name: Implementáció – célzott kivételek bevezetése az importerben
+    description: >
+      Módosítsd a `vrs_nesting/dxf/importer.py`-t:
+      - DXF readfile: cseréld `except Exception`-t célzott kivételekre (OSError/UnicodeDecodeError/ezdxf.DXFError),
+        és továbbra is `DxfImportError("DXF_READ_FAILED", ...)` legyen az eredmény.
+      - clean_ring környéke: importáld a `GeometryCleanError`-t a `vrs_nesting/geometry/clean.py`-ból,
+        és csak ezt kapd el (továbbra is `DxfImportError("DXF_INVALID_RING", ...)`).
+      - SPLINE flattening: `except Exception` helyett célzott kivételek + ezdxf.DXFError,
+        a fallback logika (fit_points → control_points) maradjon.
+      Ügyelj rá, hogy a meglévő error code-ok és üzenetek lényegi részei stabilak maradjanak.
+    outputs:
+      - vrs_nesting/dxf/importer.py
+
+  - name: Unit tesztek – hibakezelés regresszió védelem
+    description: >
+      Hozz létre új tesztfájlt: `tests/test_dxf_importer_error_handling.py`.
+      Minimum tesztek:
+      1) Invalid ring JSON fixture (degenerált/összeomló pontlista) → `DxfImportError.code == "DXF_INVALID_RING"`.
+      2) Nem DXF tartalmú `.dxf` fájl (pl. sima text) → `DxfImportError.code == "DXF_READ_FAILED"`.
+      A tesztek ne túl-szűken a message-re asserteljenek, inkább a code-ra.
+      Ezek a tesztek automatikusan fussanak a meglévő `python3 -m pytest` gate-ben (külön doksi módosítás nem kell,
+      mert a gate már pytest-et futtat).
+    outputs:
+      - tests/test_dxf_importer_error_handling.py
+
+  - name: Codex checklist + report előkészítés
+    description: >
+      Hozd létre/frissítsd a feladathoz tartozó checklistet és reportot a repo konvenció szerint.
+      A report legyen a docs/codex/report_standard.md szerkezetével kompatibilis.
+    outputs:
+      - codex/codex_checklist/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.md
+      - codex/reports/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.md
+
+  - name: Repo gate (automatikus verify)
+    description: >
+      Futtasd a repo standard verifikációt:
+        ./scripts/verify.sh --report codex/reports/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.md
+      A verify log kerüljön mentésre, és a report AUTO_VERIFY blokkja frissüljön.
+    outputs:
+      - codex/reports/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.md
+      - codex/reports/egyedi_solver/p1_2_dxf_import_error_handling_narrow_exceptions.verify.log

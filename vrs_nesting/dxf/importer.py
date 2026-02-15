@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from vrs_nesting.geometry.clean import clean_ring
+from vrs_nesting.geometry.clean import GeometryCleanError, clean_ring
 from vrs_nesting.geometry.polygonize import arc_to_points
 
 
@@ -153,7 +153,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
 
     try:
         doc = ezdxf.readfile(path)
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, UnicodeDecodeError, ezdxf.DXFError) as exc:
         raise DxfImportError("DXF_READ_FAILED", f"could not read dxf: {path}: {exc}") from exc
 
     msp = doc.modelspace()
@@ -224,7 +224,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
         spline_points: list[list[float]] = []
         try:
             spline_points = [[float(v.x), float(v.y)] for v in entity_any.flattening(ARC_CHORD_ERROR_MM)]
-        except Exception:  # noqa: BLE001
+        except (AttributeError, TypeError, ValueError, ezdxf.DXFError):
             fit_points = list(getattr(entity_any, "fit_points", []) or [])
             if fit_points:
                 spline_points = [[float(v.x), float(v.y)] for v in fit_points]
@@ -306,7 +306,7 @@ def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -
             try:
                 ring = clean_ring(chain, min_edge_len=1e-6, ccw=True, where=f"{layer}.chain")
                 rings.append(ring)
-            except Exception as exc:  # noqa: BLE001
+            except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"failed to normalize chained contour on {layer}: {exc}") from exc
         else:
             open_paths.append(chain)
@@ -371,7 +371,7 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
             ring_points = path + [path[0]]
             try:
                 direct_rings.append(clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.closed"))
-            except Exception as exc:  # noqa: BLE001
+            except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"invalid closed contour at {where}: {exc}") from exc
             continue
 
@@ -379,7 +379,7 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
             ring_points = path + [path[0]]
             try:
                 direct_rings.append(clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.circle"))
-            except Exception as exc:  # noqa: BLE001
+            except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"invalid circle contour at {where}: {exc}") from exc
             continue
 
@@ -388,7 +388,7 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
             ring_points[-1] = list(ring_points[0])
             try:
                 direct_rings.append(clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.spline"))
-            except Exception as exc:  # noqa: BLE001
+            except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"invalid spline contour at {where}: {exc}") from exc
             continue
 
