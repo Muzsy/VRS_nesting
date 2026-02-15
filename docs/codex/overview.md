@@ -65,7 +65,7 @@ Szabályok:
 
 A standard minőségkapu ebben a repóban:
 
-* `./scripts/check.sh` – Sparrow build (ha kell) + IO smoketest futtatás + validator
+* `./scripts/check.sh` – pytest unit tests (fail-fast) + Sparrow build (ha kell) + IO smoketest futtatás + validator
 
 Codex futásnál kötelező a wrapper, ami logot ment és frissíti a reportot:
 

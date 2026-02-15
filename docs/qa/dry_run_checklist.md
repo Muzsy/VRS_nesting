@@ -81,6 +81,7 @@ Ebben a fájlban a DoD checklist mellett legyen benne ez a dry run rész is (vag
 
   * [ ] `./scripts/verify.sh --report codex/reports/[<AREA>/]<TASK_SLUG>.md`
   * [ ] (opcionális) `./scripts/check.sh`
+  * [ ] `./scripts/check.sh` részeként a `python3 -m pytest -q` is lefut (fail-fast)
 
 * [ ] A report útvonala rögzítve: `codex/reports/[<AREA>/]<TASK_SLUG>.md`
 * [ ] A log útvonala rögzítve: `codex/reports/[<AREA>/]<TASK_SLUG>.verify.log`

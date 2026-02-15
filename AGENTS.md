@@ -75,6 +75,7 @@ Részletek: `docs/codex/overview.md`
 ## Tooling elvárások
 
 * **Python 3** szükséges (`scripts/validate_sparrow_io.py`, `scripts/verify.sh` report frissítéshez).
+* **pytest** szükséges a `scripts/check.sh` elején futó unit tesztekhez (pl. `python3-pytest`).
 * **Git** szükséges (Sparrow forrás klónozás, diff/stat a verify reporthoz).
 * **Rust toolchain + cargo** szükséges (Sparrow buildhez, ha nincs előre telepített bináris).
 * **Shapely** ajánlott az overlap-check-hez; CI-ben telepítve van (`python3-shapely`).

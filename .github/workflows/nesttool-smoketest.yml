@@ -17,10 +17,14 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 git
+          sudo apt-get install -y python3 python3-pytest git
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Unit tests (pytest)
+        run: |
+          python3 -m pytest -q
 
       - name: Build VRS solver (release)
         run: |

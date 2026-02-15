@@ -2,7 +2,7 @@
 
 ## 🎯 Funkció
 
-Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput** (Sparrow build + IO smoketest + validator), a determinisztikus futtatási elveket, és azt, mit kell a Codexnek mindig lefuttatnia és dokumentálnia.
+Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput** (pytest unit tests + Sparrow build + IO smoketest + validator), a determinisztikus futtatási elveket, és azt, mit kell a Codexnek mindig lefuttatnia és dokumentálnia.
 
 ---
 
@@ -13,6 +13,8 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
 ### 1.1 Standard (lokál)
 
 * `./scripts/check.sh`
+  * futtatja a `python3 -m pytest -q` unit teszteket (fail-fast)
+  * utána futtatja a meglévő smoke + validator gate lépéseket
 
 ### 1.2 Codex/report (kötelező)
 
@@ -27,13 +29,26 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
 
 ## 2) Mi számít tesztnek ebben a repóban?
 
-A repó jelenlegi „tesztje” script-alapú:
+A repó jelenlegi tesztkészlete:
+
+* Pytest unit tesztek (`tests/`, `pytest.ini`)
 
 * Sparrow futtatás egy rögzített POC bemeneten (alapértelmezés: `poc/sparrow_io/swim.json`)
 * Output contract ellenőrzés: `scripts/validate_sparrow_io.py`
 * (ha elérhető) overlap-check shapely-vel
 
 A belépési pont: `scripts/run_sparrow_smoketest.sh`.
+
+### 2.1 Pytest tooling
+
+Lokál és CI környezetben a `check.sh` miatt szükséges:
+
+* `python3`
+* `python3-pytest` (apt csomag)
+
+Telepítés (Ubuntu/Debian):
+
+* `sudo apt-get update && sudo apt-get install -y python3-pytest`
 
 ---
 
@@ -67,6 +82,7 @@ Ha módosul a `scripts/validate_sparrow_io.py` vagy bármely POC minta:
 * Geometria algoritmus módosítás → legalább 1 új POC input a `poc/` alatt.
 * Parser / export változás → input + expected output struktúra frissítése, validator bővítés.
 * Több sheet / multi-run wrapper → legalább 1 „multi” POC minta.
+* Új teszt típus (pl. benchmark/integration) bevezetése → a standard gate (`scripts/check.sh`) és ez a dokumentáció együtt frissítendő.
 
 ---
 

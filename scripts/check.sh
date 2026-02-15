@@ -26,6 +26,13 @@ if [[ -z "$SPARROW_BIN" ]]; then
   need_cmd cargo
 fi
 
+echo "[PYTEST] Unit tests"
+if ! python3 -m pytest -q; then
+  echo "ERROR: pytest unit tests failed or pytest is not installed." >&2
+  echo "Install tip (Ubuntu/Debian): sudo apt-get install -y python3-pytest" >&2
+  exit 2
+fi
+
 chmod +x \
   scripts/run_sparrow_smoketest.sh \
   scripts/validate_sparrow_io.py \
