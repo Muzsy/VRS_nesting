@@ -1,0 +1,135 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_p0_pytest_unit_test_infra.yaml
+goal: >
+  Pytest unit teszt infrastruktúra bevezetése (pytest.ini + tests/),
+  integráció a standard gate-be (scripts/check.sh), CI workflow-kba,
+  és a kapcsolódó dokumentáció frissítése úgy, hogy a pytest a “szokásos végfuttatás”
+  része legyen, és jövőbeni tesztbővítéseknél a docs+gate együtt frissüljön.
+
+deadline: "n/a"
+
+outputs:
+  - canvases/egyedi_solver/p0_pytest_unit_test_infra.md
+  - pytest.ini
+  - tests/test_dxf_importer_json_fixture.py
+  - tests/test_project_model_validation.py
+  - tests/test_run_dir.py
+  - scripts/check.sh
+  - .github/workflows/nesttool-smoketest.yml
+  - .github/workflows/sparrow-smoketest.yml
+  - docs/qa/testing_guidelines.md
+  - docs/qa/dry_run_checklist.md
+  - docs/codex/overview.md
+  - AGENTS.md
+  - codex/codex_checklist/egyedi_solver/p0_pytest_unit_test_infra.md
+  - codex/reports/egyedi_solver/p0_pytest_unit_test_infra.md
+  - codex/reports/egyedi_solver/p0_pytest_unit_test_infra.verify.log
+
+steps:
+  - name: Repo feltérképezés (pytest nélküli jelen állapot igazolása)
+    description: >
+      Igazold a valós repó alapján, hogy nincs unit teszt infrastruktúra:
+      - nincs tests/ könyvtár,
+      - nincs pytest.ini,
+      - find alapján nincs test_*.py.
+      Jegyezd meg a gate-et: scripts/check.sh és scripts/verify.sh működését.
+    outputs: []
+
+  - name: Canvas létrehozása
+    description: >
+      Hozd létre a canvases/egyedi_solver/p0_pytest_unit_test_infra.md fájlt
+      a specifikáció szerint (emoji-s szekciók: 🎯 🧠 🧪 🌍 📎).
+    outputs:
+      - canvases/egyedi_solver/p0_pytest_unit_test_infra.md
+
+  - name: Pytest scaffold (pytest.ini + tests/ + 3 unit teszt)
+    description: >
+      1) Adj a repo rootba pytest.ini-t (testpaths=tests).
+      2) Hozd létre a tests/ alá a 3 unit tesztet:
+         - test_dxf_importer_json_fixture.py:
+           * tmp_path alá írj JSON fixture-t { "entities": [...] } formában.
+           * import_part_raw() PASS outer+inner esetben.
+           * nyitott outer esetben DXF_OPEN_OUTER_PATH hibakód.
+           * outer hiány esetben DXF_NO_OUTER_LAYER hibakód.
+         - test_project_model_validation.py:
+           * parse_project() normalizálja allowed_rotations_deg-t (pl. 360->0, dupe kiszűrés).
+           * invalid rotáció (pl. 45) dobjon ProjectValidationError-t E_SCHEMA_RANGE kóddal.
+         - test_run_dir.py:
+           * create_run_dir(run_root=tmp_path/...) létrehoz run_dir/out + run.log-ot.
+           * write_project_snapshot létrehoz project.json-t.
+           * append_run_log ténylegesen appendel.
+      Fontos: ne importálj shapely-függő modulokat, ne igényelj ezdxf-et.
+    outputs:
+      - pytest.ini
+      - tests/test_dxf_importer_json_fixture.py
+      - tests/test_project_model_validation.py
+      - tests/test_run_dir.py
+
+  - name: Gate integráció (scripts/check.sh)
+    description: >
+      A scripts/check.sh elejére (fail-fast módon) illeszd be a pytest futtatást:
+      - echo blokk: [PYTEST] Unit tests
+      - futtatás: python3 -m pytest -q
+      - ha pytest hiányzik, a hiba legyen egyértelmű és adjon install tippet:
+        sudo apt-get install -y python3-pytest
+      A meglévő gate lépések sorrendje maradhat, csak a pytest kerüljön a legelejére.
+    outputs:
+      - scripts/check.sh
+
+  - name: CI integráció (workflow-k bővítése)
+    description: >
+      Mindkét workflow-ban add hozzá a pytest telepítést és futtatást:
+      - .github/workflows/nesttool-smoketest.yml:
+        * System deps: python3-pytest telepítése (apt)
+        * új step: python3 -m pytest -q (lehetőleg korán, hogy gyorsan bukjon)
+      - .github/workflows/sparrow-smoketest.yml:
+        * System deps: python3-pytest telepítése (apt) a python3/python3-shapely mellé
+        * új step: python3 -m pytest -q (Sparrow build előtt is mehet)
+      Figyelj rá, hogy a tesztek ne igényeljenek extra csomagokat.
+    outputs:
+      - .github/workflows/nesttool-smoketest.yml
+      - .github/workflows/sparrow-smoketest.yml
+
+  - name: Dokumentáció frissítés (általános tesztfuttatások)
+    description: >
+      Frissítsd a doksikat úgy, hogy a pytest a standard futtatás része legyen:
+      - docs/qa/testing_guidelines.md:
+        * add hozzá, hogy a standard gate (check.sh) futtat pytest-et is,
+        * add telepítési útmutatót (apt: python3-pytest),
+        * rögzítsd a szabályt: ha új teszt típust vezetünk be, azt a check.sh + docs-ban is frissíteni kell.
+      - docs/qa/dry_run_checklist.md:
+        * tegyél be explicit pontot, hogy a gate részeként pytest is lefut.
+      - docs/codex/overview.md:
+        * a standard gate leírásába kerüljön bele a pytest.
+      - AGENTS.md:
+        * Tooling elvárások között szerepeljen: pytest szükséges a check.sh-hoz.
+    outputs:
+      - docs/qa/testing_guidelines.md
+      - docs/qa/dry_run_checklist.md
+      - docs/codex/overview.md
+      - AGENTS.md
+
+  - name: Codex checklist + report scaffold
+    description: >
+      Hozd létre:
+      - codex/codex_checklist/egyedi_solver/p0_pytest_unit_test_infra.md
+        * pipálható DoD pontok a canvas alapján (pytest, check.sh, CI, docs, verify).
+      - codex/reports/egyedi_solver/p0_pytest_unit_test_infra.md
+        * docs/codex/report_standard.md szerkezet szerint,
+        * tartalmazza az AUTO_VERIFY_START/END markerpárt (kezdetben üres blokk is ok).
+    outputs:
+      - codex/codex_checklist/egyedi_solver/p0_pytest_unit_test_infra.md
+      - codex/reports/egyedi_solver/p0_pytest_unit_test_infra.md
+
+  - name: Repo gate (automatikus verify + report finalizálás)
+    description: >
+      Futtasd a kötelező gate-et:
+        ./scripts/verify.sh --report codex/reports/egyedi_solver/p0_pytest_unit_test_infra.md
+      Elvárás: PASS.
+      A reportban legyen:
+      - helyes státusz (PASS / FAIL),
+      - “How tested” rész: pytest + check.sh + CI változás megemlítése,
+      - DoD -> Evidence Matrix kitöltve (konkrét fájlokkal).
+      A verify log automatikusan jön létre és outputként szerepel.
+    outputs:
+      - codex/reports/egyedi_solver/p0_pytest_unit_test_infra.md
+      - codex/reports/egyedi_solver/p0_pytest_unit_test_infra.verify.log
