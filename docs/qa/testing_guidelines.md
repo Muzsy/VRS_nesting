@@ -14,7 +14,18 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
 
 * `./scripts/check.sh`
   * futtatja a `python3 -m pytest -q` unit teszteket (fail-fast)
-  * utána futtatja a meglévő smoke + validator gate lépéseket
+  * Sparrow pin + build (ha nincs előre megadott bináris)
+  * Sparrow IO smoketest + IO validator
+  * DXF import convention smoke
+  * geometry/polygonize/offset robustness smoke
+  * DXF export smoke (`--run-dir`)
+  * BLOCK/INSERT eredeti geometria export smoke
+  * multisheet wrapper edge-case smoke
+  * valós DXF fixture import smoke
+  * valós DXF + Sparrow pipeline smoke
+  * `vrs_solver` build + nesting solution validator smoke
+  * determinisztika hash-stabilitás smoke
+  * timeout/perf guard smoke
 
 ### 1.2 Codex/report (kötelező)
 
@@ -35,6 +46,9 @@ A repó jelenlegi tesztkészlete:
 
 * Sparrow futtatás egy rögzített POC bemeneten (alapértelmezés: `poc/sparrow_io/swim.json`)
 * Output contract ellenőrzés: `scripts/validate_sparrow_io.py`
+* DXF import/export smoke suite + valós DXF fixture smoke
+* Multisheet wrapper edge-case smoke
+* `vrs_solver` validator + determinisztika + time-budget guard smoke
 * (ha elérhető) overlap-check shapely-vel
 
 A belépési pont: `scripts/run_sparrow_smoketest.sh`.
@@ -45,10 +59,15 @@ Lokál és CI környezetben a `check.sh` miatt szükséges:
 
 * `python3`
 * `python3-pytest` (apt csomag)
+* `python3-shapely` (overlap-check smoke-hoz)
+* `git` (Sparrow clone/pin lépésekhez)
+* `cargo` / Rust toolchain (Sparrow build, illetve `vrs_solver` build)
+* `ezdxf` (különösen a valós DXF smoke-okhoz)
 
 Telepítés (Ubuntu/Debian):
 
-* `sudo apt-get update && sudo apt-get install -y python3-pytest`
+* `sudo apt-get update && sudo apt-get install -y python3 python3-pytest python3-pip python3-shapely git`
+* `python3 -m pip install --break-system-packages ezdxf`
 
 ---
 

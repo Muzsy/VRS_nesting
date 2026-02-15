@@ -1,0 +1,40 @@
+name: repo-gate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  repo_gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pytest python3-pip python3-shapely git
+
+      - name: Install ezdxf
+        run: |
+          python3 -m pip install --break-system-packages ezdxf
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run repo gate
+        run: |
+          ./scripts/check.sh
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-gate-artifacts
+          path: |
+            runs/**
+            .cache/sparrow/**

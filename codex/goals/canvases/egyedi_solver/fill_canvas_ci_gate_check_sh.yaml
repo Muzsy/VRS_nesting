@@ -1,0 +1,78 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_ci_gate_check_sh.yaml
+
+goal: >
+  CI gate: scripts/check.sh futtatása + docs szinkron a bővített smoke suite-tal.
+  Cél: lokál/Codex verify/CI ugyanazt a gate-et használja, és az új smoke-ok (valódi DXF, BLOCK/INSERT export, multisheet edge-case, stb.)
+  bekerülnek az “általános tesztfuttatás” dokumentációba is.
+
+deadline: "n/a"
+
+outputs:
+  - canvases/egyedi_solver/ci_gate_check_sh.md
+  - docs/qa/testing_guidelines.md
+  - docs/codex/overview.md
+  - .github/workflows/repo-gate.yml
+  - codex/codex_checklist/egyedi_solver/ci_gate_check_sh.md
+  - codex/reports/egyedi_solver/ci_gate_check_sh.md
+  - codex/reports/egyedi_solver/ci_gate_check_sh.verify.log
+
+steps:
+  - name: Canvas véglegesítés (DoD pontosítás)
+    description: >
+      Ellenőrizd, hogy a canvas DoD-ja konkrétan tartalmazza:
+      - docs szinkron (testing_guidelines + codex overview)
+      - új CI workflow, ami ./scripts/check.sh-t futtat
+      - verify.sh futtatás és report evidence kitöltés.
+    outputs:
+      - canvases/egyedi_solver/ci_gate_check_sh.md
+
+  - name: QA doksi frissítés (testing_guidelines)
+    description: >
+      Frissítsd a docs/qa/testing_guidelines.md fájlt úgy, hogy az “általános tesztfuttatás / szokásos végfuttatás”
+      része explicit a ./scripts/check.sh legyen, és sorolja fel a check.sh fő komponenseit:
+      - pytest
+      - Sparrow build + IO smoketest/validator
+      - DXF import/geometry/export smoke-ok
+      - BLOCK/INSERT eredeti geometria export smoke
+      - multisheet edge-case smoke
+      - valós DXF fixture + valós DXF Sparrow pipeline smoke
+      - vrs_solver build + determinisztika + time budget guard
+      Emellett dokumentáld a szükséges függőségeket (külön kiemelve: ezdxf), és adj rövid telepítési tippet.
+    outputs:
+      - docs/qa/testing_guidelines.md
+
+  - name: Codex workflow doksi szinkron (overview)
+    description: >
+      Frissítsd a docs/codex/overview.md “quality gate / scripts/check.sh” részét,
+      hogy összhangban legyen a scripts/check.sh aktuális, bővített smoke suite-jával.
+      Ne találgass: a check.sh valódi lépéseit tükrözze.
+    outputs:
+      - docs/codex/overview.md
+
+  - name: CI gate workflow hozzáadása (repo-gate.yml)
+    description: >
+      Hozz létre egy új GitHub Actions workflow-t: .github/workflows/repo-gate.yml
+      Követelmények:
+      - trigger: push, pull_request, workflow_dispatch
+      - ubuntu-latest, timeout emelve (pl. 25 perc)
+      - telepítsd: python3, python3-pytest, python3-pip, python3-shapely, git
+      - pip install: ezdxf (mert a valós DXF smoke-ok ezt igénylik)
+      - rust toolchain stable
+      - futtasd: ./scripts/check.sh
+      - failure esetén upload-artifact: runs/** és .cache/sparrow/**
+      Fontos: maradhat a két meglévő workflow; ez egy “össz-gate”.
+    outputs:
+      - .github/workflows/repo-gate.yml
+
+  - name: Checklist + report + verifikáció (verify.sh)
+    description: >
+      Készítsd el/frissítsd:
+      - codex/codex_checklist/egyedi_solver/ci_gate_check_sh.md
+      - codex/reports/egyedi_solver/ci_gate_check_sh.md
+      Majd futtasd:
+      - ./scripts/verify.sh --report codex/reports/egyedi_solver/ci_gate_check_sh.md
+      A reportban legyen DoD -> Evidence (file+line), és a verify log generálódjon.
+    outputs:
+      - codex/codex_checklist/egyedi_solver/ci_gate_check_sh.md
+      - codex/reports/egyedi_solver/ci_gate_check_sh.md
+      - codex/reports/egyedi_solver/ci_gate_check_sh.verify.log
