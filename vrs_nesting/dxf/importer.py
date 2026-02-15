@@ -147,7 +147,7 @@ def _extract_entities_from_json(path: Path) -> list[dict[str, Any]]:
 
 def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
     try:
-        import ezdxf  # type: ignore
+        import ezdxf
     except ImportError as exc:
         raise DxfImportError("DXF_BACKEND_MISSING", "ezdxf not installed; use JSON fixture backend or install ezdxf") from exc
 
@@ -159,8 +159,9 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
     msp = doc.modelspace()
     out: list[dict[str, Any]] = []
     for idx, entity in enumerate(msp):
-        etype = entity.dxftype().upper()
-        layer = str(entity.dxf.layer)
+        entity_any: Any = entity
+        etype = entity_any.dxftype().upper()
+        layer = str(entity_any.dxf.layer)
         where = f"modelspace[{idx}]"
 
         if etype not in SUPPORTED_LAYER_ENTITY_TYPES:
@@ -168,18 +169,27 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
             continue
 
         if etype == "LWPOLYLINE":
-            points = [[float(x), float(y)] for x, y, *_ in entity.get_points("xy")]
-            out.append({"layer": layer, "type": etype, "closed": bool(entity.closed), "points": _normalize_points(points, f"{where}.points")})
+            lw_points = [[float(x), float(y)] for x, y, *_ in entity_any.get_points("xy")]
+            out.append(
+                {"layer": layer, "type": etype, "closed": bool(entity_any.closed), "points": _normalize_points(lw_points, f"{where}.points")}
+            )
             continue
 
         if etype == "POLYLINE":
-            points = [[float(v.dxf.location.x), float(v.dxf.location.y)] for v in entity.vertices]
-            out.append({"layer": layer, "type": etype, "closed": bool(entity.is_closed), "points": _normalize_points(points, f"{where}.points")})
+            poly_points = [[float(v.dxf.location.x), float(v.dxf.location.y)] for v in entity_any.vertices]
+            out.append(
+                {"layer": layer, "type": etype, "closed": bool(entity_any.is_closed), "points": _normalize_points(poly_points, f"{where}.points")}
+            )
             continue
 
         if etype == "LINE":
-            points = [[float(entity.dxf.start.x), float(entity.dxf.start.y)], [float(entity.dxf.end.x), float(entity.dxf.end.y)]]
-            out.append({"layer": layer, "type": etype, "closed": False, "points": _normalize_points(points, f"{where}.points", min_points=2)})
+            line_points = [
+                [float(entity_any.dxf.start.x), float(entity_any.dxf.start.y)],
+                [float(entity_any.dxf.end.x), float(entity_any.dxf.end.y)],
+            ]
+            out.append(
+                {"layer": layer, "type": etype, "closed": False, "points": _normalize_points(line_points, f"{where}.points", min_points=2)}
+            )
             continue
 
         if etype == "ARC":
@@ -188,10 +198,10 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                     "layer": layer,
                     "type": etype,
                     "closed": False,
-                    "center": [float(entity.dxf.center.x), float(entity.dxf.center.y)],
-                    "radius": float(entity.dxf.radius),
-                    "start_angle": float(entity.dxf.start_angle),
-                    "end_angle": float(entity.dxf.end_angle),
+                    "center": [float(entity_any.dxf.center.x), float(entity_any.dxf.center.y)],
+                    "radius": float(entity_any.dxf.radius),
+                    "start_angle": float(entity_any.dxf.start_angle),
+                    "end_angle": float(entity_any.dxf.end_angle),
                 }
             )
             continue
@@ -202,8 +212,8 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                     "layer": layer,
                     "type": etype,
                     "closed": True,
-                    "center": [float(entity.dxf.center.x), float(entity.dxf.center.y)],
-                    "radius": float(entity.dxf.radius),
+                    "center": [float(entity_any.dxf.center.x), float(entity_any.dxf.center.y)],
+                    "radius": float(entity_any.dxf.radius),
                     "start_angle": 0.0,
                     "end_angle": 360.0,
                 }
@@ -211,23 +221,23 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
             continue
 
         # SPLINE
-        points: list[list[float]] = []
+        spline_points: list[list[float]] = []
         try:
-            points = [[float(v.x), float(v.y)] for v in entity.flattening(ARC_CHORD_ERROR_MM)]
+            spline_points = [[float(v.x), float(v.y)] for v in entity_any.flattening(ARC_CHORD_ERROR_MM)]
         except Exception:  # noqa: BLE001
-            fit_points = list(getattr(entity, "fit_points", []) or [])
+            fit_points = list(getattr(entity_any, "fit_points", []) or [])
             if fit_points:
-                points = [[float(v.x), float(v.y)] for v in fit_points]
+                spline_points = [[float(v.x), float(v.y)] for v in fit_points]
             else:
-                control_points = list(getattr(entity, "control_points", []) or [])
-                points = [[float(v.x), float(v.y)] for v in control_points]
+                control_points = list(getattr(entity_any, "control_points", []) or [])
+                spline_points = [[float(v.x), float(v.y)] for v in control_points]
 
         out.append(
             {
                 "layer": layer,
                 "type": etype,
-                "closed": bool(getattr(entity, "closed", False)),
-                "points": _normalize_points(points, f"{where}.points", min_points=2),
+                "closed": bool(getattr(entity_any, "closed", False)),
+                "points": _normalize_points(spline_points, f"{where}.points", min_points=2),
             }
         )
 

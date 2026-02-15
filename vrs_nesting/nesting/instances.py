@@ -341,9 +341,9 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
         seen_counts[part_id] += 1
 
         if reason == "PART_NEVER_FITS_STOCK":
-            bw, bh, allowed_rot = part_dims.get(part_id, (None, None, None))
-            if bw is None:
+            if part_id not in part_dims:
                 raise ValueError(f"unknown part in unplaced: {part_id}")
+            bw, bh, allowed_rot = part_dims[part_id]
             fits_any = False
             for sheet in sheet_shapes.values():
                 for rot in allowed_rot:

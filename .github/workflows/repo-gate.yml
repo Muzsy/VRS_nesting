@@ -21,7 +21,7 @@ jobs:
 
       - name: Install ezdxf
         run: |
-          python3 -m pip install --break-system-packages ezdxf
+          python3 -m pip install --break-system-packages ezdxf mypy
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable

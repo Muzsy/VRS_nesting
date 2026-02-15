@@ -28,6 +28,8 @@ def polygonize_part_raw(
 ) -> dict[str, Any]:
     outer_raw = payload.get("outer_points_mm")
     holes_raw = payload.get("holes_points_mm", [])
+    if outer_raw is None:
+        raise ValueError("part.outer_points_mm is required")
 
     outer = clean_ring(outer_raw, min_edge_len=min_edge_len, ccw=True, where="part.outer_points_mm")
     holes = _clean_holes(holes_raw, min_edge_len=min_edge_len, where="part.holes_points_mm")
@@ -45,6 +47,8 @@ def polygonize_stock_raw(
 ) -> dict[str, Any]:
     outer_raw = payload.get("outer_points_mm")
     holes_raw = payload.get("holes_points_mm", [])
+    if outer_raw is None:
+        raise ValueError("stock.outer_points_mm is required")
 
     outer = clean_ring(outer_raw, min_edge_len=min_edge_len, ccw=True, where="stock.outer_points_mm")
     holes = _clean_holes(holes_raw, min_edge_len=min_edge_len, where="stock.holes_points_mm")

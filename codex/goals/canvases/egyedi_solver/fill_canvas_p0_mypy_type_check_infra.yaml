@@ -1,0 +1,140 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_p0_mypy_type_check_infra.yaml
+goal: >
+  Mypy type-check bevezetése (mypy.ini + vrs_nesting scope), integráció a standard gate-be
+  (scripts/check.sh) és a CI gate-be (.github/workflows/repo-gate.yml), valamint a kapcsolódó
+  dokumentáció frissítése. Elvárás: mypy baseline PASS, minimális kódjavításokkal.
+
+deadline: "n/a"
+
+outputs:
+  - canvases/egyedi_solver/p0_mypy_type_check_infra.md
+  - mypy.ini
+  - scripts/check.sh
+  - .github/workflows/repo-gate.yml
+  - vrs_nesting/nesting/instances.py
+  - vrs_nesting/geometry/polygonize.py
+  - vrs_nesting/dxf/importer.py
+  - vrs_nesting/dxf/exporter.py
+  - vrs_nesting/runner/sparrow_runner.py
+  - docs/qa/testing_guidelines.md
+  - docs/qa/dry_run_checklist.md
+  - docs/codex/overview.md
+  - AGENTS.md
+  - codex/codex_checklist/egyedi_solver/p0_mypy_type_check_infra.md
+  - codex/reports/egyedi_solver/p0_mypy_type_check_infra.md
+  - codex/reports/egyedi_solver/p0_mypy_type_check_infra.verify.log
+
+steps:
+  - name: Repo feltérképezés (mypy jelenlegi hiánya + gate pontok)
+    description: >
+      Igazold a valós repó alapján:
+      - nincs mypy.ini / pyproject mypy config,
+      - scripts/check.sh a standard gate (verify.sh wrapper),
+      - repo-gate workflow check.sh-t futtat.
+      Rögzítsd, hol kell integrálni a mypy-t (check.sh + repo-gate + docs).
+    outputs: []
+
+  - name: Canvas létrehozása
+    description: >
+      Hozd létre a canvases/egyedi_solver/p0_mypy_type_check_infra.md fájlt
+      a repo konvenció szerint (🎯 🧠 🧪 🌍 📎).
+    outputs:
+      - canvases/egyedi_solver/p0_mypy_type_check_infra.md
+
+  - name: mypy.ini hozzáadása (scoped baseline)
+    description: >
+      Hozz létre mypy.ini-t a repo rootban.
+      Követelmények:
+      - files = vrs_nesting
+      - check_untyped_defs = True, no_implicit_optional = True
+      - warn_unused_ignores / warn_redundant_casts / warn_return_any
+      - per-module ignore a third-party/optional modulokra:
+        [mypy-ezdxf.*] ignore_missing_imports = True
+        [mypy-shapely.*] ignore_missing_imports = True
+      (A per-module ignore mintát mypy támogatja.)  # megjegyzés: csak a configban, ne idézz doksit
+    outputs:
+      - mypy.ini
+
+  - name: Minimális kódjavítások a mypy baseline PASS-hoz
+    description: >
+      Futtasd le: python3 -m mypy --config-file mypy.ini vrs_nesting
+      és javítsd a mypy által jelzett valós hibákat minimálisan:
+      - vrs_nesting/nesting/instances.py:
+        * a PART_NEVER_FITS_STOCK ágban ne part_dims.get(... None) legyen,
+          hanem if part_id not in part_dims: raise, majd part_dims[part_id].
+      - vrs_nesting/geometry/polygonize.py:
+        * outer_points_mm kötelező: ha None -> ValueError (type narrowing + logikai korrektség).
+      - vrs_nesting/dxf/importer.py:
+        * a points többszöri definícióját oldd fel (külön változónevek: lw_points / poly_points / line_points / spline_points),
+        * az import ezdxf soron lévő felesleges # type: ignore törlése.
+      - vrs_nesting/dxf/exporter.py:
+        * az import ezdxf soron lévő felesleges # type: ignore törlése.
+      - vrs_nesting/runner/sparrow_runner.py:
+        * _read_json() garantáltan dict[str, Any]-t adjon vissza (runtime check + typing.cast).
+    outputs:
+      - vrs_nesting/nesting/instances.py
+      - vrs_nesting/geometry/polygonize.py
+      - vrs_nesting/dxf/importer.py
+      - vrs_nesting/dxf/exporter.py
+      - vrs_nesting/runner/sparrow_runner.py
+
+  - name: Gate integráció (scripts/check.sh)
+    description: >
+      A scripts/check.sh elejére (pytest után, Sparrow build előtt) tedd be:
+      - echo: [MYPY] Type check
+      - futtatás: python3 -m mypy --config-file mypy.ini vrs_nesting
+      - hiba esetén: egyértelmű üzenet + telepítési tipp:
+        python3 -m pip install --break-system-packages mypy
+      Elvárás: fail-fast, és a meglévő lépések nem sérülhetnek.
+    outputs:
+      - scripts/check.sh
+
+  - name: CI gate integráció (repo-gate workflow)
+    description: >
+      A .github/workflows/repo-gate.yml-ben gondoskodj róla, hogy mypy telepítve legyen,
+      mivel a check.sh mostantól futtatja:
+      - pip install --break-system-packages ezdxf mypy
+      (pip upgrade opcionális, de oké)
+    outputs:
+      - .github/workflows/repo-gate.yml
+
+  - name: Dokumentáció frissítés (mypy a standard futtatás része)
+    description: >
+      Frissítsd:
+      - docs/qa/testing_guidelines.md:
+        * a standard gate (check.sh) része a mypy is,
+        * telepítési tipp (pip),
+        * szabály: ha új quality gate lépés kerül be (pytest/mypy), akkor check.sh + docs együtt frissítendő.
+      - docs/qa/dry_run_checklist.md:
+        * a “Teszt és minőségkapu” részben jelenjen meg, hogy check.sh részeként mypy is lefut.
+      - docs/codex/overview.md:
+        * a standard gate leírásba kerüljön be a mypy.
+      - AGENTS.md:
+        * Tooling elvárások között szerepeljen: mypy szükséges a check.sh-hoz.
+    outputs:
+      - docs/qa/testing_guidelines.md
+      - docs/qa/dry_run_checklist.md
+      - docs/codex/overview.md
+      - AGENTS.md
+
+  - name: Codex checklist + report scaffold
+    description: >
+      Hozd létre:
+      - codex/codex_checklist/egyedi_solver/p0_mypy_type_check_infra.md
+        * pipálható DoD (mypy.ini, mypy PASS, check.sh, repo-gate, docs, verify).
+      - codex/reports/egyedi_solver/p0_mypy_type_check_infra.md
+        * report_standard szerkezet, AUTO_VERIFY_START/END markerrel.
+    outputs:
+      - codex/codex_checklist/egyedi_solver/p0_mypy_type_check_infra.md
+      - codex/reports/egyedi_solver/p0_mypy_type_check_infra.md
+
+  - name: Repo gate (automatikus verify + report finalizálás)
+    description: >
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/egyedi_solver/p0_mypy_type_check_infra.md
+      Elvárás: PASS.
+      A reportban legyen How tested + Evidence Matrix (konkrét fájlokkal).
+      A verify log automatikusan jön létre és outputként szerepel.
+    outputs:
+      - codex/reports/egyedi_solver/p0_mypy_type_check_infra.md
+      - codex/reports/egyedi_solver/p0_mypy_type_check_infra.verify.log

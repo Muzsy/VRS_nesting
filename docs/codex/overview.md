@@ -65,7 +65,7 @@ Szabályok:
 
 A standard minőségkapu ebben a repóban:
 
-* `./scripts/check.sh` – pytest unit tests (fail-fast) + Sparrow build/pin (ha kell) + IO smoketest/validator + DXF smoke suite (import/geometry/export/BLOCK-INSERT/multisheet/valós DXF pipeline) + `vrs_solver` validator + determinisztika + timeout/perf guard
+* `./scripts/check.sh` – pytest unit tests (fail-fast) + mypy type-check (fail-fast) + Sparrow build/pin (ha kell) + IO smoketest/validator + DXF smoke suite (import/geometry/export/BLOCK-INSERT/multisheet/valós DXF pipeline) + `vrs_solver` validator + determinisztika + timeout/perf guard
 
 Codex futásnál kötelező a wrapper, ami logot ment és frissíti a reportot:
 

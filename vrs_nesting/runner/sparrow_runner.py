@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 
 
 class SparrowRunnerError(RuntimeError):
@@ -59,9 +59,12 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _read_json(path: Path) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
         raise SparrowOutputParseError(f"JSON parse hiba: {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SparrowOutputParseError(f"Top-level JSON object required: {path}")
+    return cast(dict[str, Any], payload)
 
 
 def resolve_sparrow_bin(explicit_bin: str | None = None) -> str:

@@ -410,7 +410,7 @@ def _entity_points(entity: dict[str, Any], *, where: str) -> list[tuple[float, f
 
 def _require_ezdxf() -> Any:
     try:
-        import ezdxf  # type: ignore
+        import ezdxf
     except ImportError as exc:
         raise DxfExportError("source geometry export requires 'ezdxf' dependency") from exc
     return ezdxf

@@ -33,6 +33,13 @@ if ! python3 -m pytest -q; then
   exit 2
 fi
 
+echo "[MYPY] Type check"
+if ! python3 -m mypy --config-file mypy.ini vrs_nesting; then
+  echo "ERROR: mypy type check failed or mypy is not installed." >&2
+  echo "Install tip: python3 -m pip install --break-system-packages mypy" >&2
+  exit 2
+fi
+
 chmod +x \
   scripts/run_sparrow_smoketest.sh \
   scripts/validate_sparrow_io.py \

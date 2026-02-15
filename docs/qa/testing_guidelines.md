@@ -2,7 +2,7 @@
 
 ## 🎯 Funkció
 
-Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput** (pytest unit tests + Sparrow build + IO smoketest + validator), a determinisztikus futtatási elveket, és azt, mit kell a Codexnek mindig lefuttatnia és dokumentálnia.
+Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput** (pytest + mypy + Sparrow build + IO smoketest + validator), a determinisztikus futtatási elveket, és azt, mit kell a Codexnek mindig lefuttatnia és dokumentálnia.
 
 ---
 
@@ -14,6 +14,7 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
 
 * `./scripts/check.sh`
   * futtatja a `python3 -m pytest -q` unit teszteket (fail-fast)
+  * futtatja a `python3 -m mypy --config-file mypy.ini vrs_nesting` type-checket (fail-fast)
   * Sparrow pin + build (ha nincs előre megadott bináris)
   * Sparrow IO smoketest + IO validator
   * DXF import convention smoke
@@ -43,6 +44,7 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
 A repó jelenlegi tesztkészlete:
 
 * Pytest unit tesztek (`tests/`, `pytest.ini`)
+* Mypy type-check (`mypy.ini`, scope: `vrs_nesting/`)
 
 * Sparrow futtatás egy rögzített POC bemeneten (alapértelmezés: `poc/sparrow_io/swim.json`)
 * Output contract ellenőrzés: `scripts/validate_sparrow_io.py`
@@ -53,12 +55,13 @@ A repó jelenlegi tesztkészlete:
 
 A belépési pont: `scripts/run_sparrow_smoketest.sh`.
 
-### 2.1 Pytest tooling
+### 2.1 Pytest + mypy tooling
 
 Lokál és CI környezetben a `check.sh` miatt szükséges:
 
 * `python3`
 * `python3-pytest` (apt csomag)
+* `mypy` (pip csomag)
 * `python3-shapely` (overlap-check smoke-hoz)
 * `git` (Sparrow clone/pin lépésekhez)
 * `cargo` / Rust toolchain (Sparrow build, illetve `vrs_solver` build)
@@ -67,7 +70,7 @@ Lokál és CI környezetben a `check.sh` miatt szükséges:
 Telepítés (Ubuntu/Debian):
 
 * `sudo apt-get update && sudo apt-get install -y python3 python3-pytest python3-pip python3-shapely git`
-* `python3 -m pip install --break-system-packages ezdxf`
+* `python3 -m pip install --break-system-packages ezdxf mypy`
 
 ---
 
@@ -101,7 +104,7 @@ Ha módosul a `scripts/validate_sparrow_io.py` vagy bármely POC minta:
 * Geometria algoritmus módosítás → legalább 1 új POC input a `poc/` alatt.
 * Parser / export változás → input + expected output struktúra frissítése, validator bővítés.
 * Több sheet / multi-run wrapper → legalább 1 „multi” POC minta.
-* Új teszt típus (pl. benchmark/integration) bevezetése → a standard gate (`scripts/check.sh`) és ez a dokumentáció együtt frissítendő.
+* Új quality gate lépés (pl. pytest/mypy vagy más kötelező check) bevezetése → a standard gate (`scripts/check.sh`) és ez a dokumentáció együtt frissítendő.
 
 ---
 
