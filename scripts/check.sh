@@ -20,11 +20,6 @@ need_cmd() {
 }
 
 need_cmd python3
-need_cmd git
-
-if [[ -z "$SPARROW_BIN" ]]; then
-  need_cmd cargo
-fi
 
 echo "[PYTEST] Unit tests"
 if ! python3 -m pytest -q; then
@@ -41,6 +36,7 @@ if ! python3 -m mypy --config-file mypy.ini vrs_nesting; then
 fi
 
 chmod +x \
+  scripts/ensure_sparrow.sh \
   scripts/run_sparrow_smoketest.sh \
   scripts/validate_sparrow_io.py \
   scripts/smoke_export_run_dir_out.py \
@@ -50,42 +46,10 @@ chmod +x \
   scripts/run_real_dxf_sparrow_pipeline.py \
   scripts/smoke_real_dxf_sparrow_pipeline.py || true
 
-# --- Sparrow build (ha nincs előre megadott bináris) ---
+# --- Sparrow binary resolve/build ---
 if [[ -z "$SPARROW_BIN" ]]; then
-  CACHE_DIR=".cache/sparrow"
-  mkdir -p .cache
-
-  if [[ ! -d "$CACHE_DIR/.git" ]]; then
-    rm -rf "$CACHE_DIR"
-    echo "[1/3] Prepare Sparrow source (clone)"
-    git clone https://github.com/JeroenGar/sparrow.git "$CACHE_DIR"
-  fi
-
-  # Optional pin
-  if [[ -f "poc/sparrow_io/sparrow_commit.txt" ]]; then
-    COMMIT="$(tr -d '\n\r' < poc/sparrow_io/sparrow_commit.txt)"
-    if [[ -n "$COMMIT" ]]; then
-      echo "[1/3] Sparrow pin: $COMMIT"
-      (
-        cd "$CACHE_DIR"
-        if git rev-parse --verify "${COMMIT}^{commit}" >/dev/null 2>&1; then
-          git checkout "$COMMIT"
-        else
-          echo "[1/3] Pinned commit nincs lokálisan, fetch szükséges."
-          if git fetch --all --tags --prune; then
-            git checkout "$COMMIT"
-          else
-            echo "ERROR: Nem sikerült fetch-elni és a pinned commit nem elérhető lokálisan: $COMMIT" >&2
-            exit 2
-          fi
-        fi
-      )
-    fi
-  fi
-
-  echo "[2/3] Build Sparrow (release)"
-  ( cd "$CACHE_DIR" && cargo build --release )
-  SPARROW_BIN="$ROOT_DIR/.cache/sparrow/target/release/sparrow"
+  echo "[SPARROW] Resolve/build via scripts/ensure_sparrow.sh"
+  SPARROW_BIN="$(./scripts/ensure_sparrow.sh)"
 fi
 
 if [[ ! -x "$SPARROW_BIN" ]]; then

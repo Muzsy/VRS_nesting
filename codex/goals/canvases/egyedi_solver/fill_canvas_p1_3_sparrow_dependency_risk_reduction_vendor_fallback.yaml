@@ -1,0 +1,95 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_p1_3_sparrow_dependency_risk_reduction_vendor_fallback.yaml
+
+goal: >
+  Csökkentsük a Sparrow külső dependency kockázatát: preferált vendor/submodule út (vendor/sparrow),
+  és fallback a jelenlegi .cache clone+pin+build logikára. A logikát központosítsuk egy scripts/ensure_sparrow.sh
+  resolver scriptbe, és kössük be a check.sh + CI workflow-k alá. Dokumentációt szinkronizáljuk.
+deadline: n/a
+outputs:
+  - canvases/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.md
+  - scripts/ensure_sparrow.sh
+  - scripts/check.sh
+  - .github/workflows/repo-gate.yml
+  - .github/workflows/sparrow-smoketest.yml
+  - docs/qa/testing_guidelines.md
+  - AGENTS.md
+  - vendor/README.md
+  - codex/codex_checklist/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.md
+  - codex/reports/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.md
+  - codex/reports/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.verify.log
+
+steps:
+  - name: Felderítés – Sparrow beszerzés/build belépési pontok
+    description: >
+      Azonosítsd a Sparrow clone/pin/build logikát a repóban (legalább: scripts/check.sh és
+      .github/workflows/sparrow-smoketest.yml). Jegyezd fel, hol állítódik be a SPARROW_BIN,
+      és milyen pin mechanizmus van (poc/sparrow_io/sparrow_commit.txt).
+      Cél: a módosítás csak ezekre a valós belépési pontokra támaszkodjon.
+    outputs: []
+
+  - name: Implementáció – scripts/ensure_sparrow.sh (vendor/submodule + fallback resolver)
+    description: >
+      Hozd létre a scripts/ensure_sparrow.sh scriptet.
+      Követelmények:
+      - bash, set -euo pipefail
+      - stdout: kizárólag egy abszolút SPARROW_BIN path (semmi extra)
+      - stderr: logolhatsz (preferált)
+      - prioritás:
+        1) ha SPARROW_BIN env és futtatható -> return
+        2) ha SPARROW_SRC_DIR env és van Cargo.toml -> cargo build --release -> return bin
+        3) ha vendor/sparrow/Cargo.toml -> cargo build --release -> return bin
+        4) fallback: .cache/sparrow; ha nincs git repo, clone; pin commit (SPARROW_COMMIT env vagy poc/.../sparrow_commit.txt);
+           majd cargo build --release; return bin
+      - pin: ha commit nincs meg a lokális repo-ban, próbálj fetch-elni fallback esetén; vendor esetén inkább adj érthető hibát/teendőt.
+      - a bin létezését és futtathatóságát ellenőrizd (hibával álljon meg, ha nincs).
+    outputs:
+      - scripts/ensure_sparrow.sh
+
+  - name: Integráció – scripts/check.sh Sparrow részének központosítása
+    description: >
+      Módosítsd a scripts/check.sh-t úgy, hogy ha nincs explicit SPARROW_BIN env,
+      akkor a Sparrow feloldás/build az új scripts/ensure_sparrow.sh-n keresztül történjen.
+      A gate többi része/sorrendje nem sérülhet.
+    outputs:
+      - scripts/check.sh
+
+  - name: CI integráció – workflow-k submodule + ensure_sparrow használata
+    description: >
+      Frissítsd:
+      - .github/workflows/sparrow-smoketest.yml:
+        * actions/checkout@v4 kapjon submodules: recursive
+        * a Prepare/Build Sparrow lépések helyett használd: echo "SPARROW_BIN=$(./scripts/ensure_sparrow.sh)" >> $GITHUB_ENV
+      - .github/workflows/repo-gate.yml:
+        * actions/checkout@v4 kapjon submodules: recursive (jövőbiztos vendor/submodule támogatás)
+    outputs:
+      - .github/workflows/repo-gate.yml
+      - .github/workflows/sparrow-smoketest.yml
+
+  - name: Dokumentáció – QA + AGENTS szinkron
+    description: >
+      Frissítsd:
+      - docs/qa/testing_guidelines.md: írd át a Sparrow pin/build részt az ensure_sparrow.sh logikára,
+        és dokumentáld az env opciókat (SPARROW_BIN, SPARROW_SRC_DIR, SPARROW_COMMIT) + vendor/sparrow preferált utat.
+      - AGENTS.md: pontosítsd a git követelményt (fallback klónozás vs vendor/submodule).
+      - Hozz létre vendor/README.md-t: rövid útmutató a vendor/sparrow submodule vagy vendored copy használatához.
+    outputs:
+      - docs/qa/testing_guidelines.md
+      - AGENTS.md
+      - vendor/README.md
+
+  - name: Codex checklist + report előkészítés
+    description: >
+      Hozd létre/frissítsd a feladathoz tartozó checklistet és reportot a repo konvenció szerint.
+      A report legyen a docs/codex/report_standard.md szerkezetével kompatibilis.
+    outputs:
+      - codex/codex_checklist/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.md
+      - codex/reports/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.md
+
+  - name: Repo gate (automatikus verify)
+    description: >
+      Futtasd a repo standard verifikációt:
+        ./scripts/verify.sh --report codex/reports/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.md
+      A verify log kerüljön mentésre, és a report AUTO_VERIFY blokkja frissüljön.
+    outputs:
+      - codex/reports/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.md
+      - codex/reports/egyedi_solver/p1_3_sparrow_dependency_risk_reduction_vendor_fallback.verify.log

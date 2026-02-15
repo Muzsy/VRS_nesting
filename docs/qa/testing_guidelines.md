@@ -15,7 +15,7 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
 * `./scripts/check.sh`
   * futtatja a `python3 -m pytest -q` unit teszteket (fail-fast)
   * futtatja a `python3 -m mypy --config-file mypy.ini vrs_nesting` type-checket (fail-fast)
-  * Sparrow pin + build (ha nincs előre megadott bináris)
+  * Sparrow feloldás/build a `scripts/ensure_sparrow.sh`-n keresztül
   * Sparrow IO smoketest + IO validator
   * DXF import convention smoke
   * geometry/polygonize/offset robustness smoke
@@ -60,7 +60,7 @@ A belépési pont: `scripts/run_sparrow_smoketest.sh`.
 Lokál és CI környezetben a `check.sh` miatt szükséges:
 
 * `python3`
-* `git` (Sparrow clone/pin lépésekhez)
+* `git` (Sparrow fallback klónozás/pin lépésekhez; `vendor/sparrow` használatakor ez a rész elhagyható)
 * `cargo` / Rust toolchain (Sparrow build, illetve `vrs_solver` build)
 * Python deps-ek a pinelt `requirements-dev.txt`-ből (`pytest`, `mypy`, `shapely`, `ezdxf`, stb.)
 
@@ -86,9 +86,21 @@ A smoketest célja nem a „legjobb nesting”, hanem a **stabil contract és a 
 * `SEED` környezeti változóval fixáljuk (alap: `0`)
 * `TIME_LIMIT` környezeti változóval korlátozzuk (alap: `60`)
 
-### 3.2 Sparrow verzió pin
+### 3.2 Sparrow feloldás + verzió pin
 
-Ha létezik: `poc/sparrow_io/sparrow_commit.txt`, akkor a buildnek ezt kell használni.
+A Sparrow bináris feloldását a `scripts/ensure_sparrow.sh` végzi:
+
+1. `SPARROW_BIN` env (ha futtatható)
+2. `SPARROW_SRC_DIR` env (ha van benne `Cargo.toml`, build onnan)
+3. `vendor/sparrow` (ha van `vendor/sparrow/Cargo.toml`, preferált vendor/submodule út)
+4. fallback `.cache/sparrow` clone + pin + build
+
+Pin commit forrás:
+
+* `SPARROW_COMMIT` env (elsődleges), különben
+* `poc/sparrow_io/sparrow_commit.txt` (ha létezik és nem üres)
+
+Ha a vendor/submodule repo nem tartalmazza a pinelt commitot, az `ensure_sparrow.sh` hibával áll meg és teendőt jelez (`git submodule update --init --recursive`).
 
 **Szabály:** ha a CI-ben flakiness jelenik meg, az első lépés a commit pin és a seed/time limit felülvizsgálata.
 

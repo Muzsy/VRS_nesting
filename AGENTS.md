@@ -77,7 +77,7 @@ Részletek: `docs/codex/overview.md`
 * **Python 3** szükséges (`scripts/validate_sparrow_io.py`, `scripts/verify.sh` report frissítéshez).
 * **Pinelt Python deps** szükségesek a `requirements-dev.txt` alapján (`pytest`, `mypy`, `shapely`, `ezdxf`, stb.).
 * **pip-tools** szükséges a dependency frissítéshez (`requirements*.in` -> `requirements*.txt` compile).
-* **Git** szükséges (Sparrow forrás klónozás, diff/stat a verify reporthoz).
+* **Git** szükséges (verify diff/stat és Sparrow fallback klónozás/pin esetén). Vendor/submodule (`vendor/sparrow`) úton a gate offline-barátabb.
 * **Rust toolchain + cargo** szükséges (Sparrow buildhez, ha nincs előre telepített bináris).
 * **Shapely** az overlap-check-hez a `requirements-dev.txt` részeként települ.
 
