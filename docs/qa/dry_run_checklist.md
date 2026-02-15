@@ -86,6 +86,7 @@ Ebben a fájlban a DoD checklist mellett legyen benne ez a dry run rész is (vag
 
 * [ ] A report útvonala rögzítve: `codex/reports/[<AREA>/]<TASK_SLUG>.md`
 * [ ] A log útvonala rögzítve: `codex/reports/[<AREA>/]<TASK_SLUG>.verify.log`
+* [ ] Python dependency változás esetén frissítve vannak a `.in` és pinelt `requirements*.txt` fájlok, és a CI telepítés ezekre mutat
 
 ---
 

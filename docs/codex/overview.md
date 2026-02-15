@@ -67,6 +67,11 @@ A standard minőségkapu ebben a repóban:
 
 * `./scripts/check.sh` – pytest unit tests (fail-fast) + mypy type-check (fail-fast) + Sparrow build/pin (ha kell) + IO smoketest/validator + DXF smoke suite (import/geometry/export/BLOCK-INSERT/multisheet/valós DXF pipeline) + `vrs_solver` validator + determinisztika + timeout/perf guard
 
+Python dependency telepítéshez a repo pinelt fájljai az irányadóak:
+
+* `requirements-dev.txt` telepítendő lokál/CI futtatás előtt
+* dependency módosítás esetén `.in` fájlok frissítése + pip-tools compile szükséges
+
 Codex futásnál kötelező a wrapper, ami logot ment és frissíti a reportot:
 
 * `./scripts/verify.sh --report codex/reports/[<AREA>/]<TASK_SLUG>.md`

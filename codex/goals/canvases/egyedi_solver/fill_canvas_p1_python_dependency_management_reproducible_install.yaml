@@ -1,0 +1,106 @@
+# codex/goals/canvases/egyedi_solver/fill_canvas_p1_python_dependency_management_reproducible_install.yaml
+
+goal: >
+  Vezessük be a reprodukálható Python dependency managementet (pip-tools alapú requirements.in →
+  pinelt requirements-dev.txt), és kössük be a CI gate-be + frissítsük a kapcsolódó doksikat és script tippeket.
+deadline: n/a
+outputs:
+  - canvases/egyedi_solver/p1_python_dependency_management_reproducible_install.md
+  - requirements.in
+  - requirements-dev.in
+  - requirements.txt
+  - requirements-dev.txt
+  - scripts/check.sh
+  - scripts/run_sparrow_smoketest.sh
+  - .github/workflows/repo-gate.yml
+  - .github/workflows/sparrow-smoketest.yml
+  - .github/workflows/nesttool-smoketest.yml
+  - docs/qa/testing_guidelines.md
+  - docs/qa/dry_run_checklist.md
+  - docs/codex/overview.md
+  - AGENTS.md
+  - codex/codex_checklist/egyedi_solver/p1_python_dependency_management_reproducible_install.md
+  - codex/reports/egyedi_solver/p1_python_dependency_management_reproducible_install.md
+  - codex/reports/egyedi_solver/p1_python_dependency_management_reproducible_install.verify.log
+
+steps:
+  - name: Felderítés – jelenlegi Python függőségek és CI telepítés
+    description: >
+      Nézd át hol és hogyan települnek most a Python csomagok (check.sh, workflow-k, smoke script-ek),
+      és rögzítsd a ténylegesen szükséges csomaglistát a requirements.in / requirements-dev.in-hez.
+      Kizárólag a repóban ténylegesen importált/használt 3rd party csomagok kerüljenek be.
+    outputs: []
+
+  - name: Requirements fájlok létrehozása (input + pinelt output)
+    description: >
+      Hozd létre a requirements.in és requirements-dev.in fájlokat.
+      Ajánlott struktúra:
+        - requirements.in: runtime jellegű direkt deps (pl. ezdxf, shapely)
+        - requirements-dev.in: dev/test/tooling + base include/constraint (pytest, mypy, pip-tools)
+      Ezután generáld a pinelt requirements.txt és requirements-dev.txt fájlokat pip-tools-szal.
+      Parancsok (példa, a környezethez igazítva):
+        - python3 -m pip install --upgrade pip
+        - python3 -m pip install pip-tools
+        - python3 -m piptools compile requirements.in -o requirements.txt
+        - python3 -m piptools compile requirements-dev.in -o requirements-dev.txt
+      A generált *.txt fájlok kerüljenek commit alá.
+    outputs:
+      - requirements.in
+      - requirements-dev.in
+      - requirements.txt
+      - requirements-dev.txt
+
+  - name: Script tippek frissítése (check.sh + sparrow smoketest)
+    description: >
+      Frissítsd a scripts/check.sh install tip üzeneteit úgy, hogy a csomagonkénti telepítés helyett
+      a requirements-dev.txt telepítésére mutassanak.
+      Ugyanez a shapely-hiány esetén: a scripts/run_sparrow_smoketest.sh hiba/tipp szövegében is jelenjen meg,
+      hogy a requirements-dev.txt telepítése megoldja a szükséges Python deps-eket.
+      A meglévő funkciók nem sérülhetnek.
+    outputs:
+      - scripts/check.sh
+      - scripts/run_sparrow_smoketest.sh
+
+  - name: CI workflow-k átállítása a pinelt requirements telepítésre
+    description: >
+      Frissítsd a workflow-kat úgy, hogy a Python deps-ek telepítése a requirements-dev.txt-ből történjen,
+      és ne ad-hoc pip install/apt csomaglista legyen.
+      Minimum: .github/workflows/repo-gate.yml.
+      Ha a sparrow-smoketest és nesttool-smoketest is Python tesztet futtat, legyen konzisztens a telepítés ott is.
+      Fontos: a gate továbbra is a ./scripts/check.sh legyen.
+    outputs:
+      - .github/workflows/repo-gate.yml
+      - .github/workflows/sparrow-smoketest.yml
+      - .github/workflows/nesttool-smoketest.yml
+
+  - name: Dokumentáció frissítése (telepítés + gate előfeltételek)
+    description: >
+      Frissítsd a következő doksikat úgy, hogy a reprodukálható telepítés hivatalos útja a
+      requirements-dev.txt legyen (és írja le azt is, hogyan frissítjük: .in módosítás + piptools compile):
+        - docs/qa/testing_guidelines.md
+        - docs/qa/dry_run_checklist.md
+        - docs/codex/overview.md
+        - AGENTS.md
+      Tartsd a meglévő gate-listát; csak a telepítési részt és a dependency update szabályt igazítsd.
+    outputs:
+      - docs/qa/testing_guidelines.md
+      - docs/qa/dry_run_checklist.md
+      - docs/codex/overview.md
+      - AGENTS.md
+
+  - name: Codex checklist + report előkészítés
+    description: >
+      Hozd létre/frissítsd a feladathoz tartozó checklistet és reportot a repo konvenció szerint.
+      A report legyen a docs/codex/report_standard.md szerkezetével kompatibilis.
+    outputs:
+      - codex/codex_checklist/egyedi_solver/p1_python_dependency_management_reproducible_install.md
+      - codex/reports/egyedi_solver/p1_python_dependency_management_reproducible_install.md
+
+  - name: Repo gate (automatikus verify)
+    description: >
+      Futtasd a repo standard verifikációt:
+        ./scripts/verify.sh --report codex/reports/egyedi_solver/p1_python_dependency_management_reproducible_install.md
+      A verify log kerüljön mentésre, és a report AUTO_VERIFY blokkja frissüljön.
+    outputs:
+      - codex/reports/egyedi_solver/p1_python_dependency_management_reproducible_install.md
+      - codex/reports/egyedi_solver/p1_python_dependency_management_reproducible_install.verify.log

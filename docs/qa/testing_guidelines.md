@@ -60,17 +60,20 @@ A belépési pont: `scripts/run_sparrow_smoketest.sh`.
 Lokál és CI környezetben a `check.sh` miatt szükséges:
 
 * `python3`
-* `python3-pytest` (apt csomag)
-* `mypy` (pip csomag)
-* `python3-shapely` (overlap-check smoke-hoz)
 * `git` (Sparrow clone/pin lépésekhez)
 * `cargo` / Rust toolchain (Sparrow build, illetve `vrs_solver` build)
-* `ezdxf` (különösen a valós DXF smoke-okhoz)
+* Python deps-ek a pinelt `requirements-dev.txt`-ből (`pytest`, `mypy`, `shapely`, `ezdxf`, stb.)
 
 Telepítés (Ubuntu/Debian):
 
-* `sudo apt-get update && sudo apt-get install -y python3 python3-pytest python3-pip python3-shapely git`
-* `python3 -m pip install --break-system-packages ezdxf mypy`
+* `sudo apt-get update && sudo apt-get install -y python3 python3-pip git`
+* `python3 -m pip install --break-system-packages -r requirements-dev.txt`
+
+Dependency frissítés (reprodukálható mód):
+
+* `requirements.in` / `requirements-dev.in` módosítása
+* `python3 -m piptools compile requirements.in -o requirements.txt`
+* `python3 -m piptools compile requirements-dev.in -o requirements-dev.txt`
 
 ---
 
@@ -105,6 +108,7 @@ Ha módosul a `scripts/validate_sparrow_io.py` vagy bármely POC minta:
 * Parser / export változás → input + expected output struktúra frissítése, validator bővítés.
 * Több sheet / multi-run wrapper → legalább 1 „multi” POC minta.
 * Új quality gate lépés (pl. pytest/mypy vagy más kötelező check) bevezetése → a standard gate (`scripts/check.sh`) és ez a dokumentáció együtt frissítendő.
+* Python dependency változás esetén a `.in` + pinelt `.txt` fájlok és CI telepítési lépések együtt frissítendők.
 
 ---
 

@@ -112,8 +112,7 @@ PY
   else
     if [[ "${CI:-}" == "true" || "${CI:-}" == "1" ]]; then
       echo "ERROR: overlap-check-hez kell a shapely (CI-ben kötelező)." >&2
-      echo "Tipp (Ubuntu): sudo apt-get install -y python3-shapely" >&2
-      echo "Tipp (pip): pip install shapely" >&2
+      echo "Tipp: python3 -m pip install --break-system-packages -r requirements-dev.txt" >&2
       echo "[DEBUG] run_dir: $RUN_DIR" >&2
       exit 2
     fi

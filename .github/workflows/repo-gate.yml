@@ -17,11 +17,11 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pytest python3-pip python3-shapely git
+          sudo apt-get install -y python3 python3-pip git
 
-      - name: Install ezdxf
+      - name: Install Python deps (pinned)
         run: |
-          python3 -m pip install --break-system-packages ezdxf mypy
+          python3 -m pip install --break-system-packages -r requirements-dev.txt
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable

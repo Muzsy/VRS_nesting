@@ -29,14 +29,14 @@ fi
 echo "[PYTEST] Unit tests"
 if ! python3 -m pytest -q; then
   echo "ERROR: pytest unit tests failed or pytest is not installed." >&2
-  echo "Install tip (Ubuntu/Debian): sudo apt-get install -y python3-pytest" >&2
+  echo "Install tip: python3 -m pip install --break-system-packages -r requirements-dev.txt" >&2
   exit 2
 fi
 
 echo "[MYPY] Type check"
 if ! python3 -m mypy --config-file mypy.ini vrs_nesting; then
   echo "ERROR: mypy type check failed or mypy is not installed." >&2
-  echo "Install tip: python3 -m pip install --break-system-packages mypy" >&2
+  echo "Install tip: python3 -m pip install --break-system-packages -r requirements-dev.txt" >&2
   exit 2
 fi
 
