@@ -153,7 +153,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
 
     try:
         doc = ezdxf.readfile(path)
-    except (OSError, UnicodeDecodeError, ezdxf.DXFError) as exc:
+    except Exception as exc:
         raise DxfImportError("DXF_READ_FAILED", f"could not read dxf: {path}: {exc}") from exc
 
     msp = doc.modelspace()

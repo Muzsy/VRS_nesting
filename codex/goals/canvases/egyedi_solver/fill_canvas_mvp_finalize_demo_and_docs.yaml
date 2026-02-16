@@ -1,0 +1,33 @@
+steps:
+  - name: "Canvas létrehozása"
+    description: >
+      A `canvases/mvp_finalize_demo_and_docs.md` fájl létrehozása a
+      fenti tartalommal.
+    outputs:
+      - "canvases/mvp_finalize_demo_and_docs.md"
+
+  - name: "Demo készlet leírásának véglegesítése"
+    description: >
+      A `samples/dxf_demo/README.md` frissítése. Listázza fel tételesen
+      a mappában lévő 3 kulcsfontosságú DXF fájlt (stock, curved part, error part),
+      és írja le, melyik mire való a tesztelés során.
+    outputs:
+      - "samples/dxf_demo/README.md"
+
+  - name: "User Guide (How-To) létrehozása"
+    description: >
+      A `docs/how_to_run.md` fájl létrehozása. Tartalmazza:
+      1. Előfeltételek (Python 3.10+, Rust/Cargo opcionális de ajánlott).
+      2. Setup lépések (`python -m venv .venv`, `source .venv/bin/activate`, `pip install pip-tools`, `pip-sync requirements.txt requirements-dev.txt`).
+      3. Sparrow setup (`./scripts/ensure_sparrow.sh`).
+      4. Futtatási példa parancs a demo fájlokkal.
+      5. Várt kimenet helye (`run_artifacts/...`).
+    outputs:
+      - "docs/how_to_run.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      A feladat zárása a kötelező verifikációval és report generálással.
+    outputs:
+      - "codex/reports/mvp_finalize_demo_and_docs.md"
+      - "codex/reports/mvp_finalize_demo_and_docs.verify.log"
