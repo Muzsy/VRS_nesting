@@ -1,32 +1,17 @@
-# Demo DXF Készlet (`dxf_demo`)
+# Demo DXF készlet
 
-Ez a mappa tartalmazza a hivatalos demo és smoke test DXF fájlokat, amelyek a `vrs-nesting` rendszer képességeit hivatottak bemutatni és validálni.
+Ez a mappa a `vrs-nesting` pipeline end-to-end teszteléséhez és demonstrálásához szükséges DXF fájlokat tartalmazza.
 
-## Fájlok és Szerepük
+## Fájlok
 
-A demo készlet három kulcsfontosságú fájlból áll, amelyek különböző felhasználási eseteket fednek le:
+1.  `stock_rect_1000x2000.dxf`
+    *   **Szerep:** Alapanyag (stock).
+    *   **Leírás:** Egy 1000x2000 egység méretű téglalap, amelyre a nesting algoritmus az alkatrészeket helyezi.
 
-1.  **`stock_rect_1000x2000.dxf`**
-    *   **Szerep:** Alapanyag (tábla) definíció.
-    *   **Leírás:** Egy egyszerű, 1000x2000 mm méretű téglalap, amely a `CUT_OUTER` rétegen helyezkedik el. Ezen a táblán kerülnek elhelyezésre az alkatrészek.
+2.  `part_arc_spline_chaining_ok.dxf`
+    *   **Szerep:** Helyes, komplex alkatrész (part).
+    *   **Leírás:** Olyan alkatrészt definiál, amely íveket és spline-okat is tartalmaz. A geometria-feldolgozó réteg (pl. poligonizáció) helyes működését teszteli. A kontúr zárt és feldolgozhatónak kell lennie.
 
-2.  **`part_arc_spline_chaining_ok.dxf`**
-    *   **Szerep:** Komplex, de helyes alkatrész.
-    *   **Leírás:** Ez a fájl egy olyan alkatrészt definiál, amelynek külső kontúrja több, egymáshoz kapcsolódó elemből (vonal, ív) áll. Tartalmaz egy belső furatot is (spline-ból), demonstrálva a rendszer geometriai láncolási (`chaining`) és furatfelismerési képességeit. A feldolgozásának sikeresnek kell lennie.
-
-3.  **`part_chain_open_fail.dxf`**
-    *   **Szerep:** Szándékosan hibás alkatrész.
-    *   **Leírás:** Olyan alkatrészt tartalmaz, amelynek külső kontúrja nincs bezárva (nyitott poligon). Ez a fájl a rendszer hibakezelésének tesztelésére szolgál; a DXF importnak `DXF_OPEN_OUTER_PATH` hibával kell elszállnia.
-
-## Használat
-
-A demo futtatásához és a rendszer ellenőrzéséhez a következő parancsok használhatók:
-
-*   **Gyors smoke teszt (csak import):**
-    ```bash
-    python3 scripts/smoke_real_dxf_fixtures.py
-    ```
-*   **Teljes, end-to-end pipeline teszt (import, nesting, export):**
-    ```bash
-    python3 scripts/smoke_real_dxf_sparrow_pipeline.py
-    ```
+3.  `part_chain_open_fail.dxf`
+    *   **Szerep:** Szándékosan hibás alkatrész (part).
+    *   **Leírás:** Olyan alkatrészt tartalmaz, amelynek a kontúrja nem zárt. Az importálási és validálási lépcső hibakezelését teszteli. A rendszernek ezt a fájlt hibaként kell azonosítania és elutasítania.
