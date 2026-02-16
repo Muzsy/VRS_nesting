@@ -12,6 +12,10 @@
     pkgs.python311Packages.pytest
     pkgs.python311Packages.virtualenv
 
+    # --- Rust Környezet (Sparrow buildhez) ---
+    pkgs.rustc
+    pkgs.cargo
+
     # --- YAML és Adatkezelés ---
     pkgs.yq-go            # Parancssoros YAML feldolgozó (szuper a tervedhez!)
     pkgs.jq               # JSON feldolgozó
@@ -47,8 +51,12 @@
       onCreate = {
         # Virtuális környezet létrehozása és alap csomagok telepítése
         setup-venv = "python -m venv .venv && source .venv/bin/activate && pip install --upgrade pip";
-        # Ha van requirements.txt, automatikusan telepíti
-        install-deps = "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi";
+        # Projekt függőségek telepítése a pip-tools konvenció szerint
+        install-deps = ''
+          source .venv/bin/activate && \
+          pip install pip-tools && \
+          pip-sync requirements.txt requirements-dev.txt
+        '';
       };
       
       # Minden alkalommal lefut, amikor megnyitod az IDX-et
@@ -69,4 +77,4 @@
       };
     };
   };
-}
+}F094-588B

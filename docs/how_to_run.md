@@ -1,33 +1,33 @@
-# Hogyan futtasd a VRS-Nesting demót?
+# Hogyan futtasd a VRS-Nesting projektet
 
-Ez az útmutató bemutatja, hogyan telepítsd, konfiguráld és futtasd a `vrs-nesting` projekt demo pipeline-ját helyi környezetben.
+Ez az útmutató bemutatja, hogyan telepítsd, konfiguráld és futtasd a DXF-alapú nesting pipeline-t a mellékelt demo készlettel.
 
 ## 1. Előfeltételek
 
--   **Python:** 3.10 vagy újabb.
--   **Rust/Cargo:** Opcionális, de erősen ajánlott. A `./scripts/ensure_sparrow.sh` szkript megpróbálja automatikusan letölteni a Sparrow binárist, de ha ez nem sikerül, a Rust toolchain segítségével helyben is lefordítható.
+- **Python:** 3.10 vagy újabb.
+- **Rust Toolchain (opcionális, de ajánlott):** A Sparrow nesting szoftver fordításához szükséges a `cargo` és a `rustc`. Ha ez nem áll rendelkezésre, a rendszer megpróbálja letölteni a `vendor/` mappába.
 
 ## 2. Telepítés és beállítás
 
-1.  **Hozd létre és aktiváld a virtuális környezetet:**
+1.  **Virtuális környezet létrehozása:**
 
     ```bash
     python -m venv .venv
     source .venv/bin/activate
     ```
 
-2.  **Telepítsd a függőségeket:**
+2.  **Függőségek telepítése:**
 
-    A projekt `pip-tools` segítségével kezeli a függőségeket a reprodukálhatóság érdekében. A `pip-sync` parancs biztosítja, hogy a virtuális környezeted pontosan megegyezzen a `requirements.txt` és `requirements-dev.txt` fájlokban rögzített verziókkal.
+    A projekt `pip-tools` segítségével kezeli a függőségeket a reprodukálhatóság érdekében.
 
     ```bash
     pip install pip-tools
     pip-sync requirements.txt requirements-dev.txt
     ```
 
-3.  **Győződj meg a Sparrow Nesting Solver elérhetőségéről:**
+3.  **Sparrow Nesting Engine beszerzése:**
 
-    A Sparrow egy külső, Rust-alapú nesting algoritmus. A következő parancs letölti vagy lefordítja a megfelelő binárist a `vendor/` mappába.
+    A beágyazott nesting szoftver biztosításához futtasd a következő parancsot. Ez letölti vagy lefordítja a Sparrow-t a `vendor/sparrow/` mappába.
 
     ```bash
     ./scripts/ensure_sparrow.sh
@@ -35,24 +35,40 @@ Ez az útmutató bemutatja, hogyan telepítsd, konfiguráld és futtasd a `vrs-n
 
 ## 3. Demo futtatása
 
-A `vrs_nesting` csomag futtatható modulként is működik. A következő parancs elindítja a teljes DXF-to-DXF pipeline-t a `samples/dxf_demo/` mappában található fájlokkal.
+A projekt CLI-n keresztül futtatható. Az alábbi parancs elindítja a teljes pipeline-t a `samples/dxf_demo` mappában található DXF fájlokkal.
+
+- **Alapanyag:** `stock_rect_1000x2000.dxf`
+- **Alkatrészek:** `part_arc_spline_chaining_ok.dxf` (20 db)
+- **Hibaellenőrzés:** A pipeline a futás során validálja a bemeneteket.
 
 ```bash
-python -m vrs_nesting.cli run_solver_pipeline \
-    --project-file samples/project_rect_1000x2000_with_examples.json \
-    --dxf-input-dir samples/dxf_demo \
-    --output-dir run_artifacts/mvp_demo_run
+python -m vrs_nesting.cli run-solver-pipeline \
+  --stock-dxf samples/dxf_demo/stock_rect_1000x2000.dxf \
+  --part-dxf samples/dxf_demo/part_arc_spline_chaining_ok.dxf \
+  --part-quantity 20
 ```
-
-Ez a parancs:
-
-1.  Beolvassa a projekt definíciót (`project_rect_1000x2000_with_examples.json`).
-2.  Importálja a DXF fájlokat a `samples/dxf_demo` mappából.
-3.  Futtatja a Sparrow nesting algoritmust.
-4.  A végeredményt (a nestingelt terítékrajzot) a `run_artifacts/mvp_demo_run` mappába menti DXF formátumban.
 
 ## 4. Várt kimenet
 
-A sikeres futás után a `run_artifacts/mvp_demo_run` mappa jön létre, amely tartalmazza a futás közbeni állapotokat (pl. `geometry_pipeline_out.json`) és a végső, optimalizált DXF-et (`final_nesting_result.dxf`).
+A futás eredménye a `run_artifacts/` mappában jön létre, egyedi időbélyeggel ellátott alkönyvtárban. Például:
+`run_artifacts/run_20240520_143000/`
 
-A parancssori kimenetnek `INFO` és `DEBUG` üzeneteket kell mutatnia a feldolgozás lépéseiről, hibaüzenet nélkül (kivéve a `part_chain_open_fail.dxf` szándékolt hibáját, amit a rendszernek jeleznie kell).
+**A kimeneti mappában található kulcsfontosságú fájlok:**
+
+- `in/`: A feldolgozott, egységesített bemeneti adatok.
+- `out/`: Az optimalizált kiosztás eredménye.
+  - `layouts.dxf`: A végső, táblákra rendezett DXF kimenet.
+  - `summary.json`: A futás összegzése (felhasznált táblák, hulladék stb.).
+- `logs/`: A futással kapcsolatos logok.
+- `run_command.sh`: A futtatást előidéző parancs.
+
+## 5. Hibakezelés
+
+Ha hibás geometriát (pl. nyitott kontúrt) tartalmazó DXF-et adsz meg, a rendszer hibát fog jelezni, és a futás leáll. Példa hibás futtatásra:
+
+```bash
+python -m vrs_nesting.cli run-solver-pipeline \
+  --stock-dxf samples/dxf_demo/stock_rect_1000x2000.dxf \
+  --part-dxf samples/dxf_demo/part_chain_open_fail.dxf \
+  --part-quantity 1
+```
