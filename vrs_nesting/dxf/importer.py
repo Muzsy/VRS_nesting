@@ -20,9 +20,34 @@ from vrs_nesting.geometry.polygonize import arc_to_points
 
 OUTER_LAYER_DEFAULT = "CUT_OUTER"
 INNER_LAYER_DEFAULT = "CUT_INNER"
-SUPPORTED_LAYER_ENTITY_TYPES = {"LWPOLYLINE", "POLYLINE", "LINE", "ARC", "CIRCLE", "SPLINE"}
+SUPPORTED_LAYER_ENTITY_TYPES = {"LWPOLYLINE", "POLYLINE", "LINE", "ARC", "CIRCLE", "SPLINE", "ELLIPSE"}
 CHAIN_ENDPOINT_EPSILON_MM = 0.2
 ARC_CHORD_ERROR_MM = 0.2
+ELLIPSE_CLOSED_PARAM_EPSILON = 1e-6
+MAX_INSERT_EXPANSION_DEPTH = 8
+INSUNITS_MM_SCALE = {
+    0: 1.0,
+    1: 25.4,
+    2: 304.8,
+    3: 1609344.0,
+    4: 1.0,
+    5: 10.0,
+    6: 1000.0,
+    7: 1000000.0,
+    8: 0.0000254,
+    9: 0.0254,
+    10: 914.4,
+    11: 0.0000001,
+    12: 0.000001,
+    13: 0.001,
+    14: 100.0,
+    15: 10000.0,
+    16: 100000.0,
+    17: 1000000000000.0,
+    18: 149597870700000.0,
+    19: 9460730472580800000.0,
+    20: 30856775814913700000.0,
+}
 
 
 class DxfImportError(RuntimeError):
@@ -156,92 +181,201 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
     except Exception as exc:
         raise DxfImportError("DXF_READ_FAILED", f"could not read dxf: {path}: {exc}") from exc
 
+    unit_scale_to_mm = _resolve_insunits_scale_to_mm(doc)
+    flatten_tol_in_source_units = ARC_CHORD_ERROR_MM / unit_scale_to_mm
     msp = doc.modelspace()
     out: list[dict[str, Any]] = []
     for idx, entity in enumerate(msp):
         entity_any: Any = entity
         etype = entity_any.dxftype().upper()
-        layer = str(entity_any.dxf.layer)
         where = f"modelspace[{idx}]"
+        expanded_entities = _expand_insert_entities(entity_any, where=where)
+        for expanded_idx, expanded in enumerate(expanded_entities):
+            expanded_any = expanded["entity"]
+            expanded_type = str(expanded["type"]).upper()
+            expanded_layer = str(expanded["layer"])
+            expanded_where = f"{where}.expanded[{expanded_idx}]"
 
-        if etype not in SUPPORTED_LAYER_ENTITY_TYPES:
-            out.append({"layer": layer, "type": etype, "_unsupported": True})
-            continue
+            if expanded_type not in SUPPORTED_LAYER_ENTITY_TYPES:
+                out.append({"layer": expanded_layer, "type": expanded_type, "_unsupported": True})
+                continue
 
-        if etype == "LWPOLYLINE":
-            lw_points = [[float(x), float(y)] for x, y, *_ in entity_any.get_points("xy")]
-            out.append(
-                {"layer": layer, "type": etype, "closed": bool(entity_any.closed), "points": _normalize_points(lw_points, f"{where}.points")}
+            if expanded_type == "LWPOLYLINE":
+                lw_points = [[float(x), float(y)] for x, y, *_ in expanded_any.get_points("xy")]
+                out.append(
+                    {
+                        "layer": expanded_layer,
+                        "type": expanded_type,
+                        "closed": bool(expanded_any.closed),
+                        "points": _normalize_points(lw_points, f"{expanded_where}.points"),
+                    }
+                )
+                continue
+
+            if expanded_type == "POLYLINE":
+                poly_points = [[float(v.dxf.location.x), float(v.dxf.location.y)] for v in expanded_any.vertices]
+                out.append(
+                    {
+                        "layer": expanded_layer,
+                        "type": expanded_type,
+                        "closed": bool(expanded_any.is_closed),
+                        "points": _normalize_points(poly_points, f"{expanded_where}.points"),
+                    }
+                )
+                continue
+
+            if expanded_type == "LINE":
+                line_points = [
+                    [float(expanded_any.dxf.start.x), float(expanded_any.dxf.start.y)],
+                    [float(expanded_any.dxf.end.x), float(expanded_any.dxf.end.y)],
+                ]
+                out.append(
+                    {
+                        "layer": expanded_layer,
+                        "type": expanded_type,
+                        "closed": False,
+                        "points": _normalize_points(line_points, f"{expanded_where}.points", min_points=2),
+                    }
+                )
+                continue
+
+            if expanded_type == "ARC":
+                out.append(
+                    {
+                        "layer": expanded_layer,
+                        "type": expanded_type,
+                        "closed": False,
+                        "center": [float(expanded_any.dxf.center.x), float(expanded_any.dxf.center.y)],
+                        "radius": float(expanded_any.dxf.radius),
+                        "start_angle": float(expanded_any.dxf.start_angle),
+                        "end_angle": float(expanded_any.dxf.end_angle),
+                    }
+                )
+                continue
+
+            if expanded_type == "CIRCLE":
+                out.append(
+                    {
+                        "layer": expanded_layer,
+                        "type": expanded_type,
+                        "closed": True,
+                        "center": [float(expanded_any.dxf.center.x), float(expanded_any.dxf.center.y)],
+                        "radius": float(expanded_any.dxf.radius),
+                        "start_angle": 0.0,
+                        "end_angle": 360.0,
+                    }
+                )
+                continue
+
+            if expanded_type == "ELLIPSE":
+                ellipse_points = _flatten_curve_points(
+                    expanded_any,
+                    where=f"{expanded_where}.ellipse",
+                    flatten_tol=flatten_tol_in_source_units,
+                    ezdxf_module=ezdxf,
+                )
+                out.append(
+                    {
+                        "layer": expanded_layer,
+                        "type": expanded_type,
+                        "closed": _is_ellipse_closed(expanded_any),
+                        "points": _normalize_points(ellipse_points, f"{expanded_where}.points", min_points=2),
+                    }
+                )
+                continue
+
+            # SPLINE
+            spline_points = _flatten_curve_points(
+                expanded_any,
+                where=f"{expanded_where}.spline",
+                flatten_tol=flatten_tol_in_source_units,
+                ezdxf_module=ezdxf,
             )
-            continue
-
-        if etype == "POLYLINE":
-            poly_points = [[float(v.dxf.location.x), float(v.dxf.location.y)] for v in entity_any.vertices]
-            out.append(
-                {"layer": layer, "type": etype, "closed": bool(entity_any.is_closed), "points": _normalize_points(poly_points, f"{where}.points")}
-            )
-            continue
-
-        if etype == "LINE":
-            line_points = [
-                [float(entity_any.dxf.start.x), float(entity_any.dxf.start.y)],
-                [float(entity_any.dxf.end.x), float(entity_any.dxf.end.y)],
-            ]
-            out.append(
-                {"layer": layer, "type": etype, "closed": False, "points": _normalize_points(line_points, f"{where}.points", min_points=2)}
-            )
-            continue
-
-        if etype == "ARC":
             out.append(
                 {
-                    "layer": layer,
-                    "type": etype,
-                    "closed": False,
-                    "center": [float(entity_any.dxf.center.x), float(entity_any.dxf.center.y)],
-                    "radius": float(entity_any.dxf.radius),
-                    "start_angle": float(entity_any.dxf.start_angle),
-                    "end_angle": float(entity_any.dxf.end_angle),
+                    "layer": expanded_layer,
+                    "type": expanded_type,
+                    "closed": bool(getattr(expanded_any, "closed", False)),
+                    "points": _normalize_points(spline_points, f"{expanded_where}.points", min_points=2),
                 }
             )
-            continue
 
-        if etype == "CIRCLE":
-            out.append(
-                {
-                    "layer": layer,
-                    "type": etype,
-                    "closed": True,
-                    "center": [float(entity_any.dxf.center.x), float(entity_any.dxf.center.y)],
-                    "radius": float(entity_any.dxf.radius),
-                    "start_angle": 0.0,
-                    "end_angle": 360.0,
-                }
-            )
-            continue
+    return [_scale_entity_to_mm(entity, scale_to_mm=unit_scale_to_mm) for entity in out]
 
-        # SPLINE
-        spline_points: list[list[float]] = []
-        try:
-            spline_points = [[float(v.x), float(v.y)] for v in entity_any.flattening(ARC_CHORD_ERROR_MM)]
-        except (AttributeError, TypeError, ValueError, ezdxf.DXFError):
-            fit_points = list(getattr(entity_any, "fit_points", []) or [])
-            if fit_points:
-                spline_points = [[float(v.x), float(v.y)] for v in fit_points]
-            else:
-                control_points = list(getattr(entity_any, "control_points", []) or [])
-                spline_points = [[float(v.x), float(v.y)] for v in control_points]
 
-        out.append(
-            {
-                "layer": layer,
-                "type": etype,
-                "closed": bool(getattr(entity_any, "closed", False)),
-                "points": _normalize_points(spline_points, f"{where}.points", min_points=2),
-            }
-        )
+def _resolve_insunits_scale_to_mm(doc: Any) -> float:
+    raw = doc.header.get("$INSUNITS", 0)
+    try:
+        code = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise DxfImportError("DXF_UNSUPPORTED_UNITS", f"invalid DXF INSUNITS value: {raw!r}") from exc
 
-    return out
+    scale = INSUNITS_MM_SCALE.get(code)
+    if scale is None or scale <= 0:
+        raise DxfImportError("DXF_UNSUPPORTED_UNITS", f"unsupported DXF INSUNITS value: {code}")
+    return float(scale)
+
+
+def _scale_entity_to_mm(entity: dict[str, Any], *, scale_to_mm: float) -> dict[str, Any]:
+    if scale_to_mm == 1.0:
+        return entity
+
+    scaled = dict(entity)
+    points = scaled.get("points")
+    if isinstance(points, list):
+        scaled["points"] = [[float(pt[0]) * scale_to_mm, float(pt[1]) * scale_to_mm] for pt in points]
+
+    center = scaled.get("center")
+    if isinstance(center, list) and len(center) == 2:
+        scaled["center"] = [float(center[0]) * scale_to_mm, float(center[1]) * scale_to_mm]
+
+    radius = scaled.get("radius")
+    if isinstance(radius, (int, float)):
+        scaled["radius"] = float(radius) * scale_to_mm
+
+    return scaled
+
+
+def _flatten_curve_points(curve_entity: Any, *, where: str, flatten_tol: float, ezdxf_module: Any) -> list[list[float]]:
+    try:
+        return [[float(v.x), float(v.y)] for v in curve_entity.flattening(flatten_tol)]
+    except (AttributeError, TypeError, ValueError, ezdxf_module.DXFError):
+        fit_points = list(getattr(curve_entity, "fit_points", []) or [])
+        if fit_points:
+            return [[float(v.x), float(v.y)] for v in fit_points]
+        control_points = list(getattr(curve_entity, "control_points", []) or [])
+        if control_points:
+            return [[float(v.x), float(v.y)] for v in control_points]
+    raise DxfImportError("DXF_ENTITY_INVALID", f"{where} has no usable points")
+
+
+def _is_ellipse_closed(entity: Any) -> bool:
+    start = float(getattr(entity.dxf, "start_param", 0.0))
+    end = float(getattr(entity.dxf, "end_param", math.tau))
+    span = (end - start) % math.tau
+    return math.isclose(span, 0.0, abs_tol=ELLIPSE_CLOSED_PARAM_EPSILON) or math.isclose(
+        span, math.tau, abs_tol=ELLIPSE_CLOSED_PARAM_EPSILON
+    )
+
+
+def _expand_insert_entities(entity: Any, *, where: str, depth: int = 0) -> list[dict[str, Any]]:
+    etype = str(entity.dxftype()).upper()
+    if etype != "INSERT":
+        return [{"entity": entity, "type": etype, "layer": str(entity.dxf.layer)}]
+
+    if depth >= MAX_INSERT_EXPANSION_DEPTH:
+        raise DxfImportError("DXF_INSERT_EXPANSION_FAILED", f"{where} exceeded insert expansion depth {MAX_INSERT_EXPANSION_DEPTH}")
+
+    try:
+        virtual_entities = list(entity.virtual_entities())
+    except Exception as exc:
+        raise DxfImportError("DXF_INSERT_EXPANSION_FAILED", f"{where} could not expand INSERT: {exc}") from exc
+
+    expanded: list[dict[str, Any]] = []
+    for idx, virtual_entity in enumerate(virtual_entities):
+        virtual_where = f"{where}.insert[{idx}]"
+        expanded.extend(_expand_insert_entities(virtual_entity, where=virtual_where, depth=depth + 1))
+    return expanded
 
 
 def _normalize_entities(path: Path) -> list[dict[str, Any]]:
@@ -317,7 +451,7 @@ def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -
 def _entity_to_path(entity: dict[str, Any], where: str) -> list[list[float]]:
     etype = str(entity.get("type", "")).upper()
 
-    if etype in {"LWPOLYLINE", "POLYLINE", "LINE", "SPLINE"}:
+    if etype in {"LWPOLYLINE", "POLYLINE", "LINE", "SPLINE", "ELLIPSE"}:
         points = entity.get("points")
         if not isinstance(points, list):
             raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.points must be list")
@@ -383,7 +517,7 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
                 raise DxfImportError("DXF_INVALID_RING", f"invalid circle contour at {where}: {exc}") from exc
             continue
 
-        if etype == "SPLINE" and closed and _distance(path[0], path[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
+        if etype in {"SPLINE", "ELLIPSE"} and closed and _distance(path[0], path[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
             ring_points = list(path)
             ring_points[-1] = list(ring_points[0])
             try:

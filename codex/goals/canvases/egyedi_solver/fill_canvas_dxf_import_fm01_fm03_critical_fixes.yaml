@@ -1,0 +1,43 @@
+steps:
+  - name: "Canvas es task artefaktok letrehozasa"
+    description: >
+      Veglegesitsd a task canvas scope-jat FM01-FM03-ra, majd hozd letre
+      a checklist es report alap fajlokat a codex workflow szerint.
+    outputs:
+      - "canvases/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.md"
+      - "codex/codex_checklist/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.md"
+      - "codex/reports/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.md"
+
+  - name: "FM01-FM03 implementacio a DXF importerben"
+    description: >
+      Bovitd a vrs_nesting/dxf/importer.py modult ugy, hogy:
+      - ELLIPSE entitas tamogatott legyen,
+      - INSERT/BLOCK geometriak felbontasa megtortenjen import elott,
+      - INSUNITS alapjan mm normalizalas tortenjen a DXF backendben.
+      Ugy implementald, hogy a jelenlegi hibaformatum/determinista viselkedes megmaradjon.
+    outputs:
+      - "vrs_nesting/dxf/importer.py"
+
+  - name: "FM01-FM03 unit tesztek bovitese"
+    description: >
+      Frissitsd a tests/test_dxf_importer_error_handling.py teszteket:
+      adj valos DXF-alapu eseteket ELLIPSE supportra, INSERT/BLOCK importtal
+      nyert konturra, es INSUNITS=inch -> mm skalarol valo igazolasra.
+    outputs:
+      - "tests/test_dxf_importer_error_handling.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Pipald ki a teljesult pontokat, es toltsd ki a report DoD->Evidence
+      matrixot konkret file+line hivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.md"
+      - "codex/reports/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.md
+    outputs:
+      - "codex/reports/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.md"
+      - "codex/reports/egyedi_solver/dxf_import_fm01_fm03_critical_fixes.verify.log"
