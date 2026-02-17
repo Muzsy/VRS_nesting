@@ -53,8 +53,8 @@ def _load_asset_geometry(
         prepared = offset_part_geometry(poly, spacing_mm=spacing_mm)
 
     min_x, min_y, max_x, max_y = polygon_bbox(prepared)
-    source_base_x = min(float(point[0]) for point in raw.outer_points_mm)
-    source_base_y = min(float(point[1]) for point in raw.outer_points_mm)
+    source_base_x = min(float(point[0]) for point in prepared["outer_points_mm"])
+    source_base_y = min(float(point[1]) for point in prepared["outer_points_mm"])
     return {
         "id": asset.id,
         "quantity": asset.quantity,
@@ -131,6 +131,8 @@ def build_sparrow_inputs(project: DxfProjectModel, *, project_dir: Path) -> tupl
         "project_name": project.name,
         "seed": project.seed,
         "time_limit_s": project.time_limit_s,
+        "spacing_mm": project.spacing_mm,
+        "margin_mm": project.margin_mm,
         "stocks": [
             {
                 "id": stock["id"],
@@ -153,6 +155,8 @@ def build_sparrow_inputs(project: DxfProjectModel, *, project_dir: Path) -> tupl
                 "holes_points": part["raw_holes_points"],
                 "source_outer_points": part["raw_outer_points"],
                 "source_holes_points": part["raw_holes_points"],
+                "prepared_outer_points": part["prepared_outer_points"],
+                "prepared_holes_points": part["prepared_holes_points"],
                 "source_entities": part["source_entities"],
                 "source_path": part["source_path"],
                 "source_dxf_path": part["source_dxf_path"],

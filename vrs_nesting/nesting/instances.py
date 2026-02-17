@@ -6,8 +6,18 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
+try:
+    from shapely.affinity import rotate as shp_rotate
+    from shapely.affinity import translate as shp_translate
+    from shapely.geometry import Polygon
+except ImportError:  # pragma: no cover
+    Polygon = None
+    shp_rotate = None
+    shp_translate = None
+
 
 EPS = 1e-9
+AREA_EPS = 1e-9
 
 
 def expand_part_instances(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -32,6 +42,11 @@ def expand_part_instances(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return instances
 
 
+def _require_shapely() -> None:
+    if Polygon is None or shp_rotate is None or shp_translate is None:
+        raise ValueError("shapely is required for geometry validation")
+
+
 def _parse_point(raw: Any, where: str) -> tuple[float, float]:
     if isinstance(raw, (list, tuple)) and len(raw) == 2:
         x, y = raw
@@ -52,6 +67,28 @@ def _parse_polygon(raw: Any, where: str) -> list[tuple[float, float]]:
     if len(pts) < 3:
         raise ValueError(f"polygon must have >=3 points at {where}")
     return pts
+
+
+def _normalize_loops(outer: list[tuple[float, float]], holes: list[list[tuple[float, float]]]) -> tuple[list[tuple[float, float]], list[list[tuple[float, float]]]]:
+    all_points = list(outer)
+    for hole in holes:
+        all_points.extend(hole)
+
+    min_x = min(p[0] for p in all_points)
+    min_y = min(p[1] for p in all_points)
+
+    def _shift(loop: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        return [(float(x - min_x), float(y - min_y)) for x, y in loop]
+
+    return _shift(outer), [_shift(hole) for hole in holes]
+
+
+def _as_polygon(outer: list[tuple[float, float]], holes: list[list[tuple[float, float]]], where: str) -> Any:
+    _require_shapely()
+    poly = Polygon(outer, holes)
+    if poly.is_empty or poly.area <= 0 or not poly.is_valid:
+        raise ValueError(f"invalid polygon at {where}")
+    return poly
 
 
 def _stock_outer_and_holes(stock: dict[str, Any], where: str) -> tuple[list[tuple[float, float]], list[list[tuple[float, float]]], float, float]:
@@ -75,7 +112,7 @@ def _stock_outer_and_holes(stock: dict[str, Any], where: str) -> tuple[list[tupl
         if not isinstance(holes_raw, list):
             raise ValueError(f"{where}.holes_points must be list")
         for hole_idx, hole in enumerate(holes_raw):
-            holes.append(_parse_polygon(hole, f"{where}.holes_points[{hole_idx}]"))
+            holes.append(_parse_polygon(hole, f"{where}.holes_points[{hole_idx}]") )
 
     min_x = min(p[0] for p in outer)
     max_x = max(p[0] for p in outer)
@@ -106,14 +143,14 @@ def _build_sheet_shapes(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
 
         outer, holes, bbox_w, bbox_h = _stock_outer_and_holes(stock, f"stocks[{idx}]")
         stock_id = str(stock.get("id", "")).strip() or f"stock_{idx}"
+        stock_poly = _as_polygon(outer, holes, f"stocks[{idx}]")
 
         for _ in range(qty):
             sheet_shapes[sheet_index] = {
                 "stock_id": stock_id,
-                "outer": outer,
-                "holes": holes,
-                "bbox_w": bbox_w,
-                "bbox_h": bbox_h,
+                "polygon": stock_poly,
+                "bbox_w": float(bbox_w),
+                "bbox_h": float(bbox_h),
             }
             sheet_index += 1
 
@@ -139,117 +176,71 @@ def _normalize_allowed_rotations(part: dict[str, Any], where: str) -> list[int]:
     return out
 
 
-def _part_dims(payload: dict[str, Any]) -> dict[str, tuple[float, float, list[int]]]:
+def _part_geometries(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     parts = payload.get("parts")
     if not isinstance(parts, list):
         raise ValueError("parts must be list")
 
-    out: dict[str, tuple[float, float, list[int]]] = {}
-    for part in parts:
+    out: dict[str, dict[str, Any]] = {}
+    for idx, part in enumerate(parts):
         if not isinstance(part, dict):
             raise ValueError("part must be object")
+
         part_id = str(part.get("id", "")).strip()
-        width = part.get("width")
-        height = part.get("height")
-        allowed_rotations = _normalize_allowed_rotations(part, f"parts[{part_id}]")
         if not part_id:
             raise ValueError("part.id must be non-empty")
+
+        width = part.get("width")
+        height = part.get("height")
         if not isinstance(width, (int, float)) or width <= 0:
             raise ValueError(f"part.width invalid for {part_id}")
         if not isinstance(height, (int, float)) or height <= 0:
             raise ValueError(f"part.height invalid for {part_id}")
-        out[part_id] = (float(width), float(height), allowed_rotations)
+
+        allowed_rotations = _normalize_allowed_rotations(part, f"parts[{idx}]")
+
+        outer_raw = part.get("prepared_outer_points", part.get("outer_points"))
+        holes_raw = part.get("prepared_holes_points", part.get("holes_points", []))
+
+        if outer_raw is None:
+            outer = [(0.0, 0.0), (float(width), 0.0), (float(width), float(height)), (0.0, float(height))]
+            holes: list[list[tuple[float, float]]] = []
+        else:
+            outer = _parse_polygon(outer_raw, f"parts[{idx}].outer_points")
+            holes = []
+            if holes_raw is not None:
+                if not isinstance(holes_raw, list):
+                    raise ValueError(f"parts[{idx}].holes_points must be list")
+                for hidx, hole in enumerate(holes_raw):
+                    holes.append(_parse_polygon(hole, f"parts[{idx}].holes_points[{hidx}]"))
+
+        outer, holes = _normalize_loops(outer, holes)
+        poly = _as_polygon(outer, holes, f"parts[{idx}]")
+        min_x, min_y, max_x, max_y = poly.bounds
+
+        out[part_id] = {
+            "allowed_rotations": allowed_rotations,
+            "polygon": poly,
+            "bbox_w": float(max_x - min_x),
+            "bbox_h": float(max_y - min_y),
+        }
 
     return out
 
 
-def _rect_overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
-    ax1, ay1, ax2, ay2 = a
-    bx1, by1, bx2, by2 = b
-    return ax1 < bx2 - EPS and bx1 < ax2 - EPS and ay1 < by2 - EPS and by1 < ay2 - EPS
+def _parse_clearance(payload: dict[str, Any], key: str) -> float:
+    value = payload.get(key, 0.0)
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{key} must be number")
+    if float(value) < 0:
+        raise ValueError(f"{key} must be >= 0")
+    return float(value)
 
 
-def _point_on_segment(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> bool:
-    cross = (py - ay) * (bx - ax) - (px - ax) * (by - ay)
-    if abs(cross) > EPS:
-        return False
-    dot = (px - ax) * (px - bx) + (py - ay) * (py - by)
-    return dot <= EPS
-
-
-def _point_in_polygon(pt: tuple[float, float], poly: list[tuple[float, float]]) -> bool:
-    x, y = pt
-    inside = False
-    n = len(poly)
-    for i in range(n):
-        x1, y1 = poly[i]
-        x2, y2 = poly[(i + 1) % n]
-        if _point_on_segment(x, y, x1, y1, x2, y2):
-            return True
-        intersects = ((y1 > y) != (y2 > y)) and (x < (x2 - x1) * (y - y1) / ((y2 - y1) + EPS) + x1)
-        if intersects:
-            inside = not inside
-    return inside
-
-
-def _orientation(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
-    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-
-
-def _segments_intersect(a1: tuple[float, float], a2: tuple[float, float], b1: tuple[float, float], b2: tuple[float, float]) -> bool:
-    o1 = _orientation(a1, a2, b1)
-    o2 = _orientation(a1, a2, b2)
-    o3 = _orientation(b1, b2, a1)
-    o4 = _orientation(b1, b2, a2)
-
-    if (o1 > EPS and o2 < -EPS or o1 < -EPS and o2 > EPS) and (o3 > EPS and o4 < -EPS or o3 < -EPS and o4 > EPS):
-        return True
-
-    if abs(o1) <= EPS and _point_on_segment(b1[0], b1[1], a1[0], a1[1], a2[0], a2[1]):
-        return True
-    if abs(o2) <= EPS and _point_on_segment(b2[0], b2[1], a1[0], a1[1], a2[0], a2[1]):
-        return True
-    if abs(o3) <= EPS and _point_on_segment(a1[0], a1[1], b1[0], b1[1], b2[0], b2[1]):
-        return True
-    if abs(o4) <= EPS and _point_on_segment(a2[0], a2[1], b1[0], b1[1], b2[0], b2[1]):
-        return True
-
-    return False
-
-
-def _polygon_edges(poly: list[tuple[float, float]]) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    return [(poly[i], poly[(i + 1) % len(poly)]) for i in range(len(poly))]
-
-
-def _rect_edges(rect: tuple[float, float, float, float]) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    x1, y1, x2, y2 = rect
-    return [
-        ((x1, y1), (x2, y1)),
-        ((x2, y1), (x2, y2)),
-        ((x2, y2), (x1, y2)),
-        ((x1, y2), (x1, y1)),
-    ]
-
-
-def _rect_shape_feasible(rect: tuple[float, float, float, float], outer: list[tuple[float, float]], holes: list[list[tuple[float, float]]]) -> bool:
-    x1, y1, x2, y2 = rect
-    corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
-
-    for c in corners:
-        if not _point_in_polygon(c, outer):
-            return False
-
-    rect_edges = _rect_edges(rect)
-    for hole in holes:
-        for c in corners:
-            if _point_in_polygon(c, hole):
-                return False
-        for re in rect_edges:
-            for he in _polygon_edges(hole):
-                if _segments_intersect(re[0], re[1], he[0], he[1]):
-                    return False
-
-    return True
+def _placement_polygon(base_poly: Any, *, x: float, y: float, rotation_deg: int) -> Any:
+    _require_shapely()
+    rotated = shp_rotate(base_poly, float(rotation_deg), origin=(0.0, 0.0), use_radians=False)
+    return shp_translate(rotated, xoff=float(x), yoff=float(y))
 
 
 def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: dict[str, Any]) -> None:
@@ -267,8 +258,17 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
     if not isinstance(unplaced, list):
         raise ValueError("output.unplaced must be list")
 
+    spacing_mm = _parse_clearance(input_payload, "spacing_mm")
+    margin_mm = _parse_clearance(input_payload, "margin_mm")
+
     sheet_shapes = _build_sheet_shapes(input_payload)
-    part_dims = _part_dims(input_payload)
+    part_geoms = _part_geometries(input_payload)
+
+    sheet_margin_usable: dict[int, Any] = {}
+    if margin_mm > 0:
+        for sidx, sheet in sheet_shapes.items():
+            usable = sheet["polygon"].buffer(-margin_mm, join_style=2)
+            sheet_margin_usable[sidx] = usable
 
     expected_counts: Counter[str] = Counter()
     for part in input_payload.get("parts", []):
@@ -276,7 +276,7 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
 
     seen_instance_ids: set[str] = set()
     seen_counts: Counter[str] = Counter()
-    sheet_rects: dict[int, list[tuple[float, float, float, float]]] = defaultdict(list)
+    sheet_polys: dict[int, list[Any]] = defaultdict(list)
 
     for placement in placements:
         if not isinstance(placement, dict):
@@ -294,7 +294,7 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
             raise ValueError(f"duplicate instance_id: {instance_id}")
         seen_instance_ids.add(instance_id)
 
-        if part_id not in part_dims:
+        if part_id not in part_geoms:
             raise ValueError(f"unknown part_id in placement: {part_id}")
         if not isinstance(sheet_index, int) or sheet_index not in sheet_shapes:
             raise ValueError(f"invalid sheet_index: {sheet_index}")
@@ -303,31 +303,28 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
         if not isinstance(rot, (int, float)):
             raise ValueError("placement.rotation_deg must be number")
 
-        base_w, base_h, allowed_rotations = part_dims[part_id]
         rot_norm = int(rot) % 360
+        allowed_rotations = part_geoms[part_id]["allowed_rotations"]
         if rot_norm not in allowed_rotations:
             raise ValueError(f"rotation {rot_norm} not allowed for part {part_id}")
-        if rot_norm in (0, 180):
-            w, h = base_w, base_h
-        elif rot_norm in (90, 270):
-            w, h = base_h, base_w
-        else:
-            raise ValueError(f"unsupported rotation_deg: {rot}")
 
-        x1 = float(x)
-        y1 = float(y)
-        x2 = x1 + w
-        y2 = y1 + h
-        rect = (x1, y1, x2, y2)
+        poly = _placement_polygon(part_geoms[part_id]["polygon"], x=float(x), y=float(y), rotation_deg=rot_norm)
+        sheet_poly = sheet_shapes[sheet_index]["polygon"]
 
-        sheet = sheet_shapes[sheet_index]
-        if not _rect_shape_feasible(rect, sheet["outer"], sheet["holes"]):
+        if not sheet_poly.covers(poly):
             raise ValueError(f"placement out of stock shape or intersects hole: {instance_id}")
 
-        for prev in sheet_rects[sheet_index]:
-            if _rect_overlap(prev, rect):
+        if margin_mm > 0:
+            usable = sheet_margin_usable[sheet_index]
+            if usable.is_empty or not usable.covers(poly):
+                raise ValueError(f"margin violation on sheet {sheet_index} for {instance_id}")
+
+        for prev in sheet_polys[sheet_index]:
+            if prev.intersection(poly).area > AREA_EPS:
                 raise ValueError(f"overlap detected on sheet {sheet_index} for {instance_id}")
-        sheet_rects[sheet_index].append(rect)
+            if spacing_mm > 0 and prev.distance(poly) < spacing_mm - EPS:
+                raise ValueError(f"spacing violation on sheet {sheet_index} for {instance_id}")
+        sheet_polys[sheet_index].append(poly)
 
         seen_counts[part_id] += 1
 
@@ -345,19 +342,23 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
         seen_counts[part_id] += 1
 
         if reason == "PART_NEVER_FITS_STOCK":
-            if part_id not in part_dims:
+            if part_id not in part_geoms:
                 raise ValueError(f"unknown part in unplaced: {part_id}")
-            bw, bh, allowed_rot = part_dims[part_id]
+            part_w = part_geoms[part_id]["bbox_w"]
+            part_h = part_geoms[part_id]["bbox_h"]
+            allowed_rot = part_geoms[part_id]["allowed_rotations"]
             fits_any = False
             for sheet in sheet_shapes.values():
-                for rot in allowed_rot:
-                    if rot in (0, 180):
-                        rw, rh = bw, bh
-                    elif rot in (90, 270):
-                        rw, rh = bh, bw
+                usable_w = sheet["bbox_w"] - (2.0 * margin_mm)
+                usable_h = sheet["bbox_h"] - (2.0 * margin_mm)
+                if usable_w <= 0 or usable_h <= 0:
+                    continue
+                for rotation in allowed_rot:
+                    if rotation in (90, 270):
+                        rw, rh = part_h, part_w
                     else:
-                        continue
-                    if rw <= sheet["bbox_w"] and rh <= sheet["bbox_h"]:
+                        rw, rh = part_w, part_h
+                    if rw <= usable_w + EPS and rh <= usable_h + EPS:
                         fits_any = True
             if fits_any:
                 raise ValueError(f"invalid PART_NEVER_FITS_STOCK reason for part {part_id}")

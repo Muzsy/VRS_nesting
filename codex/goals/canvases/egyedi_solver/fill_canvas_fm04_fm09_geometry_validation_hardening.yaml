@@ -1,0 +1,56 @@
+steps:
+  - name: "Canvas es Codex artefaktok letrehozasa"
+    description: >
+      Veglegesitsd a task canvas scope-jat FM04-FM09 javitasokra, es hozd letre
+      a checklist + report alapfajlokat a codex workflow szerint.
+    outputs:
+      - "canvases/egyedi_solver/fm04_fm09_geometry_validation_hardening.md"
+      - "codex/codex_checklist/egyedi_solver/fm04_fm09_geometry_validation_hardening.md"
+      - "codex/reports/egyedi_solver/fm04_fm09_geometry_validation_hardening.md"
+
+  - name: "DXF importer hardening (FM04 FM05 FM09)"
+    description: >
+      Frissitsd a vrs_nesting/dxf/importer.py modult ugy, hogy chaining ketiranyu legyen,
+      self-intersection detektalas tortenjen importnal, es closed spline endpoint drift
+      ne okozzon fals open contour hibakat.
+    outputs:
+      - "vrs_nesting/dxf/importer.py"
+
+  - name: "Validator hardening (FM06 FM07)"
+    description: >
+      Frissitsd a vrs_nesting/nesting/instances.py validatort valos polygon overlap
+      ellenorzesre es spacing/margin invarians enforce-ra.
+    outputs:
+      - "vrs_nesting/nesting/instances.py"
+
+  - name: "Input generator offset fix (FM08)"
+    description: >
+      Frissitsd a vrs_nesting/sparrow/input_generator.py-t, hogy
+      source_base_offset_mm prepared geometriabol szamolodjon.
+    outputs:
+      - "vrs_nesting/sparrow/input_generator.py"
+
+  - name: "Unit tesztek bovitese FM04-FM09"
+    description: >
+      Bovitsd a relevans teszteket importer/validator/input_generator regresszio esetekkel.
+      Adj uj tesztfajlt a sparrow input generator offset viselkedesre.
+    outputs:
+      - "tests/test_dxf_importer_json_fixture.py"
+      - "tests/test_output_status_validation.py"
+      - "tests/test_sparrow_input_generator.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Pipald ki a checklist pontokat, es toltsd ki a report DoD->Evidence matrixot
+      konkret file+line hivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/fm04_fm09_geometry_validation_hardening.md"
+      - "codex/reports/egyedi_solver/fm04_fm09_geometry_validation_hardening.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/fm04_fm09_geometry_validation_hardening.md
+    outputs:
+      - "codex/reports/egyedi_solver/fm04_fm09_geometry_validation_hardening.md"
+      - "codex/reports/egyedi_solver/fm04_fm09_geometry_validation_hardening.verify.log"

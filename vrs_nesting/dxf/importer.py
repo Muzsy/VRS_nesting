@@ -25,6 +25,7 @@ CHAIN_ENDPOINT_EPSILON_MM = 0.2
 ARC_CHORD_ERROR_MM = 0.2
 ELLIPSE_CLOSED_PARAM_EPSILON = 1e-6
 MAX_INSERT_EXPANSION_DEPTH = 8
+RING_INTERSECTION_EPS = 1e-9
 INSUNITS_MM_SCALE = {
     0: 1.0,
     1: 25.4,
@@ -390,6 +391,66 @@ def _distance(a: list[float], b: list[float]) -> float:
     return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
 
 
+def _orientation(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def _point_on_segment(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> bool:
+    cross = _orientation(a, b, p)
+    if abs(cross) > RING_INTERSECTION_EPS:
+        return False
+    dot = (p[0] - a[0]) * (p[0] - b[0]) + (p[1] - a[1]) * (p[1] - b[1])
+    return dot <= RING_INTERSECTION_EPS
+
+
+def _segments_intersect(a1: tuple[float, float], a2: tuple[float, float], b1: tuple[float, float], b2: tuple[float, float]) -> bool:
+    o1 = _orientation(a1, a2, b1)
+    o2 = _orientation(a1, a2, b2)
+    o3 = _orientation(b1, b2, a1)
+    o4 = _orientation(b1, b2, a2)
+
+    if (o1 > RING_INTERSECTION_EPS and o2 < -RING_INTERSECTION_EPS or o1 < -RING_INTERSECTION_EPS and o2 > RING_INTERSECTION_EPS) and (
+        o3 > RING_INTERSECTION_EPS and o4 < -RING_INTERSECTION_EPS or o3 < -RING_INTERSECTION_EPS and o4 > RING_INTERSECTION_EPS
+    ):
+        return True
+
+    if abs(o1) <= RING_INTERSECTION_EPS and _point_on_segment(b1, a1, a2):
+        return True
+    if abs(o2) <= RING_INTERSECTION_EPS and _point_on_segment(b2, a1, a2):
+        return True
+    if abs(o3) <= RING_INTERSECTION_EPS and _point_on_segment(a1, b1, b2):
+        return True
+    if abs(o4) <= RING_INTERSECTION_EPS and _point_on_segment(a2, b1, b2):
+        return True
+    return False
+
+
+def _ring_has_self_intersection(ring: list[list[float]]) -> bool:
+    points = [(float(p[0]), float(p[1])) for p in ring]
+    n = len(points)
+    if n < 3:
+        return True
+
+    for i in range(n):
+        a1 = points[i]
+        a2 = points[(i + 1) % n]
+        for j in range(i + 1, n):
+            if abs(i - j) <= 1:
+                continue
+            if i == 0 and j == n - 1:
+                continue
+            b1 = points[j]
+            b2 = points[(j + 1) % n]
+            if _segments_intersect(a1, a2, b1, b2):
+                return True
+    return False
+
+
+def _assert_non_self_intersecting(ring: list[list[float]], *, where: str) -> None:
+    if _ring_has_self_intersection(ring):
+        raise DxfImportError("DXF_INVALID_RING", f"self-intersecting contour at {where}")
+
+
 def _reverse_path(points: list[list[float]]) -> list[list[float]]:
     rev = list(reversed(points))
     return [[float(x), float(y)] for x, y in rev]
@@ -409,6 +470,20 @@ def _append_path(dst: list[list[float]], src: list[list[float]]) -> None:
     dst.extend(src)
 
 
+def _prepend_path(dst: list[list[float]], src: list[list[float]]) -> None:
+    if not src:
+        return
+    if not dst:
+        dst.extend(src)
+        return
+
+    if _distance(src[-1], dst[0]) <= CHAIN_ENDPOINT_EPSILON_MM:
+        dst[:0] = src[:-1]
+        return
+
+    dst[:0] = src
+
+
 def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
     remaining = [seg for seg in segments if len(seg) >= 2]
     rings: list[list[list[float]]] = []
@@ -423,6 +498,7 @@ def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -
                 cand_forward = candidate
                 cand_reverse = _reverse_path(candidate)
 
+                start = chain[0]
                 end = chain[-1]
                 if _distance(end, cand_forward[0]) <= CHAIN_ENDPOINT_EPSILON_MM:
                     _append_path(chain, cand_forward)
@@ -434,11 +510,22 @@ def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -
                     remaining.pop(idx)
                     progressed = True
                     break
+                if _distance(start, cand_forward[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
+                    _prepend_path(chain, cand_forward)
+                    remaining.pop(idx)
+                    progressed = True
+                    break
+                if _distance(start, cand_reverse[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
+                    _prepend_path(chain, cand_reverse)
+                    remaining.pop(idx)
+                    progressed = True
+                    break
 
         if len(chain) >= 3 and _distance(chain[0], chain[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
             chain[-1] = [float(chain[0][0]), float(chain[0][1])]
             try:
                 ring = clean_ring(chain, min_edge_len=1e-6, ccw=True, where=f"{layer}.chain")
+                _assert_non_self_intersecting(ring, where=f"{layer}.chain")
                 rings.append(ring)
             except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"failed to normalize chained contour on {layer}: {exc}") from exc
@@ -504,7 +591,9 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
         if etype in {"LWPOLYLINE", "POLYLINE"} and closed:
             ring_points = path + [path[0]]
             try:
-                direct_rings.append(clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.closed"))
+                ring = clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.closed")
+                _assert_non_self_intersecting(ring, where=f"{where}.closed")
+                direct_rings.append(ring)
             except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"invalid closed contour at {where}: {exc}") from exc
             continue
@@ -512,16 +601,23 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
         if etype == "CIRCLE":
             ring_points = path + [path[0]]
             try:
-                direct_rings.append(clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.circle"))
+                ring = clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.circle")
+                _assert_non_self_intersecting(ring, where=f"{where}.circle")
+                direct_rings.append(ring)
             except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"invalid circle contour at {where}: {exc}") from exc
             continue
 
-        if etype in {"SPLINE", "ELLIPSE"} and closed and _distance(path[0], path[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
+        if etype in {"SPLINE", "ELLIPSE"} and closed:
             ring_points = list(path)
-            ring_points[-1] = list(ring_points[0])
+            if _distance(ring_points[0], ring_points[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
+                ring_points[-1] = list(ring_points[0])
+            else:
+                ring_points.append(list(ring_points[0]))
             try:
-                direct_rings.append(clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.spline"))
+                ring = clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.spline")
+                _assert_non_self_intersecting(ring, where=f"{where}.spline")
+                direct_rings.append(ring)
             except GeometryCleanError as exc:
                 raise DxfImportError("DXF_INVALID_RING", f"invalid spline contour at {where}: {exc}") from exc
             continue
