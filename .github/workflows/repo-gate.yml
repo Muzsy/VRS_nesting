@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      SPARROW_ALLOW_NETWORK_FALLBACK: "0"
+      SPARROW_ALLOW_NETWORK_FALLBACK: "1"
 
     steps:
       - name: Checkout
