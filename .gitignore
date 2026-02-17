@@ -5,3 +5,5 @@ __pycache__/
 tmp/
 runs/
 rust/vrs_solver/target/
+.venv/
+.idx/
