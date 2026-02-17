@@ -130,12 +130,16 @@ def _part_defs(input_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 raise DxfExportError(f"parts[{idx}].holes_points must be list")
 
         outer, holes = _normalize_loops(outer, holes)
+        source_entities = part.get("source_entities", [])
+        if not isinstance(source_entities, list):
+            source_entities = []
         out[part_id] = {
             "width": float(width),
             "height": float(height),
             "allowed_rotations": allowed_rotations,
             "outer": outer,
             "holes": holes,
+            "source_entities": source_entities,
         }
 
     return out
@@ -174,7 +178,8 @@ def _approx_block_name(part_id: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_]", "_", part_id)
     if not safe:
         safe = "PART"
-    return f"PART_{safe.upper()}"
+    digest = hashlib.sha1(part_id.encode("utf-8")).hexdigest()[:10].upper()
+    return f"PART_{safe.upper()}_{digest}"
 
 
 def _source_block_name(part_id: str, source_meta: dict[str, Any]) -> str:
@@ -229,86 +234,93 @@ def _write_dxf_approx(
     part_defs: dict[str, dict[str, Any]],
     sheet_placements: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    lines: list[str] = [
-        "0",
-        "SECTION",
-        "2",
-        "HEADER",
-        "0",
-        "ENDSEC",
-        "0",
-        "SECTION",
-        "2",
-        "BLOCKS",
-    ]
-
+    ezdxf = _require_ezdxf()
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
     used_parts = sorted({str(p["part_id"]) for p in sheet_placements})
     for part_id in used_parts:
         pdef = part_defs[part_id]
         block = _approx_block_name(part_id)
+        if block not in doc.blocks:
+            block_rec = doc.blocks.new(name=block, base_point=(0.0, 0.0, 0.0))
+            source_entities = pdef.get("source_entities", [])
+            if isinstance(source_entities, list) and source_entities:
+                base_x, base_y = _source_entities_base_offset(source_entities)
+                _add_source_entities_to_block(block_rec, source_entities, base_x, base_y)
+            else:
+                block_rec.add_lwpolyline(pdef["outer"], close=True, dxfattribs={"layer": "PART_OUTER"})
+                for hole in pdef["holes"]:
+                    block_rec.add_lwpolyline(hole, close=True, dxfattribs={"layer": "PART_HOLE"})
 
-        lines.extend([
-            "0",
-            "BLOCK",
-            "8",
-            "PART_BLOCK",
-            "2",
-            block,
-            "70",
-            "0",
-            "10",
-            "0.000000",
-            "20",
-            "0.000000",
-            "30",
-            "0.0",
-            "3",
-            block,
-            "1",
-            "",
-        ])
-
-        _loop_to_lines(lines, pdef["outer"], "PART_OUTER")
-        for hole in pdef["holes"]:
-            _loop_to_lines(lines, hole, "PART_HOLE")
-
-        lines.extend(["0", "ENDBLK"])
-
-    lines.extend(["0", "ENDSEC", "0", "SECTION", "2", "ENTITIES"])
-
-    _add_line_entity(lines, 0.0, 0.0, sheet_w, 0.0, "SHEET")
-    _add_line_entity(lines, sheet_w, 0.0, sheet_w, sheet_h, "SHEET")
-    _add_line_entity(lines, sheet_w, sheet_h, 0.0, sheet_h, "SHEET")
-    _add_line_entity(lines, 0.0, sheet_h, 0.0, 0.0, "SHEET")
+    msp.add_line((0.0, 0.0, 0.0), (sheet_w, 0.0, 0.0), dxfattribs={"layer": "SHEET"})
+    msp.add_line((sheet_w, 0.0, 0.0), (sheet_w, sheet_h, 0.0), dxfattribs={"layer": "SHEET"})
+    msp.add_line((sheet_w, sheet_h, 0.0), (0.0, sheet_h, 0.0), dxfattribs={"layer": "SHEET"})
+    msp.add_line((0.0, sheet_h, 0.0), (0.0, 0.0, 0.0), dxfattribs={"layer": "SHEET"})
 
     for placement in sheet_placements:
         part_id = str(placement["part_id"])
         block = _approx_block_name(part_id)
-        lines.extend(
-            [
-                "0",
-                "INSERT",
-                "8",
-                "PART_INSERT",
-                "2",
-                block,
-                "10",
-                f"{float(placement['x']):.6f}",
-                "20",
-                f"{float(placement['y']):.6f}",
-                "30",
-                "0.0",
-                "50",
-                f"{float(placement['rotation_deg']):.6f}",
-            ]
+        msp.add_blockref(
+            block,
+            (float(placement["x"]), float(placement["y"]), 0.0),
+            dxfattribs={
+                "layer": "PART_INSERT",
+                "rotation": float(placement["rotation_deg"]),
+            },
         )
-
-    lines.extend(["0", "ENDSEC", "0", "EOF"])
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.saveas(path)
     return {
         "export_mode": "block_insert",
         "used_part_blocks": sorted({_approx_block_name(str(p["part_id"])) for p in sheet_placements}),
     }
+
+
+def _source_entities_base_offset(source_entities: list[dict[str, Any]]) -> tuple[float, float]:
+    min_x: float | None = None
+    min_y: float | None = None
+
+    def _push(x: float, y: float) -> None:
+        nonlocal min_x, min_y
+        if min_x is None or x < min_x:
+            min_x = x
+        if min_y is None or y < min_y:
+            min_y = y
+
+    for entity in source_entities:
+        if not isinstance(entity, dict):
+            continue
+        etype = str(entity.get("type", "")).upper().strip()
+        if etype in {"LINE", "LWPOLYLINE", "POLYLINE", "SPLINE", "ELLIPSE"}:
+            points = entity.get("points")
+            if isinstance(points, list):
+                for point in points:
+                    if isinstance(point, (list, tuple)) and len(point) == 2:
+                        x = point[0]
+                        y = point[1]
+                        if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+                            _push(float(x), float(y))
+            continue
+        if etype in {"ARC", "CIRCLE"}:
+            center = entity.get("center")
+            radius = entity.get("radius")
+            if (
+                isinstance(center, (list, tuple))
+                and len(center) == 2
+                and isinstance(center[0], (int, float))
+                and isinstance(center[1], (int, float))
+                and isinstance(radius, (int, float))
+            ):
+                cx = float(center[0])
+                cy = float(center[1])
+                r = float(radius)
+                _push(cx - r, cy - r)
+                _push(cx + r, cy + r)
+            continue
+
+    if min_x is None or min_y is None:
+        return 0.0, 0.0
+    return float(min_x), float(min_y)
 
 
 def _validate_source_meta(part_id: str, entry: dict[str, Any], *, where: str) -> dict[str, Any]:

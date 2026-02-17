@@ -1,0 +1,51 @@
+steps:
+  - name: "Canvas es task artefaktok letrehozasa"
+    description: >
+      Veglegesitsd a FM10/FM11/FM12/FM14 scope-ot, es hozd letre a checklist+report
+      alapfajlokat a codex workflow szerint.
+    outputs:
+      - "canvases/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.md"
+      - "codex/codex_checklist/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.md"
+      - "codex/reports/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.md"
+
+  - name: "Offset es chaining hardening implementacio"
+    description: >
+      Frissitsd a geometry offset modult explicit mitre_limit hasznalatra,
+      illetve a DXF importer chaining algoritmusat endpoint-indexes keresessel.
+    outputs:
+      - "vrs_nesting/geometry/offset.py"
+      - "vrs_nesting/dxf/importer.py"
+
+  - name: "Exporter approx mode javitas (entity-preserving + collision-safe names)"
+    description: >
+      Frissitsd a DXF exportert ugy, hogy approx mod source_entities jelenleteben
+      tudjon ARC/SPLINE entitasokat blokkokban megorizni, es az approx block nev
+      collision-safe legyen stabil digest alapon.
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+
+  - name: "Unit tesztek bovitese FM10/FM11/FM12/FM14"
+    description: >
+      Adj/frasits teszteket offset mitre_limit viselkedesre,
+      approx exporter entity-preserving + block name collision esetre,
+      es chaining regressziora.
+    outputs:
+      - "tests/test_geometry_offset.py"
+      - "tests/test_dxf_exporter_approx_mode.py"
+      - "tests/test_dxf_importer_json_fixture.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Pipald ki a checklist pontokat, es toltsd ki a report DoD->Evidence matrixot
+      konkret file+line hivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.md"
+      - "codex/reports/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.md
+    outputs:
+      - "codex/reports/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.md"
+      - "codex/reports/egyedi_solver/fm10_fm12_fm14_export_offset_chain_robustness.verify.log"

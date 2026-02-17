@@ -135,3 +135,21 @@ def test_import_part_raw_json_fixture_closed_spline_endpoint_drift_passes(tmp_pa
 
     part = import_part_raw(fixture_path)
     assert len(part.outer_points_mm) >= 4
+
+
+def test_chain_segments_to_rings_many_segments_still_closes_ring():
+    segments = []
+    width = 50
+    height = 50
+    for x in range(width):
+        segments.append([[x, 0], [x + 1, 0]])
+    for y in range(height):
+        segments.append([[width, y], [width, y + 1]])
+    for x in range(width, 0, -1):
+        segments.append([[x, height], [x - 1, height]])
+    for y in range(height, 0, -1):
+        segments.append([[0, y], [0, y - 1]])
+
+    rings, open_paths = _chain_segments_to_rings(segments, layer="CUT_OUTER")
+    assert len(rings) == 1
+    assert len(open_paths) == 0

@@ -489,35 +489,89 @@ def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -
     rings: list[list[list[float]]] = []
     open_paths: list[list[list[float]]] = []
 
-    while remaining:
-        chain = [list(p) for p in remaining.pop(0)]
+    if not remaining:
+        return rings, open_paths
+
+    epsilon = CHAIN_ENDPOINT_EPSILON_MM
+    scale = 1.0 / epsilon if epsilon > 0 else 1.0
+
+    def _endpoint_key(point: list[float]) -> tuple[int, int]:
+        return (int(round(float(point[0]) * scale)), int(round(float(point[1]) * scale)))
+
+    alive: set[int] = set(range(len(remaining)))
+    start_index: dict[tuple[int, int], set[int]] = {}
+    end_index: dict[tuple[int, int], set[int]] = {}
+
+    def _index_add(seg_idx: int) -> None:
+        seg = remaining[seg_idx]
+        skey = _endpoint_key(seg[0])
+        ekey = _endpoint_key(seg[-1])
+        start_index.setdefault(skey, set()).add(seg_idx)
+        end_index.setdefault(ekey, set()).add(seg_idx)
+
+    def _index_remove(seg_idx: int) -> None:
+        seg = remaining[seg_idx]
+        skey = _endpoint_key(seg[0])
+        ekey = _endpoint_key(seg[-1])
+        start_set = start_index.get(skey)
+        if start_set is not None:
+            start_set.discard(seg_idx)
+            if not start_set:
+                start_index.pop(skey, None)
+        end_set = end_index.get(ekey)
+        if end_set is not None:
+            end_set.discard(seg_idx)
+            if not end_set:
+                end_index.pop(ekey, None)
+
+    for seg_idx in sorted(alive):
+        _index_add(seg_idx)
+
+    def _consume_segment(seg_idx: int) -> list[list[float]]:
+        _index_remove(seg_idx)
+        alive.discard(seg_idx)
+        return [list(p) for p in remaining[seg_idx]]
+
+    while alive:
+        current_idx = min(alive)
+        chain = _consume_segment(current_idx)
         progressed = True
-        while progressed and remaining:
+        while progressed and alive:
             progressed = False
-            for idx, candidate in enumerate(remaining):
+            start = chain[0]
+            end = chain[-1]
+
+            candidate_idx_pool: set[int] = set()
+            candidate_idx_pool.update(start_index.get(_endpoint_key(end), set()))
+            candidate_idx_pool.update(end_index.get(_endpoint_key(end), set()))
+            candidate_idx_pool.update(start_index.get(_endpoint_key(start), set()))
+            candidate_idx_pool.update(end_index.get(_endpoint_key(start), set()))
+
+            for idx in sorted(candidate_idx_pool):
+                if idx not in alive:
+                    continue
+                candidate = remaining[idx]
                 cand_forward = candidate
                 cand_reverse = _reverse_path(candidate)
 
-                start = chain[0]
-                end = chain[-1]
                 if _distance(end, cand_forward[0]) <= CHAIN_ENDPOINT_EPSILON_MM:
                     _append_path(chain, cand_forward)
-                    remaining.pop(idx)
+                    _consume_segment(idx)
                     progressed = True
                     break
                 if _distance(end, cand_reverse[0]) <= CHAIN_ENDPOINT_EPSILON_MM:
                     _append_path(chain, cand_reverse)
-                    remaining.pop(idx)
+                    _consume_segment(idx)
                     progressed = True
                     break
                 if _distance(start, cand_forward[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
                     _prepend_path(chain, cand_forward)
-                    remaining.pop(idx)
+                    _consume_segment(idx)
                     progressed = True
                     break
                 if _distance(start, cand_reverse[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
                     _prepend_path(chain, cand_reverse)
-                    remaining.pop(idx)
+                    _consume_segment(idx)
                     progressed = True
                     break
 

@@ -8,6 +8,8 @@ from typing import Any
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
 
+DEFAULT_MITRE_LIMIT = 2.0
+
 
 class GeometryOffsetError(ValueError):
     """Deterministic geometry offset error with stable code + message."""
@@ -108,7 +110,7 @@ def offset_part_geometry(
 
     base = _as_polygon(payload.get("outer_points_mm"), payload.get("holes_points_mm", []), "part")
     dist = float(spacing_mm) / 2.0
-    expanded = base.buffer(dist, join_style="mitre")
+    expanded = base.buffer(dist, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT)
     poly = _largest_polygon(expanded, "part")
     return _polygon_to_payload(poly)
 
@@ -127,13 +129,16 @@ def offset_stock_geometry(
     clearance = float(margin_mm) + (float(spacing_mm) / 2.0)
     base = _as_polygon(payload.get("outer_points_mm"), payload.get("holes_points_mm", []), "stock")
 
-    usable_outer = _largest_polygon(base.buffer(-clearance, join_style="mitre"), "stock.outer")
+    usable_outer = _largest_polygon(
+        base.buffer(-clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT),
+        "stock.outer",
+    )
 
     holes_payload = payload.get("holes_points_mm", [])
     expanded_holes = []
     for idx, hole in enumerate(holes_payload):
         hpoly = _as_polygon(hole, [], f"stock.hole[{idx}]")
-        expanded_holes.append(hpoly.buffer(clearance, join_style="mitre"))
+        expanded_holes.append(hpoly.buffer(clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT))
 
     if expanded_holes:
         usable = usable_outer.difference(unary_union(expanded_holes))
