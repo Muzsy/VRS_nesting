@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from vrs_nesting.runner.sparrow_runner import SparrowRunnerError, run_sparrow_in_dir
+from vrs_nesting.runner.solver_adapter import SolverAdapter, SolverAdapterError, build_sparrow_solver_adapter
 
 
 class MultiSheetWrapperError(RuntimeError):
@@ -297,6 +297,7 @@ def run_multi_sheet_wrapper(
     seed: int,
     time_limit_s: int,
     sparrow_bin: str | None = None,
+    solver_adapter: SolverAdapter | None = None,
 ) -> dict[str, Any]:
     root = Path(run_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -306,6 +307,7 @@ def run_multi_sheet_wrapper(
 
     stock_sheets = _sheet_sizes_from_solver_input(solver_input)
     remaining = _expand_remaining_items(sparrow_instance, stock_sheets)
+    active_adapter = solver_adapter or build_sparrow_solver_adapter()
 
     all_placements: list[dict[str, Any]] = []
     raw_outputs: list[dict[str, Any]] = []
@@ -337,14 +339,14 @@ def run_multi_sheet_wrapper(
         sheet_instance_path.write_text(json.dumps(sheet_instance, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
         try:
-            _, meta = run_sparrow_in_dir(
-                str(sheet_instance_path),
+            _, meta = active_adapter.run_in_dir(
+                input_path=str(sheet_instance_path),
                 run_dir=sheet_dir,
                 seed=seed + sheet_index,
-                time_limit=budget,
-                sparrow_bin=sparrow_bin,
+                time_limit_s=budget,
+                solver_bin=sparrow_bin,
             )
-        except SparrowRunnerError as exc:
+        except SolverAdapterError as exc:
             raise MultiSheetWrapperError(f"sparrow run failed on sheet_{sheet_index + 1:03d}: {exc}") from exc
 
         final_json_path = Path(str(meta.get("final_json_path", ""))).resolve()

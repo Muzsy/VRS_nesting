@@ -15,7 +15,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from vrs_nesting.config.runtime import solver_runtime_from_env
+from vrs_nesting.config.runtime import resolve_solver_bin_name, solver_runtime_from_env
 from vrs_nesting.nesting.instances import validate_multi_sheet_output
 from vrs_nesting.run_artifacts.run_dir import create_run_dir
 
@@ -77,12 +77,9 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def resolve_solver_bin(explicit_bin: str | None = None) -> str:
     candidates: list[str] = []
-    if explicit_bin:
-        candidates.append(explicit_bin)
-
-    env_bin = os.environ.get("VRS_SOLVER_BIN", "").strip()
-    if env_bin and env_bin not in candidates:
-        candidates.append(env_bin)
+    config_bin = resolve_solver_bin_name(explicit_bin=explicit_bin)
+    if config_bin:
+        candidates.append(config_bin)
 
     if "vrs_solver" not in candidates:
         candidates.append("vrs_solver")

@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -86,7 +87,7 @@ def _run_timeout_guard(fake_solver: Path, run_root: Path) -> None:
         raise AssertionError(f"unexpected timeout duration_sec={duration}")
 
 
-def _run_perf_guard(real_solver: Path, run_root: Path) -> None:
+def _run_perf_guard(real_solver: Path, run_root: Path, *, perf_threshold_s: float) -> dict[str, object]:
     cmd = RUNNER_CMD + [
         "--input",
         str(INPUT_PATH),
@@ -106,11 +107,23 @@ def _run_perf_guard(real_solver: Path, run_root: Path) -> None:
     run_dir = Path(proc.stdout.strip().splitlines()[-1])
     meta = _read_json(run_dir / "runner_meta.json")
     duration = float(meta.get("duration_sec", -1.0))
-    if duration <= 0 or duration > 5.0:
+    if duration <= 0 or duration > perf_threshold_s:
         raise AssertionError(f"perf guard breached on tiny fixture: duration_sec={duration}")
     output_sha = str(meta.get("output_sha256", "")).strip()
     if not output_sha:
         raise AssertionError("missing output_sha256 in runner_meta")
+    return {
+        "status": "pass",
+        "threshold_s": float(perf_threshold_s),
+        "duration_sec": duration,
+        "output_sha256": output_sha,
+        "run_dir": str(run_dir.resolve()),
+    }
+
+
+def _write_baseline_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,12 +133,24 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Fail if rust/vrs_solver binary is missing",
     )
+    parser.add_argument(
+        "--perf-threshold-s",
+        type=float,
+        default=5.0,
+        help="Maximum allowed duration (seconds) for the tiny real-solver perf fixture.",
+    )
+    parser.add_argument(
+        "--baseline-json",
+        default=None,
+        help="Optional path to write nightly baseline JSON payload.",
+    )
     args = parser.parse_args(argv)
 
     if not INPUT_PATH.is_file():
         raise AssertionError(f"missing input fixture: {INPUT_PATH}")
 
     real_solver = ROOT / "rust" / "vrs_solver" / "target" / "release" / "vrs_solver"
+    perf_result: dict[str, object] = {"status": "skipped"}
 
     with tempfile.TemporaryDirectory(prefix="vrs_timeout_guard_") as tmp:
         tmp_dir = Path(tmp)
@@ -137,9 +162,22 @@ def main(argv: list[str] | None = None) -> int:
         if real_solver.is_file() and os.access(real_solver, os.X_OK):
             perf_run_root = tmp_dir / "perf_runs"
             perf_run_root.mkdir(parents=True, exist_ok=True)
-            _run_perf_guard(real_solver, perf_run_root)
+            perf_result = _run_perf_guard(real_solver, perf_run_root, perf_threshold_s=float(args.perf_threshold_s))
         elif args.require_real_solver:
             raise AssertionError(f"real solver binary missing: {real_solver}")
+
+    if args.baseline_json:
+        baseline_payload: dict[str, object] = {
+            "contract_version": "v1",
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "fixture": str(INPUT_PATH),
+            "timeout_guard": {
+                "status": "pass",
+                "expected_runner_return_code": 124,
+            },
+            "perf_guard": perf_result,
+        }
+        _write_baseline_json(Path(args.baseline_json), baseline_payload)
 
     print("[OK] timeout/perf guard smoke passed")
     return 0

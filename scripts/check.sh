@@ -8,8 +8,12 @@ INPUT_JSON="${INPUT_JSON:-poc/sparrow_io/swim.json}"
 SEED="${SEED:-}"
 TIME_LIMIT="${TIME_LIMIT:-}"
 
-# SPARROW_BIN: ha a felhasználó megadja, használjuk. Egyébként buildeljük cache-be.
+# SPARROW_BIN: explicit env esetén kötelezően azt használjuk, különben runtime configból indulunk.
 SPARROW_BIN="${SPARROW_BIN:-}"
+SPARROW_BIN_EXPLICIT=0
+if [[ -n "${SPARROW_BIN}" ]]; then
+  SPARROW_BIN_EXPLICIT=1
+fi
 
 need_cmd() {
   local c="$1"
@@ -19,18 +23,35 @@ need_cmd() {
   fi
 }
 
+resolve_bin_from_value() {
+  local value="$1"
+  local resolved=""
+  if resolved="$(command -v "$value" 2>/dev/null)"; then
+    if [[ -x "$resolved" ]]; then
+      echo "$resolved"
+      return 0
+    fi
+  fi
+  if [[ -x "$value" ]]; then
+    echo "$value"
+    return 0
+  fi
+  return 1
+}
+
 need_cmd python3
 
-if [[ -z "$SEED" || -z "$TIME_LIMIT" ]]; then
+if [[ -z "$SEED" || -z "$TIME_LIMIT" || -z "$SPARROW_BIN" ]]; then
   readarray -t RUNTIME_DEFAULTS < <(python3 - <<'PY'
-from vrs_nesting.config.runtime import runtime_defaults_from_env
+from vrs_nesting.config.runtime import runtime_defaults_from_env, resolve_sparrow_bin_name
 
-cfg = runtime_defaults_from_env()
-print(cfg.seed)
-print(cfg.time_limit_s)
+defaults = runtime_defaults_from_env()
+print(defaults.seed)
+print(defaults.time_limit_s)
+print(resolve_sparrow_bin_name())
 PY
   )
-  if [[ "${#RUNTIME_DEFAULTS[@]}" -ne 2 ]]; then
+  if [[ "${#RUNTIME_DEFAULTS[@]}" -ne 3 ]]; then
     echo "ERROR: Failed to resolve runtime defaults from vrs_nesting.config.runtime" >&2
     exit 2
   fi
@@ -39,6 +60,9 @@ PY
   fi
   if [[ -z "$TIME_LIMIT" ]]; then
     TIME_LIMIT="${RUNTIME_DEFAULTS[1]}"
+  fi
+  if [[ -z "$SPARROW_BIN" ]]; then
+    SPARROW_BIN="${RUNTIME_DEFAULTS[2]}"
   fi
 fi
 
@@ -69,6 +93,18 @@ chmod +x \
   scripts/smoke_real_dxf_sparrow_pipeline.py || true
 
 # --- Sparrow binary resolve/build ---
+if [[ -n "$SPARROW_BIN" ]]; then
+  if resolved_bin="$(resolve_bin_from_value "$SPARROW_BIN")"; then
+    SPARROW_BIN="$resolved_bin"
+  elif [[ "$SPARROW_BIN_EXPLICIT" == "1" ]]; then
+    echo "ERROR: SPARROW_BIN nem futtatható: $SPARROW_BIN" >&2
+    echo "Tipp: add meg full path-ként: SPARROW_BIN=/path/to/sparrow ./scripts/check.sh" >&2
+    exit 2
+  else
+    SPARROW_BIN=""
+  fi
+fi
+
 if [[ -z "$SPARROW_BIN" ]]; then
   echo "[SPARROW] Resolve/build via scripts/ensure_sparrow.sh"
   SPARROW_BIN="$(./scripts/ensure_sparrow.sh)"

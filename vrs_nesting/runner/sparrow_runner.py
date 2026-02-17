@@ -10,13 +10,13 @@ import os
 import shutil
 import subprocess
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
 from typing import Any, cast
 
-from vrs_nesting.config.runtime import sparrow_runtime_from_env
+from vrs_nesting.config.runtime import resolve_sparrow_bin_name, sparrow_runtime_from_env
+from vrs_nesting.run_artifacts.run_dir import create_run_dir
 
 class SparrowRunnerError(RuntimeError):
     """Base runner error."""
@@ -85,11 +85,9 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def resolve_sparrow_bin(explicit_bin: str | None = None) -> str:
     candidates: list[str] = []
-    if explicit_bin:
-        candidates.append(explicit_bin)
-    env_bin = os.environ.get("SPARROW_BIN", "").strip()
-    if env_bin and env_bin not in candidates:
-        candidates.append(env_bin)
+    config_bin = resolve_sparrow_bin_name(explicit_bin=explicit_bin)
+    if config_bin:
+        candidates.append(config_bin)
     if "sparrow" not in candidates:
         candidates.append("sparrow")
 
@@ -105,19 +103,6 @@ def resolve_sparrow_bin(explicit_bin: str | None = None) -> str:
     raise SparrowBinaryNotFoundError(
         "Sparrow binary not found. Provide --sparrow-bin explicitly, or set SPARROW_BIN."
     )
-
-
-def _new_run_dir(run_root: Path) -> Path:
-    run_root.mkdir(parents=True, exist_ok=True)
-    for _ in range(100):
-        run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
-        run_dir = run_root / run_id
-        try:
-            run_dir.mkdir(parents=False, exist_ok=False)
-            return run_dir
-        except FileExistsError:
-            continue
-    raise SparrowRunnerError("Failed to allocate unique run_id.", code="E_SPARROW_RUN_ID_ALLOC")
 
 
 def _discover_final_json(run_dir: Path, snapshot_json: Path, input_json: Path) -> Path:
@@ -272,7 +257,10 @@ def run_sparrow(
     if not input_json.is_file():
         raise SparrowRunnerError(f"Input JSON not found: {input_json}", code="E_SPARROW_INPUT_NOT_FOUND")
 
-    run_dir = _new_run_dir(Path(run_root).resolve())
+    try:
+        run_dir = create_run_dir(run_root=run_root).run_dir
+    except Exception as exc:  # noqa: BLE001
+        raise SparrowRunnerError("Failed to allocate unique run_id.", code="E_SPARROW_RUN_ID_ALLOC") from exc
     snapshot_json = run_dir / "instance.json"
     shutil.copy2(input_json, snapshot_json)
     return _run_sparrow_with_snapshot(

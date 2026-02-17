@@ -43,6 +43,11 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
   * workflow: `.github/workflows/repo-gate.yml`
   * a workflow futtatja a teljes `./scripts/check.sh` minőségkaput
 * A többi workflow (`sparrow-io-smoketest`, `nesttool-smoketest`) kiegészítő smoke jellegű; nem kötelező merge gate.
+* Nightly perf baseline workflow: `nightly-perf-baseline`
+  * workflow: `.github/workflows/nightly-perf-baseline.yml`
+  * futtatja: `python3 scripts/smoke_time_budget_guard.py --require-real-solver --perf-threshold-s 5.0 --baseline-json artifacts/nightly_perf_baseline.json`
+  * publikálja: `nightly_perf_baseline.json` artifactot trend/baseline követéshez
+  * threshold jelzés: GitHub Actions warning/notice summary + script fail, ha a küszöb sérül
 
 ---
 

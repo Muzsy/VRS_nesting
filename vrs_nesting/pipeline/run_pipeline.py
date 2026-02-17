@@ -11,7 +11,7 @@ from typing import Any
 from vrs_nesting.dxf.exporter import export_per_sheet
 from vrs_nesting.project.model import ProjectValidationError, load_project_json
 from vrs_nesting.run_artifacts.run_dir import append_run_log, create_run_dir, write_project_snapshot
-from vrs_nesting.runner.vrs_solver_runner import VrsSolverRunnerError, run_solver_in_dir
+from vrs_nesting.runner.solver_adapter import SolverAdapterError, build_vrs_solver_adapter
 from vrs_nesting.validate.solution_validator import validate_nesting_solution
 
 
@@ -69,6 +69,7 @@ def run_table_pipeline(project_path: str, run_root: str) -> int:
 
     ctx = None
     try:
+        solver_adapter = build_vrs_solver_adapter()
         ctx = create_run_dir(run_root=run_root)
         append_run_log(ctx.run_log_path, "RUN_START", f"project={Path(project_path).resolve()}")
 
@@ -82,8 +83,8 @@ def run_table_pipeline(project_path: str, run_root: str) -> int:
         _write_json(solver_input_path, solver_input)
         append_run_log(ctx.run_log_path, "SOLVER_INPUT_WRITTEN", f"path={solver_input_path}")
 
-        run_dir, runner_meta = run_solver_in_dir(
-            str(solver_input_path),
+        run_dir, runner_meta = solver_adapter.run_in_dir(
+            input_path=str(solver_input_path),
             run_dir=ctx.run_dir,
             seed=project.seed,
             time_limit_s=project.time_limit_s,
@@ -130,7 +131,7 @@ def run_table_pipeline(project_path: str, run_root: str) -> int:
     except Exception as exc:  # noqa: BLE001
         if ctx is not None:
             append_run_log(ctx.run_log_path, "RUN_FAIL", str(exc))
-        if isinstance(exc, VrsSolverRunnerError):
+        if isinstance(exc, SolverAdapterError):
             _eprint(f"ERROR: E_RUN_SOLVER: {exc}")
             return 2
         _eprint(f"ERROR: E_RUN_PIPELINE: {exc}")
@@ -138,4 +139,3 @@ def run_table_pipeline(project_path: str, run_root: str) -> int:
 
     print(str(ctx.run_dir))
     return 0
-

@@ -1,0 +1,63 @@
+steps:
+  - name: "Felderítés és P2 terv rögzítése"
+    description: >
+      Ellenőrizd a P2 backlog tételekhez tartozó jelenlegi implementációt:
+      run_dir allokáció (run_artifacts + sparrow_runner), közvetlen runner hívások
+      (run_pipeline + multi_sheet_wrapper), valamint a perf guard script és workflow-k.
+      A döntések és DoD a canvasban legyenek rögzítve.
+    outputs:
+      - "canvases/egyedi_solver/p2_run_dir_dedupe_solver_adapter_nightly_perf_baseline.md"
+
+  - name: "Run directory allokáció deduplikáció Sparrow runnerben"
+    description: >
+      Módosítsd a `vrs_nesting/runner/sparrow_runner.py` fájlt úgy, hogy a run_sparrow
+      allokáció a közös `create_run_dir` API-n menjen keresztül, és a meglévő meta mezők
+      kompatibilisek maradjanak.
+      Adj hozzá regressziós tesztet a deduplikált allokáció viselkedésére.
+    outputs:
+      - "vrs_nesting/runner/sparrow_runner.py"
+      - "tests/test_sparrow_runner_run_dir_dedupe.py"
+
+  - name: "Közös solver adapter boundary bevezetése"
+    description: >
+      Hozz létre közös adapter interfészt a runner rétegben, amely egységes run_in_dir
+      contractot ad `vrs_solver` és `sparrow` futtatásokra.
+      Kösd be a call site-okba (`run_pipeline`, `multi_sheet_wrapper`) a közvetlen runner
+      hívások helyett.
+      Frissítsd a runner package exportokat, és adj contract teszteket fake binary-kkel.
+    outputs:
+      - "vrs_nesting/runner/solver_adapter.py"
+      - "vrs_nesting/runner/__init__.py"
+      - "vrs_nesting/pipeline/run_pipeline.py"
+      - "vrs_nesting/sparrow/multi_sheet_wrapper.py"
+      - "tests/test_solver_adapter_contract.py"
+
+  - name: "Nightly perf baseline bevezetése"
+    description: >
+      Bővítsd a `scripts/smoke_time_budget_guard.py` scriptet baseline JSON exporttal és
+      paraméterezhető thresholddal.
+      Hozz létre új nightly workflow-t, ami futtatja a perf guardot, baseline artifactot publikál,
+      és threshold summary jelzést ad.
+      Frissítsd a QA dokumentációt a nightly baseline folyamatról.
+    outputs:
+      - "scripts/smoke_time_budget_guard.py"
+      - ".github/workflows/nightly-perf-baseline.yml"
+      - "docs/qa/testing_guidelines.md"
+
+  - name: "Checklist és report előkészítés"
+    description: >
+      Készítsd el a task checklist és report fájlokat a repo szabvány szerint.
+      A report legyen kompatibilis a report_standard v2 szerkezettel, AUTO_VERIFY blokkot
+      a verify.sh kezeli.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/p2_run_dir_dedupe_solver_adapter_nightly_perf_baseline.md"
+      - "codex/reports/egyedi_solver/p2_run_dir_dedupe_solver_adapter_nightly_perf_baseline.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput a wrapperen keresztül:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/p2_run_dir_dedupe_solver_adapter_nightly_perf_baseline.md
+      A verify log kerüljön mentésre és a report AUTO_VERIFY blokkja frissüljön.
+    outputs:
+      - "codex/reports/egyedi_solver/p2_run_dir_dedupe_solver_adapter_nightly_perf_baseline.md"
+      - "codex/reports/egyedi_solver/p2_run_dir_dedupe_solver_adapter_nightly_perf_baseline.verify.log"

@@ -77,3 +77,24 @@ def sparrow_runtime_from_env(env: Mapping[str, str] | None = None) -> SparrowRun
     sparrow_bin = source.get("SPARROW_BIN", "").strip() or "sparrow"
     return SparrowRuntimeConfig(seed=seed, time_limit_s=time_limit_s, sparrow_bin=sparrow_bin)
 
+
+def resolve_solver_bin_name(
+    *,
+    explicit_bin: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve solver binary name/path from explicit override or runtime config."""
+    if explicit_bin and explicit_bin.strip():
+        return explicit_bin.strip()
+    return solver_runtime_from_env(env).solver_bin
+
+
+def resolve_sparrow_bin_name(
+    *,
+    explicit_bin: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve Sparrow binary name/path from explicit override or runtime config."""
+    if explicit_bin and explicit_bin.strip():
+        return explicit_bin.strip()
+    return sparrow_runtime_from_env(env).sparrow_bin

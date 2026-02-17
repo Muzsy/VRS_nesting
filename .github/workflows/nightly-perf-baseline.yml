@@ -1,0 +1,85 @@
+name: nightly-perf-baseline
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * *"
+
+jobs:
+  nightly_perf_baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip git
+
+      - name: Install Python deps (pinned)
+        run: |
+          python3 -m pip install --break-system-packages -r requirements-dev.txt
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build VRS solver (release)
+        run: |
+          cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
+
+      - name: Run nightly perf baseline
+        run: |
+          mkdir -p artifacts
+          python3 scripts/smoke_time_budget_guard.py \
+            --require-real-solver \
+            --perf-threshold-s 5.0 \
+            --baseline-json artifacts/nightly_perf_baseline.json
+
+      - name: Threshold summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("artifacts/nightly_perf_baseline.json")
+          if not path.is_file():
+              print("::warning::nightly perf baseline artifact missing")
+              raise SystemExit(0)
+
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          perf = payload.get("perf_guard", {}) if isinstance(payload, dict) else {}
+          status = str(perf.get("status", "unknown"))
+          duration = perf.get("duration_sec")
+          threshold = perf.get("threshold_s")
+
+          if status != "pass":
+              print(f"::warning::nightly perf guard status={status}")
+              raise SystemExit(0)
+
+          try:
+              duration_f = float(duration)
+              threshold_f = float(threshold)
+          except Exception:
+              print("::warning::nightly perf guard baseline has invalid numeric fields")
+              raise SystemExit(0)
+
+          if duration_f > threshold_f * 0.9:
+              print(f"::warning::nightly perf near threshold: duration={duration_f:.3f}s threshold={threshold_f:.3f}s")
+          else:
+              print(f"::notice::nightly perf ok: duration={duration_f:.3f}s threshold={threshold_f:.3f}s")
+          PY
+
+      - name: Upload nightly baseline artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-perf-baseline
+          path: |
+            artifacts/nightly_perf_baseline.json
+            runs/**
