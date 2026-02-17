@@ -15,6 +15,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
+from vrs_nesting.config.runtime import solver_runtime_from_env
 from vrs_nesting.nesting.instances import validate_multi_sheet_output
 from vrs_nesting.run_artifacts.run_dir import create_run_dir
 
@@ -277,11 +278,11 @@ def run_solver(
 
 
 def _default_seed() -> int:
-    return int(os.environ.get("VRS_SOLVER_SEED", "0"))
+    return solver_runtime_from_env().seed
 
 
 def _default_time_limit() -> int:
-    return int(os.environ.get("VRS_SOLVER_TIME_LIMIT_S", "60"))
+    return solver_runtime_from_env().time_limit_s
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

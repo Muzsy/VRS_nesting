@@ -66,6 +66,27 @@ resolve_pin_commit() {
   echo "$commit"
 }
 
+network_fallback_allowed() {
+  local allow="${SPARROW_ALLOW_NETWORK_FALLBACK:-}"
+  if [[ -n "$allow" ]]; then
+    case "${allow,,}" in
+      1|true|yes|on) echo "1"; return 0 ;;
+      0|false|no|off) echo "0"; return 0 ;;
+      *)
+        log "ERROR: invalid SPARROW_ALLOW_NETWORK_FALLBACK value: $allow (use 0/1)"
+        exit 2
+        ;;
+    esac
+  fi
+
+  if [[ "${CI:-}" == "true" || "${CI:-}" == "1" ]]; then
+    echo "0"
+    return 0
+  fi
+
+  echo "1"
+}
+
 apply_pin_if_requested() {
   local src_dir="$1"
   local mode="$2"
@@ -137,6 +158,15 @@ if [[ -f "vendor/sparrow/Cargo.toml" ]]; then
 fi
 
 # Priority 4: fallback cache clone
+ALLOW_NETWORK_FALLBACK="$(network_fallback_allowed)"
+if [[ "$ALLOW_NETWORK_FALLBACK" != "1" ]]; then
+  log "ERROR: Sparrow network fallback is disabled in this environment."
+  log "Sparrow resolution order exhausted: SPARROW_BIN, SPARROW_SRC_DIR, vendor/sparrow."
+  log "Teendo: hasznald a vendor/submodule Sparrow forrast vagy add meg SPARROW_BIN / SPARROW_SRC_DIR."
+  log "Feluliras (nem ajanlott CI-ben): SPARROW_ALLOW_NETWORK_FALLBACK=1"
+  exit 2
+fi
+
 need_cmd git
 cache_dir="$(abs_path ".cache/sparrow")"
 mkdir -p .cache

@@ -256,6 +256,10 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
     if output_payload.get("contract_version") != "v1":
         raise ValueError("output.contract_version must be v1")
 
+    status = output_payload.get("status")
+    if not isinstance(status, str) or status not in {"ok", "partial"}:
+        raise ValueError("output.status must be ok or partial")
+
     placements = output_payload.get("placements")
     unplaced = output_payload.get("unplaced")
     if not isinstance(placements, list):

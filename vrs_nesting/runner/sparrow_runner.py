@@ -16,25 +16,41 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, cast
 
+from vrs_nesting.config.runtime import sparrow_runtime_from_env
 
 class SparrowRunnerError(RuntimeError):
     """Base runner error."""
+
+    code = "E_SPARROW_RUNNER"
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        if code:
+            self.code = code
 
 
 class SparrowBinaryNotFoundError(SparrowRunnerError):
     """Raised when Sparrow binary cannot be resolved."""
 
+    code = "E_SPARROW_BIN_NOT_FOUND"
+
 
 class SparrowNonZeroExitError(SparrowRunnerError):
     """Raised when Sparrow exits with non-zero status."""
+
+    code = "E_SPARROW_NON_ZERO_EXIT"
 
 
 class SparrowOutputNotFoundError(SparrowRunnerError):
     """Raised when expected output json is missing."""
 
+    code = "E_SPARROW_OUTPUT_NOT_FOUND"
+
 
 class SparrowOutputParseError(SparrowRunnerError):
     """Raised when output json cannot be parsed."""
+
+    code = "E_SPARROW_OUTPUT_PARSE"
 
 
 def _eprint(msg: str) -> None:
@@ -61,7 +77,7 @@ def _read_json(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        raise SparrowOutputParseError(f"JSON parse hiba: {path}: {exc}") from exc
+        raise SparrowOutputParseError(f"JSON parse error: {path}: {exc}") from exc
     if not isinstance(payload, dict):
         raise SparrowOutputParseError(f"Top-level JSON object required: {path}")
     return cast(dict[str, Any], payload)
@@ -87,8 +103,7 @@ def resolve_sparrow_bin(explicit_bin: str | None = None) -> str:
             return str(cand_path.resolve())
 
     raise SparrowBinaryNotFoundError(
-        "Sparrow bináris nem található. Add meg explicit módon (--sparrow-bin), "
-        "vagy állítsd be az SPARROW_BIN környezeti változót."
+        "Sparrow binary not found. Provide --sparrow-bin explicitly, or set SPARROW_BIN."
     )
 
 
@@ -102,13 +117,13 @@ def _new_run_dir(run_root: Path) -> Path:
             return run_dir
         except FileExistsError:
             continue
-    raise SparrowRunnerError("Nem sikerült egyedi run_id-t generálni.")
+    raise SparrowRunnerError("Failed to allocate unique run_id.", code="E_SPARROW_RUN_ID_ALLOC")
 
 
 def _discover_final_json(run_dir: Path, snapshot_json: Path, input_json: Path) -> Path:
     output_dir = run_dir / "output"
     if not output_dir.is_dir():
-        raise SparrowOutputNotFoundError(f"Hiányzó output könyvtár: {output_dir}")
+        raise SparrowOutputNotFoundError(f"Missing output directory: {output_dir}")
 
     in_data = _read_json(snapshot_json)
     candidates: list[Path] = []
@@ -128,7 +143,7 @@ def _discover_final_json(run_dir: Path, snapshot_json: Path, input_json: Path) -
     if all_final:
         return all_final[0].resolve()
 
-    raise SparrowOutputNotFoundError(f"Nem található final_*.json itt: {output_dir}")
+    raise SparrowOutputNotFoundError(f"final_*.json not found in output directory: {output_dir}")
 
 
 def _discover_final_svg(run_dir: Path, final_json: Path) -> str:
@@ -228,7 +243,7 @@ def _run_sparrow_with_snapshot(
     if proc.returncode != 0:
         _write_json(meta_path, meta)
         raise SparrowNonZeroExitError(
-            f"Sparrow futás hibával tért vissza (exit={proc.returncode}). run_dir={run_dir}"
+            f"Sparrow process failed with non-zero exit code (exit={proc.returncode}). run_dir={run_dir}"
         )
 
     final_json = _discover_final_json(run_dir, snapshot_json, input_json)
@@ -255,7 +270,7 @@ def run_sparrow(
 ) -> tuple[Path, dict[str, Any]]:
     input_json = Path(input_path).resolve()
     if not input_json.is_file():
-        raise SparrowRunnerError(f"Input JSON nem található: {input_json}")
+        raise SparrowRunnerError(f"Input JSON not found: {input_json}", code="E_SPARROW_INPUT_NOT_FOUND")
 
     run_dir = _new_run_dir(Path(run_root).resolve())
     snapshot_json = run_dir / "instance.json"
@@ -280,11 +295,11 @@ def run_sparrow_in_dir(
 ) -> tuple[Path, dict[str, Any]]:
     input_json = Path(input_path).resolve()
     if not input_json.is_file():
-        raise SparrowRunnerError(f"Input JSON nem található: {input_json}")
+        raise SparrowRunnerError(f"Input JSON not found: {input_json}", code="E_SPARROW_INPUT_NOT_FOUND")
 
     target_dir = Path(run_dir).resolve()
     if not target_dir.is_dir():
-        raise SparrowRunnerError(f"run_dir nem létezik: {target_dir}")
+        raise SparrowRunnerError(f"run_dir not found: {target_dir}", code="E_SPARROW_RUN_DIR_NOT_FOUND")
 
     snapshot_json = target_dir / "instance.json"
     if snapshot_json.resolve() != input_json:
@@ -300,13 +315,11 @@ def run_sparrow_in_dir(
 
 
 def _default_seed() -> int:
-    value = os.environ.get("SPARROW_SEED", "0")
-    return int(value)
+    return sparrow_runtime_from_env().seed
 
 
 def _default_time_limit() -> int:
-    value = os.environ.get("SPARROW_TIME_LIMIT_S", "60")
-    return int(value)
+    return sparrow_runtime_from_env().time_limit_s
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -337,13 +350,13 @@ def main(argv: list[str] | None = None) -> int:
             sparrow_bin=args.sparrow_bin,
         )
     except SparrowRunnerError as exc:
-        _eprint(f"ERROR: {exc}")
+        _eprint(f"ERROR: {exc.code}: {exc}")
         return 2
     except Exception as exc:  # noqa: BLE001
-        _eprint(f"ERROR: Váratlan runner hiba: {exc}")
+        _eprint(f"ERROR: E_SPARROW_UNEXPECTED: {exc}")
         return 2
 
-    # Script integráció miatt ide csak a run_dir kerülhet stdout-ra.
+    # Script integration requires stdout to contain only run_dir.
     print(str(run_dir))
     return 0
 

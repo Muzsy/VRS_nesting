@@ -37,6 +37,13 @@ Ez a dokumentum rögzíti a VRS Nesting projektben a **kötelező minőségkaput
 
 **Szabály:** Codex futás végén mindig a `verify.sh` az elvárt.
 
+### 1.3 CI kötelező check (PR merge gate)
+
+* Kötelező PR check: **`repo-gate-required / repo_gate`**
+  * workflow: `.github/workflows/repo-gate.yml`
+  * a workflow futtatja a teljes `./scripts/check.sh` minőségkaput
+* A többi workflow (`sparrow-io-smoketest`, `nesttool-smoketest`) kiegészítő smoke jellegű; nem kötelező merge gate.
+
 ---
 
 ## 2) Mi számít tesztnek ebben a repóban?
@@ -94,6 +101,12 @@ A Sparrow bináris feloldását a `scripts/ensure_sparrow.sh` végzi:
 2. `SPARROW_SRC_DIR` env (ha van benne `Cargo.toml`, build onnan)
 3. `vendor/sparrow` (ha van `vendor/sparrow/Cargo.toml`, preferált vendor/submodule út)
 4. fallback `.cache/sparrow` clone + pin + build
+
+CI policy:
+
+* CI-ben a hálózati fallback clone alapértelmezetten tiltott (`SPARROW_ALLOW_NETWORK_FALLBACK=0`).
+* Ez vendor/submodule vagy explicit forrás/bináris használatot kényszerít (`vendor/sparrow`, `SPARROW_SRC_DIR`, `SPARROW_BIN`).
+* Lokál futásnál a fallback clone továbbra is elérhető (ha nincs explicit tiltás).
 
 Pin commit forrás:
 

@@ -1,74 +1,61 @@
-# Hogyan futtasd a VRS-Nesting projektet
+# How To Run VRS Nesting
 
-Ez az útmutató bemutatja, hogyan telepítsd, konfiguráld és futtasd a DXF-alapú nesting pipeline-t a mellékelt demo készlettel.
+This guide describes the current, supported commands for local execution.
 
-## 1. Előfeltételek
+## Prerequisites
+- Python 3.10+
+- Rust toolchain (`cargo`, `rustc`)
+- Python dependencies:
+  - `python3 -m pip install --break-system-packages -r requirements-dev.txt`
 
-- **Python:** 3.10 vagy újabb.
-- **Rust Toolchain (opcionális, de ajánlott):** A Sparrow nesting szoftver fordításához szükséges a `cargo` és a `rustc`. Ha ez nem áll rendelkezésre, a rendszer megpróbálja letölteni a `vendor/` mappába.
+## Required quality gate
+- Local full gate:
+  - `./scripts/check.sh`
+- Codex/report wrapper:
+  - `./scripts/verify.sh --report codex/reports/<path>/<task>.md`
 
-## 2. Telepítés és beállítás
+## CLI entrypoints
 
-1.  **Virtuális környezet létrehozása:**
-
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate
-    ```
-
-2.  **Függőségek telepítése:**
-
-    A projekt `pip-tools` segítségével kezeli a függőségeket a reprodukálhatóság érdekében.
-
-    ```bash
-    pip install pip-tools
-    pip-sync requirements.txt requirements-dev.txt
-    ```
-
-3.  **Sparrow Nesting Engine beszerzése:**
-
-    A beágyazott nesting szoftver biztosításához futtasd a következő parancsot. Ez letölti vagy lefordítja a Sparrow-t a `vendor/sparrow/` mappába.
-
-    ```bash
-    ./scripts/ensure_sparrow.sh
-    ```
-
-## 3. Demo futtatása
-
-A projekt CLI-n keresztül futtatható. Az alábbi parancs elindítja a teljes pipeline-t a `samples/dxf_demo` mappában található DXF fájlokkal.
-
-- **Alapanyag:** `stock_rect_1000x2000.dxf`
-- **Alkatrészek:** `part_arc_spline_chaining_ok.dxf` (20 db)
-- **Hibaellenőrzés:** A pipeline a futás során validálja a bemeneteket.
-
+### 1) Table-solver flow (`v1`)
+- Command:
 ```bash
-python -m vrs_nesting.cli run-solver-pipeline \
-  --stock-dxf samples/dxf_demo/stock_rect_1000x2000.dxf \
-  --part-dxf samples/dxf_demo/part_arc_spline_chaining_ok.dxf \
-  --part-quantity 20
+python3 -m vrs_nesting.cli run <project_v1.json> --run-root runs
+```
+- Output contract on success:
+  - stdout contains exactly one non-empty line: absolute `run_dir`.
+
+### 2) DXF + Sparrow flow (`dxf_v1`)
+- Command:
+```bash
+python3 -m vrs_nesting.cli dxf-run <project_dxf_v1.json> --run-root runs [--sparrow-bin /path/to/sparrow]
+```
+- Wrapper equivalent:
+```bash
+python3 scripts/run_real_dxf_sparrow_pipeline.py --project <project_dxf_v1.json> --run-root runs [--sparrow-bin /path/to/sparrow]
+```
+- Output contract on success:
+  - stdout contains exactly one non-empty line: absolute `run_dir`.
+
+## Sparrow resolution policy
+Resolution order in `scripts/ensure_sparrow.sh`:
+1. `SPARROW_BIN`
+2. `SPARROW_SRC_DIR`
+3. `vendor/sparrow`
+4. fallback `.cache/sparrow` clone/build (disabled by default in CI)
+
+CI default:
+- `SPARROW_ALLOW_NETWORK_FALLBACK=0`
+
+Local override (if needed):
+- `SPARROW_ALLOW_NETWORK_FALLBACK=1 ./scripts/check.sh`
+
+## Typical local run
+1. Run gate:
+```bash
+./scripts/check.sh
+```
+2. Run DXF pipeline:
+```bash
+python3 -m vrs_nesting.cli dxf-run samples/project_rect_1000x2000.json --run-root runs
 ```
 
-## 4. Várt kimenet
-
-A futás eredménye a `run_artifacts/` mappában jön létre, egyedi időbélyeggel ellátott alkönyvtárban. Például:
-`run_artifacts/run_20240520_143000/`
-
-**A kimeneti mappában található kulcsfontosságú fájlok:**
-
-- `in/`: A feldolgozott, egységesített bemeneti adatok.
-- `out/`: Az optimalizált kiosztás eredménye.
-  - `layouts.dxf`: A végső, táblákra rendezett DXF kimenet.
-  - `summary.json`: A futás összegzése (felhasznált táblák, hulladék stb.).
-- `logs/`: A futással kapcsolatos logok.
-- `run_command.sh`: A futtatást előidéző parancs.
-
-## 5. Hibakezelés
-
-Ha hibás geometriát (pl. nyitott kontúrt) tartalmazó DXF-et adsz meg, a rendszer hibát fog jelezni, és a futás leáll. Példa hibás futtatásra:
-
-```bash
-python -m vrs_nesting.cli run-solver-pipeline \
-  --stock-dxf samples/dxf_demo/stock_rect_1000x2000.dxf \
-  --part-dxf samples/dxf_demo/part_chain_open_fail.dxf \
-  --part-quantity 1
-```

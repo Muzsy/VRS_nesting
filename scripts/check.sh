@@ -5,8 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT_DIR"
 
 INPUT_JSON="${INPUT_JSON:-poc/sparrow_io/swim.json}"
-SEED="${SEED:-0}"
-TIME_LIMIT="${TIME_LIMIT:-60}"
+SEED="${SEED:-}"
+TIME_LIMIT="${TIME_LIMIT:-}"
 
 # SPARROW_BIN: ha a felhasználó megadja, használjuk. Egyébként buildeljük cache-be.
 SPARROW_BIN="${SPARROW_BIN:-}"
@@ -20,6 +20,27 @@ need_cmd() {
 }
 
 need_cmd python3
+
+if [[ -z "$SEED" || -z "$TIME_LIMIT" ]]; then
+  readarray -t RUNTIME_DEFAULTS < <(python3 - <<'PY'
+from vrs_nesting.config.runtime import runtime_defaults_from_env
+
+cfg = runtime_defaults_from_env()
+print(cfg.seed)
+print(cfg.time_limit_s)
+PY
+  )
+  if [[ "${#RUNTIME_DEFAULTS[@]}" -ne 2 ]]; then
+    echo "ERROR: Failed to resolve runtime defaults from vrs_nesting.config.runtime" >&2
+    exit 2
+  fi
+  if [[ -z "$SEED" ]]; then
+    SEED="${RUNTIME_DEFAULTS[0]}"
+  fi
+  if [[ -z "$TIME_LIMIT" ]]; then
+    TIME_LIMIT="${RUNTIME_DEFAULTS[1]}"
+  fi
+fi
 
 echo "[PYTEST] Unit tests"
 if ! python3 -m pytest -q; then
@@ -41,6 +62,7 @@ chmod +x \
   scripts/validate_sparrow_io.py \
   scripts/smoke_export_run_dir_out.py \
   scripts/smoke_export_original_geometry_block_insert.py \
+  scripts/smoke_docs_commands.py \
   scripts/smoke_multisheet_wrapper_edge_cases.py \
   scripts/smoke_real_dxf_fixtures.py \
   scripts/run_real_dxf_sparrow_pipeline.py \
@@ -71,6 +93,9 @@ python3 scripts/smoke_dxf_import_convention.py
 
 echo "[GEO] Polygonize + offset robustness smoke"
 python3 scripts/smoke_geometry_pipeline.py
+
+echo "[DOCS] Command references smoke"
+python3 scripts/smoke_docs_commands.py
 
 echo "[DXF] Export --run-dir smoke"
 python3 scripts/smoke_export_run_dir_out.py

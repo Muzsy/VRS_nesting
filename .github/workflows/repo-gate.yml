@@ -1,4 +1,4 @@
-name: repo-gate
+name: repo-gate-required
 
 on:
   push:
@@ -9,6 +9,8 @@ jobs:
   repo_gate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      SPARROW_ALLOW_NETWORK_FALLBACK: "0"
 
     steps:
       - name: Checkout

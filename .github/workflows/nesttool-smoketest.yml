@@ -1,9 +1,9 @@
 name: nesttool-smoketest
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * *"
 
 jobs:
   nesttool_smoketest:

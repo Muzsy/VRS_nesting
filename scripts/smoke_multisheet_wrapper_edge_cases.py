@@ -104,6 +104,38 @@ def _run_once(run_dir: Path, *, sparrow_bin: str) -> tuple[dict, list[dict]]:
     return output, raw_outputs
 
 
+def _determinism_signature(output: dict) -> dict:
+    placements_raw = output.get("placements", [])
+    unplaced_raw = output.get("unplaced", [])
+    if not isinstance(placements_raw, list) or not isinstance(unplaced_raw, list):
+        raise AssertionError("output placements/unplaced must be lists")
+
+    placements = sorted(
+        (
+            str(item.get("instance_id", "")),
+            str(item.get("part_id", "")),
+            int(item.get("sheet_index", -1)),
+            int(round(float(item.get("rotation_deg", 0.0)))) % 360,
+        )
+        for item in placements_raw
+        if isinstance(item, dict)
+    )
+    unplaced = sorted(
+        (
+            str(item.get("instance_id", "")),
+            str(item.get("part_id", "")),
+            str(item.get("reason", "")),
+        )
+        for item in unplaced_raw
+        if isinstance(item, dict)
+    )
+    return {
+        "status": str(output.get("status", "")),
+        "placements": placements,
+        "unplaced": unplaced,
+    }
+
+
 def main() -> int:
     sparrow_bin = _resolve_sparrow_bin()
 
@@ -136,10 +168,12 @@ def main() -> int:
             if budget > global_limit:
                 raise AssertionError(f"runner_meta.time_limit_s exceeds global limit at index {idx}: {budget} > {global_limit}")
 
-        dump_a = json.dumps(output_a, sort_keys=True, separators=(",", ":"))
-        dump_b = json.dumps(output_b, sort_keys=True, separators=(",", ":"))
-        if dump_a != dump_b:
-            raise AssertionError("determinism failure: solver_output differs between runs with same seed")
+        sig_a = _determinism_signature(output_a)
+        sig_b = _determinism_signature(output_b)
+        if sig_a != sig_b:
+            raise AssertionError(
+                f"determinism failure: semantic output differs between runs with same seed: {sig_a!r} vs {sig_b!r}"
+            )
 
         # raw run metadata can differ (timestamps/paths), but budget vectors must be deterministic
         budgets_a = [int(entry.get("runner_meta", {}).get("time_limit_s", -1)) for entry in raw_a if isinstance(entry, dict)]

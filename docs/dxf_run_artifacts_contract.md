@@ -82,3 +82,7 @@ Required `metrics` keys:
 - `vrs_nesting/run_artifacts/run_dir.py`
 - `vrs_nesting/sparrow/multi_sheet_wrapper.py`
 - `scripts/smoke_real_dxf_sparrow_pipeline.py`
+
+## Related Docs
+- `docs/how_to_run.md` (current supported command examples)
+- `docs/error_code_catalog.md` (runtime error code format)

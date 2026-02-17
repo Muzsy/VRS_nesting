@@ -283,7 +283,10 @@ def _unplaced_reason(item: dict[str, Any], *, timeout_hit: bool) -> str:
 
 def _stable_float(value: float) -> float:
     # Stabilize tiny floating noise from Sparrow output for deterministic JSON artifacts.
-    return float(round(float(value), 3))
+    rounded = float(round(float(value), 3))
+    if abs(rounded) <= 1e-3:
+        return 0.0
+    return rounded
 
 
 def run_multi_sheet_wrapper(

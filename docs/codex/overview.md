@@ -67,6 +67,10 @@ A standard minőségkapu ebben a repóban:
 
 * `./scripts/check.sh` – pytest unit tests (fail-fast) + mypy type-check (fail-fast) + Sparrow build/pin (ha kell) + IO smoketest/validator + DXF smoke suite (import/geometry/export/BLOCK-INSERT/multisheet/valós DXF pipeline) + `vrs_solver` validator + determinisztika + timeout/perf guard
 
+CI oldalon a PR merge kötelező checkje:
+
+* `repo-gate-required / repo_gate` (`.github/workflows/repo-gate.yml`)
+
 Python dependency telepítéshez a repo pinelt fájljai az irányadóak:
 
 * `requirements-dev.txt` telepítendő lokál/CI futtatás előtt

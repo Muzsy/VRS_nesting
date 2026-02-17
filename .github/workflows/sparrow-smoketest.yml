@@ -1,14 +1,16 @@
 name: sparrow-io-smoketest
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
 
 jobs:
   smoketest:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      SPARROW_ALLOW_NETWORK_FALLBACK: "0"
 
     steps:
       - name: Checkout
