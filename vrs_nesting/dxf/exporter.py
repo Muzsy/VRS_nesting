@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 from collections import defaultdict
@@ -498,6 +499,46 @@ def _add_source_entities_to_block(block: Any, source_entities: list[dict[str, An
             )
             if bool(entity.get("closed", False)):
                 spline.dxf.flags = int(getattr(spline.dxf, "flags", 0)) | 1
+            continue
+
+        if etype == "ELLIPSE":
+            center = entity.get("center")
+            major_axis = entity.get("major_axis")
+            ratio = entity.get("ratio")
+            start_param = entity.get("start_param", 0.0)
+            end_param = entity.get("end_param", math.tau)
+            if (
+                isinstance(center, (list, tuple))
+                and len(center) == 2
+                and isinstance(center[0], (int, float))
+                and isinstance(center[1], (int, float))
+                and isinstance(major_axis, (list, tuple))
+                and len(major_axis) == 2
+                and isinstance(major_axis[0], (int, float))
+                and isinstance(major_axis[1], (int, float))
+                and isinstance(ratio, (int, float))
+                and float(ratio) > 0.0
+                and isinstance(start_param, (int, float))
+                and isinstance(end_param, (int, float))
+            ):
+                block.add_ellipse(
+                    center=(float(center[0]) - base_x, float(center[1]) - base_y, 0.0),
+                    major_axis=(float(major_axis[0]), float(major_axis[1]), 0.0),
+                    ratio=float(ratio),
+                    start_param=float(start_param),
+                    end_param=float(end_param),
+                    dxfattribs={"layer": layer},
+                )
+                continue
+
+            points = _entity_points(entity, where=where)
+            if len(points) < 2:
+                continue
+            block.add_lwpolyline(
+                [(x - base_x, y - base_y) for x, y in points],
+                close=bool(entity.get("closed", True)),
+                dxfattribs={"layer": layer},
+            )
             continue
 
         if etype:

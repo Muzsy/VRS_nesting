@@ -1,0 +1,42 @@
+steps:
+  - name: "Canvas es task artefaktok letrehozasa"
+    description: >
+      Rogzitsd a feladat celjat, scope-jat, DoD-jat es kockazatkezeleset az
+      ellipse source export hiany javitasara, majd hozd letre a checklist+report
+      alapfajlokat a codex workflow szerint.
+    outputs:
+      - "canvases/egyedi_solver/ellipse_source_export_coverage.md"
+      - "codex/codex_checklist/egyedi_solver/ellipse_source_export_coverage.md"
+      - "codex/reports/egyedi_solver/ellipse_source_export_coverage.md"
+
+  - name: "ELLIPSE source export implementacio"
+    description: >
+      Bovitsd a DXF exportert ugy, hogy a source entity listaban szereplo ELLIPSE
+      geometriat ne dobja el. Ha elerheto a natív ellipse parametrizacio, azt
+      exportald ELLIPSE entitaskent; kulonben pontlistabol keszits zart
+      polyline fallbackot.
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+
+  - name: "Regresszios unit teszt ELLIPSE source exporthoz"
+    description: >
+      Keszits/frasits unit tesztet, amely source mode exportnal ELLIPSE forrasbol
+      exportalt blokkot ellenoriz, es bizonyitja hogy geometria nem veszik el.
+    outputs:
+      - "tests/test_dxf_exporter_source_mode.py"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/ellipse_source_export_coverage.md
+    outputs:
+      - "codex/reports/egyedi_solver/ellipse_source_export_coverage.md"
+      - "codex/reports/egyedi_solver/ellipse_source_export_coverage.verify.log"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Pipald ki a checklist pontokat, es toltsd ki a reportot Report Standard v2
+      szerint DoD->Evidence matrixszal a verify eredmenyere hivatkozva.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/ellipse_source_export_coverage.md"
+      - "codex/reports/egyedi_solver/ellipse_source_export_coverage.md"
