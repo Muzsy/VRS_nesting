@@ -1,0 +1,44 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase2_p2_worker_loop_and_queue_processing task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase2_p2_worker_loop_and_queue_processing.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase2_p2_worker_loop_and_queue_processing.yaml"
+      - "codex/codex_checklist/web_platform/phase2_p2_worker_loop_and_queue_processing.md"
+      - "codex/reports/web_platform/phase2_p2_worker_loop_and_queue_processing.md"
+
+  - name: "Worker loop implementacio"
+    description: >
+      Implementald a worker loopot queue claim + run status atmenetek + temp workdir
+      + input download + dxf-run futtatas + artifact upload + db update + cleanup
+      logikaval.
+    outputs:
+      - "worker/__init__.py"
+      - "worker/main.py"
+
+  - name: "Worker image runtime frissites"
+    description: >
+      Frissitsd a worker image CMD-et a worker loop futtatasara, es dokumentald
+      a hasznalatot a worker README-ben.
+    outputs:
+      - "worker/Dockerfile"
+      - "worker/README.md"
+
+  - name: "Checklist es report frissites"
+    description: >
+      Frissitsd a task checklistet/reportot DoD->Evidence matrixszal,
+      valamint a master checklist P2.2 pontjait.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase2_p2_worker_loop_and_queue_processing.md"
+      - "codex/reports/web_platform/phase2_p2_worker_loop_and_queue_processing.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase2_p2_worker_loop_and_queue_processing.md
+    outputs:
+      - "codex/reports/web_platform/phase2_p2_worker_loop_and_queue_processing.md"
+      - "codex/reports/web_platform/phase2_p2_worker_loop_and_queue_processing.verify.log"

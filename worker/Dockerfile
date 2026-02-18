@@ -27,6 +27,7 @@ COPY requirements.txt requirements.txt
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY vrs_nesting vrs_nesting
+COPY worker worker
 COPY scripts scripts
 COPY docs docs
 COPY samples samples
@@ -39,4 +40,4 @@ ENV PYTHONUNBUFFERED=1
 ENV VRS_SOLVER_BIN=/usr/local/bin/vrs_solver
 ENV SPARROW_BIN=/usr/local/bin/sparrow
 
-CMD ["python3", "-m", "vrs_nesting.cli", "dxf-run", "--help"]
+CMD ["python3", "-m", "worker.main"]

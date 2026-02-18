@@ -105,16 +105,16 @@ Szabaly:
 - [x] P2.1/f Image tartalmazza a Sparrow binarist (`/usr/local/bin/sparrow`).
 - [x] P2.1/g Image publish container registry-be.
 
-- [ ] P2.2/a `worker/main.py` worker loop implementacio.
-- [ ] P2.2/b Queue poll: feldolgozatlan feladat lekerdezese.
-- [ ] P2.2/c Queue lock: feladat zarolasa (`FOR UPDATE SKIP LOCKED`).
-- [ ] P2.2/d `runs.status` atmenet: `queued -> running`.
-- [ ] P2.2/e Temp workdir letrehozas: `/tmp/vrs_worker/{run_id}/`.
-- [ ] P2.2/f Input fajlok letoltese Storage-bol.
-- [ ] P2.2/g CLI futtatasa: `python3 -m vrs_nesting.cli dxf-run ...`.
-- [ ] P2.2/h Artifact feltoltes Storage-ba (DXF/SVG/JSON).
-- [ ] P2.2/i DB frissites: `run_artifacts` + `runs.status = done`.
-- [ ] P2.2/j Temp mappa torles.
+- [x] P2.2/a `worker/main.py` worker loop implementacio.
+- [x] P2.2/b Queue poll: feldolgozatlan feladat lekerdezese.
+- [x] P2.2/c Queue lock: feladat zarolasa (`FOR UPDATE SKIP LOCKED`).
+- [x] P2.2/d `runs.status` atmenet: `queued -> running`.
+- [x] P2.2/e Temp workdir letrehozas: `/tmp/vrs_worker/{run_id}/`.
+- [x] P2.2/f Input fajlok letoltese Storage-bol.
+- [x] P2.2/g CLI futtatasa: `python3 -m vrs_nesting.cli dxf-run ...`.
+- [x] P2.2/h Artifact feltoltes Storage-ba (DXF/SVG/JSON).
+- [x] P2.2/i DB frissites: `run_artifacts` + `runs.status = done`.
+- [x] P2.2/j Temp mappa torles.
 
 - [ ] P2.3/a Worker ellenorzi a `out/sheet_NNN.svg` fajlok letezeset.
 - [ ] P2.3/b Ha hianyzik/ures, fallback SVG generalas `solver_output.json` alapjan.
