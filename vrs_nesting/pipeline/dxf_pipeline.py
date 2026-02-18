@@ -9,7 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from vrs_nesting.dxf.exporter import export_per_sheet
+from vrs_nesting.dxf.exporter import export_per_sheet, export_per_sheet_svg
 from vrs_nesting.project.model import ProjectValidationError, load_dxf_project_json
 from vrs_nesting.run_artifacts.run_dir import append_run_log, create_run_dir, write_project_snapshot
 from vrs_nesting.runner.vrs_solver_runner import VrsSolverRunnerError
@@ -68,6 +68,8 @@ def run_dxf_pipeline(project_path: str, run_root: str, sparrow_bin: str | None) 
 
         export_summary = export_per_sheet(solver_input, solver_output, ctx.out_dir)
         append_run_log(ctx.run_log_path, "DXF_EXPORT_DONE", f"exported_count={export_summary.get('exported_count', 0)}")
+        svg_export_summary = export_per_sheet_svg(ctx.out_dir)
+        append_run_log(ctx.run_log_path, "DXF_SVG_EXPORT_DONE", f"exported_count={svg_export_summary.get('exported_count', 0)}")
 
         report_payload = {
             "contract_version": "dxf_v1",
@@ -84,6 +86,7 @@ def run_dxf_pipeline(project_path: str, run_root: str, sparrow_bin: str | None) 
                 "sparrow_output_json": str((ctx.run_dir / "sparrow_output.json").resolve()),
                 "solver_output_json": str((ctx.run_dir / "solver_output.json").resolve()),
                 "out_dir": str(ctx.out_dir.resolve()),
+                "out_svg_dir": str(ctx.out_dir.resolve()),
             },
             "metrics": {
                 "placements_count": len(solver_output.get("placements", [])),
@@ -98,6 +101,7 @@ def run_dxf_pipeline(project_path: str, run_root: str, sparrow_bin: str | None) 
                 },
             },
             "export_summary": export_summary,
+            "svg_export_summary": svg_export_summary,
         }
         report_path = ctx.run_dir / "report.json"
         _write_json(report_path, report_payload)
@@ -113,4 +117,3 @@ def run_dxf_pipeline(project_path: str, run_root: str, sparrow_bin: str | None) 
 
     print(str(ctx.run_dir))
     return 0
-

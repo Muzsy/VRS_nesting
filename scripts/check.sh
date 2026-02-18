@@ -90,7 +90,8 @@ chmod +x \
   scripts/smoke_multisheet_wrapper_edge_cases.py \
   scripts/smoke_real_dxf_fixtures.py \
   scripts/run_real_dxf_sparrow_pipeline.py \
-  scripts/smoke_real_dxf_sparrow_pipeline.py || true
+  scripts/smoke_real_dxf_sparrow_pipeline.py \
+  scripts/smoke_svg_export.py || true
 
 # --- Sparrow binary resolve/build ---
 if [[ -n "$SPARROW_BIN" ]]; then
@@ -147,6 +148,9 @@ python3 scripts/smoke_real_dxf_fixtures.py
 
 echo "[DXF] Real Sparrow pipeline smoke"
 python3 scripts/smoke_real_dxf_sparrow_pipeline.py
+
+echo "[DXF] SVG export artifact smoke"
+python3 scripts/smoke_svg_export.py
 
 if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
   echo "[4/5] Nesting solution validator smoke"
