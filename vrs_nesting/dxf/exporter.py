@@ -429,6 +429,63 @@ def _require_ezdxf() -> Any:
     return ezdxf
 
 
+def _require_svg_renderer() -> tuple[Any, Any, Any, Any, Any, Any]:
+    try:
+        import ezdxf
+        from ezdxf import bbox as ezdxf_bbox
+        from ezdxf.addons.drawing import Frontend, RenderContext, layout
+        from ezdxf.addons.drawing.svg import SVGBackend
+    except ImportError as exc:
+        raise DxfExportError("svg export requires ezdxf drawing svg backend") from exc
+    return ezdxf, ezdxf_bbox, Frontend, RenderContext, layout, SVGBackend
+
+
+def export_per_sheet_svg(out_dir: str | Path) -> dict[str, Any]:
+    out_path = Path(out_dir).resolve()
+    if not out_path.is_dir():
+        raise DxfExportError(f"svg export out_dir does not exist: {out_path}")
+
+    dxf_files = sorted(path for path in out_path.glob("sheet_*.dxf") if path.is_file())
+    ezdxf, ezdxf_bbox, Frontend, RenderContext, layout, SVGBackend = _require_svg_renderer()
+
+    exported_files: list[str] = []
+    for dxf_path in dxf_files:
+        if dxf_path.stat().st_size <= 0:
+            raise DxfExportError(f"cannot render empty dxf file: {dxf_path}")
+
+        try:
+            doc = ezdxf.readfile(dxf_path)
+        except Exception as exc:  # noqa: BLE001
+            raise DxfExportError(f"failed to read dxf for svg export: {dxf_path}: {exc}") from exc
+
+        msp = doc.modelspace()
+        backend = SVGBackend()
+        Frontend(RenderContext(doc), backend).draw_layout(msp)
+
+        render_box = ezdxf_bbox.extents(msp)
+        if render_box.has_data:
+            page_width = max(float(render_box.size.x), 1.0)
+            page_height = max(float(render_box.size.y), 1.0)
+        else:
+            page_width = 100.0
+            page_height = 100.0
+
+        svg_page = layout.Page(page_width, page_height, units=layout.Units.mm)
+        svg_settings = layout.Settings(fit_page=True, crop_at_margins=False)
+        svg_payload = backend.get_string(svg_page, settings=svg_settings)
+
+        svg_path = dxf_path.with_suffix(".svg")
+        svg_path.write_text(svg_payload, encoding="utf-8")
+        if svg_path.stat().st_size <= 0:
+            raise DxfExportError(f"empty svg output: {svg_path}")
+        exported_files.append(str(svg_path.resolve()))
+
+    return {
+        "exported_count": len(exported_files),
+        "exported_files": exported_files,
+    }
+
+
 def _add_source_entities_to_block(block: Any, source_entities: list[dict[str, Any]], base_x: float, base_y: float) -> None:
     unsupported_types: set[str] = set()
 

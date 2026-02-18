@@ -47,6 +47,7 @@ Top-level files in `run_dir`:
 Output directory:
 - `out/` exists
 - `out/sheet_001.dxf` exists and is non-empty when at least one sheet is exported
+- `out/sheet_001.svg` exists and is non-empty when at least one sheet is exported
 
 Optional per-sheet subtree (expected when multisheet loop ran):
 - `sheets/sheet_001/...`
@@ -71,6 +72,7 @@ Required `paths` keys:
 - `sparrow_output_json`
 - `solver_output_json`
 - `out_dir`
+- `out_svg_dir`
 
 Required `metrics` keys:
 - `placements_count`

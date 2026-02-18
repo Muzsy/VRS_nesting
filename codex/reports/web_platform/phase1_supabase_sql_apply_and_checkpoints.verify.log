@@ -1,0 +1,60 @@
+[PYTEST] Unit tests
+................................                                         [100%]
+32 passed in 3.70s
+[MYPY] Type check
+Success: no issues found in 24 source files
+[SPARROW] Resolve/build via scripts/ensure_sparrow.sh
+[ensure_sparrow] pin commit (fallback_cache): c95454e390276231b278c879d25b39708398b7d3
+HEAD is now at c95454e Merge pull request #132 from JeroenGar/rand-0.10
+[ensure_sparrow] build source: .cache/sparrow (/home/muszy/projects/VRS_nesting/.cache/sparrow)
+    Finished `release` profile [optimized] target(s) in 0.49s
+[3/3] Sparrow IO smoketest
+[1/2] Sparrow run via runner module
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260218T175015Z_be4d5844
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260218T175015Z_be4d5844/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260218T175015Z_be4d5844
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260218T175015Z_be4d5844/output/final_swim.json
+PASS ✅
+ strip_height=5752.0
+ strip_width =5934.645
+ placed_items=48 (demand_sum=48)
+ overlap-check: PASS
+[DXF] Import convention smoke
+[OK] DXF import convention smoke passed
+[GEO] Polygonize + offset robustness smoke
+[OK] geometry pipeline smoke passed
+[DOCS] Command references smoke
+[OK] docs command smoke passed
+[DXF] Export --run-dir smoke
+[OK] exporter --run-dir smoke passed
+[DXF] Source geometry BLOCK/INSERT export smoke
+[OK] source geometry export smoke passed
+[DXF] Multi-sheet wrapper edge-cases smoke
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_mvusksae/run_a/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_mvusksae/run_a/sheets/sheet_001/instance.json -t 2 -s 0
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_mvusksae/run_b/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_mvusksae/run_b/sheets/sheet_001/instance.json -t 2 -s 0
+[OK] multisheet wrapper edge-cases smoke passed
+[DXF] Real fixture import smoke
+[OK] real DXF fixture smoke passed
+[DXF] Real Sparrow pipeline smoke
+[OK] real DXF + Sparrow pipeline smoke passed
+[DXF] SVG export artifact smoke
+[OK] svg export smoke passed
+[4/5] Nesting solution validator smoke
+    Finished `release` profile [optimized] target(s) in 0.31s
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260218T175212Z_7645297b
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260218T175212Z_7645297b/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260218T175212Z_7645297b/solver_output.json --seed 0 --time-limit 60
+[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260218T175212Z_7645297b
+PASS: nesting solution is valid
+ input=/home/muszy/projects/VRS_nesting/runs/20260218T175212Z_7645297b/solver_input.json
+ output=/home/muszy/projects/VRS_nesting/runs/20260218T175212Z_7645297b/solver_output.json
+[5/5] Determinism hash stability smoke
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260218T175212Z_e4412ed6
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260218T175212Z_e4412ed6/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260218T175212Z_e4412ed6/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260218T175212Z_ed8ea6d3
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260218T175212Z_ed8ea6d3/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260218T175212Z_ed8ea6d3/solver_output.json --seed 0 --time-limit 60
+[INFO] Determinism hash stable: 6fa835403323f854933aadd5e00de5807aeff5225dd923b5d2844e28a9f6a8f7
+[6/6] Timeout/perf guard smoke
+[OK] timeout/perf guard smoke passed
+[DONE] smoketest OK

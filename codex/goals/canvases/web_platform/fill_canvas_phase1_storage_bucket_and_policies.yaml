@@ -1,0 +1,54 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a Phase 1 P1.4 bucket+policy blokk canvas/checklist/report
+      alapjait.
+    outputs:
+      - "canvases/web_platform/phase1_storage_bucket_and_policies.md"
+      - "codex/codex_checklist/web_platform/phase1_storage_bucket_and_policies.md"
+      - "codex/reports/web_platform/phase1_storage_bucket_and_policies.md"
+
+  - name: "Storage bucket es policy SQL implementacio"
+    description: >
+      Keszits idempotens SQL-t a private `vrs-nesting` bucket letrehozasara,
+      valamint owner-scope storage policykre a users/.../files/... es
+      runs/.../artifacts/... key struktura szerint.
+    outputs:
+      - "api/sql/phase1_storage_bucket_policies.sql"
+
+  - name: "Supabase storage SQL alkalmazasa"
+    description: >
+      Alkalmazd a `api/sql/phase1_storage_bucket_policies.sql` SQL-t a Supabase
+      adatbazisra.
+    outputs:
+      - "codex/reports/web_platform/phase1_storage_bucket_and_policies.md"
+
+  - name: "Bucket/policy smoke script letrehozasa"
+    description: >
+      Keszits smoke scriptet, amely ellenorzi a bucket allapotot es a kotelezo
+      storage policyk letezeset.
+    outputs:
+      - "scripts/smoke_phase1_storage_bucket_policies.py"
+
+  - name: "Master checklist P1.4 checkpoint frissites"
+    description: >
+      Frissitsd a master checklistben a P1.4 pontokat, de csak bizonyitottan
+      kesz allapot eseteben.
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a task checklistet es report DoD->Evidence matrixot konkret
+      file hivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase1_storage_bucket_and_policies.md"
+      - "codex/reports/web_platform/phase1_storage_bucket_and_policies.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase1_storage_bucket_and_policies.md
+    outputs:
+      - "codex/reports/web_platform/phase1_storage_bucket_and_policies.md"
+      - "codex/reports/web_platform/phase1_storage_bucket_and_policies.verify.log"

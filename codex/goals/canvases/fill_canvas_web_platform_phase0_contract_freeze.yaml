@@ -1,0 +1,50 @@
+steps:
+  - name: "Canvas es task artefaktok letrehozasa"
+    description: >
+      Rogzitsd a Phase 0 scope-ot canvasban, es hozd letre a checklist/report
+      alapfajlokat a codex workflow szerint.
+    outputs:
+      - "canvases/web_platform_phase0_contract_freeze.md"
+      - "codex/codex_checklist/web_platform_phase0_contract_freeze.md"
+      - "codex/reports/web_platform_phase0_contract_freeze.md"
+
+  - name: "SVG export implementacio es dxf-run report paths bovites"
+    description: >
+      Adj uj export_per_sheet_svg funkciot az exporter modulhoz, hivd meg a
+      dxf pipeline-ban a DXF export utan, es egeszitsd ki a report paths objektumot
+      out_svg_dir kulccsal.
+    outputs:
+      - "vrs_nesting/dxf/exporter.py"
+      - "vrs_nesting/pipeline/dxf_pipeline.py"
+
+  - name: "Artifact contract dokumentacio frissites"
+    description: >
+      Frissitsd a dxf-run artifact contract dokumentumot, hogy explicit kovetelmeny
+      legyen az out/sheet_001.svg es a report paths out_svg_dir kulcs.
+    outputs:
+      - "docs/dxf_run_artifacts_contract.md"
+
+  - name: "SVG smoke script es check gate integracio"
+    description: >
+      Keszitsd el a scripts/smoke_svg_export.py scriptet, ami egy minta dxf-run
+      futas utan ellenorzi az SVG artifactot, majd kotd be a scripts/check.sh
+      minosegkapuba.
+    outputs:
+      - "scripts/smoke_svg_export.py"
+      - "scripts/check.sh"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Tolds ki a checklist pontokat es a report DoD->Evidence matrixot konkret
+      file+line hivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/web_platform_phase0_contract_freeze.md"
+      - "codex/reports/web_platform_phase0_contract_freeze.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform_phase0_contract_freeze.md
+    outputs:
+      - "codex/reports/web_platform_phase0_contract_freeze.md"
+      - "codex/reports/web_platform_phase0_contract_freeze.verify.log"

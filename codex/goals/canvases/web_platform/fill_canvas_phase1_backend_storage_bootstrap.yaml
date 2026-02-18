@@ -1,0 +1,57 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a Phase 1 bootstrap canvas/checklist/report alapokat,
+      a scope es DoD rogzitesevel.
+    outputs:
+      - "canvases/web_platform/phase1_backend_storage_bootstrap.md"
+      - "codex/codex_checklist/web_platform/phase1_backend_storage_bootstrap.md"
+      - "codex/reports/web_platform/phase1_backend_storage_bootstrap.md"
+
+  - name: "API skeleton es konfiguracio scaffold"
+    description: >
+      Keszits FastAPI alap scaffoldot (main, config, deps, auth, supabase kliens,
+      readme, requirements), amely Supabase env alapu konfiguraciot hasznal.
+    outputs:
+      - "api/requirements.txt"
+      - "api/README.md"
+      - "api/__init__.py"
+      - "api/main.py"
+      - "api/config.py"
+      - "api/deps.py"
+      - "api/auth.py"
+      - "api/supabase_client.py"
+
+  - name: "Phase 1 SQL schema es RLS draft"
+    description: >
+      Hozd letre a Supabase-hez hasznalhato SQL schema es RLS policy draftot
+      a Phase 1-ben szukseges tablakhoz es owner scope policykhez.
+    outputs:
+      - "api/sql/phase1_schema.sql"
+      - "api/sql/phase1_rls.sql"
+
+  - name: "Projects/files route-ok es DXF validacio szolgaltatas"
+    description: >
+      Implementald a Project CRUD route alapokat, a files upload-url es metadata
+      route alapokat, valamint az aszinkron DXF validacio szolgaltatast.
+    outputs:
+      - "api/services/dxf_validation.py"
+      - "api/routes/projects.py"
+      - "api/routes/files.py"
+      - "api/main.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a report DoD->Evidence matrixot konkret
+      file hivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase1_backend_storage_bootstrap.md"
+      - "codex/reports/web_platform/phase1_backend_storage_bootstrap.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase1_backend_storage_bootstrap.md
+    outputs:
+      - "codex/reports/web_platform/phase1_backend_storage_bootstrap.md"
+      - "codex/reports/web_platform/phase1_backend_storage_bootstrap.verify.log"
