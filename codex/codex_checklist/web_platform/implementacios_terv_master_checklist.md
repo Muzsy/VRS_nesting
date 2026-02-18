@@ -97,13 +97,13 @@ Szabaly:
 
 ## Phase 2 - Worker + run pipeline
 
-- [ ] P2.1/a Worker Dockerfile letrehozasa.
-- [ ] P2.1/b Image tartalmazza Python 3.12 runtime-ot.
-- [ ] P2.1/c Image tartalmazza `requirements.txt` python fuggosegeket.
-- [ ] P2.1/d Image tartalmazza a `vrs_nesting/` csomagot.
-- [ ] P2.1/e Image tartalmazza a `vrs_solver` binarist (`/usr/local/bin/vrs_solver`).
-- [ ] P2.1/f Image tartalmazza a Sparrow binarist (`/usr/local/bin/sparrow`).
-- [ ] P2.1/g Image publish container registry-be.
+- [x] P2.1/a Worker Dockerfile letrehozasa.
+- [x] P2.1/b Image tartalmazza Python 3.12 runtime-ot.
+- [x] P2.1/c Image tartalmazza `requirements.txt` python fuggosegeket.
+- [x] P2.1/d Image tartalmazza a `vrs_nesting/` csomagot.
+- [x] P2.1/e Image tartalmazza a `vrs_solver` binarist (`/usr/local/bin/vrs_solver`).
+- [x] P2.1/f Image tartalmazza a Sparrow binarist (`/usr/local/bin/sparrow`).
+- [x] P2.1/g Image publish container registry-be.
 
 - [ ] P2.2/a `worker/main.py` worker loop implementacio.
 - [ ] P2.2/b Queue poll: feldolgozatlan feladat lekerdezese.

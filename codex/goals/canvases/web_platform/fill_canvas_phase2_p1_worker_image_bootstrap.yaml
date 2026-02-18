@@ -1,0 +1,43 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase2_p1_worker_image_bootstrap task canvas/yaml/checklist/report
+      alapokat.
+    outputs:
+      - "canvases/web_platform/phase2_p1_worker_image_bootstrap.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase2_p1_worker_image_bootstrap.yaml"
+      - "codex/codex_checklist/web_platform/phase2_p1_worker_image_bootstrap.md"
+      - "codex/reports/web_platform/phase2_p1_worker_image_bootstrap.md"
+
+  - name: "Worker Docker image definicio"
+    description: >
+      Keszits worker Dockerfile-t multi-stage builddel ugy, hogy tartalmazza a
+      Python 3.12 runtime-ot, requirements telepitest, `vrs_nesting` csomagot,
+      valamint a `vrs_solver` es `sparrow` binarisokat.
+    outputs:
+      - "worker/Dockerfile"
+      - "worker/README.md"
+
+  - name: "Registry publish workflow"
+    description: >
+      Adj hozza GitHub Actions workflow-t a worker image build+publish
+      folyamathoz GHCR celra.
+    outputs:
+      - ".github/workflows/worker-image.yml"
+
+  - name: "Checklist es report frissites"
+    description: >
+      Frissitsd a task checklistet es reportot DoD->Evidence matrixszal,
+      valamint a master checklist P2.1 pontjait.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase2_p1_worker_image_bootstrap.md"
+      - "codex/reports/web_platform/phase2_p1_worker_image_bootstrap.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase2_p1_worker_image_bootstrap.md
+    outputs:
+      - "codex/reports/web_platform/phase2_p1_worker_image_bootstrap.md"
+      - "codex/reports/web_platform/phase2_p1_worker_image_bootstrap.verify.log"
