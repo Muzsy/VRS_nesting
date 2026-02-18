@@ -43,39 +43,39 @@ PASS
 | Checklist fajl letrejott | PASS | `codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md:1` | A kert uj checklist fajl a megadott mappaban letrejott. | `./scripts/verify.sh --report codex/reports/web_platform/implementacios_terv_master_checklist.md` |
 | Docx Phase 0-4 teljes lefedes | PASS | `codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md:12` | A checklist kulon blokkokban tartalmazza a Phase 0, 1, 2, 3 es 4 feladatpontokat es fozis-DoD checkpointokat. | Manualis ellenorzes: docx phase/task list 1:1 atvezetes |
 | Phase 0 checkpointok pipalva | PASS | `codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md:14` | A Phase 0 feladatok es DoD checkpointok `[x]` allapotban vannak. | Manualis ellenorzes a checklistben |
-| Phase 1-4 nyitott checkpointok | PASS | `codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md:33` | A Phase 1-4 feladatok es DoD checkpointok nyitott, `[ ]` allapotban maradtak. | Manualis ellenorzes a checklistben |
+| Phase 1-4 kezdeti allapot rogzitve | PASS | `codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md:33` | A master checklist eredeti letrehozasakor a Phase 1-4 checkpointok nyitottak voltak; kesobbi Phase 1 taskok ezeket reszben frissitettek. | Manualis ellenorzes a checklist + kesobbi phase1 reportok alapjan |
 | Verify gate PASS | PASS | `codex/reports/web_platform/implementacios_terv_master_checklist.verify.log` | A kotelezo wrapperes gate sikeresen lefutott. | `./scripts/verify.sh --report codex/reports/web_platform/implementacios_terv_master_checklist.md` |
 
 ## 8) Advisory notes
 - A checklist a docx implementacios tervet tekinti primer forrasnak; a spec fajl atnezese kontextuskent megtortent.
+- Megjegyzes: ez a report az elso checklist-letrehozas snapshotja; a jelenlegi P1 allapotot a frissitett master checklist es a kulon Phase 1 reportok tukrozik.
 
 <!-- AUTO_VERIFY_START -->
 ### Automatikus repo gate (verify.sh)
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-02-18T17:41:53+01:00 → 2026-02-18T17:44:01+01:00 (128s)
+- futás: 2026-02-18T21:30:50+01:00 → 2026-02-18T21:33:00+01:00 (130s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/implementacios_terv_master_checklist.verify.log`
-- git: `fix/repo-gate-sparrow-fallback@27f5af2`
-- módosított fájlok (git status): 6
+- git: `main@eeef059`
+- módosított fájlok (git status): 3
 
 **git diff --stat**
 
 ```text
- docs/error_code_catalog.md | 2 ++
- 1 file changed, 2 insertions(+)
+ .../implementacios_terv_master_checklist.md        |  3 +-
+ .../implementacios_terv_master_checklist.md        |  3 +-
+ ...implementacios_terv_master_checklist.verify.log | 42 +++++++++++-----------
+ 3 files changed, 25 insertions(+), 23 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
- M docs/error_code_catalog.md
-?? canvases/web_platform/
-?? codex/codex_checklist/web_platform/
-?? codex/goals/canvases/web_platform/
-?? codex/reports/web_platform/
-?? scripts/smoke_sparrow_determinism.py
+ M codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md
+ M codex/reports/web_platform/implementacios_terv_master_checklist.md
+ M codex/reports/web_platform/implementacios_terv_master_checklist.verify.log
 ```
 
 <!-- AUTO_VERIFY_END -->

@@ -1,0 +1,49 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase1_auth_profile_provisioning_and_smoke_hardening
+      canvas/checklist/report/yaml alapokat.
+    outputs:
+      - "canvases/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase1_auth_profile_provisioning_and_smoke_hardening.yaml"
+      - "codex/codex_checklist/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.md"
+      - "codex/reports/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.md"
+
+  - name: "Auth profile provisioning SQL"
+    description: >
+      Keszits idempotens SQL function+trigger csomagot auth.users -> public.users
+      provisioningre (insert/update/delete szinkron).
+    outputs:
+      - "api/sql/phase1_auth_user_profile_trigger.sql"
+      - "api/sql/phase1_rls.sql"
+
+  - name: "Schema smoke bovites"
+    description: >
+      Frissitsd a schema smoke scriptet, hogy a kotelezo trigger/function
+      jelenletet is ellenorizze.
+    outputs:
+      - "scripts/smoke_phase1_supabase_schema_state.py"
+
+  - name: "API smoke refaktor"
+    description: >
+      Vezesd ki a kezi public.users DB insert workaroundot a P1.5-P1.9 smoke-bol,
+      es trigger-alapu profile provisioninggel ellenorizd a flow-t.
+    outputs:
+      - "scripts/smoke_phase1_api_auth_projects_files_validation.py"
+
+  - name: "Checklist/report frissites"
+    description: >
+      Frissitsd a task checklistet, reportot es a master checklist relevans
+      Phase 1 allapotmegfogalmazasat.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.md"
+      - "codex/reports/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.md
+    outputs:
+      - "codex/reports/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.md"
+      - "codex/reports/web_platform/phase1_auth_profile_provisioning_and_smoke_hardening.verify.log"

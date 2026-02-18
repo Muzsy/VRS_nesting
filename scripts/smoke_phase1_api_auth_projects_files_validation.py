@@ -125,7 +125,6 @@ def main() -> int:
     password = "CodexTmp!2345"
 
     auth_user_ids: list[str] = []
-    public_user_ids: list[str] = []
 
     def _create_admin_user(email: str) -> str:
         resp = requests.post(
@@ -161,14 +160,14 @@ def main() -> int:
             return payload
         return []
 
-    def _ensure_public_user(user_id: str, email: str) -> None:
-        safe_email = email.replace("'", "''")
-        _db_query(
-            "insert into public.users(id, email, display_name, tier, quota_runs_per_month) "
-            f"values ('{user_id}', '{safe_email}', null, 'free', 50) "
-            "on conflict (id) do update set email = excluded.email;"
-        )
-        public_user_ids.append(user_id)
+    def _wait_public_user_profile(user_id: str, timeout_sec: float = 8.0) -> None:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            rows = _db_query(f"select id from public.users where id = '{user_id}' limit 1;")
+            if rows:
+                return
+            time.sleep(0.3)
+        raise RuntimeError(f"public.users profile row not provisioned for auth user {user_id}")
 
     def _login(email: str) -> str:
         resp = requests.post(
@@ -214,8 +213,8 @@ def main() -> int:
         # P1.6/a: email/password auth flow with temporary admin-created users.
         u1_id = _create_admin_user(u1_email)
         u2_id = _create_admin_user(u2_email)
-        _ensure_public_user(u1_id, u1_email)
-        _ensure_public_user(u2_id, u2_email)
+        _wait_public_user_profile(u1_id)
+        _wait_public_user_profile(u2_id)
 
         t1 = _login(u1_email)
         t2 = _login(u2_email)
@@ -449,7 +448,7 @@ def main() -> int:
         print(f" validation_status_observed: api_valid={status_value}, api_invalid={invalid_status}, service_ok=ok, service_bad=error")
         return 0
     finally:
-        for user_id in public_user_ids:
+        for user_id in auth_user_ids:
             try:
                 _db_query(f"delete from public.projects where owner_id = '{user_id}';")
                 _db_query(f"delete from public.users where id = '{user_id}';")

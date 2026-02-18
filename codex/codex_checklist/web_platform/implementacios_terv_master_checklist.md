@@ -7,7 +7,12 @@ Forrasok:
 Szabaly:
 - A checklist a docx feladatpontjait koveti (Phase 0-4).
 - A Phase 0 checkpointok keszre vannak jelolve.
-- A Phase 1-4 pontok nyitottak maradnak.
+- A checklist allapota folyamatosan frissul; a P1.2-P1.9 pontok mar tobbsegeben keszek,
+  a P1.1 blokk es a login/signup DoD checkpoint jelenleg nyitott.
+- Auth profile provisioning technikai hianyossaga javitva: `auth.users -> public.users`
+  triggeres szinkron aktiv (`api/sql/phase1_auth_user_profile_trigger.sql`).
+- A login/signup DoD nyitott marad, mert a publikus emailes signup flow kulon
+  browseres/E2E ellenorzest igenyel (nem CI smoke feladat).
 
 ## Phase 0 - Contract freeze (checkpoint: kesz)
 
