@@ -1,0 +1,33 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase2_p3_worker_svg_fallback task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase2_p3_worker_svg_fallback.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase2_p3_worker_svg_fallback.yaml"
+      - "codex/codex_checklist/web_platform/phase2_p3_worker_svg_fallback.md"
+      - "codex/reports/web_platform/phase2_p3_worker_svg_fallback.md"
+
+  - name: "Worker SVG fallback implementacio"
+    description: >
+      A worker ellenorizze a sheet SVG artifactokat, es hiany/uresseg eseten
+      generaljon fallback SVG-t solver_input/solver_output alapjan.
+    outputs:
+      - "worker/main.py"
+
+  - name: "Checklist es report frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist P2.3 pontjait.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase2_p3_worker_svg_fallback.md"
+      - "codex/reports/web_platform/phase2_p3_worker_svg_fallback.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase2_p3_worker_svg_fallback.md
+    outputs:
+      - "codex/reports/web_platform/phase2_p3_worker_svg_fallback.md"
+      - "codex/reports/web_platform/phase2_p3_worker_svg_fallback.verify.log"

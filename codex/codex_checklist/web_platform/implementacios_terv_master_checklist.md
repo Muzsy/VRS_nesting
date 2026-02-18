@@ -116,29 +116,29 @@ Szabaly:
 - [x] P2.2/i DB frissites: `run_artifacts` + `runs.status = done`.
 - [x] P2.2/j Temp mappa torles.
 
-- [ ] P2.3/a Worker ellenorzi a `out/sheet_NNN.svg` fajlok letezeset.
-- [ ] P2.3/b Ha hianyzik/ures, fallback SVG generalas `solver_output.json` alapjan.
-- [ ] P2.3/c Fallback SVG artifactok feltoltese Storage-ba.
+- [x] P2.3/a Worker ellenorzi a `out/sheet_NNN.svg` fajlok letezeset.
+- [x] P2.3/b Ha hianyzik/ures, fallback SVG generalas `solver_output.json` alapjan.
+- [x] P2.3/c Fallback SVG artifactok feltoltese Storage-ba.
 
-- [ ] P2.4/a `POST /projects/:id/runs` implementacio.
-- [ ] P2.4/b `GET /projects/:id/runs` implementacio.
-- [ ] P2.4/c `GET /projects/:id/runs/:run_id` implementacio.
-- [ ] P2.4/d `DELETE /projects/:id/runs/:run_id` implementacio (cancel).
-- [ ] P2.4/e `POST /projects/:id/runs/:run_id/rerun` implementacio.
+- [x] P2.4/a `POST /projects/:id/runs` implementacio.
+- [x] P2.4/b `GET /projects/:id/runs` implementacio.
+- [x] P2.4/c `GET /projects/:id/runs/:run_id` implementacio.
+- [x] P2.4/d `DELETE /projects/:id/runs/:run_id` implementacio (cancel).
+- [x] P2.4/e `POST /projects/:id/runs/:run_id/rerun` implementacio.
 
-- [ ] P2.5/a `GET /projects/:id/runs/:run_id/log?offset=0&lines=100` implementacio.
-- [ ] P2.5/b `run.log` eleres biztositasa worker futas kozben.
-- [ ] P2.5/c 3s polling logika tamogatasa (`offset` alapu incrementalitas).
-- [ ] P2.5/d Polling leallitasa DONE/FAILED allapotban.
+- [x] P2.5/a `GET /projects/:id/runs/:run_id/log?offset=0&lines=100` implementacio.
+- [x] P2.5/b `run.log` eleres biztositasa worker futas kozben.
+- [x] P2.5/c 3s polling logika tamogatasa (`offset` alapu incrementalitas).
+- [x] P2.5/d Polling leallitasa DONE/FAILED allapotban.
 
-- [ ] P2.6/a Worker timeout kezeles (`time_limit_s + 120s`).
-- [ ] P2.6/b Retry logika max 3 kiserletig.
-- [ ] P2.6/c Input snapshot tarolasa reprodukalhatosaghoz.
-- [ ] P2.6/d Ertheto `error_message` kitoltese hiba eseten.
+- [x] P2.6/a Worker timeout kezeles (`time_limit_s + 120s`).
+- [x] P2.6/b Retry logika max 3 kiserletig.
+- [x] P2.6/c Input snapshot tarolasa reprodukalhatosaghoz.
+- [x] P2.6/d Ertheto `error_message` kitoltese hiba eseten.
 
-- [ ] P2.7/a `POST /projects/:id/run-configs` implementacio.
-- [ ] P2.7/b `GET /projects/:id/run-configs` implementacio.
-- [ ] P2.7/c Futas inditas presetbol vagy manualis parameterekkel.
+- [x] P2.7/a `POST /projects/:id/run-configs` implementacio.
+- [x] P2.7/b `GET /projects/:id/run-configs` implementacio.
+- [x] P2.7/c Futas inditas presetbol vagy manualis parameterekkel.
 
 ### Phase 2 DoD checkpointok
 - [ ] Docker image sikeresen buildelodik es fut.

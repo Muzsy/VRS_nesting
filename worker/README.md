@@ -1,6 +1,8 @@
-# Worker Image (Phase 2.1 + P2.2 baseline)
+# Worker Image (Phase 2.1-P2.7)
 
 This image packages the worker runtime and starts the queue loop by default.
+The worker now handles live log sync, timeout/retry, cancellation, input snapshot
+hashing, and SVG fallback generation.
 
 ## What is included
 - Python 3.12 runtime
@@ -43,6 +45,7 @@ Optional:
 - `WORKER_POLL_INTERVAL_S` (default: `5`)
 - `WORKER_RETRY_DELAY_S` (default: `30`)
 - `WORKER_TIMEOUT_EXTRA_S` (default: `120`)
+- `WORKER_RUN_LOG_SYNC_INTERVAL_S` (default: `2`)
 - `WORKER_TEMP_ROOT` (default: `/tmp/vrs_worker`)
 - `WORKER_RUN_ROOT` (default: `runs`)
 - `SPARROW_BIN` (default from image: `/usr/local/bin/sparrow`)

@@ -34,6 +34,8 @@ uvicorn api.main:app --reload --port 8000
 - Supabase REST/storage client (`api/supabase_client.py`)
 - Projects CRUD routes (`api/routes/projects.py`)
 - Files upload URL + metadata routes (`api/routes/files.py`)
+- Run-configs routes (`api/routes/run_configs.py`)
+- Runs + run-log routes (`api/routes/runs.py`)
 - Async DXF validation service (`api/services/dxf_validation.py`)
 - SQL schema + RLS drafts (`api/sql/phase1_schema.sql`, `api/sql/phase1_rls.sql`)
 

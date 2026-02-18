@@ -1,0 +1,35 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase2_p4_runs_api_endpoints task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase2_p4_runs_api_endpoints.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase2_p4_runs_api_endpoints.yaml"
+      - "codex/codex_checklist/web_platform/phase2_p4_runs_api_endpoints.md"
+      - "codex/reports/web_platform/phase2_p4_runs_api_endpoints.md"
+
+  - name: "Runs endpoint implementacio"
+    description: >
+      Implementald a runs endpointokat (create/list/get/cancel/rerun) es
+      kotsd be az app routerbe.
+    outputs:
+      - "api/routes/runs.py"
+      - "api/main.py"
+      - "api/README.md"
+
+  - name: "Checklist es report frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist P2.4 pontjait.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase2_p4_runs_api_endpoints.md"
+      - "codex/reports/web_platform/phase2_p4_runs_api_endpoints.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase2_p4_runs_api_endpoints.md
+    outputs:
+      - "codex/reports/web_platform/phase2_p4_runs_api_endpoints.md"
+      - "codex/reports/web_platform/phase2_p4_runs_api_endpoints.verify.log"

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -11,15 +12,27 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from xml.sax.saxutils import escape
 
 
 class WorkerError(RuntimeError):
+    pass
+
+
+class WorkerSettingsError(WorkerError):
+    pass
+
+
+class WorkerCancelledError(WorkerError):
+    pass
+
+
+class WorkerTimeoutError(WorkerError):
     pass
 
 
@@ -69,14 +82,11 @@ class WorkerSettings:
     poll_interval_s: float
     retry_delay_s: int
     run_timeout_extra_s: int
+    run_log_sync_interval_s: float
     run_root: Path
     temp_root: Path
     sparrow_bin: str
     once: bool
-
-
-class WorkerSettingsError(WorkerError):
-    pass
 
 
 def load_settings(*, once: bool, poll_interval_s: float | None = None) -> WorkerSettings:
@@ -101,6 +111,9 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
 
     retry_delay_s = int(_resolve_env("WORKER_RETRY_DELAY_S", "30"))
     timeout_extra_s = int(_resolve_env("WORKER_TIMEOUT_EXTRA_S", "120"))
+    log_sync_interval_s = float(_resolve_env("WORKER_RUN_LOG_SYNC_INTERVAL_S", "2"))
+    if log_sync_interval_s <= 0:
+        raise WorkerSettingsError("WORKER_RUN_LOG_SYNC_INTERVAL_S must be > 0")
 
     worker_id = _resolve_env("WORKER_ID", f"worker-{os.getpid()}")
     run_root = Path(_resolve_env("WORKER_RUN_ROOT", "runs")).resolve()
@@ -116,6 +129,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         poll_interval_s=poll_value,
         retry_delay_s=retry_delay_s,
         run_timeout_extra_s=timeout_extra_s,
+        run_log_sync_interval_s=log_sync_interval_s,
         run_root=run_root,
         temp_root=temp_root,
         sparrow_bin=_resolve_env("SPARROW_BIN", ""),
@@ -138,7 +152,7 @@ class WorkerSupabaseClient:
                 "Authorization": f"Bearer {self._settings.supabase_access_token}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "vrs-worker/phase2-p2",
+                "User-Agent": "vrs-worker/phase2",
             },
         )
         try:
@@ -217,10 +231,27 @@ limit 1;
             raise WorkerError(f"project file not found: {file_id}")
         return rows[0]
 
+    def fetch_run_status(self, run_id: str) -> str:
+        sql = f"""
+select status
+from public.runs
+where id = {_sql_literal(run_id)}
+limit 1;
+"""
+        rows = self._management_query(sql)
+        if not rows:
+            return ""
+        return str(rows[0].get("status", "")).strip().lower()
+
     def mark_run_running(self, run_id: str) -> None:
         sql = f"""
 update public.runs
-set status = 'running', started_at = now(), error_message = null
+set status = 'running',
+    started_at = now(),
+    finished_at = null,
+    duration_sec = null,
+    solver_exit_code = null,
+    error_message = null
 where id = {_sql_literal(run_id)};
 """
         self._management_query(sql)
@@ -268,7 +299,28 @@ where id = {_sql_literal(run_id)};
 update public.runs
 set status = 'queued',
     started_at = null,
+    finished_at = null,
+    duration_sec = null,
     error_message = {_sql_literal(message[:2000])}
+where id = {_sql_literal(run_id)};
+"""
+        self._management_query(sql)
+
+    def mark_run_cancelled(self, *, run_id: str, message: str) -> None:
+        sql = f"""
+update public.runs
+set status = 'cancelled',
+    finished_at = coalesce(finished_at, now()),
+    duration_sec = extract(epoch from coalesce(finished_at, now()) - coalesce(started_at, queued_at)),
+    error_message = {_sql_literal(message[:2000])}
+where id = {_sql_literal(run_id)};
+"""
+        self._management_query(sql)
+
+    def set_run_input_snapshot_hash(self, *, run_id: str, snapshot_hash: str) -> None:
+        sql = f"""
+update public.runs
+set input_snapshot_hash = {_sql_literal(snapshot_hash)}
 where id = {_sql_literal(run_id)};
 """
         self._management_query(sql)
@@ -307,6 +359,24 @@ values (
   {_sql_literal(storage_key)},
   {size_bytes},
   {sheet_value}
+);
+"""
+        self._management_query(sql)
+
+    def replace_run_log_artifact(self, *, run_id: str, storage_key: str, size_bytes: int) -> None:
+        sql = f"""
+delete from public.run_artifacts
+where run_id = {_sql_literal(run_id)}
+  and artifact_type = 'run_log';
+
+insert into public.run_artifacts(run_id, artifact_type, filename, storage_key, size_bytes, sheet_index)
+values (
+  {_sql_literal(run_id)},
+  'run_log',
+  'run.log',
+  {_sql_literal(storage_key)},
+  {int(size_bytes)},
+  null
 );
 """
         self._management_query(sql)
@@ -427,8 +497,6 @@ def _artifact_type_for_path(relative_path: Path) -> tuple[str, int | None]:
         return "solver_input", None
     if name == "sparrow_output.json":
         return "sparrow_output", None
-    if name == "run.log":
-        return "run_log", None
     if name.endswith(".dxf") and sheet_index is not None:
         return "sheet_dxf", sheet_index
     if name.endswith(".svg") and sheet_index is not None:
@@ -510,6 +578,172 @@ def _build_dxf_project_payload(
     }
 
 
+def _read_json_object(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def _expand_sheet_sizes(solver_input_payload: dict[str, Any]) -> dict[int, tuple[float, float]]:
+    out: dict[int, tuple[float, float]] = {}
+    stocks = solver_input_payload.get("stocks")
+    if not isinstance(stocks, list):
+        return out
+
+    index = 0
+    for stock in stocks:
+        if not isinstance(stock, dict):
+            continue
+        width = float(stock.get("width") or 0.0)
+        height = float(stock.get("height") or 0.0)
+        qty = int(stock.get("quantity") or 0)
+        if width <= 0 or height <= 0 or qty <= 0:
+            continue
+        for _ in range(qty):
+            out[index] = (width, height)
+            index += 1
+    return out
+
+
+def _part_sizes(solver_input_payload: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    out: dict[str, tuple[float, float]] = {}
+    parts = solver_input_payload.get("parts")
+    if not isinstance(parts, list):
+        return out
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        part_id = str(part.get("id", "")).strip()
+        if not part_id:
+            continue
+        width = float(part.get("width") or 0.0)
+        height = float(part.get("height") or 0.0)
+        if width <= 0 or height <= 0:
+            continue
+        out[part_id] = (width, height)
+    return out
+
+
+def _fallback_color(part_id: str) -> str:
+    digest = hashlib.sha1(part_id.encode("utf-8")).hexdigest()
+    return "#" + digest[:6]
+
+
+def _build_fallback_svg(
+    *,
+    width: float,
+    height: float,
+    placements: list[dict[str, Any]],
+    part_sizes: dict[str, tuple[float, float]],
+) -> str:
+    safe_width = max(width, 1.0)
+    safe_height = max(height, 1.0)
+
+    lines: list[str] = []
+    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+    lines.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{safe_width:.3f}mm" height="{safe_height:.3f}mm" '
+        f'viewBox="0 0 {safe_width:.3f} {safe_height:.3f}">'
+    )
+    lines.append(
+        f'  <rect x="0" y="0" width="{safe_width:.3f}" height="{safe_height:.3f}" '
+        'fill="#ffffff" stroke="#111827" stroke-width="1" />'
+    )
+
+    for placement in placements:
+        part_id = str(placement.get("part_id", "")).strip()
+        if not part_id:
+            continue
+        x = float(placement.get("x") or 0.0)
+        y = float(placement.get("y") or 0.0)
+        rotation = float(placement.get("rotation_deg") or 0.0)
+        part_w, part_h = part_sizes.get(part_id, (10.0, 10.0))
+        color = _fallback_color(part_id)
+        transform = ""
+        if rotation:
+            transform = f' transform="rotate({rotation:.3f} {x:.3f} {y:.3f})"'
+        label = escape(part_id)
+        lines.append(
+            f'  <rect x="{x:.3f}" y="{y:.3f}" width="{part_w:.3f}" height="{part_h:.3f}" '
+            f'fill="{color}" fill-opacity="0.35" stroke="#0f172a" stroke-width="0.4"{transform} />'
+        )
+        lines.append(
+            f'  <title>{label}</title>'
+        )
+
+    lines.append("</svg>")
+    return "\n".join(lines) + "\n"
+
+
+def _ensure_sheet_svgs(run_dir: Path) -> list[Path]:
+    out_dir = run_dir / "out"
+    if not out_dir.is_dir():
+        return []
+
+    solver_input_payload = _read_json_object(run_dir / "solver_input.json")
+    solver_output_payload = _read_json_object(run_dir / "solver_output.json")
+
+    sheet_sizes = _expand_sheet_sizes(solver_input_payload)
+    part_dims = _part_sizes(solver_input_payload)
+
+    grouped_placements: dict[int, list[dict[str, Any]]] = {}
+    placements = solver_output_payload.get("placements")
+    if isinstance(placements, list):
+        for item in placements:
+            if not isinstance(item, dict):
+                continue
+            sheet_index = item.get("sheet_index")
+            if not isinstance(sheet_index, int):
+                continue
+            grouped_placements.setdefault(sheet_index, []).append(item)
+
+    target_sheet_indexes: set[int] = set(grouped_placements.keys())
+    for dxf_path in out_dir.glob("sheet_*.dxf"):
+        if not dxf_path.is_file():
+            continue
+        token = dxf_path.stem.split("_", 1)[1] if "_" in dxf_path.stem else ""
+        if token.isdigit():
+            target_sheet_indexes.add(int(token) - 1)
+
+    generated: list[Path] = []
+    for sheet_index in sorted(target_sheet_indexes):
+        svg_path = out_dir / f"sheet_{sheet_index + 1:03d}.svg"
+        if svg_path.is_file() and svg_path.stat().st_size > 0:
+            continue
+
+        placements_for_sheet = grouped_placements.get(sheet_index, [])
+        width, height = sheet_sizes.get(sheet_index, (1000.0, 1000.0))
+        if sheet_index not in sheet_sizes and placements_for_sheet:
+            max_x = 0.0
+            max_y = 0.0
+            for placement in placements_for_sheet:
+                part_id = str(placement.get("part_id", "")).strip()
+                part_w, part_h = part_dims.get(part_id, (10.0, 10.0))
+                px = float(placement.get("x") or 0.0)
+                py = float(placement.get("y") or 0.0)
+                max_x = max(max_x, px + part_w)
+                max_y = max(max_y, py + part_h)
+            width = max(max_x + 10.0, width)
+            height = max(max_y + 10.0, height)
+
+        svg_payload = _build_fallback_svg(
+            width=width,
+            height=height,
+            placements=placements_for_sheet,
+            part_sizes=part_dims,
+        )
+        svg_path.write_text(svg_payload, encoding="utf-8")
+        generated.append(svg_path)
+
+    return generated
+
+
 def _read_run_metrics(run_dir: Path) -> tuple[int, int, int]:
     report_json = run_dir / "report.json"
     if not report_json.is_file():
@@ -535,6 +769,62 @@ def _find_run_dir_from_stdout(stdout: str) -> Path:
     if not lines:
         raise WorkerError("dxf-run returned empty stdout; run_dir path missing")
     return Path(lines[-1]).resolve()
+
+
+def _discover_cli_run_dir(run_root: Path) -> Path | None:
+    if not run_root.is_dir():
+        return None
+    dirs = [path for path in run_root.iterdir() if path.is_dir()]
+    if not dirs:
+        return None
+    dirs.sort(key=lambda path: path.name)
+    return dirs[-1]
+
+
+def _sync_run_log_artifact(
+    *,
+    client: WorkerSupabaseClient,
+    settings: WorkerSettings,
+    run_id: str,
+    run_log_path: Path,
+) -> int:
+    if not run_log_path.is_file():
+        return 0
+
+    payload = run_log_path.read_bytes()
+    storage_key = f"runs/{run_id}/artifacts/run.log"
+    client.upload_object(bucket=settings.storage_bucket, object_key=storage_key, payload=payload)
+    client.replace_run_log_artifact(run_id=run_id, storage_key=storage_key, size_bytes=len(payload))
+    return len(payload)
+
+
+def _upload_run_artifacts(
+    *,
+    client: WorkerSupabaseClient,
+    settings: WorkerSettings,
+    run_id: str,
+    run_dir: Path,
+) -> None:
+    for artifact_path in run_dir.rglob("*"):
+        if not artifact_path.is_file():
+            continue
+        relative = artifact_path.relative_to(run_dir)
+        rel_text = relative.as_posix()
+        if rel_text == "run.log":
+            continue
+
+        storage_key = f"runs/{run_id}/artifacts/{rel_text}"
+        payload = artifact_path.read_bytes()
+        client.upload_object(bucket=settings.storage_bucket, object_key=storage_key, payload=payload)
+        artifact_type, sheet_index = _artifact_type_for_path(relative)
+        client.insert_run_artifact(
+            run_id=run_id,
+            artifact_type=artifact_type,
+            filename=rel_text,
+            storage_key=storage_key,
+            size_bytes=artifact_path.stat().st_size,
+            sheet_index=sheet_index,
+        )
 
 
 def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, item: dict[str, Any]) -> None:
@@ -589,8 +879,20 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             part_entries=parts_cfg,
             local_paths_by_file_id=local_paths_by_file_id,
         )
+
+        snapshot_text = json.dumps(project_payload, ensure_ascii=True, sort_keys=True)
+        snapshot_hash = hashlib.sha256(snapshot_text.encode("utf-8")).hexdigest()
+        snapshot_blob = (snapshot_text + "\n").encode("utf-8")
+
         project_json_path = input_dir / "project_dxf_v1.json"
         project_json_path.write_text(json.dumps(project_payload, ensure_ascii=True, indent=2), encoding="utf-8")
+
+        client.upload_object(
+            bucket=settings.storage_bucket,
+            object_key=f"runs/{run_id}/inputs/project_snapshot.json",
+            payload=snapshot_blob,
+        )
+        client.set_run_input_snapshot_hash(run_id=run_id, snapshot_hash=snapshot_hash)
 
         cmd = [
             "python3",
@@ -605,36 +907,96 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             cmd.extend(["--sparrow-bin", settings.sparrow_bin])
 
         timeout_s = int(context.get("time_limit_s") or 60) + settings.run_timeout_extra_s
-        proc = subprocess.run(
+        timeout_s = max(timeout_s, 30)
+
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
-            timeout=max(timeout_s, 30),
         )
 
+        discovered_run_dir: Path | None = None
+        last_log_size = -1
+        next_log_sync_at = 0.0
+        cancel_requested = False
+        timeout_hit = False
+        deadline = time.monotonic() + timeout_s
+
+        while proc.poll() is None:
+            now = time.monotonic()
+            if now >= deadline:
+                timeout_hit = True
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                break
+
+            run_status = client.fetch_run_status(run_id)
+            if run_status == "cancelled":
+                cancel_requested = True
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                break
+
+            if discovered_run_dir is None:
+                discovered_run_dir = _discover_cli_run_dir(run_root)
+
+            if discovered_run_dir is not None and now >= next_log_sync_at:
+                next_log_sync_at = now + settings.run_log_sync_interval_s
+                run_log_path = discovered_run_dir / "run.log"
+                if run_log_path.is_file():
+                    current_size = run_log_path.stat().st_size
+                    if current_size != last_log_size:
+                        try:
+                            last_log_size = _sync_run_log_artifact(
+                                client=client,
+                                settings=settings,
+                                run_id=run_id,
+                                run_log_path=run_log_path,
+                            )
+                        except WorkerError:
+                            pass
+
+            time.sleep(1.0)
+
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+
+        run_dir: Path | None = discovered_run_dir
+        if proc.returncode == 0:
+            run_dir = _find_run_dir_from_stdout(stdout)
+
+        if run_dir is not None:
+            run_log_path = run_dir / "run.log"
+            if run_log_path.is_file():
+                _sync_run_log_artifact(
+                    client=client,
+                    settings=settings,
+                    run_id=run_id,
+                    run_log_path=run_log_path,
+                )
+
+        if cancel_requested:
+            raise WorkerCancelledError(f"run {run_id}: cancelled by user")
+        if timeout_hit:
+            raise WorkerTimeoutError(f"run {run_id}: timeout exceeded ({timeout_s}s)")
         if proc.returncode != 0:
-            stderr = (proc.stderr or "").strip()
-            raise WorkerError(f"dxf-run failed (exit={proc.returncode}): {stderr[:2000]}")
+            stderr_text = (stderr or "").strip()
+            raise WorkerError(f"run {run_id}: dxf-run failed (exit={proc.returncode}): {stderr_text[:2000]}")
+        if run_dir is None:
+            raise WorkerError(f"run {run_id}: cannot locate run_dir")
 
-        run_dir = _find_run_dir_from_stdout(proc.stdout)
-
-        for artifact_path in run_dir.rglob("*"):
-            if not artifact_path.is_file():
-                continue
-            relative = artifact_path.relative_to(run_dir)
-            storage_key = f"runs/{run_id}/artifacts/{relative.as_posix()}"
-            payload = artifact_path.read_bytes()
-            client.upload_object(bucket=settings.storage_bucket, object_key=storage_key, payload=payload)
-            artifact_type, sheet_index = _artifact_type_for_path(relative)
-            client.insert_run_artifact(
-                run_id=run_id,
-                artifact_type=artifact_type,
-                filename=relative.as_posix(),
-                storage_key=storage_key,
-                size_bytes=artifact_path.stat().st_size,
-                sheet_index=sheet_index,
-            )
+        _ensure_sheet_svgs(run_dir)
+        _upload_run_artifacts(client=client, settings=settings, run_id=run_id, run_dir=run_dir)
 
         placements_count, unplaced_count, sheet_count = _read_run_metrics(run_dir)
         client.mark_run_done(
@@ -648,8 +1010,18 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         )
         client.complete_queue_item(queue_id=queue_id)
 
+    except WorkerCancelledError as exc:
+        client.mark_run_cancelled(run_id=run_id, message=str(exc))
+        client.complete_queue_item(queue_id=queue_id)
+        raise
     except Exception as exc:
         message = str(exc)
+        current_status = client.fetch_run_status(run_id)
+        if current_status == "cancelled":
+            client.mark_run_cancelled(run_id=run_id, message=message)
+            client.complete_queue_item(queue_id=queue_id)
+            raise
+
         if attempts >= max_attempts:
             client.mark_run_failed(run_id=run_id, message=message)
             client.complete_queue_item(queue_id=queue_id)

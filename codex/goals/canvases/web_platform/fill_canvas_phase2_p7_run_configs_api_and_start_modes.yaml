@@ -1,0 +1,36 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase2_p7_run_configs_api_and_start_modes task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase2_p7_run_configs_api_and_start_modes.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase2_p7_run_configs_api_and_start_modes.yaml"
+      - "codex/codex_checklist/web_platform/phase2_p7_run_configs_api_and_start_modes.md"
+      - "codex/reports/web_platform/phase2_p7_run_configs_api_and_start_modes.md"
+
+  - name: "Run-config endpoint + start mode implementacio"
+    description: >
+      Implementald a run-config endpointokat es a run inditas ket modjat
+      (preset run_config_id vagy manualis config).
+    outputs:
+      - "api/routes/run_configs.py"
+      - "api/routes/runs.py"
+      - "api/main.py"
+      - "api/README.md"
+
+  - name: "Checklist es report frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist P2.7 pontjait.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase2_p7_run_configs_api_and_start_modes.md"
+      - "codex/reports/web_platform/phase2_p7_run_configs_api_and_start_modes.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase2_p7_run_configs_api_and_start_modes.md
+    outputs:
+      - "codex/reports/web_platform/phase2_p7_run_configs_api_and_start_modes.md"
+      - "codex/reports/web_platform/phase2_p7_run_configs_api_and_start_modes.verify.log"
