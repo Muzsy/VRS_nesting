@@ -1,0 +1,46 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a canvas/checklist/report alapokat a Phase 1 SQL apply +
+      checklist sync blokkhoz.
+    outputs:
+      - "canvases/web_platform/phase1_supabase_sql_apply_and_checkpoints.md"
+      - "codex/codex_checklist/web_platform/phase1_supabase_sql_apply_and_checkpoints.md"
+      - "codex/reports/web_platform/phase1_supabase_sql_apply_and_checkpoints.md"
+
+  - name: "Supabase schema + RLS SQL alkalmazasa"
+    description: >
+      Futtasd a `api/sql/phase1_schema.sql` es `api/sql/phase1_rls.sql` fajlokat
+      a Supabase DATABASE_URL kapcsolaton keresztul.
+    outputs:
+      - "codex/reports/web_platform/phase1_supabase_sql_apply_and_checkpoints.md"
+
+  - name: "Schema/RLS allapot smoke script keszitese"
+    description: >
+      Keszits scriptet, ami DATABASE_URL alapjan ellenorzi, hogy a Phase 1
+      tablakszerkezet es RLS allapotok aktivak.
+    outputs:
+      - "scripts/smoke_phase1_supabase_schema_state.py"
+
+  - name: "Master checklist Phase 1 checkpoint frissitese"
+    description: >
+      Frissitsd a master checklist Phase 1 szekciojat a bizonyitottan kesz
+      pontokkal (csak verifikalt elemeket pipalj).
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a task checklistet es report DoD->Evidence matrixot konkret
+      file hivatkozasokkal.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase1_supabase_sql_apply_and_checkpoints.md"
+      - "codex/reports/web_platform/phase1_supabase_sql_apply_and_checkpoints.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase1_supabase_sql_apply_and_checkpoints.md
+    outputs:
+      - "codex/reports/web_platform/phase1_supabase_sql_apply_and_checkpoints.md"
+      - "codex/reports/web_platform/phase1_supabase_sql_apply_and_checkpoints.verify.log"

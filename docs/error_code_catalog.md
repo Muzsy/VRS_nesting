@@ -29,6 +29,8 @@ This document defines stable user-facing error code prefixes and key runtime err
 - `E_SPARROW_RUN_DIR_NOT_FOUND`: Sparrow runner target run_dir missing (`vrs_nesting/runner/sparrow_runner.py`)
 - `E_SPARROW_RUN_ID_ALLOC`: run_id allocation failed after retries (`vrs_nesting/runner/sparrow_runner.py`)
 - `E_SPARROW_UNEXPECTED`: unexpected Sparrow runner exception (`vrs_nesting/runner/sparrow_runner.py`)
+- `DXF_UNSUPPORTED_UNITS`: DXF `$INSUNITS` header érvénytelen vagy nem támogatott értéke (`vrs_nesting/dxf/importer.py::_resolve_insunits_scale_to_mm`)
+- `DXF_INSERT_EXPANSION_FAILED`: BLOCK/INSERT rekurzív kifejtése sikertelen, vagy elérte a mélységkorlátot (`vrs_nesting/dxf/importer.py::_expand_insert_entities`)
 
 ## Notes
 - Project model and DXF importer already expose deterministic structured codes:

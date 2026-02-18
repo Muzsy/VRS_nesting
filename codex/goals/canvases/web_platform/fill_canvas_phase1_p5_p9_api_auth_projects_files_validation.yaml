@@ -1,0 +1,45 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a P1.5-P1.9 completion blokk canvas/checklist/report
+      alapjait.
+    outputs:
+      - "canvases/web_platform/phase1_p5_p9_api_auth_projects_files_validation.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase1_p5_p9_api_auth_projects_files_validation.yaml"
+      - "codex/codex_checklist/web_platform/phase1_p5_p9_api_auth_projects_files_validation.md"
+      - "codex/reports/web_platform/phase1_p5_p9_api_auth_projects_files_validation.md"
+
+  - name: "API route runtime es authz erosites"
+    description: >
+      Javitsd a projects/files route-okat FastAPI 204 kompatibilitasra,
+      es add hozza a file completion storage key ownership ellenorzest
+      (403 hibaag).
+    outputs:
+      - "api/routes/projects.py"
+      - "api/routes/files.py"
+      - "api/supabase_client.py"
+
+  - name: "P1.5-P1.9 smoke script letrehozasa"
+    description: >
+      Keszits smoke scriptet, ami Supabase auth configot ellenoriz,
+      ideiglenes userekkel vegigteszteli a project/files endpointokat,
+      es validalja a 401/403/404 + upload-url + metadata + meretlimit flow-t.
+    outputs:
+      - "scripts/smoke_phase1_api_auth_projects_files_validation.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a task checklistet es report DoD->Evidence matrixot,
+      valamint a master checklist P1.5-P1.9 pontjait bizonyitott statuszra.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase1_p5_p9_api_auth_projects_files_validation.md"
+      - "codex/reports/web_platform/phase1_p5_p9_api_auth_projects_files_validation.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase1_p5_p9_api_auth_projects_files_validation.md
+    outputs:
+      - "codex/reports/web_platform/phase1_p5_p9_api_auth_projects_files_validation.md"
+      - "codex/reports/web_platform/phase1_p5_p9_api_auth_projects_files_validation.verify.log"

@@ -1,0 +1,31 @@
+steps:
+  - name: "Canvas es report vaz letrehozasa"
+    description: >
+      Hozd letre a task canvas es report fajlakat a web_platform area alatt,
+      a checklist-keszitesi scope-pal es DoD-vel.
+    outputs:
+      - "canvases/web_platform/implementacios_terv_master_checklist.md"
+      - "codex/reports/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Docx alapu master checklist osszeallitasa"
+    description: >
+      Keszits teljes, pipalhato checklistet a docx implementacios terv osszes
+      Phase 0-4 feladatpontjabol. A Phase 0 checkpointokat jelold keszre,
+      a tobbi fazis maradjon nyitott.
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Report frissitese DoD evidenciaval"
+    description: >
+      Frissitsd a reportot a valtozasokkal es DoD->Evidence matrixszal,
+      file hivatkozasokkal.
+    outputs:
+      - "codex/reports/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/implementacios_terv_master_checklist.md
+    outputs:
+      - "codex/reports/web_platform/implementacios_terv_master_checklist.md"
+      - "codex/reports/web_platform/implementacios_terv_master_checklist.verify.log"

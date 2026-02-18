@@ -7,3 +7,8 @@ runs/
 rust/vrs_solver/target/
 .venv/
 .idx/
+.env.local
+.env
+.env.*
+
+
