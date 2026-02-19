@@ -5,67 +5,89 @@ import { api } from "../lib/api";
 import { getAccessToken } from "../lib/supabase";
 import type { ViewerDataResponse } from "../lib/types";
 
+function formatExpires(value?: string | null): string {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString();
+}
+
 export function ViewerPage() {
   const { projectId, runId } = useParams<{ projectId: string; runId: string }>();
   const [viewerData, setViewerData] = useState<ViewerDataResponse | null>(null);
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
-  const [signedSvgUrls, setSignedSvgUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
+  async function loadViewerData(options?: { resetSheet?: boolean; silent?: boolean }) {
     if (!projectId || !runId) {
       return;
     }
 
-    async function loadViewerData() {
-      if (!projectId || !runId) {
-        return;
-      }
-      const currentProjectId = projectId;
-      const currentRunId = runId;
+    const resetSheet = options?.resetSheet ?? false;
+    const silent = options?.silent ?? false;
 
+    if (!silent) {
       setLoading(true);
-      setError("");
-      try {
-        const token = await getAccessToken();
-        const response = await api.getViewerData(token, currentProjectId, currentRunId);
-        if (cancelled) {
-          return;
-        }
-        setViewerData(response);
-        setActiveSheetIndex(0);
-
-        const signedMap: Record<string, string> = {};
-        for (const sheet of response.sheets) {
-          if (!sheet.svg_artifact_id) {
-            continue;
-          }
-          try {
-            const signed = await api.getArtifactUrl(token, currentProjectId, currentRunId, sheet.svg_artifact_id);
-            signedMap[sheet.svg_artifact_id] = signed.download_url;
-          } catch {
-            signedMap[sheet.svg_artifact_id] = "";
-          }
-        }
-        if (!cancelled) {
-          setSignedSvgUrls(signedMap);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Viewer data loading failed.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+    } else {
+      setRefreshing(true);
     }
 
-    void loadViewerData();
+    try {
+      const token = await getAccessToken();
+      const response = await api.getViewerData(token, projectId, runId);
+      setViewerData(response);
+
+      if (resetSheet) {
+        setActiveSheetIndex(0);
+      } else {
+        setActiveSheetIndex((previous) => {
+          if (response.sheets.length === 0) {
+            return 0;
+          }
+          return Math.min(previous, response.sheets.length - 1);
+        });
+      }
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Viewer data loading failed.");
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      } else {
+        setRefreshing(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!projectId || !runId) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      if (cancelled) {
+        return;
+      }
+      await loadViewerData({ resetSheet: true, silent: false });
+    })();
+
+    const refreshTimer = window.setInterval(() => {
+      if (cancelled) {
+        return;
+      }
+      void loadViewerData({ resetSheet: false, silent: true });
+    }, 240000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
     };
   }, [projectId, runId]);
 
@@ -113,6 +135,13 @@ export function ViewerPage() {
           <Link className="rounded-md border border-mist px-3 py-2 text-sm text-slate hover:bg-slate-100" to={`/projects/${projectId}/runs/${runId}/export`}>
             Export center
           </Link>
+          <button
+            className="rounded-md border border-mist px-3 py-2 text-sm text-slate hover:bg-slate-100"
+            onClick={() => void loadViewerData({ resetSheet: false, silent: false })}
+            type="button"
+          >
+            Refresh viewer data
+          </button>
         </div>
       </header>
 
@@ -127,6 +156,7 @@ export function ViewerPage() {
                 <span className="rounded bg-slate-100 px-2 py-1">status: {viewerData.status}</span>
                 <span className="rounded bg-slate-100 px-2 py-1">sheet_count: {viewerData.sheet_count}</span>
                 <span className="rounded bg-slate-100 px-2 py-1">placements: {viewerData.placements.length}</span>
+                {refreshing && <span className="rounded bg-slate-100 px-2 py-1">refreshing signed URLs...</span>}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -148,17 +178,32 @@ export function ViewerPage() {
               </div>
             </div>
 
+            {activeSheet && (
+              <div className="mt-3 grid gap-2 rounded-md border border-mist bg-slate-50 p-3 text-xs text-slate md:grid-cols-5">
+                <p>sheet: {activeSheet.sheet_index + 1}</p>
+                <p>
+                  size: {activeSheet.width_mm?.toFixed(1) ?? "-"} x {activeSheet.height_mm?.toFixed(1) ?? "-"} mm
+                </p>
+                <p>placements: {activeSheet.placements_count}</p>
+                <p>utilization: {activeSheet.utilization_pct?.toFixed(2) ?? "-"}%</p>
+                <p>svg url exp: {formatExpires(activeSheet.svg_url_expires_at)}</p>
+              </div>
+            )}
+
             {activeSheet ? (
               <div className="mt-4">
                 <ViewerCanvas
+                  onSvgError={() => {
+                    void loadViewerData({ resetSheet: false, silent: true });
+                  }}
                   placements={activeSheetPlacements}
                   sheetIndex={activeSheet.sheet_index}
-                  svgUrl={activeSheet.svg_artifact_id ? signedSvgUrls[activeSheet.svg_artifact_id] || null : null}
+                  svgUrl={activeSheet.svg_url ?? null}
                 />
               </div>
             ) : (
               <p className="mt-4 rounded-md border border-dashed border-mist bg-slate-50 px-4 py-3 text-sm text-slate">
-                No sheet artifacts found. Viewer fallback can still use placement points if available.
+                No sheet artifacts found. Viewer fallback uses solver placements.
               </p>
             )}
           </article>

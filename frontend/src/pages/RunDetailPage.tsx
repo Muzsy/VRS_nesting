@@ -41,6 +41,7 @@ export function RunDetailPage() {
   const [loading, setLoading] = useState(true);
   const [downloadingArtifactId, setDownloadingArtifactId] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const nextOffsetRef = useRef(0);
 
@@ -139,6 +140,23 @@ export function RunDetailPage() {
     }
   }
 
+  async function handleCancel() {
+    if (!projectId || !runId) {
+      return;
+    }
+    setCancelling(true);
+    setError("");
+    try {
+      const token = await getAccessToken();
+      await api.cancelRun(token, projectId, runId);
+      await refreshRunData(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cancel failed.");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   const sortedArtifacts = useMemo(() => [...artifacts].sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? "")), [artifacts]);
 
   if (!projectId || !runId) {
@@ -184,6 +202,16 @@ export function RunDetailPage() {
                 type="button"
               >
                 {rerunning ? "Re-running..." : "Re-run"}
+              </button>
+            )}
+            {(run.status === "queued" || run.status === "running") && (
+              <button
+                className="rounded-md border border-danger/30 px-3 py-2 text-sm font-medium text-danger hover:bg-red-50 disabled:opacity-60"
+                disabled={cancelling}
+                onClick={() => void handleCancel()}
+                type="button"
+              >
+                {cancelling ? "Cancelling..." : "Cancel run"}
               </button>
             )}
           </div>

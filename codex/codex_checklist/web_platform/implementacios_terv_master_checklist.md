@@ -9,6 +9,8 @@ Szabaly:
 - A Phase 0 checkpointok keszre vannak jelolve.
 - A checklist allapota folyamatosan frissul; a P1.2-P1.9 pontok mar tobbsegeben keszek,
   a P1.1 blokk es a login/signup DoD checkpoint jelenleg nyitott.
+- Phase 3 post-MVP korrekciok alkalmazva: cancel UX, viewer-data mezok pontositasa,
+  signed URL refresh kezeles, geometry-alapu viewer hit-test, disk-backed bundle folyamat.
 - Auth profile provisioning technikai hianyossaga javitva: `auth.users -> public.users`
   triggeres szinkron aktiv (`api/sql/phase1_auth_user_profile_trigger.sql`).
 - A login/signup DoD nyitott marad, mert a publikus emailes signup flow kulon

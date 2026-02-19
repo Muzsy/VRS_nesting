@@ -6,12 +6,23 @@ interface ViewerCanvasProps {
   sheetIndex: number;
   svgUrl: string | null;
   placements: ViewerPlacement[];
+  onSvgError?: () => void;
+}
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface PlacementGeometry {
+  source: ViewerPlacement;
+  corners: Point[];
 }
 
 interface ProjectedPlacement {
   source: ViewerPlacement;
-  px: number;
-  py: number;
+  points: Point[];
+  center: Point;
 }
 
 interface Bounds {
@@ -24,39 +35,102 @@ interface Bounds {
 const VIEW_W = 1000;
 const VIEW_H = 700;
 
-function computeBounds(items: ViewerPlacement[]): Bounds {
+function rotatePoint(point: Point, origin: Point, angleDeg: number): Point {
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const c = Math.cos(angleRad);
+  const s = Math.sin(angleRad);
+  const dx = point.x - origin.x;
+  const dy = point.y - origin.y;
+  return {
+    x: origin.x + dx * c - dy * s,
+    y: origin.y + dx * s + dy * c,
+  };
+}
+
+function placementToGeometry(item: ViewerPlacement): PlacementGeometry {
+  const width = item.width_mm > 0 ? item.width_mm : 10;
+  const height = item.height_mm > 0 ? item.height_mm : 10;
+
+  const origin: Point = { x: item.x, y: item.y };
+  const rect = [
+    { x: item.x, y: item.y },
+    { x: item.x + width, y: item.y },
+    { x: item.x + width, y: item.y + height },
+    { x: item.x, y: item.y + height },
+  ];
+
+  const corners = rect.map((point) => rotatePoint(point, origin, item.rotation_deg));
+  return { source: item, corners };
+}
+
+function computeBounds(items: PlacementGeometry[]): Bounds {
   if (items.length === 0) {
     return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
   }
+
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
+
   for (const item of items) {
-    minX = Math.min(minX, item.x);
-    minY = Math.min(minY, item.y);
-    maxX = Math.max(maxX, item.x);
-    maxY = Math.max(maxY, item.y);
+    for (const point of item.corners) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
   }
+
   if (minX === maxX) {
     maxX += 1;
   }
   if (minY === maxY) {
     maxY += 1;
   }
+
   return { minX, minY, maxX, maxY };
 }
 
-function projectPoint(item: ViewerPlacement, bounds: Bounds): { px: number; py: number } {
+function projectPoint(point: Point, bounds: Bounds): Point {
   const scaleX = VIEW_W / (bounds.maxX - bounds.minX);
   const scaleY = VIEW_H / (bounds.maxY - bounds.minY);
   return {
-    px: (item.x - bounds.minX) * scaleX,
-    py: VIEW_H - (item.y - bounds.minY) * scaleY,
+    x: (point.x - bounds.minX) * scaleX,
+    y: VIEW_H - (point.y - bounds.minY) * scaleY,
   };
 }
 
-export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasProps) {
+function pointInPolygon(point: Point, polygon: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+
+    const intersect = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 1e-9) + xi;
+    if (intersect) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function polygonCenter(points: Point[]): Point {
+  let sx = 0;
+  let sy = 0;
+  for (const point of points) {
+    sx += point.x;
+    sy += point.y;
+  }
+  return {
+    x: sx / points.length,
+    y: sy / points.length,
+  };
+}
+
+export function ViewerCanvas({ sheetIndex, svgUrl, placements, onSvgError }: ViewerCanvasProps) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -66,15 +140,21 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderMode: "svg" | "canvas" = placements.length > 300 ? "canvas" : "svg";
-  const bounds = useMemo(() => computeBounds(placements), [placements]);
+
+  const geometries = useMemo(() => placements.map(placementToGeometry), [placements]);
+  const bounds = useMemo(() => computeBounds(geometries), [geometries]);
 
   const projected = useMemo<ProjectedPlacement[]>(
     () =>
-      placements.map((item) => {
-        const point = projectPoint(item, bounds);
-        return { source: item, px: point.px, py: point.py };
+      geometries.map((item) => {
+        const points = item.corners.map((point) => projectPoint(point, bounds));
+        return {
+          source: item.source,
+          points,
+          center: polygonCenter(points),
+        };
       }),
-    [placements, bounds]
+    [geometries, bounds]
   );
 
   useEffect(() => {
@@ -107,16 +187,16 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
 
     for (const item of projected) {
       ctx.beginPath();
-      ctx.arc(item.px, item.py, 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = "#0284c7";
+      ctx.moveTo(item.points[0].x, item.points[0].y);
+      for (let i = 1; i < item.points.length; i += 1) {
+        ctx.lineTo(item.points[i].x, item.points[i].y);
+      }
+      ctx.closePath();
+      const isSelected = selected?.source.instance_id === item.source.instance_id;
+      ctx.fillStyle = isSelected ? "rgba(220,38,38,0.35)" : "rgba(2,132,199,0.32)";
+      ctx.strokeStyle = isSelected ? "#dc2626" : "#0f172a";
+      ctx.lineWidth = isSelected ? 2 : 1;
       ctx.fill();
-    }
-
-    if (selected) {
-      ctx.beginPath();
-      ctx.arc(selected.px, selected.py, 7, 0, Math.PI * 2);
-      ctx.strokeStyle = "#dc2626";
-      ctx.lineWidth = 2;
       ctx.stroke();
     }
   }, [projected, renderMode, selected]);
@@ -142,6 +222,15 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
     setDragOrigin(null);
   }
 
+  function pickPlacementAt(localPoint: Point): ProjectedPlacement | null {
+    for (let i = projected.length - 1; i >= 0; i -= 1) {
+      if (pointInPolygon(localPoint, projected[i].points)) {
+        return projected[i];
+      }
+    }
+    return null;
+  }
+
   function handleMouseMove(event: MouseEvent<HTMLDivElement>) {
     if (dragging && dragOrigin) {
       const dx = event.clientX - dragOrigin.x;
@@ -150,44 +239,21 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
       return;
     }
 
-    if (renderMode !== "canvas") {
-      return;
-    }
-
     const rect = event.currentTarget.getBoundingClientRect();
-    const localX = (event.clientX - rect.left - pan.x) / zoom;
-    const localY = (event.clientY - rect.top - pan.y) / zoom;
-
-    let nearest: ProjectedPlacement | null = null;
-    let nearestDistance = 14;
-    for (const point of projected) {
-      const distance = Math.hypot(point.px - localX, point.py - localY);
-      if (distance < nearestDistance) {
-        nearest = point;
-        nearestDistance = distance;
-      }
-    }
-    setHovered(nearest);
+    const localPoint = {
+      x: (event.clientX - rect.left - pan.x) / zoom,
+      y: (event.clientY - rect.top - pan.y) / zoom,
+    };
+    setHovered(pickPlacementAt(localPoint));
   }
 
   function handleCanvasClick(event: MouseEvent<HTMLDivElement>) {
-    if (renderMode !== "canvas") {
-      return;
-    }
     const rect = event.currentTarget.getBoundingClientRect();
-    const localX = (event.clientX - rect.left - pan.x) / zoom;
-    const localY = (event.clientY - rect.top - pan.y) / zoom;
-
-    let nearest: ProjectedPlacement | null = null;
-    let nearestDistance = 14;
-    for (const point of projected) {
-      const distance = Math.hypot(point.px - localX, point.py - localY);
-      if (distance < nearestDistance) {
-        nearest = point;
-        nearestDistance = distance;
-      }
-    }
-    setSelected(nearest);
+    const localPoint = {
+      x: (event.clientX - rect.left - pan.x) / zoom,
+      y: (event.clientY - rect.top - pan.y) / zoom,
+    };
+    setSelected(pickPlacementAt(localPoint));
   }
 
   return (
@@ -236,6 +302,7 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
                 alt={`Sheet ${sheetIndex + 1}`}
                 className="absolute inset-0 h-full w-full object-contain opacity-85"
                 draggable={false}
+                onError={onSvgError}
                 src={svgUrl}
               />
             ) : (
@@ -248,16 +315,17 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
               <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}>
                 {projected.map((item) => {
                   const isSelected = selected?.source.instance_id === item.source.instance_id;
+                  const pointsAttr = item.points.map((point) => `${point.x},${point.y}`).join(" ");
                   return (
-                    <circle
-                      cx={item.px}
-                      cy={item.py}
-                      fill={isSelected ? "#dc2626" : "#0284c7"}
+                    <polygon
+                      fill={isSelected ? "rgba(220,38,38,0.36)" : "rgba(2,132,199,0.30)"}
                       key={item.source.instance_id}
                       onClick={() => setSelected(item)}
                       onMouseEnter={() => setHovered(item)}
                       onMouseLeave={() => setHovered(null)}
-                      r={isSelected ? 6 : 4}
+                      points={pointsAttr}
+                      stroke={isSelected ? "#dc2626" : "#0f172a"}
+                      strokeWidth={isSelected ? 2 : 1}
                     />
                   );
                 })}
@@ -274,6 +342,9 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
               <p>
                 X/Y: {hovered.source.x.toFixed(2)} / {hovered.source.y.toFixed(2)}
               </p>
+              <p>
+                W/H: {hovered.source.width_mm.toFixed(2)} / {hovered.source.height_mm.toFixed(2)}
+              </p>
             </div>
           )}
         </div>
@@ -281,7 +352,7 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
 
       <aside className="rounded-xl border border-mist bg-white p-4">
         <h3 className="text-sm font-semibold text-ink">Selection details</h3>
-        {!selected && <p className="mt-2 text-sm text-slate">Click a part marker to inspect placement properties.</p>}
+        {!selected && <p className="mt-2 text-sm text-slate">Click a part geometry to inspect placement properties.</p>}
         {selected && (
           <dl className="mt-2 space-y-2 text-sm">
             <div>
@@ -299,8 +370,20 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements }: ViewerCanvasPro
               </dd>
             </div>
             <div>
+              <dt className="text-slate">Size</dt>
+              <dd className="font-medium text-ink">
+                {selected.source.width_mm.toFixed(3)} / {selected.source.height_mm.toFixed(3)}
+              </dd>
+            </div>
+            <div>
               <dt className="text-slate">Rotation</dt>
               <dd className="font-medium text-ink">{selected.source.rotation_deg.toFixed(1)} deg</dd>
+            </div>
+            <div>
+              <dt className="text-slate">Center (projected)</dt>
+              <dd className="font-medium text-ink">
+                {selected.center.x.toFixed(1)} / {selected.center.y.toFixed(1)}
+              </dd>
             </div>
           </dl>
         )}

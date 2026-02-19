@@ -1,0 +1,47 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase3_post_mvp_fixes task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase3_post_mvp_fixes.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase3_post_mvp_fixes.yaml"
+      - "codex/codex_checklist/web_platform/phase3_post_mvp_fixes.md"
+      - "codex/reports/web_platform/phase3_post_mvp_fixes.md"
+
+  - name: "Backend Phase 3 utokorrekcio"
+    description: >
+      Runs endpointek bovitese viewer-data mezokkel (sheet meretek, kihasznaltsag,
+      signed url metadata), es bundle endpoint memoriahasznalati kockazat csokkentese
+      disk/stream orientalt feldolgozassal. API verziostring es README igazitas.
+    outputs:
+      - "api/routes/runs.py"
+      - "api/supabase_client.py"
+      - "api/main.py"
+      - "api/README.md"
+
+  - name: "Frontend Phase 3 utokorrekcio"
+    description: >
+      Run detail cancel UX potlas, viewer signed URL refresh logika,
+      geometriara epitett hover/click hit-test.
+    outputs:
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/components/ViewerCanvas.tsx"
+      - "frontend/src/pages/ViewerPage.tsx"
+      - "frontend/src/pages/RunDetailPage.tsx"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist relevans megjegyzeset.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase3_post_mvp_fixes.md"
+      - "codex/reports/web_platform/phase3_post_mvp_fixes.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase3_post_mvp_fixes.md
+    outputs:
+      - "codex/reports/web_platform/phase3_post_mvp_fixes.md"
+      - "codex/reports/web_platform/phase3_post_mvp_fixes.verify.log"

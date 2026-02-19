@@ -1,6 +1,6 @@
-# API Phase 1 Bootstrap
+# API Backend (Phase 3 baseline + fixes)
 
-This directory contains the Phase 1 backend/storage scaffold for the web platform.
+This directory contains the backend API for the web platform through Phase 3, including post-MVP fixes.
 
 ## Local setup
 
@@ -27,7 +27,7 @@ python3 -m pip install -r api/requirements.txt
 uvicorn api.main:app --reload --port 8000
 ```
 
-## Implemented in this Phase 1 bootstrap
+## Implemented baseline
 
 - FastAPI app skeleton (`api/main.py`)
 - Supabase-backed auth dependency (`api/auth.py`)
@@ -35,12 +35,13 @@ uvicorn api.main:app --reload --port 8000
 - Projects CRUD routes (`api/routes/projects.py`)
 - Files upload URL + metadata routes (`api/routes/files.py`)
 - Run-configs routes (`api/routes/run_configs.py`)
-- Runs + run-log routes (`api/routes/runs.py`)
+- Runs + run-log + viewer-data + artifact URL/proxy + bundle routes (`api/routes/runs.py`)
 - Async DXF validation service (`api/services/dxf_validation.py`)
 - SQL schema + RLS drafts (`api/sql/phase1_schema.sql`, `api/sql/phase1_rls.sql`)
 
 ## Notes
 
-- This is a scaffold focused on Phase 1 flow and contracts.
+- The API intentionally keeps storage private and uses short-lived signed URLs for artifact access.
+- Bundle creation uses temporary disk-backed processing to reduce memory pressure for larger artifacts.
 - Supabase dashboard provisioning steps (project creation, bucket creation, policy deployment)
   are out of repo scope and must be executed in Supabase separately.

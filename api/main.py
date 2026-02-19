@@ -21,7 +21,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="VRS Nesting Web API",
-        version="0.1.0-phase1",
+        version="0.3.1-phase3-fixes",
         docs_url="/docs",
         redoc_url="/redoc",
     )

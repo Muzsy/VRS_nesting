@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import io
 import json
+import tempfile
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -122,8 +123,15 @@ class ViewerSheetResponse(BaseModel):
     svg_artifact_id: str | None = None
     dxf_filename: str | None = None
     svg_filename: str | None = None
+    dxf_download_path: str | None = None
+    svg_download_path: str | None = None
     dxf_url: str | None = None
+    dxf_url_expires_at: str | None = None
     svg_url: str | None = None
+    svg_url_expires_at: str | None = None
+    width_mm: float | None = None
+    height_mm: float | None = None
+    utilization_pct: float | None = None
     placements_count: int
 
 
@@ -134,6 +142,8 @@ class ViewerPlacementResponse(BaseModel):
     x: float
     y: float
     rotation_deg: float
+    width_mm: float
+    height_mm: float
 
 
 class ViewerUnplacedResponse(BaseModel):
@@ -673,19 +683,96 @@ def download_artifact_proxy(
     return RedirectResponse(url=artifact_url.download_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
-def _parse_solver_output(payload: dict[str, Any]) -> tuple[list[ViewerPlacementResponse], list[ViewerUnplacedResponse]]:
+def _parse_solver_input_part_sizes(payload: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    out: dict[str, tuple[float, float]] = {}
+    parts = payload.get("parts")
+    if not isinstance(parts, list):
+        return out
+    for item in parts:
+        if not isinstance(item, dict):
+            continue
+        part_id = str(item.get("id", "")).strip()
+        if not part_id:
+            continue
+        width = float(item.get("width") or 0.0)
+        height = float(item.get("height") or 0.0)
+        if width <= 0 or height <= 0:
+            continue
+        out[part_id] = (width, height)
+    return out
+
+
+def _sheet_size_from_outer_points(points: Any) -> tuple[float, float] | None:
+    if not isinstance(points, list) or len(points) < 3:
+        return None
+    xs: list[float] = []
+    ys: list[float] = []
+    for point in points:
+        if not isinstance(point, list) or len(point) < 2:
+            continue
+        try:
+            xs.append(float(point[0]))
+            ys.append(float(point[1]))
+        except (TypeError, ValueError):
+            continue
+    if len(xs) < 3 or len(ys) < 3:
+        return None
+    width = max(xs) - min(xs)
+    height = max(ys) - min(ys)
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _parse_solver_input_sheet_sizes(payload: dict[str, Any]) -> dict[int, tuple[float, float]]:
+    out: dict[int, tuple[float, float]] = {}
+    stocks = payload.get("stocks")
+    if not isinstance(stocks, list):
+        return out
+
+    sheet_index = 0
+    for item in stocks:
+        if not isinstance(item, dict):
+            continue
+        qty = int(item.get("quantity") or 0)
+        if qty <= 0:
+            continue
+
+        width = float(item.get("width") or 0.0)
+        height = float(item.get("height") or 0.0)
+        if width <= 0 or height <= 0:
+            inferred = _sheet_size_from_outer_points(item.get("outer_points"))
+            if inferred is None:
+                continue
+            width, height = inferred
+
+        for _ in range(qty):
+            out[sheet_index] = (width, height)
+            sheet_index += 1
+    return out
+
+
+def _parse_solver_output(
+    payload: dict[str, Any],
+    *,
+    part_sizes: dict[str, tuple[float, float]],
+) -> tuple[list[ViewerPlacementResponse], list[ViewerUnplacedResponse]]:
     placements: list[ViewerPlacementResponse] = []
     for item in payload.get("placements", []) if isinstance(payload.get("placements"), list) else []:
         if not isinstance(item, dict):
             continue
+        part_id = str(item.get("part_id", ""))
+        part_width, part_height = part_sizes.get(part_id, (10.0, 10.0))
         placements.append(
             ViewerPlacementResponse(
                 instance_id=str(item.get("instance_id", "")),
-                part_id=str(item.get("part_id", "")),
+                part_id=part_id,
                 sheet_index=int(item.get("sheet_index", 0)),
                 x=float(item.get("x", 0.0)),
                 y=float(item.get("y", 0.0)),
                 rotation_deg=float(item.get("rotation_deg", 0.0)),
+                width_mm=part_width,
+                height_mm=part_height,
             )
         )
 
@@ -721,6 +808,7 @@ def get_viewer_data(
     settings = get_settings()
     by_sheet: dict[int, dict[str, Any]] = {}
     solver_payload: dict[str, Any] = {}
+    solver_input_payload: dict[str, Any] = {}
 
     for row in artifact_rows:
         artifact_id = str(row.get("id", ""))
@@ -762,20 +850,83 @@ def get_viewer_data(
                     solver_payload = parsed
             except (SupabaseHTTPError, json.JSONDecodeError):
                 solver_payload = {}
+        if artifact_type == "solver_input" or filename.endswith("solver_input.json"):
+            try:
+                signed = supabase.create_signed_download_url(
+                    access_token=user.access_token,
+                    bucket=settings.storage_bucket,
+                    object_key=storage_key,
+                    expires_in=900,
+                )
+                blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
+                parsed = json.loads(blob.decode("utf-8"))
+                if isinstance(parsed, dict):
+                    solver_input_payload = parsed
+            except (SupabaseHTTPError, json.JSONDecodeError):
+                solver_input_payload = {}
 
-    placements, unplaced = _parse_solver_output(solver_payload)
+    part_sizes = _parse_solver_input_part_sizes(solver_input_payload)
+    sheet_sizes = _parse_solver_input_sheet_sizes(solver_input_payload)
+    placements, unplaced = _parse_solver_output(solver_payload, part_sizes=part_sizes)
     placements_per_sheet: dict[int, int] = {}
+    area_per_sheet: dict[int, float] = {}
     for item in placements:
         placements_per_sheet[item.sheet_index] = placements_per_sheet.get(item.sheet_index, 0) + 1
+        area_per_sheet[item.sheet_index] = area_per_sheet.get(item.sheet_index, 0.0) + (item.width_mm * item.height_mm)
 
-    sheet_indices = sorted(set(by_sheet.keys()) | set(placements_per_sheet.keys()))
+    sheet_indices = sorted(set(by_sheet.keys()) | set(placements_per_sheet.keys()) | set(sheet_sizes.keys()))
     sheets: list[ViewerSheetResponse] = []
     for idx in sheet_indices:
         slot = by_sheet.get(idx, {})
         dxf_artifact_id = slot.get("dxf_artifact_id")
         svg_artifact_id = slot.get("svg_artifact_id")
-        dxf_url = _artifact_download_link_path(project_id, run_id, dxf_artifact_id) if dxf_artifact_id else None
-        svg_url = _artifact_download_link_path(project_id, run_id, svg_artifact_id) if svg_artifact_id else None
+
+        dxf_download_path = _artifact_download_link_path(project_id, run_id, dxf_artifact_id) if dxf_artifact_id else None
+        svg_download_path = _artifact_download_link_path(project_id, run_id, svg_artifact_id) if svg_artifact_id else None
+
+        dxf_url: str | None = None
+        dxf_url_expires_at: str | None = None
+        if dxf_artifact_id:
+            try:
+                dxf_signed = get_artifact_url(
+                    project_id=project_id,
+                    run_id=run_id,
+                    artifact_id=str(dxf_artifact_id),
+                    user=user,
+                    supabase=supabase,
+                )
+                dxf_url = dxf_signed.download_url
+                dxf_url_expires_at = dxf_signed.expires_at
+            except HTTPException:
+                dxf_url = None
+                dxf_url_expires_at = None
+
+        svg_url: str | None = None
+        svg_url_expires_at: str | None = None
+        if svg_artifact_id:
+            try:
+                svg_signed = get_artifact_url(
+                    project_id=project_id,
+                    run_id=run_id,
+                    artifact_id=str(svg_artifact_id),
+                    user=user,
+                    supabase=supabase,
+                )
+                svg_url = svg_signed.download_url
+                svg_url_expires_at = svg_signed.expires_at
+            except HTTPException:
+                svg_url = None
+                svg_url_expires_at = None
+
+        width_mm: float | None = None
+        height_mm: float | None = None
+        utilization_pct: float | None = None
+        if idx in sheet_sizes:
+            width_mm, height_mm = sheet_sizes[idx]
+            sheet_area = width_mm * height_mm
+            if sheet_area > 0:
+                utilization_pct = round((area_per_sheet.get(idx, 0.0) / sheet_area) * 100.0, 3)
+
         sheets.append(
             ViewerSheetResponse(
                 sheet_index=idx,
@@ -783,8 +934,15 @@ def get_viewer_data(
                 svg_artifact_id=svg_artifact_id,
                 dxf_filename=slot.get("dxf_filename"),
                 svg_filename=slot.get("svg_filename"),
+                dxf_download_path=dxf_download_path,
+                svg_download_path=svg_download_path,
                 dxf_url=dxf_url,
+                dxf_url_expires_at=dxf_url_expires_at,
                 svg_url=svg_url,
+                svg_url_expires_at=svg_url_expires_at,
+                width_mm=width_mm,
+                height_mm=height_mm,
+                utilization_pct=utilization_pct,
                 placements_count=placements_per_sheet.get(idx, 0),
             )
         )
@@ -831,43 +989,53 @@ def create_artifacts_bundle(
     bundle_filename = f"bundle_{run_id}.zip"
     bundle_storage_key = f"runs/{run_id}/artifacts/{bundle_filename}"
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        used_names: set[str] = set()
-        for row in selected_rows:
-            storage_key = str(row.get("storage_key", ""))
-            filename = str(row.get("filename", "")).strip() or "artifact.bin"
-            arcname = filename.split("/")[-1]
-            if arcname in used_names:
-                base, dot, ext = arcname.partition(".")
-                suffix = 1
-                while f"{base}_{suffix}{dot}{ext}" in used_names:
-                    suffix += 1
-                arcname = f"{base}_{suffix}{dot}{ext}"
-            used_names.add(arcname)
+    bundle_size = 0
+    try:
+        with tempfile.TemporaryDirectory(prefix=f"vrs_bundle_{run_id[:8]}_") as temp_dir:
+            temp_root = Path(temp_dir)
+            zip_path = temp_root / bundle_filename
 
-            signed = supabase.create_signed_download_url(
+            with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+                used_names: set[str] = set()
+                for index, row in enumerate(selected_rows):
+                    storage_key = str(row.get("storage_key", ""))
+                    filename = str(row.get("filename", "")).strip() or "artifact.bin"
+                    arcname = filename.split("/")[-1]
+                    if arcname in used_names:
+                        base, dot, ext = arcname.partition(".")
+                        suffix = 1
+                        while f"{base}_{suffix}{dot}{ext}" in used_names:
+                            suffix += 1
+                        arcname = f"{base}_{suffix}{dot}{ext}"
+                    used_names.add(arcname)
+
+                    signed = supabase.create_signed_download_url(
+                        access_token=user.access_token,
+                        bucket=settings.storage_bucket,
+                        object_key=storage_key,
+                        expires_in=900,
+                    )
+                    source_path = temp_root / f"artifact_{index:04d}.bin"
+                    supabase.download_signed_object_to_file(
+                        signed_url=str(signed["download_url"]),
+                        destination_path=str(source_path),
+                    )
+                    zf.write(source_path, arcname=arcname)
+                    source_path.unlink(missing_ok=True)
+
+            bundle_size = zip_path.stat().st_size
+            upload_signed = supabase.create_signed_upload_url(
                 access_token=user.access_token,
                 bucket=settings.storage_bucket,
-                object_key=storage_key,
+                object_key=bundle_storage_key,
                 expires_in=900,
             )
-            blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
-            zf.writestr(arcname, blob)
+            supabase.upload_signed_object_from_file(
+                signed_url=str(upload_signed["upload_url"]),
+                file_path=str(zip_path),
+                content_type="application/zip",
+            )
 
-    payload = zip_buffer.getvalue()
-    try:
-        upload_signed = supabase.create_signed_upload_url(
-            access_token=user.access_token,
-            bucket=settings.storage_bucket,
-            object_key=bundle_storage_key,
-            expires_in=900,
-        )
-        supabase.upload_signed_object(
-            signed_url=str(upload_signed["upload_url"]),
-            payload=payload,
-            content_type="application/zip",
-        )
         existing = supabase.select_rows(
             table="run_artifacts",
             access_token=user.access_token,
@@ -891,7 +1059,7 @@ def create_artifacts_bundle(
                 "artifact_type": "bundle_zip",
                 "filename": bundle_filename,
                 "storage_key": bundle_storage_key,
-                "size_bytes": len(payload),
+                "size_bytes": bundle_size,
                 "sheet_index": None,
             },
         )

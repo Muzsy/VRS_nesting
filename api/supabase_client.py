@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import http.client
 import json
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -74,6 +76,21 @@ class SupabaseClient:
         try:
             with urlopen(req, timeout=30) as resp:
                 return resp.read()
+        except HTTPError as exc:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            raise SupabaseHTTPError(f"{method} {absolute_url} -> {exc.code}: {err_body}") from exc
+        except URLError as exc:
+            raise SupabaseHTTPError(f"{method} {absolute_url} network error: {exc}") from exc
+
+    def _request_stream_to_file(self, method: str, absolute_url: str, destination_path: str) -> None:
+        req = Request(url=absolute_url, method=method.upper())
+        try:
+            with urlopen(req, timeout=60) as resp, Path(destination_path).open("wb") as out:
+                while True:
+                    chunk = resp.read(1024 * 64)
+                    if not chunk:
+                        break
+                    out.write(chunk)
         except HTTPError as exc:
             err_body = exc.read().decode("utf-8", errors="replace")
             raise SupabaseHTTPError(f"{method} {absolute_url} -> {exc.code}: {err_body}") from exc
@@ -223,6 +240,50 @@ class SupabaseClient:
     def download_signed_object(self, *, signed_url: str) -> bytes:
         return self._request_bytes("GET", signed_url)
 
+    def download_signed_object_to_file(self, *, signed_url: str, destination_path: str) -> None:
+        self._request_stream_to_file("GET", signed_url, destination_path)
+
+    def _upload_file_with_method(
+        self,
+        *,
+        method: str,
+        signed_url: str,
+        file_path: str,
+        content_type: str,
+    ) -> None:
+        split = urlsplit(signed_url)
+        if split.scheme not in {"http", "https"}:
+            raise SupabaseHTTPError(f"unsupported upload url scheme: {split.scheme}")
+
+        path_with_query = split.path + (f"?{split.query}" if split.query else "")
+        port = split.port
+        if split.scheme == "https":
+            conn: http.client.HTTPConnection = http.client.HTTPSConnection(split.hostname, port=port, timeout=60)
+        else:
+            conn = http.client.HTTPConnection(split.hostname, port=port, timeout=60)
+
+        file_size = Path(file_path).stat().st_size
+        try:
+            conn.putrequest(method, path_with_query)
+            conn.putheader("Content-Type", content_type)
+            conn.putheader("Content-Length", str(file_size))
+            conn.putheader("Host", split.netloc)
+            conn.endheaders()
+            with Path(file_path).open("rb") as source:
+                while True:
+                    chunk = source.read(1024 * 64)
+                    if not chunk:
+                        break
+                    conn.send(chunk)
+            response = conn.getresponse()
+            body = response.read().decode("utf-8", errors="replace")
+            if response.status < 200 or response.status >= 300:
+                raise SupabaseHTTPError(f"{method} {signed_url} -> {response.status}: {body}")
+        except OSError as exc:
+            raise SupabaseHTTPError(f"{method} {signed_url} network error: {exc}") from exc
+        finally:
+            conn.close()
+
     def upload_signed_object(
         self,
         *,
@@ -247,6 +308,30 @@ class SupabaseClient:
         if last_error is not None:
             raise last_error
         raise SupabaseHTTPError("upload_signed_object failed with unknown error")
+
+    def upload_signed_object_from_file(
+        self,
+        *,
+        signed_url: str,
+        file_path: str,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        last_error: SupabaseHTTPError | None = None
+        for method in ("PUT", "POST"):
+            try:
+                self._upload_file_with_method(
+                    method=method,
+                    signed_url=signed_url,
+                    file_path=file_path,
+                    content_type=content_type,
+                )
+                return
+            except SupabaseHTTPError as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise last_error
+        raise SupabaseHTTPError("upload_signed_object_from_file failed with unknown error")
 
     def remove_object(self, *, access_token: str, bucket: str, object_key: str) -> None:
         encoded_key = quote(object_key, safe="/")

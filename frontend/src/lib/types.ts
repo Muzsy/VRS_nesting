@@ -105,8 +105,15 @@ export interface ViewerSheet {
   svg_artifact_id?: string | null;
   dxf_filename?: string | null;
   svg_filename?: string | null;
+  dxf_download_path?: string | null;
+  svg_download_path?: string | null;
   dxf_url?: string | null;
+  dxf_url_expires_at?: string | null;
   svg_url?: string | null;
+  svg_url_expires_at?: string | null;
+  width_mm?: number | null;
+  height_mm?: number | null;
+  utilization_pct?: number | null;
   placements_count: number;
 }
 
@@ -117,6 +124,8 @@ export interface ViewerPlacement {
   x: number;
   y: number;
   rotation_deg: number;
+  width_mm: number;
+  height_mm: number;
 }
 
 export interface ViewerUnplaced {
