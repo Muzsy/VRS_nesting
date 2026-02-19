@@ -1,0 +1,32 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p0_decision_freeze_and_dod_rebaseline task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p0_decision_freeze_and_dod_rebaseline.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.md"
+      - "codex/reports/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.md"
+
+  - name: "Master checklist Phase 4 ujraalapozas"
+    description: >
+      Frissitsd a master checklistet: P4.0 dontes blokk bevezetese,
+      Phase 4 feladatpontok pontositasa, DoD update a jovahagyott kerettel.
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Checklist es report frissites"
+    description: >
+      Tedd konzisztensse a task checklistet es reportot a valtozasokkal.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.md"
+      - "codex/reports/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.md"
+      - "codex/reports/web_platform/phase4_p0_decision_freeze_and_dod_rebaseline.verify.log"

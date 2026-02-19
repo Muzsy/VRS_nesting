@@ -11,6 +11,8 @@ Szabaly:
   a P1.1 blokk es a login/signup DoD checkpoint jelenleg nyitott.
 - Phase 3 post-MVP korrekciok alkalmazva: cancel UX, viewer-data mezok pontositasa,
   signed URL refresh kezeles, geometry-alapu viewer hit-test, disk-backed bundle folyamat.
+- Phase 4 decision freeze rogzitve: gateway+app rate limit split, atomic quota ellenorzes,
+  Supabase Cron -> Edge cleanup orchestracio, p95 es Sentry kotelezoseg kivetele Phase 4 DoD-bol.
 - Auth profile provisioning technikai hianyossaga javitva: `auth.users -> public.users`
   triggeres szinkron aktiv (`api/sql/phase1_auth_user_profile_trigger.sql`).
 - A login/signup DoD nyitott marad, mert a publikus emailes signup flow kulon
@@ -217,56 +219,69 @@ Szabaly:
 
 ## Phase 4 - Hardening (security + QA)
 
-- [ ] P4.1/a Rate limit beallitas API gateway szinten (60 req/perc/user).
-- [ ] P4.1/b 429 + `Retry-After` valasz limit tullepeskor.
-- [ ] P4.1/c Kulon upload limit (pl. 10 upload/perc).
+### P4.0 - Decision freeze (elofeltetel)
+- [x] P4.0/a Rate limit strategia rogzitve: gateway altalanos vedelem + minimalis app-side vedelmek kritikus mutaciokra.
+- [x] P4.0/b Quota strategia rogzitve: atomic check+increment DB oldalon, egyetlen forras az adatbazis.
+- [x] P4.0/c Cleanup orchestracio rogzitve: Supabase Cron (HTTP) -> Edge Function (batch, lock, idempotens).
+- [x] P4.0/d CI auth strategia rogzitve: service-role admin user letrehozas random credentialdel (nem publikus signup).
+- [x] P4.0/e p95 cel jelenleg out-of-scope a Phase 4 DoD-ban.
+- [x] P4.0/f Sentry jelenleg optional/future, nem kotelezo DoD blocker.
+
+- [ ] P4.1/a Gateway oldali altalanos rate limit konfiguracio route-csoportokra.
+- [ ] P4.1/b App oldali rate limit csak kritikus mutaciokra (`POST /runs`, `POST /runs/:id/artifacts/bundle`, opcion: upload mutaciok).
+- [ ] P4.1/c Egységes 429 + `Retry-After` + konzisztens hibatest biztositas gateway es app oldalon.
+- [ ] P4.1/d Rate limit talalatok metrikazasa/naplozasa observability celra.
 
 - [ ] P4.2/a `users.quota_runs_per_month` default 50/honap.
-- [ ] P4.2/b `POST /runs` elott havi quota ellenorzes.
-- [ ] P4.2/c Quota tullepeskor 429 + felhasznalobarat uzenet.
+- [ ] P4.2/b Atomic SQL function (check+increment) konkurencia-biztos lockolas mellett.
+- [ ] P4.2/c `POST /runs` csak sikeres quota commit utan allithat queue rekordot.
+- [ ] P4.2/d Quota tullepeskor 429 + felhasznalobarat hiba uzenet.
 
 - [ ] P4.3/a Playwright teszt framework beallitas.
-- [ ] P4.3/b E2E#1 Happy path (login -> project -> upload -> run -> poll -> viewer).
-- [ ] P4.3/c E2E#2 Invalid DXF upload -> validation error badge.
-- [ ] P4.3/d E2E#3 FAILED run -> hiba megjelenik Run detail oldalon.
-- [ ] P4.3/e E2E#4 ZIP bundle letoltes -> DXF + SVG a zipben.
-- [ ] P4.3/f E2E#5 Re-run -> azonos elhelyezesi metrikak (determinizmus).
-- [ ] P4.3/g E2E tesztek CI pipeline-ba kotese.
+- [ ] P4.3/b Stable E2E#1: auth -> project -> upload -> run start -> queued/running -> cancel (worker completion nelkul is stabil).
+- [ ] P4.3/c Stable E2E#2: invalid DXF upload -> validation error badge.
+- [ ] P4.3/d Async E2E#3: FAILED run -> hiba megjelenik Run detail oldalon.
+- [ ] P4.3/e Async E2E#4: teljes run completion -> viewer oldal elerheto.
+- [ ] P4.3/f Async E2E#5: ZIP bundle letoltes -> DXF + SVG a zipben.
+- [ ] P4.3/g Stable + async suite CI pipeline-ba kotese retry/backoff/time budget szabalyokkal.
 
 - [ ] P4.4/a SQL injection ellenorzes (parameteres query gyakorlat).
-- [ ] P4.4/b Auth ellenorzes (JWT expiry, refresh rotation, jelszoerosseg).
-- [ ] P4.4/c Sensitive data vedelem (rovid signed URL TTL, private bucket).
-- [ ] P4.4/d Path traversal vedelem (`Path(filename).name`).
-- [ ] P4.4/e CORS production domainre korlatozasa.
-- [ ] P4.4/f Dependency audit (`pip-audit`, `npm audit`).
+- [ ] P4.4/b Auth ellenorzes (JWT expiry, refresh rotation, jelszoerosseg policy).
+- [ ] P4.4/c Security headers + CORS production domain + frontend CSP policy.
+- [ ] P4.4/d Sensitive data vedelem (rovid signed URL TTL, private bucket).
+- [ ] P4.4/e Path traversal vedelem (`Path(filename).name`).
+- [ ] P4.4/f Dependency audit (`pip-audit`, `npm audit`) + vulnerability exception policy dokumentalasa.
 
 - [ ] P4.5/a 10 parhuzamos run terhelesi teszt.
 - [ ] P4.5/b 50 parhuzamos viewer session terhelesi teszt.
-- [ ] P4.5/c API p95 latencia cel validalas (<500ms).
+- [ ] P4.5/c Performance snapshot riport (latency eloszlasok, hibaarany, kapacitas) strict p95 gate nelkul.
 - [ ] P4.5/d Bottleneck tuning (index/query cache) szukseg eseten.
 
 - [ ] P4.6/a `GET /health` endpoint implementacio (`status`, `db`, `storage`).
-- [ ] P4.6/b Sentry integracio API + frontend oldalon.
+- [ ] P4.6/b Structured logging + request_id/correlation_id API es worker oldalon.
 - [ ] P4.6/c Worker idle/failure alert (5 perc backlog mellett nincs feldolgozas).
 - [ ] P4.6/d Uptime monitor beallitas (pl. 5 perces ping `/health`).
+- [ ] P4.6/e Sentry opcion: future enhancement, nem kotelezo Phase 4 DoD blocker.
 
-- [ ] P4.7/a Lifecycle rule: FAILED/CANCELLED artifact torles 7 nap utan.
-- [ ] P4.7/b Lifecycle rule: archivalt projektek fajljai 30 nap utan torles.
-- [ ] P4.7/c Lifecycle rule: ideiglenes bundle ZIP torles 24 ora utan.
-- [ ] P4.7/d DB sorok kaszkad torlesi logikajanak osszehangolasa.
+- [ ] P4.7/a Supabase Cron HTTP trigger konfiguracio cleanup Edge Function hivassal.
+- [ ] P4.7/b Edge Function cleanup batch claim/lock/idempotens implementacio.
+- [ ] P4.7/c Lifecycle rule: FAILED/CANCELLED artifact torles 7 nap utan.
+- [ ] P4.7/d Lifecycle rule: archivalt projektek fajljai 30 nap utan torles.
+- [ ] P4.7/e Lifecycle rule: ideiglenes bundle ZIP torles 24 ora utan.
+- [ ] P4.7/f DB sorok kaszkad torlesi logikajanak osszehangolasa.
 
 - [ ] P4.8/a OpenAPI schema automatikus generalas.
 - [ ] P4.8/b Swagger UI eleres `/docs` alatt.
-- [ ] P4.8/c `README.md` quick-start frissites (local env + tesztfuttatas).
+- [ ] P4.8/c `README.md` quick-start + Phase 4 operational decisions frissites (local env + tesztfuttatas).
 
 ### Phase 4 DoD checkpointok
-- [ ] Rate limit mukodik (429 60 req/perc felett).
-- [ ] Soft quota mukodik (50 run/honap felett hiba).
-- [ ] Mind az 5 E2E teszt zold.
+- [ ] P4.0 dontesi freeze dokumentalt es elfogadott.
+- [ ] Gateway + app split rate limit aktiv, konzisztens 429 + `Retry-After` valasszal.
+- [ ] Soft quota atomican mukodik (`POST /runs` konkurens terhelesnel sem enged tulfutast).
+- [ ] Stable + async E2E suite zold CI-ban.
 - [ ] `pip-audit` es `npm audit` 0 kritikus sebezhetoseggel fut.
 - [ ] Terheles alatt 10 concurrent worker runnal nincs dupla feldolgozas.
-- [ ] API p95 latencia < 500ms terheles alatt.
-- [ ] `GET /health` endpoint elerheto es OK.
-- [ ] Sentry rogzit API hibakat.
-- [ ] S3 lifecycle rule aktiv a FAILED futasokra (7 nap).
+- [ ] `GET /health` endpoint elerheto es OK, naplok request/correlation id-t tartalmaznak.
+- [ ] Supabase Cron -> Edge cleanup futas bizonyitott, 7/30/24 napos torlesi szabalyok ervenyesulnek.
 - [ ] API dokumentacio elerheto `/docs` URL-en.
+- [ ] Performance snapshot riport csatolva (p95 strict gate jelenleg out-of-scope).
