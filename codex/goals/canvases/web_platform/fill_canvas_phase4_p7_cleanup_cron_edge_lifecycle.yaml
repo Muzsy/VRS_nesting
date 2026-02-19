@@ -1,0 +1,36 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p7_cleanup_cron_edge_lifecycle task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p7_cleanup_cron_edge_lifecycle.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.md"
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.md"
+
+  - name: "Cleanup SQL + Edge function implementacio"
+    description: >
+      Lock/candidate/delete SQL helper fuggvenyek, edge cleanup worker,
+      es cron trigger template.
+    outputs:
+      - "api/sql/phase4_cleanup_edge_functions.sql"
+      - "api/sql/phase4_cleanup_cron_template.sql"
+      - "supabase/functions/cleanup-worker/index.ts"
+      - "supabase/functions/cleanup-worker/README.md"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      P4.7 checkpointok statusza frissitve es deploy/manual lepesek reportba rogzitve.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.md"
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.md"
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_edge_lifecycle.verify.log"

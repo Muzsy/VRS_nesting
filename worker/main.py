@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -34,6 +35,20 @@ class WorkerCancelledError(WorkerError):
 
 class WorkerTimeoutError(WorkerError):
     pass
+
+
+logger = logging.getLogger("vrs_worker")
+
+
+def _configure_logging() -> None:
+    if logger.handlers:
+        return
+    level_name = _resolve_env("WORKER_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s level=%(levelname)s logger=%(name)s message=%(message)s",
+    )
 
 
 def _parse_dotenv(path: Path) -> dict[str, str]:
@@ -81,6 +96,7 @@ class WorkerSettings:
     worker_id: str
     poll_interval_s: float
     retry_delay_s: int
+    alert_backlog_seconds: int
     run_timeout_extra_s: int
     run_log_sync_interval_s: float
     run_root: Path
@@ -110,6 +126,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         raise WorkerSettingsError("WORKER_POLL_INTERVAL_S must be > 0")
 
     retry_delay_s = int(_resolve_env("WORKER_RETRY_DELAY_S", "30"))
+    alert_backlog_seconds = int(_resolve_env("WORKER_ALERT_BACKLOG_SECONDS", "300"))
     timeout_extra_s = int(_resolve_env("WORKER_TIMEOUT_EXTRA_S", "120"))
     log_sync_interval_s = float(_resolve_env("WORKER_RUN_LOG_SYNC_INTERVAL_S", "2"))
     if log_sync_interval_s <= 0:
@@ -128,6 +145,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         worker_id=worker_id,
         poll_interval_s=poll_value,
         retry_delay_s=retry_delay_s,
+        alert_backlog_seconds=alert_backlog_seconds,
         run_timeout_extra_s=timeout_extra_s,
         run_log_sync_interval_s=log_sync_interval_s,
         run_root=run_root,
@@ -205,6 +223,23 @@ returning q.id, q.run_id, q.attempts, q.max_attempts;
 """
         rows = self._management_query(sql)
         return rows[0] if rows else None
+
+    def fetch_backlog_metrics(self) -> tuple[int, float]:
+        sql = """
+select
+  count(*)::int as pending_count,
+  coalesce(extract(epoch from (now() - min(q.created_at))), 0)::double precision as oldest_age_s
+from public.run_queue q
+join public.runs r on r.id = q.run_id
+where q.visible_after <= now()
+  and (q.locked_by is null or q.locked_at < now() - interval '10 minutes')
+  and r.status in ('queued','running');
+"""
+        rows = self._management_query(sql)
+        if not rows:
+            return (0, 0.0)
+        row = rows[0]
+        return (int(row.get("pending_count") or 0), float(row.get("oldest_age_s") or 0.0))
 
     def fetch_run_context(self, run_id: str) -> dict[str, Any]:
         sql = f"""
@@ -1092,20 +1127,50 @@ def run_worker_loop(settings: WorkerSettings) -> int:
     settings.run_root.mkdir(parents=True, exist_ok=True)
 
     client = WorkerSupabaseClient(settings)
+    last_processed_at = time.monotonic()
+    last_alert_at = 0.0
 
     while True:
         item = client.claim_next_queue_item(settings.worker_id)
         if item is None:
             if settings.once:
                 return 0
+            now = time.monotonic()
+            if now - last_processed_at >= float(settings.alert_backlog_seconds) and (
+                now - last_alert_at >= float(settings.alert_backlog_seconds)
+            ):
+                pending_count, oldest_age_s = client.fetch_backlog_metrics()
+                if pending_count > 0:
+                    logger.error(
+                        "event=worker_backlog_alert worker_id=%s threshold_s=%s pending_count=%s oldest_age_s=%.1f",
+                        settings.worker_id,
+                        settings.alert_backlog_seconds,
+                        pending_count,
+                        oldest_age_s,
+                    )
+                    last_alert_at = now
             time.sleep(settings.poll_interval_s)
             continue
 
+        last_processed_at = time.monotonic()
+        run_id = str(item.get("run_id", ""))
+        queue_id = str(item.get("id", ""))
         try:
             _process_queue_item(client, settings, item)
-            print(f"[worker] processed run_id={item.get('run_id')} queue_id={item.get('id')}")
+            logger.info(
+                "event=run_processed worker_id=%s run_id=%s queue_id=%s",
+                settings.worker_id,
+                run_id,
+                queue_id,
+            )
         except Exception as exc:  # noqa: BLE001
-            print(f"[worker] run processing error: {exc}")
+            logger.error(
+                "event=run_processing_error worker_id=%s run_id=%s queue_id=%s error=%s",
+                settings.worker_id,
+                run_id,
+                queue_id,
+                exc,
+            )
 
         if settings.once:
             return 0
@@ -1119,6 +1184,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_logging()
     args = build_parser().parse_args(argv)
     settings = load_settings(once=bool(args.once), poll_interval_s=args.poll_interval_s)
     return run_worker_loop(settings)

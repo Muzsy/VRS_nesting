@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { E2E_BYPASS_AUTH, supabase } from "../lib/supabase";
 
 type AuthMode = "login" | "signup" | "reset";
 
@@ -32,6 +32,11 @@ export function AuthPage() {
   }, [queryMode]);
 
   useEffect(() => {
+    if (E2E_BYPASS_AUTH) {
+      navigate("/projects", { replace: true });
+      return;
+    }
+
     let mounted = true;
     supabase.auth
       .getSession()

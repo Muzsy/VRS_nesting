@@ -12,7 +12,9 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, model_validator
 
 from api.auth import AuthenticatedUser, get_current_user
+from api.config import Settings
 from api.deps import get_settings, get_supabase_client
+from api.rate_limit import enforce_user_rate_limit
 from api.routes.run_configs import RunConfigPartEntry
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
@@ -315,6 +317,41 @@ def _insert_run_and_queue(
     return run_row
 
 
+def _insert_run_and_queue_with_quota(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    project_id: str,
+    triggered_by: str,
+    run_config_id: str | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "p_project_id": project_id,
+        "p_triggered_by": triggered_by,
+    }
+    if run_config_id is not None:
+        payload["p_run_config_id"] = run_config_id
+
+    rpc_result = supabase.execute_rpc(
+        function_name="enqueue_run_with_quota",
+        access_token=access_token,
+        payload=payload,
+    )
+    if isinstance(rpc_result, dict):
+        return rpc_result
+    if isinstance(rpc_result, list) and rpc_result and isinstance(rpc_result[0], dict):
+        return rpc_result[0]
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="enqueue_run_with_quota returned unexpected payload",
+    )
+
+
+def _is_quota_exceeded_error(exc: SupabaseHTTPError) -> bool:
+    normalized = str(exc).lower()
+    return "quota_exceeded" in normalized
+
+
 def _resolve_run_config_id(
     *,
     req: RunCreateRequest,
@@ -370,19 +407,44 @@ def create_run(
     req: RunCreateRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> RunResponse:
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
+    enforce_user_rate_limit(
+        supabase=supabase,
+        access_token=user.access_token,
+        user_id=user.id,
+        table="runs",
+        timestamp_field="queued_at",
+        limit=settings.rate_limit_runs_per_window,
+        window_seconds=settings.rate_limit_window_s,
+        route_key="POST /v1/projects/{project_id}/runs",
+        filters={
+            "triggered_by": f"eq.{user.id}",
+            "project_id": f"eq.{project_id}",
+        },
+    )
 
     try:
         run_config_id = _resolve_run_config_id(req=req, project_id=project_id, user=user, supabase=supabase)
-        run_row = _insert_run_and_queue(
+        run_row = _insert_run_and_queue_with_quota(
             supabase=supabase,
             access_token=user.access_token,
             project_id=project_id,
             triggered_by=user.id,
             run_config_id=run_config_id,
         )
+    except HTTPException:
+        raise
     except SupabaseHTTPError as exc:
+        if _is_quota_exceeded_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "code": "monthly_run_quota_exceeded",
+                    "message": "Monthly run quota exceeded. Please retry next month or increase your plan quota.",
+                },
+            ) from exc
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"create run failed: {exc}") from exc
     return _to_run_response(run_row)
 
@@ -566,7 +628,7 @@ def get_run_log(
             access_token=user.access_token,
             bucket=settings.storage_bucket,
             object_key=storage_key,
-            expires_in=900,
+            expires_in=settings.signed_url_ttl_s,
         )
         blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
     except SupabaseHTTPError as exc:
@@ -636,6 +698,7 @@ def get_artifact_url(
     artifact_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> ArtifactUrlResponse:
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
     _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
@@ -652,7 +715,7 @@ def get_artifact_url(
             access_token=user.access_token,
             bucket=settings.storage_bucket,
             object_key=str(artifact.get("storage_key", "")),
-            expires_in=900,
+            expires_in=settings.signed_url_ttl_s,
         )
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"artifact url failed: {exc}") from exc
@@ -672,6 +735,7 @@ def download_artifact_proxy(
     artifact_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     artifact_url = get_artifact_url(
         project_id=project_id,
@@ -679,6 +743,7 @@ def download_artifact_proxy(
         artifact_id=artifact_id,
         user=user,
         supabase=supabase,
+        settings=settings,
     )
     return RedirectResponse(url=artifact_url.download_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
@@ -796,6 +861,7 @@ def get_viewer_data(
     run_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> ViewerDataResponse:
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
     run_row = _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
@@ -805,7 +871,6 @@ def get_viewer_data(
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"viewer-data failed: {exc}") from exc
 
-    settings = get_settings()
     by_sheet: dict[int, dict[str, Any]] = {}
     solver_payload: dict[str, Any] = {}
     solver_input_payload: dict[str, Any] = {}
@@ -842,7 +907,7 @@ def get_viewer_data(
                     access_token=user.access_token,
                     bucket=settings.storage_bucket,
                     object_key=storage_key,
-                    expires_in=900,
+                    expires_in=settings.signed_url_ttl_s,
                 )
                 blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
                 parsed = json.loads(blob.decode("utf-8"))
@@ -856,7 +921,7 @@ def get_viewer_data(
                     access_token=user.access_token,
                     bucket=settings.storage_bucket,
                     object_key=storage_key,
-                    expires_in=900,
+                    expires_in=settings.signed_url_ttl_s,
                 )
                 blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
                 parsed = json.loads(blob.decode("utf-8"))
@@ -894,6 +959,7 @@ def get_viewer_data(
                     artifact_id=str(dxf_artifact_id),
                     user=user,
                     supabase=supabase,
+                    settings=settings,
                 )
                 dxf_url = dxf_signed.download_url
                 dxf_url_expires_at = dxf_signed.expires_at
@@ -911,6 +977,7 @@ def get_viewer_data(
                     artifact_id=str(svg_artifact_id),
                     user=user,
                     supabase=supabase,
+                    settings=settings,
                 )
                 svg_url = svg_signed.download_url
                 svg_url_expires_at = svg_signed.expires_at
@@ -968,9 +1035,21 @@ def create_artifacts_bundle(
     req: BundleRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> BundleResponse:
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
     _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
+    enforce_user_rate_limit(
+        supabase=supabase,
+        access_token=user.access_token,
+        user_id=user.id,
+        table="run_artifacts",
+        timestamp_field="created_at",
+        limit=settings.rate_limit_bundles_per_window,
+        window_seconds=settings.rate_limit_window_s,
+        route_key="POST /v1/projects/{project_id}/runs/{run_id}/artifacts/bundle",
+        filters={"artifact_type": "eq.bundle_zip"},
+    )
 
     try:
         artifact_rows = _fetch_run_artifacts(supabase=supabase, access_token=user.access_token, run_id=run_id)
@@ -985,7 +1064,6 @@ def create_artifacts_bundle(
     if not selected_rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="selected artifacts not found")
 
-    settings = get_settings()
     bundle_filename = f"bundle_{run_id}.zip"
     bundle_storage_key = f"runs/{run_id}/artifacts/{bundle_filename}"
 
@@ -1013,7 +1091,7 @@ def create_artifacts_bundle(
                         access_token=user.access_token,
                         bucket=settings.storage_bucket,
                         object_key=storage_key,
-                        expires_in=900,
+                        expires_in=settings.signed_url_ttl_s,
                     )
                     source_path = temp_root / f"artifact_{index:04d}.bin"
                     supabase.download_signed_object_to_file(
@@ -1028,7 +1106,7 @@ def create_artifacts_bundle(
                 access_token=user.access_token,
                 bucket=settings.storage_bucket,
                 object_key=bundle_storage_key,
-                expires_in=900,
+                expires_in=settings.signed_url_ttl_s,
             )
             supabase.upload_signed_object_from_file(
                 signed_url=str(upload_signed["upload_url"]),
@@ -1067,7 +1145,7 @@ def create_artifacts_bundle(
             access_token=user.access_token,
             bucket=settings.storage_bucket,
             object_key=bundle_storage_key,
-            expires_in=300,
+            expires_in=settings.signed_url_ttl_s,
         )
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"bundle build failed: {exc}") from exc

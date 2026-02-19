@@ -1,0 +1,37 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p6_observability_health_alerting task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p6_observability_health_alerting.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p6_observability_health_alerting.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p6_observability_health_alerting.md"
+      - "codex/reports/web_platform/phase4_p6_observability_health_alerting.md"
+
+  - name: "Observability + health + alerting implementacio"
+    description: >
+      API health endpoint bovitese, request/correlation logging, worker backlog alert,
+      uptime ping script + workflow.
+    outputs:
+      - "api/main.py"
+      - "api/supabase_client.py"
+      - "worker/main.py"
+      - "scripts/uptime_health_ping.py"
+      - ".github/workflows/uptime-health-ping.yml"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      P4.6 checkpointok statusza frissitve report evidence-zel.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p6_observability_health_alerting.md"
+      - "codex/reports/web_platform/phase4_p6_observability_health_alerting.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p6_observability_health_alerting.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p6_observability_health_alerting.md"
+      - "codex/reports/web_platform/phase4_p6_observability_health_alerting.verify.log"

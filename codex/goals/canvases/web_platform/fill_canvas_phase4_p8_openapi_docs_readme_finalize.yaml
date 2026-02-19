@@ -1,0 +1,35 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p8_openapi_docs_readme_finalize task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p8_openapi_docs_readme_finalize.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p8_openapi_docs_readme_finalize.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p8_openapi_docs_readme_finalize.md"
+      - "codex/reports/web_platform/phase4_p8_openapi_docs_readme_finalize.md"
+
+  - name: "OpenAPI export + docs update"
+    description: >
+      OpenAPI schema export script, statikus openapi artifact, es README-k frissitese.
+    outputs:
+      - "scripts/export_openapi_schema.py"
+      - "docs/api_openapi_schema.json"
+      - "README.md"
+      - "api/README.md"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      P4.8 checkpointok statusza frissitve es evidence report kitoltve.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p8_openapi_docs_readme_finalize.md"
+      - "codex/reports/web_platform/phase4_p8_openapi_docs_readme_finalize.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p8_openapi_docs_readme_finalize.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p8_openapi_docs_readme_finalize.md"
+      - "codex/reports/web_platform/phase4_p8_openapi_docs_readme_finalize.verify.log"

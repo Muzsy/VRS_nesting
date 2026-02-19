@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from api.auth import AuthenticatedUser, get_current_user
 from api.config import Settings
 from api.deps import get_settings, get_supabase_client
+from api.rate_limit import enforce_user_rate_limit
 from api.services.dxf_validation import validate_dxf_file_async
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
@@ -74,6 +75,15 @@ def _as_file_response(row: dict[str, Any]) -> ProjectFileResponse:
     )
 
 
+def _sanitize_filename(raw_filename: str) -> str:
+    safe_name = Path(raw_filename).name.strip()
+    if not safe_name or safe_name in {".", ".."}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid filename")
+    if "/" in safe_name or "\\" in safe_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid filename")
+    return safe_name
+
+
 def _ensure_project_access(
     *,
     supabase: SupabaseClient,
@@ -100,6 +110,20 @@ def create_upload_url(
     settings: Settings = Depends(get_settings),
 ) -> UploadUrlResponse:
     _ensure_project_access(supabase=supabase, user=user, project_id=project_id)
+    enforce_user_rate_limit(
+        supabase=supabase,
+        access_token=user.access_token,
+        user_id=user.id,
+        table="project_files",
+        timestamp_field="uploaded_at",
+        limit=settings.rate_limit_upload_urls_per_window,
+        window_seconds=settings.rate_limit_window_s,
+        route_key="POST /v1/projects/{project_id}/files/upload-url",
+        filters={
+            "uploaded_by": f"eq.{user.id}",
+            "project_id": f"eq.{project_id}",
+        },
+    )
 
     if req.size_bytes > settings.max_dxf_size_bytes:
         raise HTTPException(
@@ -107,9 +131,7 @@ def create_upload_url(
             detail=f"file too large: max={settings.max_dxf_size_bytes} bytes",
         )
 
-    safe_name = Path(req.filename).name.strip()
-    if not safe_name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid filename")
+    safe_name = _sanitize_filename(req.filename)
 
     if not safe_name.lower().endswith(".dxf") and req.file_type in {"stock_dxf", "part_dxf"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="DXF file must have .dxf extension")
@@ -158,7 +180,7 @@ def complete_upload(
         "project_id": project_id,
         "uploaded_by": user.id,
         "file_type": req.file_type,
-        "original_filename": Path(req.original_filename).name,
+        "original_filename": _sanitize_filename(req.original_filename),
         "storage_key": req.storage_key,
         "size_bytes": req.size_bytes,
         "content_hash_sha256": req.content_hash_sha256,

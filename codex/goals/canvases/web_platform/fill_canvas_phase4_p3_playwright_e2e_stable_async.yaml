@@ -1,0 +1,53 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p3_playwright_e2e_stable_async task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p3_playwright_e2e_stable_async.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p3_playwright_e2e_stable_async.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p3_playwright_e2e_stable_async.md"
+      - "codex/reports/web_platform/phase4_p3_playwright_e2e_stable_async.md"
+
+  - name: "Playwright framework + e2e bypass auth"
+    description: >
+      Playwright konfiguracio, package script/dependency, es tesztkornyezetben
+      auth bypass a determinisztikus E2E futasokhoz.
+    outputs:
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/playwright.config.ts"
+      - "frontend/src/lib/supabase.ts"
+      - "frontend/src/components/AuthGuard.tsx"
+      - "frontend/src/components/Layout.tsx"
+      - "frontend/src/pages/AuthPage.tsx"
+
+  - name: "Stable + async E2E tesztek"
+    description: >
+      Mockolt API adapter + P4.3 kovetelmenyeknek megfelelo stable es async Playwright tesztek.
+    outputs:
+      - "frontend/e2e/support/mockApi.ts"
+      - "frontend/e2e/phase4.stable.spec.ts"
+      - "frontend/e2e/phase4.async.spec.ts"
+
+  - name: "CI workflow bekotes"
+    description: >
+      Frontend E2E workflow beallitasa retry/time budget parameterekkel.
+    outputs:
+      - ".github/workflows/frontend-e2e.yml"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist P4.3 statuszait.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p3_playwright_e2e_stable_async.md"
+      - "codex/reports/web_platform/phase4_p3_playwright_e2e_stable_async.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p3_playwright_e2e_stable_async.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p3_playwright_e2e_stable_async.md"
+      - "codex/reports/web_platform/phase4_p3_playwright_e2e_stable_async.verify.log"

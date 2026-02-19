@@ -97,6 +97,30 @@ class SupabaseClient:
         except URLError as exc:
             raise SupabaseHTTPError(f"{method} {absolute_url} network error: {exc}") from exc
 
+    def _probe(self, *, path: str) -> bool:
+        url = self._build_url(path)
+        req = Request(
+            url=url,
+            method="GET",
+            headers={
+                "apikey": self._anon_key,
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urlopen(req, timeout=10) as resp:
+                return resp.status < 500
+        except HTTPError as exc:
+            return exc.code < 500
+        except URLError:
+            return False
+
+    def ping_rest(self) -> bool:
+        return self._probe(path="/rest/v1/")
+
+    def ping_storage(self) -> bool:
+        return self._probe(path="/storage/v1/bucket")
+
     def _storage_signed_absolute_url(self, signed_path: str) -> str:
         if signed_path.startswith("http://") or signed_path.startswith("https://"):
             return signed_path
@@ -127,6 +151,20 @@ class SupabaseClient:
         if not isinstance(payload, list):
             raise SupabaseHTTPError(f"select_rows expected list response for table={table}")
         return [item for item in payload if isinstance(item, dict)]
+
+    def execute_rpc(
+        self,
+        *,
+        function_name: str,
+        access_token: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        return self._request_json(
+            "POST",
+            f"/rest/v1/rpc/{function_name}",
+            token=access_token,
+            payload=payload or {},
+        )
 
     def insert_row(self, *, table: str, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
         rows = self._request_json(

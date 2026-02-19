@@ -1,0 +1,36 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p1_app_rate_limit_minimal task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p1_app_rate_limit_minimal.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p1_app_rate_limit_minimal.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p1_app_rate_limit_minimal.md"
+      - "codex/reports/web_platform/phase4_p1_app_rate_limit_minimal.md"
+
+  - name: "App-side rate limit implementacio"
+    description: >
+      Konfig + helper + route integracio: kritikus mutacios endpointokra
+      app-oldali rate limit, konzisztens 429 + Retry-After valasszal.
+    outputs:
+      - "api/config.py"
+      - "api/rate_limit.py"
+      - "api/routes/runs.py"
+      - "api/routes/files.py"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist P4.1 app-side statuszat.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p1_app_rate_limit_minimal.md"
+      - "codex/reports/web_platform/phase4_p1_app_rate_limit_minimal.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p1_app_rate_limit_minimal.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p1_app_rate_limit_minimal.md"
+      - "codex/reports/web_platform/phase4_p1_app_rate_limit_minimal.verify.log"

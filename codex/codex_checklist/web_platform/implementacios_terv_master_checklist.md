@@ -228,60 +228,60 @@ Szabaly:
 - [x] P4.0/f Sentry jelenleg optional/future, nem kotelezo DoD blocker.
 
 - [ ] P4.1/a Gateway oldali altalanos rate limit konfiguracio route-csoportokra.
-- [ ] P4.1/b App oldali rate limit csak kritikus mutaciokra (`POST /runs`, `POST /runs/:id/artifacts/bundle`, opcion: upload mutaciok).
-- [ ] P4.1/c Egységes 429 + `Retry-After` + konzisztens hibatest biztositas gateway es app oldalon.
-- [ ] P4.1/d Rate limit talalatok metrikazasa/naplozasa observability celra.
+- [x] P4.1/b App oldali rate limit csak kritikus mutaciokra (`POST /runs`, `POST /runs/:id/artifacts/bundle`, `POST /files/upload-url`).
+- [ ] P4.1/c Egységes 429 + `Retry-After` + konzisztens hibatest biztositas gateway es app oldalon (app kesz, gateway pending).
+- [x] P4.1/d Rate limit talalatok metrikazasa/naplozasa observability celra.
 
-- [ ] P4.2/a `users.quota_runs_per_month` default 50/honap.
-- [ ] P4.2/b Atomic SQL function (check+increment) konkurencia-biztos lockolas mellett.
-- [ ] P4.2/c `POST /runs` csak sikeres quota commit utan allithat queue rekordot.
-- [ ] P4.2/d Quota tullepeskor 429 + felhasznalobarat hiba uzenet.
+- [x] P4.2/a `users.quota_runs_per_month` default 50/honap.
+- [x] P4.2/b Atomic SQL function (check+increment) konkurencia-biztos lockolas mellett.
+- [x] P4.2/c `POST /runs` csak sikeres quota commit utan allithat queue rekordot.
+- [x] P4.2/d Quota tullepeskor 429 + felhasznalobarat hiba uzenet.
 
-- [ ] P4.3/a Playwright teszt framework beallitas.
-- [ ] P4.3/b Stable E2E#1: auth -> project -> upload -> run start -> queued/running -> cancel (worker completion nelkul is stabil).
-- [ ] P4.3/c Stable E2E#2: invalid DXF upload -> validation error badge.
-- [ ] P4.3/d Async E2E#3: FAILED run -> hiba megjelenik Run detail oldalon.
-- [ ] P4.3/e Async E2E#4: teljes run completion -> viewer oldal elerheto.
-- [ ] P4.3/f Async E2E#5: ZIP bundle letoltes -> DXF + SVG a zipben.
-- [ ] P4.3/g Stable + async suite CI pipeline-ba kotese retry/backoff/time budget szabalyokkal.
+- [x] P4.3/a Playwright teszt framework beallitas.
+- [x] P4.3/b Stable E2E#1: auth -> project -> upload -> run start -> queued/running -> cancel (worker completion nelkul is stabil).
+- [x] P4.3/c Stable E2E#2: invalid DXF upload -> validation error badge.
+- [x] P4.3/d Async E2E#3: FAILED run -> hiba megjelenik Run detail oldalon.
+- [x] P4.3/e Async E2E#4: teljes run completion -> viewer oldal elerheto.
+- [x] P4.3/f Async E2E#5: ZIP bundle letoltes -> DXF + SVG a zipben.
+- [x] P4.3/g Stable + async suite CI pipeline-ba kotese retry/backoff/time budget szabalyokkal.
 
-- [ ] P4.4/a SQL injection ellenorzes (parameteres query gyakorlat).
-- [ ] P4.4/b Auth ellenorzes (JWT expiry, refresh rotation, jelszoerosseg policy).
-- [ ] P4.4/c Security headers + CORS production domain + frontend CSP policy.
-- [ ] P4.4/d Sensitive data vedelem (rovid signed URL TTL, private bucket).
-- [ ] P4.4/e Path traversal vedelem (`Path(filename).name`).
-- [ ] P4.4/f Dependency audit (`pip-audit`, `npm audit`) + vulnerability exception policy dokumentalasa.
+- [x] P4.4/a SQL injection ellenorzes (parameteres query gyakorlat).
+- [x] P4.4/b Auth ellenorzes (JWT expiry, refresh rotation, jelszoerosseg policy).
+- [x] P4.4/c Security headers + CORS production domain + frontend CSP policy.
+- [x] P4.4/d Sensitive data vedelem (rovid signed URL TTL, private bucket).
+- [x] P4.4/e Path traversal vedelem (`Path(filename).name`).
+- [x] P4.4/f Dependency audit (`pip-audit`, `npm audit`) + vulnerability exception policy dokumentalasa.
 
-- [ ] P4.5/a 10 parhuzamos run terhelesi teszt.
-- [ ] P4.5/b 50 parhuzamos viewer session terhelesi teszt.
-- [ ] P4.5/c Performance snapshot riport (latency eloszlasok, hibaarany, kapacitas) strict p95 gate nelkul.
-- [ ] P4.5/d Bottleneck tuning (index/query cache) szukseg eseten.
+- [x] P4.5/a 10 parhuzamos run terhelesi teszt.
+- [x] P4.5/b 50 parhuzamos viewer session terhelesi teszt.
+- [x] P4.5/c Performance snapshot riport (latency eloszlasok, hibaarany, kapacitas) strict p95 gate nelkul.
+- [x] P4.5/d Bottleneck tuning (index/query cache) szukseg eseten.
 
-- [ ] P4.6/a `GET /health` endpoint implementacio (`status`, `db`, `storage`).
-- [ ] P4.6/b Structured logging + request_id/correlation_id API es worker oldalon.
-- [ ] P4.6/c Worker idle/failure alert (5 perc backlog mellett nincs feldolgozas).
-- [ ] P4.6/d Uptime monitor beallitas (pl. 5 perces ping `/health`).
+- [x] P4.6/a `GET /health` endpoint implementacio (`status`, `db`, `storage`).
+- [x] P4.6/b Structured logging + request_id/correlation_id API es worker oldalon.
+- [x] P4.6/c Worker idle/failure alert (5 perc backlog mellett nincs feldolgozas).
+- [x] P4.6/d Uptime monitor beallitas (pl. 5 perces ping `/health`).
 - [ ] P4.6/e Sentry opcion: future enhancement, nem kotelezo Phase 4 DoD blocker.
 
-- [ ] P4.7/a Supabase Cron HTTP trigger konfiguracio cleanup Edge Function hivassal.
-- [ ] P4.7/b Edge Function cleanup batch claim/lock/idempotens implementacio.
-- [ ] P4.7/c Lifecycle rule: FAILED/CANCELLED artifact torles 7 nap utan.
-- [ ] P4.7/d Lifecycle rule: archivalt projektek fajljai 30 nap utan torles.
-- [ ] P4.7/e Lifecycle rule: ideiglenes bundle ZIP torles 24 ora utan.
-- [ ] P4.7/f DB sorok kaszkad torlesi logikajanak osszehangolasa.
+- [x] P4.7/a Supabase Cron HTTP trigger konfiguracio cleanup Edge Function hivassal.
+- [x] P4.7/b Edge Function cleanup batch claim/lock/idempotens implementacio.
+- [x] P4.7/c Lifecycle rule: FAILED/CANCELLED artifact torles 7 nap utan.
+- [x] P4.7/d Lifecycle rule: archivalt projektek fajljai 30 nap utan torles.
+- [x] P4.7/e Lifecycle rule: ideiglenes bundle ZIP torles 24 ora utan.
+- [x] P4.7/f DB sorok kaszkad torlesi logikajanak osszehangolasa.
 
-- [ ] P4.8/a OpenAPI schema automatikus generalas.
-- [ ] P4.8/b Swagger UI eleres `/docs` alatt.
-- [ ] P4.8/c `README.md` quick-start + Phase 4 operational decisions frissites (local env + tesztfuttatas).
+- [x] P4.8/a OpenAPI schema automatikus generalas.
+- [x] P4.8/b Swagger UI eleres `/docs` alatt.
+- [x] P4.8/c `README.md` quick-start + Phase 4 operational decisions frissites (local env + tesztfuttatas).
 
 ### Phase 4 DoD checkpointok
-- [ ] P4.0 dontesi freeze dokumentalt es elfogadott.
+- [x] P4.0 dontesi freeze dokumentalt es elfogadott.
 - [ ] Gateway + app split rate limit aktiv, konzisztens 429 + `Retry-After` valasszal.
-- [ ] Soft quota atomican mukodik (`POST /runs` konkurens terhelesnel sem enged tulfutast).
+- [x] Soft quota atomican mukodik (`POST /runs` konkurens terhelesnel sem enged tulfutast).
 - [ ] Stable + async E2E suite zold CI-ban.
-- [ ] `pip-audit` es `npm audit` 0 kritikus sebezhetoseggel fut.
-- [ ] Terheles alatt 10 concurrent worker runnal nincs dupla feldolgozas.
-- [ ] `GET /health` endpoint elerheto es OK, naplok request/correlation id-t tartalmaznak.
+- [x] `pip-audit` es `npm audit` 0 kritikus sebezhetoseggel fut.
+- [x] Terheles alatt 10 concurrent worker runnal nincs dupla feldolgozas.
+- [x] `GET /health` endpoint elerheto es OK, naplok request/correlation id-t tartalmaznak.
 - [ ] Supabase Cron -> Edge cleanup futas bizonyitott, 7/30/24 napos torlesi szabalyok ervenyesulnek.
-- [ ] API dokumentacio elerheto `/docs` URL-en.
-- [ ] Performance snapshot riport csatolva (p95 strict gate jelenleg out-of-scope).
+- [x] API dokumentacio elerheto `/docs` URL-en.
+- [x] Performance snapshot riport csatolva (p95 strict gate jelenleg out-of-scope).

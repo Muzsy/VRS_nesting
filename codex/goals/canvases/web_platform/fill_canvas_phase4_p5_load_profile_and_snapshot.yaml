@@ -1,0 +1,32 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p5_load_profile_and_snapshot task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p5_load_profile_and_snapshot.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p5_load_profile_and_snapshot.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p5_load_profile_and_snapshot.md"
+      - "codex/reports/web_platform/phase4_p5_load_profile_and_snapshot.md"
+
+  - name: "Load smoke script implementacio"
+    description: >
+      In-process ASGI terhelesi smoke script 10 concurrent run es 50 concurrent viewer profilokkal.
+    outputs:
+      - "scripts/smoke_phase4_load_profile.py"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      P4.5 checkpointok statusza frissitve es snapshot metrikak reportba rogzitve.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p5_load_profile_and_snapshot.md"
+      - "codex/reports/web_platform/phase4_p5_load_profile_and_snapshot.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p5_load_profile_and_snapshot.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p5_load_profile_and_snapshot.md"
+      - "codex/reports/web_platform/phase4_p5_load_profile_and_snapshot.verify.log"

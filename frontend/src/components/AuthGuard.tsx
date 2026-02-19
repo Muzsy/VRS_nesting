@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { Navigate, Outlet } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { E2E_BYPASS_AUTH, supabase } from "../lib/supabase";
 
 export function AuthGuard() {
+  if (E2E_BYPASS_AUTH) {
+    return <Outlet />;
+  }
+
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { E2E_BYPASS_AUTH, supabase } from "../lib/supabase";
 
 export function Layout() {
   const [user, setUser] = useState<User | null>(null);
@@ -10,6 +10,11 @@ export function Layout() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (E2E_BYPASS_AUTH) {
+      setUser({ id: "e2e-user", email: "e2e-user@example.test" } as User);
+      return;
+    }
+
     let mounted = true;
 
     supabase.auth
@@ -36,6 +41,10 @@ export function Layout() {
   }, []);
 
   async function handleSignOut() {
+    if (E2E_BYPASS_AUTH) {
+      navigate("/projects", { replace: true });
+      return;
+    }
     setSigningOut(true);
     await supabase.auth.signOut();
     setSigningOut(false);

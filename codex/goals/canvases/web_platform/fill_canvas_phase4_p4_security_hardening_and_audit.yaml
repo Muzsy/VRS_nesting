@@ -1,0 +1,45 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p4_security_hardening_and_audit task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p4_security_hardening_and_audit.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p4_security_hardening_and_audit.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p4_security_hardening_and_audit.md"
+      - "codex/reports/web_platform/phase4_p4_security_hardening_and_audit.md"
+
+  - name: "API/frontend security hardening implementacio"
+    description: >
+      Security headers, CORS szigoritas, signed URL TTL konfig,
+      path traversal vedelmek, frontend CSP policy.
+    outputs:
+      - "api/config.py"
+      - "api/main.py"
+      - "api/routes/files.py"
+      - "api/routes/runs.py"
+      - "frontend/index.html"
+
+  - name: "Auth guard + security dokumentacio"
+    description: >
+      Auth security config guard script es a hardening+exception policy doksik.
+    outputs:
+      - "scripts/smoke_phase4_auth_security_config.py"
+      - "docs/qa/phase4_security_hardening_notes.md"
+      - "docs/qa/vulnerability_exception_policy.md"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      P4.4 checkpointok statusza frissitve, reportban audit evidence rogzitve.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p4_security_hardening_and_audit.md"
+      - "codex/reports/web_platform/phase4_p4_security_hardening_and_audit.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p4_security_hardening_and_audit.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p4_security_hardening_and_audit.md"
+      - "codex/reports/web_platform/phase4_p4_security_hardening_and_audit.verify.log"

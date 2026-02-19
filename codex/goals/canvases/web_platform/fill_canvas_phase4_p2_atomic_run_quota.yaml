@@ -1,0 +1,41 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase4_p2_atomic_run_quota task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase4_p2_atomic_run_quota.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p2_atomic_run_quota.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p2_atomic_run_quota.md"
+      - "codex/reports/web_platform/phase4_p2_atomic_run_quota.md"
+
+  - name: "Atomic quota SQL implementacio"
+    description: >
+      Hozz letre SQL migracios fajlt havi kvota usage taroloval es
+      atomic check+increment + run+queue tranzakcios functionnel.
+    outputs:
+      - "api/sql/phase4_run_quota_atomic.sql"
+
+  - name: "API integracio a quota RPC funkciohoz"
+    description: >
+      Bovitett Supabase kliens RPC hivas lehetoseggel, majd
+      create-run route atallitasa az atomic quota function hasznalatara.
+    outputs:
+      - "api/supabase_client.py"
+      - "api/routes/runs.py"
+
+  - name: "Checklist/report/master frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist P4.2 statuszait.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p2_atomic_run_quota.md"
+      - "codex/reports/web_platform/phase4_p2_atomic_run_quota.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p2_atomic_run_quota.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p2_atomic_run_quota.md"
+      - "codex/reports/web_platform/phase4_p2_atomic_run_quota.verify.log"
