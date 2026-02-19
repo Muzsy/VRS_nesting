@@ -141,14 +141,14 @@ Szabaly:
 - [x] P2.7/c Futas inditas presetbol vagy manualis parameterekkel.
 
 ### Phase 2 DoD checkpointok
-- [ ] Docker image sikeresen buildelodik es fut.
-- [ ] Worker elindul es figyeli a `run_queue` tablat.
-- [ ] `POST /runs` utan status: QUEUED -> RUNNING -> DONE.
-- [ ] DONE futas utan `run_artifacts` sorok megjelennek DB-ben.
-- [ ] Storage-ban elerhetok DXF/SVG/JSON eredmenyek.
-- [ ] `GET /runs/:id/log` visszaadja a naplot.
-- [ ] FAILED futasnal ertheto hiba jelenik meg.
-- [ ] Re-run determinizmus ellenorzes reprodukalhato.
+- [x] Docker image sikeresen buildelodik es fut.
+- [x] Worker elindul es figyeli a `run_queue` tablat.
+- [x] `POST /runs` utan status: QUEUED -> RUNNING -> DONE.
+- [x] DONE futas utan `run_artifacts` sorok megjelennek DB-ben.
+- [x] Storage-ban elerhetok DXF/SVG/JSON eredmenyek.
+- [x] `GET /runs/:id/log` visszaadja a naplot.
+- [x] FAILED futasnal ertheto hiba jelenik meg.
+- [x] Re-run determinizmus ellenorzes reprodukalhato.
 
 ## Phase 3 - Layout viewer + export
 

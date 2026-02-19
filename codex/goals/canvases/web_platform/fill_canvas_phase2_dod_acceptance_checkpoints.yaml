@@ -1,0 +1,44 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase2_dod_acceptance_checkpoints task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase2_dod_acceptance_checkpoints.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase2_dod_acceptance_checkpoints.yaml"
+      - "codex/codex_checklist/web_platform/phase2_dod_acceptance_checkpoints.md"
+      - "codex/reports/web_platform/phase2_dod_acceptance_checkpoints.md"
+
+  - name: "Phase 2 DoD acceptance smoke script"
+    description: >
+      Keszits dedikalt smoke scriptet, ami a Phase 2 DoD checkpointokat
+      vegponttol-vegpontig ellenorzi (docker build/run, queue, status, artifacts,
+      log, failed run, rerun determinizmus).
+    outputs:
+      - "scripts/smoke_phase2_dod_acceptance.py"
+      - "worker/Dockerfile"
+      - "worker/main.py"
+      - "requirements.in"
+      - "requirements.txt"
+
+  - name: "Acceptance futtatas es checklist pipa"
+    description: >
+      Futtasd le a smoke scriptet PASS-ra, majd pipald a Phase 2 DoD checkpointokat
+      a master checklistben.
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Task checklist es report frissites"
+    description: >
+      Frissitsd a task checklistet/reportot DoD->Evidence matrixszal.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase2_dod_acceptance_checkpoints.md"
+      - "codex/reports/web_platform/phase2_dod_acceptance_checkpoints.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase2_dod_acceptance_checkpoints.md
+    outputs:
+      - "codex/reports/web_platform/phase2_dod_acceptance_checkpoints.md"
+      - "codex/reports/web_platform/phase2_dod_acceptance_checkpoints.verify.log"

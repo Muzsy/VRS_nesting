@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1.82-bookworm AS vrs-solver-builder
+FROM rust:1.90-bookworm AS vrs-solver-builder
 WORKDIR /build/vrs_solver
 COPY rust/vrs_solver/Cargo.toml rust/vrs_solver/Cargo.lock ./
 COPY rust/vrs_solver/src ./src
 RUN cargo build --release
 
-FROM rust:1.82-bookworm AS sparrow-builder
+FROM rust:1.90-bookworm AS sparrow-builder
 WORKDIR /build
 COPY scripts/ensure_sparrow.sh scripts/ensure_sparrow.sh
 COPY poc/sparrow_io/sparrow_commit.txt poc/sparrow_io/sparrow_commit.txt

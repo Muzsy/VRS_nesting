@@ -144,25 +144,34 @@ class WorkerSupabaseClient:
     def _management_query(self, sql: str) -> list[dict[str, Any]]:
         url = f"https://api.supabase.com/v1/projects/{self._settings.supabase_project_ref}/database/query"
         payload = json.dumps({"query": sql}, ensure_ascii=True).encode("utf-8")
-        req = Request(
-            url=url,
-            method="POST",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {self._settings.supabase_access_token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "vrs-worker/phase2",
-            },
-        )
-        try:
-            with urlopen(req, timeout=30) as resp:
-                body = resp.read().decode("utf-8")
-        except HTTPError as exc:
-            err = exc.read().decode("utf-8", errors="replace")
-            raise WorkerError(f"management query failed: {exc.code} {err}") from exc
-        except URLError as exc:
-            raise WorkerError(f"management query network error: {exc}") from exc
+        body = ""
+        for attempt in range(6):
+            req = Request(
+                url=url,
+                method="POST",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {self._settings.supabase_access_token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "vrs-worker/phase2",
+                },
+            )
+            try:
+                with urlopen(req, timeout=30) as resp:
+                    body = resp.read().decode("utf-8")
+                break
+            except HTTPError as exc:
+                err = exc.read().decode("utf-8", errors="replace")
+                if exc.code in (429, 500, 502, 503, 504) and attempt < 5:
+                    time.sleep(min(5.0, 0.4 * (attempt + 1)))
+                    continue
+                raise WorkerError(f"management query failed: {exc.code} {err}") from exc
+            except URLError as exc:
+                if attempt < 5:
+                    time.sleep(min(5.0, 0.4 * (attempt + 1)))
+                    continue
+                raise WorkerError(f"management query network error: {exc}") from exc
 
         parsed = json.loads(body or "[]")
         if not isinstance(parsed, list):
@@ -431,13 +440,33 @@ values (
             return f"{self._settings.supabase_url}/storage/v1{normalized}"
         return f"{self._settings.supabase_url}{normalized}"
 
+    @staticmethod
+    def _is_duplicate_storage_error(error_text: str) -> bool:
+        normalized = error_text.lower()
+        return (
+            "duplicate" in normalized
+            or '"statuscode":"409"' in normalized
+            or " 409:" in normalized
+        )
+
     def create_signed_upload_url(self, *, bucket: str, object_key: str, expires_in: int = 900) -> str:
         encoded_key = quote(object_key, safe="/")
-        payload = self._storage_request(
-            "POST",
-            f"/storage/v1/object/upload/sign/{bucket}/{encoded_key}",
-            payload={"expiresIn": expires_in},
-        )
+        payload: dict[str, Any] | None = None
+        for attempt in range(2):
+            try:
+                payload = self._storage_request(
+                    "POST",
+                    f"/storage/v1/object/upload/sign/{bucket}/{encoded_key}",
+                    payload={"expiresIn": expires_in},
+                )
+                break
+            except WorkerError as exc:
+                if attempt == 0 and self._is_duplicate_storage_error(str(exc)):
+                    self.remove_object(bucket=bucket, object_key=object_key)
+                    continue
+                raise
+        if payload is None:
+            raise WorkerError("signed upload url request failed without payload")
         signed_path = str(payload.get("signedURL") or payload.get("signedUrl") or payload.get("url") or "").strip()
         upload_token = str(payload.get("token", "")).strip()
         if signed_path:
@@ -466,19 +495,44 @@ values (
         except URLError as exc:
             raise WorkerError(f"download network error: {exc}") from exc
 
+    def remove_object(self, *, bucket: str, object_key: str) -> None:
+        encoded_key = quote(object_key, safe="/")
+        try:
+            self._storage_request("DELETE", f"/storage/v1/object/{bucket}/{encoded_key}")
+        except WorkerError as exc:
+            # Deleting an already missing object is fine for idempotent retry handling.
+            if " 404 " in str(exc):
+                return
+            raise
+
     def upload_object(self, *, bucket: str, object_key: str, payload: bytes) -> None:
-        upload_url = self.create_signed_upload_url(bucket=bucket, object_key=object_key)
-        for method in ("PUT", "POST"):
-            req = Request(url=upload_url, method=method, data=payload)
-            req.add_header("Content-Type", "application/octet-stream")
-            try:
-                with urlopen(req, timeout=60):
-                    return
-            except HTTPError:
+        last_status: int | None = None
+        last_error = ""
+
+        for _attempt in range(2):
+            upload_url = self.create_signed_upload_url(bucket=bucket, object_key=object_key)
+            for method in ("PUT", "POST"):
+                req = Request(url=upload_url, method=method, data=payload)
+                req.add_header("Content-Type", "application/octet-stream")
+                try:
+                    with urlopen(req, timeout=60):
+                        return
+                except HTTPError as exc:
+                    last_status = int(exc.code)
+                    last_error = exc.read().decode("utf-8", errors="replace")
+                    continue
+                except URLError as exc:
+                    last_status = None
+                    last_error = str(exc)
+                    continue
+
+            if last_status == 409 or self._is_duplicate_storage_error(last_error):
+                self.remove_object(bucket=bucket, object_key=object_key)
                 continue
-            except URLError:
-                continue
-        raise WorkerError(f"upload failed for storage key: {object_key}")
+
+        raise WorkerError(
+            f"upload failed for storage key={object_key} status={last_status} error={last_error[:500]}"
+        )
 
 
 def _artifact_type_for_path(relative_path: Path) -> tuple[str, int | None]:
