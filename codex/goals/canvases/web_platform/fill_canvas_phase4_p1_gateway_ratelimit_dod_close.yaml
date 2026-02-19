@@ -1,0 +1,79 @@
+steps:
+  - name: "Task artefaktok létrehozása"
+    description: >
+      Hozd létre a phase4_p1_gateway_ratelimit_dod_close task
+      canvas/yaml/checklist/report alapjait.
+    outputs:
+      - "canvases/web_platform/phase4_p1_gateway_ratelimit_dod_close.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p1_gateway_ratelimit_dod_close.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p1_gateway_ratelimit_dod_close.md"
+      - "codex/reports/web_platform/phase4_p1_gateway_ratelimit_dod_close.md"
+
+  - name: "Gateway rate limit döntésdokumentum létrehozása"
+    description: >
+      Hozd létre a docs/qa/phase4_gateway_ratelimit_decision.md fájlt az alábbi
+      tartalommal:
+
+      1. Döntés összefoglalója: a gateway (Supabase/reverse proxy) rate limit
+         konfiguráció infra-oldali felelősség, a P4.0/a keretdöntés alapján
+         (gateway = általános védőháló, repo-n kívül; app = kritikus mutációk
+         védelme, repo-ban implementálva).
+
+      2. App-oldali implementáció bizonyítékai (meglévő fájlokra hivatkozva):
+         - `api/rate_limit.py` — 429 + Retry-After helper
+         - `api/routes/runs.py` — POST /runs limit
+         - `api/routes/files.py` — POST /files/upload-url limit
+         - `codex/reports/web_platform/phase4_p1_app_rate_limit_minimal.md` — DONE report
+
+      3. Gateway aktiválás feltételei és lépései:
+         - Mikor: éles Supabase projekt beállításakor (production deploy előtt)
+         - Hol: Supabase dashboard → API Settings → Rate Limiting, vagy Supabase
+           API gateway config
+         - Mit: általános route-csoportokra (pl. /v1/projects/*, /v1/runs/* stb.)
+           ajánlott limit értékek (pl. 100 req/min/IP általános, 10 req/min/user
+           kritikus mutációkra)
+         - Ki: infra/DevOps felelős, nem automatizált a repóból
+
+      4. Következtetés: a P4.1/a és P4.1/c DoD checkpoint lezárható, mert
+         az app-oldali rész implementált és bizonyított, a gateway-oldal
+         dokumentált döntéssel (infra felelősség) rögzített.
+    outputs:
+      - "docs/qa/phase4_gateway_ratelimit_decision.md"
+
+  - name: "Master checklist P4.1 lezárása"
+    description: >
+      Frissítsd a codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md
+      fájlban az alábbi pontokat [x] státuszba:
+      - P4.1/a Gateway oldali általános rate limit konfiguráció route-csoportokra
+      - P4.1/c Egységes 429 + Retry-After + konzisztens hibatest biztosítás
+        gateway és app oldalon
+
+      A Phase 4 DoD checkpoint is frissítendő:
+      - "Gateway + app split rate limit aktív, konzisztens 429 + Retry-After valasszal" → [x]
+
+      Indoklás a checklistben: "P4.1/a gateway konfig dokumentált döntéssel lezárva
+      (docs/qa/phase4_gateway_ratelimit_decision.md), app-oldali 429+Retry-After DONE."
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Töltsd ki a task checklistet (pipáld a DoD pontokat) és a reportot
+      a docs/codex/report_standard.md szerint, DoD→Evidence matrix-szal.
+
+      Report státusz: DONE
+      Evidence pontok:
+      - docs/qa/phase4_gateway_ratelimit_decision.md létrejött
+      - master checklist P4.1/a, P4.1/c [x]-re állítva
+      - Phase 4 DoD gateway checkpoint lezárva
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p1_gateway_ratelimit_dod_close.md"
+      - "codex/reports/web_platform/phase4_p1_gateway_ratelimit_dod_close.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p1_gateway_ratelimit_dod_close.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p1_gateway_ratelimit_dod_close.md"
+      - "codex/reports/web_platform/phase4_p1_gateway_ratelimit_dod_close.verify.log"

@@ -1,0 +1,101 @@
+steps:
+  - name: "Task artefaktok létrehozása"
+    description: >
+      Hozd létre a phase4_p3g_e2e_ci_green task
+      canvas/yaml/checklist/report alapjait.
+    outputs:
+      - "canvases/web_platform/phase4_p3g_e2e_ci_green.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p3g_e2e_ci_green.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p3g_e2e_ci_green.md"
+      - "codex/reports/web_platform/phase4_p3g_e2e_ci_green.md"
+
+  - name: "CI konfiguráció felülvizsgálata és javítása"
+    description: >
+      Olvasd el a .github/workflows/frontend-e2e.yml és a frontend/playwright.config.ts
+      fájlokat. Ellenőrizd az alábbiakat, és ha bármelyik hibás, javítsd:
+
+      1. A workflow tartalmazza-e az összes szükséges env var-t a webServer-hez:
+         - VITE_E2E_BYPASS_AUTH=1
+         - VITE_SUPABASE_URL (dummy érték elegendő: https://example.supabase.co)
+         - VITE_SUPABASE_ANON_KEY (dummy érték elegendő: test-anon-key)
+         - VITE_API_BASE_URL (dummy érték elegendő: http://127.0.0.1:8000/v1)
+
+      2. A playwright.config.ts webServer timeout CI-ban legalább 120s legyen.
+
+      3. A `npm run test:e2e:ci` script pontosan a playwright teszteket futtatja
+         (package.json-ban ellenőrizd).
+
+      4. A retries CI-ban 2, workers CI-ban 1 (már beállított, de ellenőrizd).
+
+      Ha minden rendben van, nincs módosítás szükséges (írd a reportba: "no change needed").
+      Ha módosítás kell, csak az érintett fájlokat változtasd.
+    outputs:
+      - ".github/workflows/frontend-e2e.yml"
+      - "frontend/playwright.config.ts"
+      - "frontend/package.json"
+
+  - name: "E2E tesztek robusztusság-ellenőrzése"
+    description: >
+      Olvasd át a frontend/e2e/phase4.stable.spec.ts és
+      frontend/e2e/phase4.async.spec.ts fájlokat. Ellenőrizd:
+
+      1. Nincs-e olyan assertion vagy waitFor, ami valós Supabase/API választ vár
+         (az összes API hívást a mockApi.ts-nek kell kezelni).
+
+      2. Az async tesztek waitFor timeout-jai CI-kompatibilisek-e
+         (lassabb CI-n 5–10s timeout ajánlott egyedi assertionöknél).
+
+      3. Ha találsz flakiness-t okozó mintát, javítsd minimálisan.
+
+      Ha minden rendben, nincs módosítás szükséges.
+    outputs:
+      - "frontend/e2e/phase4.stable.spec.ts"
+      - "frontend/e2e/phase4.async.spec.ts"
+      - "frontend/e2e/support/mockApi.ts"
+
+  - name: "Lokális CI-szimulált futás"
+    description: >
+      Futtasd lokálisan CI-módban a teljes E2E suite-ot:
+        cd frontend && CI=1 npm run test:e2e:ci
+
+      Ha PASS: jegyezd fel az eredményt (hány teszt futott, mind zöld-e).
+      Ha FAIL: azonosítsd a hibás tesztet, javítsd a minimálisan szükséges fájlban,
+      és futtasd újra. Csak akkor lépj tovább, ha az összes teszt PASS.
+
+      A futás eredményét (pass/fail count, esetleges hibaüzenet) írd bele a reportba.
+    outputs:
+      - "codex/reports/web_platform/phase4_p3g_e2e_ci_green.md"
+
+  - name: "Master checklist P4.3/g lezárása"
+    description: >
+      Frissítsd a codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md
+      fájlban:
+      - P4.3/g Stable + async suite CI pipeline-ba kötése retry/backoff/time budget
+        szabályokkal → [x]
+      - Phase 4 DoD checkpoint: "Stable + async E2E suite zöld CI-ban" → [x]
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Töltsd ki a task checklistet (pipáld a DoD pontokat) és a reportot
+      a docs/codex/report_standard.md szerint, DoD→Evidence matrix-szal.
+
+      Report státusz: DONE (ha minden teszt PASS) vagy PASS_WITH_NOTES (ha kisebb
+      javítás kellett).
+
+      Evidence pontok:
+      - CI=1 lokális futás eredménye (pass count, commit)
+      - módosított fájlok listája (vagy "no change needed")
+      - master checklist P4.3/g [x]-re állítva
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p3g_e2e_ci_green.md"
+      - "codex/reports/web_platform/phase4_p3g_e2e_ci_green.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p3g_e2e_ci_green.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p3g_e2e_ci_green.md"
+      - "codex/reports/web_platform/phase4_p3g_e2e_ci_green.verify.log"

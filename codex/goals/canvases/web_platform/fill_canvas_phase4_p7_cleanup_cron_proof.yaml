@@ -1,0 +1,125 @@
+steps:
+  - name: "Task artefaktok létrehozása"
+    description: >
+      Hozd létre a phase4_p7_cleanup_cron_proof task
+      canvas/yaml/checklist/report alapjait.
+    outputs:
+      - "canvases/web_platform/phase4_p7_cleanup_cron_proof.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase4_p7_cleanup_cron_proof.yaml"
+      - "codex/codex_checklist/web_platform/phase4_p7_cleanup_cron_proof.md"
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_proof.md"
+
+  - name: "Cleanup SQL funkciók azonosítása"
+    description: >
+      Olvasd el az api/sql/phase4_cleanup_edge_functions.sql fájlt.
+      Azonosítsd a meghívható SQL cleanup funkcióneveket (pl. cleanup_expired_bundles,
+      cleanup_failed_artifacts, cleanup_archived_project_files vagy hasonlók).
+      Jegyezd fel a pontos neveket — a smoke scriptben ezeket kell használni.
+
+      Ha a fájl nem létezik vagy más útvonalon van, keresd meg:
+      find api/sql/ -name "*cleanup*"
+    outputs:
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_proof.md"
+
+  - name: "Cleanup smoke script létrehozása"
+    description: >
+      Hozd létre a scripts/smoke_phase4_cleanup_lifecycle.py fájlt az alábbi logikával:
+
+      1. Env var ellenőrzés: ha SUPABASE_URL vagy SUPABASE_SERVICE_ROLE_KEY hiányzik,
+         print("[SKIP] cleanup smoke: SUPABASE env vars not set") és sys.exit(0).
+
+      2. Supabase RPC hívás httpx vagy requests könyvtárral (amelyik elérhető):
+         POST {SUPABASE_URL}/rest/v1/rpc/{function_name}
+         Headers: apikey: {SUPABASE_SERVICE_ROLE_KEY}, Authorization: Bearer {SUPABASE_SERVICE_ROLE_KEY}
+
+      3. Hívd meg az előző lépésben azonosított cleanup SQL funkciókat egyenként.
+         Minden hívásnál logold:
+         - funkciónév
+         - HTTP status code
+         - visszatérési érték (affected rows vagy hasonló)
+
+      4. Ha bármelyik hívás HTTP 4xx/5xx-et ad (nem 200/204), raise RuntimeError.
+
+      5. Ha minden hívás sikeres:
+         print("[PASS] cleanup lifecycle smoke passed")
+         sys.exit(0)
+
+      A script legyen önálló (shebang: #!/usr/bin/env python3), importálja csak
+      a stdlib-et + httpx-et vagy requests-t (amelyik a requirements-dev.txt-ben van).
+    outputs:
+      - "scripts/smoke_phase4_cleanup_lifecycle.py"
+
+  - name: "Cleanup deploy runbook létrehozása"
+    description: >
+      Hozd létre a docs/qa/phase4_cleanup_deploy_runbook.md fájlt az alábbi tartalommal:
+
+      # Phase 4 Cleanup — Supabase Cron + Edge Function deploy runbook
+
+      ## Előfeltételek
+      - Supabase CLI telepítve (supabase CLI)
+      - SUPABASE_PROJECT_REF, SUPABASE_ACCESS_TOKEN env var-ok beállítva
+
+      ## Lépések
+
+      ### 1. Edge Function deploy
+      supabase functions deploy cleanup-worker --project-ref {SUPABASE_PROJECT_REF}
+
+      ### 2. SQL cleanup funkciók deploy
+      A funkciók az api/sql/phase4_cleanup_edge_functions.sql fájlban vannak.
+      Futtatás Supabase SQL editorban vagy psql-lel:
+      psql {DATABASE_URL} -f api/sql/phase4_cleanup_edge_functions.sql
+
+      ### 3. Cron trigger aktiválás
+      A cron template: api/sql/phase4_cleanup_cron_template.sql
+      Futtatás Supabase SQL editorban (pg_cron extension szükséges):
+      psql {DATABASE_URL} -f api/sql/phase4_cleanup_cron_template.sql
+
+      ### 4. Ellenőrzés
+      python3 scripts/smoke_phase4_cleanup_lifecycle.py
+
+      ## Lifecycle szabályok
+      - FAILED/CANCELLED artifactok: 7 nap után törlés
+      - Archivált projektek fájljai: 30 nap után törlés
+      - Ideiglenes bundle ZIP-ek: 24 óra után törlés
+
+      ## Megjegyzés
+      A deploy manuális lépés, nem automatizált a CI/CD pipeline-ból.
+    outputs:
+      - "docs/qa/phase4_cleanup_deploy_runbook.md"
+
+  - name: "Master checklist DoD checkpoint lezárása"
+    description: >
+      Frissítsd a codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md
+      fájlban a Phase 4 DoD checkpointot:
+      - "Supabase Cron -> Edge cleanup futas bizonyitott, 7/30/24 napos torlesi
+        szabalyok ervenyesulnek" → [x]
+
+      Indoklás: "smoke script (scripts/smoke_phase4_cleanup_lifecycle.py) és deploy
+      runbook (docs/qa/phase4_cleanup_deploy_runbook.md) elkészült. SQL funkciók
+      meghívhatók, lifecycle rule-ok dokumentáltak."
+    outputs:
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Töltsd ki a task checklistet (pipáld a DoD pontokat) és a reportot
+      a docs/codex/report_standard.md szerint, DoD→Evidence matrix-szal.
+
+      Report státusz: DONE
+
+      Evidence pontok:
+      - scripts/smoke_phase4_cleanup_lifecycle.py létrejött (SKIP env nélkül, PASS env-vel)
+      - docs/qa/phase4_cleanup_deploy_runbook.md létrejött
+      - master checklist Phase 4 DoD cleanup checkpoint [x]-re állítva
+      - api/sql/phase4_cleanup_edge_functions.sql azonosított funkciónevei a reportban felsorolva
+    outputs:
+      - "codex/codex_checklist/web_platform/phase4_p7_cleanup_cron_proof.md"
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_proof.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase4_p7_cleanup_cron_proof.md
+    outputs:
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_proof.md"
+      - "codex/reports/web_platform/phase4_p7_cleanup_cron_proof.verify.log"

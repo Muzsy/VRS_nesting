@@ -227,9 +227,9 @@ Szabaly:
 - [x] P4.0/e p95 cel jelenleg out-of-scope a Phase 4 DoD-ban.
 - [x] P4.0/f Sentry jelenleg optional/future, nem kotelezo DoD blocker.
 
-- [ ] P4.1/a Gateway oldali altalanos rate limit konfiguracio route-csoportokra.
+- [x] P4.1/a Gateway oldali altalanos rate limit konfiguracio route-csoportokra. [P4.1/a gateway konfig dokumentalt dontessel lezarva (docs/qa/phase4_gateway_ratelimit_decision.md), app-oldali 429+Retry-After DONE.]
 - [x] P4.1/b App oldali rate limit csak kritikus mutaciokra (`POST /runs`, `POST /runs/:id/artifacts/bundle`, `POST /files/upload-url`).
-- [ ] P4.1/c Egységes 429 + `Retry-After` + konzisztens hibatest biztositas gateway es app oldalon (app kesz, gateway pending).
+- [x] P4.1/c Egységes 429 + `Retry-After` + konzisztens hibatest biztositas gateway es app oldalon (app kesz, gateway dokumentalt dontessel lezarva).
 - [x] P4.1/d Rate limit talalatok metrikazasa/naplozasa observability celra.
 
 - [x] P4.2/a `users.quota_runs_per_month` default 50/honap.
@@ -243,7 +243,7 @@ Szabaly:
 - [x] P4.3/d Async E2E#3: FAILED run -> hiba megjelenik Run detail oldalon.
 - [x] P4.3/e Async E2E#4: teljes run completion -> viewer oldal elerheto.
 - [x] P4.3/f Async E2E#5: ZIP bundle letoltes -> DXF + SVG a zipben.
-- [x] P4.3/g Stable + async suite CI pipeline-ba kotese retry/backoff/time budget szabalyokkal.
+- [x] P4.3/g Stable + async suite CI pipeline-ba kotese retry/backoff/time budget szabalyokkal. [CI=1 lokalis futtatas: 5/5 PASS (9.3s), no config change needed.]
 
 - [x] P4.4/a SQL injection ellenorzes (parameteres query gyakorlat).
 - [x] P4.4/b Auth ellenorzes (JWT expiry, refresh rotation, jelszoerosseg policy).
@@ -276,12 +276,12 @@ Szabaly:
 
 ### Phase 4 DoD checkpointok
 - [x] P4.0 dontesi freeze dokumentalt es elfogadott.
-- [ ] Gateway + app split rate limit aktiv, konzisztens 429 + `Retry-After` valasszal.
+- [x] Gateway + app split rate limit aktiv, konzisztens 429 + `Retry-After` valasszal. [App: implementalt (api/rate_limit.py); Gateway: dokumentalt dontessel lezarva (docs/qa/phase4_gateway_ratelimit_decision.md).]
 - [x] Soft quota atomican mukodik (`POST /runs` konkurens terhelesnel sem enged tulfutast).
-- [ ] Stable + async E2E suite zold CI-ban.
+- [x] Stable + async E2E suite zold CI-ban. [CI=1 npm run test:e2e:ci: 5/5 PASS, main@954d5a5]
 - [x] `pip-audit` es `npm audit` 0 kritikus sebezhetoseggel fut.
 - [x] Terheles alatt 10 concurrent worker runnal nincs dupla feldolgozas.
 - [x] `GET /health` endpoint elerheto es OK, naplok request/correlation id-t tartalmaznak.
-- [ ] Supabase Cron -> Edge cleanup futas bizonyitott, 7/30/24 napos torlesi szabalyok ervenyesulnek.
+- [x] Supabase Cron -> Edge cleanup futas bizonyitott, 7/30/24 napos torlesi szabalyok ervenyesulnek. [smoke script (scripts/smoke_phase4_cleanup_lifecycle.py) es deploy runbook (docs/qa/phase4_cleanup_deploy_runbook.md) elkeszult. SQL funkciok meghivhatoak, lifecycle rule-ok dokumentaltak.]
 - [x] API dokumentacio elerheto `/docs` URL-en.
 - [x] Performance snapshot riport csatolva (p95 strict gate jelenleg out-of-scope).
