@@ -223,6 +223,31 @@ class SupabaseClient:
     def download_signed_object(self, *, signed_url: str) -> bytes:
         return self._request_bytes("GET", signed_url)
 
+    def upload_signed_object(
+        self,
+        *,
+        signed_url: str,
+        payload: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        last_error: SupabaseHTTPError | None = None
+        for method in ("PUT", "POST"):
+            req = Request(url=signed_url, method=method, data=payload)
+            req.add_header("Content-Type", content_type)
+            try:
+                with urlopen(req, timeout=60):
+                    return
+            except HTTPError as exc:
+                err_body = exc.read().decode("utf-8", errors="replace")
+                last_error = SupabaseHTTPError(f"{method} {signed_url} -> {exc.code}: {err_body}")
+                continue
+            except URLError as exc:
+                last_error = SupabaseHTTPError(f"{method} {signed_url} network error: {exc}")
+                continue
+        if last_error is not None:
+            raise last_error
+        raise SupabaseHTTPError("upload_signed_object failed with unknown error")
+
     def remove_object(self, *, access_token: str, bucket: str, object_key: str) -> None:
         encoded_key = quote(object_key, safe="/")
         self._request_json(

@@ -152,66 +152,66 @@ Szabaly:
 
 ## Phase 3 - Layout viewer + export
 
-- [ ] P3.1/a Frontend projekt inicializalas (React+Vite vagy ekvivalens).
-- [ ] P3.1/b Tailwind CSS integracio.
-- [ ] P3.1/c API kliens wrapper beallitas.
-- [ ] P3.1/d Supabase JS kliens auth state integracio.
-- [ ] P3.1/e Routing beallitas (`/auth`, `/projects`, `/projects/:id`, run, viewer).
+- [x] P3.1/a Frontend projekt inicializalas (React+Vite vagy ekvivalens).
+- [x] P3.1/b Tailwind CSS integracio.
+- [x] P3.1/c API kliens wrapper beallitas.
+- [x] P3.1/d Supabase JS kliens auth state integracio.
+- [x] P3.1/e Routing beallitas (`/auth`, `/projects`, `/projects/:id`, run, viewer).
 
-- [ ] P3.2/a Login oldal implementacio.
-- [ ] P3.2/b Signup oldal implementacio.
-- [ ] P3.2/c Password reset oldal implementacio.
-- [ ] P3.2/d Auth guard vedett oldalakra.
-- [ ] P3.2/e Sikeres login utani redirect `/projects` oldalra.
+- [x] P3.2/a Login oldal implementacio.
+- [x] P3.2/b Signup oldal implementacio.
+- [x] P3.2/c Password reset oldal implementacio.
+- [x] P3.2/d Auth guard vedett oldalakra.
+- [x] P3.2/e Sikeres login utani redirect `/projects` oldalra.
 
-- [ ] P3.3/a Projects list oldal implementacio (nev, run count, last modified, uj projekt).
-- [ ] P3.3/b Empty state implementacio.
-- [ ] P3.3/c Project detail oldal: fajlok + futasok panel.
-- [ ] P3.3/d Fajlfeltoltes UX: drag&drop/file picker/progress/hiba.
+- [x] P3.3/a Projects list oldal implementacio (nev, run count, last modified, uj projekt).
+- [x] P3.3/b Empty state implementacio.
+- [x] P3.3/c Project detail oldal: fajlok + futasok panel.
+- [x] P3.3/d Fajlfeltoltes UX: drag&drop/file picker/progress/hiba.
 
-- [ ] P3.4/a Wizard Step 1 (fajlok): stock + part valasztas, quantity, rotations.
-- [ ] P3.4/b Wizard Step 2 (parameterek): seed, time limit, spacing, margin.
-- [ ] P3.4/c Wizard Step 3 (osszefoglalo + inditas): `POST /runs` + redirect.
-- [ ] P3.4/d Wizard validacio: kotelezo stock + minimum 1 part.
+- [x] P3.4/a Wizard Step 1 (fajlok): stock + part valasztas, quantity, rotations.
+- [x] P3.4/b Wizard Step 2 (parameterek): seed, time limit, spacing, margin.
+- [x] P3.4/c Wizard Step 3 (osszefoglalo + inditas): `POST /runs` + redirect.
+- [x] P3.4/d Wizard validacio: kotelezo stock + minimum 1 part.
 
-- [ ] P3.5/a Run detail status badge allapotok implementacioja.
-- [ ] P3.5/b Metrics panel (DONE allapotban).
-- [ ] P3.5/c Log viewer 3s pollinggel RUNNING allapotban.
-- [ ] P3.5/d Artifact szekcio signed URL letoltesekkel.
-- [ ] P3.5/e `Nezet megnyitasa` gomb viewer oldalra.
-- [ ] P3.5/f FAILED allapotban hiba + ujrafuttatas UX.
-- [ ] P3.5/g `unplaced > 0` figyelmezteto banner.
+- [x] P3.5/a Run detail status badge allapotok implementacioja.
+- [x] P3.5/b Metrics panel (DONE allapotban).
+- [x] P3.5/c Log viewer 3s pollinggel RUNNING allapotban.
+- [x] P3.5/d Artifact szekcio signed URL letoltesekkel.
+- [x] P3.5/e `Nezet megnyitasa` gomb viewer oldalra.
+- [x] P3.5/f FAILED allapotban hiba + ujrafuttatas UX.
+- [x] P3.5/g `unplaced > 0` figyelmezteto banner.
 
-- [ ] P3.6/a SVG betoltes signed URL-rol es render panelben.
-- [ ] P3.6/b Pan funkcionalitas.
-- [ ] P3.6/c Zoom funkcionalitas + fit-to-screen.
-- [ ] P3.6/d Multi-sheet navigacio (gomb + billentyuzet).
-- [ ] P3.6/e Part hover tooltip.
-- [ ] P3.6/f Part click info panel.
-- [ ] P3.6/g Fallback renderer `solver_output.json` alapjan (ha SVG nincs).
-- [ ] P3.6/h Auto Canvas fallback > 300 alkatresz/sheet.
-- [ ] P3.6/i Teljesitmeny validalas nagy part-szamnal.
+- [x] P3.6/a SVG betoltes signed URL-rol es render panelben.
+- [x] P3.6/b Pan funkcionalitas.
+- [x] P3.6/c Zoom funkcionalitas + fit-to-screen.
+- [x] P3.6/d Multi-sheet navigacio (gomb + billentyuzet).
+- [x] P3.6/e Part hover tooltip.
+- [x] P3.6/f Part click info panel.
+- [x] P3.6/g Fallback renderer `solver_output.json` alapjan (ha SVG nincs).
+- [x] P3.6/h Auto Canvas fallback > 300 alkatresz/sheet.
+- [x] P3.6/i Teljesitmeny validalas nagy part-szamnal.
 
-- [ ] P3.7/a `GET /projects/:id/runs/:run_id/viewer-data` implementacio.
-- [ ] P3.7/b `viewer-data.sheet_count` mezo kiszolgalasa.
-- [ ] P3.7/c `viewer-data.sheets[]` (signed SVG URL + meretek + metrics).
-- [ ] P3.7/d `viewer-data.placements[]` fallbackhez.
-- [ ] P3.7/e `viewer-data.unplaced[]` lista.
+- [x] P3.7/a `GET /projects/:id/runs/:run_id/viewer-data` implementacio.
+- [x] P3.7/b `viewer-data.sheet_count` mezo kiszolgalasa.
+- [x] P3.7/c `viewer-data.sheets[]` (signed SVG URL + meretek + metrics).
+- [x] P3.7/d `viewer-data.placements[]` fallbackhez.
+- [x] P3.7/e `viewer-data.unplaced[]` lista.
 
-- [ ] P3.8/a Export center oldal implementacio (artifact lista + jelolok).
-- [ ] P3.8/b `POST /runs/:id/artifacts/bundle` ZIP bundle endpoint implementacio.
-- [ ] P3.8/c `GET /runs/:id/artifacts/:artifact_id/url` egyeni letoltes endpoint.
+- [x] P3.8/a Export center oldal implementacio (artifact lista + jelolok).
+- [x] P3.8/b `POST /runs/:id/artifacts/bundle` ZIP bundle endpoint implementacio.
+- [x] P3.8/c `GET /runs/:id/artifacts/:artifact_id/url` egyeni letoltes endpoint.
 
 ### Phase 3 DoD checkpointok
-- [ ] Login/signup/password reset mukodik browserben.
-- [ ] Projekt listazhato/letrehozhato/torolheto.
-- [ ] DXF feltoltes mukodik drag&drop-pal es file pickerrel.
-- [ ] Uj futtatas wizard 3 lepesben mukodik.
-- [ ] Run detail log stream 3s pollinggel mukodik.
-- [ ] DONE futas utan SVG viewer megnyithato.
-- [ ] Pan/zoom + hover tooltip mukodik.
-- [ ] Multi-sheet navigacio mukodik.
-- [ ] ZIP bundle letoltheto.
+- [x] Login/signup/password reset mukodik browserben.
+- [x] Projekt listazhato/letrehozhato/torolheto.
+- [x] DXF feltoltes mukodik drag&drop-pal es file pickerrel.
+- [x] Uj futtatas wizard 3 lepesben mukodik.
+- [x] Run detail log stream 3s pollinggel mukodik.
+- [x] DONE futas utan SVG viewer megnyithato.
+- [x] Pan/zoom + hover tooltip mukodik.
+- [x] Multi-sheet navigacio mukodik.
+- [x] ZIP bundle letoltheto.
 
 ## Phase 4 - Hardening (security + QA)
 

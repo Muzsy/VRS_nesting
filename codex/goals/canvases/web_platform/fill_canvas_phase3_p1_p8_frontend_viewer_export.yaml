@@ -1,0 +1,73 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a phase3_p1_p8_frontend_viewer_export task
+      canvas/yaml/checklist/report alapokat.
+    outputs:
+      - "canvases/web_platform/phase3_p1_p8_frontend_viewer_export.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_phase3_p1_p8_frontend_viewer_export.yaml"
+      - "codex/codex_checklist/web_platform/phase3_p1_p8_frontend_viewer_export.md"
+      - "codex/reports/web_platform/phase3_p1_p8_frontend_viewer_export.md"
+
+  - name: "Backend endpointok P3.7 es P3.8 alapokhoz"
+    description: >
+      Implementald a runs route boviteseket: viewer-data endpoint,
+      artifact URL endpoint, bundle endpoint, es az ezekhez szukseges
+      supabase client helper funkciokat.
+    outputs:
+      - "api/main.py"
+      - "api/routes/runs.py"
+      - "api/supabase_client.py"
+
+  - name: "Frontend scaffold es auth/projects/run oldalak"
+    description: >
+      Hozd letre a frontend React+Vite+Tailwind appot es implementald a
+      P3.1-P3.5 UX flow-t: auth, projects list/detail, upload, run wizard,
+      run detail log polling.
+    outputs:
+      - "frontend/index.html"
+      - "frontend/package.json"
+      - "frontend/tsconfig.json"
+      - "frontend/tsconfig.node.json"
+      - "frontend/vite.config.ts"
+      - "frontend/postcss.config.cjs"
+      - "frontend/tailwind.config.cjs"
+      - "frontend/src/main.tsx"
+      - "frontend/src/index.css"
+      - "frontend/src/App.tsx"
+      - "frontend/src/lib/api.ts"
+      - "frontend/src/lib/supabase.ts"
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/components/AuthGuard.tsx"
+      - "frontend/src/components/Layout.tsx"
+      - "frontend/src/pages/AuthPage.tsx"
+      - "frontend/src/pages/ProjectsPage.tsx"
+      - "frontend/src/pages/ProjectDetailPage.tsx"
+      - "frontend/src/pages/NewRunPage.tsx"
+      - "frontend/src/pages/RunDetailPage.tsx"
+
+  - name: "Viewer es export UI"
+    description: >
+      Implementald a P3.6 es P3.8 frontend reszeket: SVG/Canvas viewer,
+      multi-sheet navigacio, hover/click info, export center es bundle letoltes.
+    outputs:
+      - "frontend/src/components/ViewerCanvas.tsx"
+      - "frontend/src/pages/ViewerPage.tsx"
+      - "frontend/src/pages/ExportPage.tsx"
+
+  - name: "Phase 3 checklist/report/master frissites"
+    description: >
+      Frissitsd a task checklistet/reportot es a master checklist Phase 3 blokkjat
+      az implementacio szerint.
+    outputs:
+      - "codex/codex_checklist/web_platform/phase3_p1_p8_frontend_viewer_export.md"
+      - "codex/reports/web_platform/phase3_p1_p8_frontend_viewer_export.md"
+      - "codex/codex_checklist/web_platform/implementacios_terv_master_checklist.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/phase3_p1_p8_frontend_viewer_export.md
+    outputs:
+      - "codex/reports/web_platform/phase3_p1_p8_frontend_viewer_export.md"
+      - "codex/reports/web_platform/phase3_p1_p8_frontend_viewer_export.verify.log"
