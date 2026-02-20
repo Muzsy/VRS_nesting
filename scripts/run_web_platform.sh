@@ -88,6 +88,27 @@ load_env_if_present() {
   fi
 }
 
+apply_frontend_env_compat() {
+  # Vite exposes only VITE_* vars to frontend code.
+  # Map existing repo-level SUPABASE_* vars for local convenience.
+  if [[ -z "${VITE_SUPABASE_URL:-}" && -n "${SUPABASE_URL:-}" ]]; then
+    export VITE_SUPABASE_URL="$SUPABASE_URL"
+  fi
+  if [[ -z "${VITE_SUPABASE_ANON_KEY:-}" && -n "${SUPABASE_ANON_KEY:-}" ]]; then
+    export VITE_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+  fi
+  if [[ -z "${VITE_API_BASE_URL:-}" ]]; then
+    export VITE_API_BASE_URL="http://${API_HOST}:${API_PORT}/v1"
+  fi
+}
+
+apply_api_env_compat() {
+  if [[ -z "${API_ALLOWED_ORIGINS:-}" ]]; then
+    local alt_port=$((FRONTEND_PORT + 1))
+    export API_ALLOWED_ORIGINS="http://127.0.0.1:${FRONTEND_PORT},http://localhost:${FRONTEND_PORT},http://127.0.0.1:${alt_port},http://localhost:${alt_port},http://localhost:3000"
+  fi
+}
+
 start_service() {
   local name="$1"
   local workdir="$2"
@@ -109,7 +130,7 @@ start_service() {
 
   (
     cd "$workdir"
-    nohup bash -lc "$cmd" >"$log_file" 2>&1 &
+    nohup bash -lc "exec $cmd" >"$log_file" 2>&1 &
     echo $! >"$pid_file"
   )
 
@@ -149,6 +170,13 @@ stop_service() {
   kill -9 "$pid" >/dev/null 2>&1 || true
   rm -f "$pid_file"
   echo "[OK] ${name} force-stopped"
+}
+
+cleanup_orphans() {
+  # Best-effort cleanup for previously detached processes started by older script versions.
+  pkill -f "uvicorn api.main:app --host ${API_HOST} --port ${API_PORT}" >/dev/null 2>&1 || true
+  pkill -f "python3 worker/main.py" >/dev/null 2>&1 || true
+  pkill -f "vite --host ${FRONTEND_HOST} --port ${FRONTEND_PORT}" >/dev/null 2>&1 || true
 }
 
 status_service() {
@@ -194,6 +222,8 @@ start_all() {
   need_cmd uvicorn
   ensure_dirs
   load_env_if_present
+  apply_frontend_env_compat
+  apply_api_env_compat
 
   local api_cmd="uvicorn api.main:app --host ${API_HOST} --port ${API_PORT}"
   if [[ "$API_RELOAD" == "1" ]]; then
@@ -202,7 +232,7 @@ start_all() {
 
   start_service "api" "$ROOT_DIR" "$api_cmd"
   start_service "worker" "$ROOT_DIR" "python3 worker/main.py"
-  start_service "frontend" "${ROOT_DIR}/frontend" "npm run dev -- --host ${FRONTEND_HOST} --port ${FRONTEND_PORT}"
+  start_service "frontend" "${ROOT_DIR}/frontend" "npm run dev -- --host ${FRONTEND_HOST} --port ${FRONTEND_PORT} --strictPort"
 
   wait_http_ready "http://${API_HOST}:${API_PORT}/health" "api" "$START_TIMEOUT_S"
   wait_http_ready "http://${FRONTEND_HOST}:${FRONTEND_PORT}/" "frontend" "$START_TIMEOUT_S"
@@ -222,6 +252,7 @@ stop_all() {
   stop_service "frontend"
   stop_service "worker"
   stop_service "api"
+  cleanup_orphans
 }
 
 logs_cmd() {
