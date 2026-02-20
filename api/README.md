@@ -26,6 +26,14 @@ python3 -m pip install -r api/requirements.txt
 
 3. Run the server:
 
+Preferred (from repo root, manages API + worker + frontend together):
+
+```bash
+./scripts/run_web_platform.sh start
+```
+
+API-only manual command:
+
 ```bash
 uvicorn api.main:app --reload --port 8000
 ```

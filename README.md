@@ -34,7 +34,21 @@ Optional API/worker tuning:
 - `API_SIGNED_URL_TTL_S` (default: `300`)
 - `WORKER_ALERT_BACKLOG_SECONDS` (default: `300`)
 
-4. Run services:
+4. Run services (recommended):
+
+```bash
+./scripts/run_web_platform.sh start
+```
+
+Useful commands:
+
+```bash
+./scripts/run_web_platform.sh status
+./scripts/run_web_platform.sh logs api
+./scripts/run_web_platform.sh stop
+```
+
+Manual alternative:
 
 ```bash
 uvicorn api.main:app --reload --port 8000
