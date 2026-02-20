@@ -9,7 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from vrs_nesting.dxf.exporter import export_per_sheet, export_per_sheet_svg
+from vrs_nesting.dxf.exporter import DxfExportError, export_per_sheet, export_per_sheet_svg
 from vrs_nesting.project.model import ProjectValidationError, load_dxf_project_json
 from vrs_nesting.run_artifacts.run_dir import append_run_log, create_run_dir, write_project_snapshot
 from vrs_nesting.runner.vrs_solver_runner import VrsSolverRunnerError
@@ -68,8 +68,20 @@ def run_dxf_pipeline(project_path: str, run_root: str, sparrow_bin: str | None) 
 
         export_summary = export_per_sheet(solver_input, solver_output, ctx.out_dir)
         append_run_log(ctx.run_log_path, "DXF_EXPORT_DONE", f"exported_count={export_summary.get('exported_count', 0)}")
-        svg_export_summary = export_per_sheet_svg(ctx.out_dir)
-        append_run_log(ctx.run_log_path, "DXF_SVG_EXPORT_DONE", f"exported_count={svg_export_summary.get('exported_count', 0)}")
+        try:
+            svg_export_summary = export_per_sheet_svg(ctx.out_dir)
+            append_run_log(ctx.run_log_path, "DXF_SVG_EXPORT_DONE", f"exported_count={svg_export_summary.get('exported_count', 0)}")
+        except DxfExportError as exc:
+            # Keep dxf-run contract stable when optional ezdxf SVG backend is not installed.
+            if "svg export requires ezdxf drawing svg backend" not in str(exc):
+                raise
+            svg_export_summary = {
+                "status": "skipped",
+                "reason": str(exc),
+                "exported_count": 0,
+                "exported_files": [],
+            }
+            append_run_log(ctx.run_log_path, "DXF_SVG_EXPORT_SKIPPED", str(exc))
 
         report_payload = {
             "contract_version": "dxf_v1",
