@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SPARROW_ALLOW_NETWORK_FALLBACK: "0"
+      SPARROW_ALLOW_NETWORK_FALLBACK: "1"
 
     steps:
       - name: Checkout
@@ -29,6 +29,14 @@ jobs:
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Sparrow source/build
+        uses: actions/cache@v4
+        with:
+          path: .cache/sparrow
+          key: sparrow-${{ hashFiles('poc/sparrow_io/sparrow_commit.txt') }}
+          restore-keys: |
+            sparrow-
 
       - name: Unit tests (pytest)
         run: |

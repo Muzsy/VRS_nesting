@@ -14,11 +14,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run health ping
-        if: ${{ secrets.API_HEALTH_URL != '' }}
         env:
           API_HEALTH_URL: ${{ secrets.API_HEALTH_URL }}
-        run: python3 scripts/uptime_health_ping.py
-
-      - name: Skip notice
-        if: ${{ secrets.API_HEALTH_URL == '' }}
-        run: echo "API_HEALTH_URL secret is not configured; skipping uptime ping."
+        run: |
+          if [ -z "${API_HEALTH_URL}" ]; then
+            echo "API_HEALTH_URL secret is not configured; skipping uptime ping."
+            exit 0
+          fi
+          python3 scripts/uptime_health_ping.py
