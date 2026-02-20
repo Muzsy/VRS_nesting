@@ -150,7 +150,16 @@ echo "[DXF] Real Sparrow pipeline smoke"
 python3 scripts/smoke_real_dxf_sparrow_pipeline.py
 
 echo "[DXF] SVG export artifact smoke"
-python3 scripts/smoke_svg_export.py
+if python3 - <<'PY' >/dev/null 2>&1
+from ezdxf import bbox as _bbox  # noqa: F401
+from ezdxf.addons.drawing import Frontend, RenderContext, layout  # noqa: F401
+from ezdxf.addons.drawing.svg import SVGBackend  # noqa: F401
+PY
+then
+  python3 scripts/smoke_svg_export.py
+else
+  echo "[SKIP] SVG export smoke skipped: ezdxf drawing svg backend is not available"
+fi
 
 if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
   echo "[4/5] Nesting solution validator smoke"
