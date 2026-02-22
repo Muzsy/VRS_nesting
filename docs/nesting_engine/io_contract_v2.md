@@ -88,7 +88,70 @@ A `meta.determinism_hash` mezo szamitasi szabalyai normativan itt vannak rogzitv
 Ebben a dokumentumban nincs canonicalization-szabaly duplikacio: a hash-kepzeshez a
 fenti normativ dokumentum kovetese kotelezo.
 
-## 7. v1 <-> v2 osszehasonlitas
+## 7. Pipeline preprocessing contract (pipeline_v1)
+
+Ez a szekcio a `nesting_engine inflate-parts` stdin/stdout JSON contractjat rogziti,
+nem a `nest` solver endpointet.
+
+### 7.1 Request (`PipelineRequest`)
+
+| Mezo | Tipus | Kotelezo | Leiras |
+|---|---|---|---|
+| `version` | string | Igen | Erteke: `pipeline_v1` |
+| `kerf_mm` | number (`>=0`) | Igen | Vagasi res (kerf) |
+| `margin_mm` | number (`>=0`) | Igen | Kiegeszito margó |
+| `parts` | array&lt;PartRequest&gt; | Nem (default `[]`) | Part preprocessing bemenet |
+| `stocks` | array&lt;StockRequest&gt; | Nem (default `[]`) | Stock preprocessing bemenet |
+
+`PartRequest`:
+
+| Mezo | Tipus | Kotelezo | Leiras |
+|---|---|---|---|
+| `id` | string | Igen | Part azonosito |
+| `outer_points_mm` | array&lt;[number,number]&gt; (`>=3`) | Igen | Nominalis outer kontur |
+| `holes_points_mm` | array&lt;array&lt;[number,number]&gt;&gt; | Igen | Nominalis hole konturok (`[]` ha nincs) |
+
+`StockRequest`:
+
+| Mezo | Tipus | Kotelezo | Leiras |
+|---|---|---|---|
+| `id` | string | Igen | Stock azonosito |
+| `outer_points_mm` | array&lt;[number,number]&gt; (`>=3`) | Igen | Nominalis stock outer kontur |
+| `holes_points_mm` | array&lt;array&lt;[number,number]&gt;&gt; | Igen | Nominalis stock hole/defect konturok (`[]` ha nincs) |
+
+### 7.2 Response (`PipelineResponse`)
+
+| Mezo | Tipus | Kotelezo | Leiras |
+|---|---|---|---|
+| `version` | string | Igen | Input `version` echo |
+| `parts` | array&lt;PartResponse&gt; | Nem (default `[]`) | Part preprocess eredmenyek |
+| `stocks` | array&lt;StockResponse&gt; | Nem (default `[]`) | Stock preprocess eredmenyek |
+
+`PartResponse` statusok:
+- `ok`
+- `hole_collapsed`
+- `self_intersect`
+- `error`
+
+`StockResponse`:
+
+| Mezo | Tipus | Kotelezo | Leiras |
+|---|---|---|---|
+| `id` | string | Igen | Stock azonosito |
+| `status` | string | Igen | `ok` / `self_intersect` / `error` |
+| `usable_outer_points_mm` | array&lt;[number,number]&gt; | Igen | Hasznalhato outer kontur mm-ben |
+| `usable_holes_points_mm` | array&lt;array&lt;[number,number]&gt;&gt; | Igen | Hasznalhato hole konturok mm-ben |
+| `diagnostics` | array&lt;Diagnostic&gt; | Igen | Diagnosztikak (`SELF_INTERSECT`, `OFFSET_ERROR`) |
+
+### 7.3 Normativ offset szabaly (`stocks`)
+
+- `delta_mm = margin_mm + kerf_mm * 0.5`
+- Stock preprocess szabaly:
+  - outer kontur: deflate (`inflate_outer(stock_polygon, -delta_mm)`)
+  - hole/defect konturok: inflate (ugyanazon negativ delta hatasara)
+- Ha nominalis stock self-intersect, akkor a status kotelezoen `self_intersect` (reject, nincs auto-fix).
+
+## 8. v1 <-> v2 osszehasonlitas
 
 | Aspektus | v1 (`docs/solver_io_contract.md`) | v2 (`docs/nesting_engine/io_contract_v2.md`) |
 |---|---|---|

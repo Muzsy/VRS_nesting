@@ -29,6 +29,7 @@ ENGINE_SHAPELY = "shapely"
 STATUS_OK = "ok"
 STATUS_HOLE_COLLAPSED = "hole_collapsed"
 STATUS_SELF_INTERSECT = "self_intersect"
+STATUS_ERROR = "error"
 
 _LOG = logging.getLogger(__name__)
 
@@ -208,6 +209,21 @@ def _rust_request_part(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _rust_request_stock(payload: dict[str, Any]) -> dict[str, Any]:
+    outer = _to_open_ring(payload.get("outer_points_mm"), "stock.outer")
+    holes_raw = payload.get("holes_points_mm", [])
+    if holes_raw is None:
+        holes_raw = []
+    if not isinstance(holes_raw, list):
+        raise GeometryOffsetError("GEO_POLYGON_TYPE", "stock.holes_points_mm must be list")
+    holes = [_to_open_ring(hole, f"stock.holes[{idx}]") for idx, hole in enumerate(holes_raw)]
+    return {
+        "id": "stock_0",
+        "outer_points_mm": outer,
+        "holes_points_mm": holes,
+    }
+
+
 def _parse_rust_part_response(response_payload: Any) -> dict[str, Any]:
     if not isinstance(response_payload, dict):
         raise GeometryOffsetError("GEO_RUST_SCHEMA", "inflate-parts response must be object")
@@ -244,17 +260,44 @@ def _parse_rust_part_response(response_payload: Any) -> dict[str, Any]:
     return _polygon_to_payload(poly)
 
 
-def _offset_part_geometry_rust(
-    payload: dict[str, Any],
-    *,
-    spacing_mm: float,
-) -> dict[str, Any]:
-    request = {
-        "version": "pipeline_v1",
-        "kerf_mm": float(spacing_mm),
-        "margin_mm": 0.0,
-        "parts": [_rust_request_part(payload)],
-    }
+def _parse_rust_stock_response(response_payload: Any) -> dict[str, Any]:
+    if not isinstance(response_payload, dict):
+        raise GeometryOffsetError("GEO_RUST_SCHEMA", "inflate-parts response must be object")
+    stocks = response_payload.get("stocks")
+    if not isinstance(stocks, list) or len(stocks) != 1 or not isinstance(stocks[0], dict):
+        raise GeometryOffsetError("GEO_RUST_SCHEMA", "inflate-parts response.stocks must contain one object")
+
+    stock = stocks[0]
+    status = stock.get("status")
+    if not isinstance(status, str):
+        raise GeometryOffsetError("GEO_RUST_SCHEMA", "inflate-parts stock.status must be string")
+
+    diagnostics = stock.get("diagnostics", [])
+    detail = _diagnostic_detail(diagnostics)
+    code = _diagnostic_code(diagnostics)
+
+    if status == STATUS_SELF_INTERSECT:
+        if detail:
+            raise GeometryOffsetError("GEO_RUST_SELF_INTERSECT", detail)
+        raise GeometryOffsetError("GEO_RUST_SELF_INTERSECT", "Rust stock offset returned self_intersect status")
+    if status == STATUS_ERROR:
+        suffix = f" code={code}" if code else ""
+        detail_msg = f" detail={detail}" if detail else ""
+        raise GeometryOffsetError("GEO_RUST_STATUS", f"Rust stock offset status=error{suffix}{detail_msg}")
+    if status != STATUS_OK:
+        suffix = f" code={code}" if code else ""
+        detail_msg = f" detail={detail}" if detail else ""
+        raise GeometryOffsetError("GEO_RUST_STATUS", f"Rust stock offset status={status}{suffix}{detail_msg}")
+
+    poly = _as_polygon(
+        stock.get("usable_outer_points_mm"),
+        stock.get("usable_holes_points_mm", []),
+        "stock.rust.ok",
+    )
+    return _polygon_to_payload(poly)
+
+
+def _run_rust_pipeline(request: dict[str, Any]) -> dict[str, Any]:
     req_json = json.dumps(request, separators=(",", ":"), ensure_ascii=False)
     bin_path = _resolve_nesting_engine_bin()
     timeout_sec = _rust_timeout_sec()
@@ -285,10 +328,27 @@ def _offset_part_geometry_rust(
         )
 
     try:
-        response_payload = json.loads(proc.stdout)
+        payload = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         raise GeometryOffsetError("GEO_RUST_JSON", f"nesting_engine inflate-parts stdout parse failed: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise GeometryOffsetError("GEO_RUST_SCHEMA", "inflate-parts response must be object")
+    return payload
 
+
+def _offset_part_geometry_rust(
+    payload: dict[str, Any],
+    *,
+    spacing_mm: float,
+) -> dict[str, Any]:
+    request = {
+        "version": "pipeline_v1",
+        "kerf_mm": float(spacing_mm),
+        "margin_mm": 0.0,
+        "parts": [_rust_request_part(payload)],
+        "stocks": [],
+    }
+    response_payload = _run_rust_pipeline(request)
     return _parse_rust_part_response(response_payload)
 
 
@@ -301,6 +361,57 @@ def _offset_part_geometry_shapely(
     dist = float(spacing_mm) / 2.0
     expanded = base.buffer(dist, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT)
     poly = _largest_polygon(expanded, "part")
+    return _polygon_to_payload(poly)
+
+
+def _offset_stock_geometry_rust(
+    payload: dict[str, Any],
+    *,
+    margin_mm: float,
+    spacing_mm: float,
+) -> dict[str, Any]:
+    request = {
+        "version": "pipeline_v1",
+        "kerf_mm": float(spacing_mm),
+        "margin_mm": float(margin_mm),
+        "parts": [],
+        "stocks": [_rust_request_stock(payload)],
+    }
+    response_payload = _run_rust_pipeline(request)
+    return _parse_rust_stock_response(response_payload)
+
+
+def _offset_stock_geometry_shapely(
+    payload: dict[str, Any],
+    *,
+    margin_mm: float,
+    spacing_mm: float,
+) -> dict[str, Any]:
+    clearance = float(margin_mm) + (float(spacing_mm) / 2.0)
+    base = _as_polygon(payload.get("outer_points_mm"), payload.get("holes_points_mm", []), "stock")
+
+    usable_outer = _largest_polygon(
+        base.buffer(-clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT),
+        "stock.outer",
+    )
+
+    holes_payload = payload.get("holes_points_mm", [])
+    if holes_payload is None:
+        holes_payload = []
+    if not isinstance(holes_payload, list):
+        raise GeometryOffsetError("GEO_POLYGON_TYPE", "stock.holes_points_mm must be list")
+
+    expanded_holes = []
+    for idx, hole in enumerate(holes_payload):
+        hpoly = _as_polygon(hole, [], f"stock.hole[{idx}]")
+        expanded_holes.append(hpoly.buffer(clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT))
+
+    if expanded_holes:
+        usable = usable_outer.difference(unary_union(expanded_holes))
+    else:
+        usable = usable_outer
+
+    poly = _largest_polygon(usable, "stock.usable")
     return _polygon_to_payload(poly)
 
 
@@ -352,24 +463,16 @@ def offset_stock_geometry(
     if spacing_mm < 0:
         raise GeometryOffsetError("GEO_PARAM_RANGE", "spacing_mm must be >= 0")
 
-    clearance = float(margin_mm) + (float(spacing_mm) / 2.0)
-    base = _as_polygon(payload.get("outer_points_mm"), payload.get("holes_points_mm", []), "stock")
-
-    usable_outer = _largest_polygon(
-        base.buffer(-clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT),
-        "stock.outer",
-    )
-
-    holes_payload = payload.get("holes_points_mm", [])
-    expanded_holes = []
-    for idx, hole in enumerate(holes_payload):
-        hpoly = _as_polygon(hole, [], f"stock.hole[{idx}]")
-        expanded_holes.append(hpoly.buffer(clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT))
-
-    if expanded_holes:
-        usable = usable_outer.difference(unary_union(expanded_holes))
-    else:
-        usable = usable_outer
-
-    poly = _largest_polygon(usable, "stock.usable")
-    return _polygon_to_payload(poly)
+    try:
+        return _offset_stock_geometry_rust(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+    except GeometryOffsetError as exc:
+        if exc.code == "GEO_RUST_SELF_INTERSECT":
+            raise
+        if exc.code.startswith("GEO_RUST_") and _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV):
+            _LOG.warning(
+                "offset_stock_geometry: rust path failed (%s), using explicit shapely fallback via %s",
+                exc.code,
+                ALLOW_SHAPELY_FALLBACK_ENV,
+            )
+            return _offset_stock_geometry_shapely(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+        raise

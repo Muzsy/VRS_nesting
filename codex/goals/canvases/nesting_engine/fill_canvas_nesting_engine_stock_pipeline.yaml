@@ -1,0 +1,91 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_stock_pipeline.yaml
+steps:
+  - name: Repo-szabályok és a pipeline stock hiány beazonosítása
+    description: |
+      Olvasd el az AGENTS.md-t és a codex szabálydoksikat.
+      Azonosítsd a jelenlegi pipeline contractot és hívási útvonalat:
+      - rust/nesting_engine/src/io/pipeline_io.rs
+      - rust/nesting_engine/src/main.rs (inflate-parts)
+      - rust/nesting_engine/src/geometry/pipeline.rs
+      - vrs_nesting/geometry/offset.py (part Rust bridge, stock Shapely)
+      Frissítsd a canvas-t, hogy a StockRequest/StockResponse mezők és a delta definíció (margin + kerf/2) normatív legyen.
+    outputs:
+      - canvases/nesting_engine/nesting_engine_stock_pipeline.md
+
+  - name: IO contract bővítés (PipelineRequest/Response + StockRequest/Response)
+    description: |
+      Módosítsd a rust/nesting_engine/src/io/pipeline_io.rs fájlt:
+      - PipelineRequest bővüljön `stocks: Vec<StockRequest>` mezővel (serde default: üres lista).
+      - PipelineResponse bővüljön `stocks: Vec<StockResponse>` mezővel (serde default: üres lista).
+      - Vezesd be a StockRequest és StockResponse structokat.
+      - StockResponse tartalmazza: id, status, usable_outer_points_mm, usable_holes_points_mm, diagnostics.
+      Fontos: maradjon kompatibilis a meglévő part-only hívásokkal (ha nincs stocks mező a JSON-ben).
+    outputs:
+      - rust/nesting_engine/src/io/pipeline_io.rs
+
+  - name: Rust pipeline stock inverse offset implementáció
+    description: |
+      Módosítsd a rust/nesting_engine/src/geometry/pipeline.rs fájlt:
+      - run_inflate_pipeline dolgozza fel a stocks mezőt is.
+      - delta_mm maradjon: margin_mm + kerf_mm*0.5.
+      - Stock offset: a stock polygonra hívd a `inflate_outer(polygon, -delta_mm)` függvényt
+        (negatív delta: outer deflate, holes inflate).
+      - SELF_INTERSECT nominal input esetén status self_intersect (diagnosztika: SELF_INTERSECT).
+      - ERROR esetén status error (diagnosztika: OFFSET_ERROR).
+      - A part ág változatlan viselkedésű maradjon.
+    outputs:
+      - rust/nesting_engine/src/geometry/pipeline.rs
+
+  - name: Dokumentáció frissítése (pipeline_v1 kiterjesztés stockra)
+    description: |
+      Frissítsd a docs/nesting_engine/io_contract_v2.md fájlt:
+      - Adj hozzá egy külön szekciót: "Pipeline preprocessing contract (pipeline_v1)".
+      - Dokumentáld a PipelineRequest/Response mezőket (parts + stocks), és külön a StockRequest/StockResponse-t.
+      - Rögzítsd normatívan a stock offset szabályt: outer deflate, holes inflate, delta_mm = margin_mm + kerf_mm*0.5.
+      - Egyértelműen írd le, hogy ez a preprocessing contract a `nesting_engine inflate-parts` stdin/stdout JSON-hoz tartozik.
+    outputs:
+      - docs/nesting_engine/io_contract_v2.md
+
+  - name: Python stock Shapely kivezetés (Rust pipeline hívás)
+    description: |
+      Módosítsd a vrs_nesting/geometry/offset.py fájlt:
+      - Az `offset_stock_geometry` számítása ne használjon Shapely-t.
+      - A stock requestet is küldd át a Rust pipeline-nak JSON stdin/stdout-on a már meglévő bináris feloldással.
+      - Parse-old a StockResponse-t és alakítsd vissza a meglévő Python oldali formára úgy, hogy a hívó kód kompatibilis maradjon.
+      - SELF_INTERSECT stock esetén dobj determinisztikus GeometryOffsetError-t (fail).
+      - Shapely fallback policy: stock esetén alapértelmezetten tiltott (csak explicit env engedéllyel, ha a repo-ban van ilyen policy).
+    outputs:
+      - vrs_nesting/geometry/offset.py
+
+  - name: Determinizmus teszt hozzáadása (irreguláris stock + hole)
+    description: |
+      Adj hozzá tesztet a Rust oldalon a pipeline stock ágra:
+      - építs egy irreguláris outer polygont (nem téglalap) és egy hole-t,
+      - futtasd le a stock offsetet kétszer ugyanazzal a bemenettel,
+      - hasonlítsd össze a JSON serializált StockResponse-t byte-szinten (bit-azonos),
+      - plusz ellenőrizd a “helyes irányt”: usable_outer bbox kisebb, usable_hole bbox nagyobb legyen a nominalhoz képest.
+      A tesztet a repo meglévő teszt-struktúrájához illeszd (geometry/pipeline.rs vagy offset.rs testmod).
+    outputs:
+      - rust/nesting_engine/src/geometry/pipeline.rs
+
+  - name: Checklist és report létrehozása
+    description: |
+      Hozd létre a checklistet és reportot a repo konvenciói szerint.
+      A reportban rögzítsd:
+      - milyen mezők kerültek be StockRequest/Response-hoz,
+      - mi a delta definíció,
+      - hogyan lett a Shapely stock kivezetve,
+      - melyik teszt bizonyítja a determinisztikát.
+    outputs:
+      - codex/codex_checklist/nesting_engine/nesting_engine_stock_pipeline.md
+      - codex/reports/nesting_engine/nesting_engine_stock_pipeline.md
+
+  - name: Verify futtatás és log mentése
+    description: |
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_stock_pipeline.md
+      Ha hibát találsz, javítsd, majd futtasd újra.
+      Mentsd a verify logot a standard helyre.
+    outputs:
+      - codex/reports/nesting_engine/nesting_engine_stock_pipeline.md
+      - codex/reports/nesting_engine/nesting_engine_stock_pipeline.verify.log

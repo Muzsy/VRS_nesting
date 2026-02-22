@@ -126,6 +126,7 @@ fn run_nest() -> Result<(), String> {
                 holes_points_mm: p.holes_points_mm.clone(),
             })
             .collect(),
+        stocks: Vec::new(),
     };
     let pipe_resp = run_inflate_pipeline(pipe_req);
 

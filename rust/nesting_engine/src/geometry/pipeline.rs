@@ -6,7 +6,8 @@ use crate::geometry::{
     types::{PartGeometry, Point64, Polygon64},
 };
 use crate::io::pipeline_io::{
-    Diagnostic, PartRequest, PartResponse, PipelineRequest, PipelineResponse,
+    Diagnostic, PartRequest, PartResponse, PipelineRequest, PipelineResponse, StockRequest,
+    StockResponse,
 };
 
 const STATUS_OK: &str = "ok";
@@ -27,8 +28,17 @@ pub fn run_inflate_pipeline(req: PipelineRequest) -> PipelineResponse {
         .into_iter()
         .map(|part| inflate_single_part(part, delta_mm))
         .collect();
+    let stocks = req
+        .stocks
+        .into_iter()
+        .map(|stock| inflate_single_stock(stock, delta_mm))
+        .collect();
 
-    PipelineResponse { version, parts }
+    PipelineResponse {
+        version,
+        parts,
+        stocks,
+    }
 }
 
 fn inflate_single_part(part: PartRequest, delta_mm: f64) -> PartResponse {
@@ -96,6 +106,117 @@ fn inflate_single_part(part: PartRequest, delta_mm: f64) -> PartResponse {
                 preserve_for_export: None,
                 usable_for_nesting: None,
                 detail: format!("inflate_part failed: {}", offset_error_detail(&err)),
+            }],
+        },
+    }
+}
+
+fn inflate_single_stock(stock: StockRequest, delta_mm: f64) -> StockResponse {
+    let stock_id = stock.id.clone();
+    let nominal = Polygon64 {
+        outer: mm_pairs_to_points(&stock.outer_points_mm),
+        holes: stock
+            .holes_points_mm
+            .iter()
+            .map(|hole| mm_pairs_to_points(hole))
+            .collect(),
+    };
+
+    if polygon_self_intersects(&nominal.outer) {
+        return StockResponse {
+            id: stock_id,
+            status: STATUS_SELF_INTERSECT.to_string(),
+            usable_outer_points_mm: Vec::new(),
+            usable_holes_points_mm: Vec::new(),
+            diagnostics: vec![self_intersect_diagnostic(
+                "nominal stock outer polygon self-intersects before offset",
+            )],
+        };
+    }
+    for (hole_idx, hole) in nominal.holes.iter().enumerate() {
+        if polygon_self_intersects(hole) {
+            return StockResponse {
+                id: stock_id,
+                status: STATUS_SELF_INTERSECT.to_string(),
+                usable_outer_points_mm: Vec::new(),
+                usable_holes_points_mm: Vec::new(),
+                diagnostics: vec![Diagnostic {
+                    code: CODE_SELF_INTERSECT.to_string(),
+                    hole_index: Some(hole_idx),
+                    nominal_hole_bbox_mm: hole_bbox_mm(
+                        stock
+                            .holes_points_mm
+                            .get(hole_idx)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]),
+                    ),
+                    preserve_for_export: None,
+                    usable_for_nesting: None,
+                    detail: "nominal stock hole polygon self-intersects before offset".to_string(),
+                }],
+            };
+        }
+    }
+
+    match inflate_outer(&nominal, -delta_mm) {
+        Ok(usable) => {
+            let outer_self_intersect = polygon_self_intersects(&usable.outer);
+            let hole_self_intersect_idx = usable
+                .holes
+                .iter()
+                .position(|hole| polygon_self_intersects(hole));
+
+            let mut diagnostics = Vec::new();
+            if outer_self_intersect {
+                diagnostics.push(self_intersect_diagnostic(
+                    "usable stock outer polygon self-intersects after offset",
+                ));
+            }
+            if let Some(hole_idx) = hole_self_intersect_idx {
+                diagnostics.push(Diagnostic {
+                    code: CODE_SELF_INTERSECT.to_string(),
+                    hole_index: Some(hole_idx),
+                    nominal_hole_bbox_mm: hole_bbox_mm(
+                        stock
+                            .holes_points_mm
+                            .get(hole_idx)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]),
+                    ),
+                    preserve_for_export: None,
+                    usable_for_nesting: None,
+                    detail: "usable stock hole polygon self-intersects after offset".to_string(),
+                });
+            }
+
+            StockResponse {
+                id: stock_id,
+                status: if outer_self_intersect || hole_self_intersect_idx.is_some() {
+                    STATUS_SELF_INTERSECT.to_string()
+                } else {
+                    STATUS_OK.to_string()
+                },
+                usable_outer_points_mm: points_to_mm_pairs(&usable.outer),
+                usable_holes_points_mm: usable
+                    .holes
+                    .iter()
+                    .map(|hole| points_to_mm_pairs(hole))
+                    .collect(),
+                diagnostics,
+            }
+        }
+        Err(err) => StockResponse {
+            id: stock_id,
+            status: STATUS_ERROR.to_string(),
+            usable_outer_points_mm: Vec::new(),
+            usable_holes_points_mm: Vec::new(),
+            diagnostics: vec![Diagnostic {
+                code: CODE_OFFSET_ERROR.to_string(),
+                hole_index: None,
+                nominal_hole_bbox_mm: None,
+                preserve_for_export: None,
+                usable_for_nesting: None,
+                detail: format!("inflate_outer failed: {}", offset_error_detail(&err)),
             }],
         },
     }
@@ -353,6 +474,7 @@ mod tests {
                 outer_points_mm: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0]],
                 holes_points_mm: Vec::new(),
             }],
+            stocks: Vec::new(),
         };
 
         let resp = run_inflate_pipeline(req);
@@ -380,6 +502,7 @@ mod tests {
                 outer_points_mm: vec![[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
                 holes_points_mm: vec![vec![[9.0, 9.0], [11.0, 9.0], [11.0, 11.0], [9.0, 11.0]]],
             }],
+            stocks: Vec::new(),
         };
 
         let resp = run_inflate_pipeline(req);
@@ -416,6 +539,7 @@ mod tests {
                 outer_points_mm: vec![[0.0, 0.0], [30.0, 0.0], [30.0, 10.0], [0.0, 10.0]],
                 holes_points_mm: Vec::new(),
             }],
+            stocks: Vec::new(),
         };
 
         let resp_a = run_inflate_pipeline(req.clone());
@@ -440,6 +564,7 @@ mod tests {
                 outer_points_mm: vec![[0.0, 0.0], [10.0, 10.0], [0.0, 10.0], [10.0, 0.0]],
                 holes_points_mm: Vec::new(),
             }],
+            stocks: Vec::new(),
         };
 
         let resp = run_inflate_pipeline(req);
@@ -459,6 +584,67 @@ mod tests {
             diag.detail.contains("self-intersects"),
             "expected meaningful diagnostic detail, got: {}",
             diag.detail
+        );
+    }
+
+    #[test]
+    fn stock_irregular_with_hole_is_deterministic_and_offsets_in_correct_direction() {
+        let nominal_outer = vec![
+            [0.0, 0.0],
+            [160.0, 0.0],
+            [180.0, 55.0],
+            [135.0, 120.0],
+            [45.0, 110.0],
+            [0.0, 45.0],
+        ];
+        let nominal_hole = vec![[55.0, 35.0], [90.0, 35.0], [90.0, 65.0], [55.0, 65.0]];
+
+        let req = PipelineRequest {
+            version: "pipeline_v1".to_string(),
+            kerf_mm: 2.0,
+            margin_mm: 3.0,
+            parts: Vec::new(),
+            stocks: vec![StockRequest {
+                id: "irregular_stock_1".to_string(),
+                outer_points_mm: nominal_outer.clone(),
+                holes_points_mm: vec![nominal_hole.clone()],
+            }],
+        };
+
+        let resp_a = run_inflate_pipeline(req.clone());
+        let resp_b = run_inflate_pipeline(req);
+        let serialized_a = serde_json::to_vec(&resp_a).expect("serialize response A");
+        let serialized_b = serde_json::to_vec(&resp_b).expect("serialize response B");
+        assert_eq!(
+            serialized_a, serialized_b,
+            "stock pipeline output is not deterministic"
+        );
+
+        assert_eq!(resp_a.stocks.len(), 1);
+        let stock = &resp_a.stocks[0];
+        assert_eq!(stock.status, STATUS_OK);
+        assert_eq!(stock.usable_holes_points_mm.len(), 1);
+
+        let (nom_outer_w, nom_outer_h) = bbox_from_points_mm(&nominal_outer);
+        let (usable_outer_w, usable_outer_h) = bbox_from_points_mm(&stock.usable_outer_points_mm);
+        assert!(
+            usable_outer_w < nom_outer_w,
+            "stock outer width must shrink after deflate"
+        );
+        assert!(
+            usable_outer_h < nom_outer_h,
+            "stock outer height must shrink after deflate"
+        );
+
+        let (nom_hole_w, nom_hole_h) = bbox_from_points_mm(&nominal_hole);
+        let (usable_hole_w, usable_hole_h) = bbox_from_points_mm(&stock.usable_holes_points_mm[0]);
+        assert!(
+            usable_hole_w > nom_hole_w,
+            "stock hole width must grow after inflate"
+        );
+        assert!(
+            usable_hole_h > nom_hole_h,
+            "stock hole height must grow after inflate"
         );
     }
 }

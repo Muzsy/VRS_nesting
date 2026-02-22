@@ -5,7 +5,10 @@ pub struct PipelineRequest {
     pub version: String,
     pub kerf_mm: f64,
     pub margin_mm: f64,
+    #[serde(default)]
     pub parts: Vec<PartRequest>,
+    #[serde(default)]
+    pub stocks: Vec<StockRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +21,10 @@ pub struct PartRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineResponse {
     pub version: String,
+    #[serde(default)]
     pub parts: Vec<PartResponse>,
+    #[serde(default)]
+    pub stocks: Vec<StockResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +33,22 @@ pub struct PartResponse {
     pub status: String,
     pub inflated_outer_points_mm: Vec<[f64; 2]>,
     pub inflated_holes_points_mm: Vec<Vec<[f64; 2]>>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockRequest {
+    pub id: String,
+    pub outer_points_mm: Vec<[f64; 2]>,
+    pub holes_points_mm: Vec<Vec<[f64; 2]>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockResponse {
+    pub id: String,
+    pub status: String,
+    pub usable_outer_points_mm: Vec<[f64; 2]>,
+    pub usable_holes_points_mm: Vec<Vec<[f64; 2]>>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
