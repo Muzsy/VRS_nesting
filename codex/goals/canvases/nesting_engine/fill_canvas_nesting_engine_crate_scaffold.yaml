@@ -1,0 +1,143 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_crate_scaffold.yaml
+#
+# Mentés helye a repóban:
+#   codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_crate_scaffold.yaml
+#
+# TASK_SLUG: nesting_engine_crate_scaffold
+# AREA:      nesting_engine
+
+steps:
+  - name: "Felderítés és canvas véglegesítése"
+    description: >
+      Olvasd el kötelező sorrendben: AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md.
+      Keresd meg és olvasd el: rust/vrs_solver/Cargo.toml (dependency pinning minta),
+      rust/vrs_solver/src/main.rs (CLI minta), scripts/check.sh (cargo build lépés helye),
+      .github/workflows/repo-gate.yml (CI build minta).
+      Véglegesítsd a canvas scope/DoD pontjait a valós repó állapothoz igazítva.
+      Ha bármely hivatkozott fájl nem létezik: állj meg és jelezd pontosan mit kerestél.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_crate_scaffold.md"
+
+  - name: "Rust crate scaffold és Cargo.toml"
+    description: >
+      Hozd létre a rust/nesting_engine/ könyvtárstruktúrát.
+      Írj Cargo.toml-t: package name = "nesting_engine", edition = "2021".
+      Add hozzá a clipper2 Rust crate-et pinned verzióval
+      (keress rá a crates.io-n a legfrissebb stabil verzióra, pl. clipper2 = "=X.Y.Z").
+      Add hozzá a serde és serde_json dependency-ket (mint a vrs_solver-ben).
+      Hozd létre a src/main.rs CLI skeletont: --version és --help flag kezelés,
+      egyébként stderr-re ír "nesting_engine: no input" és exit 1.
+    outputs:
+      - "rust/nesting_engine/Cargo.toml"
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Geometry types és scale policy"
+    description: >
+      Hozd létre a src/geometry/mod.rs fájlt (pub mod types; pub mod scale; pub mod offset;).
+      Hozd létre a src/geometry/types.rs fájlt a következő struktúrákkal:
+        - Point64 { x: i64, y: i64 } — derive Debug, Clone, Copy, PartialEq, Eq
+        - Polygon64 { outer: Vec<Point64>, holes: Vec<Vec<Point64>> } — derive Debug, Clone
+        - PartGeometry { id: String, polygon: Polygon64 } — derive Debug, Clone
+      Hozd létre a src/geometry/scale.rs fájlt:
+        - SCALE: i64 = 1_000_000 (pub const)
+        - TOUCH_TOL: i64 = 1 (pub const)
+        - pub fn mm_to_i64(mm: f64) -> i64: (mm * SCALE as f64).round() as i64
+        - pub fn i64_to_mm(scaled: i64) -> f64: scaled as f64 / SCALE as f64
+        - unit test: scale round-trip 10.5 mm pontossága < 1e-6
+    outputs:
+      - "rust/nesting_engine/src/geometry/mod.rs"
+      - "rust/nesting_engine/src/geometry/types.rs"
+      - "rust/nesting_engine/src/geometry/scale.rs"
+
+  - name: "Clipper2 offset wrapper"
+    description: >
+      Hozd létre a src/geometry/offset.rs fájlt.
+      Definiáld az OffsetError enum-ot:
+        - HoleCollapsed { hole_index: usize }
+        - SelfIntersection
+        - ClipperError(String)
+      Implementáld a következő public függvényeket a clipper2 crate API-ján keresztül:
+        - inflate_outer(polygon: &Polygon64, delta_mm: f64) -> Result<Polygon64, OffsetError>
+          Az outer kontúrt delta_mm-rel kifelé tolja (Clipper2 OffsetPolygon / inflate).
+        - deflate_hole(hole: &[Point64], delta_mm: f64) -> Result<Vec<Point64>, OffsetError>
+          A hole kontúrt delta_mm-rel befelé tolja (negatív offset).
+        - inflate_part(geom: &PartGeometry, delta_mm: f64) -> Result<PartGeometry, OffsetError>
+          Kombinálja a fentieket: outer inflate + minden hole deflate.
+          Ha egy hole eltűnik az offset után (üres eredmény): HoleCollapsed hiba.
+          Ha az eredmény self-intersecting: SelfIntersection hiba.
+      Írj unit teszteket:
+        - 100x200mm téglalap outer inflate 1.0mm delta → bbox >= 101.9x201.9mm
+        - 50x50mm lyuk deflate 1.0mm delta → bbox <= 48.1x48.1mm
+        - determinizmus: két inflate_part hívás azonos inputra azonos outputot ad
+    outputs:
+      - "rust/nesting_engine/src/geometry/offset.rs"
+
+  - name: "Tolerance policy dokumentáció"
+    description: >
+      Hozd létre a docs/nesting_engine/ könyvtárat (ha még nem létezik).
+      Hozd létre a docs/nesting_engine/tolerance_policy.md fájlt a következő tartalommal:
+        - SCALE konstans definíciója és indoklása (miért 1_000_000, miért i64)
+        - mm_to_i64 / i64_to_mm konverzió leírása
+        - TOUCH_TOL = 1 µm definíciója és jelentése
+        - Touching policy: touching = infeasible (konzervatív oldal, gyártási biztonság)
+        - Maximális kezelhető méret (i64 max / SCALE = ~9.2M mm >> valós táblaméret)
+        - OffsetError típusok és kezelési elvek
+    outputs:
+      - "docs/nesting_engine/tolerance_policy.md"
+
+  - name: "check.sh és CI bővítése"
+    description: >
+      Módosítsd a scripts/check.sh fájlt: add hozzá a nesting_engine cargo build lépést.
+      A vrs_solver build lépés NEM módosítható, NEM törölhető — marad ahol van.
+      Az új lépés formátuma igazodjon a meglévő vrs_solver build lépéséhez.
+      Javasolt elhelyezés: a vrs_solver build lépés UTÁN, külön blokkban.
+      Javasolt tartalom:
+        echo "[X/Y] Build nesting_engine (release)"
+        cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+      Módosítsd a .github/workflows/repo-gate.yml fájlt: add hozzá az új crate build-jét
+      a meglévő vrs_solver build step után, azt nem érintve.
+      Ellenőrizd: a step --manifest-path rust/nesting_engine/Cargo.toml-t használ.
+    outputs:
+      - "scripts/check.sh"
+      - ".github/workflows/repo-gate.yml"
+
+  - name: "Cargo.lock generálás és regresszió ellenőrzés"
+    description: >
+      Futtasd: cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+      Ez generálja a Cargo.lock fájlt az új crate-hez.
+      Futtasd: cargo test --manifest-path rust/nesting_engine/Cargo.toml
+      Ellenőrizd, hogy a MEGLÉVŐ vrs_solver build sem tört el:
+        cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
+      Ha bármelyik FAIL: állj meg, ne folytasd a következő stepre.
+    outputs:
+      - "rust/nesting_engine/Cargo.lock"
+
+  - name: "Checklist és report vázlat létrehozása"
+    description: >
+      Hozd létre a codex/codex_checklist/nesting_engine/ könyvtárat (ha nem létezik).
+      Hozd létre a codex/codex_checklist/nesting_engine/nesting_engine_crate_scaffold.md
+      fájlt a canvas DoD listájának pipálható változataként.
+      Hozd létre a codex/reports/nesting_engine/ könyvtárat (ha nem létezik).
+      Hozd létre a codex/reports/nesting_engine/nesting_engine_crate_scaffold.md fájlt
+      a docs/codex/report_standard.md szerkezete szerint:
+        - Meta szekció kitöltve (task slug, canvas, yaml, dátum, branch, fókusz terület)
+        - Scope szekció: cél és nem-cél
+        - Változások összefoglalója: érintett fájlok listája
+        - Verifikáció: kötelező és opcionális parancsok
+        - DoD → Evidence Matrix: minden DoD ponthoz útvonal + sor (egyelőre üres, gate után töltendő)
+        - AUTO_VERIFY blokk placeholder (verify.sh tölti ki)
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_crate_scaffold.md"
+      - "codex/reports/nesting_engine/nesting_engine_crate_scaffold.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést a wrapper segítségével.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_crate_scaffold.md
+      A wrapper futtatja a teljes check.sh-t (beleértve az új nesting_engine build lépést),
+      logot ment és frissíti a report AUTO_VERIFY blokkját.
+      Ha FAIL: ne zárj le semmit, javítsd a hibát és futtasd újra.
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_crate_scaffold.md"
+      - "codex/reports/nesting_engine/nesting_engine_crate_scaffold.verify.log"

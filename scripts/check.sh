@@ -161,6 +161,11 @@ else
   echo "[SKIP] SVG export smoke skipped: ezdxf drawing svg backend is not available"
 fi
 
+if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
+  echo "[BUILD] nesting_engine (release)"
+  cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+fi
+
 if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
   echo "[4/5] Nesting solution validator smoke"
   cargo build --release --manifest-path rust/vrs_solver/Cargo.toml

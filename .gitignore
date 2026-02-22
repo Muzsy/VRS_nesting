@@ -10,5 +10,6 @@ rust/vrs_solver/target/
 .env.local
 .env
 .env.*
+rust/nesting_engine/target/
 
 

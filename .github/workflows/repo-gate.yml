@@ -38,6 +38,10 @@ jobs:
           restore-keys: |
             sparrow-
 
+      - name: Build nesting_engine (release)
+        run: |
+          cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+
       - name: Run repo gate
         run: |
           ./scripts/check.sh
