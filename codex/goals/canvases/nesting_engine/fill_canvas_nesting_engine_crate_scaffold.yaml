@@ -1,3 +1,6 @@
+`codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_crate_scaffold.yaml`
+
+```yaml
 # codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_crate_scaffold.yaml
 #
 # Mentés helye a repóban:
@@ -23,8 +26,8 @@ steps:
     description: >
       Hozd létre a rust/nesting_engine/ könyvtárstruktúrát.
       Írj Cargo.toml-t: package name = "nesting_engine", edition = "2021".
-      Add hozzá a clipper2 Rust crate-et pinned verzióval
-      (keress rá a crates.io-n a legfrissebb stabil verzióra, pl. clipper2 = "=X.Y.Z").
+      Add hozzá az i_overlay pure Rust crate-et pinned verzióval
+      (keress rá a crates.io-n a legfrissebb stabil verzióra, pl. i_overlay = "=X.Y.Z").
       Add hozzá a serde és serde_json dependency-ket (mint a vrs_solver-ben).
       Hozd létre a src/main.rs CLI skeletont: --version és --help flag kezelés,
       egyébként stderr-re ír "nesting_engine: no input" és exit 1.
@@ -50,22 +53,32 @@ steps:
       - "rust/nesting_engine/src/geometry/types.rs"
       - "rust/nesting_engine/src/geometry/scale.rs"
 
-  - name: "Clipper2 offset wrapper"
+  - name: "i_overlay offset wrapper (inflate/deflate)"
     description: >
       Hozd létre a src/geometry/offset.rs fájlt.
       Definiáld az OffsetError enum-ot:
         - HoleCollapsed { hole_index: usize }
         - SelfIntersection
-        - ClipperError(String)
-      Implementáld a következő public függvényeket a clipper2 crate API-ján keresztül:
+        - OverlayError(String)
+      Implementáld a következő public függvényeket az i_overlay crate API-ján keresztül:
+
+        Kötelező előfeltételek (nem opcionális):
+        1) Minden offset előtt kötelező a simplify_shape előfeldolgozás
+           (FillRule::NonZero), mert DXF-ből érkező polygonok validitása nem garantált,
+           és az offset érvénytelen polygonon csendesen hibás eredményt adhat.
+        2) Kontúr-irány explicit enforce:
+           - outer boundary: CCW
+           - holes: CW
+
         - inflate_outer(polygon: &Polygon64, delta_mm: f64) -> Result<Polygon64, OffsetError>
-          Az outer kontúrt delta_mm-rel kifelé tolja (Clipper2 OffsetPolygon / inflate).
+          Az outer kontúrt delta_mm-rel kifelé tolja.
         - deflate_hole(hole: &[Point64], delta_mm: f64) -> Result<Vec<Point64>, OffsetError>
-          A hole kontúrt delta_mm-rel befelé tolja (negatív offset).
+          A hole kontúrt delta_mm-rel befelé tolja (pozitív delta_mm, logikailag "deflate").
         - inflate_part(geom: &PartGeometry, delta_mm: f64) -> Result<PartGeometry, OffsetError>
           Kombinálja a fentieket: outer inflate + minden hole deflate.
           Ha egy hole eltűnik az offset után (üres eredmény): HoleCollapsed hiba.
           Ha az eredmény self-intersecting: SelfIntersection hiba.
+
       Írj unit teszteket:
         - 100x200mm téglalap outer inflate 1.0mm delta → bbox >= 101.9x201.9mm
         - 50x50mm lyuk deflate 1.0mm delta → bbox <= 48.1x48.1mm
@@ -81,6 +94,8 @@ steps:
         - mm_to_i64 / i64_to_mm konverzió leírása
         - TOUCH_TOL = 1 µm definíciója és jelentése
         - Touching policy: touching = infeasible (konzervatív oldal, gyártási biztonság)
+        - Kontúr-irány policy: outer CCW, holes CW (offset előfeltétel)
+        - Simplify policy: minden offset előtt simplify_shape (FillRule::NonZero), miért kötelező
         - Maximális kezelhető méret (i64 max / SCALE = ~9.2M mm >> valós táblaméret)
         - OffsetError típusok és kezelési elvek
     outputs:
@@ -90,13 +105,13 @@ steps:
     description: >
       Módosítsd a scripts/check.sh fájlt: add hozzá a nesting_engine cargo build lépést.
       A vrs_solver build lépés NEM módosítható, NEM törölhető — marad ahol van.
-      Az új lépés formátuma igazodjon a meglévő vrs_solver build lépéséhez.
-      Javasolt elhelyezés: a vrs_solver build lépés UTÁN, külön blokkban.
+      Az új lépés formátuma igazodjon a meglévő gate stílusához.
+      Megengedett elhelyezés: a vrs_solver build lépés ELŐTT (additív), külön blokkban.
       Javasolt tartalom:
-        echo "[X/Y] Build nesting_engine (release)"
+        echo "[BUILD] nesting_engine (release)"
         cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
       Módosítsd a .github/workflows/repo-gate.yml fájlt: add hozzá az új crate build-jét
-      a meglévő vrs_solver build step után, azt nem érintve.
+      a gate folyamatba úgy, hogy a meglévő vrs_solver build megmaradjon.
       Ellenőrizd: a step --manifest-path rust/nesting_engine/Cargo.toml-t használ.
     outputs:
       - "scripts/check.sh"
@@ -127,6 +142,7 @@ steps:
         - Verifikáció: kötelező és opcionális parancsok
         - DoD → Evidence Matrix: minden DoD ponthoz útvonal + sor (egyelőre üres, gate után töltendő)
         - AUTO_VERIFY blokk placeholder (verify.sh tölti ki)
+        - Megjegyzés szekció: rögzítsd, hogy a spec clipper2-ről i_overlay-re frissült a pure Rust döntés miatt
     outputs:
       - "codex/codex_checklist/nesting_engine/nesting_engine_crate_scaffold.md"
       - "codex/reports/nesting_engine/nesting_engine_crate_scaffold.md"
@@ -141,3 +157,4 @@ steps:
     outputs:
       - "codex/reports/nesting_engine/nesting_engine_crate_scaffold.md"
       - "codex/reports/nesting_engine/nesting_engine_crate_scaffold.verify.log"
+```
