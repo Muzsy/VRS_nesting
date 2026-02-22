@@ -1,0 +1,84 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_spatial_index_rtree_and_sweepline_self_intersect.yaml
+steps:
+  - name: Repo-szabályok és érintett kódrészek beazonosítása
+    description: |
+      Olvasd el az AGENTS.md-t és a codex szabálydoksikat.
+      Nézd át a teljesítmény szempontból érintett fájlokat:
+      - rust/nesting_engine/src/placement/blf.rs
+      - rust/nesting_engine/src/feasibility/narrow.rs
+      - rust/nesting_engine/src/feasibility/aabb.rs
+      - rust/nesting_engine/src/geometry/pipeline.rs
+      - rust/nesting_engine/Cargo.toml
+      Frissítsd a canvas-t, hogy a konkrét refaktor döntés (PlacedIndex + RTree + geo sweep) végleges legyen.
+    outputs:
+      - canvases/nesting_engine/nesting_engine_spatial_index_rtree_and_sweepline_self_intersect.md
+
+  - name: Geo crate bevezetése és pipeline self-intersect refaktor
+    description: |
+      Módosítsd a rust/nesting_engine/Cargo.toml-t: add hozzá a geo crate-et (a repo verziópin stílusához igazítva).
+      Refaktoráld a rust/nesting_engine/src/geometry/pipeline.rs fájlban a polygon_self_intersects függvényt:
+      - töröld a brute-force (O(N^2)) double-loop + segments_intersect implementációt
+      - használd a geo::sweep::HasIntersections trait-et
+      - a Point64 pontokat alakítsd geo LineString formátumra
+      - a viselkedés maradjon: self-intersect -> STATUS_SELF_INTERSECT (nem auto-fix)
+      Biztosítsd, hogy a meglévő pipeline tesztek továbbra is zöldek.
+    outputs:
+      - rust/nesting_engine/Cargo.toml
+      - rust/nesting_engine/src/geometry/pipeline.rs
+
+  - name: R-tree spatial index bevezetése a feasibility broad-phase-hez
+    description: |
+      Vezesd be a rstar::RTree aktív használatát.
+      Refaktoráld a rust/nesting_engine/src/feasibility/narrow.rs-t:
+      - hozz létre egy PlacedIndex struktúrát, ami:
+        - tárolja a PlacedPart elemeket Vec-ben
+        - párhuzamosan fenntart egy RTree-t AABB envelope + index alapján
+      - módosítsd a can_place signature-t úgy, hogy PlacedIndex-et kapjon (ne &[PlacedPart]-ot)
+      - a jelölt lekérdezés RTree query-ből jöjjön (AABB intersect)
+      - a narrow-phase előtt a jelölteket determinisztikusan rendezd (min_x, min_y)
+      A aabb pruning és az i_overlay narrow-phase logika maradjon funkcionálisan azonos.
+    outputs:
+      - rust/nesting_engine/src/feasibility/narrow.rs
+
+  - name: Baseline placer (blf) átállítása PlacedIndex használatra
+    description: |
+      Módosítsd a rust/nesting_engine/src/placement/blf.rs fájlt:
+      - a Vec<PlacedPart> helyett PlacedIndex-et használjon a state tárolására
+      - sikeres elhelyezéskor a PlacedPart bekerül a PlacedIndex-be
+      - a can_place hívás az új signature-t használja
+      Figyelj arra, hogy a blf determinism teszt (blf.rs-ben létezik) továbbra is zöld maradjon.
+    outputs:
+      - rust/nesting_engine/src/placement/blf.rs
+
+  - name: Tesztek bővítése (self-intersect + determinism regresszió)
+    description: |
+      Bővítsd a releváns meglévő unit teszteket:
+      - pipeline.rs: legyen explicit self-intersect teszt (STATUS_SELF_INTERSECT)
+      - blf.rs és/vagy feasibility: determinism regresszió megmaradjon PlacedIndex + RTree mellett
+      Ne vezess be időalapú flaky teszteket (nincs performance timing assert).
+    outputs:
+      - rust/nesting_engine/src/geometry/pipeline.rs
+      - rust/nesting_engine/src/placement/blf.rs
+      - rust/nesting_engine/src/feasibility/narrow.rs
+
+  - name: Checklist és report létrehozása
+    description: |
+      Készíts checklistet és reportot a repo konvenciói szerint.
+      A reportban rögzítsd:
+      - mit váltott ki az RTree (lineáris broad-phase -> logN query)
+      - hogyan marad determinisztikus a narrow-phase (explicit sort)
+      - geo sweep-line self-intersect: mi lett törölve és mi lett a helyettesítés
+      - kockázat: geo koordináta típus választás (és miért elfogadható a scaled i64 -> f64 konverzió)
+    outputs:
+      - codex/codex_checklist/nesting_engine/nesting_engine_spatial_index_rtree_and_sweepline_self_intersect.md
+      - codex/reports/nesting_engine/nesting_engine_spatial_index_rtree_and_sweepline_self_intersect.md
+
+  - name: Verify futtatás és log mentése
+    description: |
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_spatial_index_rtree_and_sweepline_self_intersect.md
+      Ha hibát találsz, javítsd, majd futtasd újra.
+      Mentsd a verify logot a standard helyre.
+    outputs:
+      - codex/reports/nesting_engine/nesting_engine_spatial_index_rtree_and_sweepline_self_intersect.md
+      - codex/reports/nesting_engine/nesting_engine_spatial_index_rtree_and_sweepline_self_intersect.verify.log

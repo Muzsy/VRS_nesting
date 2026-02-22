@@ -3,6 +3,7 @@ use std::time::Instant;
 use crate::feasibility::{
     aabb::aabb_from_polygon64,
     can_place, PlacedPart,
+    narrow::PlacedIndex,
 };
 use crate::geometry::{
     scale::{i64_to_mm, mm_to_i64},
@@ -58,7 +59,7 @@ pub fn blf_place(
 
     let step = mm_to_i64(if grid_step_mm <= 0.0 { 1.0 } else { grid_step_mm }).max(1);
     let bin_aabb = aabb_from_polygon64(bin_polygon);
-    let mut placed_state: Vec<PlacedPart> = Vec::new();
+    let mut placed_state = PlacedIndex::new();
     let mut placed: Vec<PlacedItem> = Vec::new();
     let mut unplaced: Vec<UnplacedItem> = Vec::new();
 
@@ -119,7 +120,7 @@ pub fn blf_place(
                         let candidate = translate_polygon(rotated, tx, ty);
                         if can_place(&candidate, bin_polygon, &placed_state) {
                             let candidate_aabb = aabb_from_polygon64(&candidate);
-                            placed_state.push(PlacedPart {
+                            placed_state.insert(PlacedPart {
                                 inflated_polygon: candidate,
                                 aabb: candidate_aabb,
                             });

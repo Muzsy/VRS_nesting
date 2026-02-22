@@ -1,6 +1,8 @@
+use geo::{Coord, Line, sweep::{Cross, Intersections, LineOrPoint}};
+
 use crate::geometry::{
     offset::{deflate_hole, inflate_outer, inflate_part, OffsetError},
-    scale::{i64_to_mm, mm_to_i64, TOUCH_TOL},
+    scale::{i64_to_mm, mm_to_i64},
     types::{PartGeometry, Point64, Polygon64},
 };
 use crate::io::pipeline_io::{
@@ -252,71 +254,74 @@ fn offset_error_detail(err: &OffsetError) -> String {
 }
 
 fn polygon_self_intersects(points: &[Point64]) -> bool {
-    let n = points.len();
-    if n < 4 {
+    if points.len() < 4 {
         return false;
     }
 
-    for i in 0..n {
-        let a_start = points[i];
-        let a_end = points[(i + 1) % n];
-        for j in (i + 1)..n {
-            if i == j || (i + 1) % n == j || i == (j + 1) % n {
-                continue;
-            }
+    let Some(segments) = polygon_segments(points) else {
+        return false;
+    };
+    let segment_count = segments.len();
+    if segment_count < 2 {
+        return false;
+    }
 
-            let b_start = points[j];
-            let b_end = points[(j + 1) % n];
-            if segments_intersect(a_start, a_end, b_start, b_end) {
-                return true;
-            }
+    let intersections = Intersections::<SweepSegment>::from_iter(segments);
+    for (a, b, _) in intersections {
+        if !segments_are_adjacent(a.idx, b.idx, segment_count) {
+            return true;
         }
     }
-
     false
 }
 
-fn segments_intersect(a: Point64, b: Point64, c: Point64, d: Point64) -> bool {
-    let o1 = orientation(a, b, c);
-    let o2 = orientation(a, b, d);
-    let o3 = orientation(c, d, a);
-    let o4 = orientation(c, d, b);
-
-    if ((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0))
-    {
-        return true;
-    }
-
-    if o1 == 0 && on_segment(a, b, c) {
-        return true;
-    }
-    if o2 == 0 && on_segment(a, b, d) {
-        return true;
-    }
-    if o3 == 0 && on_segment(c, d, a) {
-        return true;
-    }
-    if o4 == 0 && on_segment(c, d, b) {
-        return true;
-    }
-
-    false
+#[derive(Debug, Clone, Copy)]
+struct SweepSegment {
+    idx: usize,
+    line: Line<f64>,
 }
 
-fn orientation(a: Point64, b: Point64, c: Point64) -> i128 {
-    let ab_x = b.x as i128 - a.x as i128;
-    let ab_y = b.y as i128 - a.y as i128;
-    let ac_x = c.x as i128 - a.x as i128;
-    let ac_y = c.y as i128 - a.y as i128;
-    ab_x * ac_y - ab_y * ac_x
+impl Cross for SweepSegment {
+    type Scalar = f64;
+
+    fn line(&self) -> LineOrPoint<Self::Scalar> {
+        self.line.into()
+    }
 }
 
-fn on_segment(a: Point64, b: Point64, p: Point64) -> bool {
-    let min_x = a.x.min(b.x).saturating_sub(TOUCH_TOL);
-    let max_x = a.x.max(b.x).saturating_add(TOUCH_TOL);
-    let min_y = a.y.min(b.y).saturating_sub(TOUCH_TOL);
-    let max_y = a.y.max(b.y).saturating_add(TOUCH_TOL);
-    p.x >= min_x && p.x <= max_x && p.y >= min_y && p.y <= max_y
+fn polygon_segments(points: &[Point64]) -> Option<Vec<SweepSegment>> {
+    if points.len() < 3 {
+        return None;
+    }
+
+    let coords: Vec<Coord<f64>> = points
+        .iter()
+        .map(|p| Coord {
+            x: i64_to_mm(p.x),
+            y: i64_to_mm(p.y),
+        })
+        .collect();
+    let n = coords.len();
+    if n < 3 {
+        return None;
+    }
+
+    let mut segments = Vec::with_capacity(n);
+    for i in 0..n {
+        segments.push(SweepSegment {
+            idx: i,
+            line: Line::new(coords[i], coords[(i + 1) % n]),
+        });
+    }
+    Some(segments)
+}
+
+fn segments_are_adjacent(a: usize, b: usize, n: usize) -> bool {
+    if n < 2 || a == b {
+        return true;
+    }
+    let diff = a.abs_diff(b);
+    diff == 1 || diff == (n - 1)
 }
 
 #[cfg(test)]

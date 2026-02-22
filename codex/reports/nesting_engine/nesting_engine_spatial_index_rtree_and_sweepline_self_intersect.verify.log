@@ -1,0 +1,88 @@
+[PYTEST] Unit tests
+...................................                                      [100%]
+35 passed in 2.31s
+[MYPY] Type check
+Success: no issues found in 25 source files
+[SPARROW] Resolve/build via scripts/ensure_sparrow.sh
+[ensure_sparrow] pin commit (fallback_cache): c95454e390276231b278c879d25b39708398b7d3
+HEAD is now at c95454e Merge pull request #132 from JeroenGar/rand-0.10
+[ensure_sparrow] build source: .cache/sparrow (/home/muszy/projects/VRS_nesting/.cache/sparrow)
+    Finished `release` profile [optimized] target(s) in 0.70s
+[3/3] Sparrow IO smoketest
+[1/2] Sparrow run via runner module
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T205639Z_6a140beb
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260222T205639Z_6a140beb/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260222T205639Z_6a140beb
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260222T205639Z_6a140beb/output/final_swim.json
+PASS ✅
+ strip_height=5752.0
+ strip_width =5928.89
+ placed_items=48 (demand_sum=48)
+ overlap-check: PASS
+[DXF] Import convention smoke
+[OK] DXF import convention smoke passed
+[GEO] Polygonize + offset robustness smoke
+[OK] geometry pipeline smoke passed
+[DOCS] Command references smoke
+[OK] docs command smoke passed
+[DXF] Export --run-dir smoke
+[OK] exporter --run-dir smoke passed
+[DXF] Source geometry BLOCK/INSERT export smoke
+[OK] source geometry export smoke passed
+[DXF] Multi-sheet wrapper edge-cases smoke
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_ywd8xr94/run_a/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_ywd8xr94/run_a/sheets/sheet_001/instance.json -t 2 -s 0
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_ywd8xr94/run_b/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_ywd8xr94/run_b/sheets/sheet_001/instance.json -t 2 -s 0
+[OK] multisheet wrapper edge-cases smoke passed
+[DXF] Real fixture import smoke
+[OK] real DXF fixture smoke passed
+[DXF] Real Sparrow pipeline smoke
+[OK] real DXF + Sparrow pipeline smoke passed
+[DXF] SVG export artifact smoke
+[OK] svg export smoke passed
+[4/5] Nesting solution validator smoke
+    Finished `release` profile [optimized] target(s) in 0.27s
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T205834Z_acaaa3cf
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260222T205834Z_acaaa3cf/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260222T205834Z_acaaa3cf/solver_output.json --seed 0 --time-limit 60
+[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260222T205834Z_acaaa3cf
+PASS: nesting solution is valid
+ input=/home/muszy/projects/VRS_nesting/runs/20260222T205834Z_acaaa3cf/solver_input.json
+ output=/home/muszy/projects/VRS_nesting/runs/20260222T205834Z_acaaa3cf/solver_output.json
+[5/5] Determinism hash stability smoke
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T205835Z_096d6b13
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260222T205835Z_096d6b13/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260222T205835Z_096d6b13/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T205835Z_fb7dd0e9
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260222T205835Z_fb7dd0e9/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260222T205835Z_fb7dd0e9/solver_output.json --seed 0 --time-limit 60
+[INFO] Determinism hash stable: 6fa835403323f854933aadd5e00de5807aeff5225dd923b5d2844e28a9f6a8f7
+[6/6] Timeout/perf guard smoke
+[OK] timeout/perf guard smoke passed
+[BUILD] nesting_engine (release)
+   Compiling num-traits v0.2.19
+   Compiling either v1.15.0
+   Compiling equivalent v1.0.2
+   Compiling foldhash v0.1.5
+   Compiling allocator-api2 v0.2.21
+   Compiling robust v1.2.0
+   Compiling geographiclib-rs v0.2.7
+   Compiling log v0.4.29
+   Compiling float_next_after v1.0.0
+   Compiling itertools v0.11.0
+   Compiling hashbrown v0.15.5
+   Compiling rstar v0.12.2
+   Compiling approx v0.5.1
+   Compiling spade v2.15.0
+   Compiling geo-types v0.7.18
+   Compiling earcutr v0.4.3
+   Compiling geo v0.28.0
+   Compiling nesting_engine v0.1.0 (/home/muszy/projects/VRS_nesting/rust/nesting_engine)
+    Finished `release` profile [optimized] target(s) in 15.84s
+[NEST] Baseline nesting_engine smoke
+[NEST] hash OK: sha256:a3feb70e2a51bc4207161c7...
+[NEST] determinism OK
+[NEST] 0 out-of-bounds OK, placed=10
+[NEST] CLI smoke (nest-v2)
+[nesting-engine-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T205925Z_3c3a960b
+[nesting-engine-runner] cmd=/home/muszy/projects/VRS_nesting/rust/nesting_engine/target/release/nesting_engine nest
+[NEST] CLI determinism OK
+[DONE] smoketest OK
