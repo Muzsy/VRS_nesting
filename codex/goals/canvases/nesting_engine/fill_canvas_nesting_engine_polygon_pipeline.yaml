@@ -1,0 +1,205 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_polygon_pipeline.yaml
+#
+# Mentés helye a repóban:
+#   codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_polygon_pipeline.yaml
+#
+# TASK_SLUG: nesting_engine_polygon_pipeline
+# AREA:      nesting_engine
+
+steps:
+  - name: "Felderítés és kontextus összegyűjtése"
+    description: >
+      Olvasd el kötelező sorrendben: AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md.
+      Olvasd el az előző task kimeneteit:
+        - rust/nesting_engine/src/geometry/offset.rs  (inflate_part API, OffsetError)
+        - rust/nesting_engine/src/geometry/scale.rs   (SCALE, mm_to_i64, i64_to_mm)
+        - rust/nesting_engine/src/geometry/types.rs   (Point64, Polygon64, PartGeometry)
+        - rust/nesting_engine/src/main.rs             (meglévő CLI struktúra)
+        - docs/nesting_engine/tolerance_policy.md     (CCW/CW, touching policy)
+        - docs/nesting_engine/io_contract_v2.md       (nominális mezőnevek)
+        - docs/nesting_engine/json_canonicalization.md (determinism referencia)
+      Azonosítsd a scripts/check.sh-ban a nesting_engine és vrs_solver build lépések
+      sorrendjét — ez szükséges a sorrend-korrekcióhoz.
+      Ha bármelyik fájl nem létezik: állj meg és jelezd pontosan mit kerestél.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_polygon_pipeline.md"
+
+  - name: "IO struktúrák és pipeline modul — Rust"
+    description: >
+      Hozd létre a rust/nesting_engine/src/io/ könyvtárat.
+      Hozd létre a rust/nesting_engine/src/io/mod.rs fájlt:
+        pub mod pipeline_io;
+      Hozd létre a rust/nesting_engine/src/io/pipeline_io.rs fájlt.
+      Definiáld a következő serde-alapú struktúrákat:
+        PipelineRequest {
+          version: String,          // "pipeline_v1"
+          kerf_mm: f64,
+          margin_mm: f64,
+          parts: Vec<PartRequest>,
+        }
+        PartRequest {
+          id: String,
+          outer_points_mm: Vec<[f64; 2]>,
+          holes_points_mm: Vec<Vec<[f64; 2]>>,
+        }
+        PipelineResponse {
+          version: String,          // "pipeline_v1"
+          parts: Vec<PartResponse>,
+        }
+        PartResponse {
+          id: String,
+          status: String,           // "ok" | "hole_collapsed" | "self_intersect" | "error"
+          inflated_outer_points_mm: Vec<[f64; 2]>,
+          inflated_holes_points_mm: Vec<Vec<[f64; 2]>>,
+          diagnostics: Vec<Diagnostic>,
+        }
+        Diagnostic {
+          code: String,
+          hole_index: Option<usize>,
+          detail: String,
+        }
+      Hozd létre a rust/nesting_engine/src/geometry/pipeline.rs fájlt.
+      Definiáld a run_inflate_pipeline(req: PipelineRequest) -> PipelineResponse
+      függvényt, amely:
+        - Minden part-ra meghívja az offset.rs inflate_part() függvényét
+        - Az OffsetError::HoleCollapsed → status="hole_collapsed", diagnostics feltöltve
+        - Az OffsetError::SelfIntersection → status="self_intersect", diagnostics feltöltve
+        - Egyéb hiba → status="error"
+        - Sikeres → status="ok", inflated pontok visszakonvertálva mm-be (i64_to_mm)
+      Frissítsd a src/geometry/mod.rs-t: add hozzá a pub mod pipeline; sort.
+      Frissítsd a src/main.rs-t: add hozzá az inflate-parts subcommand-ot:
+        - stdin-ről olvassa a PipelineRequest JSON-t (serde_json::from_reader)
+        - Meghívja a run_inflate_pipeline()-t
+        - stdout-ra írja a PipelineResponse JSON-t (serde_json::to_writer)
+        - Hiba esetén stderr-re ír és exit 1-gyel lép ki
+    outputs:
+      - "rust/nesting_engine/src/io/mod.rs"
+      - "rust/nesting_engine/src/io/pipeline_io.rs"
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+      - "rust/nesting_engine/src/geometry/mod.rs"
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Unit tesztek — pipeline"
+    description: >
+      A rust/nesting_engine/src/geometry/pipeline.rs fájlban írj unit teszteket
+      (#[cfg(test)] mod tests blokkon belül):
+        1. ok_case: rect_100x50 (100×50mm téglalap), kerf=0.2mm, margin=5.0mm →
+           status="ok", inflated bbox legalább 102×52mm
+           (delta = kerf/2 + margin = 0.1 + 5.0 = 5.1mm mindkét oldalon)
+        2. hole_collapsed_case: kis alak (20×20mm) 1 lyukkal (2×2mm belső) →
+           kerf=0.2, margin=5.0 → a 2×2mm lyuk eltűnik → status="hole_collapsed",
+           diagnostics tartalmaz HOLE_COLLAPSED kódot
+        3. determinism_case: ugyanazon PartRequest kétszeri inflate-je azonos
+           InflateResult-ot ad (assert_eq! a serialized formán)
+      Futtasd: cargo test --manifest-path rust/nesting_engine/Cargo.toml
+      Ha FAIL: javítsd a hibát, ne lépj tovább.
+    outputs:
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+
+  - name: "Poc fájlok létrehozása"
+    description: >
+      Hozd létre a poc/nesting_engine/pipeline_smoke_input.json fájlt.
+      Tartalma (valid JSON):
+        {
+          "version": "pipeline_v1",
+          "kerf_mm": 0.2,
+          "margin_mm": 5.0,
+          "parts": [
+            {
+              "id": "rect_100x50",
+              "outer_points_mm": [[0,0],[100,0],[100,50],[0,50]],
+              "holes_points_mm": []
+            },
+            {
+              "id": "ring_60x60",
+              "outer_points_mm": [[0,0],[60,0],[60,60],[0,60]],
+              "holes_points_mm": [[[10,10],[50,10],[50,50],[10,50]]]
+            }
+          ]
+        }
+      Hozd létre a poc/nesting_engine/pipeline_smoke_expected.json fájlt
+      illustratív tartalommal + "_note" mezővel:
+        "_note": "Illusztrációs expected output — a tényleges értékek az inflate_part() futásából számítandók."
+        A struktúra egyezzen a PipelineResponse sémával.
+      Ellenőrizd: python3 -m json.tool poc/nesting_engine/pipeline_smoke_input.json > /dev/null
+    outputs:
+      - "poc/nesting_engine/pipeline_smoke_input.json"
+      - "poc/nesting_engine/pipeline_smoke_expected.json"
+
+  - name: "Architecture dokumentáció"
+    description: >
+      Hozd létre a docs/nesting_engine/architecture.md fájlt.
+      Tartalmazza:
+        1. Modulok és felelősségek (geometry/, nesting/, feasibility/, placement/, multi_bin/, export/)
+        2. A nominális vs. inflated szabály (kőbe vésett blokk):
+           "A solver feasibility engine CSAK inflated geometriával dolgozik.
+            DXF export MINDIG nominális geometriából történik.
+            Ez a különbség soha nem keveredhet."
+        3. Az inflate pipeline folyamata (szöveges ábra: Python DXF importer →
+           JSON stdio → Rust inflate-parts → inflated geometria → feasibility engine)
+        4. Hivatkozás: docs/nesting_engine/tolerance_policy.md (scale, CCW/CW)
+        5. Hivatkozás: docs/nesting_engine/json_canonicalization.md (determinism)
+    outputs:
+      - "docs/nesting_engine/architecture.md"
+
+  - name: "check.sh sorrend-korrekció"
+    description: >
+      Módosítsd a scripts/check.sh fájlt: a nesting_engine build lépést helyezd
+      a vrs_solver build lépés UTÁ NRA.
+      A tartalom nem változik — csak a sorrend.
+      Ellenőrizd: grep -n "nesting_engine\|vrs_solver" scripts/check.sh
+      A kimenetben a vrs_solver sornak kisebb sorszámot kell mutatnia mint a nesting_engine-nek.
+      Futtasd gyors szanity check-ként:
+        cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
+        cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+      Mindkettő PASS kell.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Pipeline smoke determinizmus teszt"
+    description: >
+      Build a release binárist:
+        cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+      Futtasd kétszer a pipeline-t ugyanazzal az inputtal:
+        cat poc/nesting_engine/pipeline_smoke_input.json \
+          | ./rust/nesting_engine/target/release/nesting_engine inflate-parts \
+          > /tmp/pipe_out1.json
+        cat poc/nesting_engine/pipeline_smoke_input.json \
+          | ./rust/nesting_engine/target/release/nesting_engine inflate-parts \
+          > /tmp/pipe_out2.json
+        diff /tmp/pipe_out1.json /tmp/pipe_out2.json
+      Ha a diff nem üres: determinizmus sérült — javítsd az offset pipeline-t.
+      Ellenőrizd az első futás outputját: mindkét part role-ja "ok" vagy "hole_collapsed"
+      (nem "error", nem "self_intersect" — a poc inputok ép alakzatok).
+    outputs:
+      - "poc/nesting_engine/pipeline_smoke_input.json"
+
+  - name: "Checklist és report vázlat létrehozása"
+    description: >
+      Hozd létre a codex/codex_checklist/nesting_engine/nesting_engine_polygon_pipeline.md
+      fájlt a canvas DoD listájának pipálható változataként.
+      Hozd létre a codex/reports/nesting_engine/nesting_engine_polygon_pipeline.md fájlt
+      a docs/codex/report_standard.md szerkezete szerint:
+        - Meta szekció kitöltve
+        - Scope: cél és nem-cél
+        - Változások összefoglalója: érintett fájlok, check.sh korrekció megemlítve
+        - Verifikáció: cargo test, cargo build (mindkét crate), diff smoke, verify gate
+        - DoD → Evidence Matrix (gate után töltendő)
+        - AUTO_VERIFY blokk placeholder
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_polygon_pipeline.md"
+      - "codex/reports/nesting_engine/nesting_engine_polygon_pipeline.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_polygon_pipeline.md
+      A wrapper futtatja a teljes check.sh-t (most már helyes sorrendben:
+      vrs_solver build → nesting_engine build), logot ment és frissíti a report
+      AUTO_VERIFY blokkját.
+      Ha FAIL: ne zárj le semmit, javítsd a hibát és futtasd újra.
+      A gate kimenetében ellenőrizd: mindkét cargo build PASS, cargo test PASS.
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_polygon_pipeline.md"
+      - "codex/reports/nesting_engine/nesting_engine_polygon_pipeline.verify.log"
