@@ -15,6 +15,8 @@ steps:
         - rust/nesting_engine/src/geometry/types.rs (Point64, Polygon64, PartGeometry)
         - rust/nesting_engine/src/geometry/scale.rs (SCALE, koordináta konvenciók)
         - docs/nesting_engine/tolerance_policy.md (CCW/CW irány, mm, touching policy)
+      Olvasd el a determinism_hash normatív szabályait:
+        - docs/nesting_engine/json_canonicalization.md
       Olvasd el a meglévő v1 contract-ot referenciaként (NEM módosítjuk):
         - docs/solver_io_contract.md
       Olvasd el a canvas specifikációját:
@@ -37,7 +39,9 @@ steps:
            - Nominális vs. inflated szabály
            - Elhelyezési transzformáció definíciója
         5. unplaced reason kódok (PART_NEVER_FITS_SHEET, TIME_LIMIT_EXCEEDED)
-        6. determinism_hash számítási módja
+        6. determinism_hash számítási módja:
+           - normatív hivatkozás: docs/nesting_engine/json_canonicalization.md
+           - ne duplikáld a canonicalization szabályokat itt
         7. v1 ↔ v2 összehasonlító táblázat
       Stílus: tömör, gépileg is olvasható (táblázatok), pontos egységjelölés.
     outputs:

@@ -16,6 +16,7 @@ input/output fájlok létrehozása. Ez az a szerződés, amit a Python runner
 
 A task deliverable-jei:
 - `docs/nesting_engine/io_contract_v2.md` — minden mező, egység, invariáns dokumentálva
+- `docs/nesting_engine/json_canonicalization.md` — determinism_hash normatív kanonikalizáció (meglévő, csak hivatkozunk rá)
 - `poc/nesting_engine/sample_input_v2.json` — működőképes példa input (kézzel összerakott, valószerű geometriával)
 - `poc/nesting_engine/sample_output_v2.json` — elvárt output struktúra ugyanehhez az inputhoz
 - A meglévő v1 contract (`docs/solver_io_contract.md`) **nem módosul**
@@ -35,6 +36,7 @@ A task deliverable-jei:
 
 **Létrehozandó (új):**
 - `docs/nesting_engine/io_contract_v2.md`
+  - (A determinism_hash rész csak hivatkozik a `docs/nesting_engine/json_canonicalization.md`-re)
 - `poc/nesting_engine/sample_input_v2.json`
 - `poc/nesting_engine/sample_output_v2.json`
 - `codex/codex_checklist/nesting_engine/nesting_engine_io_contract_v2.md`
@@ -179,10 +181,11 @@ motor belsejében történik, kívülről láthatatlan.
 | `TIME_LIMIT_EXCEEDED` | A time_limit_sec lejárt mielőtt minden part elhelyezhető lett volna |
 
 **`determinism_hash` számítása:**
-```
-input = JSON.stringify(placements, sorted keys, no whitespace)
-meta.determinism_hash = "sha256:" + sha256(input).hex()
-```
+**Normatív definíció:** a `meta.determinism_hash` értékét **kötelezően** a
+`docs/nesting_engine/json_canonicalization.md` szerint kell előállítani
+(RFC 8785 / JCS + hash-view + placements stabil rendezés + SHA-256).
+
+Tilos a nyers output JSON (pretty-print / tetszőleges serializáció) közvetlen hash-elése.
 
 ---
 
@@ -264,6 +267,7 @@ rögzítése és a fejlesztői referencia.
 - [ ] `docs/solver_io_contract.md` (v1) megvizsgálva — struktúra megértve, nem módosítjuk
 - [ ] `rust/nesting_engine/src/geometry/types.rs` megvizsgálva — `PartGeometry`, `Polygon64` ismert
 - [ ] `docs/nesting_engine/tolerance_policy.md` megvizsgálva — koordináta konvenciók ismertek
+- [ ] `docs/nesting_engine/json_canonicalization.md` megvizsgálva — determinism_hash normatív szabályai ismertek
 
 ### Implementáció
 - [ ] `docs/nesting_engine/io_contract_v2.md` létrehozva, minden mező dokumentálva
@@ -271,7 +275,7 @@ rögzítése és a fejlesztői referencia.
 - [ ] `poc/nesting_engine/sample_output_v2.json` létrehozva, valid JSON, illusztrációs értékekkel
 - [ ] Geometria egyezmények (CCW/CW, mm, nominális, transzformáció) dokumentálva
 - [ ] `unplaced` reason kódok definiálva és dokumentálva
-- [ ] `determinism_hash` számítási módja dokumentálva
+- [ ] `determinism_hash` számítási módja dokumentálva **és hivatkozás** a `docs/nesting_engine/json_canonicalization.md` normatív doksira szerepel
 - [ ] v1 ↔ v2 összehasonlító táblázat az io_contract_v2.md-ben
 
 ### Ellenőrzés

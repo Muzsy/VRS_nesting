@@ -10,10 +10,11 @@ Olvasd el és tartsd be, ebben a sorrendben:
 3. `docs/codex/yaml_schema.md` — steps-séma kötelező
 4. `docs/codex/report_standard.md` — report struktúra + AUTO_VERIFY blokk
 5. `docs/nesting_engine/tolerance_policy.md` — CCW/CW irány, mm, scale policy (F1-1 output)
-6. `rust/nesting_engine/src/geometry/types.rs` — Point64, Polygon64, PartGeometry (F1-1 output)
-7. `docs/solver_io_contract.md` — v1 contract (referencia, **NEM módosítjuk**)
-8. `canvases/nesting_engine/nesting_engine_io_contract_v2.md` — feladat specifikációja
-9. `codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_io_contract_v2.yaml` — lépések
+6. `docs/nesting_engine/json_canonicalization.md` — determinism_hash normatív kanonikalizáció (meglévő doksi)
+7. `rust/nesting_engine/src/geometry/types.rs` — Point64, Polygon64, PartGeometry (F1-1 output)
+8. `docs/solver_io_contract.md` — v1 contract (referencia, **NEM módosítjuk**)
+9. `canvases/nesting_engine/nesting_engine_io_contract_v2.md` — feladat specifikációja
+10. `codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_io_contract_v2.yaml` — lépések
 
 Ha bármelyik fájl nem létezik: állj meg, és írd le pontosan mit kerestél és hol.
 
@@ -126,5 +127,5 @@ git diff docs/solver_io_contract.md   # üres kell legyen
 1. `python3 -m json.tool poc/nesting_engine/sample_input_v2.json` — PASS (valid JSON)
 2. `python3 -m json.tool poc/nesting_engine/sample_output_v2.json` — PASS (valid JSON)
 3. `git diff docs/solver_io_contract.md` — üres (v1 nem változott)
-4. `docs/nesting_engine/io_contract_v2.md` tartalmazza: input séma, output séma, geometria egyezmények, reason kódok, determinism_hash leírás, v1↔v2 táblázat
+4. `docs/nesting_engine/io_contract_v2.md` tartalmazza: input séma, output séma, geometria egyezmények, reason kódok, determinism_hash leírás **és normatív hivatkozás** a `docs/nesting_engine/json_canonicalization.md`-re, v1↔v2 táblázat
 5. `./scripts/verify.sh` gate — PASS
