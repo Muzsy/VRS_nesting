@@ -125,17 +125,30 @@ echo '{ PipelineRequest JSON }' | nesting_engine inflate-parts
 | Érték | Jelentés |
 |---|---|
 | `"ok"` | inflate sikeres, geometria valid |
-| `"hole_collapsed"` | legalább 1 lyuk eltűnt az offset után (logolva, de nem FAIL — a part felhasználható lyuk nélkül) |
+| `"hole_collapsed"` | legalább 1 lyuk eltűnt az **inflated** geometriából **feasibility okból** (nem FAIL). A **nominális** geometriában a lyuk(ak) exporthoz **megmaradnak**, csak **nesting cavity-ként nem használhatók**. A collapsed hole(oka)t kötelező diagnosztikában rögzíteni. |
 | `"self_intersect"` | az inflated outer önmetsző → ez FAIL, a part nem elhelyezhető |
 | `"error"` | egyéb Rust-szintű hiba |
 
 **`diagnostics` tömb:**
 ```json
 [
-  { "code": "HOLE_COLLAPSED", "hole_index": 0, "detail": "hole area < threshold after offset" },
+  {
+    "code": "HOLE_COLLAPSED",
+    "hole_index": 0,
+    "nominal_hole_bbox_mm": [10.0, 10.0, 12.0, 12.0],
+    "preserve_for_export": true,
+    "usable_for_nesting": false,
+    "detail": "hole collapsed in inflated geometry; nominal hole preserved for export"
+  },
   { "code": "SELF_INTERSECT", "detail": "outer polygon self-intersects after inflate" }
 ]
 ```
+
+**Kötelező viselkedés `hole_collapsed` esetben (nem opcionális):**
+- A pipeline outputnak **akkor is** vissza kell adnia az `inflated_outer_points_mm`-et (feasibility-hez szükséges).
+- Mivel az `inflate_part()` jelenleg `Err(HoleCollapsed{...})`-ot ad, `hole_collapsed` esetben **fallback** szükséges.
+- Fallback során outer inflate **lyukak nélkül** (vagy csak a megmaradt lyukakkal, ha később lesz részleges eredmény), hogy legyen inflated geometria a feasibility engine-nek.
+- A nominális lyuk információ **nem veszhet el**: `HOLE_COLLAPSED` diagnosztikában kötelező legalább `hole_index`, `nominal_hole_bbox_mm`, `preserve_for_export=true`, `usable_for_nesting=false`.
 
 ---
 

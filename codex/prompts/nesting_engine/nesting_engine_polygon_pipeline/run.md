@@ -48,6 +48,18 @@ Deliverable-ök:
 
 ---
 
+## 3.1) Kritikus pontosítás — HOLE_COLLAPSED és SELF_INTERSECT (nem alkuképes)
+
+- **HOLE_COLLAPSED nem geometria-vesztés:** ha egy belső kontúr (hole) az inflated geometriában eltűnik (pl. spacing/margin miatt),
+  az a **feasibility** oldalon elfogadható. A nominális (export) geometriában a hole továbbra is létezik és **a végső kerf-kompenzált exportban meg kell maradnia**.
+  Ezért HOLE_COLLAPSED esetben a pipeline **kötelezően** rögzíti diagnosztikában legalább:
+  `hole_index`, `nominal_hole_bbox_mm`, `preserve_for_export=true`, `usable_for_nesting=false`.
+  Emellett a pipeline outputnak HOLE_COLLAPSED esetben is **vissza kell adnia** az `inflated_outer_points_mm`-et (fallback outer-only inflate),
+  mert az `inflate_part()` jelenleg HoleCollapsed esetben `Err(...)`-t ad.
+
+- **SELF_INTERSECT detektálás:** ne feltételezd, hogy az `inflate_part()` megbízhatóan `OffsetError::SelfIntersection`-t ad vissza.
+  A pipeline-ban legyen **explicit post-check** az inflated outer polygonra; ha önmetsző, `status=self_intersect` és `SELF_INTERSECT` diagnostics.
+
 ## 4) Architekturális invariáns — soha nem szeghet meg
 
 ```
@@ -159,6 +171,8 @@ grep -n "nesting_engine\|vrs_solver" scripts/check.sh
 2. `cargo build --release --manifest-path rust/vrs_solver/Cargo.toml` — PASS (regresszió)
 3. Pipeline ok eset: `rect_100x50` inflated bbox ≥ `102×52mm` (delta = 5.1mm)
 4. Pipeline hole_collapsed eset: 2×2mm lyuk 5mm delta után → status=`hole_collapsed`, nem crash
+   - és diagnostics tartalmaz `preserve_for_export=true`, `usable_for_nesting=false`, `nominal_hole_bbox_mm`
+   - továbbá az `inflated_outer_points_mm` nem üres (fallback outer-only inflate működik)
 5. Pipeline determinizmus: `diff /tmp/pipe_out1.json /tmp/pipe_out2.json` — üres
 6. `grep -n "nesting_engine\|vrs_solver" scripts/check.sh` — vrs_solver sor < nesting_engine sor
 7. `./scripts/verify.sh` gate — PASS

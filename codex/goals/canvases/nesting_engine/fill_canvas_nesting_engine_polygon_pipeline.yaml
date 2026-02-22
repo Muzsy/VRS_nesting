@@ -57,14 +57,20 @@ steps:
         Diagnostic {
           code: String,
           hole_index: Option<usize>,
+          nominal_hole_bbox_mm: Option<[f64; 4]>,   // [minx, miny, maxx, maxy] nominális mm-ben
+          preserve_for_export: Option<bool>,        // HOLE_COLLAPSED esetben true
+          usable_for_nesting: Option<bool>,         // HOLE_COLLAPSED esetben false
           detail: String,
         }
       Hozd létre a rust/nesting_engine/src/geometry/pipeline.rs fájlt.
       Definiáld a run_inflate_pipeline(req: PipelineRequest) -> PipelineResponse
       függvényt, amely:
         - Minden part-ra meghívja az offset.rs inflate_part() függvényét
-        - Az OffsetError::HoleCollapsed → status="hole_collapsed", diagnostics feltöltve
-        - Az OffsetError::SelfIntersection → status="self_intersect", diagnostics feltöltve
+        - Az OffsetError::HoleCollapsed → status="hole_collapsed", diagnostics feltöltve ÉS kötelező fallback:
+          * inflated_outer_points_mm-et akkor is add vissza (outer-only inflate), holes üres (vagy megmaradtak, ha van részleges eredmény)
+          * diagnostics HOLE_COLLAPSED tartalmazza: hole_index, nominal_hole_bbox_mm, preserve_for_export=true, usable_for_nesting=false
+        - Self-intersect státuszt NE csak OffsetError-ból várj: futtass pipeline oldali post-check-et az inflated_outer-re.
+          Ha self-intersect igaz → status="self_intersect", diagnostics SELF_INTERSECT.
         - Egyéb hiba → status="error"
         - Sikeres → status="ok", inflated pontok visszakonvertálva mm-be (i64_to_mm)
       Frissítsd a src/geometry/mod.rs-t: add hozzá a pub mod pipeline; sort.
@@ -89,7 +95,11 @@ steps:
            (delta = kerf/2 + margin = 0.1 + 5.0 = 5.1mm mindkét oldalon)
         2. hole_collapsed_case: kis alak (20×20mm) 1 lyukkal (2×2mm belső) →
            kerf=0.2, margin=5.0 → a 2×2mm lyuk eltűnik → status="hole_collapsed",
-           diagnostics tartalmaz HOLE_COLLAPSED kódot
+           diagnostics tartalmaz HOLE_COLLAPSED kódot ÉS:
+             - preserve_for_export=true
+             - usable_for_nesting=false
+             - nominal_hole_bbox_mm nem None
+           és az inflated_outer_points_mm nem üres (fallback outer-only inflate)
         3. determinism_case: ugyanazon PartRequest kétszeri inflate-je azonos
            InflateResult-ot ad (assert_eq! a serialized formán)
       Futtasd: cargo test --manifest-path rust/nesting_engine/Cargo.toml
