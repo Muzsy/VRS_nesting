@@ -1,0 +1,130 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_io_contract_v2.yaml
+#
+# Mentés helye a repóban:
+#   codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_io_contract_v2.yaml
+#
+# TASK_SLUG: nesting_engine_io_contract_v2
+# AREA:      nesting_engine
+
+steps:
+  - name: "Felderítés és kontextus összegyűjtése"
+    description: >
+      Olvasd el kötelező sorrendben: AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md.
+      Olvasd el az előző task kimeneteit (F1-1):
+        - rust/nesting_engine/src/geometry/types.rs (Point64, Polygon64, PartGeometry)
+        - rust/nesting_engine/src/geometry/scale.rs (SCALE, koordináta konvenciók)
+        - docs/nesting_engine/tolerance_policy.md (CCW/CW irány, mm, touching policy)
+      Olvasd el a meglévő v1 contract-ot referenciaként (NEM módosítjuk):
+        - docs/solver_io_contract.md
+      Olvasd el a canvas specifikációját:
+        - canvases/nesting_engine/nesting_engine_io_contract_v2.md
+      Ha bármelyik fájl nem létezik: állj meg és jelezd pontosan mit kerestél.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_io_contract_v2.md"
+
+  - name: "IO contract v2 dokumentáció megírása"
+    description: >
+      Hozd létre a docs/nesting_engine/io_contract_v2.md fájlt.
+      A fájl tartalmazza — a canvas sémája szerint:
+        1. Verzió és kontextus: mi a v2, mi a viszonya a v1-hez
+        2. Input contract teljes mezőleírása táblázatban (mező, típus, kötelező, leírás, egység)
+        3. Output contract teljes mezőleírása táblázatban
+        4. Geometria egyezmények (kőbe vésett blokk):
+           - Koordináta-rendszer: origó = bal-alsó sarok, X jobbra, Y felfelé
+           - Kontúr irány: outer CCW, hole CW
+           - Egység: kizárólag mm (f64) a JSON határon
+           - Nominális vs. inflated szabály
+           - Elhelyezési transzformáció definíciója
+        5. unplaced reason kódok (PART_NEVER_FITS_SHEET, TIME_LIMIT_EXCEEDED)
+        6. determinism_hash számítási módja
+        7. v1 ↔ v2 összehasonlító táblázat
+      Stílus: tömör, gépileg is olvasható (táblázatok), pontos egységjelölés.
+    outputs:
+      - "docs/nesting_engine/io_contract_v2.md"
+
+  - name: "Sample input JSON létrehozása"
+    description: >
+      Hozd létre a poc/nesting_engine/ könyvtárat (ha nem létezik).
+      Hozd létre a poc/nesting_engine/sample_input_v2.json fájlt.
+      Tartalma:
+        - version: "nesting_engine_v2"
+        - seed: 42
+        - time_limit_sec: 30
+        - sheet: width_mm=500, height_mm=1000, kerf_mm=0.2, margin_mm=5.0
+        - 3 part típus:
+          (a) id="rect_100x50": téglalap 100×50mm, quantity=5,
+              allowed_rotations_deg=[0,90,180,270],
+              outer_points_mm=[[0,0],[100,0],[100,50],[0,50]], holes_points_mm=[]
+          (b) id="l_shape": L-alak (konkáv), quantity=3,
+              allowed_rotations_deg=[0,90,180,270],
+              outer_points_mm pl.: [[0,0],[80,0],[80,40],[40,40],[40,80],[0,80]]
+              holes_points_mm=[]
+          (c) id="ring": téglalap 1 lyukkal, quantity=2,
+              allowed_rotations_deg=[0,180],
+              outer_points_mm=[[0,0],[60,0],[60,60],[0,60]],
+              holes_points_mm=[[[10,10],[50,10],[50,50],[10,50]]]
+      Ellenőrizd: a fájl valid JSON (python3 -m json.tool).
+    outputs:
+      - "poc/nesting_engine/sample_input_v2.json"
+
+  - name: "Sample output JSON létrehozása"
+    description: >
+      Hozd létre a poc/nesting_engine/sample_output_v2.json fájlt.
+      Tartalma illusztrációs (nem tényleges solver output):
+        - version: "nesting_engine_v2"
+        - seed: 42
+        - solver_version: "0.1.0"
+        - status: "partial"
+        - sheets_used: 1
+        - placements: legalább 5 db placement bejegyzés, a fenti 3 part típusból,
+          valószerű x_mm/y_mm koordinátákkal (a tábla boundary-n belül)
+        - unplaced: legalább 1 bejegyzés TIME_LIMIT_EXCEEDED reason-nel
+        - objective: { sheets_used: 1, utilization_pct: 64.2 }
+        - meta: { elapsed_sec: 30.0, determinism_hash: "sha256:placeholder" }
+      Adj hozzá egy JSON komment-helyett egy "_note" mezőt a gyökérbe:
+        "_note": "Illusztrációs output — nem tényleges solver eredmény. Értékek az F1-4 implementáció után frissítendők."
+      Ellenőrizd: a fájl valid JSON (python3 -m json.tool).
+    outputs:
+      - "poc/nesting_engine/sample_output_v2.json"
+
+  - name: "JSON validáció és v1 regresszió ellenőrzés"
+    description: >
+      Futtasd:
+        python3 -m json.tool poc/nesting_engine/sample_input_v2.json  > /dev/null
+        python3 -m json.tool poc/nesting_engine/sample_output_v2.json > /dev/null
+      Ha bármelyik FAIL: javítsd a JSON szintaxist, ne lépj tovább.
+      Ellenőrizd, hogy a v1 contract fájl nem változott:
+        git diff docs/solver_io_contract.md
+      Ha a diff nem üres: az a hiba — állítsd vissza a fájlt.
+    outputs:
+      - "poc/nesting_engine/sample_input_v2.json"
+      - "poc/nesting_engine/sample_output_v2.json"
+
+  - name: "Checklist és report vázlat létrehozása"
+    description: >
+      Hozd létre a codex/codex_checklist/nesting_engine/nesting_engine_io_contract_v2.md
+      fájlt a canvas DoD listájának pipálható változataként.
+      Hozd létre a codex/reports/nesting_engine/nesting_engine_io_contract_v2.md fájlt
+      a docs/codex/report_standard.md szerkezete szerint:
+        - Meta szekció kitöltve
+        - Scope szekció: cél és nem-cél
+        - Változások összefoglalója: érintett fájlok
+        - Verifikáció: kötelező és opcionális parancsok
+        - DoD → Evidence Matrix (gate után töltendő)
+        - AUTO_VERIFY blokk placeholder
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_io_contract_v2.md"
+      - "codex/reports/nesting_engine/nesting_engine_io_contract_v2.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést a wrapper segítségével.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_io_contract_v2.md
+      A wrapper futtatja a teljes check.sh-t, logot ment és frissíti a report AUTO_VERIFY blokkját.
+      Ha FAIL: ne zárj le semmit, javítsd a hibát és futtasd újra.
+      Ellenőrizd a gate kimenetében, hogy a nesting_engine cargo build még mindig PASS
+      (regresszió: az F1-1 task outputjai érintetlenek maradtak).
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_io_contract_v2.md"
+      - "codex/reports/nesting_engine/nesting_engine_io_contract_v2.verify.log"
