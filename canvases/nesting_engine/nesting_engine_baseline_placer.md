@@ -17,7 +17,7 @@ determinisztikus nesting rendszer, amelyhez képest a Fázis 2 NFP-alapú motor
 javulását mérni fogjuk.
 
 **Deliverable-ök:**
-- `rust/nesting_engine/src/feasibility/` — `can_place()`: AABB broad-phase + polygon narrow-phase
+- `rust/nesting_engine/src/feasibility/` — `can_place()`: AABB broad-phase + i_overlay narrow-phase
 - `rust/nesting_engine/src/placement/blf.rs` — BLF construction placer
 - `rust/nesting_engine/src/multi_bin/greedy.rs` — multi-sheet iteratív stratégia
 - `rust/nesting_engine/src/main.rs` — `nest` subcommand (JSON in → JSON out, io_contract_v2)
@@ -55,7 +55,7 @@ javulását mérni fogjuk.
 - `rust/nesting_engine/src/main.rs` — `nest` subcommand hozzáadása
 - `rust/nesting_engine/src/lib.rs` — új modulok exportálása (ha van lib.rs; ha nincs, main.rs bővül)
 - `vrs_nesting/cli.py` — új subcommand: `nest-v2`
-- `scripts/check.sh` — nesting_engine runner smoke: `nesting_engine_runner.py` alapfutás
+- `scripts/check.sh` — baseline smoke: közvetlen bináris (`nesting_engine nest`) + CLI (`nest-v2`)
 
 **Nem módosul:**
 - `rust/vrs_solver/` (egyetlen fájl sem)
@@ -197,7 +197,6 @@ A `vrs_solver_runner.py` mintájára, de az `io_contract_v2` inputot és outputo
 ```bash
 python3 -m vrs_nesting.runner.nesting_engine_runner \
   --input poc/nesting_engine/sample_input_v2.json \
-  --output runs/<run_id>/nesting_output.json \
   --seed 42 \
   --time-limit 30
 ```
@@ -292,7 +291,7 @@ egy inline Python one-liner ellenőrzés is elfogadható a report-ban:
 ### Implementáció — Rust feasibility + placer
 - [ ] `rust/nesting_engine/src/feasibility/mod.rs` létrehozva
 - [ ] `rust/nesting_engine/src/feasibility/aabb.rs` — AABB broad-phase
-- [ ] `rust/nesting_engine/src/feasibility/narrow.rs` — polygon narrow-phase
+- [ ] `rust/nesting_engine/src/feasibility/narrow.rs` — i_overlay narrow-phase (containment + no-overlap)
 - [ ] `rust/nesting_engine/src/placement/mod.rs` létrehozva
 - [ ] `rust/nesting_engine/src/placement/blf.rs` — BLF placer, rács traversal, time limit
 - [ ] `rust/nesting_engine/src/multi_bin/mod.rs` létrehozva
@@ -317,6 +316,7 @@ egy inline Python one-liner ellenőrzés is elfogadható a report-ban:
 
 ### Gate
 - [ ] `./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_baseline_placer.md` PASS
+- [ ] `scripts/check.sh` baseline smoke lefedi a közvetlen bináris (`nesting_engine nest`) és a CLI (`nest-v2`) futást
 
 ---
 
@@ -372,6 +372,14 @@ python3 -m vrs_nesting.runner.nesting_engine_runner \
   --input poc/nesting_engine/sample_input_v2.json \
   --seed 42 \
   --time-limit 30
+
+# CLI smoke (nest-v2)
+python3 -m vrs_nesting.cli nest-v2 \
+  --input poc/nesting_engine/sample_input_v2.json \
+  --seed 42 \
+  --time-limit 30 \
+  --nesting-engine-bin ./rust/nesting_engine/target/release/nesting_engine \
+  --run-root runs
 ```
 
 **Elfogadási kritériumok:**

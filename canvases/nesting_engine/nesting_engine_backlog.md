@@ -194,15 +194,16 @@ Multi-sheet: iteratív "amennyit befér egy táblára" stratégia. Az NFP majd e
 - `vrs_nesting/runner/nesting_engine_runner.py` — Python adapter (mint vrs_solver_runner.py mintájára)
 
 **Érintett fájlok (módosul):**
-- `vrs_nesting/cli.py` — új subcommand: `nesttool nest-v2 project.json`
-- `scripts/check.sh` — új smoke: nesting_engine baseline futás
+- `vrs_nesting/cli.py` — új subcommand: `python3 -m vrs_nesting.cli nest-v2 --input ...`
+- `scripts/check.sh` — baseline smoke: közvetlen bináris (`nesting_engine nest`) + CLI smoke (`nest-v2`)
 
 **DoD:**
 - [ ] can_place() 0 false positive a fixture készleten (nominális tesztek)
 - [ ] BLF placer fut és helyez el legalább 1 valós DXF-et hibamentesen
 - [ ] Multi-sheet: több tábla esetén minden part elhelyezve vagy unplaced listán
 - [ ] Determinizmus: azonos seed → azonos placement JSON (hash ellenőrzés)
-- [ ] Python runner: `nesting_engine_runner.py --input X --output Y` PASS
+- [ ] Python runner: `python3 -m vrs_nesting.runner.nesting_engine_runner --input X --seed S --time-limit T` PASS
+- [ ] Gate smoke lefedi mind a bináris (`nesting_engine nest`), mind a CLI (`nest-v2`) futást
 - [ ] Benchmark harness: a valós DXF készleten mér sheet count + utilization % (ez a baseline szám)
 - [ ] `./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_baseline_placer.md` PASS
 

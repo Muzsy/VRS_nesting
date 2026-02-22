@@ -284,6 +284,19 @@ if not h.startswith("sha256:") or h == "sha256:placeholder":
     raise SystemExit(f"bad determinism_hash: {h}")
 print(f"[NEST] hash OK: {h[:30]}...")
 PY
+  BASELINE_HASH="$(python3 - "$TMP_BASELINE_OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(str(out.get("meta", {}).get("determinism_hash", "")).strip())
+PY
+)"
+  if [[ -z "$BASELINE_HASH" ]]; then
+    echo "ERROR: missing baseline determinism hash in nesting_engine smoke output" >&2
+    exit 2
+  fi
 
   "$NESTING_ENGINE_BIN_PATH" nest < "poc/nesting_engine/sample_input_v2.json" > "$TMP_BASELINE_OUT_2"
   python3 - "$TMP_BASELINE_OUT" "$TMP_BASELINE_OUT_2" <<'PY'
@@ -315,6 +328,40 @@ for p in out.get("placements", []):
         raise SystemExit(f"placement below margin: {p}")
 print(f"[NEST] 0 out-of-bounds OK, placed={len(out.get('placements', []))}")
 PY
+
+  echo "[NEST] CLI smoke (nest-v2)"
+  CLI_RUN_DIR="$(python3 -m vrs_nesting.cli nest-v2 \
+    --input "poc/nesting_engine/sample_input_v2.json" \
+    --seed "$SEED" \
+    --time-limit "$TIME_LIMIT" \
+    --nesting-engine-bin "$NESTING_ENGINE_BIN_PATH" \
+    --run-root runs)"
+
+  if [[ -z "$CLI_RUN_DIR" || ! -d "$CLI_RUN_DIR" ]]; then
+    echo "ERROR: invalid run_dir returned by nest-v2 CLI smoke: '$CLI_RUN_DIR'" >&2
+    exit 2
+  fi
+
+  CLI_HASH="$(python3 - "$CLI_RUN_DIR/runner_meta.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+meta = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(str(meta.get("determinism_hash", "")).strip())
+PY
+)"
+  if [[ -z "$CLI_HASH" ]]; then
+    echo "ERROR: missing determinism_hash in nest-v2 runner meta: $CLI_RUN_DIR/runner_meta.json" >&2
+    exit 2
+  fi
+  if [[ "$CLI_HASH" != "$BASELINE_HASH" ]]; then
+    echo "ERROR: nest-v2 CLI hash mismatch vs baseline bin smoke" >&2
+    echo " baseline=$BASELINE_HASH" >&2
+    echo " cli=$CLI_HASH" >&2
+    exit 2
+  fi
+  echo "[NEST] CLI determinism OK"
 fi
 
 echo "[DONE] smoketest OK"
