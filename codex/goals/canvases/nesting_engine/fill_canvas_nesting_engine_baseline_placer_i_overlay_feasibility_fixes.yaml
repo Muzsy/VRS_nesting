@@ -1,0 +1,75 @@
+steps:
+  - name: "Felderítés és szabályok betartása"
+    description: >
+      Olvasd el az AGENTS.md-t, és rögzítsd: csak a YAML outputs listában szereplő fájlokat szabad módosítani.
+      Vizsgáld meg a jelenlegi baseline placer implementációt és a doksikat:
+      - hol van a feasibility narrow-phase (jelenleg custom) és hol kell i_overlay-re váltani,
+      - scripts/check.sh jelenlegi baseline smoke blokkja hogyan fut,
+      - vrs_nesting/cli.py-ben a nest-v2 subcommand pontos hívása és paraméterezése.
+    outputs:
+      - "AGENTS.md"
+      - "canvases/nesting_engine/nesting_engine_baseline_placer_i_overlay_feasibility_fixes.md"
+      - "rust/nesting_engine/src/feasibility/narrow.rs"
+      - "rust/nesting_engine/src/feasibility/mod.rs"
+      - "scripts/check.sh"
+      - "vrs_nesting/cli.py"
+      - "canvases/nesting_engine/nesting_engine_baseline_placer.md"
+      - "canvases/nesting_engine/nesting_engine_backlog.md"
+
+  - name: "Feasibility narrow-phase: i_overlay alapú containment + no-overlap"
+    description: >
+      Implementáld át a rust/nesting_engine/src/feasibility/narrow.rs fájlban a narrow-phase ellenőrzést i_overlay-re:
+      - Candidate ⊆ bin containment check i_overlay műveletekkel
+      - Candidate ∩ placed = ∅ no-overlap check i_overlay műveletekkel
+      Követelmény:
+      - IO contract nem változhat
+      - determinisztikus eredmény: találatokat (ha rstar van) id szerint rendezd, és fix sorrendben ellenőrizz
+      - a tolerance policy-t kövesd (mm → i_overlay koordináta skálázás a meglévő konvenciók szerint).
+      Ha szükséges, minimálisan egészítsd ki a feasibility/mod.rs-t segédfüggvényekkel.
+    outputs:
+      - "rust/nesting_engine/src/feasibility/narrow.rs"
+      - "rust/nesting_engine/src/feasibility/mod.rs"
+
+  - name: "scripts/check.sh: baseline bin smoke megtartása + új CLI-smoke blokk"
+    description: >
+      A scripts/check.sh fájlban:
+      - hagyd meg a meglévő baseline bin smoke-ot (nesting_engine nest)
+      - adj hozzá egy új, rövid CLI-smoke blokkot, ami a vrs_nesting/cli.py nest-v2 parancsát futtatja
+        (fixture/project inputtal), és ellenőrzi az exit code-ot + determinisztikát (hash vagy canonical JSON).
+      Követelmény:
+      - a CLI-smoke legyen gyors (1 futás + determinisztika ellenőrzés vagy 2 futás diff)
+      - a smoke blokk ne legyen törékeny (fix útvonalak, repo-relatív hívás).
+    outputs:
+      - "scripts/check.sh"
+      - "vrs_nesting/cli.py"
+
+  - name: "Doksik szigorú igazítása a valós működéshez"
+    description: >
+      Frissítsd a következő doksikat:
+      - canvases/nesting_engine/nesting_engine_baseline_placer.md:
+        * feasibility: i_overlay containment + no-overlap (ne említsen custom PIP/segment checket defaultként)
+        * smoke: bináris smoke + új CLI-smoke a scripts/check.sh-ben
+      - canvases/nesting_engine/nesting_engine_backlog.md:
+        * ha a baseline smoke/DoD részt érinti, írd át úgy, hogy a gate-ben bin + CLI-smoke van.
+      Cél: ne maradjon drift a “hogyan fut és mit használ” leírásban.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_baseline_placer.md"
+      - "canvases/nesting_engine/nesting_engine_backlog.md"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a task checklistjét és reportját Report Standard v2 szerint.
+      Checklist: pipálható DoD pontok.
+      Report: DoD→Evidence + Advisory + AUTO_VERIFY blokk.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_baseline_placer_i_overlay_feasibility_fixes.md"
+      - "codex/reports/nesting_engine/nesting_engine_baseline_placer_i_overlay_feasibility_fixes.md"
+
+  - name: "Repo gate (verify) futtatása"
+    description: >
+      Futtasd a standard minőségkaput:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_baseline_placer_i_overlay_feasibility_fixes.md
+      A futás hozza létre/frissítse a verify logot is.
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_baseline_placer_i_overlay_feasibility_fixes.md"
+      - "codex/reports/nesting_engine/nesting_engine_baseline_placer_i_overlay_feasibility_fixes.verify.log"
