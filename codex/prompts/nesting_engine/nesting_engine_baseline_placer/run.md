@@ -34,12 +34,14 @@ a darabokat, multi-sheet greedy stratégiával, és io_contract_v2 output JSON-t
 ad — benne valódi `determinism_hash`-sel.
 
 Deliverable-ök:
-- `feasibility/` — `can_place()` AABB + polygon narrow-phase
+- `feasibility/` — `can_place()` AABB broad-phase (+ optional `rstar`) + i_overlay narrow-phase
 - `placement/blf.rs` — BLF placer, determinisztikus rács traversal
 - `multi_bin/greedy.rs` — iteratív multi-sheet
 - `export/output_v2.rs` — io_contract_v2 output + `determinism_hash` (RFC 8785 / JCS)
 - `nest` subcommand a Rust binárisban
 - `vrs_nesting/runner/nesting_engine_runner.py` — Python adapter
+- `vrs_nesting/cli.py` — új subcommand: `nest-v2`
+- `scripts/check.sh` — baseline smoke futás a nesting_engine ágra
 - `poc/nesting_engine/baseline_benchmark.md` — valós mérési eredmény
 
 ## 3) Nem cél
@@ -47,7 +49,6 @@ Deliverable-ök:
 - NFP számítás (F2-x)
 - Simulated Annealing (F2-4)
 - `vrs_solver` bármilyen módosítása
-- `vrs_nesting/cli.py` módosítása
 - `vrs_nesting/runner/vrs_solver_runner.py` módosítása (csak minta)
 
 ---
@@ -85,6 +86,9 @@ format!("sha256:{}", hex::encode(hash))
 
 A `can_place()` a `TOUCH_TOL = 1i64` (= 1 µm) alapján dönt: ha két polygon
 érintkezik, az infeasible. Ez a konzervatív oldal — a gyártási biztonság miatt.
+A narrow-phase döntést az i_overlay feasibility layer adja:
+- containment: `candidate ⊆ bin`
+- no-overlap: `candidate ∩ placed = ∅`
 
 **BLF rács traversal determinizmus**
 
@@ -197,13 +201,14 @@ print('0 out-of-bounds OK, placed:', len(out['placements']))
 - `rust/nesting_engine/src/main.rs` — `nest` subcommand hozzáadva
 - `rust/nesting_engine/Cargo.toml` — sha2, hex, esetleg rstar hozzáadva
 - `rust/nesting_engine/Cargo.lock` — dependency lock frissítve
+- `vrs_nesting/cli.py` — új `nest-v2` subcommand
+- `scripts/check.sh` — baseline smoke futás hozzáadva
 
 **Érintetlen (ellenőrizd):**
 - `rust/vrs_solver/` — egyetlen fájl sem változik
 - `rust/nesting_engine/src/geometry/pipeline.rs` — nem változik
 - `rust/nesting_engine/src/io/` — nem változik
 - `vrs_nesting/runner/vrs_solver_runner.py` — nem változik
-- `vrs_nesting/cli.py` — nem változik
 
 ---
 
@@ -216,7 +221,9 @@ print('0 out-of-bounds OK, placed:', len(out['placements']))
 5. Két egymást követő `nest` futás azonos `determinism_hash`-t ad
 6. 0 out-of-bounds: minden `placement.x_mm >= margin_mm` és `placement.y_mm >= margin_mm`
 7. `poc/nesting_engine/baseline_benchmark.md` — valós `sheets_used`, `utilization_pct`, `determinism_hash`
-8. `./scripts/verify.sh` gate — PASS
+8. `vrs_nesting/cli.py` `nest-v2` subcommandon keresztül is futtatható
+9. `scripts/check.sh` baseline smoke lefut és hiba esetén FAIL-el
+10. `./scripts/verify.sh` gate — PASS
 
 ---
 

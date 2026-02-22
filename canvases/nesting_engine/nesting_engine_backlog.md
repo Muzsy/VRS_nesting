@@ -16,8 +16,8 @@ Ez a canvas a Sparrow-t teljes egészében kiváltó, saját tulajdonú, NFP-ala
 
 - Saját Rust motor — teljes kontroll, nincs külső licenc kockázat
 - NFP (No-Fit Polygon) alapú placement — ipari minőségű, komplex irreguláris alakzatokra alkalmas
-- Clipper2 pure Rust crate (`clipper2`) — nem C++ FFI, hanem natív Rust binding
-- Meglévő `jagua-rs` és `rstar` dependency újrahasznosítása a feasibility rétegben
+- Geometriai offset + feasibility narrow-phase: `i_overlay` (pure Rust)
+- Feasibility broad-phase: AABB minimum, opcionális `rstar` gyorsítással, determinisztikus találat-sorrenddel
 - Lexikografikus célfüggvény: P0 (0 overlap, 0 out-of-bounds) → P1 (min sheet count) → P2 (max remnant value) → P3 (min cut time proxy)
 - Determinisztikus output: azonos input + seed → bit-azonos JSON export
 
@@ -41,7 +41,7 @@ rust/
     Cargo.toml
     src/
       main.rs              ← CLI belépési pont (JSON in → JSON out)
-      geometry/            ← polygon, scale policy, Clipper2 offset
+      geometry/            ← polygon, scale policy, i_overlay offset
       nfp/                 ← NFP számítás, NFP cache
       feasibility/         ← can_place(), AABB broad-phase, narrow-phase
       placement/           ← BLF baseline placer, CFR candidate generálás
@@ -68,7 +68,7 @@ docs/
 - `vrs_nesting/validate/solution_validator.py` — validátor (bővítendő v2 contractra)
 - `vrs_nesting/cli.py` — CLI belépési pont (új subcommand kell)
 - `scripts/check.sh`, `scripts/verify.sh` — gate infrastruktúra
-- `jagua-rs`, `rstar` dependency — broad-phase collision detection
+- `rstar` dependency (opcionális) — broad-phase gyorsítás nagy elemszámnál
 - Meglévő Codex workflow: canvas + yaml + gate
 
 ---
@@ -79,14 +79,14 @@ docs/
 
 ### F1-1 — `nesting_engine_crate_scaffold`
 
-**Leírás:** Új Rust crate létrehozása (`rust/nesting_engine/`), Clipper2 dependency bekötése, alapvető polygon típusok és scale policy definiálása.
+**Leírás:** Új Rust crate létrehozása (`rust/nesting_engine/`), `i_overlay` dependency bekötése, alapvető polygon típusok és scale policy definiálása.
 
 **Érintett fájlok (új):**
 - `rust/nesting_engine/Cargo.toml`
 - `rust/nesting_engine/src/main.rs`
 - `rust/nesting_engine/src/geometry/mod.rs`
 - `rust/nesting_engine/src/geometry/types.rs` — Point64, Polygon64, scale policy (SCALE = 1_000_000i64 / mm)
-- `rust/nesting_engine/src/geometry/offset.rs` — Clipper2 inflate/deflate wrapper
+- `rust/nesting_engine/src/geometry/offset.rs` — i_overlay inflate/deflate wrapper
 - `docs/nesting_engine/tolerance_policy.md`
 
 **Érintett fájlok (módosul):**
@@ -96,11 +96,11 @@ docs/
 **DoD:**
 - [ ] `cargo build --release` PASS az új crate-re
 - [ ] SCALE policy dokumentálva és tesztelve (mm → i64 → mm round-trip)
-- [ ] Clipper2 offset: outer inflate + hole deflate egy egyszerű téglalapra PASS
+- [ ] i_overlay offset: outer inflate + hole deflate egy egyszerű téglalapra PASS
 - [ ] `./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_crate_scaffold.md` PASS
 
 **Kockázat + mitigáció:**
-- A `clipper2` crate API változhat → pin konkrét verziót a Cargo.toml-ban
+- Az `i_overlay` crate API változhat → pin konkrét verziót a Cargo.toml-ban
 - Rollback: az új crate izolált, a meglévő solver nem változik
 
 ---
@@ -182,10 +182,13 @@ docs/
 
 ### F1-4 — `nesting_engine_baseline_placer`
 
-**Leírás:** Egyszerű, determinisztikus BLF-jellegű (Bottom-Left Fill) construction placer. Nem NFP — rács alapú candidate generálás jagua-rs/rstar feasibility check-kel. Multi-sheet: iteratív "amennyit befér egy táblára" stratégia. Az NFP majd erre épül rá Fázis 2-ben.
+**Leírás:** Egyszerű, determinisztikus BLF-jellegű (Bottom-Left Fill) construction placer. Nem NFP — rács alapú candidate generálás feasibility modellel:
+broad-phase AABB (+ optional rstar), determinisztikus találat-sorrend;
+narrow-phase feasibility layer (i_overlay): containment + no-overlap.
+Multi-sheet: iteratív "amennyit befér egy táblára" stratégia. Az NFP majd erre épül rá Fázis 2-ben.
 
 **Érintett fájlok (új):**
-- `rust/nesting_engine/src/feasibility/mod.rs` — can_place() AABB broad-phase + Clipper2 narrow-phase
+- `rust/nesting_engine/src/feasibility/mod.rs` — can_place() AABB broad-phase (+ optional rstar) + i_overlay narrow-phase
 - `rust/nesting_engine/src/placement/blf.rs` — BLF placer, rács-alapú candidate generálás
 - `rust/nesting_engine/src/multi_bin/greedy.rs` — iteratív multi-sheet stratégia
 - `vrs_nesting/runner/nesting_engine_runner.py` — Python adapter (mint vrs_solver_runner.py mintájára)
@@ -338,7 +341,7 @@ docs/
 ## ✅ Pipálható összesítő DoD lista
 
 ### Fázis 1 — Truth Layer
-- [ ] F1-1: `nesting_engine_crate_scaffold` — új Rust crate, Clipper2, scale policy
+- [ ] F1-1: `nesting_engine_crate_scaffold` — új Rust crate, i_overlay, scale policy
 - [ ] F1-2: `nesting_engine_io_contract_v2` — JSON IO contract dokumentálva + példák
 - [ ] F1-3: `nesting_engine_polygon_pipeline` — nominal → inflated pipeline
 - [ ] F1-4: `nesting_engine_baseline_placer` — BLF placer + Python runner + benchmark harness
@@ -394,7 +397,7 @@ Nem releváns (belső motor + JSON contract).
 - `vrs_nesting/dxf/exporter.py` — DXF export
 - `vrs_nesting/runner/vrs_solver_runner.py` — runner minta
 - `rust/vrs_solver/` — regressziós baseline (nem módosítjuk)
-- `jagua-rs = "0.6.4"` — broad-phase collision primitívek
+- `rstar` (opcionális) — broad-phase gyorsítás nagy elemszámnál
 - `docs/codex/overview.md`, `AGENTS.md` — Codex workflow szabályok
 
 **Következő lépés (első végrehajtandó task):**

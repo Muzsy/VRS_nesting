@@ -30,7 +30,7 @@ javulását mérni fogjuk.
 - Simulated Annealing (F2-4 task)
 - Python DXF importer módosítása
 - `vrs_solver` bármilyen módosítása
-- A meglévő `vrs_nesting/cli.py` `run` subcommand módosítása (az a vrs_solver-hez kapcsolódik)
+- A meglévő `vrs_nesting/cli.py` `run` subcommand viselkedésének módosítása (az a vrs_solver-hez kapcsolódik)
 
 ---
 
@@ -41,7 +41,7 @@ javulását mérni fogjuk.
 **Létrehozandó (új):**
 - `rust/nesting_engine/src/feasibility/mod.rs`
 - `rust/nesting_engine/src/feasibility/aabb.rs` — AABB broad-phase
-- `rust/nesting_engine/src/feasibility/narrow.rs` — polygon narrow-phase (Clipper/i_overlay)
+- `rust/nesting_engine/src/feasibility/narrow.rs` — polygon narrow-phase (i_overlay feasibility layer)
 - `rust/nesting_engine/src/placement/mod.rs`
 - `rust/nesting_engine/src/placement/blf.rs` — BLF placer + rács-alapú candidate generálás
 - `rust/nesting_engine/src/multi_bin/mod.rs`
@@ -54,12 +54,12 @@ javulását mérni fogjuk.
 **Módosuló (meglévő):**
 - `rust/nesting_engine/src/main.rs` — `nest` subcommand hozzáadása
 - `rust/nesting_engine/src/lib.rs` — új modulok exportálása (ha van lib.rs; ha nincs, main.rs bővül)
+- `vrs_nesting/cli.py` — új subcommand: `nest-v2`
 - `scripts/check.sh` — nesting_engine runner smoke: `nesting_engine_runner.py` alapfutás
 
 **Nem módosul:**
 - `rust/vrs_solver/` (egyetlen fájl sem)
 - `vrs_nesting/runner/vrs_solver_runner.py` (minta, nem módosítjuk)
-- `vrs_nesting/cli.py` (vrs_solver pipeline — érintetlen)
 - `docs/nesting_engine/io_contract_v2.md`
 - `docs/nesting_engine/json_canonicalization.md`
 
@@ -92,27 +92,24 @@ Output: `io_contract_v2` szerinti JSON (`version`, `seed`, `solver_version`, `st
 ///   2. 0 overlap: nem metszi az already_placed inflated polygonok egyikét sem
 ///   3. Touching = infeasible (TOUCH_TOL = 1 µm alapján)
 pub fn can_place(
-    candidate: &Polygon64,           // inflated part polygon
-    position: Point64,               // elhelyezési pozíció (eltolás)
-    rotation_deg: i32,               // forgatás fokban
+    candidate: &Polygon64,           // inflated part polygon (már transzformálva)
     bin: &Polygon64,                 // tábla polygon (inflated határ)
     placed: &[PlacedPart],           // már elhelyezett inflated polygonok
 ) -> bool
 ```
 
 **Broad-phase (AABB):**
-- Axis-Aligned Bounding Box gyors kiszűrés
-- Ha az AABB-k nem metszik egymást → can_place = true (narrow-phase kihagyva)
-- Ha metszik → narrow-phase szükséges
+- AABB lista kötelező minimum implementáció
+- Opcionális gyorsítás: `rstar` R-tree index
+- Találat-sorrend determinisztikus: candidate-ütközések `id` szerint rendezve, azonos inputra azonos ellenőrzési sorrend
 
 **Narrow-phase:**
-- Polygon containment: az `i_overlay` vagy polygon pont-in-polygon tesztelés
-- Polygon overlap: polygon intersection check
+- Polygon containment: `i_overlay` containment (`candidate ⊆ bin`)
+- Polygon overlap: `i_overlay` no-overlap (`candidate ∩ placed = ∅`)
 - Touching policy: `TOUCH_TOL = 1` alapján (pontosan érintkezők = infeasible)
 
-**Megjegyzés:** `jagua-rs` és `rstar` dependency a Cargo.toml-ban már megvan a
-`vrs_solver`-ből — **ellenőrizd** hogy a `nesting_engine/Cargo.toml`-ban is
-szerepelnek-e, és ha igen, ugyanolyan pinned verzióban. Ha nem, add hozzá.
+**Kőbe vésett szabály:** a placer minden feasibility döntést inflated geometrián hoz
+(`solver truth`), a nominális geometriát nem használja ütközési döntésre.
 
 ---
 
@@ -273,7 +270,7 @@ egy inline Python one-liner ellenőrzés is elfogadható a report-ban:
 | Rács-alapú candidate generálás lassú 500+ példánynál | `time_limit_sec` kötelező; time limit lejáratán `partial` status és `TIME_LIMIT_EXCEEDED` az unplaced-ben | Rácslépés növelése (grid_step_mm paraméter) |
 | `determinism_hash` JCS crate nem elérhető / kompatibilitási probléma | Fallback: manuális key-sortos JSON serialize + sha256 (nincs külső JCS crate) | A hash placeholder marad, F3-4 hardening task véglegesíti |
 | Python runner subprocess stdin/stdout deadlock | `communicate()` helyett `Popen` + timeout kezelés, ahogy a vrs_solver_runner.py is csinálja | subprocess.run timeout fallback |
-| `jagua-rs`/`rstar` nesting_engine Cargo.toml-ból hiányzik | Felderítési lépés: Cargo.toml elolvasása → ha hiányzik, hozzáadás a vrs_solver Cargo.toml-ból kimásolva | Dependency eltávolítása, pure AABB marad |
+| `rstar` opcionális gyorsítás hiánya nagy elemszámnál lassulást okoz | AABB lista minimum implementáció kötelező; `rstar` opcionális bekapcsolása feature-flaggel | `rstar` kikapcsolható, pure AABB fallback |
 
 ---
 
@@ -286,7 +283,7 @@ egy inline Python one-liner ellenőrzés is elfogadható a report-ban:
 - [ ] `docs/codex/report_standard.md` elolvasva
 - [ ] `rust/nesting_engine/src/geometry/pipeline.rs` — `run_inflate_pipeline()` API ismert
 - [ ] `rust/nesting_engine/src/io/pipeline_io.rs` — `PipelineRequest`, `PipelineResponse` struktúrák ismertek
-- [ ] `rust/nesting_engine/Cargo.toml` — meglévő dependency-k azonosítva (`jagua-rs`, `rstar` szerepel-e?)
+- [ ] `rust/nesting_engine/Cargo.toml` — meglévő dependency-k azonosítva (`rstar` opcionális gyorsítás szerepel-e?)
 - [ ] `docs/nesting_engine/io_contract_v2.md` — input/output séma ismert
 - [ ] `docs/nesting_engine/json_canonicalization.md` — `determinism_hash` szabály ismert
 - [ ] `vrs_nesting/runner/vrs_solver_runner.py` — runner minta megvizsgálva (subprocess, meta artifact, binary resolution)

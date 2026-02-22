@@ -15,15 +15,14 @@ steps:
         - rust/nesting_engine/src/geometry/pipeline.rs  (run_inflate_pipeline API)
         - rust/nesting_engine/src/io/pipeline_io.rs     (PipelineRequest, PipelineResponse)
         - rust/nesting_engine/src/main.rs               (inflate-parts subcommand struktúra)
-        - rust/nesting_engine/Cargo.toml                (meglévő dependency-k: jagua-rs? rstar? sha2?)
+        - rust/nesting_engine/Cargo.toml                (meglévő dependency-k: i_overlay? rstar? sha2?)
         - docs/nesting_engine/io_contract_v2.md         (input/output séma)
         - docs/nesting_engine/json_canonicalization.md  (determinism_hash szabály)
         - docs/nesting_engine/tolerance_policy.md       (SCALE, TOUCH_TOL)
         - docs/nesting_engine/architecture.md           (nominális vs. inflated szabály)
         - vrs_nesting/runner/vrs_solver_runner.py       (runner architektúra minta)
         - poc/nesting_engine/sample_input_v2.json       (poc fixture)
-      Azonosítsd: szerepel-e jagua-rs és rstar a nesting_engine/Cargo.toml-ban?
-      Ha nem, a vrs_solver/Cargo.toml-ból kell kimásolni a pinned verziókat.
+      Azonosítsd: szerepel-e rstar a nesting_engine/Cargo.toml-ban (opcionális broad-phase gyorsítás)?
       Azonosítsd: elérhető-e sha2 crate a Cargo.toml-ban? Ha nem, add hozzá.
       Azonosítsd: milyen JCS crate-et érdemes használni (json-canon vagy manuális key-sort)?
       Ha bármelyik fájl nem létezik: állj meg és jelezd pontosan mit kerestél.
@@ -51,7 +50,7 @@ steps:
       Hozd létre a rust/nesting_engine/src/feasibility/mod.rs fájlt:
         pub mod aabb;
         pub mod narrow;
-        pub use mod::{can_place, PlacedPart};
+        pub use narrow::{can_place, PlacedPart};
       Hozd létre a rust/nesting_engine/src/feasibility/aabb.rs fájlt.
         Definiáld az Aabb struktúrát (min_x, min_y, max_x, max_y: i64).
         Definiáld az aabb_from_polygon(polygon: &[Point64]) -> Aabb függvényt.
@@ -194,10 +193,18 @@ steps:
           5. stdout-ra írja az io_contract_v2 output JSON-t
           6. Hiba esetén stderr-re ír és exit 1
         - A meglévő inflate-parts subcommand ÉRINTETLEN marad
+      Frissítsd a vrs_nesting/cli.py fájlt:
+        - Adj hozzá új CLI subcommandot: nest-v2
+        - A subcommand a nesting_engine runnerre delegáljon
+      Frissítsd a scripts/check.sh fájlt:
+        - Adj hozzá baseline smoke futást a nesting_engine pipeline-ra
+        - A smoke parancs ne tartalmazzon dupla pipe-ot vagy redundáns nest hívást
       Futtasd: cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
       Ha FAIL: javítsd, ne lépj tovább.
     outputs:
       - "rust/nesting_engine/src/main.rs"
+      - "vrs_nesting/cli.py"
+      - "scripts/check.sh"
 
   - name: "Python runner implementálása"
     description: >
