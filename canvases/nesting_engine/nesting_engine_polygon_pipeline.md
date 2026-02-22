@@ -85,7 +85,7 @@ Ezen felül: a `scripts/check.sh`-ban az F1-1 task során bevezetett sorrend-hib
 A `rust/nesting_engine` bináris kap egy új subcommand-ot: `inflate-parts`
 
 ```bash
-echo '{ PipelineRequest JSON }' | nesting_engine inflate-parts
+echo '{ PipelineRequest JSON }' | ./rust/nesting_engine/target/release/nesting_engine inflate-parts
 ```
 
 **PipelineRequest séma:**
@@ -195,9 +195,9 @@ Az inflate pipeline outputja determinisztikus kell legyen:
 **Smoke teszt a determinizmusra:**
 ```bash
 echo "$(cat poc/nesting_engine/pipeline_smoke_input.json)" \
-  | nesting_engine inflate-parts > /tmp/out1.json
+  | ./rust/nesting_engine/target/release/nesting_engine inflate-parts > /tmp/out1.json
 echo "$(cat poc/nesting_engine/pipeline_smoke_input.json)" \
-  | nesting_engine inflate-parts > /tmp/out2.json
+  | ./rust/nesting_engine/target/release/nesting_engine inflate-parts > /tmp/out2.json
 diff /tmp/out1.json /tmp/out2.json   # üresnek kell lennie
 ```
 
@@ -293,9 +293,9 @@ cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
 
 # Pipeline smoke determinizmus
 echo "$(cat poc/nesting_engine/pipeline_smoke_input.json)" \
-  | ./target/release/nesting_engine inflate-parts > /tmp/pipe_out1.json
+  | ./rust/nesting_engine/target/release/nesting_engine inflate-parts > /tmp/pipe_out1.json
 echo "$(cat poc/nesting_engine/pipeline_smoke_input.json)" \
-  | ./target/release/nesting_engine inflate-parts > /tmp/pipe_out2.json
+  | ./rust/nesting_engine/target/release/nesting_engine inflate-parts > /tmp/pipe_out2.json
 diff /tmp/pipe_out1.json /tmp/pipe_out2.json
 
 # JSON validáció

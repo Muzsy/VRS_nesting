@@ -17,8 +17,6 @@ use crate::geometry::{
 pub enum OffsetError {
     /// A hole polygon collapsed to an empty polygon after deflation.
     HoleCollapsed { hole_index: usize },
-    /// The result polygon is self-intersecting (detected post-offset).
-    SelfIntersection,
     /// An error occurred in the underlying offset library.
     ClipperError(String),
 }

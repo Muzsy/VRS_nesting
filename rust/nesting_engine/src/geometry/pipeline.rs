@@ -1,6 +1,6 @@
 use crate::geometry::{
     offset::{deflate_hole, inflate_outer, inflate_part, OffsetError},
-    scale::{i64_to_mm, mm_to_i64},
+    scale::{i64_to_mm, mm_to_i64, TOUCH_TOL},
     types::{PartGeometry, Point64, Polygon64},
 };
 use crate::io::pipeline_io::{
@@ -32,6 +32,18 @@ pub fn run_inflate_pipeline(req: PipelineRequest) -> PipelineResponse {
 fn inflate_single_part(part: PartRequest, delta_mm: f64) -> PartResponse {
     let part_id = part.id.clone();
     let nominal = request_to_geometry(&part);
+    // Early validation keeps SELF_INTERSECT behavior deterministic for invalid nominal input.
+    if polygon_self_intersects(&nominal.polygon.outer) {
+        return PartResponse {
+            id: part_id,
+            status: STATUS_SELF_INTERSECT.to_string(),
+            inflated_outer_points_mm: Vec::new(),
+            inflated_holes_points_mm: Vec::new(),
+            diagnostics: vec![self_intersect_diagnostic(
+                "nominal outer polygon self-intersects before inflate",
+            )],
+        };
+    }
 
     match inflate_part(&nominal, delta_mm) {
         Ok(inflated) => {
@@ -70,15 +82,6 @@ fn inflate_single_part(part: PartRequest, delta_mm: f64) -> PartResponse {
         Err(OffsetError::HoleCollapsed { hole_index }) => {
             handle_hole_collapsed(part, nominal, hole_index, delta_mm)
         }
-        Err(OffsetError::SelfIntersection) => PartResponse {
-            id: part_id,
-            status: STATUS_SELF_INTERSECT.to_string(),
-            inflated_outer_points_mm: Vec::new(),
-            inflated_holes_points_mm: Vec::new(),
-            diagnostics: vec![self_intersect_diagnostic(
-                "offset library reported self-intersection",
-            )],
-        },
         Err(err) => PartResponse {
             id: part_id,
             status: STATUS_ERROR.to_string(),
@@ -244,7 +247,6 @@ fn offset_error_detail(err: &OffsetError) -> String {
         OffsetError::HoleCollapsed { hole_index } => {
             format!("hole collapsed at index {hole_index}")
         }
-        OffsetError::SelfIntersection => "self intersection".to_string(),
         OffsetError::ClipperError(detail) => detail.clone(),
     }
 }
@@ -310,10 +312,10 @@ fn orientation(a: Point64, b: Point64, c: Point64) -> i128 {
 }
 
 fn on_segment(a: Point64, b: Point64, p: Point64) -> bool {
-    let min_x = a.x.min(b.x);
-    let max_x = a.x.max(b.x);
-    let min_y = a.y.min(b.y);
-    let max_y = a.y.max(b.y);
+    let min_x = a.x.min(b.x).saturating_sub(TOUCH_TOL);
+    let max_x = a.x.max(b.x).saturating_add(TOUCH_TOL);
+    let min_y = a.y.min(b.y).saturating_sub(TOUCH_TOL);
+    let max_y = a.y.max(b.y).saturating_add(TOUCH_TOL);
     p.x >= min_x && p.x <= max_x && p.y >= min_y && p.y <= max_y
 }
 
@@ -419,6 +421,39 @@ mod tests {
         assert_eq!(
             serialized_a, serialized_b,
             "pipeline output is not deterministic"
+        );
+    }
+
+    #[test]
+    fn self_intersect_bow_tie_case_returns_status_and_diagnostic() {
+        let req = PipelineRequest {
+            version: "pipeline_v1".to_string(),
+            kerf_mm: 0.2,
+            margin_mm: 5.0,
+            parts: vec![PartRequest {
+                id: "bow_tie".to_string(),
+                outer_points_mm: vec![[0.0, 0.0], [10.0, 10.0], [0.0, 10.0], [10.0, 0.0]],
+                holes_points_mm: Vec::new(),
+            }],
+        };
+
+        let resp = run_inflate_pipeline(req);
+        assert_eq!(resp.parts.len(), 1);
+        let part = &resp.parts[0];
+        assert_eq!(part.status, STATUS_SELF_INTERSECT);
+        assert!(
+            part.inflated_outer_points_mm.is_empty(),
+            "self-intersect input should not return inflated outer points"
+        );
+        let diag = part
+            .diagnostics
+            .iter()
+            .find(|d| d.code == CODE_SELF_INTERSECT)
+            .expect("missing SELF_INTERSECT diagnostic");
+        assert!(
+            diag.detail.contains("self-intersects"),
+            "expected meaningful diagnostic detail, got: {}",
+            diag.detail
         );
     }
 }
