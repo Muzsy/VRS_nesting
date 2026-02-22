@@ -239,15 +239,15 @@ futtatásával azonnal verifikálható.
 ## ✅ Pipálható DoD lista
 
 ### Felderítés
-- [ ] `AGENTS.md` elolvasva
-- [ ] `docs/codex/overview.md` elolvasva
-- [ ] `docs/codex/yaml_schema.md` elolvasva
-- [ ] `docs/codex/report_standard.md` elolvasva
-- [ ] `rust/nesting_engine/src/geometry/offset.rs` megvizsgálva (inflate_part API ismert)
-- [ ] `rust/nesting_engine/src/geometry/scale.rs` megvizsgálva (SCALE, mm_to_i64 ismert)
-- [ ] `docs/nesting_engine/io_contract_v2.md` megvizsgálva (nominális mezők neve ismert)
-- [ ] `docs/nesting_engine/json_canonicalization.md` megvizsgálva (determinism referencia)
-- [ ] `scripts/check.sh` megvizsgálva (build sorrend azonosítva)
+- [x] `AGENTS.md` elolvasva
+- [x] `docs/codex/overview.md` elolvasva
+- [x] `docs/codex/yaml_schema.md` elolvasva
+- [x] `docs/codex/report_standard.md` elolvasva
+- [x] `rust/nesting_engine/src/geometry/offset.rs` megvizsgálva (inflate_part API ismert)
+- [x] `rust/nesting_engine/src/geometry/scale.rs` megvizsgálva (SCALE, mm_to_i64 ismert)
+- [x] `docs/nesting_engine/io_contract_v2.md` megvizsgálva (nominális mezők neve ismert)
+- [x] `docs/nesting_engine/json_canonicalization.md` megvizsgálva (determinism referencia)
+- [x] `scripts/check.sh` megvizsgálva (build sorrend azonosítva)
 
 ### Implementáció — Rust
 - [ ] `rust/nesting_engine/src/io/mod.rs` létrehozva

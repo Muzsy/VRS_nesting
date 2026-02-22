@@ -1,0 +1,17 @@
+{
+  "version": "pipeline_v1",
+  "kerf_mm": 0.2,
+  "margin_mm": 5.0,
+  "parts": [
+    {
+      "id": "rect_100x50",
+      "outer_points_mm": [[0, 0], [100, 0], [100, 50], [0, 50]],
+      "holes_points_mm": []
+    },
+    {
+      "id": "ring_60x60",
+      "outer_points_mm": [[0, 0], [60, 0], [60, 60], [0, 60]],
+      "holes_points_mm": [[[10, 10], [50, 10], [50, 50], [10, 50]]]
+    }
+  ]
+}

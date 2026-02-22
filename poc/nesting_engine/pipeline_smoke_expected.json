@@ -1,0 +1,20 @@
+{
+  "version": "pipeline_v1",
+  "_note": "Illusztracios expected output - a tenyleges ertekek az inflate_part() futasabol szamitandok.",
+  "parts": [
+    {
+      "id": "rect_100x50",
+      "status": "ok",
+      "inflated_outer_points_mm": [[-5.1, -5.1], [105.1, -5.1], [105.1, 55.1], [-5.1, 55.1]],
+      "inflated_holes_points_mm": [],
+      "diagnostics": []
+    },
+    {
+      "id": "ring_60x60",
+      "status": "ok",
+      "inflated_outer_points_mm": [[-5.1, -5.1], [65.1, -5.1], [65.1, 65.1], [-5.1, 65.1]],
+      "inflated_holes_points_mm": [[[15.1, 15.1], [44.9, 15.1], [44.9, 44.9], [15.1, 44.9]]],
+      "diagnostics": []
+    }
+  ]
+}
