@@ -1,0 +1,73 @@
+steps:
+  - name: "Szabályok és célok betöltése"
+    description: >
+      Olvasd el az AGENTS.md-t és rögzítsd a kötelező outputs szabályt: csak a YAML outputs listában
+      szereplő fájlok módosíthatók. Ezután nyisd meg a javító canvast és az érintett baseline/backlog fájlokat.
+    outputs:
+      - "AGENTS.md"
+      - "canvases/nesting_engine/nesting_engine_baseline_placer_fixes.md"
+      - "canvases/nesting_engine/nesting_engine_backlog.md"
+      - "canvases/nesting_engine/nesting_engine_baseline_placer.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_baseline_placer.yaml"
+      - "codex/prompts/nesting_engine/nesting_engine_baseline_placer/run.md"
+
+  - name: "Backlog drift javítás: Clipper2/jagua → i_overlay/feasibility"
+    description: >
+      A canvases/nesting_engine/nesting_engine_backlog.md fájlban javítsd a nesting_engine ágon az elavult terminológiát:
+      - minden releváns “Clipper2” említés → “i_overlay”
+      - baseline placer részben a “jagua-rs” említést írd át “feasibility layer (i_overlay)” kifejezésre,
+        és tedd opcionálissá/egyértelművé az rstar broad-phase szerepét.
+      Ne változtass a backlog struktúráján, csak a pontatlan megnevezéseket és a baseline placer bekezdést tisztítsd.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_backlog.md"
+
+  - name: "Baseline placer canvas pontosítás: broad-phase + narrow-phase i_overlay"
+    description: >
+      A canvases/nesting_engine/nesting_engine_baseline_placer.md fájlban írd át a feasibility részt úgy, hogy:
+      - Broad-phase: AABB lista minimum, opcionális rstar R-tree, determinisztikus találat-sorrend (id szerint rendezés).
+      - Narrow-phase: i_overlay containment (candidate ⊆ bin) és no-overlap (candidate ∩ placed = ∅).
+      - Mondd ki: a placer inflated geometrián dönt (solver truth).
+      Emellett egységesítsd a can_place API jelölést úgy, hogy a canvas és a YAML ugyanazt a paraméterezést használja.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_baseline_placer.md"
+
+  - name: "Baseline placer YAML javítás: outputs lyukak bezárása + parancs-snippet fix"
+    description: >
+      A codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_baseline_placer.yaml fájlban:
+      1) Vedd fel az outputs listákba a kötelező integrációs fájlokat:
+         - vrs_nesting/cli.py (CLI subcommand)
+         - scripts/check.sh (baseline smoke)
+      2) Javíts minden hibás parancs-snippetet (pl. dupla pipe, redundáns nest hívás), hogy egyértelmű és futtatható legyen.
+      3) Igazítsd a leírásokat az i_overlay feasibility modellhez (ne Clipper2-re hivatkozzon).
+      4) Ellenőrizd, hogy a YAML lépései ténylegesen lefedik a backlogban elvártakat:
+         - CLI subcommand bevezetése
+         - scripts/check.sh baseline smoke
+         - determinisztikus BLF + feasibility (AABB (+ optional rstar) + i_overlay)
+    outputs:
+      - "codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_baseline_placer.yaml"
+      - "vrs_nesting/cli.py"
+      - "scripts/check.sh"
+
+  - name: "Runner prompt javítás: CLI és baseline smoke elvárás rögzítése"
+    description: >
+      A codex/prompts/nesting_engine/nesting_engine_baseline_placer/run.md fájlban:
+      - rögzítsd, hogy a task része a vrs_nesting/cli.py új subcommand bevezetése (pl. nest-v2),
+      - rögzítsd, hogy a scripts/check.sh baseline smoke módosítása a task része,
+      - állítsd át a leírást i_overlay feasibility modellre (ne Clipper2),
+      - tedd egyértelművé, hogy a gate végén a standard verify fut.
+      (A pontos verify parancs maradjon a repo szabvány szerint.)
+    outputs:
+      - "codex/prompts/nesting_engine/nesting_engine_baseline_placer/run.md"
+
+  - name: "Konzisztencia ellenőrzés (statikus)"
+    description: >
+      Ellenőrizd kézzel (statikusan), hogy:
+      - backlog ↔ baseline placer canvas ↔ YAML ↔ run.md ugyanazt állítja (i_overlay, CLI, check.sh smoke),
+      - a YAML outputs listái valóban engedik a szükséges módosításokat (vrs_nesting/cli.py, scripts/check.sh),
+      - nincs bent elavult “Clipper2”/“jagua-rs” hivatkozás a baseline placer taskban.
+      Ha marad “Clipper2” szó, javítsd.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_backlog.md"
+      - "canvases/nesting_engine/nesting_engine_baseline_placer.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_baseline_placer.yaml"
+      - "codex/prompts/nesting_engine/nesting_engine_baseline_placer/run.md"
