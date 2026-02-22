@@ -1,0 +1,60 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_offset_py_rust_bridge.yaml
+steps:
+  - name: Repo-szabályok és érintett pontok beolvasása
+    description: |
+      Olvasd el az AGENTS.md-t és a kapcsolódó codex szabálydoksikat (overview, yaml_schema, report/checklist szabvány).
+      Azonosítsd a valós futtatási útvonalat a nesting_engine CLI-hez (hogyan és honnan hívják a repóban).
+      Nézd át a következő fájlokat: vrs_nesting/geometry/offset.py, vrs_nesting/sparrow/input_generator.py,
+      rust/nesting_engine/src/main.rs (inflate-parts), rust/nesting_engine/src/geometry/pipeline.rs.
+      Készíts rövid, konkrét összefoglalót a canvasban a tényleges contractról (input/output JSON mezők a Rust kódból).
+    outputs:
+      - canvases/nesting_engine/nesting_engine_offset_py_rust_bridge.md
+
+  - name: Canvas véglegesítése a valós contract alapján
+    description: |
+      Frissítsd a canvas tartalmát úgy, hogy a JSON request/response mezőket a Rust implementációból tényszerűen rögzítsd.
+      Rögzítsd, hogy a part infláció Rust-ra kerül, a stock infláció jelenleg maradhat Shapely (ha a Rust CLI nem támogatja),
+      és ezt a "Nem cél" szekcióban írd le. A DoD pontokat tartsd meg.
+    outputs:
+      - canvases/nesting_engine/nesting_engine_offset_py_rust_bridge.md
+
+  - name: Python offset.py bridge implementálása Rust inflate-parts-ra
+    description: |
+      Alakítsd át a vrs_nesting/geometry/offset.py-t:
+      - Part infláció esetén alapértelmezetten Rust subprocess JSON stdio hívás történjen.
+      - A Rust bináris útvonala ne legyen kitalált: a repóban talált futtatási gyakorlatot kövesd, és tegyél be env override-t.
+      - A Shapely fallback csak explicit engedéllyel legyen használható (pl. env flag), és legyen jól látható log/hiba.
+      - A kód kezelje: non-zero exit, stdout JSON parse hiba, timeout, SELF_INTERSECT státusz (fail), HOLE_COLLAPSED (nem crash).
+      - A külső API (offset_part_geometry / offset_stock_geometry) maradjon kompatibilis a vrs_nesting/sparrow/input_generator.py használatával.
+    outputs:
+      - vrs_nesting/geometry/offset.py
+
+  - name: Tesztek frissítése vagy bővítése a Rust bridge-hez
+    description: |
+      Keress a repo-ban meglévő geometriateszteket a Python oldalon, és a legközelebbi releváns tesztfájlt frissítsd.
+      Adj hozzá teszteket:
+      - igazolja, hogy Rust útvonal hívódik (subprocess.run mock/monkeypatch, request JSON ellenőrzés),
+      - SELF_INTERSECT válasz esetén hibát dob,
+      - HOLE_COLLAPSED válasz esetén nem omlik össze.
+      A tesztek ne igényeljenek kötelező cargo buildet unit szinten, ha a repo eddig sem így csinálta.
+    outputs:
+      - tests/test_geometry_offset.py
+
+  - name: Checklist és report létrehozása
+    description: |
+      Hozd létre a checklistet és reportot a repo konvenciói szerint.
+      A checklist legyen pipálható és a DoD pontokat tartalmazza.
+      A reportban rögzítsd: melyik engine aktív (Rust default, Shapely fallback policy), milyen contract mezők lettek implementálva,
+      és a determinizmus megjegyzést (f64 trig szabad forgatás).
+    outputs:
+      - codex/codex_checklist/nesting_engine/nesting_engine_offset_py_rust_bridge.md
+      - codex/reports/nesting_engine/nesting_engine_offset_py_rust_bridge.md
+
+  - name: Verify futtatás és log mentése
+    description: |
+      Futtasd a repó standard ellenőrzését a scripts/verify.sh használatával úgy, hogy a report fájl frissüljön,
+      és a verify log is elmentésre kerüljön. Ha hibát találsz, javítsd, majd futtasd újra.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_offset_py_rust_bridge.md
+    outputs:
+      - codex/reports/nesting_engine/nesting_engine_offset_py_rust_bridge.md
+      - codex/reports/nesting_engine/nesting_engine_offset_py_rust_bridge.verify.log
