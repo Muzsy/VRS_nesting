@@ -259,6 +259,62 @@ fi
 if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   echo "[BUILD] nesting_engine (release)"
   cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+
+  echo "[NEST] Baseline nesting_engine smoke"
+  NESTING_ENGINE_BIN_PATH="$ROOT_DIR/rust/nesting_engine/target/release/nesting_engine"
+  if [[ ! -x "$NESTING_ENGINE_BIN_PATH" ]]; then
+    echo "ERROR: nesting_engine binary missing or not executable: $NESTING_ENGINE_BIN_PATH" >&2
+    exit 2
+  fi
+
+  TMP_BASELINE_OUT="$(mktemp /tmp/nesting_engine_baseline_out_XXXXXX.json)"
+  TMP_BASELINE_OUT_2="$(mktemp /tmp/nesting_engine_baseline_out2_XXXXXX.json)"
+
+  "$NESTING_ENGINE_BIN_PATH" nest < "poc/nesting_engine/sample_input_v2.json" > "$TMP_BASELINE_OUT"
+  python3 -m json.tool "$TMP_BASELINE_OUT" > /dev/null
+
+  python3 - "$TMP_BASELINE_OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+h = str(out.get("meta", {}).get("determinism_hash", ""))
+if not h.startswith("sha256:") or h == "sha256:placeholder":
+    raise SystemExit(f"bad determinism_hash: {h}")
+print(f"[NEST] hash OK: {h[:30]}...")
+PY
+
+  "$NESTING_ENGINE_BIN_PATH" nest < "poc/nesting_engine/sample_input_v2.json" > "$TMP_BASELINE_OUT_2"
+  python3 - "$TMP_BASELINE_OUT" "$TMP_BASELINE_OUT_2" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+a = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+b = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+ha = a.get("meta", {}).get("determinism_hash")
+hb = b.get("meta", {}).get("determinism_hash")
+if ha != hb:
+    raise SystemExit(f"determinism hash mismatch: {ha} != {hb}")
+print("[NEST] determinism OK")
+PY
+
+  python3 - "poc/nesting_engine/sample_input_v2.json" "$TMP_BASELINE_OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+inp = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+out = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+margin = float(inp["sheet"]["margin_mm"])
+for p in out.get("placements", []):
+    x = float(p["x_mm"])
+    y = float(p["y_mm"])
+    if x < margin - 1e-3 or y < margin - 1e-3:
+        raise SystemExit(f"placement below margin: {p}")
+print(f"[NEST] 0 out-of-bounds OK, placed={len(out.get('placements', []))}")
+PY
 fi
 
 echo "[DONE] smoketest OK"
