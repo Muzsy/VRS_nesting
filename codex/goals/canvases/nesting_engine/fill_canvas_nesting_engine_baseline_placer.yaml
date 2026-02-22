@@ -1,0 +1,311 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_baseline_placer.yaml
+#
+# Mentés helye a repóban:
+#   codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_baseline_placer.yaml
+#
+# TASK_SLUG: nesting_engine_baseline_placer
+# AREA:      nesting_engine
+
+steps:
+  - name: "Felderítés és kontextus összegyűjtése"
+    description: >
+      Olvasd el kötelező sorrendben: AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md.
+      Olvasd el az előző task kimeneteit:
+        - rust/nesting_engine/src/geometry/pipeline.rs  (run_inflate_pipeline API)
+        - rust/nesting_engine/src/io/pipeline_io.rs     (PipelineRequest, PipelineResponse)
+        - rust/nesting_engine/src/main.rs               (inflate-parts subcommand struktúra)
+        - rust/nesting_engine/Cargo.toml                (meglévő dependency-k: jagua-rs? rstar? sha2?)
+        - docs/nesting_engine/io_contract_v2.md         (input/output séma)
+        - docs/nesting_engine/json_canonicalization.md  (determinism_hash szabály)
+        - docs/nesting_engine/tolerance_policy.md       (SCALE, TOUCH_TOL)
+        - docs/nesting_engine/architecture.md           (nominális vs. inflated szabály)
+        - vrs_nesting/runner/vrs_solver_runner.py       (runner architektúra minta)
+        - poc/nesting_engine/sample_input_v2.json       (poc fixture)
+      Azonosítsd: szerepel-e jagua-rs és rstar a nesting_engine/Cargo.toml-ban?
+      Ha nem, a vrs_solver/Cargo.toml-ból kell kimásolni a pinned verziókat.
+      Azonosítsd: elérhető-e sha2 crate a Cargo.toml-ban? Ha nem, add hozzá.
+      Azonosítsd: milyen JCS crate-et érdemes használni (json-canon vagy manuális key-sort)?
+      Ha bármelyik fájl nem létezik: állj meg és jelezd pontosan mit kerestél.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_baseline_placer.md"
+
+  - name: "Cargo.toml dependency bővítés"
+    description: >
+      Ha szükséges (felderítés alapján), egészítsd ki a rust/nesting_engine/Cargo.toml-t:
+        - sha2 (SHA-256 hash): keress rá a legfrissebb stabil verzióra, pl. sha2 = "=X.Y.Z"
+        - hex (byte → hex string): ha szükséges
+        - JCS serialize: json-canon crate vagy hasonló RFC 8785 implementáció
+          Alternativa ha nincs megfelelő crate: manuális key-sort + serde_json
+        - rstar (ha nincs): az rstar broad-phase R-tree könyvtár
+      TILOS módosítani: rust/vrs_solver/Cargo.toml
+      Futtasd ellenőrzésként: cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+      Ha FAIL: javítsd a dependency-t, ne lépj tovább.
+    outputs:
+      - "rust/nesting_engine/Cargo.toml"
+      - "rust/nesting_engine/Cargo.lock"
+
+  - name: "Feasibility engine implementálása"
+    description: >
+      Hozd létre a rust/nesting_engine/src/feasibility/ könyvtárat.
+      Hozd létre a rust/nesting_engine/src/feasibility/mod.rs fájlt:
+        pub mod aabb;
+        pub mod narrow;
+        pub use mod::{can_place, PlacedPart};
+      Hozd létre a rust/nesting_engine/src/feasibility/aabb.rs fájlt.
+        Definiáld az Aabb struktúrát (min_x, min_y, max_x, max_y: i64).
+        Definiáld az aabb_from_polygon(polygon: &[Point64]) -> Aabb függvényt.
+        Definiáld az aabb_overlaps(a: &Aabb, b: &Aabb) -> bool függvényt.
+        Touching AABB-k (érintkezők) = overlaps = true (konzervatív, TOUCH_TOL szerint).
+      Hozd létre a rust/nesting_engine/src/feasibility/narrow.rs fájlt.
+        Definiáld a PlacedPart struktúrát:
+          { inflated_polygon: Polygon64, aabb: Aabb }
+        Definiáld a can_place függvényt:
+          pub fn can_place(
+            candidate: &Polygon64,  // inflated, translate+rotate alkalmazva
+            bin: &Polygon64,        // tábla hasznosítható területe (margin alkalmazva)
+            placed: &[PlacedPart],  // már elhelyezettek
+          ) -> bool
+        Implementáció:
+          1. AABB broad-phase: candidate AABB a bin AABB-n belül van-e?
+             Ha nem → false (out of bounds)
+          2. AABB broad-phase: candidate AABB metszi-e bármelyik placed AABB-t?
+             Ha nem → true (biztosan elfér)
+          3. Narrow-phase containment: candidate minden csúcsa a bin polygon belsejében van-e?
+             (point-in-polygon, i_overlay vagy saját implementáció)
+          4. Narrow-phase overlap: candidate metszi-e bármelyik placed polygon-t?
+             (polygon intersection, i_overlay boolean intersection)
+          5. Ha minden check OK → true, különben false
+        Unit tesztek (#[cfg(test)]):
+          - ok_case: kis téglalap nagy bin-ben, semmi placed → true
+          - overlap_case: két téglalap ugyanazon pozícióban → false
+          - containment_case: candidate kilóg a bin-ből → false
+          - touching_case: két téglalap pontosan érinti egymást → false (konzervatív)
+    outputs:
+      - "rust/nesting_engine/src/feasibility/mod.rs"
+      - "rust/nesting_engine/src/feasibility/aabb.rs"
+      - "rust/nesting_engine/src/feasibility/narrow.rs"
+
+  - name: "BLF placer implementálása"
+    description: >
+      Hozd létre a rust/nesting_engine/src/placement/ könyvtárat.
+      Hozd létre a rust/nesting_engine/src/placement/mod.rs fájlt:
+        pub mod blf;
+        pub use blf::{blf_place, PlacementResult, PlacedItem};
+      Hozd létre a rust/nesting_engine/src/placement/blf.rs fájlt.
+      Definiáld a következő struktúrákat:
+        PlacedItem { part_id: String, instance: usize, sheet: usize,
+                     x_mm: f64, y_mm: f64, rotation_deg: i32 }
+        UnplacedItem { part_id: String, instance: usize, reason: String }
+        PlacementResult { placed: Vec<PlacedItem>, unplaced: Vec<UnplacedItem> }
+      Implementáld a blf_place függvényt:
+        pub fn blf_place(
+          parts: &[InflatedPartSpec],  // id, inflated polygon, allowed_rotations, quantity
+          bin_polygon: &Polygon64,     // tábla hasznosítható területe
+          grid_step_mm: f64,           // rács lépésköze
+          time_limit_sec: u64,
+          started_at: std::time::Instant,
+        ) -> PlacementResult
+      Algoritmus (kötelező sorrend a determinizmushoz):
+        1. Parts rendezése: csökkenő terület (nominális bounding box area) szerint.
+           Azonos terület esetén: id lexikografikus sorrendje (stabilis rendezés).
+        2. Minden part minden instance-jára (0..quantity):
+           a. Time limit ellenőrzés: ha lejárt → TIME_LIMIT_EXCEEDED, break
+           b. Rács traversal: Y = 0 + margin_step-től felfelé, X = 0 + margin_step-től jobbra
+              (X-major: X belső ciklus, Y külső ciklus — bal-alsó saroktól indulva)
+           c. Minden (x, y) pozícióra: allowed_rotations_deg sorrendjében rotation-ok
+           d. can_place() check az adott pozícióra és rotációra
+           e. Első feasible → PlacedItem, placed lista bővítése, BREAK (tovább nem keres)
+           f. Ha nem fért el → UnplacedItem PART_NEVER_FITS_SHEET reason-nel
+        3. Return PlacementResult
+      Unit tesztek:
+        - basic_placement: 2 kis téglalap elfér egy nagyobb bin-ben → placed.len() == 2
+        - determinism: ugyanaz az input → ugyanaz a placed lista (sorted assert_eq!)
+    outputs:
+      - "rust/nesting_engine/src/placement/mod.rs"
+      - "rust/nesting_engine/src/placement/blf.rs"
+
+  - name: "Multi-sheet greedy stratégia implementálása"
+    description: >
+      Hozd létre a rust/nesting_engine/src/multi_bin/ könyvtárat.
+      Hozd létre a rust/nesting_engine/src/multi_bin/mod.rs fájlt:
+        pub mod greedy;
+        pub use greedy::{greedy_multi_sheet, MultiSheetResult};
+      Hozd létre a rust/nesting_engine/src/multi_bin/greedy.rs fájlt.
+      Definiáld a MultiSheetResult struktúrát:
+        { placed: Vec<PlacedItem>, unplaced: Vec<UnplacedItem>, sheets_used: usize }
+      Implementáld a greedy_multi_sheet függvényt:
+        pub fn greedy_multi_sheet(
+          parts: &[InflatedPartSpec],
+          bin_polygon: &Polygon64,
+          grid_step_mm: f64,
+          time_limit_sec: u64,
+        ) -> MultiSheetResult
+      Algoritmus:
+        1. started_at = Instant::now()
+        2. Első kör: blf_place minden part-ra, sheet_index = 0
+        3. Ha van unplaced és time limit nem járt le → sheet_index++ és ismétlés az unplaced-del
+        4. Ha time limit lejárt → maradék unplaced → TIME_LIMIT_EXCEEDED
+        5. sheets_used = legmagasabb sheet_index + 1
+    outputs:
+      - "rust/nesting_engine/src/multi_bin/mod.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+
+  - name: "Export + determinism_hash implementálása"
+    description: >
+      Hozd létre a rust/nesting_engine/src/export/ könyvtárat.
+      Hozd létre a rust/nesting_engine/src/export/mod.rs fájlt:
+        pub mod output_v2;
+        pub use output_v2::build_output_v2;
+      Hozd létre a rust/nesting_engine/src/export/output_v2.rs fájlt.
+      Implementáld a build_output_v2 függvényt, amely egy MultiSheetResult-ból
+      és a meta adatokból io_contract_v2 szerinti serde_json::Value-t épít.
+      A determinism_hash számítása:
+        1. Építs hash_view JSON-t:
+           { "schema_version": "nesting_engine.hash_view.v1",
+             "placements": [ { "sheet_id": "S<n>", "part_id": "...",
+               "rotation_deg": N, "x_scaled_i64": round(x_mm * 1_000_000),
+               "y_scaled_i64": round(y_mm * 1_000_000) } ] }
+        2. Rendezd a placements tömböt: (sheet_id, part_id, rotation_deg, x_scaled_i64, y_scaled_i64)
+        3. Kanonizáld: JCS (RFC 8785) — json-canon crate vagy manuális:
+           - serde_json::to_string rendezi-e a kulcsokat? NEM feltétlenül → BTreeMap-et használj
+             hogy a kulcsok lexikografikus sorrendben kerüljenek a JSON-ba
+           - Nincs whitespace
+        4. UTF-8 byte konverzió
+        5. SHA-256: sha2::Sha256::digest(bytes).hex()
+        6. "sha256:" + hex_string
+      Az output meta.determinism_hash mező = a fenti érték.
+      TILOS: a nyers output JSON (placement koordináták float-ként) direkt hash-elése.
+    outputs:
+      - "rust/nesting_engine/src/export/mod.rs"
+      - "rust/nesting_engine/src/export/output_v2.rs"
+
+  - name: "nest subcommand + modulok bekötése"
+    description: >
+      Frissítsd a rust/nesting_engine/src/main.rs fájlt:
+        - Adj hozzá mod deklarációkat: feasibility, placement, multi_bin, export
+        - Adj hozzá nest subcommand-ot:
+          if args.len() >= 2 && args[1] == "nest" { run_nest() }
+        - Implementáld a run_nest() függvényt:
+          1. stdin-ről olvassa az io_contract_v2 input JSON-t (serde_json::from_reader)
+          2. Minden part-ra: run_inflate_pipeline() hívás az inflated geometriáért
+          3. greedy_multi_sheet() hívás
+          4. build_output_v2() hívás (determinism_hash beleértve)
+          5. stdout-ra írja az io_contract_v2 output JSON-t
+          6. Hiba esetén stderr-re ír és exit 1
+        - A meglévő inflate-parts subcommand ÉRINTETLEN marad
+      Futtasd: cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+      Ha FAIL: javítsd, ne lépj tovább.
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Python runner implementálása"
+    description: >
+      Hozd létre a vrs_nesting/runner/nesting_engine_runner.py fájlt.
+      A vrs_solver_runner.py mintájára, de az alábbi eltérésekkel:
+        - Subprocesst stdin/stdout-on keresztül kommunikál (nem fájlokon):
+            proc = subprocess.run(
+              [bin_path, "nest"],
+              input=input_json_str,
+              capture_output=True,
+              text=True,
+              timeout=time_limit_sec + 5,
+            )
+        - Binary resolution: --nesting-engine-bin flag → NESTING_ENGINE_BIN env → PATH "nesting_engine"
+        - CLI interface:
+            python3 -m vrs_nesting.runner.nesting_engine_runner \
+              --input <path> --seed <int> --time-limit <int> [--nesting-engine-bin <path>]
+        - Output a runs/<run_id>/ könyvtárba mentve:
+            nesting_input.json   ← input snapshot
+            nesting_output.json  ← solver stdout
+            runner_meta.json     ← meta
+        - runner_meta.json minimális tartalma:
+            run_id, solver_version (output.solver_version), input_sha256, output_sha256,
+            started_at_utc, ended_at_utc, elapsed_sec, return_code, determinism_hash
+        - stdout: kizárólag run_dir útvonala
+        - stderr: diagnosztika
+        - Non-zero exit → NestingEngineRunnerError
+        - Output parse hiba → NestingEngineRunnerError
+      Definiáld a következő exception osztályokat (mint vrs_solver_runner.py-ban):
+        NestingEngineRunnerError, NestingEngineBinaryNotFoundError,
+        NestingEngineNonZeroExitError, NestingEngineOutputParseError
+    outputs:
+      - "vrs_nesting/runner/nesting_engine_runner.py"
+
+  - name: "Nest smoke futás + validáció + benchmark"
+    description: >
+      Hajtsd végre a poc fixture-ön a teljes pipeline-t:
+        cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+        cat poc/nesting_engine/sample_input_v2.json \
+          | ./rust/nesting_engine/target/release/nesting_engine nest \
+          > /tmp/baseline_out.json
+      Ellenőrizd:
+        python3 -m json.tool /tmp/baseline_out.json > /dev/null   # valid JSON
+      Ellenőrizd a determinizmus_hash-t:
+        python3 -c "
+        import json
+        a = json.load(open('/tmp/baseline_out.json'))
+        h = a['meta']['determinism_hash']
+        assert h.startswith('sha256:') and h != 'sha256:placeholder', f'bad hash: {h}'
+        print('hash OK:', h[:30], '...')
+        "
+      Futtasd kétszer és ellenőrizd az egyezést:
+        cat poc/nesting_engine/sample_input_v2.json \
+          | ./rust/nesting_engine/target/release/nesting_engine nest \
+          > /tmp/baseline_out2.json
+        python3 -c "
+        import json
+        a = json.load(open('/tmp/baseline_out.json'))
+        b = json.load(open('/tmp/baseline_out2.json'))
+        assert a['meta']['determinism_hash'] == b['meta']['determinism_hash'], 'HASH MISMATCH'
+        print('determinism OK')
+        "
+      Ellenőrizd a 0 out-of-bounds invariánst (bbox szinten):
+        python3 -c "
+        import json
+        inp = json.load(open('poc/nesting_engine/sample_input_v2.json'))
+        out = json.load(open('/tmp/baseline_out.json'))
+        sheet = inp['sheet']
+        margin = sheet['margin_mm']
+        W = sheet['width_mm']; H = sheet['height_mm']
+        for p in out['placements']:
+          assert p['x_mm'] >= margin - 0.001, f'x out of bounds: {p}'
+          assert p['y_mm'] >= margin - 0.001, f'y out of bounds: {p}'
+        print('0 out-of-bounds OK, placed:', len(out['placements']))
+        "
+      Rögzítsd a mérési eredményt:
+        sheets_used, utilization_pct, elapsed_sec a /tmp/baseline_out.json-ból.
+      Hozd létre a poc/nesting_engine/baseline_benchmark.md fájlt a valós értékekkel.
+    outputs:
+      - "poc/nesting_engine/baseline_benchmark.md"
+
+  - name: "Checklist és report vázlat létrehozása"
+    description: >
+      Hozd létre a codex/codex_checklist/nesting_engine/nesting_engine_baseline_placer.md
+      fájlt a canvas DoD listájának pipálható változataként.
+      Hozd létre a codex/reports/nesting_engine/nesting_engine_baseline_placer.md fájlt
+      a docs/codex/report_standard.md szerkezete szerint:
+        - Meta szekció kitöltve
+        - Scope: cél és nem-cél
+        - Változások összefoglalója: érintett fájlok
+        - Baseline benchmark eredmény (sheets_used, utilization_pct, hash)
+        - Verifikáció: cargo test, build, nest smoke, determinism check, verify gate
+        - DoD → Evidence Matrix
+        - AUTO_VERIFY blokk placeholder
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_baseline_placer.md"
+      - "codex/reports/nesting_engine/nesting_engine_baseline_placer.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_baseline_placer.md
+      A wrapper futtatja a teljes check.sh-t, logot ment és frissíti a report AUTO_VERIFY blokkját.
+      Ha FAIL: ne zárj le semmit, javítsd a hibát és futtasd újra.
+      Ellenőrizd a gate kimenetében:
+        - cargo test PASS
+        - cargo build vrs_solver PASS (regresszió)
+        - cargo build nesting_engine PASS
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_baseline_placer.md"
+      - "codex/reports/nesting_engine/nesting_engine_baseline_placer.verify.log"
