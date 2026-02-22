@@ -1,0 +1,88 @@
+{
+  "version": "nesting_engine_v2",
+  "seed": 42,
+  "solver_version": "0.1.0",
+  "status": "partial",
+  "sheets_used": 1,
+  "placements": [
+    {
+      "part_id": "rect_100x50",
+      "instance": 0,
+      "sheet": 0,
+      "x_mm": 10,
+      "y_mm": 10,
+      "rotation_deg": 0
+    },
+    {
+      "part_id": "rect_100x50",
+      "instance": 1,
+      "sheet": 0,
+      "x_mm": 120,
+      "y_mm": 10,
+      "rotation_deg": 90
+    },
+    {
+      "part_id": "rect_100x50",
+      "instance": 2,
+      "sheet": 0,
+      "x_mm": 180,
+      "y_mm": 10,
+      "rotation_deg": 0
+    },
+    {
+      "part_id": "l_shape",
+      "instance": 0,
+      "sheet": 0,
+      "x_mm": 10,
+      "y_mm": 130,
+      "rotation_deg": 0
+    },
+    {
+      "part_id": "l_shape",
+      "instance": 1,
+      "sheet": 0,
+      "x_mm": 100,
+      "y_mm": 130,
+      "rotation_deg": 90
+    },
+    {
+      "part_id": "ring",
+      "instance": 0,
+      "sheet": 0,
+      "x_mm": 210,
+      "y_mm": 130,
+      "rotation_deg": 0
+    }
+  ],
+  "unplaced": [
+    {
+      "part_id": "rect_100x50",
+      "instance": 3,
+      "reason": "TIME_LIMIT_EXCEEDED"
+    },
+    {
+      "part_id": "rect_100x50",
+      "instance": 4,
+      "reason": "TIME_LIMIT_EXCEEDED"
+    },
+    {
+      "part_id": "l_shape",
+      "instance": 2,
+      "reason": "TIME_LIMIT_EXCEEDED"
+    },
+    {
+      "part_id": "ring",
+      "instance": 1,
+      "reason": "TIME_LIMIT_EXCEEDED"
+    }
+  ],
+  "objective": {
+    "sheets_used": 1,
+    "utilization_pct": 64.2
+  },
+  "meta": {
+    "elapsed_sec": 30.0,
+    "determinism_hash": "sha256:placeholder"
+  },
+  "_note": "Illusztrációs output — nem tényleges solver eredmény. Értékek az F1-4 implementáció után frissítendők."
+}

@@ -1,0 +1,179 @@
+[PYTEST] Unit tests
+................................                                         [100%]
+32 passed in 2.34s
+[MYPY] Type check
+Success: no issues found in 24 source files
+[SPARROW] Resolve/build via scripts/ensure_sparrow.sh
+[ensure_sparrow] pin commit (fallback_cache): c95454e390276231b278c879d25b39708398b7d3
+HEAD is now at c95454e Merge pull request #132 from JeroenGar/rand-0.10
+[ensure_sparrow] build source: .cache/sparrow (/home/muszy/projects/VRS_nesting/.cache/sparrow)
+    Finished `release` profile [optimized] target(s) in 0.13s
+[3/3] Sparrow IO smoketest
+[1/2] Sparrow run via runner module
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T103240Z_21b09a8d
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260222T103240Z_21b09a8d/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260222T103240Z_21b09a8d
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260222T103240Z_21b09a8d/output/final_swim.json
+PASS ✅
+ strip_height=5752.0
+ strip_width =5928.5005
+ placed_items=48 (demand_sum=48)
+ overlap-check: PASS
+[DXF] Import convention smoke
+[OK] DXF import convention smoke passed
+[GEO] Polygonize + offset robustness smoke
+[OK] geometry pipeline smoke passed
+[DOCS] Command references smoke
+[OK] docs command smoke passed
+[DXF] Export --run-dir smoke
+[OK] exporter --run-dir smoke passed
+[DXF] Source geometry BLOCK/INSERT export smoke
+[OK] source geometry export smoke passed
+[DXF] Multi-sheet wrapper edge-cases smoke
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_v49fh_pm/run_a/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_v49fh_pm/run_a/sheets/sheet_001/instance.json -t 2 -s 0
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_v49fh_pm/run_b/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_v49fh_pm/run_b/sheets/sheet_001/instance.json -t 2 -s 0
+[OK] multisheet wrapper edge-cases smoke passed
+[DXF] Real fixture import smoke
+[OK] real DXF fixture smoke passed
+[DXF] Real Sparrow pipeline smoke
+[OK] real DXF + Sparrow pipeline smoke passed
+[DXF] SVG export artifact smoke
+[OK] svg export smoke passed
+[BUILD] nesting_engine (release)
+warning: enum `OffsetError` is never used
+  --> src/geometry/offset.rs:17:10
+   |
+17 | pub enum OffsetError {
+   |          ^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: type alias `MmPt` is never used
+  --> src/geometry/offset.rs:27:6
+   |
+27 | type MmPt = [f64; 2];
+   |      ^^^^
+
+warning: type alias `MmShape` is never used
+  --> src/geometry/offset.rs:30:6
+   |
+30 | type MmShape = Vec<Vec<MmPt>>;
+   |      ^^^^^^^
+
+warning: function `signed_area_2d` is never used
+  --> src/geometry/offset.rs:37:4
+   |
+37 | fn signed_area_2d(pts: &[MmPt]) -> f64 {
+   |    ^^^^^^^^^^^^^^
+
+warning: function `ensure_ccw` is never used
+  --> src/geometry/offset.rs:53:4
+   |
+53 | fn ensure_ccw(mut pts: Vec<MmPt>) -> Vec<MmPt> {
+   |    ^^^^^^^^^^
+
+warning: function `ensure_cw` is never used
+  --> src/geometry/offset.rs:62:4
+   |
+62 | fn ensure_cw(mut pts: Vec<MmPt>) -> Vec<MmPt> {
+   |    ^^^^^^^^^
+
+warning: function `pts_to_mm` is never used
+  --> src/geometry/offset.rs:73:4
+   |
+73 | fn pts_to_mm(pts: &[Point64]) -> Vec<MmPt> {
+   |    ^^^^^^^^^
+
+warning: function `mm_to_pts` is never used
+  --> src/geometry/offset.rs:79:4
+   |
+79 | fn mm_to_pts(path: &[MmPt]) -> Vec<Point64> {
+   |    ^^^^^^^^^
+
+warning: function `do_offset` is never used
+  --> src/geometry/offset.rs:99:4
+   |
+99 | fn do_offset(shape: MmShape, delta_mm: f64) -> Result<MmShape, OffsetError> {
+   |    ^^^^^^^^^
+
+warning: function `inflate_outer` is never used
+   --> src/geometry/offset.rs:120:8
+    |
+120 | pub fn inflate_outer(polygon: &Polygon64, delta_mm: f64) -> Result<Polygon64, OffsetError> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `deflate_hole` is never used
+   --> src/geometry/offset.rs:144:8
+    |
+144 | pub fn deflate_hole(hole: &[Point64], delta_mm: f64) -> Result<Vec<Point64>, OffsetError> {
+    |        ^^^^^^^^^^^^
+
+warning: function `inflate_part` is never used
+   --> src/geometry/offset.rs:178:8
+    |
+178 | pub fn inflate_part(geom: &PartGeometry, delta_mm: f64) -> Result<PartGeometry, OffsetError> {
+    |        ^^^^^^^^^^^^
+
+warning: constant `SCALE` is never used
+ --> src/geometry/scale.rs:2:11
+  |
+2 | pub const SCALE: i64 = 1_000_000;
+  |           ^^^^^
+
+warning: constant `TOUCH_TOL` is never used
+ --> src/geometry/scale.rs:7:11
+  |
+7 | pub const TOUCH_TOL: i64 = 1;
+  |           ^^^^^^^^^
+
+warning: function `mm_to_i64` is never used
+  --> src/geometry/scale.rs:11:8
+   |
+11 | pub fn mm_to_i64(mm: f64) -> i64 {
+   |        ^^^^^^^^^
+
+warning: function `i64_to_mm` is never used
+  --> src/geometry/scale.rs:16:8
+   |
+16 | pub fn i64_to_mm(scaled: i64) -> f64 {
+   |        ^^^^^^^^^
+
+warning: struct `Point64` is never constructed
+ --> src/geometry/types.rs:3:12
+  |
+3 | pub struct Point64 {
+  |            ^^^^^^^
+
+warning: struct `Polygon64` is never constructed
+  --> src/geometry/types.rs:12:12
+   |
+12 | pub struct Polygon64 {
+   |            ^^^^^^^^^
+
+warning: struct `PartGeometry` is never constructed
+  --> src/geometry/types.rs:19:12
+   |
+19 | pub struct PartGeometry {
+   |            ^^^^^^^^^^^^
+
+warning: `nesting_engine` (bin "nesting_engine") generated 19 warnings
+    Finished `release` profile [optimized] target(s) in 0.03s
+[4/5] Nesting solution validator smoke
+    Finished `release` profile [optimized] target(s) in 0.07s
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T103432Z_9e365939
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260222T103432Z_9e365939/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260222T103432Z_9e365939/solver_output.json --seed 0 --time-limit 60
+[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260222T103432Z_9e365939
+PASS: nesting solution is valid
+ input=/home/muszy/projects/VRS_nesting/runs/20260222T103432Z_9e365939/solver_input.json
+ output=/home/muszy/projects/VRS_nesting/runs/20260222T103432Z_9e365939/solver_output.json
+[5/5] Determinism hash stability smoke
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T103433Z_93860ae3
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260222T103433Z_93860ae3/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260222T103433Z_93860ae3/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260222T103433Z_938f3536
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260222T103433Z_938f3536/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260222T103433Z_938f3536/solver_output.json --seed 0 --time-limit 60
+[INFO] Determinism hash stable: 6fa835403323f854933aadd5e00de5807aeff5225dd923b5d2844e28a9f6a8f7
+[6/6] Timeout/perf guard smoke
+[OK] timeout/perf guard smoke passed
+[DONE] smoketest OK

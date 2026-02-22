@@ -1,0 +1,34 @@
+{
+  "version": "nesting_engine_v2",
+  "seed": 42,
+  "time_limit_sec": 30,
+  "sheet": {
+    "width_mm": 500,
+    "height_mm": 1000,
+    "kerf_mm": 0.2,
+    "margin_mm": 5.0
+  },
+  "parts": [
+    {
+      "id": "rect_100x50",
+      "quantity": 5,
+      "allowed_rotations_deg": [0, 90, 180, 270],
+      "outer_points_mm": [[0, 0], [100, 0], [100, 50], [0, 50]],
+      "holes_points_mm": []
+    },
+    {
+      "id": "l_shape",
+      "quantity": 3,
+      "allowed_rotations_deg": [0, 90, 180, 270],
+      "outer_points_mm": [[0, 0], [80, 0], [80, 40], [40, 40], [40, 80], [0, 80]],
+      "holes_points_mm": []
+    },
+    {
+      "id": "ring",
+      "quantity": 2,
+      "allowed_rotations_deg": [0, 180],
+      "outer_points_mm": [[0, 0], [60, 0], [60, 60], [0, 60]],
+      "holes_points_mm": [[[10, 10], [50, 10], [50, 50], [10, 50]]]
+    }
+  ]
+}
