@@ -1,0 +1,62 @@
+steps:
+  - name: "Felderítés: self_intersect és warning forrása"
+    description: >
+      Nyisd meg és vizsgáld át a következő fájlokat:
+      - canvases/nesting_engine/nesting_engine_polygon_pipeline.md (hibás bináris path keresése)
+      - rust/nesting_engine/src/geometry/pipeline.rs (SELF_INTERSECT kezelés + meglévő tesztek)
+      - rust/nesting_engine/src/geometry/offset.rs (vagy ahol releváns) a warning okának azonosítására.
+      Rögzítsd a pontos helyeket kommentekkel a javított fájlokban (minimal).
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_polygon_pipeline.md"
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+      - "rust/nesting_engine/src/geometry/offset.rs"
+
+  - name: "Canvas javítás: bináris útvonal pontosítása"
+    description: >
+      Javítsd a canvases/nesting_engine/nesting_engine_polygon_pipeline.md fájlban
+      a futtatási példákban szereplő bináris útvonalat repo-relatív módon.
+      Elvárt: a nesting_engine bináris a rust/nesting_engine/target/release/nesting_engine alatt van
+      (vagy dokumentáld a helyes útvonalat a repo alapján).
+      Ne változtass a tartalmon mást, csak a hibás path-ot.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_polygon_pipeline.md"
+
+  - name: "SELF_INTERSECT kezelési bizonyíték: unit teszt + stabil viselkedés"
+    description: >
+      A rust/nesting_engine/src/geometry/pipeline.rs fájlban adj hozzá egy új unit tesztet,
+      ami determinisztikusan előállít egy önmetsző (pl. bow-tie) outer polygont.
+      Elvárt: a pipeline self_intersect státusszal térjen vissza (ne crash),
+      és adjon diagnosztikát a meglévő output struktúrában.
+      Ha szükséges, tegyél be korai validációt (nominális outer check) vagy tartsd meg a post-checket,
+      de a tesztnek stabilan és egyértelműen PASS-olnia kell.
+    outputs:
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+
+  - name: "Warning tisztítás: never-constructed ág kezelése"
+    description: >
+      Ha a verify/build warning oka egy olyan enum/ág, ami ténylegesen sosem konstruálódik,
+      akkor minimal-invazívan szüntesd meg:
+      - vagy távolítsd el a felesleges enum variánst és igazítsd a kapcsolódó match/handling kódot,
+      - vagy (ha indokolt) vezesd be tényleges konstruálását.
+      Cél: a gate tiszta legyen és a kód ne legyen félrevezető.
+      Ne változtass IO contractot.
+    outputs:
+      - "rust/nesting_engine/src/geometry/offset.rs"
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+
+  - name: "Checklist + report létrehozása a fixekhez"
+    description: >
+      Hozd létre a fix task saját checklistjét és reportját Report Standard v2 szerint.
+      A checklistben legyenek pipálható DoD pontok (canvas DoD alapján).
+      A reportban legyen DoD→Evidence + Advisory, és legyen AUTO_VERIFY blokk előkészítve.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_polygon_pipeline_fixes.md"
+      - "codex/reports/nesting_engine/nesting_engine_polygon_pipeline_fixes.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_polygon_pipeline_fixes.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_polygon_pipeline_fixes.md"
+      - "codex/reports/nesting_engine/nesting_engine_polygon_pipeline_fixes.verify.log"
