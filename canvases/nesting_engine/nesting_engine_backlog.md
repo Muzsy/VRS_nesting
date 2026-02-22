@@ -211,6 +211,34 @@ Multi-sheet: iteratív "amennyit befér egy táblára" stratégia. Az NFP majd e
 
 ---
 
+### F1-5 — `nesting_engine_stock_pipeline`
+
+**Leírás:** A táblák (stock/sheet) hasznos területének (usable area) determinisztikus kiszámítása a Rust kernelben. A meglévő Python (Shapely) alapú `offset_stock_geometry` kiváltása. A tábla külső kontúrját befelé kell tolni (deflate) a margó (margin) mértékével, míg a táblán lévő esetleges anyaghibákat/lyukakat kifelé kell tolni (inflate). Ez biztosítja a "Truth Layer" teljes determinizmusát az irreguláris táblákra (P0 cél) és a leeső darabokra (remnants) is. Kritikus matematikai szabály (Usable Area definíció): Az eltolás (clearance) mértéke szigorúan `margin_mm ! (kerf_mm / 2.0)`. A stock esetén az outer kontúr befelé, a holes kontúrok kifelé tolódnak ekkora értékkel.
+
+**Tervezett architektúra / contract:**
+
+- `pipeline_io.rs` kiterjesztése: `StockRequest` és `StockResponse` bevezetése a meglévő part request/response mellé.
+- Geometria inverz eltolás (Rust): stock offset a part offset inverze:
+  - outer: **deflate** (befelé tolás)
+  - holes/defects: **inflate** (kifelé tolás)
+  - implementáció `i_overlay`-val a `geometry/pipeline.rs` megfelelő ágában
+- Python kivezetés: a runner egyetlen JSON-ben küldi a nyers **part** és **stock** geometriákat; a Rust motor visszaadja a "nestingre kész" determinisztikus (inflated/deflated) geometriákat.
+
+**Érintett fájlok (módosul):**
+- `docs/nesting_engine/io_contract_v2.md` — `StockRequest` és `StockResponse` definiálása
+- `rust/nesting_engine/src/io/pipeline_io.rs` — új structok a stock kommunikációhoz
+- `rust/nesting_engine/src/geometry/pipeline.rs` — tábla inverz eltolási logikája (outer deflate, holes inflate)
+- `vrs_nesting/geometry/offset.py` — átkötés Rust subprocess hívásra a Shapely helyett (stock oldal is)
+
+**DoD:**
+- [ ] `StockRequest` és `StockResponse` kiterjesztve a Rust IO rétegben
+- [ ] stock_offset() PASS: outer befelé, holes kifelé tolódik a margin/kerf alapján
+- [ ] A `vrs_nesting/geometry/offset.py` már nem használja a Shapely-t a stock számításhoz sem
+- [ ] Determinisztika teszt: irreguláris tábla (lyukakkal) esetén is bit-azonos kimenet
+- [ ] `./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_stock_pipeline.md` PASS
+
+---
+
 ## Fázis 2 — NFP Motor (mérhetően jobb kihasználtság)
 
 **Cél:** Az NFP cache-re épülő placement váltja ki a BLF rács-alapú megközelítést. Mérhetően jobb eredmény a Fázis 1 baseline-hoz képest.
@@ -346,6 +374,7 @@ Multi-sheet: iteratív "amennyit befér egy táblára" stratégia. Az NFP majd e
 - [ ] F1-2: `nesting_engine_io_contract_v2` — JSON IO contract dokumentálva + példák
 - [ ] F1-3: `nesting_engine_polygon_pipeline` — nominal → inflated pipeline
 - [ ] F1-4: `nesting_engine_baseline_placer` — BLF placer + Python runner + benchmark harness
+- [ ] F1-5: `nesting_engine_stock_pipeline` — determinisztikus stock offset (inverz infláció) a Rust kernelben
 
 ### Fázis 2 — NFP Motor
 - [ ] F2-1: `nfp_computation_convex` — konvex NFP + cache
