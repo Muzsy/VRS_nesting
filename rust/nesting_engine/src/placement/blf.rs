@@ -6,6 +6,7 @@ use crate::feasibility::{
 };
 use crate::geometry::{
     scale::{i64_to_mm, mm_to_i64},
+    trig_lut::{round_div_i128, normalize_deg, COS_Q, SIN_Q, TRIG_SCALE_I128},
     types::{Point64, Polygon64},
 };
 
@@ -168,20 +169,20 @@ fn rotate_polygon(poly: &Polygon64, rotation_deg: i32) -> Polygon64 {
 }
 
 fn rotate_point(p: Point64, rotation_deg: i32) -> Point64 {
-    match ((rotation_deg % 360) + 360) % 360 {
+    let norm = normalize_deg(rotation_deg);
+    match norm {
         0 => p,
         90 => Point64 { x: -p.y, y: p.x },
         180 => Point64 { x: -p.x, y: -p.y },
         270 => Point64 { x: p.y, y: -p.x },
         _ => {
-            let rad = (rotation_deg as f64).to_radians();
-            let c = rad.cos();
-            let s = rad.sin();
-            let x = i64_to_mm(p.x);
-            let y = i64_to_mm(p.y);
+            let c = COS_Q[norm] as i128;
+            let s = SIN_Q[norm] as i128;
+            let x = p.x as i128;
+            let y = p.y as i128;
             Point64 {
-                x: mm_to_i64(x * c - y * s),
-                y: mm_to_i64(x * s + y * c),
+                x: round_div_i128((x * c) - (y * s), TRIG_SCALE_I128),
+                y: round_div_i128((x * s) + (y * c), TRIG_SCALE_I128),
             }
         }
     }
@@ -270,5 +271,21 @@ mod tests {
         let b = blf_place(&[part], &bin, 1.0, 30, Instant::now());
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);
+    }
+
+    #[test]
+    fn rotate_point_non_orthogonal_is_fixed_point_deterministic() {
+        let p = Point64 {
+            x: 12_345_678,
+            y: -9_876_543,
+        };
+        let out = rotate_point(p, 17);
+        assert_eq!(
+            out,
+            Point64 {
+                x: 14_693_852,
+                y: -5_835_458,
+            }
+        );
     }
 }

@@ -1,0 +1,71 @@
+name: platform-determinism-rotation
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  determinism_x86_64:
+    name: determinism (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip git
+
+      - name: Install Python deps (pinned)
+        run: |
+          python3 -m pip install --break-system-packages -r requirements-dev.txt
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rotation determinism smoke
+        run: |
+          ./scripts/smoke_platform_determinism_rotation.sh
+
+  determinism_arm64:
+    name: determinism (arm64)
+    runs-on: ubuntu-24.04-arm64
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip git
+
+      - name: Install Python deps (pinned)
+        run: |
+          python3 -m pip install --break-system-packages -r requirements-dev.txt
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Assert arm64 runner architecture
+        run: |
+          ARCH="$(uname -m)"
+          if [[ "$ARCH" != "aarch64" && "$ARCH" != "arm64" ]]; then
+            echo "ERROR: expected arm64 hosted runner, got: $ARCH" >&2
+            exit 2
+          fi
+
+      - name: Rotation determinism smoke
+        run: |
+          ./scripts/smoke_platform_determinism_rotation.sh

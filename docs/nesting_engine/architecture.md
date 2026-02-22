@@ -42,7 +42,21 @@ Python DXF importer (nominal points)
 
 The pipeline does not mutate export-side nominal definitions.
 
-## 4. References
+## 4. Rotation determinism policy (placement)
+
+Placement rotation in `rust/nesting_engine/src/placement/blf.rs` must be platform-stable:
+
+- Orthogonal rotations (0/90/180/270) stay integer-only shortcuts.
+- Non-orthogonal rotations must use fixed-point LUT values from `geometry/trig_lut.rs`.
+- `TRIG_SCALE = 1_000_000_000` is used for `SIN_Q/COS_Q` coefficients.
+- Rotation math uses i128 intermediates:
+  - `x' = round_div(x * cos_q - y * sin_q, TRIG_SCALE)`
+  - `y' = round_div(x * sin_q + y * cos_q, TRIG_SCALE)`
+- Rounding is explicit deterministic half-away-from-zero (`round_div_i128`), not runtime `f64` trig/round.
+
+This keeps the placement output byte-stable across CPU architectures (x86_64, arm64) for identical input.
+
+## 5. References
 
 - `docs/nesting_engine/tolerance_policy.md` (SCALE, contour winding, touching policy)
 - `docs/nesting_engine/json_canonicalization.md` (determinism reference)

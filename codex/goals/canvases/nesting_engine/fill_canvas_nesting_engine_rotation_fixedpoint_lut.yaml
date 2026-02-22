@@ -1,0 +1,93 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_rotation_fixedpoint_lut.yaml
+steps:
+  - name: Repo-szabályok, rotációs kód és CI minták beolvasása
+    description: |
+      Olvasd be az AGENTS.md-t és a codex szabálydoksikat.
+      Azonosítsd a rotációs kódrészt: rust/nesting_engine/src/placement/blf.rs (rotate_point).
+      Nézd át a determinism kapcsolódásokat: export/output_v2.rs, geometry/scale.rs.
+      Nézd át a meglévő CI mintákat: .github/workflows/nesttool-smoketest.yml, repo-gate.yml.
+      Frissítsd a canvas-t úgy, hogy a konkrét változtatási pontok és DoD véglegesek legyenek.
+    outputs:
+      - canvases/nesting_engine/nesting_engine_rotation_fixedpoint_lut.md
+
+  - name: LUT modul létrehozása (fixed-point trig)
+    description: |
+      Hozd létre a rust/nesting_engine/src/geometry/trig_lut.rs modult:
+      - TRIG_SCALE konstans (pl. 1_000_000_000)
+      - SIN_Q és COS_Q tömb 360 elemre (0..359 fok)
+      - Helper: normalize_deg(i32) -> usize (0..359)
+      - Helper: rotációhoz determinisztikus i128 round-div függvény
+      A LUT tartalma legyen commitolt konstans, ne runtime trig.
+      Ha a geometry mod fájlban szükséges (mod.rs), vezesd be a modult.
+    outputs:
+      - rust/nesting_engine/src/geometry/trig_lut.rs
+      - rust/nesting_engine/src/geometry/mod.rs
+
+  - name: rotate_point átállítása fixed-point LUT-ra
+    description: |
+      Módosítsd a rust/nesting_engine/src/placement/blf.rs rotate_point függvényét:
+      - 0/90/180/270 maradjon gyors integer.
+      - Minden más szög esetén:
+        - NE használjon f64 sin/cos és NE konvertáljon mm-re.
+        - Használja a trig_lut modult és integer képletet i128 köztes értékekkel.
+        - Rounding explicit és determinisztikus legyen.
+      Adj hozzá/igazítsd a releváns use/import sorokat.
+    outputs:
+      - rust/nesting_engine/src/placement/blf.rs
+
+  - name: Rust unit teszt hozzáadása a LUT rotációra
+    description: |
+      Adj hozzá Rust unit tesztet (a meglévő test modban, vagy újban) a rotációra:
+      - Válassz egy nem-ortogonális szöget (pl. 17°).
+      - Definiálj fix Point64 értékeket és ellenőrizd, hogy a rotate_point outputja egzakt i64 értékekkel egyezik
+        (az elvárt értékek a LUT és round szabály alapján legyenek rögzítve).
+      - A teszt célja: platformfüggetlen, bit-azonos integer output.
+    outputs:
+      - rust/nesting_engine/src/placement/blf.rs
+
+  - name: Dokumentáció frissítése (rotation determinism policy)
+    description: |
+      Frissítsd a docs/nesting_engine/architecture.md-t:
+      - Rögzítsd, hogy a placement rotáció fixed-point LUT-ot használ platformfüggetlen determinizmus miatt.
+      - Írd le röviden a TRIG_SCALE és a rounding elvet (normatív jelleggel, tömören).
+    outputs:
+      - docs/nesting_engine/architecture.md
+
+  - name: Platform determinism smoke script + CI workflow
+    description: |
+      Hozd létre a scripts/smoke_platform_determinism_rotation.sh scriptet:
+      - építs vrs_solver release-t (cargo build --release --manifest-path rust/vrs_solver/Cargo.toml)
+      - készíts fix input JSON-t nem-ortogonális allowed_rotations_deg-gel (pl. [17])
+      - futtasd a vrs_solver_runner-t, olvasd ki runner_meta.json output_sha256-t
+      - hasonlítsd EXPECTED_OUTPUT_SHA256-hoz (repo-ban rögzített konstans a scriptben)
+      Majd hozd létre a .github/workflows/platform-determinism-rotation.yml workflow-t:
+      - job x86_64 (ubuntu-latest) + job arm64 (ubuntu-24.04-arm64) ha elérhető
+      - mindkét job ugyanazt a scriptet futtatja
+      Fontos: az EXPECTED_OUTPUT_SHA256 értékét a változtatás után generáld:
+      - futtasd helyben (CI-szerűen) a scriptet x86_64-en, és rögzítsd a kapott output_sha256-t a scriptbe.
+    outputs:
+      - scripts/smoke_platform_determinism_rotation.sh
+      - .github/workflows/platform-determinism-rotation.yml
+
+  - name: Checklist és report létrehozása
+    description: |
+      Készítsd el a codex checklistet és reportot a repo konvenciói szerint.
+      A reportban legyen:
+      - miért kellett LUT (f64 trig platform variance)
+      - hol lett lecserélve (blf.rs rotate_point)
+      - TRIG_SCALE, rounding policy
+      - platform smoke: EXPECTED_OUTPUT_SHA256 érték és hogyan lett generálva
+      - CI workflow megnevezése
+    outputs:
+      - codex/codex_checklist/nesting_engine/nesting_engine_rotation_fixedpoint_lut.md
+      - codex/reports/nesting_engine/nesting_engine_rotation_fixedpoint_lut.md
+
+  - name: Verify futtatás és log mentése
+    description: |
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_rotation_fixedpoint_lut.md
+      Ha hibát találsz, javítsd, majd futtasd újra.
+      Mentsd a verify logot a standard helyre.
+    outputs:
+      - codex/reports/nesting_engine/nesting_engine_rotation_fixedpoint_lut.md
+      - codex/reports/nesting_engine/nesting_engine_rotation_fixedpoint_lut.verify.log
