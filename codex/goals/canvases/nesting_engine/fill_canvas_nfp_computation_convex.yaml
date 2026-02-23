@@ -1,47 +1,219 @@
 steps:
-  - name: Goal YAML és task-artefakt keret rögzítése
+  - name: "Szabályok és előzmények betöltése"
     description: >
-      Töltsd ki a task YAML-t valid steps sémával. A további lépések csak az itt
-      deklarált outputs fájlokat érinthetik.
+      Olvasd el az AGENTS.md-t és rögzítsd a kötelező outputs szabályt.
+      Nyisd meg a következő fájlokat (kontextus és invariánsok):
+        - docs/nesting_engine/tolerance_policy.md (SCALE, TOUCH_TOL)
+        - rust/nesting_engine/src/geometry/types.rs (Point64, Polygon64 típusok)
+        - rust/nesting_engine/src/geometry/pipeline.rs (inflated pipeline output)
+        - rust/nesting_engine/src/lib.rs vagy main.rs (modul regisztrációs pont)
+        - poc/nesting_engine/baseline_benchmark.md (F1 baseline — a javulás mérési alap)
+        - canvases/nesting_engine/nfp_computation_convex.md (task specifikáció)
+      Ha bármelyik fájl nem létezik: állj meg és jelezd, pontosan mit kerestél és hol.
     outputs:
-      - "codex/goals/canvases/nesting_engine/fill_canvas_nfp_computation_convex.yaml"
+      - "canvases/nesting_engine/nfp_computation_convex.md"
 
-  - name: Geometriai i128 helper és NFP modul scaffold
+  - name: "i128 cross product helper + CCW/konvexitás ellenőrzők"
     description: >
-      Bővítsd a geometry types modult i128 cross-product és konvexitás/CCW
-      segédfüggvényekkel. Hozd létre az nfp modult (mod.rs, cache.rs, convex.rs)
-      és add hozzá a crate exportot lib.rs-ben.
+      Bővítsd a rust/nesting_engine/src/geometry/types.rs (vagy egy új
+      rust/nesting_engine/src/geometry/predicates.rs) fájlt a következőkkel:
+
+        1) cross_product_i128(dx1: i64, dy1: i64, dx2: i64, dy2: i64) -> i128
+           - minden szorzás i128-on történik (overflow védelem)
+           - ez a KÖTELEZŐ helper, amit minden irányítottság-ellenőrzés hív
+
+        2) is_ccw(poly: &Polygon64) -> bool
+           - a poligon területének előjele alapján (shoelace formula, i128)
+           - CCW = pozitív terület
+
+        3) is_convex(poly: &Polygon64) -> bool
+           - minden egymást követő él cross product előjele azonos
+           - uses cross_product_i128
+
+      Unit tesztek (minimum):
+        - rect 4 csúcs: is_ccw=true, is_convex=true
+        - CW rect: is_ccw=false
+        - L-alak: is_convex=false
+
+      Ha a helperek már léteznek: ellenőrizd, hogy i128-at használnak-e,
+      és javítsd, ha szükséges.
     outputs:
       - "rust/nesting_engine/src/geometry/types.rs"
-      - "rust/nesting_engine/src/lib.rs"
+
+  - name: "NFP modul scaffold + NfpError"
+    description: >
+      Hozd létre a rust/nesting_engine/src/nfp/mod.rs fájlt:
+        - pub mod convex;
+        - pub mod cache;
+        - NfpError enum: NotConvex, InvalidInput, EmptyPolygon
+        - A modul doccomment röviden leírja: ez az NFP réteg, F2-1 = konvex,
+          F2-2 = konkáv (külön task), a cache API mindkettőt kiszolgálja
+
+      Regisztráld a nfp modult a lib.rs-ben vagy main.rs-ben:
+        pub mod nfp;
+
+      Ellenőrizd, hogy `cargo build` PASS (üres modulokkal is).
+    outputs:
       - "rust/nesting_engine/src/nfp/mod.rs"
+      - "rust/nesting_engine/src/lib.rs"
+
+  - name: "NFP cache implementáció (F2-2 kompatibilis API)"
+    description: >
+      Hozd létre a rust/nesting_engine/src/nfp/cache.rs fájlt:
+
+        NfpCacheKey:
+          shape_id_a: u64
+          shape_id_b: u64
+          rotation_steps_b: i16   ← NEM f64, NEM f32
+          (derive: Debug, Clone, PartialEq, Eq, Hash)
+
+        CacheStats:
+          hits: u64
+          misses: u64
+          entries: usize
+
+        NfpCache:
+          store: HashMap<NfpCacheKey, Polygon64>
+          hits: u64
+          misses: u64
+          fn get(&mut self, key: &NfpCacheKey) -> Option<&Polygon64>
+          fn insert(&mut self, key: NfpCacheKey, nfp: Polygon64)
+          fn stats(&self) -> CacheStats
+
+      Fontos megszorítások:
+        - A kulcstípusban TILOS f64/f32 mező (clip: float_arithmetic)
+        - A modul doccomment magyarázza a rotation_steps_b értelmezését:
+          "0..=(360/rotation_step_deg − 1), az f64 fokszám kerülendő"
+        - Az F2-2 (konkáv NFP) ugyanezt a cache-t fogja használni —
+          az API nem változhat F2-2 implementálása során
+
+      Unit tesztek (minimum):
+        - insert + get: hit visszaad azonos polygont
+        - miss: None-t ad vissza
+        - stats: hits/misses helyes számlálás
+    outputs:
       - "rust/nesting_engine/src/nfp/cache.rs"
+
+  - name: "Konvex NFP implementáció (Minkowski-összeg)"
+    description: >
+      Hozd létre a rust/nesting_engine/src/nfp/convex.rs fájlt:
+
+        pub fn compute_convex_nfp(
+            a: &Polygon64,
+            b: &Polygon64,
+        ) -> Result<Polygon64, NfpError>
+
+      Algoritmus (kötelező lépések):
+        1) Ellenőrzés: is_ccw(a) && is_convex(a) — ha nem: Err(NfpError::NotConvex)
+        2) Ellenőrzés: is_ccw(b) && is_convex(b) — ha nem: Err(NfpError::NotConvex)
+        3) B tükrözése: minden csúcs → (-x, -y) → neg_b: Polygon64
+        4) A és neg_b élvektorainak összegyűjtése
+        5) Élvektorok rendezése szög szerint (cross_product_i128 alapú komparátor)
+        6) Az összefűzött élsorozatból NFP kontúr összerakása (összeg origóból indulva,
+           de a kezdőpont: A azon csúcsa, amelyik a legelső élnek felel meg)
+        7) Visszatérés: Ok(nfp_polygon)
+
+      Cross product komparátor: KIZÁRÓLAG cross_product_i128() helpert hívjon —
+      közvetlen i64 szorzat TILOS.
+
+      Unit tesztek (minimum, kézzel számolt referencia értékekkel):
+        1) rect_100x50 × rect_60x30 (rotation=0): NFP = ismert téglalap
+        2) square_50 × square_50 (rotation=0): NFP = square_100 (eltolva)
+        3) rect × rect (rotation=90°, a B-t forgatva): más méretű NFP
+        4) nem-konvex L-alak bemenet → Err(NfpError::NotConvex)
+        5) üres polygon → Err(NfpError::EmptyPolygon)
+    outputs:
       - "rust/nesting_engine/src/nfp/convex.rs"
 
-  - name: Regressziós fixture könyvtár és integrációs teszt
+  - name: "Regressziós fixture könyvtár alapítása"
     description: >
-      Hozd létre a poc/nfp_regression könyvtárat README-vel és legalább két
-      konvex fixture-rel. Adj hozzá integrációs tesztet, ami betölti a fixture
-      JSON-eket és ellenőrzi a compute_convex_nfp kimenetet.
+      Hozd létre:
+
+        poc/nfp_regression/README.md
+          - A könyvtár célja: reprodukálható, kézzel ellenőrzött NFP referencia tesztek
+          - Fixture JSON formátum leírása:
+            {
+              "description": "...",
+              "polygon_a": [[x,y], ...],   ← mm-ben, CCW
+              "polygon_b": [[x,y], ...],   ← mm-ben, CCW
+              "rotation_deg_b": 0,
+              "expected_nfp": [[x,y], ...],
+              "expected_vertex_count": N
+            }
+          - Koordináták mm-ben (a Rust teszt SCALE-lel konvertálja)
+          - Hogyan futtathatók: cargo test --test nfp_regression
+
+        poc/nfp_regression/convex_rect_rect.json
+          - A: 100×50 téglalap (CCW), B: 60×30 téglalap (CCW), rotation=0°
+          - expected_nfp: kézzel kiszámolt értékek
+
+        poc/nfp_regression/convex_rect_square.json
+          - A: 100×50 téglalap, B: 40×40 négyzet, rotation=0°
+          - expected_nfp: kézzel kiszámolt értékek
+
+      Figyelem: a fixture koordinátái mm-ben vannak megadva.
+      A Rust integrációs teszt a betöltés után alkalmazza a SCALE konverziót,
+      futtatja a compute_convex_nfp()-t, és az eredményt SCALE-lel visszaalakítva
+      összehasonlítja az expected_nfp-vel (max 1 SCALE egység toleranciával csúcsonként).
     outputs:
       - "poc/nfp_regression/README.md"
       - "poc/nfp_regression/convex_rect_rect.json"
       - "poc/nfp_regression/convex_rect_square.json"
+
+  - name: "Integrációs teszt: fixture-alapú NFP regresszió"
+    description: >
+      Hozd létre a rust/nesting_engine/tests/nfp_regression.rs integrációs tesztet:
+
+        - Betölti a poc/nfp_regression/*.json fixture-öket
+        - Minden fixture-re:
+            1) polygon_a és polygon_b konvertálása Polygon64-re (mm × SCALE)
+            2) compute_convex_nfp() futtatása
+            3) Eredmény csúcsainak összehasonlítása expected_nfp-vel
+               (tolerancia: max 1i64 egység eltérés csúcsonként)
+            4) expected_vertex_count egyezés ellenőrzése
+        - cargo test --test nfp_regression → PASS
+
+      Ellenőrizd, hogy a teszt nem csak "lefordul", hanem valóban ellenőrzi
+      az értékeket (assert ne legyen placeholder).
+    outputs:
       - "rust/nesting_engine/tests/nfp_regression.rs"
 
-  - name: Checklist és report kitöltése
+  - name: "Checklist és report vázlat létrehozása"
     description: >
-      Töltsd ki a codex checklist és report fájlokat a task állapotával,
-      DoD-bizonyítékokkal és verifikációs szekcióval.
+      Hozd létre:
+
+        codex/codex_checklist/nesting_engine/nfp_computation_convex.md
+          - Canvas DoD pontjainak pipálható listája
+          - Feladat-specifikus ellenőrzési pontok (i128 helper, cache kulcstípus,
+            regressziós fixture-ök, determinizmus)
+
+        codex/reports/nesting_engine/nfp_computation_convex.md
+          - docs/codex/report_standard.md (Report Standard v2) szerint
+          - Meta szekció kitöltve
+          - Scope: cél és nem-cél
+          - Változások összefoglalója: érintett fájlok
+          - DoD → Evidence Matrix váz (evidence a gate után töltendő ki)
+          - AUTO_VERIFY blokk placeholder
     outputs:
       - "codex/codex_checklist/nesting_engine/nfp_computation_convex.md"
       - "codex/reports/nesting_engine/nfp_computation_convex.md"
 
-  - name: Repo gate (automatikus verify)
+  - name: "Repo gate (automatikus verify)"
     description: >
-      Futtasd a kötelező wrapper parancsot:
-      ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_computation_convex.md
-      Hibánál javíts, majd futtasd újra.
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_computation_convex.md
+
+      A wrapper futtatja a teljes check.sh-t (beleértve a meglévő F1 smoke-ot,
+      cargo test, vrs_solver regresszió), logot ment és frissíti a report
+      AUTO_VERIFY blokkját.
+
+      Ellenőrizd a gate kimenetében:
+        - cargo test nesting_engine PASS (unit tesztek + integrációs nfp_regression)
+        - cargo build vrs_solver PASS (regresszió nem sérül)
+        - cargo build nesting_engine PASS
+        - 0 overlap / 0 out-of-bounds a baseline fixture-ön (F1 regresszió)
+
+      Ha FAIL: ne zárj le semmit, javítsd a hibát és futtasd újra.
     outputs:
       - "codex/reports/nesting_engine/nfp_computation_convex.md"
       - "codex/reports/nesting_engine/nfp_computation_convex.verify.log"

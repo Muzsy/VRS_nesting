@@ -1,4 +1,7 @@
-use geo::{Coord, Line, sweep::{Cross, Intersections, LineOrPoint}};
+use geo::{
+    sweep::{Cross, Intersections, LineOrPoint},
+    Coord, Line,
+};
 
 use crate::geometry::{
     offset::{deflate_hole, inflate_outer, inflate_part, OffsetError},
@@ -324,7 +327,8 @@ fn hole_collapsed_diagnostic(part: &PartRequest, hole_index: usize) -> Diagnosti
         nominal_hole_bbox_mm: bbox,
         preserve_for_export: Some(true),
         usable_for_nesting: Some(false),
-        detail: "hole collapsed in inflated geometry; nominal hole preserved for export".to_string(),
+        detail: "hole collapsed in inflated geometry; nominal hole preserved for export"
+            .to_string(),
     }
 }
 

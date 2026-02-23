@@ -95,8 +95,7 @@ fn mm_to_pts(path: &[MmPt]) -> Vec<Point64> {
 ///
 /// Uses `LineJoin::Round` for corner rounding.
 fn do_offset(shape: MmShape, delta_mm: f64) -> Result<MmShape, OffsetError> {
-    let style: OutlineStyle<f64> =
-        OutlineStyle::new(delta_mm).line_join(LineJoin::Round(0.1_f64));
+    let style: OutlineStyle<f64> = OutlineStyle::new(delta_mm).line_join(LineJoin::Round(0.1_f64));
 
     let result = shape.outline(&style);
 
@@ -147,8 +146,8 @@ pub fn deflate_hole(hole: &[Point64], delta_mm: f64) -> Result<Vec<Point64>, Off
     let outer = ensure_ccw(pts_to_mm(hole));
     let shape: MmShape = vec![outer];
 
-    let result_shape = do_offset(shape, -delta_mm)
-        .map_err(|_| OffsetError::HoleCollapsed { hole_index: 0 })?;
+    let result_shape =
+        do_offset(shape, -delta_mm).map_err(|_| OffsetError::HoleCollapsed { hole_index: 0 })?;
 
     let outer_pts = result_shape
         .into_iter()
@@ -222,10 +221,22 @@ mod tests {
     /// Build a simple axis-aligned rectangle as a Vec<Point64>.
     fn rect_pts(w_mm: f64, h_mm: f64) -> Vec<Point64> {
         vec![
-            Point64 { x: mm_to_i64(0.0), y: mm_to_i64(0.0) },
-            Point64 { x: mm_to_i64(w_mm), y: mm_to_i64(0.0) },
-            Point64 { x: mm_to_i64(w_mm), y: mm_to_i64(h_mm) },
-            Point64 { x: mm_to_i64(0.0), y: mm_to_i64(h_mm) },
+            Point64 {
+                x: mm_to_i64(0.0),
+                y: mm_to_i64(0.0),
+            },
+            Point64 {
+                x: mm_to_i64(w_mm),
+                y: mm_to_i64(0.0),
+            },
+            Point64 {
+                x: mm_to_i64(w_mm),
+                y: mm_to_i64(h_mm),
+            },
+            Point64 {
+                x: mm_to_i64(0.0),
+                y: mm_to_i64(h_mm),
+            },
         ]
     }
 
