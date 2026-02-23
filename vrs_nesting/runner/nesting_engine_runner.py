@@ -136,6 +136,7 @@ def run_nesting_engine(
 
     elapsed_sec = round(monotonic() - started, 3)
     ended_at = _utc_now_iso()
+    # Runtime timing is tracked at runner artifact level; Rust stdout stays byte-stable.
 
     stdout_log.write_text(proc.stdout, encoding="utf-8")
     stderr_log.write_text(proc.stderr, encoding="utf-8")

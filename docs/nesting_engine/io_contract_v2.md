@@ -57,9 +57,13 @@
 | `objective.sheets_used` | integer (`>=0`) | Igen | Elsoleges cel metrika | db |
 | `objective.utilization_pct` | number (`0..100`) | Igen | Tabla-kihasznaltsag | % |
 | `meta` | object | Igen | Futasi metaadatok | - |
-| `meta.elapsed_sec` | number (`>=0`) | Igen | Futasido | sec |
+| `meta.elapsed_sec` | number (`>=0`) | Nem | Python runner-level meres (`runner_meta.json`), nem Rust kernel stdout mezo | sec |
 | `meta.determinism_hash` | string | Igen | Determinisztikus hash ertek | - |
 | `_note` | string | Nem | Emberi megjegyzes, illusztracios mintakhoz | - |
+
+Megjegyzes: a Rust `nest` stdout output `meta` objektuma determinisztikus kimenetre optimalizalt,
+ezert csak a `determinism_hash` mezot adja vissza. A futasido (`elapsed_sec`) runner artifact szinten
+(`runs/<run_id>/runner_meta.json`) erheto el.
 
 ## 4. Geometria egyezmenyek (kobe vesett)
 

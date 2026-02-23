@@ -8,7 +8,7 @@ use crate::multi_bin::greedy::MultiSheetResult;
 
 pub fn build_output_v2(
     seed: u64,
-    elapsed_sec: f64,
+    _elapsed_sec: f64,
     utilization_pct: f64,
     result: &MultiSheetResult,
 ) -> Value {
@@ -62,7 +62,6 @@ pub fn build_output_v2(
             "utilization_pct": utilization_pct
         },
         "meta": {
-            "elapsed_sec": elapsed_sec,
             "determinism_hash": determinism_hash
         }
     })

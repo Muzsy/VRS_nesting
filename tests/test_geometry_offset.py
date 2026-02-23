@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 
 import pytest
@@ -146,3 +147,57 @@ def test_offset_part_geometry_explicit_shapely_engine_guardrail(monkeypatch: pyt
     assert min_x < 0.0
     assert min_y < 0.0
     assert max_y <= 102.2
+
+
+def test_stock_no_fallback_without_env(monkeypatch: pytest.MonkeyPatch):
+    payload = {
+        "outer_points_mm": [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
+        "holes_points_mm": [],
+    }
+
+    monkeypatch.delenv(offset_mod.ALLOW_SHAPELY_FALLBACK_ENV, raising=False)
+
+    def fake_rust(*args: object, **kwargs: object) -> dict[str, object]:
+        raise GeometryOffsetError("GEO_RUST_TIMEOUT", "mocked timeout")
+
+    monkeypatch.setattr(offset_mod, "_offset_stock_geometry_rust", fake_rust)
+    monkeypatch.setattr(
+        offset_mod,
+        "_offset_stock_geometry_shapely",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("shapely fallback must remain disabled")),
+    )
+
+    with pytest.raises(GeometryOffsetError, match="GEO_RUST_TIMEOUT"):
+        offset_mod.offset_stock_geometry(payload, margin_mm=1.0, spacing_mm=0.2)
+
+
+def test_stock_fallback_with_env_warns(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    payload = {
+        "outer_points_mm": [[0.0, 0.0], [80.0, 0.0], [80.0, 60.0], [0.0, 60.0]],
+        "holes_points_mm": [],
+    }
+    fallback_result = {
+        "outer_points_mm": [[5.0, 5.0], [75.0, 5.0], [75.0, 55.0], [5.0, 55.0]],
+        "holes_points_mm": [],
+    }
+    called = {"shapely": False}
+
+    monkeypatch.setenv(offset_mod.ALLOW_SHAPELY_FALLBACK_ENV, "1")
+
+    def fake_rust(*args: object, **kwargs: object) -> dict[str, object]:
+        raise GeometryOffsetError("GEO_RUST_TIMEOUT", "mocked timeout")
+
+    def fake_shapely(*args: object, **kwargs: object) -> dict[str, object]:
+        called["shapely"] = True
+        return fallback_result
+
+    monkeypatch.setattr(offset_mod, "_offset_stock_geometry_rust", fake_rust)
+    monkeypatch.setattr(offset_mod, "_offset_stock_geometry_shapely", fake_shapely)
+
+    with caplog.at_level(logging.WARNING):
+        out = offset_mod.offset_stock_geometry(payload, margin_mm=1.5, spacing_mm=0.2)
+
+    assert called["shapely"] is True
+    assert out == fallback_result
+    assert offset_mod.ALLOW_SHAPELY_FALLBACK_ENV in caplog.text
+    assert "GEO_RUST_TIMEOUT" in caplog.text

@@ -1,0 +1,109 @@
+steps:
+  - name: Felderítés és érintett fájlok beolvasása
+    description: >
+      Olvasd el az AGENTS.md-t és a docs/codex szabálydoksikat (overview,
+      yaml_schema, report_standard). Keresd meg és olvasd be a következő
+      fájlokat: scripts/validate_nesting_solution.py, scripts/check.sh,
+      vrs_nesting/geometry/offset.py, vrs_nesting/runner/nesting_engine_runner.py,
+      rust/nesting_engine/src/export/output_v2.rs,
+      docs/nesting_engine/io_contract_v2.md,
+      poc/nesting_engine/sample_input_v2.json.
+      Végezz grep-et az `elapsed_sec` kifejezésre a teljes repóban, és jegyezd
+      fel az összes érintett helyet a canvasban. Ellenőrizd, hogy a
+      `ALLOW_SHAPELY_FALLBACK_ENV` az `offset_stock_geometry` ágban ténylegesen
+      csak env flag esetén enged fallbacket.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_phase1_p1_fixes.md"
+
+  - name: "P1-A: Geometriai validátor bővítése (overlap + OOB)"
+    description: >
+      Bővítsd a scripts/validate_nesting_solution.py validátort:
+      (1) overlap ellenőrzés – minden placement-párra AABB metszésvizsgálat
+      (ha az i_overlay Python binding elérhető, azt használd; különben tiszta
+      Python AABB); ha bármely pár metszi egymást, non-zero exitkóddal és
+      értelmes hibaüzenettel álljon le.
+      (2) OOB (out-of-bounds) ellenőrzés – minden placement esetén ellenőrizd,
+      hogy az alkatrész bounding box-a a sheet határain (margin figyelembevételével)
+      belül van; ha nem, non-zero exit + hibaüzenet.
+      Hozd létre a poc/nesting_engine/invalid_overlap_fixture.json fixture-t:
+      valid io_contract_v2 output JSON, amelyben két alkatrész szándékosan
+      egymásba csúszik (pl. x_mm értékük közel nulla, és a bounding boxok
+      átfednek). A fixture-nak a `meta.determinism_hash` mező jelenléte nem
+      szükséges – csak a validátor logikáját teszteli.
+    outputs:
+      - "scripts/validate_nesting_solution.py"
+      - "poc/nesting_engine/invalid_overlap_fixture.json"
+
+  - name: "P1-A: check.sh bővítése validátor smoke lépésekkel"
+    description: >
+      Bővítsd a scripts/check.sh fájlt két új lépéssel a nesting_engine
+      szekció végén:
+      (1) „Validátor FAIL smoke" – futtasd a validátort az
+      invalid_overlap_fixture.json-ra, és ellenőrizd, hogy a kilépési kód
+      nem nulla (ha nulla, a check.sh FAIL-eljen: echo + exit 1).
+      (2) „Validátor PASS smoke" – futtasd a validátort a baseline golden
+      outputon (ha létezik; ha nem, a lépést kommenteld ki TODO-val).
+      A két lépés között ne legyen más nesting_engine build vagy futás, csak
+      az already-built bináris feltételezése.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "P1-B: Shapely fallback stock ágon – teszt lefedés"
+    description: >
+      A vrs_nesting/geometry/offset.py-ban az `offset_stock_geometry` fallback
+      logika már jelen van. Ellenőrizd, hogy az env flag nélküli állapotban
+      (ALLOW_SHAPELY_FALLBACK_ENV nem beállítva vagy "0") Rust hiba esetén
+      ténylegesen GeometryOffsetError dobódik (nincs csendes fallback). Ha a
+      kód ettől eltér, javítsd minimal-invazívan.
+      Bővítsd a tests/test_geometry_offset.py fájlt két új teszttel:
+      (1) `test_stock_no_fallback_without_env`: monkeypatch-eld a Rust path-ot
+      hogy GEO_RUST_TIMEOUT hibát dobjon; az env flag nincs beállítva; elvárt:
+      GeometryOffsetError keletkezik.
+      (2) `test_stock_fallback_with_env_warns`: monkeypatch-eld a Rust path-ot
+      hogy GEO_RUST_TIMEOUT hibát dobjon; env flag = "1"; elvárt: Shapely
+      meghívódik (mock), és a WARNING log tartalmazza a ALLOW_SHAPELY_FALLBACK_ENV
+      nevet.
+    outputs:
+      - "vrs_nesting/geometry/offset.py"
+      - "tests/test_geometry_offset.py"
+
+  - name: "P1-C: elapsed_sec eltávolítása a Rust kernel outputból"
+    description: >
+      Keresd meg az `elapsed_sec` (és összes futásfüggő idő-mező) definícióját
+      a rust/nesting_engine/src/export/output_v2.rs fájlban. Távolítsd el (vagy
+      állítsd None/null-ra) ezeket a mezőket a Rust kernel stdout JSON
+      kimenetéből. A `meta.determinism_hash` számítása változatlan marad.
+      Ha a mező jelenleg kötelező az io_contract_v2 sémában, frissítsd az
+      `outputs`-ban szereplő docs/nesting_engine/io_contract_v2.md-t: a `meta`
+      szekció jelölje az `elapsed_sec`-et opcionálisként / Python-runner-level
+      mezőként.
+      A vrs_nesting/runner/nesting_engine_runner.py-ban add hozzá a subprocess
+      időmérést: rögzítsd a mért `elapsed_sec` értéket a runner-szintű artifact
+      metaadatba (pl. a meglévő artifact könyvtárban lévő metaadat fájlba, ha
+      van; ha nincs, hozz létre egy minimális `run_meta.json`-t a run könyvtárban).
+    outputs:
+      - "rust/nesting_engine/src/export/output_v2.rs"
+      - "docs/nesting_engine/io_contract_v2.md"
+      - "vrs_nesting/runner/nesting_engine_runner.py"
+
+  - name: Checklist és report váz létrehozása
+    description: >
+      Hozd létre a codex/codex_checklist/nesting_engine/nesting_engine_phase1_p1_fixes.md
+      fájlt a canvas DoD pontjai alapján pipálható formában.
+      Hozd létre a codex/reports/nesting_engine/nesting_engine_phase1_p1_fixes.md
+      fájlt a docs/codex/report_standard.md (Report Standard v2) szerint, a
+      DoD→Evidence matrix vázzal (evidence oszlop egyelőre üres, a gate után
+      töltendő ki).
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_phase1_p1_fixes.md"
+      - "codex/reports/nesting_engine/nesting_engine_phase1_p1_fixes.md"
+
+  - name: Repo gate (automatikus verify)
+    description: >
+      Futtasd a standard ellenőrzést wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_phase1_p1_fixes.md
+      Ez futtatja a check.sh-t (beleértve az új validátor smoke lépéseket),
+      frissíti a report AUTO_VERIFY blokkját, és elmenti a logot.
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_phase1_p1_fixes.md"
+      - "codex/reports/nesting_engine/nesting_engine_phase1_p1_fixes.verify.log"

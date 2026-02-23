@@ -329,6 +329,19 @@ for p in out.get("placements", []):
 print(f"[NEST] 0 out-of-bounds OK, placed={len(out.get('placements', []))}")
 PY
 
+  echo "[NEST] Validator FAIL smoke (expected non-zero on overlap fixture)"
+  if python3 scripts/validate_nesting_solution.py \
+    --input-v2 "poc/nesting_engine/sample_input_v2.json" \
+    --output-v2 "poc/nesting_engine/invalid_overlap_fixture.json"; then
+    echo "ERROR: validator unexpectedly accepted invalid_overlap_fixture.json" >&2
+    exit 1
+  fi
+
+  echo "[NEST] Validator PASS smoke (baseline output)"
+  python3 scripts/validate_nesting_solution.py \
+    --input-v2 "poc/nesting_engine/sample_input_v2.json" \
+    --output-v2 "$TMP_BASELINE_OUT"
+
   echo "[NEST] CLI smoke (nest-v2)"
   CLI_RUN_DIR="$(python3 -m vrs_nesting.cli nest-v2 \
     --input "poc/nesting_engine/sample_input_v2.json" \

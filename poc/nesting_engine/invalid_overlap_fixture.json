@@ -1,0 +1,31 @@
+{
+  "version": "nesting_engine_v2",
+  "seed": 42,
+  "solver_version": "0.1.0",
+  "status": "ok",
+  "sheets_used": 1,
+  "placements": [
+    {
+      "part_id": "rect_100x50",
+      "instance": 0,
+      "sheet": 0,
+      "x_mm": 10.0,
+      "y_mm": 10.0,
+      "rotation_deg": 0
+    },
+    {
+      "part_id": "rect_100x50",
+      "instance": 1,
+      "sheet": 0,
+      "x_mm": 50.0,
+      "y_mm": 10.0,
+      "rotation_deg": 0
+    }
+  ],
+  "unplaced": [],
+  "objective": {
+    "sheets_used": 1,
+    "utilization_pct": 20.0
+  },
+  "meta": {}
+}
