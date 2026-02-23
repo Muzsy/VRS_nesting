@@ -63,17 +63,43 @@ A `NfpCacheKey.rotation_steps_b` típusa `i16` (diszkrét lépésszám),
 **soha nem f64 fokszám**. Az f64 kulcs cache-miss forrás és
 determinizmus-gyilkos lenne. A kulcstípus az F2-2-ben sem változhat.
 
+### 4.2 — Algoritmus: pairwise vertex sums + Andrew monotone chain hull
+
+A `compute_convex_nfp()` **NEM edge-merge** módszert alkalmaz. A tényleges lépések:
+
+1. `normalize_ring()` — duplikált és záró csúcsok eltávolítása
+2. Méretellenőrzés (`< 3` csúcs → `EmptyPolygon`), konvexitás + CCW check
+3. Release-ben is CCW javítás: `if !is_ccw { outer.reverse() }` — robusztusabb mint assert-only
+4. B tükrözése: `neg_b[i] = (-b[i].x, -b[i].y)`
+5. **Pairwise sums** — O(n×m): minden `a[i] + neg_b[j]` pont összegyűjtve
+6. **Andrew monotone chain hull** a ponthalmazra:
+   - lex. sort (x, y), dedup
+   - lower + upper hull, `turn(a,b,c) <= 0` esetén pop
+   - `turn()` KIZÁRÓLAG `cross_product_i128()`-et hív
+   - `turn <= 0` a kollineáris pontokat is eltávolítja → minimális csúcsszám
+
+**Komplexitás:** O(n×m × log(n×m)) — az edge-merge O(n+m)-jével szemben.
+Kis n,m-nél elhanyagolható. Inflate utáni nagy csúcsszámnál (200-400) az NFP cache
+eliminálni fogja a teljesítmény-problémát (alak-párra egyszer fut le).
+
+**Kollinearitás:** implicit eltávolítás a hull során → F2-3-ban kedvező.
+
+**Kezdőpont:** lex. min (x,y) csúcs a sort stabilitásából.
+
 ### 4.3 — Nem-konvex bemenet nem generálhat hibás NFP-t
 
 Ha `is_convex(a)` vagy `is_convex(b)` hamis: a függvény
 `Err(NfpError::NotConvex)` értékkel tér vissza. **Soha nem pánikol,
 soha nem generál "jónak látszó" de hibás NFP-t.**
 
-### 4.4 — CCW invariáns ellenőrzése
+### 4.4 — CCW invariáns: release-ben is javít, nem csak assertel
 
-A `convex.rs` bemeneténél `debug_assert!(is_ccw(&poly))` —
-az inflate pipeline CCW-t garantál, de ez a garancia a unit tesztekkel
-igazolandó.
+A `convex.rs` `debug_assert!(is_ccw(&poly))` hívást tartalmaz, **de ezen felül
+release-ben is megfordítja a CW inputot** (`if !is_ccw { outer.reverse() }`).
+Ez robosztusabb a pure assert-only megközelítésnél.
+
+A pipeline invariáns (inflate always CCW) ettől függetlenül kötelező és fenntartandó —
+a release-es javítás csak biztonsági háló, nem a pipeline kötelezettség helyettesítője.
 
 ---
 
@@ -113,12 +139,14 @@ Minden pontot saját magad ellenőrizz, mielőtt a verify.sh-t futtatod:
 - [ ] `compute_convex_nfp()` ≥ 4 unit teszt PASS (kézzel számolt ref értékekkel)
 - [ ] Nem-konvex bemenet → `Err(NfpError::NotConvex)` (nem panic!)
 - [ ] Üres polygon → `Err(NfpError::EmptyPolygon)`
+- [ ] `NfpError` enum csak `NotConvex` és `EmptyPolygon` variánst tartalmaz (`InvalidInput` nincs)
 - [ ] `cross_product_i128()` helper létezik, minden irányítottság-ellenőrzés azt hívja
 - [ ] `NfpCacheKey.rotation_steps_b` típusa `i16` (grep: nincs f64 a cache kulcsban)
 - [ ] Cache hit/miss statisztika legalább debug szinten logolva
 - [ ] Determinizmus: azonos input → azonos NFP kimeneti csúcslista kétszer egymás után
-- [ ] `poc/nfp_regression/` létezik ≥ 2 fixture JSON-nel
-- [ ] `rust/nesting_engine/tests/nfp_regression.rs` integrációs teszt PASS
+- [ ] `poc/nfp_regression/` létezik, fájlok: `convex_rect_rect.json` + `convex_rect_square.json`
+- [ ] Fixture koordinátái integer egységben vannak (nem mm, nem SCALE-lel szorozva)
+- [ ] `nfp_regression.rs` integrációs teszt `canonicalize_ring` + egzakt `assert_eq!`-t használ (nem toleranciás összehasonlítást)
 - [ ] `cargo build vrs_solver --release` PASS (F1 regresszió nem sérül)
 - [ ] `cargo test` (nesting_engine) PASS (minden unit + integrációs teszt)
 

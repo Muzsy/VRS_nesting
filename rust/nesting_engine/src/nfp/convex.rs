@@ -174,6 +174,40 @@ mod tests {
     }
 
     #[test]
+    fn square_square_manual_reference() {
+        let a = rect(0, 0, 50, 50);
+        let b = rect(0, 0, 50, 50);
+
+        let nfp = compute_convex_nfp(&a, &b).expect("square-square NFP should be valid");
+        assert_eq!(
+            nfp.outer,
+            vec![
+                Point64 { x: -50, y: -50 },
+                Point64 { x: 50, y: -50 },
+                Point64 { x: 50, y: 50 },
+                Point64 { x: -50, y: 50 },
+            ]
+        );
+    }
+
+    #[test]
+    fn rect_rect_different_ratio_reference() {
+        let a = rect(0, 0, 120, 40);
+        let b = rect(0, 0, 30, 10);
+
+        let nfp = compute_convex_nfp(&a, &b).expect("rect-rect ratio NFP should be valid");
+        assert_eq!(
+            nfp.outer,
+            vec![
+                Point64 { x: -30, y: -10 },
+                Point64 { x: 120, y: -10 },
+                Point64 { x: 120, y: 40 },
+                Point64 { x: -30, y: 40 },
+            ]
+        );
+    }
+
+    #[test]
     fn non_convex_input_returns_not_convex() {
         let concave = Polygon64 {
             outer: vec![

@@ -1,3 +1,9 @@
+//! NFP computation layer for nesting_engine.
+//!
+//! F2-1 provides convex NFP generation and cache primitives.
+//! F2-2 (concave NFP) is implemented in a separate task but reuses the same
+//! cache API and key policy.
+
 pub mod cache;
 pub mod convex;
 

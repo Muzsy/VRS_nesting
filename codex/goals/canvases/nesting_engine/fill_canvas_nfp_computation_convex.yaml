@@ -42,10 +42,11 @@ steps:
 
   - name: "NFP modul scaffold + NfpError"
     description: >
-      Hozd létre a rust/nesting_engine/src/nfp/mod.rs fájlt:
+      Hozd létre vagy frissítsd a rust/nesting_engine/src/nfp/mod.rs fájlt:
         - pub mod convex;
         - pub mod cache;
-        - NfpError enum: NotConvex, InvalidInput, EmptyPolygon
+        - NfpError enum: NotConvex, EmptyPolygon
+          (InvalidInput variant nem szükséges — a NotConvex + EmptyPolygon lefedi az összes esetet)
         - A modul doccomment röviden leírja: ez az NFP réteg, F2-1 = konvex,
           F2-2 = konkáv (külön task), a cache API mindkettőt kiszolgálja
 
@@ -53,6 +54,8 @@ steps:
         pub mod nfp;
 
       Ellenőrizd, hogy `cargo build` PASS (üres modulokkal is).
+
+      Megjegyzés: ha a fájl már létezik, csak a szükséges módosításokat végezd el.
     outputs:
       - "rust/nesting_engine/src/nfp/mod.rs"
       - "rust/nesting_engine/src/lib.rs"
@@ -94,67 +97,79 @@ steps:
     outputs:
       - "rust/nesting_engine/src/nfp/cache.rs"
 
-  - name: "Konvex NFP implementáció (Minkowski-összeg)"
+  - name: "Konvex NFP implementáció (pairwise vertex sums + Andrew monotone chain hull)"
     description: >
-      Hozd létre a rust/nesting_engine/src/nfp/convex.rs fájlt:
+      Hozd létre vagy frissítsd a rust/nesting_engine/src/nfp/convex.rs fájlt.
 
-        pub fn compute_convex_nfp(
-            a: &Polygon64,
-            b: &Polygon64,
-        ) -> Result<Polygon64, NfpError>
+      A TÉNYLEGES algoritmus — NEM edge-merge, HANEM pairwise sums + hull:
 
-      Algoritmus (kötelező lépések):
-        1) Ellenőrzés: is_ccw(a) && is_convex(a) — ha nem: Err(NfpError::NotConvex)
-        2) Ellenőrzés: is_ccw(b) && is_convex(b) — ha nem: Err(NfpError::NotConvex)
-        3) B tükrözése: minden csúcs → (-x, -y) → neg_b: Polygon64
-        4) A és neg_b élvektorainak összegyűjtése
-        5) Élvektorok rendezése szög szerint (cross_product_i128 alapú komparátor)
-        6) Az összefűzött élsorozatból NFP kontúr összerakása (összeg origóból indulva,
-           de a kezdőpont: A azon csúcsa, amelyik a legelső élnek felel meg)
-        7) Visszatérés: Ok(nfp_polygon)
+        pub fn compute_convex_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError>
 
-      Cross product komparátor: KIZÁRÓLAG cross_product_i128() helpert hívjon —
-      közvetlen i64 szorzat TILOS.
+        Lépések sorrendben:
+          1) normalize_ring(): duplikált szomszédos csúcsok és záró ismétlés eltávolítása
+          2) len() < 3 → Err(NfpError::EmptyPolygon)
+          3) debug_assert!(is_ccw(a)), debug_assert!(is_ccw(b))
+          4) is_convex check — ha megbukik: Err(NfpError::NotConvex)
+          5) Release CCW javítás: if !is_ccw { outer.reverse() }
+             Ez robusztusabb mint assert-only, de a pipeline invariáns (inflate=CCW) ettől marad.
+          6) B tükrözése: neg_b[i] = Point64 { x: -b[i].x, y: -b[i].y }
+          7) Pairwise sums — O(n×m) pont:
+               for pa in a_outer:
+                 for pb in neg_b:
+                   pairwise_sums.push(pa + pb)
+          8) convex_hull(pairwise_sums) — Andrew monotone chain:
+               sort_by (x, y) lex
+               dedup()
+               lower hull + upper hull, pop ha turn(a,b,c) <= 0
+               (turn <= 0 kollineáris pontokat is kiszűri → minimális csúcsszám)
+               turn() KIZÁRÓLAG cross_product_i128()-et hív
+          9) hull.len() < 3 → Err(NfpError::NotConvex)
+         10) Ok(Polygon64 { outer: hull, holes: vec![] })
+
+      Komplexitás: O(n×m × log(n×m))
+        - Kis n,m esetén elhanyagolható
+        - Inflate utáni 400 csúcsos poligonoknál n×m = 160k — a cache eliminálni fogja
+          (F2-3 cache miss counter mérése kötelező)
+
+      Kollinearitás kezelése: turn<=0 implicit kiszűri → NFP minimális csúcsszámú.
+      Ez F2-3-ban kedvező (boolean műveletek kevesebb ponttal gyorsabbak).
+
+      Kezdőpont: lex. min (x,y) — a monotone chain sort stabilitásából adódóan.
 
       Unit tesztek (minimum, kézzel számolt referencia értékekkel):
-        1) rect_100x50 × rect_60x30 (rotation=0): NFP = ismert téglalap
-        2) square_50 × square_50 (rotation=0): NFP = square_100 (eltolva)
-        3) rect × rect (rotation=90°, a B-t forgatva): más méretű NFP
+        1) rect_100x50 × rect_60x30 → ismert NFP téglalap
+        2) square_50 × square_50 → ismert square_100
+        3) rect × rect különböző méretarányban
         4) nem-konvex L-alak bemenet → Err(NfpError::NotConvex)
-        5) üres polygon → Err(NfpError::EmptyPolygon)
+        5) üres polygon (<3 csúcs) → Err(NfpError::EmptyPolygon)
     outputs:
       - "rust/nesting_engine/src/nfp/convex.rs"
 
   - name: "Regressziós fixture könyvtár alapítása"
     description: >
-      Hozd létre:
+      Hozd létre vagy frissítsd:
 
         poc/nfp_regression/README.md
           - A könyvtár célja: reprodukálható, kézzel ellenőrzött NFP referencia tesztek
           - Fixture JSON formátum leírása:
             {
               "description": "...",
-              "polygon_a": [[x,y], ...],   ← mm-ben, CCW
-              "polygon_b": [[x,y], ...],   ← mm-ben, CCW
+              "polygon_a": [[x,y], ...],   ← integer egységben (nem mm, nem SCALE-lel szorozva)
+              "polygon_b": [[x,y], ...],   ← integer egységben
               "rotation_deg_b": 0,
               "expected_nfp": [[x,y], ...],
               "expected_vertex_count": N
             }
-          - Koordináták mm-ben (a Rust teszt SCALE-lel konvertálja)
+          - Koordináták integer rácson; a Rust teszt közvetlenül i64-ként olvassa be
           - Hogyan futtathatók: cargo test --test nfp_regression
 
         poc/nfp_regression/convex_rect_rect.json
           - A: 100×50 téglalap (CCW), B: 60×30 téglalap (CCW), rotation=0°
-          - expected_nfp: kézzel kiszámolt értékek
+          - expected_nfp: kézzel kiszámolt értékek integer egységben
 
         poc/nfp_regression/convex_rect_square.json
           - A: 100×50 téglalap, B: 40×40 négyzet, rotation=0°
-          - expected_nfp: kézzel kiszámolt értékek
-
-      Figyelem: a fixture koordinátái mm-ben vannak megadva.
-      A Rust integrációs teszt a betöltés után alkalmazza a SCALE konverziót,
-      futtatja a compute_convex_nfp()-t, és az eredményt SCALE-lel visszaalakítva
-      összehasonlítja az expected_nfp-vel (max 1 SCALE egység toleranciával csúcsonként).
+          - expected_nfp: kézzel kiszámolt értékek integer egységben
     outputs:
       - "poc/nfp_regression/README.md"
       - "poc/nfp_regression/convex_rect_rect.json"
@@ -162,19 +177,19 @@ steps:
 
   - name: "Integrációs teszt: fixture-alapú NFP regresszió"
     description: >
-      Hozd létre a rust/nesting_engine/tests/nfp_regression.rs integrációs tesztet:
+      Hozd létre vagy frissítsd a rust/nesting_engine/tests/nfp_regression.rs integrációs tesztet:
 
         - Betölti a poc/nfp_regression/*.json fixture-öket
         - Minden fixture-re:
-            1) polygon_a és polygon_b konvertálása Polygon64-re (mm × SCALE)
+            1) polygon_a és polygon_b konvertálása Polygon64-re (koordinátákat közvetlenül
+               i64-ként olvassa be — nincs SCALE konverzió a fixture-szinten)
             2) compute_convex_nfp() futtatása
             3) Eredmény csúcsainak összehasonlítása expected_nfp-vel
-               (tolerancia: max 1i64 egység eltérés csúcsonként)
+               canonicalize_ring alapú EGZAKT egyezéssel (nincs tolerancia —
+               integer aritmetika determinisztikus)
             4) expected_vertex_count egyezés ellenőrzése
+            5) Determinizmus: azonos fixture kétszeri futtatása azonos eredményt ad
         - cargo test --test nfp_regression → PASS
-
-      Ellenőrizd, hogy a teszt nem csak "lefordul", hanem valóban ellenőrzi
-      az értékeket (assert ne legyen placeholder).
     outputs:
       - "rust/nesting_engine/tests/nfp_regression.rs"
 

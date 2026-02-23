@@ -110,6 +110,18 @@ mod tests {
     }
 
     #[test]
+    fn cw_rectangle_reports_not_ccw() {
+        let rect_cw = vec![
+            Point64 { x: 0, y: 0 },
+            Point64 { x: 0, y: 5 },
+            Point64 { x: 10, y: 5 },
+            Point64 { x: 10, y: 0 },
+        ];
+        assert!(!is_ccw(&rect_cw));
+        assert!(is_convex(&rect_cw));
+    }
+
+    #[test]
     fn non_convex_ring_detected() {
         let concave = vec![
             Point64 { x: 0, y: 0 },

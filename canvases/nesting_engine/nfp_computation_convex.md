@@ -32,17 +32,21 @@ eredmény is jobb kihasználtságot ad, mint a BLF rács.
 
 ### Érintett fájlok
 
-**Létrehozandó (új):**
-- `rust/nesting_engine/src/nfp/mod.rs` — modul regisztráció
+**Létrehozandó (ha még nem létezik) / módosítandó:**
+- `rust/nesting_engine/src/nfp/mod.rs` — modul regisztráció + `NfpError` enum
 - `rust/nesting_engine/src/nfp/convex.rs` — Minkowski-összeg konvex esetben
 - `rust/nesting_engine/src/nfp/cache.rs` — NFP cache: `(shape_id_a, shape_id_b, rotation_steps_b) → Polygon64`
+- `rust/nesting_engine/src/geometry/types.rs` — `cross_product_i128`, `is_ccw`, `is_convex` helperek
+- `rust/nesting_engine/tests/nfp_regression.rs` — integrációs regressziós teszt
 - `poc/nfp_regression/README.md` — a regressziós könyvtár leírása és fixture formátum
 - `poc/nfp_regression/convex_rect_rect.json` — téglalap × téglalap referencia fixture
-- `poc/nfp_regression/convex_rect_l.json` — téglalap × L-alak (konvex hull) referencia fixture
+- `poc/nfp_regression/convex_rect_square.json` — téglalap × négyzet referencia fixture
 
 **Módosuló (meglévő):**
 - `rust/nesting_engine/src/lib.rs` vagy `main.rs` — `nfp` modul exportálása
-- `rust/nesting_engine/src/geometry/pipeline.rs` — `ensure_ccw()` helper bekötése (ha még nem létezik)
+
+**Nem módosul:**
+- `rust/nesting_engine/src/geometry/pipeline.rs` (az `is_ccw` invariáns a types.rs-ben van)
 
 **Nem módosul:**
 - `rust/vrs_solver/` (egyetlen fájl sem)
@@ -54,25 +58,73 @@ eredmény is jobb kihasználtságot ad, mint a BLF rács.
 
 ### Algoritmikus specifikáció
 
-#### Minkowski-összeg (konvex eset)
+#### Minkowski-összeg (konvex eset) — pairwise vertex sums + convex hull
 
-Az NFP(A, B) = A ⊕ (−B), ahol:
-1. B poligon tükrözése az origóra: minden `p` csúcs → `(-p.x, -p.y)`
-2. A és a tükrözött B csúcsait összefűzve egy összevont él-sorozatot alkotunk,
-   az éleket szög szerint rendezve (CCW)
-3. Az összevont élsorozatot összefűzve kapjuk az NFP kontúrját
+Az implementált algoritmus (`convex.rs`) az alábbi lépésekből áll:
 
-**Előfeltétel (kötelező ellenőrzés minden bemenetére):**
-- Mindkét poligon valóban konvex (monoton CCW él-szögek)
-- Mindkét poligon CCW irányú (outer kontúr)
-- Ha a konvexitás-check megbukik: a függvény `Err(NfpError::NotConvex)` hibával tér vissza,
-  nem generál hibás NFP-t
+**1. Előfeldolgozás és invariáns-ellenőrzés**
+- `normalize_ring()`: duplikált szomszédos csúcsok és záró ismétlés eltávolítása
+- `is_ccw()` / `is_convex()` ellenőrzés mindkét bemenetre — ha nem teljesül: `Err(NfpError::NotConvex)`
+- Release buildben is: ha a gyűrű CW, megfordítja (`a_outer.reverse()`) — ez robusztusabb, mint a csak debug assertelés
+
+**2. B tükrözése**
+```
+neg_b[i] = (-b[i].x, -b[i].y)
+```
+
+**3. Pairwise csúcsösszeg (O(n×m) pont)**
+```
+pairwise_sums = { a[i] + neg_b[j]  |  minden i, j }
+```
+Eredmény: n×m darab `Point64` koordináta.
+
+**4. Konvex burok (Andrew monotone chain)**
+- Pontok rendezése (x, y) szerint lexikografikusan
+- `dedup()` (azonos koordinátájú pontok eltávolítása)
+- Lower hull + upper hull építése `turn(a,b,c) <= 0` feltétellel
+- A `turn()` KIZÁRÓLAG `cross_product_i128()`-et hív (i64 közvetlen szorzat tilos)
+- `turn <= 0` kiszűri a kollineáris pontokat is → a kimenet minimalizált csúcsszámú kontúr
+
+**5. Kimenet**
+- CCW irányú, kollineáris-mentes konvex poligon
+- Kezdőpont: lexikografikusan legkisebb (x,y) csúcs (a sort stabilitásából adódóan)
+
+---
+
+#### Komplexitás és következmények
+
+| Tulajdonság | Edge-merge módszer (O(n+m)) | Pairwise+hull (implementált) |
+|---|---|---|
+| Időbonyolultság | O(n+m) | O(n×m × log(n×m)) |
+| Kollineáris pontok | megtarthatja | eltávolítja (`turn<=0`) |
+| Kezdőpont | extrém csúcsból indulva | lex. min (x,y) |
+| Determinizmus forrása | angle-merge sorrend | lex. sort + dedup + fix hull eljárás |
+
+**Kis elemszámnál (n,m < 20) a különbség elhanyagolható.** Inflate/offset után
+400 csúcsos poligonoknál n×m = 160k pont + sort — ez F2-3-ban cache nélkül
+szűk keresztmetszet lehet. A cache (F2-1-ben felépítve) ezt a problémát
+teljesen eliminálhatja azonos alak-párra.
+
+**A kollineáris-mentesség következménye:** az NFP kontúr csúcsszáma minimális.
+Ez az F2-3 (CFR = IFP \ NFP-unió) szempontjából kedvező (kevesebb pont → gyorsabb
+boolean műveletek az `i_overlay`-ben).
+
+---
+
+#### CCW-javítás viselkedése (release vs. debug)
+
+A kód **release buildben is megfordítja** a CW bemenetet (`if !is_ccw { reverse() }`),
+nem csak debug assertel. Ez robosztusabb az assert-only megközelítésnél, de
+a pipeline invariáns (inflate always CCW) ettől függetlenül fennmarad és kötelező.
+
+---
 
 #### Kontúrirány-invariáns
 
-Az NFP modul bemenete a `geometry/pipeline.rs` által inflated Polygon64.
-Az inflate pipeline CCW-t garantál az outer kontúrra — ezt a `convex.rs` egy
-`debug_assert!(is_ccw(&poly))` hívással ellenőrzi debug buildben.
+Az NFP modul bemenete a `geometry/pipeline.rs` által inflated `Polygon64`.
+Az inflate pipeline CCW-t garantál az outer kontúrra. A `convex.rs`
+`debug_assert!(is_ccw(&poly))` hívással ellenőrzi debug buildben, és
+release-ben is javítja, ha szükséges.
 
 ---
 
@@ -143,6 +195,11 @@ az NFP pipeline minden irányítottság-ellenőrzése ezt hívja.
 
 ### Regressziós fixture formátum (`poc/nfp_regression/`)
 
+**Koordináta konvenció:** A fixture JSON-ok koordinátái **integer egységben** vannak
+megadva (nem mm-ben, nem SCALE-lel szorozva). A Rust integrációs teszt közvetlenül
+`i64` értékként olvassa be és `Point64`-ré konvertálja. Ez konzisztens önmagával és
+a `canonicalize_ring` alapú egzakt egyezés-ellenőrzéssel.
+
 Minden fixture JSON fájl:
 ```json
 {
@@ -150,13 +207,14 @@ Minden fixture JSON fájl:
   "polygon_a": [[0,0],[100,0],[100,50],[0,50]],
   "polygon_b": [[0,0],[60,0],[60,30],[0,30]],
   "rotation_deg_b": 0,
-  "expected_nfp": [[−60,−30],[100,−30],[100,50],[−60,50]],
+  "expected_nfp": [[-60,-30],[100,-30],[100,50],[-60,50]],
   "expected_vertex_count": 4
 }
 ```
 
-A Rust unit teszt betölti a fixture-t, lefuttatja a `compute_convex_nfp()`-t,
-és összehasonlítja az `expected_nfp`-vel (koordináta-egyezés SCALE tolerancián belül).
+Az összehasonlítás **egzakt** (`assert_eq!`) a kanonizált kontúrokon (`canonicalize_ring`):
+CCW orientáció + lexikografikusan legkisebb csúcs a kezdőpont. Nincs koordináta-tolerancia —
+az integer aritmetika determinisztikus, kerekítési hiba nincs.
 
 ---
 
@@ -197,9 +255,10 @@ A Rust unit teszt betölti a fixture-t, lefuttatja a `compute_convex_nfp()`-t,
 |---|---|---|---|
 | i64 overflow cross product-ban | Magas (ha nem figyelsz) | Helytelen NFP kontúr, csendesen rossz eredmény | Kötelező i128 cross product, unit teszt nagy koordinátákra |
 | f64 rotációs kulcs csúszik be a cache-be | Közepes | Cache-miss, nem-determinisztikus viselkedés | `i16` kulcstípus, `#[deny(clippy::float_arithmetic)]` a cache modulban |
-| Inflate output nem CCW | Alacsony | Minkowski-összeg helytelen irányú NFP-t ad | `debug_assert!(is_ccw(&poly))` a convex.rs bemeneténél |
+| Inflate output nem CCW | Alacsony | Helytelen NFP irány | Release-ben is javítja a kód; pipeline invariáns is véd |
 | Nem-konvex polygon konvex-ként kezelve | Alacsony-közepes | Hibás NFP, overlap az F2-3-ban | `is_convex()` ellenőrzés + `Err(NfpError::NotConvex)` visszatérés |
 | Cache API inkompatibilis F2-2-vel | Alacsony (de drága) | F2-2 cache-t újra kell írni | Cache kulcs tervezési döntések dokumentálva, F2-2 kompatibilitás canvasban rögzítve |
+| **Teljesítmény: n×m pont nagy csúcsszámnál** | Közepes (inflate után 200-400 csúcs előfordulhat) | O(n×m×log) = 160k+ pont / NFP hívás cache miss esetén | NFP cache minden alak-párra — cache miss csak egyszer fordul elő azonos párra; F2-3-ban mérni kell |
 
 **Rollback:** Ha a Minkowski-összeg implementáció hibásnak bizonyul a regressziós teszteken, a task nem merge-elhető. Az F2-3 és F2-4 task-ok blokkoltak, amíg az NFP regressziós tesztek nem zöldek. Nincs "kész, majd javítjuk" opció az NFP alaprétegen.
 

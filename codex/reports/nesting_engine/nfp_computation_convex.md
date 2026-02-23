@@ -10,7 +10,7 @@
 - **Kapcsolódó canvas:** `canvases/nesting_engine/nfp_computation_convex.md`
 - **Kapcsolódó goal YAML:** `codex/goals/canvases/nesting_engine/fill_canvas_nfp_computation_convex.yaml`
 - **Futás dátuma:** 2026-02-23
-- **Branch / commit:** `main` / `68bd00a` (uncommitted changes)
+- **Branch / commit:** `main` / `39674a8` (uncommitted changes)
 - **Fókusz terület:** Geometry
 
 ## 2) Scope
@@ -69,15 +69,17 @@
 
 | DoD pont | Státusz | Bizonyíték (path + line) | Magyarázat | Kapcsolódó teszt/ellenőrzés |
 |---|---|---|---|---|
-| `compute_convex_nfp()` legalább 4 unit teszt PASS | PASS | `rust/nesting_engine/src/nfp/convex.rs:142` | 5 unit teszt került be (manual ref + hibaág + determinizmus). | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
+| `compute_convex_nfp()` legalább 4 unit teszt PASS | PASS | `rust/nesting_engine/src/nfp/convex.rs:142` | 7 unit teszt került be (kézi referencia + hibaág + determinizmus). | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
 | Nem-konvex bemenet -> `Err(NfpError::NotConvex)` | PASS | `rust/nesting_engine/src/nfp/convex.rs:176` | A konkáv polygon teszt explicit `NotConvex` hibát vár. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
 | Üres polygon -> `Err(NfpError::EmptyPolygon)` | PASS | `rust/nesting_engine/src/nfp/convex.rs:194` | Az üres outer gyűrű `EmptyPolygon` hibával tér vissza. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
+| `NfpError` enum csak `NotConvex` + `EmptyPolygon` | PASS | `rust/nesting_engine/src/nfp/mod.rs:7` | Az error enumban nincs `InvalidInput` variáns, csak a két elvárt ág. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
 | `cross_product_i128()` helper létezik és i128-at használ | PASS | `rust/nesting_engine/src/geometry/types.rs:24` | A helper i128-on számol; a konvexitás és hull turn-check ezt használja. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
 | `NfpCacheKey.rotation_steps_b` típusa `i16` | PASS | `rust/nesting_engine/src/nfp/cache.rs:9` | A cache kulcs diszkrét i16 lépésindexet használ, f64 nélkül. | `rg -n "rotation_steps_b|f64" rust/nesting_engine/src/nfp/cache.rs` |
 | Cache hit/miss statisztika debug szinten logolva | PASS | `rust/nesting_engine/src/nfp/cache.rs:59` | `debug_log_stats()` `eprintln!` debug loggal jelzi a hit/miss/insert eseményeket. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
 | Determinizmus: azonos input -> azonos kimenet | PASS | `rust/nesting_engine/src/nfp/convex.rs:206` | Unit teszt kétszeri futtatásnál azonos csúcslistát vár; fixture teszt is ellenőrzi. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
 | `poc/nfp_regression/` >= 2 fixture | PASS | `poc/nfp_regression/convex_rect_rect.json:1` | Két referenciafixture készült (`rect_rect`, `rect_square`) + README formátumleírás. | N/A |
-| Integrációs regressziós teszt PASS | PASS | `rust/nesting_engine/tests/nfp_regression.rs:18` | A teszt fixture betöltést, elvárt NFP egyezést és determinizmust ellenőriz. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
+| Fixture koordináták integer egységűek | PASS | `poc/nfp_regression/README.md:9` | A fixture szerződés explicit integer koordinátát rögzít, mm/SCALE konverzió nélkül. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
+| Integrációs regressziós teszt PASS | PASS | `rust/nesting_engine/tests/nfp_regression.rs:18` | A teszt fixture betöltést, `canonicalize_ring` + egzakt `assert_eq!` egyezést és determinizmust ellenőriz. | `cargo test --manifest-path rust/nesting_engine/Cargo.toml -q` |
 | Kötelező repo gate wrapperrel futtatva | PASS | `codex/reports/nesting_engine/nfp_computation_convex.md` | Az eredmény és log hivatkozás automatikusan a verify blokkba kerül. | `./scripts/verify.sh --report codex/reports/nesting_engine/nfp_computation_convex.md` |
 
 ## 8) Advisory notes
@@ -89,39 +91,41 @@
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-02-23T23:28:03+01:00 → 2026-02-23T23:30:54+01:00 (171s)
+- futás: 2026-02-24T00:47:25+01:00 → 2026-02-24T00:50:40+01:00 (195s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/nesting_engine/nfp_computation_convex.verify.log`
-- git: `main@68bd00a`
-- módosított fájlok (git status): 14
+- git: `main@39674a8`
+- módosított fájlok (git status): 10
 
 **git diff --stat**
 
 ```text
- rust/nesting_engine/src/geometry/offset.rs   |  27 +-
- rust/nesting_engine/src/geometry/pipeline.rs |   8 +-
- rust/nesting_engine/src/geometry/trig_lut.rs | 810 ++++++++++++++++++++++++---
- rust/nesting_engine/src/geometry/types.rs    | 105 +++-
- 4 files changed, 848 insertions(+), 102 deletions(-)
+ canvases/nesting_engine/nfp_computation_convex.md  | 105 ++++++++++++++++-----
+ .../nesting_engine/nfp_computation_convex.md       |   3 +
+ .../fill_canvas_nfp_computation_convex.yaml        | 103 +++++++++++---------
+ .../nesting_engine/nfp_computation_convex/run.md   |  42 +++++++--
+ .../nesting_engine/nfp_computation_convex.md       |   8 +-
+ .../nfp_computation_convex.verify.log              |  49 +++++-----
+ rust/nesting_engine/src/geometry/types.rs          |  12 +++
+ rust/nesting_engine/src/nfp/cache.rs               |   5 +
+ rust/nesting_engine/src/nfp/convex.rs              |  34 +++++++
+ rust/nesting_engine/src/nfp/mod.rs                 |   6 ++
+ 10 files changed, 266 insertions(+), 101 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
- M rust/nesting_engine/src/geometry/offset.rs
- M rust/nesting_engine/src/geometry/pipeline.rs
- M rust/nesting_engine/src/geometry/trig_lut.rs
+ M canvases/nesting_engine/nfp_computation_convex.md
+ M codex/codex_checklist/nesting_engine/nfp_computation_convex.md
+ M codex/goals/canvases/nesting_engine/fill_canvas_nfp_computation_convex.yaml
+ M codex/prompts/nesting_engine/nfp_computation_convex/run.md
+ M codex/reports/nesting_engine/nfp_computation_convex.md
+ M codex/reports/nesting_engine/nfp_computation_convex.verify.log
  M rust/nesting_engine/src/geometry/types.rs
-?? canvases/nesting_engine/nfp_computation_convex.md
-?? codex/codex_checklist/nesting_engine/nfp_computation_convex.md
-?? codex/goals/canvases/nesting_engine/fill_canvas_nfp_computation_convex.yaml
-?? codex/prompts/nesting_engine/nfp_computation_convex/
-?? codex/reports/nesting_engine/nfp_computation_convex.md
-?? codex/reports/nesting_engine/nfp_computation_convex.verify.log
-?? poc/nfp_regression/
-?? rust/nesting_engine/src/lib.rs
-?? rust/nesting_engine/src/nfp/
-?? rust/nesting_engine/tests/
+ M rust/nesting_engine/src/nfp/cache.rs
+ M rust/nesting_engine/src/nfp/convex.rs
+ M rust/nesting_engine/src/nfp/mod.rs
 ```
 
 <!-- AUTO_VERIFY_END -->

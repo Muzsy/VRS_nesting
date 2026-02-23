@@ -1,3 +1,8 @@
+//! Cache primitives shared by convex (F2-1) and concave (F2-2) NFP generators.
+//!
+//! `rotation_steps_b` stores a discrete rotation index in
+//! `0..=(360/rotation_step_deg - 1)` and intentionally avoids float angles.
+
 use std::collections::HashMap;
 
 use crate::geometry::types::Polygon64;
