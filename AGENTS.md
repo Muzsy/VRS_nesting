@@ -44,6 +44,7 @@ Ez a fájl az AI agent futás közbeni **elsődleges szabálygyűjteménye**. Mi
 * `docs/` – specifikációk és fejlesztési dokumentáció
 * `canvases/` – feladat specifikációk (canvasok)
 * `codex/` – goal YAML-ek + checklistek + riportok
+* `docs/known_issues/` – auditok által feltárt, még nem ütemezett tech debt nyilvántartása (modulonként `<area>_known_issues.md`)
 
 ---
 
