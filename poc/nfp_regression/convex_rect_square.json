@@ -1,0 +1,8 @@
+{
+  "description": "Rectangle A (100x50) vs Square B (40x40), rotation=0",
+  "polygon_a": [[0, 0], [100, 0], [100, 50], [0, 50]],
+  "polygon_b": [[0, 0], [40, 0], [40, 40], [0, 40]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-40, -40], [100, -40], [100, 50], [-40, 50]],
+  "expected_vertex_count": 4
+}

@@ -1,0 +1,47 @@
+steps:
+  - name: Goal YAML és task-artefakt keret rögzítése
+    description: >
+      Töltsd ki a task YAML-t valid steps sémával. A további lépések csak az itt
+      deklarált outputs fájlokat érinthetik.
+    outputs:
+      - "codex/goals/canvases/nesting_engine/fill_canvas_nfp_computation_convex.yaml"
+
+  - name: Geometriai i128 helper és NFP modul scaffold
+    description: >
+      Bővítsd a geometry types modult i128 cross-product és konvexitás/CCW
+      segédfüggvényekkel. Hozd létre az nfp modult (mod.rs, cache.rs, convex.rs)
+      és add hozzá a crate exportot lib.rs-ben.
+    outputs:
+      - "rust/nesting_engine/src/geometry/types.rs"
+      - "rust/nesting_engine/src/lib.rs"
+      - "rust/nesting_engine/src/nfp/mod.rs"
+      - "rust/nesting_engine/src/nfp/cache.rs"
+      - "rust/nesting_engine/src/nfp/convex.rs"
+
+  - name: Regressziós fixture könyvtár és integrációs teszt
+    description: >
+      Hozd létre a poc/nfp_regression könyvtárat README-vel és legalább két
+      konvex fixture-rel. Adj hozzá integrációs tesztet, ami betölti a fixture
+      JSON-eket és ellenőrzi a compute_convex_nfp kimenetet.
+    outputs:
+      - "poc/nfp_regression/README.md"
+      - "poc/nfp_regression/convex_rect_rect.json"
+      - "poc/nfp_regression/convex_rect_square.json"
+      - "rust/nesting_engine/tests/nfp_regression.rs"
+
+  - name: Checklist és report kitöltése
+    description: >
+      Töltsd ki a codex checklist és report fájlokat a task állapotával,
+      DoD-bizonyítékokkal és verifikációs szekcióval.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_computation_convex.md"
+      - "codex/reports/nesting_engine/nfp_computation_convex.md"
+
+  - name: Repo gate (automatikus verify)
+    description: >
+      Futtasd a kötelező wrapper parancsot:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_computation_convex.md
+      Hibánál javíts, majd futtasd újra.
+    outputs:
+      - "codex/reports/nesting_engine/nfp_computation_convex.md"
+      - "codex/reports/nesting_engine/nfp_computation_convex.verify.log"
