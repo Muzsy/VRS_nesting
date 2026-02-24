@@ -2,9 +2,108 @@ use crate::geometry::types::{cross_product_i128, is_ccw, is_convex, Point64, Pol
 
 use super::NfpError;
 
-/// Compute NFP(A, B) for convex polygons via Minkowski-sum identity:
-/// NFP(A, B) = A ⊕ (-B).
+/// Fast O(n+m) convex NFP via edge-vector merge on NFP(A, B) = A ⊕ (-B).
 pub fn compute_convex_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError> {
+    let mut a_outer = normalize_ring(&a.outer);
+    let mut b_outer = normalize_ring(&b.outer);
+
+    if a_outer.len() < 3 || b_outer.len() < 3 {
+        return Err(NfpError::EmptyPolygon);
+    }
+
+    debug_assert!(is_ccw(&a_outer), "convex NFP expects CCW polygon A");
+    debug_assert!(is_ccw(&b_outer), "convex NFP expects CCW polygon B");
+
+    if !is_convex(&a_outer) || !is_convex(&b_outer) {
+        return Err(NfpError::NotConvex);
+    }
+
+    // Keep behavior deterministic even in release when debug asserts are disabled.
+    if !is_ccw(&a_outer) {
+        a_outer.reverse();
+    }
+    if !is_ccw(&b_outer) {
+        b_outer.reverse();
+    }
+
+    let mut b_neg: Vec<Point64> = b_outer
+        .iter()
+        .map(|p| Point64 { x: -p.x, y: -p.y })
+        .collect();
+
+    let start_a = argmin_lex(&a_outer);
+    let start_b = argmin_lex(&b_neg);
+    a_outer.rotate_left(start_a);
+    b_neg.rotate_left(start_b);
+
+    let a_edges = edge_vectors(&a_outer);
+    let b_edges = edge_vectors(&b_neg);
+
+    let mut merged_edges: Vec<Point64> = Vec::with_capacity(a_edges.len() + b_edges.len());
+    let mut i = 0usize;
+    let mut j = 0usize;
+
+    while i < a_edges.len() || j < b_edges.len() {
+        if i == a_edges.len() {
+            merged_edges.push(b_edges[j]);
+            j += 1;
+            continue;
+        }
+        if j == b_edges.len() {
+            merged_edges.push(a_edges[i]);
+            i += 1;
+            continue;
+        }
+
+        let edge_a = a_edges[i];
+        let edge_b = b_edges[j];
+        let cross = cross_product_i128(edge_a.x, edge_a.y, edge_b.x, edge_b.y);
+
+        if cross > 0 {
+            merged_edges.push(edge_a);
+            i += 1;
+        } else if cross < 0 {
+            merged_edges.push(edge_b);
+            j += 1;
+        } else {
+            merged_edges.push(Point64 {
+                x: edge_a.x + edge_b.x,
+                y: edge_a.y + edge_b.y,
+            });
+            i += 1;
+            j += 1;
+        }
+    }
+
+    let mut current = Point64 {
+        x: a_outer[0].x + b_neg[0].x,
+        y: a_outer[0].y + b_neg[0].y,
+    };
+
+    let mut contour = Vec::with_capacity(merged_edges.len() + 1);
+    contour.push(current);
+    for edge in merged_edges {
+        current = Point64 {
+            x: current.x + edge.x,
+            y: current.y + edge.y,
+        };
+        contour.push(current);
+    }
+
+    let contour = normalize_ring(&contour);
+    if contour.len() < 3 {
+        return Err(NfpError::NotConvex);
+    }
+
+    Ok(Polygon64 {
+        outer: contour,
+        holes: Vec::new(),
+    })
+}
+
+/// Reference / fallback: pairwise vertex sums + Andrew monotone chain hull.
+/// O(n×m×log(n×m)). Used for cross-checks and fallback paths.
+pub fn compute_convex_nfp_reference(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError> {
     let mut a_outer = normalize_ring(&a.outer);
     let mut b_outer = normalize_ring(&b.outer);
 
@@ -51,6 +150,29 @@ pub fn compute_convex_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, Nfp
         outer: hull,
         holes: Vec::new(),
     })
+}
+
+fn argmin_lex(points: &[Point64]) -> usize {
+    points
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, p)| (p.x, p.y))
+        .map(|(idx, _)| idx)
+        .unwrap_or(0)
+}
+
+fn edge_vectors(points: &[Point64]) -> Vec<Point64> {
+    let n = points.len();
+    let mut edges = Vec::with_capacity(n);
+    for i in 0..n {
+        let p0 = points[i];
+        let p1 = points[(i + 1) % n];
+        edges.push(Point64 {
+            x: p1.x - p0.x,
+            y: p1.y - p0.y,
+        });
+    }
+    edges
 }
 
 fn normalize_ring(points: &[Point64]) -> Vec<Point64> {
@@ -121,7 +243,7 @@ fn convex_hull(mut points: Vec<Point64>) -> Vec<Point64> {
 mod tests {
     use crate::geometry::types::{Point64, Polygon64};
 
-    use super::compute_convex_nfp;
+    use super::{compute_convex_nfp, compute_convex_nfp_reference};
     use crate::nfp::NfpError;
 
     fn rect(x0: i64, y0: i64, w: i64, h: i64) -> Polygon64 {
@@ -208,6 +330,24 @@ mod tests {
     }
 
     #[test]
+    fn parallel_edges_collinear_merge_keeps_minimal_vertices() {
+        let a = rect(0, 0, 80, 20);
+        let b = rect(0, 0, 80, 20);
+
+        let nfp = compute_convex_nfp(&a, &b).expect("parallel-edge merge should be valid");
+        assert_eq!(
+            nfp.outer,
+            vec![
+                Point64 { x: -80, y: -20 },
+                Point64 { x: 80, y: -20 },
+                Point64 { x: 80, y: 20 },
+                Point64 { x: -80, y: 20 },
+            ]
+        );
+        assert_eq!(nfp.outer.len(), 4);
+    }
+
+    #[test]
     fn non_convex_input_returns_not_convex() {
         let concave = Polygon64 {
             outer: vec![
@@ -245,5 +385,15 @@ mod tests {
         let first = compute_convex_nfp(&a, &b).expect("first run");
         let second = compute_convex_nfp(&a, &b).expect("second run");
         assert_eq!(first.outer, second.outer);
+    }
+
+    #[test]
+    fn edge_merge_matches_reference_hull_on_manual_case() {
+        let a = rect(0, 0, 100, 50);
+        let b = rect(0, 0, 60, 30);
+
+        let fast = compute_convex_nfp(&a, &b).expect("fast path");
+        let reference = compute_convex_nfp_reference(&a, &b).expect("reference path");
+        assert_eq!(fast.outer, reference.outer);
     }
 }

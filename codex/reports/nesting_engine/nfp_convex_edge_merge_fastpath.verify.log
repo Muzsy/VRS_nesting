@@ -1,0 +1,103 @@
+[PYTEST] Unit tests
+.....................................                                    [100%]
+37 passed in 2.46s
+[MYPY] Type check
+Success: no issues found in 25 source files
+[SPARROW] Resolve/build via scripts/ensure_sparrow.sh
+[ensure_sparrow] pin commit (fallback_cache): c95454e390276231b278c879d25b39708398b7d3
+HEAD is now at c95454e Merge pull request #132 from JeroenGar/rand-0.10
+[ensure_sparrow] build source: .cache/sparrow (/home/muszy/projects/VRS_nesting/.cache/sparrow)
+    Finished `release` profile [optimized] target(s) in 0.11s
+[3/3] Sparrow IO smoketest
+[1/2] Sparrow run via runner module
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260224T001257Z_b18ba8d8
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260224T001257Z_b18ba8d8/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260224T001257Z_b18ba8d8
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260224T001257Z_b18ba8d8/output/final_swim.json
+PASS ✅
+ strip_height=5752.0
+ strip_width =5931.0527
+ placed_items=48 (demand_sum=48)
+ overlap-check: PASS
+[DXF] Import convention smoke
+[OK] DXF import convention smoke passed
+[GEO] Polygonize + offset robustness smoke
+[OK] geometry pipeline smoke passed
+[DOCS] Command references smoke
+[OK] docs command smoke passed
+[DXF] Export --run-dir smoke
+[OK] exporter --run-dir smoke passed
+[DXF] Source geometry BLOCK/INSERT export smoke
+[OK] source geometry export smoke passed
+[DXF] Multi-sheet wrapper edge-cases smoke
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_7gssu5ey/run_a/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_7gssu5ey/run_a/sheets/sheet_001/instance.json -t 2 -s 0
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_7gssu5ey/run_b/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_7gssu5ey/run_b/sheets/sheet_001/instance.json -t 2 -s 0
+[OK] multisheet wrapper edge-cases smoke passed
+[DXF] Real fixture import smoke
+[OK] real DXF fixture smoke passed
+[DXF] Real Sparrow pipeline smoke
+[OK] real DXF + Sparrow pipeline smoke passed
+[DXF] SVG export artifact smoke
+[OK] svg export smoke passed
+[4/5] Nesting solution validator smoke
+    Finished `release` profile [optimized] target(s) in 0.62s
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260224T001454Z_36945e71
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260224T001454Z_36945e71/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260224T001454Z_36945e71/solver_output.json --seed 0 --time-limit 60
+[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260224T001454Z_36945e71
+PASS: nesting solution is valid
+ input=/home/muszy/projects/VRS_nesting/runs/20260224T001454Z_36945e71/solver_input.json
+ output=/home/muszy/projects/VRS_nesting/runs/20260224T001454Z_36945e71/solver_output.json
+[5/5] Determinism hash stability smoke
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260224T001455Z_b1a7e063
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260224T001455Z_b1a7e063/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260224T001455Z_b1a7e063/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260224T001455Z_be120d2a
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260224T001455Z_be120d2a/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260224T001455Z_be120d2a/solver_output.json --seed 0 --time-limit 60
+[INFO] Determinism hash stable: 6fa835403323f854933aadd5e00de5807aeff5225dd923b5d2844e28a9f6a8f7
+[6/6] Timeout/perf guard smoke
+[OK] timeout/perf guard smoke passed
+[BUILD] nesting_engine (release)
+warning: function `cross_product_i128` is never used
+  --> src/geometry/types.rs:28:8
+   |
+28 | pub fn cross_product_i128(dx1: i64, dy1: i64, dx2: i64, dy2: i64) -> i128 {
+   |        ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `signed_area2_i128` is never used
+  --> src/geometry/types.rs:34:8
+   |
+34 | pub fn signed_area2_i128(points: &[Point64]) -> i128 {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `is_ccw` is never used
+  --> src/geometry/types.rs:50:8
+   |
+50 | pub fn is_ccw(points: &[Point64]) -> bool {
+   |        ^^^^^^
+
+warning: function `is_convex` is never used
+  --> src/geometry/types.rs:58:8
+   |
+58 | pub fn is_convex(points: &[Point64]) -> bool {
+   |        ^^^^^^^^^
+
+warning: `nesting_engine` (bin "nesting_engine") generated 4 warnings
+    Finished `release` profile [optimized] target(s) in 0.06s
+[NEST] Baseline nesting_engine smoke
+[NEST] hash OK: sha256:a3feb70e2a51bc4207161c7...
+[NEST] determinism OK
+[NEST] 0 out-of-bounds OK, placed=10
+[NEST] Validator FAIL smoke (expected non-zero on overlap fixture)
+FAIL: overlap detected: sheet=0 rect_100x50#0 vs rect_100x50#1
+[NEST] Validator PASS smoke (baseline output)
+PASS: nesting_engine_v2 solution is valid
+ input=/home/muszy/projects/VRS_nesting/poc/nesting_engine/sample_input_v2.json
+ output=/tmp/nesting_engine_baseline_out_lSJ2l5.json
+[NEST] CLI smoke (nest-v2)
+[nesting-engine-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260224T001532Z_7435839d
+[nesting-engine-runner] cmd=/home/muszy/projects/VRS_nesting/rust/nesting_engine/target/release/nesting_engine nest
+[NEST] CLI determinism OK
+[DONE] smoketest OK

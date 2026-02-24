@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use nesting_engine::geometry::types::{signed_area2_i128, Point64, Polygon64};
-use nesting_engine::nfp::convex::compute_convex_nfp;
+use nesting_engine::nfp::convex::{compute_convex_nfp, compute_convex_nfp_reference};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -65,6 +65,42 @@ fn fixture_library_passes() {
             canonicalize_ring(&nfp_second.outer),
             "NFP is not deterministic in fixture {}",
             fixture_path.display()
+        );
+    }
+}
+
+#[test]
+fn edge_merge_equals_hull_on_all_fixtures() {
+    let fixture_dir = fixture_dir();
+    let mut fixture_files: Vec<PathBuf> = fs::read_dir(&fixture_dir)
+        .expect("read fixture dir")
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
+        .collect();
+    fixture_files.sort();
+
+    assert!(
+        fixture_files.len() >= 2,
+        "expected at least 2 fixture files in {}",
+        fixture_dir.display()
+    );
+
+    for fixture_path in fixture_files {
+        let fixture = read_fixture(&fixture_path);
+        let poly_a = to_polygon(&fixture.polygon_a);
+        let poly_b = to_polygon(&fixture.polygon_b);
+
+        let edge_result =
+            compute_convex_nfp(&poly_a, &poly_b).expect("edge-merge path must succeed");
+        let hull_result =
+            compute_convex_nfp_reference(&poly_a, &poly_b).expect("hull path must succeed");
+
+        assert_eq!(
+            canonicalize_ring(&edge_result.outer),
+            canonicalize_ring(&hull_result.outer),
+            "edge-merge != hull on fixture {} ({})",
+            fixture_path.display(),
+            fixture.description
         );
     }
 }
