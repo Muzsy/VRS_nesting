@@ -9,7 +9,45 @@
 
 ---
 
+## P1 — Magas prioritás
+
+### KI-006 `determinism_hash` canonicalization: normativ JCS spec vs jelenlegi implementacio
+**Allapot:** OPEN  
+**Forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/json_canonicalization.md`, `rust/nesting_engine/src/export/output_v2.rs`
+
+A dokumentacio normativ modon RFC 8785 (JCS) canonicalizaciot ir elo a
+`determinism_hash` kepzeshez. A jelenlegi Rust implementacio `serde_json::to_string`
+alapu szerializaciot hasznal, ami stabil lehet, de nem deklaraltan JCS-kompatibilis.
+Ez kulonosen akkor kockazat, ha kesobb Python/Rust kozti hash-egyeztetes lesz.
+
+**Javasolt DoD:**  
+- Vagy: JCS-kompatibilis canonicalizer bevezetese a Rust hash-utvonalon.  
+- Vagy: a normativ doksi atirasa "serde_json-stabil contract"-ra, explicit korlatokkal.  
+- Minden esetben: schema-valtozasnal `schema_version` bump es regresszios teszt.
+
+---
+
 ## P2 — Közepes prioritás
+
+### KI-007 tolerance_policy integer-only allitas vs aktiv f64 geometriadontesek
+**Allapot:** OPEN  
+**Forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/tolerance_policy.md`, `rust/nesting_engine/src/geometry/offset.rs`, `rust/nesting_engine/src/feasibility/narrow.rs`, `rust/nesting_engine/src/geometry/pipeline.rs`
+
+A policy szoveg szerint az egesz aritmetika integer-determinisztikus, es a
+floating-point kerekitesi nemdeterminizmus kizarhato. A kodban ugyanakkor aktiv
+f64 alapu geometriai predikatumok futnak (offset winding helper-ek, i_overlay
+FloatPredicate overlay containment/intersection, geo sweep-line self-intersection).
+Ez specifikacio-kod szintu eltérés.
+
+**Javasolt DoD:**  
+- A policy pontositsa, hogy hol kotelezo integer aritmetika es hol engedett f64.  
+- A feasibility/pipeline f64 reszekre explicit determinisztikus policy keruljon
+  (platform, epsilon/tolerancia, rendezesi szabalyok).  
+- Adjunk dedikalt regresszios tesztet a float erintett kodutvonalakra.
+
+---
 
 ### KI-001 Irreguláris bin/stock nem megy át end-to-end a v2 solverig
 **Állapot:** OPEN  
@@ -95,6 +133,53 @@ Néhány minta fájl "illusztrációs" értékeket tartalmaz, amelyek könnyen
 - Tények által fedett golden output fájlok neve `*_golden.json` vagy
   automatikusan generált.  
 - Teszt nem hivatkozik `_illustrative` fájlra assertion forrásként.
+
+---
+
+### KI-008 architecture.md modul-map elavult ("planned"), mikozben modulok aktivak
+**Allapot:** OPEN  
+**Forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/architecture.md`, `rust/nesting_engine/src/{feasibility,placement,multi_bin,export}`
+
+Az architecture dokumentumban a `feasibility/`, `placement/`, `multi_bin/`,
+`export/` modulok "planned" allapotban szerepelnek, mikozben a kodban ezek mar
+leteznek es aktivan hasznaltak. Ez felrevezeto lehet uj feladatok scope-olasanal.
+
+**Javasolt DoD:**  
+- `architecture.md` module map frissitese a tenyleges allapotra.  
+- "planned" csak valoban nem implementalt teruletre maradjon.
+
+---
+
+### KI-009 json_canonicalization.md hibas hivatkozas nem letezo szerzodes fajlra
+**Allapot:** OPEN  
+**Forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/json_canonicalization.md`, `docs/nesting_engine/io_contract_v2.md`
+
+A canonicalization dokumentum a `docs/nesting_engine/solver_io_contract_v2.md`
+fajlra hivatkozik, ami a repoban nem letezik. A valos fajl:
+`docs/nesting_engine/io_contract_v2.md`.
+
+**Javasolt DoD:**  
+- Hivatkozas javitasa a letezo kontrakt fajlra.  
+- Link-check smoke vagy docs CI check bevezetese a hasonlo drift elkerulesere.
+
+---
+
+### KI-010 tolerance_policy OffsetError szekcio elter a kodtol
+**Allapot:** OPEN  
+**Forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/tolerance_policy.md`, `rust/nesting_engine/src/geometry/offset.rs`, `rust/nesting_engine/src/geometry/pipeline.rs`
+
+A policy tablazat `SelfIntersection` variansrol es altalanos "minden OffsetError
+fatal" viselkedesrol beszel. A kodban az `OffsetError` enum jelenleg
+`HoleCollapsed` + `ClipperError`; a self-intersection kezeles pipeline szinten,
+status/diagnosztika alapon tortenik. A dokumentacio emiatt pontatlan.
+
+**Javasolt DoD:**  
+- `tolerance_policy.md` OffsetError szekcio frissitese a valos enumra es
+  pipeline status policy-ra (`ok` / `hole_collapsed` / `self_intersect` / `error`).  
+- A policy hivatkozzon a megfelelo unit tesztekre.
 
 ---
 
