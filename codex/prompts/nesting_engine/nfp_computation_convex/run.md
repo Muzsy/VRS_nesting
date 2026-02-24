@@ -63,28 +63,48 @@ A `NfpCacheKey.rotation_steps_b` típusa `i16` (diszkrét lépésszám),
 **soha nem f64 fokszám**. Az f64 kulcs cache-miss forrás és
 determinizmus-gyilkos lenne. A kulcstípus az F2-2-ben sem változhat.
 
-### 4.2 — Algoritmus: pairwise vertex sums + Andrew monotone chain hull
+### 4.3 — Algoritmus: fastpath edge-merge + referencia hull (Minkowski ugyanaz, útvonal más)
 
-A `compute_convex_nfp()` **NEM edge-merge** módszert alkalmaz. A tényleges lépések:
+Az F2-1-ben két implementáció létezik ugyanarra a matematikai célra:
+`NFP(A,B)=A ⊕ (-B)` (konvex polygon-pár).
+
+#### 4.3.1 — `compute_convex_nfp()` = **FASTPATH edge-vector merge** (O(n+m))
+Ez a fő belépési pont konvex NFP-re. Lépések:
 
 1. `normalize_ring()` — duplikált és záró csúcsok eltávolítása
 2. Méretellenőrzés (`< 3` csúcs → `EmptyPolygon`), konvexitás + CCW check
-3. Release-ben is CCW javítás: `if !is_ccw { outer.reverse() }` — robusztusabb mint assert-only
-4. B tükrözése: `neg_b[i] = (-b[i].x, -b[i].y)`
-5. **Pairwise sums** — O(n×m): minden `a[i] + neg_b[j]` pont összegyűjtve
-6. **Andrew monotone chain hull** a ponthalmazra:
+3. Release-ben is CCW javítás: `if !is_ccw { outer.reverse() }`
+4. B tükrözése: `(-B)`
+5. Kezdőpont normalizálás: `argmin_lex()` és `rotate_left()` A és (-B) outer gyűrűn
+6. Élek képzése: `edge_vectors()`
+7. **Szög szerinti összeolvasztás (merge)** cross sign alapján:
+   - `cross(edge_a, edge_b) > 0` → A él
+   - `< 0` → B él
+   - `== 0` → kollineáris merge (`edge_a + edge_b`)
+8. Kontúr felépítése prefix-sum-mal a merged edge vektorokon
+9. `normalize_ring()` a kontúron, `len()<3` → `NotConvex`
+
+**Komplexitás:** O(n+m). Ez az útvonal a későbbi F2-3 placer teljesítményének alapja.
+
+#### 4.3.2 — `compute_convex_nfp_reference()` = **pairwise vertex sums + Andrew hull** (O(n×m log(n×m)))
+Ez a referencia / fallback útvonal. Lépések:
+
+1. `normalize_ring()` — duplikált és záró csúcsok eltávolítása
+2. Méretellenőrzés (`< 3` csúcs → `EmptyPolygon`), konvexitás + CCW check
+3. Release-ben is CCW javítás: `if !is_ccw { outer.reverse() }`
+4. B tükrözése: `(-B)`
+5. **Pairwise sums** — O(n×m): minden `a[i] + (-b[j])` pont összegyűjtve
+6. **Andrew monotone chain hull**:
    - lex. sort (x, y), dedup
    - lower + upper hull, `turn(a,b,c) <= 0` esetén pop
    - `turn()` KIZÁRÓLAG `cross_product_i128()`-et hív
-   - `turn <= 0` a kollineáris pontokat is eltávolítja → minimális csúcsszám
+   - `turn <= 0` kollineáris pontokat is eltávolít → minimális csúcsszám
 
-**Komplexitás:** O(n×m × log(n×m)) — az edge-merge O(n+m)-jével szemben.
-Kis n,m-nél elhanyagolható. Inflate utáni nagy csúcsszámnál (200-400) az NFP cache
-eliminálni fogja a teljesítmény-problémát (alak-párra egyszer fut le).
+**Komplexitás:** O(n×m×log(n×m)). Főleg teszt/cross-check és fallback célra.
 
-**Kollinearitás:** implicit eltávolítás a hull során → F2-3-ban kedvező.
-
-**Kezdőpont:** lex. min (x,y) csúcs a sort stabilitásából.
+#### 4.3.3 — Kötelező korrektségi kontroll
+Az integrációs regressziós tesztnek minden fixture-re kötelezően ellenőriznie kell:
+`compute_convex_nfp()` == `compute_convex_nfp_reference()` (kanonizált ring alapján).
 
 ### 4.3 — Nem-konvex bemenet nem generálhat hibás NFP-t
 
@@ -124,7 +144,7 @@ dokumentálni kell, mielőtt az F2-2 task-ot megkezded.
 2. **i128 helper + CCW/konvexitás ellenőrzők** — geometry/types.rs bővítése
 3. **NFP modul scaffold + NfpError** — nfp/mod.rs + lib.rs regisztráció
 4. **Cache implementáció** — nfp/cache.rs (i16 kulcs, F2-2 kompatibilis API)
-5. **Konvex NFP implementáció** — nfp/convex.rs (Minkowski-összeg)
+5. **Konvex NFP implementáció** — nfp/convex.rs (FASTPATH edge-merge + referencia hull)
 6. **Regressziós fixture könyvtár** — poc/nfp_regression/ alapítása
 7. **Integrációs teszt** — rust/nesting_engine/tests/nfp_regression.rs
 8. **Checklist + report vázlat** — codex artefaktok
@@ -136,7 +156,8 @@ dokumentálni kell, mielőtt az F2-2 task-ot megkezded.
 
 Minden pontot saját magad ellenőrizz, mielőtt a verify.sh-t futtatod:
 
-- [ ] `compute_convex_nfp()` ≥ 4 unit teszt PASS (kézzel számolt ref értékekkel)
+- [ ] `compute_convex_nfp()` és `compute_convex_nfp_reference()` létezik, külön útvonal
+- [ ] `compute_convex_nfp()` ≥ 6 unit teszt PASS (kézzel számolt ref értékekkel + edge-case)
 - [ ] Nem-konvex bemenet → `Err(NfpError::NotConvex)` (nem panic!)
 - [ ] Üres polygon → `Err(NfpError::EmptyPolygon)`
 - [ ] `NfpError` enum csak `NotConvex` és `EmptyPolygon` variánst tartalmaz (`InvalidInput` nincs)
@@ -144,9 +165,10 @@ Minden pontot saját magad ellenőrizz, mielőtt a verify.sh-t futtatod:
 - [ ] `NfpCacheKey.rotation_steps_b` típusa `i16` (grep: nincs f64 a cache kulcsban)
 - [ ] Cache hit/miss statisztika legalább debug szinten logolva
 - [ ] Determinizmus: azonos input → azonos NFP kimeneti csúcslista kétszer egymás után
-- [ ] `poc/nfp_regression/` létezik, fájlok: `convex_rect_rect.json` + `convex_rect_square.json`
+- [ ] `poc/nfp_regression/` létezik, és legalább 7 fixture van (rotált / többcsúcsos / collinear / skinny)
 - [ ] Fixture koordinátái integer egységben vannak (nem mm, nem SCALE-lel szorozva)
 - [ ] `nfp_regression.rs` integrációs teszt `canonicalize_ring` + egzakt `assert_eq!`-t használ (nem toleranciás összehasonlítást)
+- [ ] Integrációs tesztben: `compute_convex_nfp()` == `compute_convex_nfp_reference()` minden fixture-re
 - [ ] `cargo build vrs_solver --release` PASS (F1 regresszió nem sérül)
 - [ ] `cargo test` (nesting_engine) PASS (minden unit + integrációs teszt)
 
@@ -179,5 +201,10 @@ külön blokkokban (nem diffet, hanem teljes fájltartalmat):
 - `poc/nfp_regression/README.md`
 - `poc/nfp_regression/convex_rect_rect.json`
 - `poc/nfp_regression/convex_rect_square.json`
+- `poc/nfp_regression/convex_triangle.json`
+- `poc/nfp_regression/convex_hexagon.json`
+- `poc/nfp_regression/convex_rotated_rect.json`
+- `poc/nfp_regression/convex_skinny.json`
+- `poc/nfp_regression/convex_collinear_edge.json`
 - `codex/codex_checklist/nesting_engine/nfp_computation_convex.md`
 - `codex/reports/nesting_engine/nfp_computation_convex.md`
