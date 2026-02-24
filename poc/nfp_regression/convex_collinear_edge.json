@@ -1,0 +1,8 @@
+{
+  "description": "Rectangle A (100x50) vs identical rectangle B (100x50), collinear edge-merge case",
+  "polygon_a": [[0, 0], [100, 0], [100, 50], [0, 50]],
+  "polygon_b": [[0, 0], [100, 0], [100, 50], [0, 50]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-100, -50], [100, -50], [100, 50], [-100, 50]],
+  "expected_vertex_count": 4
+}

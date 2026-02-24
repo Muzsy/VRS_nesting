@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use nesting_engine::geometry::types::{signed_area2_i128, Point64, Polygon64};
+use nesting_engine::geometry::types::{is_ccw, is_convex, signed_area2_i128, Point64, Polygon64};
 use nesting_engine::nfp::convex::{compute_convex_nfp, compute_convex_nfp_reference};
 use serde::Deserialize;
 
@@ -26,8 +26,8 @@ fn fixture_library_passes() {
     fixture_files.sort();
 
     assert!(
-        fixture_files.len() >= 2,
-        "expected at least 2 fixture files in {}",
+        fixture_files.len() >= 7,
+        "expected at least 7 fixture files in {}",
         fixture_dir.display()
     );
 
@@ -42,6 +42,17 @@ fn fixture_library_passes() {
         let poly_a = to_polygon(&fixture.polygon_a);
         let poly_b = to_polygon(&fixture.polygon_b);
         let expected = to_points(&fixture.expected_nfp);
+
+        assert!(
+            is_convex(&poly_a.outer) && is_ccw(&poly_a.outer),
+            "fixture polygon_a must be convex + CCW in fixture {}",
+            fixture_path.display()
+        );
+        assert!(
+            is_convex(&poly_b.outer) && is_ccw(&poly_b.outer),
+            "fixture polygon_b must be convex + CCW in fixture {}",
+            fixture_path.display()
+        );
 
         let nfp_first =
             compute_convex_nfp(&poly_a, &poly_b).expect("fixture must produce convex NFP");
@@ -80,8 +91,8 @@ fn edge_merge_equals_hull_on_all_fixtures() {
     fixture_files.sort();
 
     assert!(
-        fixture_files.len() >= 2,
-        "expected at least 2 fixture files in {}",
+        fixture_files.len() >= 7,
+        "expected at least 7 fixture files in {}",
         fixture_dir.display()
     );
 
@@ -89,6 +100,17 @@ fn edge_merge_equals_hull_on_all_fixtures() {
         let fixture = read_fixture(&fixture_path);
         let poly_a = to_polygon(&fixture.polygon_a);
         let poly_b = to_polygon(&fixture.polygon_b);
+
+        assert!(
+            is_convex(&poly_a.outer) && is_ccw(&poly_a.outer),
+            "fixture polygon_a must be convex + CCW in fixture {}",
+            fixture_path.display()
+        );
+        assert!(
+            is_convex(&poly_b.outer) && is_ccw(&poly_b.outer),
+            "fixture polygon_b must be convex + CCW in fixture {}",
+            fixture_path.display()
+        );
 
         let edge_result =
             compute_convex_nfp(&poly_a, &poly_b).expect("edge-merge path must succeed");

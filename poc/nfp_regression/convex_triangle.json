@@ -1,0 +1,8 @@
+{
+  "description": "Triangle A (approx equilateral side~100) vs smaller triangle B (side~50), rotation=0",
+  "polygon_a": [[0, 0], [100, 0], [50, 86]],
+  "polygon_b": [[0, 0], [50, 0], [25, 43]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-50, 0], [-25, -43], [75, -43], [100, 0], [50, 86], [0, 86]],
+  "expected_vertex_count": 6
+}

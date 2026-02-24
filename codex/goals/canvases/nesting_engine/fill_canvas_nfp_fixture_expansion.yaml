@@ -1,0 +1,192 @@
+steps:
+  - name: "Szabályok és előzmények betöltése"
+    description: >
+      Olvasd el az AGENTS.md-t és rögzítsd a kötelező outputs szabályt.
+      Nyisd meg a következő fájlokat:
+        - rust/nesting_engine/src/nfp/convex.rs (edge-merge + hull — ezt bővítjük #[cfg(test)] blokkal)
+        - rust/nesting_engine/tests/nfp_regression.rs (az összes fixture automatikusan fut itt)
+        - poc/nfp_regression/convex_rect_rect.json (meglévő fixture formátum referencia)
+        - poc/nfp_regression/README.md (fixture konvenció)
+        - canvases/nesting_engine/nfp_fixture_expansion.md (task specifikáció)
+      Ha bármelyik fájl nem létezik: állj meg és jelezd pontosan.
+    outputs:
+      - "canvases/nesting_engine/nfp_fixture_expansion.md"
+
+  - name: "White-box unit tesztek a convex.rs-be"
+    description: >
+      Adj hozzá #[cfg(test)] blokkot a rust/nesting_engine/src/nfp/convex.rs fájlhoz.
+
+      Kötelező unit tesztek (mind a compute_convex_nfp() fastpath-ot tesztelik):
+
+        fn test_not_convex_returns_err()
+          - L-alak bemenet (pl. [[0,0],[100,0],[100,50],[50,50],[50,100],[0,100]])
+          - Elvárás: Err(NfpError::NotConvex)
+
+        fn test_empty_polygon_returns_err()
+          - Polygon < 3 csúccsal (pl. [[0,0],[100,0]])
+          - Elvárás: Err(NfpError::EmptyPolygon)
+
+        fn test_collinear_merge_no_extra_vertices()
+          - Két azonos méretű 100×50 téglalap
+          - Az NFP-nek pontosan 4 csúcsa kell legyen (200×100 téglalap)
+          - assert_eq!(nfp.outer.len(), 4) — a collinear merge nem hagy extra csúcsot
+
+        fn test_determinism()
+          - Azonos bemenet kétszer futtatva
+          - assert_eq!(canonicalize(first), canonicalize(second))
+
+        fn test_rect_rect_known_nfp()
+          - polygon_a: 100×50 CCW téglalap
+          - polygon_b: 60×30 CCW téglalap
+          - Elvárt NFP: [[-60,-30],[100,-30],[100,50],[-60,50]] (kézzel ellenőrzött)
+          - assert_eq!(canonicalize(result), canonicalize(expected))
+
+      Minden teszt a modul tetején definiált helper függvényekkel dolgozzon
+      (rect(x0,y0,w,h) → Polygon64, hasonló a meglévő integrációs teszthez).
+
+      Ellenőrizd: cargo test --lib PASS az új tesztekkel.
+    outputs:
+      - "rust/nesting_engine/src/nfp/convex.rs"
+
+  - name: "Fixture: convex_rotated_rect.json"
+    description: >
+      Hozd létre a poc/nfp_regression/convex_rotated_rect.json fixture-t.
+
+      polygon_a: 100×50 axis-aligned téglalap, CCW:
+        [[0,0],[100,0],[100,50],[0,50]]
+
+      polygon_b: közelítőleg 45°-kal elforgatott téglalap.
+        Egész koordinátákon: [[0,0],[42,42],[0,84],[-42,42]] (ez ~60×60 körül forog)
+        FONTOS: ellenőrizd is_convex() és is_ccw() teljesül-e!
+
+      expected_nfp: számítsd ki hull-módszerrel (compute_convex_nfp_reference()),
+        és jegyezd be a kézzel ellenőrzött értéket.
+        Ha a hull hibát dob: a koordinátákat módosítsd úgy, hogy érvényes CCW konvex legyen.
+
+      expected_vertex_count: a hull kimenetének csúcsszáma.
+
+      Alternatív megközelítés ha az egész koordinátás 45° nehéz:
+        polygon_b: [[30,0],[100,30],[70,100],[0,70]] — ez egy konvex négyszög, nem téglalap,
+        de megfelelő edge-merge teszteset.
+    outputs:
+      - "poc/nfp_regression/convex_rotated_rect.json"
+
+  - name: "Fixture: convex_hexagon.json"
+    description: >
+      Hozd létre a poc/nfp_regression/convex_hexagon.json fixture-t.
+
+      polygon_a: szabályos hatszög, r≈50, egész koordinátákon, CCW.
+        Pl. középpont (0,0), csúcsok közelítve:
+        [[50,0],[25,43],[-25,43],[-50,0],[-25,-43],[25,-43]]
+        (ellenőrizd: is_convex, is_ccw)
+
+      polygon_b: 40×20 axis-aligned téglalap, CCW:
+        [[0,0],[40,0],[40,20],[0,20]]
+
+      expected_nfp: hull-módszerrel kiszámítva, kézzel ellenőrizve.
+      expected_vertex_count: 8 (6+4-2, párhuzamos élek csökkenthetik).
+    outputs:
+      - "poc/nfp_regression/convex_hexagon.json"
+
+  - name: "Fixture: convex_skinny.json"
+    description: >
+      Hozd létre a poc/nfp_regression/convex_skinny.json fixture-t.
+
+      polygon_a: 10×100 keskeny téglalap, CCW:
+        [[0,0],[10,0],[10,100],[0,100]]
+
+      polygon_b: 10×100 azonos méretű, CCW:
+        [[0,0],[10,0],[10,100],[0,100]]
+
+      expected_nfp: hull-módszerrel kiszámítva.
+        (Várható: 20×200 téglalap, 4 csúcs — ez a collinear merge extrém esete)
+      expected_vertex_count: 4
+    outputs:
+      - "poc/nfp_regression/convex_skinny.json"
+
+  - name: "Fixture: convex_collinear_edge.json"
+    description: >
+      Hozd létre a poc/nfp_regression/convex_collinear_edge.json fixture-t.
+
+      polygon_a: 100×50 téglalap, CCW: [[0,0],[100,0],[100,50],[0,50]]
+      polygon_b: 100×50 azonos méretű, CCW: [[0,0],[100,0],[100,50],[0,50]]
+
+      expected_nfp: [[-100,-50],[100,-50],[100,50],[-100,50]]
+        (A ⊕ (-B) = 200×100 téglalap, az origó körül szimmetrikusan)
+      expected_vertex_count: 4
+
+      Ez az az eset, ahol MINDEN él párhuzamos → az edge-merge loop
+      összes iterációja a cross==0 ágon fut. Ha ez PASS, a collinear merge helyes.
+    outputs:
+      - "poc/nfp_regression/convex_collinear_edge.json"
+
+  - name: "Fixture: convex_triangle.json"
+    description: >
+      Hozd létre a poc/nfp_regression/convex_triangle.json fixture-t.
+
+      polygon_a: közelítőleg egyenlő oldalú háromszög, CCW:
+        [[0,0],[100,0],[50,86]]
+
+      polygon_b: kisebb háromszög, CCW:
+        [[0,0],[50,0],[25,43]]
+
+      expected_nfp: hull-módszerrel kiszámítva, kézzel ellenőrizve.
+      expected_vertex_count: 6 (3+3 csúcs, nem párhuzamos élek esetén)
+
+      Megjegyzés: háromszögnél n=m=3, az edge-merge merge loop 6 iteráció.
+      Ez a minimális eset.
+    outputs:
+      - "poc/nfp_regression/convex_triangle.json"
+
+  - name: "Integrációs teszt ellenőrzése"
+    description: >
+      Ellenőrizd, hogy az összes új fixture automatikusan lefut:
+
+      1) cargo test --test nfp_regression → PASS
+         (a `fixture_library_passes` és `edge_merge_equals_hull_on_all_fixtures`
+          tesztek mind a 7 fixture-t feldolgozzák)
+
+      2) Ha valamelyik fixture FAIL: NE módosítsd az edge-merge kódot.
+         Ehelyett:
+         - Ha a hiba az expected_nfp értékében van: javítsd a fixture JSON-t
+           (hull-lal újraszámolva)
+         - Ha az edge-merge != hull (cross-check FAIL egy valódi konvex esetben):
+           ezt dokumentálni kell a reportban, NEM elrejteni. Ez a fastpath
+           stabilitási határát mutatja meg.
+
+      3) cargo test --lib PASS (unit tesztek a convex.rs-ben)
+    outputs:
+      - "rust/nesting_engine/tests/nfp_regression.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Hozd létre:
+
+        codex/codex_checklist/nesting_engine/nfp_fixture_expansion.md
+          - Canvas DoD pontjainak pipálható listája
+
+        codex/reports/nesting_engine/nfp_fixture_expansion.md
+          - docs/codex/report_standard.md szerint
+          - Evidence Matrix: függvénynév hivatkozások (NEM sor-számok)
+          - Minden fixture: leírás + expected_vertex_count + "kézzel ellenőrizve: igen/nem"
+          - Ha cross-check FAIL volt bármely fixture-n: dokumentálva az Advisory szekcióban
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_fixture_expansion.md"
+      - "codex/reports/nesting_engine/nfp_fixture_expansion.md"
+
+  - name: "Repo gate"
+    description: >
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_fixture_expansion.md
+
+      Ellenőrizd:
+        - cargo test nesting_engine PASS (unit + 7 integrációs fixture)
+        - cargo build vrs_solver PASS
+        - 0 overlap / 0 out-of-bounds
+
+      Ha FAIL és a hiba a fixture JSON-ban van (hibás expected_nfp): javítsd a JSON-t.
+      Ha FAIL és a hiba az edge-merge != hull cross-check-en van: dokumentáld a reportban,
+      ne rejtsd el és ne módosítsd a kódot.
+    outputs:
+      - "codex/reports/nesting_engine/nfp_fixture_expansion.md"
+      - "codex/reports/nesting_engine/nfp_fixture_expansion.verify.log"

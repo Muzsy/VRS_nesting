@@ -1,0 +1,8 @@
+{
+  "description": "Skinny rectangle A (10x100) vs skinny rectangle B (10x100), rotation=0",
+  "polygon_a": [[0, 0], [10, 0], [10, 100], [0, 100]],
+  "polygon_b": [[0, 0], [10, 0], [10, 100], [0, 100]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-10, -100], [10, -100], [10, 100], [-10, 100]],
+  "expected_vertex_count": 4
+}

@@ -1,0 +1,8 @@
+{
+  "description": "Rectangle A (100x50) vs rotated-square-like B (integer 45deg approximation), rotation=0",
+  "polygon_a": [[0, 0], [100, 0], [100, 50], [0, 50]],
+  "polygon_b": [[0, 0], [42, 42], [0, 84], [-42, 42]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-42, -42], [0, -84], [100, -84], [142, -42], [142, 8], [100, 50], [0, 50], [-42, 8]],
+  "expected_vertex_count": 8
+}

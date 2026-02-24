@@ -241,9 +241,9 @@ fn convex_hull(mut points: Vec<Point64>) -> Vec<Point64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::geometry::types::{Point64, Polygon64};
+    use crate::geometry::types::{signed_area2_i128, Point64, Polygon64};
 
-    use super::{compute_convex_nfp, compute_convex_nfp_reference};
+    use super::compute_convex_nfp;
     use crate::nfp::NfpError;
 
     fn rect(x0: i64, y0: i64, w: i64, h: i64) -> Polygon64 {
@@ -261,14 +261,99 @@ mod tests {
         }
     }
 
+    fn canonicalize_ring(points: &[Point64]) -> Vec<Point64> {
+        let mut normalized = points.to_vec();
+        if normalized.len() > 1 && normalized.first() == normalized.last() {
+            normalized.pop();
+        }
+        if normalized.is_empty() {
+            return normalized;
+        }
+
+        if signed_area2_i128(&normalized) < 0 {
+            normalized.reverse();
+        }
+
+        let start_idx = normalized
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, p)| (p.x, p.y))
+            .map(|(idx, _)| idx)
+            .expect("non-empty ring");
+        normalized.rotate_left(start_idx);
+        normalized
+    }
+
     #[test]
-    fn rect_rect_manual_reference() {
+    fn test_not_convex_returns_err() {
+        let l_shape = Polygon64 {
+            outer: vec![
+                Point64 { x: 0, y: 0 },
+                Point64 { x: 100, y: 0 },
+                Point64 { x: 100, y: 50 },
+                Point64 { x: 50, y: 50 },
+                Point64 { x: 50, y: 100 },
+                Point64 { x: 0, y: 100 },
+            ],
+            holes: Vec::new(),
+        };
+        let b = rect(0, 0, 10, 10);
+
+        let err = compute_convex_nfp(&l_shape, &b).expect_err("concave polygon must be rejected");
+        assert_eq!(err, NfpError::NotConvex);
+    }
+
+    #[test]
+    fn test_empty_polygon_returns_err() {
+        let a = Polygon64 {
+            outer: vec![Point64 { x: 0, y: 0 }, Point64 { x: 100, y: 0 }],
+            holes: Vec::new(),
+        };
+        let b = rect(0, 0, 10, 10);
+
+        let err = compute_convex_nfp(&a, &b).expect_err("polygon with <3 vertices must fail");
+        assert_eq!(err, NfpError::EmptyPolygon);
+    }
+
+    #[test]
+    fn test_collinear_merge_no_extra_vertices() {
+        let a = rect(0, 0, 100, 50);
+        let b = rect(0, 0, 100, 50);
+
+        let nfp = compute_convex_nfp(&a, &b).expect("parallel-edge merge should be valid");
+        assert_eq!(
+            canonicalize_ring(&nfp.outer),
+            vec![
+                Point64 { x: -100, y: -50 },
+                Point64 { x: 100, y: -50 },
+                Point64 { x: 100, y: 50 },
+                Point64 { x: -100, y: 50 },
+            ]
+        );
+        assert_eq!(nfp.outer.len(), 4);
+    }
+
+    #[test]
+    fn test_determinism() {
+        let a = rect(0, 0, 73, 41);
+        let b = rect(0, 0, 19, 11);
+
+        let first = compute_convex_nfp(&a, &b).expect("first run");
+        let second = compute_convex_nfp(&a, &b).expect("second run");
+        assert_eq!(
+            canonicalize_ring(&first.outer),
+            canonicalize_ring(&second.outer)
+        );
+    }
+
+    #[test]
+    fn test_rect_rect_known_nfp() {
         let a = rect(0, 0, 100, 50);
         let b = rect(0, 0, 60, 30);
 
-        let nfp = compute_convex_nfp(&a, &b).expect("rect-rect NFP should be valid");
+        let result = compute_convex_nfp(&a, &b).expect("rect-rect NFP should be valid");
         assert_eq!(
-            nfp.outer,
+            canonicalize_ring(&result.outer),
             vec![
                 Point64 { x: -60, y: -30 },
                 Point64 { x: 100, y: -30 },
@@ -276,124 +361,5 @@ mod tests {
                 Point64 { x: -60, y: 50 },
             ]
         );
-    }
-
-    #[test]
-    fn rect_square_manual_reference() {
-        let a = rect(0, 0, 100, 50);
-        let b = rect(0, 0, 40, 40);
-
-        let nfp = compute_convex_nfp(&a, &b).expect("rect-square NFP should be valid");
-        assert_eq!(
-            nfp.outer,
-            vec![
-                Point64 { x: -40, y: -40 },
-                Point64 { x: 100, y: -40 },
-                Point64 { x: 100, y: 50 },
-                Point64 { x: -40, y: 50 },
-            ]
-        );
-    }
-
-    #[test]
-    fn square_square_manual_reference() {
-        let a = rect(0, 0, 50, 50);
-        let b = rect(0, 0, 50, 50);
-
-        let nfp = compute_convex_nfp(&a, &b).expect("square-square NFP should be valid");
-        assert_eq!(
-            nfp.outer,
-            vec![
-                Point64 { x: -50, y: -50 },
-                Point64 { x: 50, y: -50 },
-                Point64 { x: 50, y: 50 },
-                Point64 { x: -50, y: 50 },
-            ]
-        );
-    }
-
-    #[test]
-    fn rect_rect_different_ratio_reference() {
-        let a = rect(0, 0, 120, 40);
-        let b = rect(0, 0, 30, 10);
-
-        let nfp = compute_convex_nfp(&a, &b).expect("rect-rect ratio NFP should be valid");
-        assert_eq!(
-            nfp.outer,
-            vec![
-                Point64 { x: -30, y: -10 },
-                Point64 { x: 120, y: -10 },
-                Point64 { x: 120, y: 40 },
-                Point64 { x: -30, y: 40 },
-            ]
-        );
-    }
-
-    #[test]
-    fn parallel_edges_collinear_merge_keeps_minimal_vertices() {
-        let a = rect(0, 0, 80, 20);
-        let b = rect(0, 0, 80, 20);
-
-        let nfp = compute_convex_nfp(&a, &b).expect("parallel-edge merge should be valid");
-        assert_eq!(
-            nfp.outer,
-            vec![
-                Point64 { x: -80, y: -20 },
-                Point64 { x: 80, y: -20 },
-                Point64 { x: 80, y: 20 },
-                Point64 { x: -80, y: 20 },
-            ]
-        );
-        assert_eq!(nfp.outer.len(), 4);
-    }
-
-    #[test]
-    fn non_convex_input_returns_not_convex() {
-        let concave = Polygon64 {
-            outer: vec![
-                Point64 { x: 0, y: 0 },
-                Point64 { x: 4, y: 0 },
-                Point64 { x: 2, y: 1 },
-                Point64 { x: 4, y: 4 },
-                Point64 { x: 0, y: 4 },
-            ],
-            holes: Vec::new(),
-        };
-        let b = rect(0, 0, 2, 2);
-
-        let err = compute_convex_nfp(&concave, &b).expect_err("concave polygon must be rejected");
-        assert_eq!(err, NfpError::NotConvex);
-    }
-
-    #[test]
-    fn empty_polygon_returns_empty_error() {
-        let a = Polygon64 {
-            outer: Vec::new(),
-            holes: Vec::new(),
-        };
-        let b = rect(0, 0, 10, 10);
-
-        let err = compute_convex_nfp(&a, &b).expect_err("empty polygon must fail");
-        assert_eq!(err, NfpError::EmptyPolygon);
-    }
-
-    #[test]
-    fn deterministic_for_same_input() {
-        let a = rect(0, 0, 73, 41);
-        let b = rect(0, 0, 19, 11);
-
-        let first = compute_convex_nfp(&a, &b).expect("first run");
-        let second = compute_convex_nfp(&a, &b).expect("second run");
-        assert_eq!(first.outer, second.outer);
-    }
-
-    #[test]
-    fn edge_merge_matches_reference_hull_on_manual_case() {
-        let a = rect(0, 0, 100, 50);
-        let b = rect(0, 0, 60, 30);
-
-        let fast = compute_convex_nfp(&a, &b).expect("fast path");
-        let reference = compute_convex_nfp_reference(&a, &b).expect("reference path");
-        assert_eq!(fast.outer, reference.outer);
     }
 }

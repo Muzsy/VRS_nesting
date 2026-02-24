@@ -1,0 +1,8 @@
+{
+  "description": "Hexagon A (r~50 integer grid) vs Rectangle B (40x20), rotation=0",
+  "polygon_a": [[50, 0], [25, 43], [-25, 43], [-50, 0], [-25, -43], [25, -43]],
+  "polygon_b": [[0, 0], [40, 0], [40, 20], [0, 20]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-90, -20], [-65, -63], [25, -63], [50, -20], [50, 0], [25, 43], [-65, 43], [-90, 0]],
+  "expected_vertex_count": 8
+}
