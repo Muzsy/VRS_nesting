@@ -1,0 +1,10 @@
+{
+  "description": "Pocket-style concave pair (hole-like pocket behavior)",
+  "fixture_type": "concave",
+  "polygon_a": [[0, 0], [9, 0], [9, 9], [6, 9], [6, 3], [3, 3], [3, 9], [0, 9]],
+  "polygon_b": [[0, 0], [4, 0], [4, 2], [2, 2], [2, 4], [0, 4]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-4, -2], [-2, -2], [-2, -4], [9, -4], [9, 9], [-4, 9]],
+  "expected_vertex_count": 6,
+  "expect_exact_fallback": true
+}

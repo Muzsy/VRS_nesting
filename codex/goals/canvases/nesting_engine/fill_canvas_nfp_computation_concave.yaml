@@ -1,0 +1,105 @@
+steps:
+  - name: "Felderítés: érintett kód és meglévő NFP teszt infrastruktúra"
+    description: >
+      Olvasd el az AGENTS.md és docs/codex/* szabályokat. Térképezd fel a meglévő
+      NFP modulokat és teszt infrastruktúrát (nfp/mod.rs, convex.rs, cache.rs,
+      tests/nfp_regression.rs, poc/nfp_regression/*, tolerance_policy.md).
+      A talált, tényleges fájlútvonalakat és releváns megjegyzéseket rögzítsd a
+      canvases/nesting_engine/nfp_computation_concave.md "Kapcsolódások" és
+      "Érintett fájlok" részeiben. Ne találj ki fájlokat.
+    outputs:
+      - "canvases/nesting_engine/nfp_computation_concave.md"
+
+  - name: "NFP mod integráció: concave + boundary_clean modulok bekötése"
+    description: >
+      Bővítsd a rust/nesting_engine/src/nfp/mod.rs modult:
+      - add hozzá a concave.rs és boundary_clean.rs modul deklarációt,
+      - definiáld vagy bővítsd az NfpError variánsokat úgy, hogy kezelhető legyen:
+        EmptyPolygon, NotSimpleOutput, OrbitLoopDetected, DecompositionFailed.
+      Ne módosítsd a cache kulcs típusokat vagy a publikus cache API-t.
+    outputs:
+      - "rust/nesting_engine/src/nfp/mod.rs"
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "rust/nesting_engine/src/nfp/boundary_clean.rs"
+
+  - name: "Boundary clean: determinisztikus canonicalizálás és önmetszés-mentes output"
+    description: >
+      Implementáld a boundary_clean.rs-ben a kimeneti NFP kontúr tisztítását:
+      - duplikált és záró csúcsok eltávolítása,
+      - 0 hossz él és kollineáris pontok összevonása,
+      - fix irány: outer CCW,
+      - fix kezdőpont: lexikografikus minimum (x,y),
+      - ha az output önmetsző vagy nem javítható: Err(NfpError::NotSimpleOutput).
+      Minden orientáció/turn/cross döntés i128-on történjen.
+      f64 alapú point-in-polygon használata tilos a core döntésekben.
+    outputs:
+      - "rust/nesting_engine/src/nfp/boundary_clean.rs"
+
+  - name: "Stabil alap: konkáv → konvex dekompozíció → Minkowski (F2-1) → union"
+    description: >
+      A concave.rs-ben valósítsd meg a stabil alap (default) útvonalat:
+      - konkáv polygon dekompozíció konvex részekre (determinista, integer alapú),
+      - konvex részek NFP-je: a meglévő compute_convex_nfp() használatával,
+      - rész-NFP-k uniója i_overlay boolean unionnal,
+      - végén boundary_clean alkalmazása.
+      Ha a dekompozíció meghiúsul: Err(NfpError::DecompositionFailed).
+      A dekompozíció lehet trianguláció (ear-clipping jelleg), de legyen determinisztikus.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Orbitális exact réteg: touching group alapú állapotgép + loop guard + fallback"
+    description: >
+      A concave.rs-ben egészítsd ki a stabil alapot egy opcionális orbitális exact móddal:
+      - SVGNest/Deepnest jellegű állapotgép mintázat (nem kódport, csak logika),
+      - Burke 2007 + Luo&Rao 2022 szemlélet: touching group képzés többszörös érintkezésnél,
+      - candidate slide vektorok determinisztikus rendezése és kiválasztása,
+      - visited-state hash + max_steps loop guard,
+      - dead-end vagy loop esetén automatikus fallback a stabil alapra,
+      - minden irány-/turn döntés i128-on.
+      A kimenet minden esetben boundary_clean után térjen vissza (vagy error).
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Fixture formátum és legalább 5 konkáv regressziós tesztpár hozzáadása"
+    description: >
+      Bővítsd a poc/nfp_regression/README.md-t concave fixture leírással.
+      Hozz létre legalább 5 konkáv fixture JSON-t a poc/nfp_regression/ alá
+      (touching group, slits, lyuk/pocket, interlock C-alak, multi-contact).
+      A fixture-ek integer koordinátákkal legyenek, determinisztikus elvárásokkal.
+      Ne használj toleranciás összehasonlítást: canonical ring legyen az alap.
+    outputs:
+      - "poc/nfp_regression/README.md"
+      - "poc/nfp_regression/concave_touching_group.json"
+      - "poc/nfp_regression/concave_slit.json"
+      - "poc/nfp_regression/concave_hole_pocket.json"
+      - "poc/nfp_regression/concave_interlock_c.json"
+      - "poc/nfp_regression/concave_multi_contact.json"
+
+  - name: "Integrációs regressziós teszt bővítése: concave + determinisztika + valid output"
+    description: >
+      Frissítsd a rust/nesting_engine/tests/nfp_regression.rs tesztet:
+      - ismerje a concave fixture típusokat,
+      - futtassa a concave NFP számítást (stabil alap default, és opcionálisan exact mód),
+      - ellenőrizze a determinisztikát: kétszer futtatva azonos canonical ring,
+      - ellenőrizze, hogy a boundary_clean utáni polygon nem önmetsző.
+      Ne hozz be f64 alapú PIP-t; ha kell, a saját integer alapú segédfüggvényeket használd.
+    outputs:
+      - "rust/nesting_engine/tests/nfp_regression.rs"
+
+  - name: "Checklist és report előkészítése (DoD szerint)"
+    description: >
+      Hozd létre / frissítsd a checklistet és a reportot a DoD pontokkal:
+      - DoD: 5 concave fixture PASS, valid boundary, 3 valós DXF pár (a felderítés alapján),
+        poc fixture-ek, verify parancs PASS.
+      A report kövesse a docs/codex/report_standard.md szerkezetét és tartalmazzon AUTO_VERIFY blokkot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_computation_concave.md"
+      - "codex/reports/nesting_engine/nfp_computation_concave.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést kizárólag wrapperrel, és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_computation_concave.md
+    outputs:
+      - "codex/reports/nesting_engine/nfp_computation_concave.md"
+      - "codex/reports/nesting_engine/nfp_computation_concave.verify.log"

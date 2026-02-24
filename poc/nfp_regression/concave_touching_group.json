@@ -1,0 +1,10 @@
+{
+  "description": "Concave touching-group case with notch-vs-L profile",
+  "fixture_type": "concave",
+  "polygon_a": [[0, 0], [8, 0], [8, 2], [4, 2], [4, 6], [8, 6], [8, 8], [0, 8]],
+  "polygon_b": [[0, 0], [3, 0], [3, 1], [1, 1], [1, 4], [0, 4]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-3, -1], [-1, -1], [-1, -4], [8, -4], [8, 8], [-3, 8]],
+  "expected_vertex_count": 6,
+  "expect_exact_fallback": true
+}

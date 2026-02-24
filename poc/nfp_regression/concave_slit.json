@@ -1,0 +1,10 @@
+{
+  "description": "Concave slit geometry with narrow channel",
+  "fixture_type": "concave",
+  "polygon_a": [[0, 0], [10, 0], [10, 10], [6, 10], [6, 2], [4, 2], [4, 10], [0, 10]],
+  "polygon_b": [[0, 0], [3, 0], [3, 5], [2, 5], [2, 1], [1, 1], [1, 5], [0, 5]],
+  "rotation_deg_b": 0,
+  "expected_nfp": [[-3, -5], [10, -5], [10, 10], [-3, 10]],
+  "expected_vertex_count": 4,
+  "expect_exact_fallback": true
+}

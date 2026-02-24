@@ -4,7 +4,9 @@
 //! F2-2 (concave NFP) is implemented in a separate task but reuses the same
 //! cache API and key policy.
 
+pub mod boundary_clean;
 pub mod cache;
+pub mod concave;
 pub mod convex;
 
 use std::fmt::{Display, Formatter};
@@ -14,6 +16,9 @@ use std::fmt::{Display, Formatter};
 pub enum NfpError {
     EmptyPolygon,
     NotConvex,
+    NotSimpleOutput,
+    OrbitLoopDetected,
+    DecompositionFailed,
 }
 
 impl Display for NfpError {
@@ -21,6 +26,9 @@ impl Display for NfpError {
         match self {
             Self::EmptyPolygon => f.write_str("empty polygon ring"),
             Self::NotConvex => f.write_str("polygon is not convex"),
+            Self::NotSimpleOutput => f.write_str("nfp output boundary is not simple"),
+            Self::OrbitLoopDetected => f.write_str("orbit exact mode detected a loop"),
+            Self::DecompositionFailed => f.write_str("concave decomposition failed"),
         }
     }
 }
