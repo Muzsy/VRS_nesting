@@ -58,70 +58,51 @@ eredmény is jobb kihasználtságot ad, mint a BLF rács.
 
 ### Algoritmikus specifikáció
 
-#### Minkowski-összeg (konvex eset) — pairwise vertex sums + convex hull
+> ⚠️ **Megjegyzés:** Az F2-1 task eredetileg pairwise sums + hull módszert implementált.
+> Az `nfp_convex_edge_merge_fastpath` task (commit `8673be9`) felváltotta a publikus
+> `compute_convex_nfp()` implementációját edge-merge fastpath-ra. Ez a szekció az
+> **aktuális állapotot** írja le.
 
-Az implementált algoritmus (`convex.rs`) az alábbi lépésekből áll:
+#### Publikus API
 
-**1. Előfeldolgozás és invariáns-ellenőrzés**
-- `normalize_ring()`: duplikált szomszédos csúcsok és záró ismétlés eltávolítása
-- `is_ccw()` / `is_convex()` ellenőrzés mindkét bemenetre — ha nem teljesül: `Err(NfpError::NotConvex)`
-- Release buildben is: ha a gyűrű CW, megfordítja (`a_outer.reverse()`) — ez robusztusabb, mint a csak debug assertelés
+```rust
+/// Elsődleges útvonal — O(n+m) edge-merge Minkowski-összeg.
+pub fn compute_convex_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError>
 
-**2. B tükrözése**
+/// Referencia / fallback — O(n×m×log) pairwise sums + convex hull.
+pub fn compute_convex_nfp_reference(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError>
 ```
-neg_b[i] = (-b[i].x, -b[i].y)
-```
 
-**3. Pairwise csúcsösszeg (O(n×m) pont)**
-```
-pairwise_sums = { a[i] + neg_b[j]  |  minden i, j }
-```
-Eredmény: n×m darab `Point64` koordináta.
+#### Fő implementáció: edge-merge fastpath (O(n+m))
 
-**4. Konvex burok (Andrew monotone chain)**
-- Pontok rendezése (x, y) szerint lexikografikusan
-- `dedup()` (azonos koordinátájú pontok eltávolítása)
-- Lower hull + upper hull építése `turn(a,b,c) <= 0` feltétellel
-- A `turn()` KIZÁRÓLAG `cross_product_i128()`-et hív (i64 közvetlen szorzat tilos)
-- `turn <= 0` kiszűri a kollineáris pontokat is → a kimenet minimalizált csúcsszámú kontúr
+1. `normalize_ring()` — duplikált szomszédos csúcsok és záró ismétlés eltávolítása
+2. `is_ccw()` / `is_convex()` ellenőrzés — ha nem teljesül: `Err(NfpError::NotConvex)`
+3. Release-ben is CCW javítás: `if !is_ccw { outer.reverse() }`
+4. B tükrözése: `neg_b[i] = (-b[i].x, -b[i].y)`
+5. Lexikografikus kezdőpont (`argmin_lex`) mindkét poligonon → `rotate_left`
+6. Él-vektorok: `eA[i] = a[i+1] - a[i]`, `eB[j] = b_neg[j+1] - b_neg[j]`
+7. Szög-merge loop (`cross_product_i128` alapú komparátor):
+   - `cross > 0` → eA[i] kerül ki, i++
+   - `cross < 0` → eB[j] kerül ki, j++
+   - `cross == 0` → eA[i]+eB[j] kerül ki (collinear merge), i++, j++
+8. Prefix-sum kontúrépítés: `p[0] = a[0] + b_neg[0]`, `p[k+1] = p[k] + merged_edges[k]`
+9. `Ok(Polygon64 { outer: kontúr, holes: vec![] })`
 
-**5. Kimenet**
-- CCW irányú, kollineáris-mentes konvex poligon
-- Kezdőpont: lexikografikusan legkisebb (x,y) csúcs (a sort stabilitásából adódóan)
+#### Referencia implementáció: pairwise sums + hull (O(n×m×log))
 
----
+Minden `a[i] + neg_b[j]` csúcspár összege → Andrew monotone chain hull.
+Használat: keresztellenőrzés (`edge_merge_equals_hull_on_all_fixtures`),
+degenerált bemenetek, és debug fallback.
 
-#### Komplexitás és következmények
+#### Komplexitás összefoglaló
 
-| Tulajdonság | Edge-merge módszer (O(n+m)) | Pairwise+hull (implementált) |
-|---|---|---|
-| Időbonyolultság | O(n+m) | O(n×m × log(n×m)) |
-| Kollineáris pontok | megtarthatja | eltávolítja (`turn<=0`) |
-| Kezdőpont | extrém csúcsból indulva | lex. min (x,y) |
-| Determinizmus forrása | angle-merge sorrend | lex. sort + dedup + fix hull eljárás |
-
-**Kis elemszámnál (n,m < 20) a különbség elhanyagolható.** Inflate/offset után
-400 csúcsos poligonoknál n×m = 160k pont + sort — ez F2-3-ban cache nélkül
-szűk keresztmetszet lehet. A cache (F2-1-ben felépítve) ezt a problémát
-teljesen eliminálhatja azonos alak-párra.
-
-**A kollineáris-mentesség következménye:** az NFP kontúr csúcsszáma minimális.
-Ez az F2-3 (CFR = IFP \ NFP-unió) szempontjából kedvező (kevesebb pont → gyorsabb
-boolean műveletek az `i_overlay`-ben).
-
----
-
-#### CCW-javítás viselkedése (release vs. debug)
-
-A kód **release buildben is megfordítja** a CW bemenetet (`if !is_ccw { reverse() }`),
-nem csak debug assertel. Ez robosztusabb az assert-only megközelítésnél, de
-a pipeline invariáns (inflate always CCW) ettől függetlenül fennmarad és kötelező.
-
----
+| Módszer | Komplexitás | Kollinearitás | Kezdőpont |
+|---|---|---|---|
+| Edge-merge (**fő, publikus**) | O(n+m) | collinear merge (`cross==0`) | lex. min (x,y) |
+| Pairwise+hull (referencia) | O(n×m×log(n×m)) | turn<=0 eltávolít | lex. min (x,y) |
 
 #### Kontúrirány-invariáns
 
-Az NFP modul bemenete a `geometry/pipeline.rs` által inflated `Polygon64`.
 Az inflate pipeline CCW-t garantál az outer kontúrra. A `convex.rs`
 `debug_assert!(is_ccw(&poly))` hívással ellenőrzi debug buildben, és
 release-ben is javítja, ha szükséges.
@@ -276,6 +257,12 @@ Nem releváns (belső Rust modul, nincs UI).
 - `canvases/nesting_engine/nesting_engine_baseline_placer.md` — F1-4 baseline (a javulás mérési alap)
 - `docs/nesting_engine/tolerance_policy.md` — SCALE, TOUCH_TOL definíciók
 - `rust/nesting_engine/src/geometry/pipeline.rs` — inflated geometria forrása
+
+**Ráépülő (elvégzett):**
+- `canvases/nesting_engine/nfp_convex_edge_merge_fastpath.md` — O(n+m) fastpath,
+  publikus API váltás (commit `8673be9`)
+- `canvases/nesting_engine/nfp_fixture_expansion.md` — fixture könyvtár bővítése
+  (rotált, sokcsúcsos, skinny, collinear esetek; a fastpath helyességének érdemi igazolása)
 
 **Következő task:**
 - `canvases/nesting_engine/nfp_computation_concave.md` — F2-2 konkáv NFP (a cache API-t örökli)

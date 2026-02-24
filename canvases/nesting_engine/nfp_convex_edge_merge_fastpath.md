@@ -158,15 +158,15 @@ Determinizmus forrása az edge-merge-ben:
 
 ### Pipálható feladatlista
 
-- [ ] `compute_convex_nfp_reference()` átnevezés (jelenlegi hull kód, semmi sem törlődik)
-- [ ] `compute_convex_nfp()` új implementáció: edge-merge fastpath
-- [ ] `b_neg` tükrözés + `normalize_ring` előfeldolgozás
-- [ ] Lexikografikus kezdőpont (`argmin_lex`) mindkét poligonon
-- [ ] Él-vektor kinyerés + szög-merge loop (`cross_product_i128` alapú)
-- [ ] Párhuzamos él kezelés (`cross == 0`: collinear merge)
-- [ ] Prefix-sum kontúrépítés + `normalize_ring` kimenet
-- [ ] Unit tesztek edge-merge-re (rect×rect, square×square, párhuzamos élek esete)
-- [ ] `nfp_regression.rs` bővítése: `edge_merge_equals_hull_on_all_fixtures()`
+- [x] `compute_convex_nfp_reference()` átnevezés (jelenlegi hull kód, semmi sem törlődik)
+- [x] `compute_convex_nfp()` új implementáció: edge-merge fastpath
+- [x] `b_neg` tükrözés + `normalize_ring` előfeldolgozás
+- [x] Lexikografikus kezdőpont (`argmin_lex`) mindkét poligonon
+- [x] Él-vektor kinyerés + szög-merge loop (`cross_product_i128` alapú)
+- [x] Párhuzamos él kezelés (`cross == 0`: collinear merge)
+- [x] Prefix-sum kontúrépítés + `normalize_ring` kimenet
+- [x] Unit tesztek edge-merge-re (rect×rect, square×square, párhuzamos élek esete)
+- [x] `nfp_regression.rs` bővítése: `edge_merge_equals_hull_on_all_fixtures()`
 
 ---
 
@@ -174,16 +174,18 @@ Determinizmus forrása az edge-merge-ben:
 
 ### DoD (Definition of Done)
 
-- [ ] `compute_convex_nfp()` az edge-merge implementációt hívja (nem a hull-t)
-- [ ] `compute_convex_nfp_reference()` a hull implementáció (átnevezve, változatlan logika)
-- [ ] A meglévő fixture regressziós teszt (`fixture_library_passes`) PASS marad — edge-merge-re fut
-- [ ] Új cross-check teszt: `edge_merge_equals_hull_on_all_fixtures()` PASS
-  (minden fixture-re `canonicalize(edge_merge) == canonicalize(hull)`)
-- [ ] Párhuzamos élek (`cross == 0`) collinear merge kezelése unit teszttel igazolva
-- [ ] Determinisztikus output: azonos input kétszer → azonos NFP csúcslista
-- [ ] `cross_product_i128()` az egyetlen szorzási útvonal a merge komparátorban
-- [ ] A meglévő F1 gate-ek nem sérülnek (0 overlap, 0 out-of-bounds, determinism hash)
-- [ ] `./scripts/verify.sh --report codex/reports/nesting_engine/nfp_convex_edge_merge_fastpath.md` PASS
+- [x] `compute_convex_nfp()` az edge-merge implementációt hívja (nem a hull-t)
+- [x] `compute_convex_nfp_reference()` a hull implementáció (átnevezve, változatlan logika)
+- [x] A meglévő fixture regressziós teszt (`fixture_library_passes`) PASS marad — edge-merge-re fut
+- [x] Új cross-check teszt: `edge_merge_equals_hull_on_all_fixtures()` PASS
+- [x] Párhuzamos élek (`cross == 0`) collinear merge kezelése unit teszttel igazolva
+- [x] Determinisztikus output: azonos input kétszer → azonos NFP csúcslista
+- [x] `cross_product_i128()` az egyetlen szorzási útvonal a merge komparátorban
+- [x] A meglévő F1 gate-ek nem sérülnek (0 overlap, 0 out-of-bounds, determinism hash)
+- [x] `./scripts/verify.sh --report codex/reports/nesting_engine/nfp_convex_edge_merge_fastpath.md` PASS
+
+**Megjegyzés:** A fixture lefedettség (2 axis-aligned téglalap) az `nfp_fixture_expansion`
+taskban bővül rotált, sokcsúcsos, skinny és collinear esetekkel.
 
 ### Kockázatok és rollback terv
 
@@ -207,11 +209,13 @@ Nem releváns (belső Rust modul).
 ## 📎 Kapcsolódások
 
 **Előzmény (elvégzett):**
-- `canvases/nesting_engine/nfp_computation_convex.md` — hull implementáció (referencia alap)
-- `rust/nesting_engine/src/nfp/convex.rs` — módosítandó fájl
-- `rust/nesting_engine/tests/nfp_regression.rs` — bővítendő cross-check teszttel
+- `canvases/nesting_engine/nfp_computation_convex.md` — hull implementáció (referencia alap, commit `39674a8`)
 
-**Következő task (ez után):**
+**Ráépülő (következő):**
+- `canvases/nesting_engine/nfp_fixture_expansion.md` — fixture könyvtár bővítése,
+  white-box unit tesztek `convex.rs`-ben; a fastpath általános helyességének igazolása
+
+**Ezt követő task:**
 - `canvases/nesting_engine/nfp_computation_concave.md` — F2-2 konkáv NFP
 
 **Kutatási referencia:**
