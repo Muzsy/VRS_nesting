@@ -1,0 +1,96 @@
+{
+  "description": "Generated boss-fight: near-parallel long-edge anisotropic scale",
+  "fixture_type": "concave",
+  "polygon_a": [
+    [
+      0,
+      0
+    ],
+    [
+      800,
+      0
+    ],
+    [
+      800,
+      198
+    ],
+    [
+      400,
+      198
+    ],
+    [
+      400,
+      594
+    ],
+    [
+      800,
+      594
+    ],
+    [
+      800,
+      792
+    ],
+    [
+      0,
+      792
+    ]
+  ],
+  "polygon_b": [
+    [
+      0,
+      0
+    ],
+    [
+      300,
+      0
+    ],
+    [
+      300,
+      99
+    ],
+    [
+      100,
+      99
+    ],
+    [
+      100,
+      396
+    ],
+    [
+      0,
+      396
+    ]
+  ],
+  "rotation_deg_b": 0,
+  "expected_nfp": [
+    [
+      -300,
+      -99
+    ],
+    [
+      -100,
+      -99
+    ],
+    [
+      -100,
+      -396
+    ],
+    [
+      800,
+      -396
+    ],
+    [
+      800,
+      792
+    ],
+    [
+      -300,
+      792
+    ]
+  ],
+  "expected_vertex_count": 6,
+  "prefer_exact": false,
+  "generated_quarantine": true,
+  "generated_case": "near_parallel",
+  "generated_seed": 20260225
+}

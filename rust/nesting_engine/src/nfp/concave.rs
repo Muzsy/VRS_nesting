@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{hash_map::DefaultHasher, HashSet};
+use std::fmt::Write as _;
 use std::hash::Hasher;
 
 use i_overlay::{
@@ -45,6 +46,57 @@ impl Default for ConcaveNfpOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OrbitTraceDirection {
+    pub dx: i64,
+    pub dy: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrbitNextEventTraceStep {
+    pub step_index: usize,
+    pub touching_group_signature: String,
+    pub chosen_direction: OrbitTraceDirection,
+    pub next_event_kind: String,
+    pub next_event_t_num: i128,
+    pub next_event_t_den: i128,
+    pub tie_break_reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrbitTraceOutcomeKind {
+    ExactClosed,
+    FallbackStable,
+    FailedNoFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrbitNextEventTrace {
+    pub outcome: OrbitTraceOutcomeKind,
+    pub steps: Vec<OrbitNextEventTraceStep>,
+}
+
+#[derive(Debug, Default)]
+struct OrbitTraceCollector {
+    max_steps: usize,
+    steps: Vec<OrbitNextEventTraceStep>,
+}
+
+impl OrbitTraceCollector {
+    fn new(max_steps: usize) -> Self {
+        Self {
+            max_steps,
+            steps: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, step: OrbitNextEventTraceStep) {
+        if self.steps.len() < self.max_steps {
+            self.steps.push(step);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TouchingContact {
     edge_a: usize,
     edge_b: usize,
@@ -55,6 +107,15 @@ struct TouchingContact {
 enum EventKind {
     VertexBToEdgeA,
     VertexAToEdgeB,
+}
+
+impl EventKind {
+    fn as_trace_kind(self) -> &'static str {
+        match self {
+            Self::VertexBToEdgeA => "vertex_b_to_edge_a",
+            Self::VertexAToEdgeB => "vertex_a_to_edge_b",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +166,8 @@ struct CandidateDirection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NextOrbitStep {
     next_translation: Point64,
+    direction: CandidateDirection,
+    event: EventCandidate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +225,32 @@ pub fn compute_concave_nfp_default(a: &Polygon64, b: &Polygon64) -> Result<Polyg
     compute_concave_nfp(a, b, ConcaveNfpOptions::default())
 }
 
+pub fn collect_orbit_next_event_trace(
+    a: &Polygon64,
+    b: &Polygon64,
+    options: ConcaveNfpOptions,
+    max_trace_steps: usize,
+) -> Result<OrbitNextEventTrace, NfpError> {
+    let mut trace = OrbitTraceCollector::new(max_trace_steps);
+    let trace_options = ConcaveNfpOptions {
+        mode: ConcaveNfpMode::ExactOrbit,
+        ..options
+    };
+    let outcome = compute_orbit_exact_outcome_with_trace(a, b, trace_options, Some(&mut trace))?;
+    Ok(OrbitNextEventTrace {
+        outcome: orbit_outcome_kind(&outcome),
+        steps: trace.steps,
+    })
+}
+
+fn orbit_outcome_kind(outcome: &OrbitOutcome) -> OrbitTraceOutcomeKind {
+    match outcome {
+        OrbitOutcome::ExactClosed { .. } => OrbitTraceOutcomeKind::ExactClosed,
+        OrbitOutcome::FallbackStable { .. } => OrbitTraceOutcomeKind::FallbackStable,
+        OrbitOutcome::FailedNoFallback { .. } => OrbitTraceOutcomeKind::FailedNoFallback,
+    }
+}
+
 fn compute_stable_concave_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError> {
     if a.outer.len() < 3 || b.outer.len() < 3 {
         return Err(NfpError::EmptyPolygon);
@@ -206,6 +295,15 @@ fn compute_orbit_exact_outcome(
     b: &Polygon64,
     options: ConcaveNfpOptions,
 ) -> Result<OrbitOutcome, NfpError> {
+    compute_orbit_exact_outcome_with_trace(a, b, options, None)
+}
+
+fn compute_orbit_exact_outcome_with_trace(
+    a: &Polygon64,
+    b: &Polygon64,
+    options: ConcaveNfpOptions,
+    mut trace: Option<&mut OrbitTraceCollector>,
+) -> Result<OrbitOutcome, NfpError> {
     let ring_a = normalize_simple_ring(&a.outer)?;
     let ring_b = normalize_simple_ring(&b.outer)?;
     if ring_a.len() < 3 || ring_b.len() < 3 {
@@ -235,9 +333,10 @@ fn compute_orbit_exact_outcome(
         events_count: 0,
     };
 
-    for _step_idx in 0..max_steps {
+    for step_idx in 0..max_steps {
         telemetry.steps_count = telemetry.steps_count.saturating_add(1);
         let touching_group = build_touching_group(&ring_a, &ring_b, current);
+        let touching_signature = touching_group_signature(&touching_group);
         let signature = hash_state(current, &touching_group);
         if !visited.insert(signature) {
             return orbit_failure_outcome(
@@ -259,6 +358,21 @@ fn compute_orbit_exact_outcome(
         else {
             return orbit_failure_outcome(a, b, options, telemetry, OrbitFailureReason::DeadEnd);
         };
+
+        if let Some(collector) = trace.as_deref_mut() {
+            collector.push(OrbitNextEventTraceStep {
+                step_index: step_idx,
+                touching_group_signature: touching_signature,
+                chosen_direction: OrbitTraceDirection {
+                    dx: next_step.direction.vector.x,
+                    dy: next_step.direction.vector.y,
+                },
+                next_event_kind: next_step.event.event_kind.as_trace_kind().to_string(),
+                next_event_t_num: next_step.event.t.num,
+                next_event_t_den: next_step.event.t.den,
+                tie_break_reason: build_tie_break_reason(next_step.direction, next_step.event),
+            });
+        }
 
         current = next_step.next_translation;
         telemetry.events_count = telemetry.events_count.saturating_add(1);
@@ -342,6 +456,8 @@ fn choose_next_orbit_step(
         }
         return Some(NextOrbitStep {
             next_translation: next_event.next_translation,
+            direction,
+            event: next_event.event,
         });
     }
 
@@ -1364,6 +1480,40 @@ fn hash_state(translation: Point64, touching_group: &[TouchingContact]) -> u64 {
         hasher.write_i64(contact.point.y);
     }
     hasher.finish()
+}
+
+fn touching_group_signature(touching_group: &[TouchingContact]) -> String {
+    if touching_group.is_empty() {
+        return "none".to_string();
+    }
+
+    let mut out = String::new();
+    for (idx, contact) in touching_group.iter().enumerate() {
+        if idx > 0 {
+            out.push('|');
+        }
+        let _ = write!(
+            out,
+            "a{}:b{}@{},{}",
+            contact.edge_a, contact.edge_b, contact.point.x, contact.point.y
+        );
+    }
+    out
+}
+
+fn build_tie_break_reason(direction: CandidateDirection, event: EventCandidate) -> String {
+    format!(
+        "dir[q{}|{},{}|src{}|a{}|b{}];event[{}|v{}|e{}]",
+        vector_quadrant(direction.vector),
+        direction.vector.x,
+        direction.vector.y,
+        direction.source_kind,
+        direction.source_edge_a,
+        direction.source_edge_b,
+        event.event_kind.as_trace_kind(),
+        event.vertex_idx,
+        event.edge_idx
+    )
 }
 
 fn min_lex_point(points: [Point64; 4]) -> Point64 {

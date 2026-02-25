@@ -1,0 +1,96 @@
+{
+  "description": "Generated boss-fight: sliver-style concave gap (high aspect transform)",
+  "fixture_type": "concave",
+  "polygon_a": [
+    [
+      0,
+      0
+    ],
+    [
+      10,
+      0
+    ],
+    [
+      10,
+      310
+    ],
+    [
+      6,
+      310
+    ],
+    [
+      6,
+      62
+    ],
+    [
+      4,
+      62
+    ],
+    [
+      4,
+      310
+    ],
+    [
+      0,
+      310
+    ]
+  ],
+  "polygon_b": [
+    [
+      0,
+      0
+    ],
+    [
+      3,
+      0
+    ],
+    [
+      3,
+      155
+    ],
+    [
+      2,
+      155
+    ],
+    [
+      2,
+      31
+    ],
+    [
+      1,
+      31
+    ],
+    [
+      1,
+      155
+    ],
+    [
+      0,
+      155
+    ]
+  ],
+  "rotation_deg_b": 0,
+  "expected_nfp": [
+    [
+      -3,
+      -155
+    ],
+    [
+      10,
+      -155
+    ],
+    [
+      10,
+      310
+    ],
+    [
+      -3,
+      310
+    ]
+  ],
+  "expected_vertex_count": 4,
+  "prefer_exact": false,
+  "generated_quarantine": true,
+  "generated_case": "sliver_gap",
+  "generated_seed": 20260225
+}
