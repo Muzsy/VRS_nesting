@@ -94,12 +94,6 @@ fn convex_fixture_library_passes() {
 
 #[test]
 fn concave_fixture_library_passes() {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum PreferExactOutcome {
-        ExactClosed,
-        ExpectedExactError,
-    }
-
     let fixture_files = fixture_files();
     let concave_files: Vec<PathBuf> = fixture_files
         .into_iter()
@@ -113,7 +107,8 @@ fn concave_fixture_library_passes() {
     );
 
     let mut exact_preferred_fixture_count = 0usize;
-    let mut exact_preferred_evidence_count = 0usize;
+    let mut exact_closed_count = 0usize;
+    let mut exact_closed_fixtures: Vec<String> = Vec::new();
 
     for fixture_path in concave_files {
         let fixture = read_fixture(&fixture_path);
@@ -189,73 +184,79 @@ fn concave_fixture_library_passes() {
                 },
             );
 
-            if expect_exact_error {
-                let err = exact_first.unwrap_err();
-                assert!(
-                    matches!(
-                        err,
-                        nesting_engine::nfp::NfpError::OrbitLoopDetected
-                            | nesting_engine::nfp::NfpError::OrbitDeadEnd
-                            | nesting_engine::nfp::NfpError::OrbitMaxStepsReached
-                            | nesting_engine::nfp::NfpError::OrbitNotClosed
-                    ),
-                    "prefer_exact fixture {} must fail with explicit orbit error",
-                    fixture_path.display()
-                );
-                let outcome = PreferExactOutcome::ExpectedExactError;
-                assert_eq!(outcome, PreferExactOutcome::ExpectedExactError);
-                exact_preferred_evidence_count += 1;
-            } else {
-                let exact_first = exact_first.unwrap_or_else(|err| {
-                    panic!(
-                        "exact mode without fallback must succeed in fixture {}: {:?}",
-                        fixture_path.display(),
-                        err
+            match exact_first {
+                Ok(exact_first) => {
+                    let exact_second = compute_concave_nfp(
+                        &poly_a,
+                        &poly_b,
+                        ConcaveNfpOptions {
+                            mode: ConcaveNfpMode::ExactOrbit,
+                            max_steps: 4096,
+                            enable_fallback: false,
+                        },
                     )
-                });
-                let exact_second = compute_concave_nfp(
-                    &poly_a,
-                    &poly_b,
-                    ConcaveNfpOptions {
-                        mode: ConcaveNfpMode::ExactOrbit,
-                        max_steps: 4096,
-                        enable_fallback: false,
-                    },
-                )
-                .unwrap_or_else(|err| {
-                    panic!(
-                        "exact mode second run failed in fixture {}: {:?}",
-                        fixture_path.display(),
-                        err
-                    )
-                });
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "exact mode second run failed in fixture {}: {:?}",
+                            fixture_path.display(),
+                            err
+                        )
+                    });
 
-                let exact_ring = canonicalize_ring(&exact_first.outer);
-                let exact_ring_second = canonicalize_ring(&exact_second.outer);
-                let stable_ring = canonicalize_ring(&stable_first.outer);
+                    let exact_ring = canonicalize_ring(&exact_first.outer);
+                    let exact_ring_second = canonicalize_ring(&exact_second.outer);
+                    let stable_ring = canonicalize_ring(&stable_first.outer);
 
-                assert_eq!(
-                    exact_ring,
-                    exact_ring_second,
-                    "exact no-fallback mode is not deterministic in fixture {}",
-                    fixture_path.display()
-                );
-                assert!(
-                    !ring_has_self_intersection(&exact_first.outer),
-                    "exact no-fallback boundary is self intersecting in fixture {}",
-                    fixture_path.display()
-                );
-                if !allow_exact_equals_stable {
-                    assert_ne!(
+                    assert_eq!(
                         exact_ring,
-                        stable_ring,
-                        "prefer_exact fixture {} must prove ExactClosed by differing from stable ring",
+                        exact_ring_second,
+                        "exact no-fallback mode is not deterministic in fixture {}",
                         fixture_path.display()
                     );
+                    assert!(
+                        !ring_has_self_intersection(&exact_first.outer),
+                        "exact no-fallback boundary is self intersecting in fixture {}",
+                        fixture_path.display()
+                    );
+                    if !allow_exact_equals_stable {
+                        assert_ne!(
+                            exact_ring,
+                            stable_ring,
+                            "prefer_exact fixture {} must prove ExactClosed by differing from stable ring",
+                            fixture_path.display()
+                        );
+                    }
+
+                    exact_closed_count += 1;
+                    exact_closed_fixtures.push(
+                        fixture_path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("unknown_fixture")
+                            .to_string(),
+                    );
                 }
-                let outcome = PreferExactOutcome::ExactClosed;
-                assert_eq!(outcome, PreferExactOutcome::ExactClosed);
-                exact_preferred_evidence_count += 1;
+                Err(err) => {
+                    if expect_exact_error {
+                        assert!(
+                            matches!(
+                                err,
+                                nesting_engine::nfp::NfpError::OrbitLoopDetected
+                                    | nesting_engine::nfp::NfpError::OrbitDeadEnd
+                                    | nesting_engine::nfp::NfpError::OrbitMaxStepsReached
+                                    | nesting_engine::nfp::NfpError::OrbitNotClosed
+                            ),
+                            "prefer_exact fixture {} must fail with explicit orbit error",
+                            fixture_path.display()
+                        );
+                    } else {
+                        panic!(
+                            "exact mode without fallback must succeed in fixture {}: {:?}",
+                            fixture_path.display(),
+                            err
+                        );
+                    }
+                }
             }
         }
 
@@ -290,8 +291,10 @@ fn concave_fixture_library_passes() {
         "at least 3 concave fixtures must opt into exact-no-fallback coverage"
     );
     assert!(
-        exact_preferred_evidence_count >= 3,
-        "prefer_exact evidence (ExactClosed or expected exact error) must exist on at least 3 fixtures"
+        exact_closed_count >= 3,
+        "at least 3 prefer_exact fixtures must close in exact mode, got {} ({:?})",
+        exact_closed_count,
+        exact_closed_fixtures
     );
 }
 

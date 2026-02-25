@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
-use std::collections::{hash_map::DefaultHasher, HashSet};
+use std::collections::HashSet;
 use std::fmt::Write as _;
-use std::hash::Hasher;
 
 use i_overlay::{
     core::{
@@ -107,6 +106,7 @@ struct TouchingContact {
 enum EventKind {
     VertexBToEdgeA,
     VertexAToEdgeB,
+    VertexToVertex,
 }
 
 impl EventKind {
@@ -114,6 +114,7 @@ impl EventKind {
         match self {
             Self::VertexBToEdgeA => "vertex_b_to_edge_a",
             Self::VertexAToEdgeB => "vertex_a_to_edge_b",
+            Self::VertexToVertex => "vertex_to_vertex",
         }
     }
 }
@@ -326,7 +327,7 @@ fn compute_orbit_exact_outcome_with_trace(
     let mut current = start;
     orbit.push(start);
 
-    let mut visited: HashSet<u64> = HashSet::new();
+    let mut banned_transitions: HashSet<(i64, i64, i64, i64)> = HashSet::new();
     let max_steps = options.max_steps.max(1);
     let mut telemetry = OrbitTelemetry {
         steps_count: 0,
@@ -335,28 +336,36 @@ fn compute_orbit_exact_outcome_with_trace(
 
     for step_idx in 0..max_steps {
         telemetry.steps_count = telemetry.steps_count.saturating_add(1);
-        let touching_group = build_touching_group(&ring_a, &ring_b, current);
-        let touching_signature = touching_group_signature(&touching_group);
-        let signature = hash_state(current, &touching_group);
-        if !visited.insert(signature) {
-            return orbit_failure_outcome(
-                a,
-                b,
-                options,
-                telemetry,
-                OrbitFailureReason::LoopDetected,
-            );
-        }
-
         let previous = if orbit.len() >= 2 {
             Some(orbit[orbit.len() - 2])
         } else {
             None
         };
-        let Some(next_step) =
-            choose_next_orbit_step(&ring_a, &ring_b, current, &touching_group, previous)
+
+        let touching_group = build_touching_group(&ring_a, &ring_b, current);
+        let touching_signature = touching_group_signature(&touching_group);
+
+        let Some(next_step) = choose_next_orbit_step(
+            &ring_a,
+            &ring_b,
+            current,
+            &touching_group,
+            previous,
+            &banned_transitions,
+        )
         else {
+            if let Some(prev) = previous {
+                banned_transitions.insert(transition_key(prev, current));
+                orbit.pop();
+                current = prev;
+                continue;
+            }
             return orbit_failure_outcome(a, b, options, telemetry, OrbitFailureReason::DeadEnd);
+        };
+
+        if next_step.next_translation != start && orbit.contains(&next_step.next_translation) {
+            banned_transitions.insert(transition_key(current, next_step.next_translation));
+            continue;
         };
 
         if let Some(collector) = trace.as_deref_mut() {
@@ -438,27 +447,37 @@ fn choose_next_orbit_step(
     translation: Point64,
     touching_group: &[TouchingContact],
     previous: Option<Point64>,
+    banned_transitions: &HashSet<(i64, i64, i64, i64)>,
 ) -> Option<NextOrbitStep> {
     let directions = build_candidate_slide_vectors(a, b, touching_group);
     if directions.is_empty() {
         return None;
     }
 
-    for direction in directions {
-        let Some(next_event) = next_event_translation(a, b, translation, direction.vector) else {
-            continue;
-        };
-        if next_event.next_translation == translation {
-            continue;
+    for allow_immediate_backtrack in [false, true] {
+        for direction in directions.iter().copied() {
+            let Some(next_event) = next_event_translation(a, b, translation, direction.vector) else {
+                continue;
+            };
+            if next_event.next_translation == translation {
+                continue;
+            }
+            if !allow_immediate_backtrack
+                && previous.is_some()
+                && previous == Some(next_event.next_translation)
+            {
+                continue;
+            }
+            if banned_transitions.contains(&transition_key(translation, next_event.next_translation))
+            {
+                continue;
+            }
+            return Some(NextOrbitStep {
+                next_translation: next_event.next_translation,
+                direction,
+                event: next_event.event,
+            });
         }
-        if previous.is_some() && previous == Some(next_event.next_translation) {
-            continue;
-        }
-        return Some(NextOrbitStep {
-            next_translation: next_event.next_translation,
-            direction,
-            event: next_event.event,
-        });
     }
 
     None
@@ -484,6 +503,39 @@ fn next_event_translation(
 
     for vertex_idx in 0..b.len() {
         let moving_vertex = translated_point(b[vertex_idx], translation);
+
+        for static_vertex_idx in 0..a.len() {
+            let static_vertex = a[static_vertex_idx];
+            let Some(event) = vertex_vertex_event(
+                moving_vertex,
+                static_vertex,
+                slide,
+                EventKind::VertexToVertex,
+                vertex_idx,
+                static_vertex_idx,
+            ) else {
+                continue;
+            };
+            let Some(next_translation) = apply_translation_fraction(translation, slide, event.t)
+            else {
+                continue;
+            };
+            if !event_contact_holds(a, b, next_translation, event) {
+                continue;
+            }
+            if polygons_strict_overlap(a, b, next_translation) {
+                continue;
+            }
+
+            let translated = NextEventTranslation {
+                event,
+                next_translation,
+            };
+            if is_better_event(&translated, &best) {
+                best = Some(translated);
+            }
+        }
+
         for edge_idx in 0..a.len() {
             let a0 = a[edge_idx];
             let a1 = a[(edge_idx + 1) % a.len()];
@@ -603,6 +655,49 @@ fn vertex_edge_event(
     })
 }
 
+fn vertex_vertex_event(
+    moving_vertex: Point64,
+    static_vertex: Point64,
+    moving_vector: Point64,
+    event_kind: EventKind,
+    vertex_idx: usize,
+    static_vertex_idx: usize,
+) -> Option<EventCandidate> {
+    let dx = static_vertex.x.checked_sub(moving_vertex.x)?;
+    let dy = static_vertex.y.checked_sub(moving_vertex.y)?;
+
+    let t = if moving_vector.x == 0 {
+        if dx != 0 {
+            return None;
+        }
+        Fraction::positive(dy as i128, moving_vector.y as i128)?
+    } else if moving_vector.y == 0 {
+        if dy != 0 {
+            return None;
+        }
+        Fraction::positive(dx as i128, moving_vector.x as i128)?
+    } else {
+        let lhs = (dx as i128).checked_mul(moving_vector.y as i128)?;
+        let rhs = (dy as i128).checked_mul(moving_vector.x as i128)?;
+        if lhs != rhs {
+            return None;
+        }
+        let t = Fraction::positive(dx as i128, moving_vector.x as i128)?;
+        let check = (moving_vector.y as i128).checked_mul(t.num)?;
+        if check != (dy as i128).checked_mul(t.den)? {
+            return None;
+        }
+        t
+    };
+
+    Some(EventCandidate {
+        t,
+        event_kind,
+        vertex_idx,
+        edge_idx: static_vertex_idx,
+    })
+}
+
 fn moving_vertex_projects_on_edge(
     moving_vertex: Point64,
     edge_start: Point64,
@@ -688,6 +783,14 @@ fn event_contact_holds(
             let b0 = translated_point(b[event.edge_idx % b.len()], translation);
             let b1 = translated_point(b[(event.edge_idx + 1) % b.len()], translation);
             point_on_segment_inclusive(b0, b1, vertex)
+        }
+        EventKind::VertexToVertex => {
+            if a.is_empty() || b.is_empty() {
+                return false;
+            }
+            let moving = translated_point(b[event.vertex_idx % b.len()], translation);
+            let fixed = a[event.edge_idx % a.len()];
+            moving == fixed
         }
     }
 }
@@ -1469,17 +1572,8 @@ fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
     a.abs()
 }
 
-fn hash_state(translation: Point64, touching_group: &[TouchingContact]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    hasher.write_i64(translation.x);
-    hasher.write_i64(translation.y);
-    for contact in touching_group {
-        hasher.write_usize(contact.edge_a);
-        hasher.write_usize(contact.edge_b);
-        hasher.write_i64(contact.point.x);
-        hasher.write_i64(contact.point.y);
-    }
-    hasher.finish()
+fn transition_key(from: Point64, to: Point64) -> (i64, i64, i64, i64) {
+    (from.x, from.y, to.x, to.y)
 }
 
 fn touching_group_signature(touching_group: &[TouchingContact]) -> String {

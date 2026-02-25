@@ -8,5 +8,5 @@
   "expected_vertex_count": 6,
   "prefer_exact": true,
   "allow_exact_equals_stable": false,
-  "expect_exact_error": true
+  "expect_exact_error": false
 }

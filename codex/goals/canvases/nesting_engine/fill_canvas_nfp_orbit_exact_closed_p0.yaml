@@ -1,0 +1,74 @@
+steps:
+  - name: "Felderítés: prefer_exact fixture státuszok és bukási okok"
+    description: >
+      Olvasd el az AGENTS.md és a releváns canvases/doc horgonyokat.
+      Listázd ki a poc/nfp_regression alatti concave fixture-eket, és külön jelöld:
+      - prefer_exact: true
+      - expect_exact_error / allow_exact_equals_stable (ha van)
+      A rust/nesting_engine/tests/nfp_regression.rs alapján írd le, mi számít ma ExactClosed bizonyítéknak.
+      A concave.rs-ben azonosítsd a konkrét ágakat, ahol ExactOrbit fail okok keletkeznek (dead-end/loop/max_steps).
+      Rögzítsd a canvasban: mely 3 fixture-t célozzuk ExactClosed-re.
+    outputs:
+      - "canvases/nesting_engine/nfp_orbit_exact_closed_p0.md"
+
+  - name: "ExactOrbit hardening: dead-end/loop esetek determinisztikus kezelése (alternatív irányok)"
+    description: >
+      A rust/nesting_engine/src/nfp/concave.rs-ben módosítsd az ExactOrbit fő ciklust úgy,
+      hogy dead-end esetén determinisztikusan próbáljon következő candidate irányt
+      (nem azonnali fail), miközben:
+      - tie-break determinisztikus marad,
+      - visited signature továbbra is védi a loopot,
+      - enable_fallback=false esetén végül Err legyen, ne stable seed.
+      A cél: legalább 3 prefer_exact fixture-ben elérni az ExactClosed zárást.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Next-event jelöltek bővítése: hiányzó event típusok (ha releváns)"
+    description: >
+      A concave.rs next-event logikájában (EventCandidate generálás) azonosítsd a hiányzó,
+      de szükséges esemény-típusokat a célzott fixture-ekhez (pl. collinear edge-edge boundary,
+      vertex-vertex contact vagy edge-edge párhuzamos határ).
+      Implementáld minimálisan azokat, amelyek bizonyíthatóan kellenek a 3 cél fixture ExactClosed-hez.
+      Minden predikátum i128; nincs f64.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Prefer_exact proof szigorítása: >=3 ExactClosed elvárás rögzítése a tesztben"
+    description: >
+      Frissítsd a rust/nesting_engine/tests/nfp_regression.rs tesztet:
+      - prefer_exact: true esetén explicit elvárás legyen: outcome == ExactClosed (enable_fallback=false),
+        kivéve ha a fixture expect_exact_error=true (de a cél: legalább 3-nál ne legyen error).
+      - bizonyítás: exact canonical ring != stable canonical ring (ha allow_exact_equals_stable nem true).
+      - a reportban később listázható legyen (teszt kimenet/log alapján), hogy mely 3 fixture teljesítette.
+    outputs:
+      - "rust/nesting_engine/tests/nfp_regression.rs"
+
+  - name: "Fixture-ek frissítése: legalább 3 prefer_exact fixture 'ExactClosed' elvárásra"
+    description: >
+      Válassz legalább 3 concave fixture-t a poc/nfp_regression alól (lehetőleg a korábbi prefer_exact-ek közül),
+      és állítsd be:
+      - prefer_exact: true
+      - expect_exact_error: false (ha eddig true volt, kapcsold ki a 3 cél fixture-nél)
+      - allow_exact_equals_stable: false (default), kivéve ha indokolt és dokumentált
+      A cél: a suite PASS és ténylegesen ExactClosed legyen no-fallback módban.
+    outputs:
+      - "poc/nfp_regression/concave_touching_group.json"
+      - "poc/nfp_regression/concave_interlock_c.json"
+      - "poc/nfp_regression/concave_multi_contact.json"
+
+  - name: "Checklist + report + verify"
+    description: >
+      Hozd létre / frissítsd:
+      - codex/codex_checklist/nesting_engine/nfp_orbit_exact_closed_p0.md
+      - codex/reports/nesting_engine/nfp_orbit_exact_closed_p0.md
+      A report kövesse a docs/codex/report_standard.md struktúrát, és tartalmazza:
+      - a 3 cél fixture listáját
+      - outcome táblázatot (expected vs actual)
+      - futtatási parancsokat
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_orbit_exact_closed_p0.md
+      és mentsd a logot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_orbit_exact_closed_p0.md"
+      - "codex/reports/nesting_engine/nfp_orbit_exact_closed_p0.md"
+      - "codex/reports/nesting_engine/nfp_orbit_exact_closed_p0.verify.log"
