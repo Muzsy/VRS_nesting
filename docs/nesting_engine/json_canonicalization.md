@@ -25,17 +25,19 @@ It does **not** specify:
 
 ## 2. Design choice
 
-### 2.1 Base canonicalization: RFC 8785 (JCS)
+### 2.1 Base canonicalization: JCS-compatible subset for `hash_view_v1`
 
-Canonical JSON serialization is based on **RFC 8785 — JSON Canonicalization Scheme (JCS)**.
+The project targets a **JCS-compatible subset** for `hash_view_v1` instead of requiring a full RFC 8785 serializer implementation.
 
-JCS provides deterministic rules for:
+For this hash-view, determinism is guaranteed by these normative constraints:
 
-* Object member (key) ordering
-* String escaping and Unicode handling
-* Minimal JSON formatting (no insignificant whitespace)
+* Object member (key) ordering is lexicographic.
+* Serialization contains no insignificant whitespace.
+* Encoding is UTF-8.
+* Numbers in hash-view are integers only.
+* Strings follow standard JSON escaping rules.
 
-JCS is used to prevent ad-hoc “almost deterministic” JSON formatting rules from diverging across languages and libraries.
+This is sufficient for byte-identical canonicalization across the Rust and Python reference implementations used in this repository.
 
 ### 2.2 Numeric stability: hash-view with scaled integers
 
@@ -51,7 +53,7 @@ This aligns with the project-wide scale policy (`SCALE = 1_000_000`, see `docs/n
 
 * **Raw output**: the human- and tool-facing solver output JSON (may contain `*_mm` floating-point numbers).
 * **Hash-view**: a derived JSON object containing only fields needed for determinism hashing, with numeric fields converted to scaled integers.
-* **Canonical JSON (JCS)**: RFC 8785 canonical serialization of a JSON value.
+* **Canonical JSON (JCS-subset)**: the project-defined, JCS-compatible subset serialization rules from Section 6.
 
 ---
 
@@ -60,13 +62,13 @@ This aligns with the project-wide scale policy (`SCALE = 1_000_000`, see `docs/n
 `determinism_hash` is defined as:
 
 ```
-determinism_hash = SHA-256( UTF8( JCS( hash_view_json ) ) )
+determinism_hash = SHA-256( UTF8( canonical_hash_view_v1_json ) )
 ```
 
 Where:
 
 * `hash_view_json` is the hash-view object as defined in Section 5.
-* `JCS(...)` produces a canonical JSON text (RFC 8785).
+* `canonical_hash_view_v1_json` is the canonical byte representation produced by the rules in Section 6.
 * `UTF8(...)` converts the canonical JSON text to bytes (UTF-8).
 * `SHA-256(...)` returns a lowercase hex string (64 hex chars).
 
@@ -135,18 +137,22 @@ This rule ensures that internal iteration order (hash maps, parallel runs, solve
 
 ---
 
-## 6. Canonical JSON (JCS) requirements
+## 6. Canonical JSON requirements for `hash_view_v1`
 
-The canonical JSON used for hashing **MUST** follow RFC 8785 rules.
+For `hash_view_v1`, canonical JSON **MUST** satisfy all of the following:
 
-At a minimum, implementations must guarantee:
+* **Lexicographic key ordering:** object members are serialized in key-sorted order.
+* **Whitespace-free JSON:** no insignificant whitespace is allowed.
+* **UTF-8 bytes:** hashing input is UTF-8 encoded JSON text.
+* **Integer-only numbers:** hash-view numeric fields are integers (`rotation_deg`, `x_scaled_i64`, `y_scaled_i64`).
+* **JSON string escaping:** strings are serialized with standard JSON escaping.
 
-* **Object members are lexicographically sorted by key** (Unicode code point order).
-* **No insignificant whitespace** is emitted.
-* **Strings are escaped** according to JSON rules and RFC 8785 (including Unicode normalization behavior as specified by the RFC).
-* **Numbers** in the hash-view are integers only; they must be serialized as base-10 with an optional leading `-` and no leading `+`.
+The repository reference implementations are normative:
 
-Because the hash-view restricts numbers to integers, the float formatting ambiguities are eliminated.
+* **Python:** `json.dumps(hash_view, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
+* **Rust:** `BTreeMap`-based key ordering + `serde_json::to_string(...)`
+
+Because the hash-view uses integers only, floating-point rendering variance is excluded by design.
 
 ---
 
@@ -192,9 +198,9 @@ Assuming `SCALE = 1_000_000`:
 }
 ```
 
-### 7.4 Canonical JSON (JCS) form
+### 7.4 Canonical JSON form
 
-JCS removes whitespace and sorts object keys. The canonical JSON text is:
+Whitespace-free, key-sorted canonical JSON text:
 
 ```json
 {"placements":[{"part_id":"P1","rotation_deg":0,"sheet_id":"S1","x_scaled_i64":0,"y_scaled_i64":0},{"part_id":"P2","rotation_deg":90,"sheet_id":"S1","x_scaled_i64":10500000,"y_scaled_i64":20000000}],"schema_version":"nesting_engine.hash_view.v1"}
@@ -206,14 +212,14 @@ JCS removes whitespace and sorts object keys. The canonical JSON text is:
 
 ## 8. Implementation notes (non-normative)
 
-* **Do not** hash the pretty-printed raw output JSON.
+* **Do not** hash pretty-printed raw output JSON.
 * **Do not** hash language-native objects directly.
-* Always build the **hash-view**, sort placements, serialize with **RFC 8785**, then hash.
+* Always build the **hash-view**, sort placements, produce canonical bytes with Section 6 rules, then hash.
 
-Recommended approach:
+Reference implementation anchors in this repo:
 
-* Rust: build a strongly-typed hash-view struct, sort with a tuple comparator, serialize with a JCS-compliant serializer.
-* Python: build a dict/list hash-view, sort placements, canonicalize with an RFC 8785 implementation, then sha256.
+* Rust: `rust/nesting_engine/src/export/output_v2.rs`
+* Python: `scripts/canonicalize_json.py`
 
 ---
 

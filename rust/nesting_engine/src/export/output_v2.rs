@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::geometry::scale::mm_to_i64;
 use crate::multi_bin::greedy::MultiSheetResult;
+use crate::placement::blf::PlacedItem;
 
 pub fn build_output_v2(
     seed: u64,
@@ -67,7 +68,7 @@ pub fn build_output_v2(
     })
 }
 
-fn compute_determinism_hash(placements: &[crate::placement::blf::PlacedItem]) -> String {
+fn hash_view_v1_canonical_json_bytes(placements: &[PlacedItem]) -> String {
     let mut hv_placements: Vec<(String, BTreeMap<String, Value>)> = placements
         .iter()
         .map(|p| {
@@ -121,7 +122,11 @@ fn compute_determinism_hash(placements: &[crate::placement::blf::PlacedItem]) ->
         Value::String("nesting_engine.hash_view.v1".to_string()),
     );
 
-    let canonical = serde_json::to_string(&hash_view).unwrap_or_else(|_| "{}".to_string());
+    serde_json::to_string(&hash_view).unwrap_or_else(|_| "{}".to_string())
+}
+
+fn compute_determinism_hash(placements: &[PlacedItem]) -> String {
+    let canonical = hash_view_v1_canonical_json_bytes(placements);
     let digest = Sha256::digest(canonical.as_bytes());
     format!("sha256:{}", hex::encode(digest))
 }
@@ -157,6 +162,43 @@ mod tests {
             a["meta"]["determinism_hash"],
             b["meta"]["determinism_hash"],
             "determinism hash changed for identical input"
+        );
+    }
+
+    #[test]
+    fn hash_view_v1_canonical_json_is_byte_identical() {
+        let placements = vec![
+            PlacedItem {
+                part_id: "b".to_string(),
+                instance: 1,
+                sheet: 1,
+                x_mm: 0.0,
+                y_mm: 0.0,
+                rotation_deg: 90,
+            },
+            PlacedItem {
+                part_id: "a".to_string(),
+                instance: 2,
+                sheet: 0,
+                x_mm: 1.0,
+                y_mm: 2.0,
+                rotation_deg: 0,
+            },
+            PlacedItem {
+                part_id: "a".to_string(),
+                instance: 0,
+                sheet: 0,
+                x_mm: 0.0,
+                y_mm: 0.0,
+                rotation_deg: 0,
+            },
+        ];
+
+        let canonical = hash_view_v1_canonical_json_bytes(&placements);
+        let expected = "{\"placements\":[{\"part_id\":\"a\",\"rotation_deg\":0,\"sheet_id\":\"S0\",\"x_scaled_i64\":0,\"y_scaled_i64\":0},{\"part_id\":\"a\",\"rotation_deg\":0,\"sheet_id\":\"S0\",\"x_scaled_i64\":1000000,\"y_scaled_i64\":2000000},{\"part_id\":\"b\",\"rotation_deg\":90,\"sheet_id\":\"S1\",\"x_scaled_i64\":0,\"y_scaled_i64\":0}],\"schema_version\":\"nesting_engine.hash_view.v1\"}";
+        assert_eq!(
+            canonical, expected,
+            "canonical hash-view JSON bytes changed unexpectedly"
         );
     }
 }

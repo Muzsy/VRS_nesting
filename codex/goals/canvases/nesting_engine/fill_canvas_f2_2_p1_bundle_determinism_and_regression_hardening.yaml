@@ -1,0 +1,75 @@
+steps:
+  - name: "Felderítés: P1 pontok és érintett fájlok rögzítése"
+    description: >
+      Nyisd meg a codex/reports/nesting_engine/f2_2_full_audit.md P1 szekcióját,
+      és rögzítsd a 4 P1 pontot a canvasban (fájlhivatkozásokkal).
+      Ellenőrizd a horgonyfájlokat: json_canonicalization.md, canonicalize_json.py,
+      smoke_nesting_engine_determinism.sh, check.sh, output_v2.rs, poc/nfp_regression/README.md.
+    outputs:
+      - "canvases/nesting_engine/f2_2_p1_bundle_determinism_and_regression_hardening.md"
+
+  - name: "P1-1: Lib canonical JSON byte-level teszt (Rust)"
+    description: >
+      Módosítsd a rust/nesting_engine/src/export/output_v2.rs fájlt:
+      - Emelj ki egy belső helper függvényt, ami a hash-view canonical JSON stringet állítja elő
+        (ugyanazzal a kulcsrendezéssel és formátummal, amit compute_determinism_hash használ).
+      - Adj hozzá egy új unit tesztet, ami byte-azonosan asserteli a canonical JSON stringet
+        egy fix, kézzel megadott expected stringhez (no whitespace, sorted keys).
+      - A determinism_hash eredmény nem változhat azonos inputra (existing teszt marad).
+    outputs:
+      - "rust/nesting_engine/src/export/output_v2.rs"
+
+  - name: "P1-2: Spec drift fix (json_canonicalization.md normatív pontosítás)"
+    description: >
+      Frissítsd a docs/nesting_engine/json_canonicalization.md dokumentumot úgy, hogy:
+      - Normatívan rögzítse: hash_view_v1 esetén JCS-kompatibilis szubszet elég, és definiálja pontosan:
+        - kulcsrendezés (lexikografikus),
+        - whitespace tilos,
+        - UTF-8,
+        - integers only a hash-viewben,
+        - stringek JSON escape szabály szerint.
+      - Mondja ki explicit: a referencia implementáció megfelel:
+        - Python: json.dumps(sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        - Rust: BTreeMap + serde_json::to_string (determinista insertion sorrenddel).
+      - Az RFC8785 hivatkozás maradhat mint háttér, de a projekt által megkövetelt rész legyen egzakt és implementációhoz kötött.
+    outputs:
+      - "docs/nesting_engine/json_canonicalization.md"
+
+  - name: "P1-3: CLI determinism smoke bekötése a check.sh gate-be"
+    description: >
+      Frissítsd a scripts/check.sh fájlt:
+      - A nesting_engine rész végén hívd meg a scripts/smoke_nesting_engine_determinism.sh scriptet.
+      - Készíts /tmp alá egy gyorsított inputot (time_limit_sec=1) a poc/nesting_engine/sample_input_v2.json alapján
+        (stdlib python inline oké).
+      - Futtatás: RUNS=${NESTING_ENGINE_DETERMINISM_RUNS:-10} INPUT_JSON=/tmp/<fast>.json ./scripts/smoke_nesting_engine_determinism.sh
+      - Dokumentáld kommentben: CI-ben állítható 50-re.
+      - Gondoskodj róla, hogy a determinism smoke failure nem marad csendben (exit != 0).
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "P1-4: Quarantine acceptance workflow formalizálása"
+    description: >
+      Bővítsd a poc/nfp_regression/README.md fájlt egy új szekcióval:
+      - Mit jelent a quarantine_generated_*.json
+      - Hogyan generáljuk (scripts/fuzz_nfp_regressions.py)
+      - Hogyan 'acceptáljuk' (átnevezés, leírás tisztítás, expected stabilitás, cargo test PASS)
+      - Mit tegyünk, ha később törik (repro + döntés).
+      Ne inventálj build_expected scriptet; ha nincs, azt írd le, hogy manual review alapján történik az accept.
+    outputs:
+      - "poc/nfp_regression/README.md"
+
+  - name: "Checklist + report + verify"
+    description: >
+      Hozd létre / frissítsd:
+      - codex/codex_checklist/nesting_engine/f2_2_p1_bundle_determinism_and_regression_hardening.md
+      - codex/reports/nesting_engine/f2_2_p1_bundle_determinism_and_regression_hardening.md
+      A report kövesse a docs/codex/report_standard.md struktúrát, és tartalmazza:
+      - a 4 P1 pontot (Before/After röviden),
+      - futtatási parancsokat,
+      - DoD checklistet és evidence-t.
+      Végül futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/f2_2_p1_bundle_determinism_and_regression_hardening.md
+    outputs:
+      - "codex/codex_checklist/nesting_engine/f2_2_p1_bundle_determinism_and_regression_hardening.md"
+      - "codex/reports/nesting_engine/f2_2_p1_bundle_determinism_and_regression_hardening.md"
+      - "codex/reports/nesting_engine/f2_2_p1_bundle_determinism_and_regression_hardening.verify.log"

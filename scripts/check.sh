@@ -92,6 +92,7 @@ chmod +x \
   scripts/smoke_real_dxf_nfp_pairs.py \
   scripts/run_real_dxf_sparrow_pipeline.py \
   scripts/smoke_real_dxf_sparrow_pipeline.py \
+  scripts/smoke_nesting_engine_determinism.sh \
   scripts/smoke_svg_export.py || true
 
 # --- Sparrow binary resolve/build ---
@@ -379,6 +380,25 @@ PY
     exit 2
   fi
   echo "[NEST] CLI determinism OK"
+
+  echo "[NEST] Canonical JSON determinism smoke"
+  NEST_DET_INPUT="$(mktemp /tmp/nesting_engine_det_input_XXXXXX.json)"
+  python3 - "poc/nesting_engine/sample_input_v2.json" "$NEST_DET_INPUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+payload = json.loads(src.read_text(encoding="utf-8"))
+if isinstance(payload, dict):
+    payload["time_limit_sec"] = 1
+dst.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+PY
+  # CI-ben emelhető: NESTING_ENGINE_DETERMINISM_RUNS=50
+  RUNS="${NESTING_ENGINE_DETERMINISM_RUNS:-10}" \
+    INPUT_JSON="$NEST_DET_INPUT" \
+    ./scripts/smoke_nesting_engine_determinism.sh
 fi
 
 echo "[DONE] smoketest OK"
