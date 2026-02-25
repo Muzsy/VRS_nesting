@@ -1,0 +1,55 @@
+steps:
+  - name: "Felderítés: dead_code warningok pontos listája bin builden"
+    description: >
+      Olvasd el az AGENTS.md és docs/codex/* szabályokat.
+      Futtasd:
+        cd rust/nesting_engine && cargo build --release --bin nesting_engine
+      Gyűjtsd ki a warningokat, és szűrd a NFP modulra (src/nfp/*).
+      A canvasban rögzítsd táblázatban: item neve, típus (fn/struct/...), fájl, sor, miért unused (test-only/debug/legacy).
+      Ne találgass: csak a build kimenete alapján.
+    outputs:
+      - "canvases/nesting_engine/nfp_dead_code_bin_warnings_p1.md"
+
+  - name: "Javítás: test-only/debug-only itemek cfg gate mögé"
+    description: >
+      A NFP érintett fájlokban (src/nfp/*.rs) kezeld a warningokat:
+      - ami kizárólag tesztben kell: jelöld #[cfg(test)]-tel, vagy tedd #[cfg(test)] mod alá.
+      - ami debug/trace jellegű: #[cfg(any(test, debug_assertions))] mögé.
+      - kerüld a modul-szintű allow(dead_code)-ot.
+      Ügyelj arra, hogy a publikus API és runtime viselkedés ne változzon.
+    outputs:
+      - "rust/nesting_engine/src/nfp/mod.rs"
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "rust/nesting_engine/src/nfp/convex.rs"
+      - "rust/nesting_engine/src/nfp/boundary_clean.rs"
+      - "rust/nesting_engine/src/nfp/cache.rs"
+
+  - name: "Javítás: legacy/átmeneti itemek kezelése (célzott allow vagy eltávolítás)"
+    description: >
+      Azokra az itemekre, amelyek nem test/debug-only, de mégis dead_code:
+      - ha bizonyíthatóan nem kell és nem része a backlognak: távolítsd el (körültekintően, compile break nélkül).
+      - ha ideiglenesen kell (következő P0/P1 taskhoz): csak az adott itemen használj #[allow(dead_code)]-ot,
+        kommenttel: miért marad és mire lesz használva.
+      Ne hagyj félkész állapotot.
+    outputs:
+      - "rust/nesting_engine/src/nfp/mod.rs"
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "rust/nesting_engine/src/nfp/convex.rs"
+      - "rust/nesting_engine/src/nfp/boundary_clean.rs"
+      - "rust/nesting_engine/src/nfp/cache.rs"
+
+  - name: "Checklist + report + verify"
+    description: >
+      Hozd létre / frissítsd:
+      - codex/codex_checklist/nesting_engine/nfp_dead_code_bin_warnings_p1.md
+      - codex/reports/nesting_engine/nfp_dead_code_bin_warnings_p1.md
+      A report kövesse a docs/codex/report_standard.md struktúrát, és tartalmazza:
+      - a warningok 'Before/After' listáját (röviden),
+      - a választott stratégiát (cfg(test), cfg(debug_assertions), célzott allow).
+      Futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_dead_code_bin_warnings_p1.md
+      és mentsd a logot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_dead_code_bin_warnings_p1.md"
+      - "codex/reports/nesting_engine/nfp_dead_code_bin_warnings_p1.md"
+      - "codex/reports/nesting_engine/nfp_dead_code_bin_warnings_p1.verify.log"
