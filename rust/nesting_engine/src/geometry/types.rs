@@ -25,12 +25,18 @@ pub struct PartGeometry {
 ///
 /// SCALE=1_000_000 mellett a szorzatok i64-en túlcsordulhatnak,
 /// ezért minden orientációs számítás i128-on fut.
+///
+/// Megjegyzés:
+/// A `nesting_engine` bin target nem fordítja be az `nfp` modult, ezért ezen
+/// helper-ek ott "unused"-nak látszanak, miközben a lib/NFP útvonal ténylegesen használja őket.
+#[allow(dead_code)]
 pub fn cross_product_i128(dx1: i64, dy1: i64, dx2: i64, dy2: i64) -> i128 {
     (dx1 as i128) * (dy2 as i128) - (dx2 as i128) * (dy1 as i128)
 }
 
 /// Twice the signed area of a polygon ring.
 /// Positive => CCW, negative => CW.
+#[allow(dead_code)]
 pub fn signed_area2_i128(points: &[Point64]) -> i128 {
     let n = points.len();
     if n < 3 {
@@ -47,6 +53,7 @@ pub fn signed_area2_i128(points: &[Point64]) -> i128 {
 }
 
 /// Returns true when a ring is counter-clockwise.
+#[allow(dead_code)]
 pub fn is_ccw(points: &[Point64]) -> bool {
     signed_area2_i128(points) > 0
 }
@@ -55,6 +62,7 @@ pub fn is_ccw(points: &[Point64]) -> bool {
 ///
 /// Collinear edges are allowed, but the ring must have at least one
 /// non-zero turn and may not switch turn direction.
+#[allow(dead_code)]
 pub fn is_convex(points: &[Point64]) -> bool {
     let n = points.len();
     if n < 3 {
