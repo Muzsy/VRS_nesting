@@ -107,6 +107,46 @@ struct NextOrbitStep {
     next_translation: Point64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OrbitTelemetry {
+    steps_count: usize,
+    events_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrbitFailureReason {
+    LoopDetected,
+    DeadEnd,
+    MaxStepsReached,
+}
+
+impl OrbitFailureReason {
+    fn as_error(self) -> NfpError {
+        match self {
+            Self::LoopDetected => NfpError::OrbitLoopDetected,
+            Self::DeadEnd => NfpError::OrbitDeadEnd,
+            Self::MaxStepsReached => NfpError::OrbitMaxStepsReached,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OrbitOutcome {
+    ExactClosed {
+        polygon: Polygon64,
+        telemetry: OrbitTelemetry,
+    },
+    FallbackStable {
+        polygon: Polygon64,
+        telemetry: OrbitTelemetry,
+        reason: OrbitFailureReason,
+    },
+    FailedNoFallback {
+        telemetry: OrbitTelemetry,
+        reason: OrbitFailureReason,
+    },
+}
+
 pub fn compute_concave_nfp(
     a: &Polygon64,
     b: &Polygon64,
@@ -114,13 +154,7 @@ pub fn compute_concave_nfp(
 ) -> Result<Polygon64, NfpError> {
     match options.mode {
         ConcaveNfpMode::StableDefault => compute_stable_concave_nfp(a, b),
-        ConcaveNfpMode::ExactOrbit => match compute_orbit_exact_nfp(a, b, options) {
-            Ok(nfp) => Ok(nfp),
-            Err(NfpError::OrbitLoopDetected) if options.enable_fallback => {
-                compute_stable_concave_nfp(a, b)
-            }
-            Err(err) => Err(err),
-        },
+        ConcaveNfpMode::ExactOrbit => compute_orbit_exact_nfp(a, b, options),
     }
 }
 
@@ -159,34 +193,60 @@ fn compute_orbit_exact_nfp(
     b: &Polygon64,
     options: ConcaveNfpOptions,
 ) -> Result<Polygon64, NfpError> {
+    let outcome = compute_orbit_exact_outcome(a, b, options)?;
+    match outcome {
+        OrbitOutcome::ExactClosed { polygon, .. } => Ok(polygon),
+        OrbitOutcome::FallbackStable { polygon, .. } => Ok(polygon),
+        OrbitOutcome::FailedNoFallback { reason, .. } => Err(reason.as_error()),
+    }
+}
+
+fn compute_orbit_exact_outcome(
+    a: &Polygon64,
+    b: &Polygon64,
+    options: ConcaveNfpOptions,
+) -> Result<OrbitOutcome, NfpError> {
     let ring_a = normalize_simple_ring(&a.outer)?;
     let ring_b = normalize_simple_ring(&b.outer)?;
     if ring_a.len() < 3 || ring_b.len() < 3 {
         return Err(NfpError::EmptyPolygon);
     }
 
-    let stable_seed = compute_stable_concave_nfp(a, b)?;
+    let Some(start) = initial_orbit_anchor(&ring_a, &ring_b) else {
+        return orbit_failure_outcome(
+            a,
+            b,
+            options,
+            OrbitTelemetry {
+                steps_count: 0,
+                events_count: 0,
+            },
+            OrbitFailureReason::DeadEnd,
+        );
+    };
     let mut orbit: Vec<Point64> = Vec::new();
-    let start = stable_seed
-        .outer
-        .first()
-        .copied()
-        .or_else(|| initial_orbit_anchor(&ring_a, &ring_b))
-        .ok_or(NfpError::OrbitLoopDetected)?;
     let mut current = start;
     orbit.push(start);
 
     let mut visited: HashSet<u64> = HashSet::new();
     let max_steps = options.max_steps.max(1);
+    let mut telemetry = OrbitTelemetry {
+        steps_count: 0,
+        events_count: 0,
+    };
 
     for _step_idx in 0..max_steps {
+        telemetry.steps_count = telemetry.steps_count.saturating_add(1);
         let touching_group = build_touching_group(&ring_a, &ring_b, current);
         let signature = hash_state(current, &touching_group);
         if !visited.insert(signature) {
-            if let Some(orbit_poly) = finalize_orbit_path(&orbit, start) {
-                return Ok(orbit_poly);
-            }
-            return Ok(stable_seed.clone());
+            return orbit_failure_outcome(
+                a,
+                b,
+                options,
+                telemetry,
+                OrbitFailureReason::LoopDetected,
+            );
         }
 
         let previous = if orbit.len() >= 2 {
@@ -197,27 +257,32 @@ fn compute_orbit_exact_nfp(
         let Some(next_step) =
             choose_next_orbit_step(&ring_a, &ring_b, current, &touching_group, previous)
         else {
-            if let Some(orbit_poly) = finalize_orbit_path(&orbit, start) {
-                return Ok(orbit_poly);
-            }
-            return Ok(stable_seed.clone());
+            return orbit_failure_outcome(a, b, options, telemetry, OrbitFailureReason::DeadEnd);
         };
 
         current = next_step.next_translation;
+        telemetry.events_count = telemetry.events_count.saturating_add(1);
         orbit.push(current);
         if orbit.len() > 3 && current == start {
             let orbit_poly = Polygon64 {
                 outer: orbit,
                 holes: Vec::new(),
             };
-            return clean_polygon_boundary(&orbit_poly);
+            let cleaned = clean_polygon_boundary(&orbit_poly)?;
+            return Ok(OrbitOutcome::ExactClosed {
+                polygon: cleaned,
+                telemetry,
+            });
         }
     }
 
-    if let Some(orbit_poly) = finalize_orbit_path(&orbit, start) {
-        return Ok(orbit_poly);
-    }
-    Ok(stable_seed)
+    orbit_failure_outcome(
+        a,
+        b,
+        options,
+        telemetry,
+        OrbitFailureReason::MaxStepsReached,
+    )
 }
 
 fn initial_orbit_anchor(a: &[Point64], b: &[Point64]) -> Option<Point64> {
@@ -234,19 +299,23 @@ fn initial_orbit_anchor(a: &[Point64], b: &[Point64]) -> Option<Point64> {
     })
 }
 
-fn finalize_orbit_path(orbit: &[Point64], start: Point64) -> Option<Polygon64> {
-    if orbit.len() < 3 {
-        return None;
+fn orbit_failure_outcome(
+    a: &Polygon64,
+    b: &Polygon64,
+    options: ConcaveNfpOptions,
+    telemetry: OrbitTelemetry,
+    reason: OrbitFailureReason,
+) -> Result<OrbitOutcome, NfpError> {
+    if options.enable_fallback {
+        let stable = compute_stable_concave_nfp(a, b)?;
+        Ok(OrbitOutcome::FallbackStable {
+            polygon: stable,
+            telemetry,
+            reason,
+        })
+    } else {
+        Ok(OrbitOutcome::FailedNoFallback { telemetry, reason })
     }
-    let mut ring = orbit.to_vec();
-    if ring.last().copied() != Some(start) {
-        ring.push(start);
-    }
-    let polygon = Polygon64 {
-        outer: ring,
-        holes: Vec::new(),
-    };
-    clean_polygon_boundary(&polygon).ok()
 }
 
 fn choose_next_orbit_step(
@@ -1432,11 +1501,13 @@ mod tests {
     use crate::geometry::types::Point64;
 
     use super::{
-        compute_concave_nfp, compute_concave_nfp_default, decompose_to_convex_parts,
-        ConcaveNfpMode, ConcaveNfpOptions,
+        compute_concave_nfp, compute_concave_nfp_default, compute_orbit_exact_outcome,
+        decompose_to_convex_parts, ConcaveNfpMode, ConcaveNfpOptions, OrbitFailureReason,
+        OrbitOutcome,
     };
     use crate::geometry::types::Polygon64;
     use crate::nfp::boundary_clean::ring_has_self_intersection;
+    use crate::nfp::NfpError;
 
     fn poly(points: &[[i64; 2]]) -> Polygon64 {
         Polygon64 {
@@ -1504,5 +1575,77 @@ mod tests {
 
         assert_eq!(exact_1.outer, exact_2.outer);
         assert!(!ring_has_self_intersection(&exact_1.outer));
+    }
+
+    #[test]
+    fn exact_mode_no_fallback_returns_explicit_error() {
+        let a = poly(&[[0, 0], [4, 0], [4, 1], [1, 1], [1, 4], [0, 4]]);
+        let b = poly(&[[0, 0], [2, 0], [2, 3], [1, 3], [1, 1], [0, 1]]);
+
+        let err = compute_concave_nfp(
+            &a,
+            &b,
+            ConcaveNfpOptions {
+                mode: ConcaveNfpMode::ExactOrbit,
+                max_steps: 1,
+                enable_fallback: false,
+            },
+        )
+        .expect_err("no-fallback exact mode must not silently return stable seed");
+
+        assert!(
+            matches!(
+                err,
+                NfpError::OrbitLoopDetected
+                    | NfpError::OrbitDeadEnd
+                    | NfpError::OrbitMaxStepsReached
+                    | NfpError::OrbitNotClosed
+            ),
+            "exact mode should fail with explicit orbit error"
+        );
+    }
+
+    #[test]
+    fn exact_mode_reports_explicit_fallback_outcome_when_enabled() {
+        let a = poly(&[[0, 0], [4, 0], [4, 1], [1, 1], [1, 4], [0, 4]]);
+        let b = poly(&[[0, 0], [2, 0], [2, 3], [1, 3], [1, 1], [0, 1]]);
+
+        let stable = compute_concave_nfp_default(&a, &b).expect("stable path");
+        let outcome = compute_orbit_exact_outcome(
+            &a,
+            &b,
+            ConcaveNfpOptions {
+                mode: ConcaveNfpMode::ExactOrbit,
+                max_steps: 1,
+                enable_fallback: true,
+            },
+        )
+        .expect("outcome computation must succeed");
+
+        match outcome {
+            OrbitOutcome::FallbackStable {
+                polygon,
+                telemetry,
+                reason,
+            } => {
+                assert_eq!(polygon.outer, stable.outer);
+                assert!(telemetry.steps_count >= 1);
+                assert!(
+                    matches!(
+                        reason,
+                        OrbitFailureReason::LoopDetected
+                            | OrbitFailureReason::DeadEnd
+                            | OrbitFailureReason::MaxStepsReached
+                    ),
+                    "fallback reason must be explicit"
+                );
+            }
+            OrbitOutcome::ExactClosed { .. } => {
+                panic!("max_steps=1 fixture should not close exact orbit")
+            }
+            OrbitOutcome::FailedNoFallback { .. } => {
+                panic!("enable_fallback=true must not produce FailedNoFallback outcome")
+            }
+        }
     }
 }

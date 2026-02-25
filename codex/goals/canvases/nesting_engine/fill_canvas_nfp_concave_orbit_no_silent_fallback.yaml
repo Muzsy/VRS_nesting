@@ -1,0 +1,90 @@
+steps:
+  - name: "Felderítés: silent fallback pontos helye + prefer_exact jelenlegi jelentése"
+    description: >
+      Olvasd el az AGENTS.md és docs/codex/* szabályokat, majd a
+      rust/nesting_engine/src/nfp/concave.rs ExactOrbit ágát és a
+      rust/nesting_engine/tests/nfp_regression.rs prefer_exact logikáját.
+      Rögzítsd a canvasban pontosan: melyik ág(ak) adnak vissza Ok(stable_seed)-et
+      dead-end/loop/max_steps esetén, és a teszt mit tekint ma “no fallback”-nek.
+    outputs:
+      - "canvases/nesting_engine/nfp_concave_orbit_no_silent_fallback.md"
+
+  - name: "NfpError bővítés: explicit orbit sikertelenség és/vagy fallback jelzés"
+    description: >
+      A rust/nesting_engine/src/nfp/mod.rs-ben bővítsd az NfpError-t úgy, hogy
+      az ExactOrbit sikertelensége no-fallback módban külön hibával jelezhető legyen.
+      Preferált: OrbitDeadEnd, OrbitLoopDetected, OrbitMaxSteps vagy egy egységes
+      OrbitFallbackUsed { reason }.
+      Ne változtasd a publikus cache kulcsokat és API-t.
+    outputs:
+      - "rust/nesting_engine/src/nfp/mod.rs"
+
+  - name: "OrbitOutcome: belső outcome struktúra a bizonyíthatósághoz"
+    description: >
+      Vezess be egy belső outcome típust (concave.rs-ben vagy külön modulban),
+      ami megkülönbözteti:
+      - ExactClosed (valódi orbit boundary)
+      - FallbackStable (csak enable_fallback=true esetén)
+      - FailedNoFallback (enable_fallback=false esetén)
+      Az outcome tartalmazzon minimalis telemetriát: steps_count, events_count,
+      és sikertelenség okát.
+      Nem publikus API: csak belső függvények és tesztek használják.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Silent fallback tiltása: enable_fallback=false esetén nincs Ok(stable_seed)"
+    description: >
+      Alakítsd át a compute_orbit_exact_nfp (vagy megfelelő belső) függvényt:
+      - dead-end/loop/max_steps esetén:
+        - ha enable_fallback=false: Err(NfpError::...) + OrbitOutcome::FailedNoFallback
+        - ha enable_fallback=true: OrbitOutcome::FallbackStable és a hívó explicit stable baseline-ra vált
+      - Tilos: no-fallback módban Ok(stable_seed) visszaadása.
+      Gondoskodj róla, hogy a felső szintű compute_concave_nfp viselkedése
+      kompatibilis maradjon (fallback csak engedélyezve).
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Teszt: explicit proof (exact outcome + exact != stable) prefer_exact fixture-ekre"
+    description: >
+      Frissítsd a rust/nesting_engine/tests/nfp_regression.rs tesztet:
+      - prefer_exact esetén fusson:
+        (1) stable baseline
+        (2) exact no-fallback (enable_fallback=false)
+      - Assert: outcome == ExactClosed
+      - Assert: canonical ring exact != canonical ring stable
+      - Ha kell, vezess be fixture mezőt: allow_exact_equals_stable (default false).
+      - Ha a no-fallback exact nem zárható: a fixture megadhatja:
+        expect_exact_error: true, és akkor a teszt erre számít.
+      Ne használj f64 PIP-et.
+    outputs:
+      - "rust/nesting_engine/tests/nfp_regression.rs"
+
+  - name: "Fixture frissítés: prefer_exact bizonyítási mezők"
+    description: >
+      Frissíts legalább 3 prefer_exact concave fixture-t:
+      - prefer_exact: true marad
+      - adj hozzá explicit elvárást:
+        - allow_exact_equals_stable: false (default)
+        - expect_exact_error: false (default)
+      Ha valamelyik fixture valójában nem zárható exact módban, állítsd:
+        expect_exact_error: true
+      és dokumentáld a reportban a pontos okot (outcome reason).
+    outputs:
+      - "poc/nfp_regression/concave_touching_group.json"
+      - "poc/nfp_regression/concave_hole_pocket.json"
+      - "poc/nfp_regression/concave_interlock_c.json"
+
+  - name: "Checklist + report + verify"
+    description: >
+      Hozd létre / frissítsd:
+      - codex/codex_checklist/nesting_engine/nfp_concave_orbit_no_silent_fallback.md
+      - codex/reports/nesting_engine/nfp_concave_orbit_no_silent_fallback.md
+      A report kövesse a docs/codex/report_standard.md szerkezetét és tartalmazzon
+      evidenciát: 3 fixture outcome táblázat (ExactClosed vs error).
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_concave_orbit_no_silent_fallback.md
+      és mentsd a logot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_concave_orbit_no_silent_fallback.md"
+      - "codex/reports/nesting_engine/nfp_concave_orbit_no_silent_fallback.md"
+      - "codex/reports/nesting_engine/nfp_concave_orbit_no_silent_fallback.verify.log"

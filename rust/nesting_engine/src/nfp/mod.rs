@@ -18,6 +18,9 @@ pub enum NfpError {
     NotConvex,
     NotSimpleOutput,
     OrbitLoopDetected,
+    OrbitDeadEnd,
+    OrbitMaxStepsReached,
+    OrbitNotClosed,
     DecompositionFailed,
 }
 
@@ -28,6 +31,9 @@ impl Display for NfpError {
             Self::NotConvex => f.write_str("polygon is not convex"),
             Self::NotSimpleOutput => f.write_str("nfp output boundary is not simple"),
             Self::OrbitLoopDetected => f.write_str("orbit exact mode detected a loop"),
+            Self::OrbitDeadEnd => f.write_str("orbit exact mode reached dead-end"),
+            Self::OrbitMaxStepsReached => f.write_str("orbit exact mode reached max-steps"),
+            Self::OrbitNotClosed => f.write_str("orbit exact mode failed to close a boundary"),
             Self::DecompositionFailed => f.write_str("concave decomposition failed"),
         }
     }

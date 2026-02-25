@@ -6,5 +6,7 @@
   "rotation_deg_b": 0,
   "expected_nfp": [[-3, -1], [-1, -1], [-1, -4], [8, -4], [8, 8], [-3, 8]],
   "expected_vertex_count": 6,
-  "prefer_exact": true
+  "prefer_exact": true,
+  "allow_exact_equals_stable": false,
+  "expect_exact_error": true
 }
