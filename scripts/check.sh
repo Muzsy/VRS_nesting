@@ -89,6 +89,7 @@ chmod +x \
   scripts/smoke_docs_commands.py \
   scripts/smoke_multisheet_wrapper_edge_cases.py \
   scripts/smoke_real_dxf_fixtures.py \
+  scripts/smoke_real_dxf_nfp_pairs.py \
   scripts/run_real_dxf_sparrow_pipeline.py \
   scripts/smoke_real_dxf_sparrow_pipeline.py \
   scripts/smoke_svg_export.py || true
@@ -145,6 +146,9 @@ python3 scripts/smoke_multisheet_wrapper_edge_cases.py
 
 echo "[DXF] Real fixture import smoke"
 python3 scripts/smoke_real_dxf_fixtures.py
+
+echo "[DXF] Real NFP pairs smoke"
+python3 scripts/smoke_real_dxf_nfp_pairs.py
 
 echo "[DXF] Real Sparrow pipeline smoke"
 python3 scripts/smoke_real_dxf_sparrow_pipeline.py

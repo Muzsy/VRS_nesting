@@ -1,0 +1,97 @@
+steps:
+  - name: "Felderítés: valós DXF készlet és export útvonal rögzítése"
+    description: >
+      Olvasd el az AGENTS.md és a releváns docs fájlokat. Ellenőrizd a
+      samples/dxf_demo/ tartalmát (pozitív stock+part, negatív open-chain).
+      Derítsd fel a DXF→raw_outer_points útvonalat (vrs_nesting/sparrow/input_generator.py),
+      és rögzítsd a canvasban a 3 bizonyítandó alakzat-párt (stock×part, part×stock, part×part).
+    outputs:
+      - "canvases/nesting_engine/nfp_real_dxf_pairs_proof.md"
+
+  - name: "Rust helper bin: nfp_fixture (fixture JSON → computed NFP canonical ring)"
+    description: >
+      Hozd létre a rust/nesting_engine/src/bin/nfp_fixture.rs binárist.
+      Feladat:
+      - stdin: a poc/nfp_regression fixture schema minimális mezőivel (polygon_a, polygon_b, fixture_type opcionális),
+      - számolja ki a stabil útvonal szerinti NFP-t:
+        - ha bármelyik poligon nem-konvex: compute_concave_nfp_default
+        - különben: compute_convex_nfp
+      - stdout: JSON, ami tartalmazza a canonical ringet (nfp_outer) és a vertex_count-ot.
+      - Ne írjon stdout-ra extra logot (csak JSON).
+      - Nincs új dependency; csak a crate meglévő moduljai.
+    outputs:
+      - "rust/nesting_engine/src/bin/nfp_fixture.rs"
+
+  - name: "Export script: valós DXF → canonical i64 ring → 3 db fixture váz"
+    description: >
+      Hozd létre a scripts/export_real_dxf_nfp_pairs.py scriptet.
+      Feladat:
+      - DXF import a repó meglévő útján: build_sparrow_inputs (vrs_nesting/sparrow/input_generator.py)
+      - A stock és a part raw_outer_points_mm ringjeiből készíts canonical i64 ringet:
+        SCALE=1_000_000, round-half-away-from-zero (Decimal, stdlib).
+      - Generálj 3 fixture JSON vázat a poc/nfp_regression alá:
+        (1) stock×part, (2) part×stock, (3) part×part.
+      - A fixture-ek tartalmazzanak extra meta mezőket (ignored by Rust parser):
+        source_dxf_a, source_dxf_b, note_outer_only=true.
+      - expected_nfp és expected_vertex_count első körben placeholder lehet, de a következő step kitölti.
+    outputs:
+      - "scripts/export_real_dxf_nfp_pairs.py"
+      - "poc/nfp_regression/real_dxf_pair_01_stock_x_part.json"
+      - "poc/nfp_regression/real_dxf_pair_02_part_x_stock.json"
+      - "poc/nfp_regression/real_dxf_pair_03_part_x_part.json"
+
+  - name: "Golden expected kitöltés: nfp_fixture futtatással expected_nfp rögzítése"
+    description: >
+      Futtasd le a scripts/export_real_dxf_nfp_pairs.py scriptet úgy, hogy a 3 fixture elkészüljön.
+      Ezután buildeld le a Rust helper bin-t:
+        cd rust/nesting_engine && cargo build --release --bin nfp_fixture
+      Majd mindhárom fixture-re:
+      - futtasd a nfp_fixture-t stdinről a fixture JSON-nal,
+      - a visszakapott nfp_outer és vertex_count értékkel töltsd ki a fixture:
+        expected_nfp + expected_vertex_count mezőket,
+      - a fixture JSON végleges legyen (determinista, stabil).
+      A lényeg: a repóban már “golden” expected mezővel kerüljön be mindhárom.
+    outputs:
+      - "poc/nfp_regression/real_dxf_pair_01_stock_x_part.json"
+      - "poc/nfp_regression/real_dxf_pair_02_part_x_stock.json"
+      - "poc/nfp_regression/real_dxf_pair_03_part_x_part.json"
+
+  - name: "Gate-smoke: real DXF párok → fixture ring egyezés + computed NFP egyezés"
+    description: >
+      Hozd létre a scripts/smoke_real_dxf_nfp_pairs.py scriptet.
+      Követelmények:
+      - ellenőrizze, hogy ezdxf elérhető (különben FAIL, mint a többi real-dxf smoke),
+      - importálja a két pozitív DXF-et (stock + part) a build_sparrow_inputs útján,
+      - validálja, hogy a part DXF-nek van legalább 1 hole-ja (evidence),
+      - canonicalizálja a DXF-ből jövő outer ringeket i64-re, és egyeztesse a 3 fixture polygon_a/polygon_b mezőivel,
+      - buildelje (ha kell) a rust/nesting_engine/bin nfp_fixture release bin-t, majd
+        mindhárom fixture-re számolja ki a NFP-t, és egyeztesse expected_nfp + vertex_count mezőkkel.
+      - stdout csak [OK] jellegű rövid üzenet a végén; hiba esetén raise AssertionError.
+    outputs:
+      - "scripts/smoke_real_dxf_nfp_pairs.py"
+
+  - name: "Check gate bekötés: real DXF NFP smoke futtatása"
+    description: >
+      Frissítsd a scripts/check.sh fájlt:
+      - add hozzá chmod listához a scripts/smoke_real_dxf_nfp_pairs.py-t (best-effort),
+      - hívd meg a smoke-ot a többi DXF smoke környékén:
+        python3 scripts/smoke_real_dxf_nfp_pairs.py
+      A változtatás minimal-invazív legyen.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report + verify"
+    description: >
+      Hozd létre / frissítsd:
+      - codex/codex_checklist/nesting_engine/nfp_real_dxf_pairs_proof.md
+      - codex/reports/nesting_engine/nfp_real_dxf_pairs_proof.md
+      A report kövesse a docs/codex/report_standard.md szerkezetet és tartalmazzon:
+      - a 3 pár felsorolását (DXF forrásokkal)
+      - a smoke futtatási parancsot
+      - DoD checklistet és evidence-t.
+      Végül futtasd:
+        ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_real_dxf_pairs_proof.md
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_real_dxf_pairs_proof.md"
+      - "codex/reports/nesting_engine/nfp_real_dxf_pairs_proof.md"
+      - "codex/reports/nesting_engine/nfp_real_dxf_pairs_proof.verify.log"
