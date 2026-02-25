@@ -179,7 +179,6 @@ struct OrbitTelemetry {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OrbitFailureReason {
-    LoopDetected,
     DeadEnd,
     MaxStepsReached,
 }
@@ -187,7 +186,6 @@ enum OrbitFailureReason {
 impl OrbitFailureReason {
     fn as_error(self) -> NfpError {
         match self {
-            Self::LoopDetected => NfpError::OrbitLoopDetected,
             Self::DeadEnd => NfpError::OrbitDeadEnd,
             Self::MaxStepsReached => NfpError::OrbitMaxStepsReached,
         }
@@ -1877,8 +1875,7 @@ mod tests {
                 assert!(
                     matches!(
                         reason,
-                        OrbitFailureReason::LoopDetected
-                            | OrbitFailureReason::DeadEnd
+                        OrbitFailureReason::DeadEnd
                             | OrbitFailureReason::MaxStepsReached
                     ),
                     "fallback reason must be explicit"
