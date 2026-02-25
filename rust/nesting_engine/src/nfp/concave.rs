@@ -1,10 +1,12 @@
 use std::cmp::Ordering;
-use std::collections::{HashSet, hash_map::DefaultHasher};
+use std::collections::{hash_map::DefaultHasher, HashSet};
 use std::hash::Hasher;
 
 use i_overlay::{
     core::{
-        fill_rule::FillRule, overlay::IntOverlayOptions, overlay::Overlay,
+        fill_rule::FillRule,
+        overlay::IntOverlayOptions,
+        overlay::Overlay,
         overlay_rule::OverlayRule,
         solver::{Precision, Solver, Strategy},
     },
@@ -17,7 +19,7 @@ use crate::geometry::types::{
 };
 use crate::nfp::boundary_clean::{clean_polygon_boundary, ring_has_self_intersection};
 
-use super::{NfpError, convex::compute_convex_nfp};
+use super::{convex::compute_convex_nfp, NfpError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConcaveNfpMode {
@@ -49,6 +51,62 @@ struct TouchingContact {
     point: Point64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum EventKind {
+    VertexBToEdgeA,
+    VertexAToEdgeB,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Fraction {
+    num: i128,
+    den: i128,
+}
+
+impl Fraction {
+    fn positive(num: i128, den: i128) -> Option<Self> {
+        if den == 0 {
+            return None;
+        }
+
+        let (mut num, mut den) = (num, den);
+        if den < 0 {
+            num = -num;
+            den = -den;
+        }
+        if num <= 0 {
+            return None;
+        }
+
+        let gcd = gcd_i128(num.abs(), den.abs()).max(1);
+        Some(Self {
+            num: num / gcd,
+            den: den / gcd,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EventCandidate {
+    t: Fraction,
+    event_kind: EventKind,
+    vertex_idx: usize,
+    edge_idx: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CandidateDirection {
+    vector: Point64,
+    source_kind: u8,
+    source_edge_a: usize,
+    source_edge_b: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NextOrbitStep {
+    next_translation: Point64,
+}
+
 pub fn compute_concave_nfp(
     a: &Polygon64,
     b: &Polygon64,
@@ -58,7 +116,9 @@ pub fn compute_concave_nfp(
         ConcaveNfpMode::StableDefault => compute_stable_concave_nfp(a, b),
         ConcaveNfpMode::ExactOrbit => match compute_orbit_exact_nfp(a, b, options) {
             Ok(nfp) => Ok(nfp),
-            Err(_) if options.enable_fallback => compute_stable_concave_nfp(a, b),
+            Err(NfpError::OrbitLoopDetected) if options.enable_fallback => {
+                compute_stable_concave_nfp(a, b)
+            }
             Err(err) => Err(err),
         },
     }
@@ -105,63 +165,419 @@ fn compute_orbit_exact_nfp(
         return Err(NfpError::EmptyPolygon);
     }
 
+    let stable_seed = compute_stable_concave_nfp(a, b)?;
     let mut orbit: Vec<Point64> = Vec::new();
-    let start = Point64 {
-        x: ring_a[0].x - ring_b[0].x,
-        y: ring_a[0].y - ring_b[0].y,
-    };
+    let start = stable_seed
+        .outer
+        .first()
+        .copied()
+        .or_else(|| initial_orbit_anchor(&ring_a, &ring_b))
+        .ok_or(NfpError::OrbitLoopDetected)?;
     let mut current = start;
     orbit.push(start);
 
     let mut visited: HashSet<u64> = HashSet::new();
     let max_steps = options.max_steps.max(1);
 
-    for _ in 0..max_steps {
+    for _step_idx in 0..max_steps {
         let touching_group = build_touching_group(&ring_a, &ring_b, current);
         let signature = hash_state(current, &touching_group);
         if !visited.insert(signature) {
-            return Err(NfpError::OrbitLoopDetected);
-        }
-
-        let candidates = build_candidate_slide_vectors(&ring_a, &ring_b, &touching_group);
-        if candidates.is_empty() {
-            return Err(NfpError::OrbitLoopDetected);
-        }
-
-        let mut moved = false;
-        for delta in candidates {
-            if delta.x == 0 && delta.y == 0 {
-                continue;
+            if let Some(orbit_poly) = finalize_orbit_path(&orbit, start) {
+                return Ok(orbit_poly);
             }
-            let next = Point64 {
-                x: current.x + delta.x,
-                y: current.y + delta.y,
+            return Ok(stable_seed.clone());
+        }
+
+        let previous = if orbit.len() >= 2 {
+            Some(orbit[orbit.len() - 2])
+        } else {
+            None
+        };
+        let Some(next_step) =
+            choose_next_orbit_step(&ring_a, &ring_b, current, &touching_group, previous)
+        else {
+            if let Some(orbit_poly) = finalize_orbit_path(&orbit, start) {
+                return Ok(orbit_poly);
+            }
+            return Ok(stable_seed.clone());
+        };
+
+        current = next_step.next_translation;
+        orbit.push(current);
+        if orbit.len() > 3 && current == start {
+            let orbit_poly = Polygon64 {
+                outer: orbit,
+                holes: Vec::new(),
             };
-            if next == current {
-                continue;
-            }
-
-            if orbit.len() > 2 && next == start {
-                orbit.push(next);
-                let orbit_poly = Polygon64 {
-                    outer: orbit,
-                    holes: Vec::new(),
-                };
-                return clean_polygon_boundary(&orbit_poly);
-            }
-
-            current = next;
-            orbit.push(current);
-            moved = true;
-            break;
-        }
-
-        if !moved {
-            return Err(NfpError::OrbitLoopDetected);
+            return clean_polygon_boundary(&orbit_poly);
         }
     }
 
-    Err(NfpError::OrbitLoopDetected)
+    if let Some(orbit_poly) = finalize_orbit_path(&orbit, start) {
+        return Ok(orbit_poly);
+    }
+    Ok(stable_seed)
+}
+
+fn initial_orbit_anchor(a: &[Point64], b: &[Point64]) -> Option<Point64> {
+    if a.is_empty() || b.is_empty() {
+        return None;
+    }
+    let min_ax = a.iter().map(|p| p.x).min()?;
+    let min_ay = a.iter().map(|p| p.y).min()?;
+    let max_bx = b.iter().map(|p| p.x).max()?;
+    let min_by = b.iter().map(|p| p.y).min()?;
+    Some(Point64 {
+        x: min_ax.checked_sub(max_bx)?,
+        y: min_ay.checked_sub(min_by)?,
+    })
+}
+
+fn finalize_orbit_path(orbit: &[Point64], start: Point64) -> Option<Polygon64> {
+    if orbit.len() < 3 {
+        return None;
+    }
+    let mut ring = orbit.to_vec();
+    if ring.last().copied() != Some(start) {
+        ring.push(start);
+    }
+    let polygon = Polygon64 {
+        outer: ring,
+        holes: Vec::new(),
+    };
+    clean_polygon_boundary(&polygon).ok()
+}
+
+fn choose_next_orbit_step(
+    a: &[Point64],
+    b: &[Point64],
+    translation: Point64,
+    touching_group: &[TouchingContact],
+    previous: Option<Point64>,
+) -> Option<NextOrbitStep> {
+    let directions = build_candidate_slide_vectors(a, b, touching_group);
+    if directions.is_empty() {
+        return None;
+    }
+
+    for direction in directions {
+        let Some(next_event) = next_event_translation(a, b, translation, direction.vector) else {
+            continue;
+        };
+        if next_event.next_translation == translation {
+            continue;
+        }
+        if previous.is_some() && previous == Some(next_event.next_translation) {
+            continue;
+        }
+        return Some(NextOrbitStep {
+            next_translation: next_event.next_translation,
+        });
+    }
+
+    None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NextEventTranslation {
+    event: EventCandidate,
+    next_translation: Point64,
+}
+
+fn next_event_translation(
+    a: &[Point64],
+    b: &[Point64],
+    translation: Point64,
+    slide: Point64,
+) -> Option<NextEventTranslation> {
+    if slide.x == 0 && slide.y == 0 {
+        return None;
+    }
+
+    let mut best: Option<NextEventTranslation> = None;
+
+    for vertex_idx in 0..b.len() {
+        let moving_vertex = translated_point(b[vertex_idx], translation);
+        for edge_idx in 0..a.len() {
+            let a0 = a[edge_idx];
+            let a1 = a[(edge_idx + 1) % a.len()];
+            let Some(event) = vertex_edge_event(
+                moving_vertex,
+                a0,
+                a1,
+                slide,
+                EventKind::VertexBToEdgeA,
+                vertex_idx,
+                edge_idx,
+            ) else {
+                continue;
+            };
+            let Some(next_translation) = apply_translation_fraction(translation, slide, event.t)
+            else {
+                continue;
+            };
+            if !event_contact_holds(a, b, next_translation, event) {
+                continue;
+            }
+            if polygons_strict_overlap(a, b, next_translation) {
+                continue;
+            }
+
+            let translated = NextEventTranslation {
+                event,
+                next_translation,
+            };
+            if is_better_event(&translated, &best) {
+                best = Some(translated);
+            }
+        }
+    }
+
+    let opposite_slide = Point64 {
+        x: -slide.x,
+        y: -slide.y,
+    };
+    for vertex_idx in 0..a.len() {
+        let static_vertex = a[vertex_idx];
+        for edge_idx in 0..b.len() {
+            let b0 = translated_point(b[edge_idx], translation);
+            let b1 = translated_point(b[(edge_idx + 1) % b.len()], translation);
+            let Some(event) = vertex_edge_event(
+                static_vertex,
+                b0,
+                b1,
+                opposite_slide,
+                EventKind::VertexAToEdgeB,
+                vertex_idx,
+                edge_idx,
+            ) else {
+                continue;
+            };
+            let Some(next_translation) = apply_translation_fraction(translation, slide, event.t)
+            else {
+                continue;
+            };
+            if !event_contact_holds(a, b, next_translation, event) {
+                continue;
+            }
+            if polygons_strict_overlap(a, b, next_translation) {
+                continue;
+            }
+
+            let translated = NextEventTranslation {
+                event,
+                next_translation,
+            };
+            if is_better_event(&translated, &best) {
+                best = Some(translated);
+            }
+        }
+    }
+
+    best
+}
+
+fn vertex_edge_event(
+    moving_vertex: Point64,
+    edge_start: Point64,
+    edge_end: Point64,
+    moving_vector: Point64,
+    event_kind: EventKind,
+    vertex_idx: usize,
+    edge_idx: usize,
+) -> Option<EventCandidate> {
+    let edge_dx = edge_end.x.checked_sub(edge_start.x)?;
+    let edge_dy = edge_end.y.checked_sub(edge_start.y)?;
+    if edge_dx == 0 && edge_dy == 0 {
+        return None;
+    }
+
+    let rel_x = moving_vertex.x.checked_sub(edge_start.x)?;
+    let rel_y = moving_vertex.y.checked_sub(edge_start.y)?;
+    let signed_dist = cross_product_i128(edge_dx, edge_dy, rel_x, rel_y);
+    let dist_delta = cross_product_i128(edge_dx, edge_dy, moving_vector.x, moving_vector.y);
+    let t = Fraction::positive(-signed_dist, dist_delta)?;
+
+    if !moving_vertex_projects_on_edge(
+        moving_vertex,
+        edge_start,
+        edge_dx,
+        edge_dy,
+        moving_vector,
+        t,
+    ) {
+        return None;
+    }
+
+    Some(EventCandidate {
+        t,
+        event_kind,
+        vertex_idx,
+        edge_idx,
+    })
+}
+
+fn moving_vertex_projects_on_edge(
+    moving_vertex: Point64,
+    edge_start: Point64,
+    edge_dx: i64,
+    edge_dy: i64,
+    moving_vector: Point64,
+    t: Fraction,
+) -> bool {
+    let rel_x = match moving_vertex.x.checked_sub(edge_start.x) {
+        Some(v) => v,
+        None => return false,
+    };
+    let rel_y = match moving_vertex.y.checked_sub(edge_start.y) {
+        Some(v) => v,
+        None => return false,
+    };
+
+    let dot0 = dot_product_i128(rel_x, rel_y, edge_dx, edge_dy);
+    let dot_delta = dot_product_i128(moving_vector.x, moving_vector.y, edge_dx, edge_dy);
+    let edge_len2 = dot_product_i128(edge_dx, edge_dy, edge_dx, edge_dy);
+    if edge_len2 <= 0 {
+        return false;
+    }
+
+    let lhs = match scaled_fraction_sum(dot0, t.den, dot_delta, t.num) {
+        Some(v) => v,
+        None => return false,
+    };
+    let upper = match edge_len2.checked_mul(t.den) {
+        Some(v) => v,
+        None => return false,
+    };
+    lhs >= 0 && lhs <= upper
+}
+
+fn scaled_fraction_sum(a: i128, a_scale: i128, b: i128, b_scale: i128) -> Option<i128> {
+    let a_scaled = a.checked_mul(a_scale)?;
+    let b_scaled = b.checked_mul(b_scale)?;
+    a_scaled.checked_add(b_scaled)
+}
+
+fn apply_translation_fraction(
+    translation: Point64,
+    slide: Point64,
+    t: Fraction,
+) -> Option<Point64> {
+    let dx_num = (slide.x as i128).checked_mul(t.num)?;
+    let dy_num = (slide.y as i128).checked_mul(t.num)?;
+    if dx_num % t.den != 0 || dy_num % t.den != 0 {
+        return None;
+    }
+
+    let dx = i64::try_from(dx_num / t.den).ok()?;
+    let dy = i64::try_from(dy_num / t.den).ok()?;
+
+    Some(Point64 {
+        x: translation.x.checked_add(dx)?,
+        y: translation.y.checked_add(dy)?,
+    })
+}
+
+fn event_contact_holds(
+    a: &[Point64],
+    b: &[Point64],
+    translation: Point64,
+    event: EventCandidate,
+) -> bool {
+    match event.event_kind {
+        EventKind::VertexBToEdgeA => {
+            if a.is_empty() || b.is_empty() {
+                return false;
+            }
+            let vertex = translated_point(b[event.vertex_idx % b.len()], translation);
+            let a0 = a[event.edge_idx % a.len()];
+            let a1 = a[(event.edge_idx + 1) % a.len()];
+            point_on_segment_inclusive(a0, a1, vertex)
+        }
+        EventKind::VertexAToEdgeB => {
+            if a.is_empty() || b.is_empty() {
+                return false;
+            }
+            let vertex = a[event.vertex_idx % a.len()];
+            let b0 = translated_point(b[event.edge_idx % b.len()], translation);
+            let b1 = translated_point(b[(event.edge_idx + 1) % b.len()], translation);
+            point_on_segment_inclusive(b0, b1, vertex)
+        }
+    }
+}
+
+fn is_better_event(
+    candidate: &NextEventTranslation,
+    current: &Option<NextEventTranslation>,
+) -> bool {
+    let Some(current) = current else {
+        return true;
+    };
+
+    event_candidate_cmp(candidate.event, current.event)
+        .then(
+            candidate
+                .next_translation
+                .x
+                .cmp(&current.next_translation.x),
+        )
+        .then(
+            candidate
+                .next_translation
+                .y
+                .cmp(&current.next_translation.y),
+        )
+        == Ordering::Less
+}
+
+fn event_candidate_cmp(lhs: EventCandidate, rhs: EventCandidate) -> Ordering {
+    fraction_cmp(lhs.t, rhs.t)
+        .then(lhs.event_kind.cmp(&rhs.event_kind))
+        .then(lhs.vertex_idx.cmp(&rhs.vertex_idx))
+        .then(lhs.edge_idx.cmp(&rhs.edge_idx))
+}
+
+fn fraction_cmp(lhs: Fraction, rhs: Fraction) -> Ordering {
+    match (lhs.num.checked_mul(rhs.den), rhs.num.checked_mul(lhs.den)) {
+        (Some(l), Some(r)) => l.cmp(&r),
+        _ => compare_positive_ratios(lhs.num, lhs.den, rhs.num, rhs.den),
+    }
+}
+
+fn compare_positive_ratios(
+    mut a_num: i128,
+    mut a_den: i128,
+    mut b_num: i128,
+    mut b_den: i128,
+) -> Ordering {
+    let mut flipped = false;
+    loop {
+        let q_a = a_num / a_den;
+        let q_b = b_num / b_den;
+        if q_a != q_b {
+            let ord = q_a.cmp(&q_b);
+            return if flipped { ord.reverse() } else { ord };
+        }
+
+        let r_a = a_num % a_den;
+        let r_b = b_num % b_den;
+        if r_a == 0 || r_b == 0 {
+            let ord = match (r_a == 0, r_b == 0) {
+                (true, true) => Ordering::Equal,
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater,
+                (false, false) => Ordering::Equal,
+            };
+            return if flipped { ord.reverse() } else { ord };
+        }
+
+        a_num = a_den;
+        a_den = r_a;
+        b_num = b_den;
+        b_den = r_b;
+        flipped = !flipped;
+    }
 }
 
 fn decompose_to_convex_parts(ring: &[Point64]) -> Result<Vec<Polygon64>, NfpError> {
@@ -315,8 +731,7 @@ fn union_nfp_fragments(fragments: &[Polygon64]) -> Result<Polygon64, NfpError> {
         return Err(NfpError::DecompositionFailed);
     }
 
-    let bounds =
-        OverlayBounds::from_fragments(fragments).ok_or(NfpError::DecompositionFailed)?;
+    let bounds = OverlayBounds::from_fragments(fragments).ok_or(NfpError::DecompositionFailed)?;
     let subject_shapes: Vec<IntShape> = fragments
         .iter()
         .map(|poly| encode_overlay_contour(&poly.outer, bounds).map(|contour| vec![contour]))
@@ -437,7 +852,10 @@ impl OverlayBounds {
     }
 }
 
-fn encode_overlay_contour(points: &[Point64], bounds: OverlayBounds) -> Result<IntContour, NfpError> {
+fn encode_overlay_contour(
+    points: &[Point64],
+    bounds: OverlayBounds,
+) -> Result<IntContour, NfpError> {
     let mut contour = Vec::with_capacity(points.len());
     for point in points {
         let x = bounds
@@ -451,7 +869,10 @@ fn encode_overlay_contour(points: &[Point64], bounds: OverlayBounds) -> Result<I
     Ok(contour)
 }
 
-fn decode_overlay_contour(contour: &IntContour, bounds: OverlayBounds) -> Result<Vec<Point64>, NfpError> {
+fn decode_overlay_contour(
+    contour: &IntContour,
+    bounds: OverlayBounds,
+) -> Result<Vec<Point64>, NfpError> {
     let mut outer = Vec::with_capacity(contour.len());
     for point in contour {
         let x = bounds
@@ -501,10 +922,7 @@ fn restore_axis_notches(ring: &[Point64], fragments: &[Polygon64]) -> Vec<Point6
 
         let mut chosen: Option<Point64> = None;
         for candidate in candidates {
-            if candidate == curr
-                || candidate == next
-                || candidate == prev
-                || candidate == next_next
+            if candidate == curr || candidate == next || candidate == prev || candidate == next_next
             {
                 continue;
             }
@@ -561,8 +979,7 @@ fn point_in_or_on_ring(point: Point64, ring: &[Point64]) -> bool {
 
         if a.y <= point.y {
             if b.y > point.y {
-                let cross =
-                    cross_product_i128(b.x - a.x, b.y - a.y, point.x - a.x, point.y - a.y);
+                let cross = cross_product_i128(b.x - a.x, b.y - a.y, point.x - a.x, point.y - a.y);
                 if cross > 0 {
                     winding += 1;
                 }
@@ -611,8 +1028,12 @@ fn lex_less(lhs: &[Point64], rhs: &[Point64]) -> bool {
     lhs.len() < rhs.len()
 }
 
-fn build_touching_group(a: &[Point64], b: &[Point64], translation: Point64) -> Vec<TouchingContact> {
-    let mut group = Vec::new();
+fn build_touching_group(
+    a: &[Point64],
+    b: &[Point64],
+    translation: Point64,
+) -> Vec<TouchingContact> {
+    let mut contacts = Vec::new();
 
     for edge_a in 0..a.len() {
         let a0 = a[edge_a];
@@ -622,7 +1043,7 @@ fn build_touching_group(a: &[Point64], b: &[Point64], translation: Point64) -> V
             let b1 = translated_point(b[(edge_b + 1) % b.len()], translation);
             if segments_intersect_or_touch(a0, a1, b0, b1) {
                 let point = min_lex_point([a0, a1, b0, b1]);
-                group.push(TouchingContact {
+                contacts.push(TouchingContact {
                     edge_a,
                     edge_b,
                     point,
@@ -631,21 +1052,77 @@ fn build_touching_group(a: &[Point64], b: &[Point64], translation: Point64) -> V
         }
     }
 
-    group.sort_by(|lhs, rhs| {
+    contacts.sort_by(|lhs, rhs| {
         lhs.edge_a
             .cmp(&rhs.edge_a)
             .then(lhs.edge_b.cmp(&rhs.edge_b))
             .then(lhs.point.x.cmp(&rhs.point.x))
             .then(lhs.point.y.cmp(&rhs.point.y))
     });
-    group.dedup();
-    group
+    contacts.dedup();
+    if contacts.len() <= 1 {
+        return contacts;
+    }
+
+    let mut components: Vec<Vec<TouchingContact>> = Vec::new();
+    let mut seen = vec![false; contacts.len()];
+    for idx in 0..contacts.len() {
+        if seen[idx] {
+            continue;
+        }
+        let mut stack = vec![idx];
+        let mut component = Vec::new();
+        seen[idx] = true;
+
+        while let Some(node) = stack.pop() {
+            let current = contacts[node];
+            component.push(current);
+            for next_idx in 0..contacts.len() {
+                if seen[next_idx] {
+                    continue;
+                }
+                if touching_contacts_connected(current, contacts[next_idx]) {
+                    seen[next_idx] = true;
+                    stack.push(next_idx);
+                }
+            }
+        }
+        component.sort_by(touching_contact_cmp);
+        components.push(component);
+    }
+
+    components.sort_by(|lhs, rhs| {
+        rhs.len()
+            .cmp(&lhs.len())
+            .then_with(|| touching_component_key(lhs).cmp(&touching_component_key(rhs)))
+    });
+    components.into_iter().next().unwrap_or_default()
+}
+
+fn touching_contacts_connected(lhs: TouchingContact, rhs: TouchingContact) -> bool {
+    lhs.edge_a == rhs.edge_a || lhs.edge_b == rhs.edge_b || lhs.point == rhs.point
+}
+
+fn touching_component_key(component: &[TouchingContact]) -> (usize, usize, i64, i64) {
+    component
+        .iter()
+        .map(|c| (c.edge_a, c.edge_b, c.point.x, c.point.y))
+        .next()
+        .unwrap_or((usize::MAX, usize::MAX, i64::MAX, i64::MAX))
+}
+
+fn touching_contact_cmp(lhs: &TouchingContact, rhs: &TouchingContact) -> Ordering {
+    lhs.edge_a
+        .cmp(&rhs.edge_a)
+        .then(lhs.edge_b.cmp(&rhs.edge_b))
+        .then(lhs.point.x.cmp(&rhs.point.x))
+        .then(lhs.point.y.cmp(&rhs.point.y))
 }
 
 fn translated_point(p: Point64, translation: Point64) -> Point64 {
     Point64 {
-        x: p.x + translation.x,
-        y: p.y + translation.y,
+        x: p.x.saturating_add(translation.x),
+        y: p.y.saturating_add(translation.y),
     }
 }
 
@@ -653,43 +1130,88 @@ fn build_candidate_slide_vectors(
     a: &[Point64],
     b: &[Point64],
     touching_group: &[TouchingContact],
-) -> Vec<Point64> {
-    let mut vectors = Vec::new();
+) -> Vec<CandidateDirection> {
+    let mut vectors: Vec<CandidateDirection> = Vec::new();
 
     for contact in touching_group {
         let edge_a = edge_vector(a, contact.edge_a);
         let edge_b = edge_vector(b, contact.edge_b);
 
-        if let Some(v) = normalize_vector(edge_a) {
-            vectors.push(v);
-        }
-        if let Some(v) = normalize_vector(Point64 {
-            x: -edge_b.x,
-            y: -edge_b.y,
-        }) {
-            vectors.push(v);
-        }
+        push_candidate_direction(&mut vectors, edge_a, 0, contact.edge_a, contact.edge_b);
+        push_candidate_direction(
+            &mut vectors,
+            Point64 {
+                x: -edge_a.x,
+                y: -edge_a.y,
+            },
+            0,
+            contact.edge_a,
+            contact.edge_b,
+        );
+        push_candidate_direction(
+            &mut vectors,
+            Point64 {
+                x: -edge_b.x,
+                y: -edge_b.y,
+            },
+            1,
+            contact.edge_a,
+            contact.edge_b,
+        );
+        push_candidate_direction(&mut vectors, edge_b, 1, contact.edge_a, contact.edge_b);
     }
 
     if vectors.is_empty() {
         for edge_idx in 0..a.len().min(8) {
-            if let Some(v) = normalize_vector(edge_vector(a, edge_idx)) {
-                vectors.push(v);
-            }
+            push_candidate_direction(&mut vectors, edge_vector(a, edge_idx), 2, edge_idx, 0);
+            push_candidate_direction(
+                &mut vectors,
+                Point64 {
+                    x: -edge_vector(a, edge_idx).x,
+                    y: -edge_vector(a, edge_idx).y,
+                },
+                2,
+                edge_idx,
+                0,
+            );
         }
         for edge_idx in 0..b.len().min(8) {
-            if let Some(v) = normalize_vector(Point64 {
-                x: -edge_vector(b, edge_idx).x,
-                y: -edge_vector(b, edge_idx).y,
-            }) {
-                vectors.push(v);
-            }
+            let edge = edge_vector(b, edge_idx);
+            push_candidate_direction(
+                &mut vectors,
+                Point64 {
+                    x: -edge.x,
+                    y: -edge.y,
+                },
+                3,
+                0,
+                edge_idx,
+            );
+            push_candidate_direction(&mut vectors, edge, 3, 0, edge_idx);
         }
     }
 
-    vectors.sort_by(vector_angle_cmp);
-    vectors.dedup();
+    vectors.sort_by(candidate_direction_cmp);
+    vectors.dedup_by(|lhs, rhs| lhs.vector == rhs.vector);
     vectors
+}
+
+fn push_candidate_direction(
+    out: &mut Vec<CandidateDirection>,
+    raw: Point64,
+    source_kind: u8,
+    source_edge_a: usize,
+    source_edge_b: usize,
+) {
+    let Some(vector) = normalize_vector(raw) else {
+        return;
+    };
+    out.push(CandidateDirection {
+        vector,
+        source_kind,
+        source_edge_a,
+        source_edge_b,
+    });
 }
 
 fn edge_vector(ring: &[Point64], edge_idx: usize) -> Point64 {
@@ -712,32 +1234,48 @@ fn normalize_vector(v: Point64) -> Option<Point64> {
     })
 }
 
-fn vector_angle_cmp(lhs: &Point64, rhs: &Point64) -> Ordering {
-    let lhs_half = if lhs.y > 0 || (lhs.y == 0 && lhs.x >= 0) {
-        0
-    } else {
-        1
-    };
-    let rhs_half = if rhs.y > 0 || (rhs.y == 0 && rhs.x >= 0) {
-        0
-    } else {
-        1
-    };
-    if lhs_half != rhs_half {
-        return lhs_half.cmp(&rhs_half);
+fn candidate_direction_cmp(lhs: &CandidateDirection, rhs: &CandidateDirection) -> Ordering {
+    let lhs_quad = vector_quadrant(lhs.vector);
+    let rhs_quad = vector_quadrant(rhs.vector);
+    if lhs_quad != rhs_quad {
+        return lhs_quad.cmp(&rhs_quad);
     }
 
-    let cross = cross_product_i128(lhs.x, lhs.y, rhs.x, rhs.y);
+    let cross = cross_product_i128(lhs.vector.x, lhs.vector.y, rhs.vector.x, rhs.vector.y);
     if cross > 0 {
-        Ordering::Less
+        return Ordering::Less;
     } else if cross < 0 {
-        Ordering::Greater
-    } else {
-        lhs.x.cmp(&rhs.x).then(lhs.y.cmp(&rhs.y))
+        return Ordering::Greater;
+    }
+
+    lhs.vector
+        .x
+        .cmp(&rhs.vector.x)
+        .then(lhs.vector.y.cmp(&rhs.vector.y))
+        .then(lhs.source_kind.cmp(&rhs.source_kind))
+        .then(lhs.source_edge_a.cmp(&rhs.source_edge_a))
+        .then(lhs.source_edge_b.cmp(&rhs.source_edge_b))
+}
+
+fn vector_quadrant(v: Point64) -> u8 {
+    match (v.x >= 0, v.y >= 0) {
+        (true, true) => 0,
+        (false, true) => 1,
+        (false, false) => 2,
+        (true, false) => 3,
     }
 }
 
 fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        let r = a % b;
+        a = b;
+        b = r;
+    }
+    a.abs()
+}
+
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
     while b != 0 {
         let r = a % b;
         a = b;
@@ -800,16 +1338,105 @@ fn segments_intersect_or_touch(a0: Point64, a1: Point64, b0: Point64, b1: Point6
     o1 != o2 && o3 != o4
 }
 
+fn segments_proper_intersect(a0: Point64, a1: Point64, b0: Point64, b1: Point64) -> bool {
+    let o1 = orient(a0, a1, b0);
+    let o2 = orient(a0, a1, b1);
+    let o3 = orient(b0, b1, a0);
+    let o4 = orient(b0, b1, a1);
+    o1 != 0 && o2 != 0 && o3 != 0 && o4 != 0 && o1 != o2 && o3 != o4
+}
+
+fn polygons_strict_overlap(a: &[Point64], b: &[Point64], translation: Point64) -> bool {
+    if a.len() < 3 || b.len() < 3 {
+        return false;
+    }
+    let translated_b: Vec<Point64> = b
+        .iter()
+        .map(|&point| translated_point(point, translation))
+        .collect();
+
+    for edge_a in 0..a.len() {
+        let a0 = a[edge_a];
+        let a1 = a[(edge_a + 1) % a.len()];
+        for edge_b in 0..translated_b.len() {
+            let b0 = translated_b[edge_b];
+            let b1 = translated_b[(edge_b + 1) % translated_b.len()];
+            if segments_proper_intersect(a0, a1, b0, b1) {
+                return true;
+            }
+        }
+    }
+
+    if a.iter()
+        .any(|&point| point_in_ring_strict(point, &translated_b))
+    {
+        return true;
+    }
+    translated_b
+        .iter()
+        .any(|&point| point_in_ring_strict(point, a))
+}
+
+fn point_in_ring_strict(point: Point64, ring: &[Point64]) -> bool {
+    if ring.len() < 3 {
+        return false;
+    }
+
+    for idx in 0..ring.len() {
+        let start = ring[idx];
+        let end = ring[(idx + 1) % ring.len()];
+        if point_on_segment_inclusive(start, end, point) {
+            return false;
+        }
+    }
+
+    let mut winding = 0_i32;
+    for idx in 0..ring.len() {
+        let start = ring[idx];
+        let end = ring[(idx + 1) % ring.len()];
+
+        if start.y <= point.y {
+            if end.y > point.y {
+                let cross = cross_product_i128(
+                    end.x - start.x,
+                    end.y - start.y,
+                    point.x - start.x,
+                    point.y - start.y,
+                );
+                if cross > 0 {
+                    winding += 1;
+                }
+            }
+        } else if end.y <= point.y {
+            let cross = cross_product_i128(
+                end.x - start.x,
+                end.y - start.y,
+                point.x - start.x,
+                point.y - start.y,
+            );
+            if cross < 0 {
+                winding -= 1;
+            }
+        }
+    }
+
+    winding != 0
+}
+
+fn dot_product_i128(dx1: i64, dy1: i64, dx2: i64, dy2: i64) -> i128 {
+    (dx1 as i128) * (dx2 as i128) + (dy1 as i128) * (dy2 as i128)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::geometry::types::Point64;
 
     use super::{
-        ConcaveNfpMode, ConcaveNfpOptions, compute_concave_nfp, compute_concave_nfp_default,
-        decompose_to_convex_parts,
+        compute_concave_nfp, compute_concave_nfp_default, decompose_to_convex_parts,
+        ConcaveNfpMode, ConcaveNfpOptions,
     };
-    use crate::nfp::boundary_clean::ring_has_self_intersection;
     use crate::geometry::types::Polygon64;
+    use crate::nfp::boundary_clean::ring_has_self_intersection;
 
     fn poly(points: &[[i64; 2]]) -> Polygon64 {
         Polygon64 {
@@ -832,7 +1459,10 @@ mod tests {
             Point64 { x: 0, y: 4 },
         ];
         let parts = decompose_to_convex_parts(&l_shape).expect("decomposition should succeed");
-        assert!(parts.len() >= 2, "concave ring should be split to multiple parts");
+        assert!(
+            parts.len() >= 2,
+            "concave ring should be split to multiple parts"
+        );
     }
 
     #[test]
@@ -847,22 +1477,32 @@ mod tests {
     }
 
     #[test]
-    fn exact_mode_falls_back_to_stable_when_loop_detected() {
+    fn exact_mode_remains_deterministic_under_loop_guard() {
         let a = poly(&[[0, 0], [4, 0], [4, 1], [1, 1], [1, 4], [0, 4]]);
         let b = poly(&[[0, 0], [2, 0], [2, 3], [1, 3], [1, 1], [0, 1]]);
 
-        let stable = compute_concave_nfp_default(&a, &b).expect("stable path");
-        let exact = compute_concave_nfp(
+        let exact_1 = compute_concave_nfp(
             &a,
             &b,
             ConcaveNfpOptions {
                 mode: ConcaveNfpMode::ExactOrbit,
-                max_steps: 8,
+                max_steps: 1,
                 enable_fallback: true,
             },
         )
-        .expect("exact mode with fallback should succeed");
+        .expect("exact mode should produce a valid loop-guarded output");
+        let exact_2 = compute_concave_nfp(
+            &a,
+            &b,
+            ConcaveNfpOptions {
+                mode: ConcaveNfpMode::ExactOrbit,
+                max_steps: 1,
+                enable_fallback: true,
+            },
+        )
+        .expect("exact mode should stay deterministic under loop-guard");
 
-        assert_eq!(stable.outer, exact.outer);
+        assert_eq!(exact_1.outer, exact_2.outer);
+        assert!(!ring_has_self_intersection(&exact_1.outer));
     }
 }

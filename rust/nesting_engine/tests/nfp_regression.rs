@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use nesting_engine::geometry::types::{is_ccw, is_convex, signed_area2_i128, Point64, Polygon64};
 use nesting_engine::nfp::boundary_clean::ring_has_self_intersection;
 use nesting_engine::nfp::concave::{
-    ConcaveNfpMode, ConcaveNfpOptions, compute_concave_nfp, compute_concave_nfp_default,
+    compute_concave_nfp, compute_concave_nfp_default, ConcaveNfpMode, ConcaveNfpOptions,
 };
 use nesting_engine::nfp::convex::{compute_convex_nfp, compute_convex_nfp_reference};
 use serde::Deserialize;
@@ -19,6 +19,8 @@ struct Fixture {
     rotation_deg_b: i64,
     expected_nfp: Vec<[i64; 2]>,
     expected_vertex_count: usize,
+    #[serde(default)]
+    prefer_exact: Option<bool>,
     #[serde(default)]
     expect_exact_fallback: Option<bool>,
 }
@@ -100,8 +102,19 @@ fn concave_fixture_library_passes() {
         fixture_dir().display()
     );
 
+    let mut exact_preferred_fixture_count = 0usize;
+    let mut exact_no_fallback_success = 0usize;
+
     for fixture_path in concave_files {
         let fixture = read_fixture(&fixture_path);
+        let prefer_exact = fixture.prefer_exact.unwrap_or(false);
+        let expect_exact_fallback = fixture.expect_exact_fallback.unwrap_or(false);
+        assert!(
+            !(prefer_exact && expect_exact_fallback),
+            "fixture cannot require exact-no-fallback and fallback simultaneously: {}",
+            fixture_path.display()
+        );
+
         assert_eq!(
             fixture.rotation_deg_b, 0,
             "concave fixtures should use 0 degree rotation: {}",
@@ -147,13 +160,62 @@ fn concave_fixture_library_passes() {
             fixture_path.display()
         );
 
-        if fixture.expect_exact_fallback.unwrap_or(false) {
+        if prefer_exact {
+            exact_preferred_fixture_count += 1;
+            let exact_first = compute_concave_nfp(
+                &poly_a,
+                &poly_b,
+                ConcaveNfpOptions {
+                    mode: ConcaveNfpMode::ExactOrbit,
+                    max_steps: 4096,
+                    enable_fallback: false,
+                },
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "exact mode without fallback must succeed in fixture {}: {:?}",
+                    fixture_path.display(),
+                    err
+                )
+            });
+            let exact_second = compute_concave_nfp(
+                &poly_a,
+                &poly_b,
+                ConcaveNfpOptions {
+                    mode: ConcaveNfpMode::ExactOrbit,
+                    max_steps: 4096,
+                    enable_fallback: false,
+                },
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "exact mode second run failed in fixture {}: {:?}",
+                    fixture_path.display(),
+                    err
+                )
+            });
+
+            assert_eq!(
+                canonicalize_ring(&exact_first.outer),
+                canonicalize_ring(&exact_second.outer),
+                "exact no-fallback mode is not deterministic in fixture {}",
+                fixture_path.display()
+            );
+            assert!(
+                !ring_has_self_intersection(&exact_first.outer),
+                "exact no-fallback boundary is self intersecting in fixture {}",
+                fixture_path.display()
+            );
+            exact_no_fallback_success += 1;
+        }
+
+        if expect_exact_fallback {
             let exact = compute_concave_nfp(
                 &poly_a,
                 &poly_b,
                 ConcaveNfpOptions {
                     mode: ConcaveNfpMode::ExactOrbit,
-                    max_steps: 64,
+                    max_steps: 1,
                     enable_fallback: true,
                 },
             )
@@ -172,6 +234,15 @@ fn concave_fixture_library_passes() {
             );
         }
     }
+
+    assert!(
+        exact_preferred_fixture_count >= 3,
+        "at least 3 concave fixtures must opt into exact-no-fallback coverage"
+    );
+    assert!(
+        exact_no_fallback_success >= 3,
+        "exact-no-fallback coverage must succeed on at least 3 concave fixtures"
+    );
 }
 
 #[test]

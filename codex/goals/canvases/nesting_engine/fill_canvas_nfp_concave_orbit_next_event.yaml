@@ -1,0 +1,83 @@
+steps:
+  - name: "Felderítés: ExactOrbit jelenlegi logika + hiányzó next-event pontok"
+    description: >
+      Olvasd el az AGENTS.md és docs/codex/* szabályokat, majd a concave.rs ExactOrbit
+      implementációt. Rögzítsd a canvasban: hol történik az 'egységlépés' és hol dől el a
+      fallback. Azonosítsd a belső segédfüggvényeket (kontakt detekt, candidate vektorok,
+      loop guard). Ne találj ki fájlokat, csak a repóban létezőket írd le.
+    outputs:
+      - "canvases/nesting_engine/nfp_concave_orbit_next_event.md"
+
+  - name: "Next-event primitívek: racionális t összehasonlítás és eseményjelöltek"
+    description: >
+      A rust/nesting_engine/src/nfp/concave.rs-ben vezess be integer alapú next-event
+      számításhoz szükséges primitíveket:
+      - Fraction jellegű reprezentáció (numerator/denominator i128), normalizált összehasonlítással,
+      - eseményjelölt struktúra (t, event_kind, contact_signature),
+      - stabil tie-break (event_kind priority + lex).
+      Tilos f64. Minden cross/dot/orientáció i128-on.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Next-event számítás: slide irányhoz legközelebbi kontakt/esemény megtalálása"
+    description: >
+      Implementáld a 'next_event_translation(v)' jellegű logikát:
+      - input: A poligon, B poligon, aktuális p, slide v (Point64)
+      - output: legkisebb pozitív t (Fraction) és az esemény részlete (mely vertex-edge)
+      - eseményjelöltek generálása vertex-edge és edge-vertex párokból
+      - dead-end: ha nincs pozitív t -> None
+      A cél: determinisztikus, stabil léptetés a következő kontaktig.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Touching group + candidate irányok: multi-contact determinisztikus feloldás"
+    description: >
+      Egészítsd ki / javítsd a touching group kezelést:
+      - többszörös kontakt esetén egy csoportba fogás (kontakt gráf)
+      - candidate slide irányok képzése a csoportból
+      - determinisztikus rendezés: kvadráns + cross + lex + kontakt index
+      Ez a Burke 2007 + Luo&Rao 2022 szemlélet minimálisan implementált változata.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "ExactOrbit fő ciklus: next-event léptetés + boundary tracing + loop guard"
+    description: >
+      Alakítsd át az ExactOrbit fő ciklust:
+      - minden iteráció: touching group -> candidate irányok -> válassz irány -> next_event -> p += v*t
+      - rögzíts boundary pontot (B anchor pályája) csak eseményeknél
+      - visited signature: (p, touching_signature) hash
+      - loop vagy max_steps esetén: kontrollált fallback a stable baseline-ra
+      - kimenet: boundary_clean után tér vissza
+      A cél: exact módban a fixture-ek jelentős részén ne fallbackeljen.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Tesztbővítés: exact mód elvárások és determinisztika"
+    description: >
+      Frissítsd a rust/nesting_engine/tests/nfp_regression.rs tesztet úgy, hogy:
+      - legyen lehetőség concave fixture-nél 'prefer_exact: true' jelzésre,
+      - legalább 3 meglévő concave fixture-re állítsd be, hogy exact módban ne fallbackeljen,
+      - determinisztika: exact mód kétszer futtatva azonos canonical ring,
+      - továbbra is PASS marad a stable baseline.
+      Ne használj f64 PIP-et.
+    outputs:
+      - "rust/nesting_engine/tests/nfp_regression.rs"
+      - "poc/nfp_regression/concave_touching_group.json"
+      - "poc/nfp_regression/concave_slit.json"
+      - "poc/nfp_regression/concave_hole_pocket.json"
+      - "poc/nfp_regression/concave_interlock_c.json"
+      - "poc/nfp_regression/concave_multi_contact.json"
+
+  - name: "Checklist + report + verify"
+    description: >
+      Hozd létre / frissítsd:
+      - codex/codex_checklist/nesting_engine/nfp_concave_orbit_next_event.md
+      - codex/reports/nesting_engine/nfp_concave_orbit_next_event.md
+      Kövesse a docs/codex/report_standard.md szerkezetét, legyen AUTO_VERIFY blokk.
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_concave_orbit_next_event.md
+      és mentsd a logot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_concave_orbit_next_event.md"
+      - "codex/reports/nesting_engine/nfp_concave_orbit_next_event.md"
+      - "codex/reports/nesting_engine/nfp_concave_orbit_next_event.verify.log"
