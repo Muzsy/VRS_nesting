@@ -3,8 +3,13 @@ use std::collections::{HashSet, hash_map::DefaultHasher};
 use std::hash::Hasher;
 
 use i_overlay::{
-    core::{fill_rule::FillRule, overlay_rule::OverlayRule},
-    float::overlay::FloatOverlay,
+    core::{
+        fill_rule::FillRule, overlay::IntOverlayOptions, overlay::Overlay,
+        overlay_rule::OverlayRule,
+        solver::{Precision, Solver, Strategy},
+    },
+    i_float::int::point::IntPoint,
+    i_shape::int::shape::{IntContour, IntShape},
 };
 
 use crate::geometry::types::{
@@ -310,13 +315,21 @@ fn union_nfp_fragments(fragments: &[Polygon64]) -> Result<Polygon64, NfpError> {
         return Err(NfpError::DecompositionFailed);
     }
 
-    let subject_shapes: Vec<Vec<Vec<[f64; 2]>>> = fragments
+    let bounds =
+        OverlayBounds::from_fragments(fragments).ok_or(NfpError::DecompositionFailed)?;
+    let subject_shapes: Vec<IntShape> = fragments
         .iter()
-        .map(|poly| vec![poly.outer.iter().map(|p| [p.x as f64, p.y as f64]).collect()])
-        .collect();
+        .map(|poly| encode_overlay_contour(&poly.outer, bounds).map(|contour| vec![contour]))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let mut overlay = FloatOverlay::with_subj(&subject_shapes);
-    let unioned = overlay.overlay(OverlayRule::Subject, FillRule::NonZero);
+    let empty_shapes: [IntShape; 0] = [];
+    let mut overlay = Overlay::with_shapes_options(
+        &subject_shapes,
+        &empty_shapes,
+        IntOverlayOptions::keep_all_points(),
+        Solver::with_strategy_and_precision(Strategy::List, Precision::ABSOLUTE),
+    );
+    let unioned = overlay.overlay(OverlayRule::Union, FillRule::NonZero);
 
     let mut best: Option<(i128, Vec<Point64>, Polygon64)> = None;
     for shape in unioned {
@@ -324,7 +337,7 @@ fn union_nfp_fragments(fragments: &[Polygon64]) -> Result<Polygon64, NfpError> {
             continue;
         }
 
-        let outer = contour_to_points(&shape[0]);
+        let outer = restore_axis_notches(&decode_overlay_contour(&shape[0], bounds)?, fragments);
         if outer.len() < 3 {
             continue;
         }
@@ -348,13 +361,221 @@ fn union_nfp_fragments(fragments: &[Polygon64]) -> Result<Polygon64, NfpError> {
         .ok_or(NfpError::DecompositionFailed)
 }
 
-fn contour_to_points(path: &[[f64; 2]]) -> Vec<Point64> {
-    path.iter()
-        .map(|p| Point64 {
-            x: p[0].round() as i64,
-            y: p[1].round() as i64,
+#[derive(Debug, Clone, Copy)]
+struct OverlayBounds {
+    min_x: i64,
+    min_y: i64,
+    shift: u32,
+}
+
+impl OverlayBounds {
+    fn from_fragments(fragments: &[Polygon64]) -> Option<Self> {
+        let mut min_x = i64::MAX;
+        let mut min_y = i64::MAX;
+        let mut max_x = i64::MIN;
+        let mut max_y = i64::MIN;
+
+        for fragment in fragments {
+            for point in &fragment.outer {
+                min_x = min_x.min(point.x);
+                min_y = min_y.min(point.y);
+                max_x = max_x.max(point.x);
+                max_y = max_y.max(point.y);
+            }
+        }
+
+        if min_x == i64::MAX || min_y == i64::MAX {
+            return None;
+        }
+
+        let span_x = max_x.checked_sub(min_x)?;
+        let span_y = max_y.checked_sub(min_y)?;
+        let mut max_span = span_x.max(span_y);
+        let mut shift = 0_u32;
+
+        while max_span > i32::MAX as i64 {
+            max_span = (max_span + 1) >> 1;
+            shift = shift.checked_add(1)?;
+        }
+
+        Some(Self {
+            min_x,
+            min_y,
+            shift,
         })
-        .collect()
+    }
+
+    fn encode_x(self, x: i64) -> Option<i32> {
+        self.encode_coord(x, self.min_x)
+    }
+
+    fn encode_y(self, y: i64) -> Option<i32> {
+        self.encode_coord(y, self.min_y)
+    }
+
+    fn decode_x(self, x: i32) -> Option<i64> {
+        self.decode_coord(x, self.min_x)
+    }
+
+    fn decode_y(self, y: i32) -> Option<i64> {
+        self.decode_coord(y, self.min_y)
+    }
+
+    fn encode_coord(self, value: i64, min: i64) -> Option<i32> {
+        let translated = value.checked_sub(min)?;
+        let scaled = if self.shift == 0 {
+            translated
+        } else {
+            translated >> self.shift
+        };
+        i32::try_from(scaled).ok()
+    }
+
+    fn decode_coord(self, value: i32, min: i64) -> Option<i64> {
+        let scaled = (value as i64).checked_shl(self.shift)?;
+        min.checked_add(scaled)
+    }
+}
+
+fn encode_overlay_contour(points: &[Point64], bounds: OverlayBounds) -> Result<IntContour, NfpError> {
+    let mut contour = Vec::with_capacity(points.len());
+    for point in points {
+        let x = bounds
+            .encode_x(point.x)
+            .ok_or(NfpError::DecompositionFailed)?;
+        let y = bounds
+            .encode_y(point.y)
+            .ok_or(NfpError::DecompositionFailed)?;
+        contour.push(IntPoint::new(x, y));
+    }
+    Ok(contour)
+}
+
+fn decode_overlay_contour(contour: &IntContour, bounds: OverlayBounds) -> Result<Vec<Point64>, NfpError> {
+    let mut outer = Vec::with_capacity(contour.len());
+    for point in contour {
+        let x = bounds
+            .decode_x(point.x)
+            .ok_or(NfpError::DecompositionFailed)?;
+        let y = bounds
+            .decode_y(point.y)
+            .ok_or(NfpError::DecompositionFailed)?;
+        outer.push(Point64 { x, y });
+    }
+    Ok(outer)
+}
+
+fn restore_axis_notches(ring: &[Point64], fragments: &[Polygon64]) -> Vec<Point64> {
+    let n = ring.len();
+    if n < 3 {
+        return ring.to_vec();
+    }
+
+    let mut out = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let prev = ring[(i + n - 1) % n];
+        let curr = ring[i];
+        let next = ring[(i + 1) % n];
+        let next_next = ring[(i + 2) % n];
+        out.push(curr);
+
+        let dx = next.x - curr.x;
+        let dy = next.y - curr.y;
+        if dx == 0 || dy == 0 {
+            continue;
+        }
+        if dx.abs() > 1 && dy.abs() > 1 {
+            continue;
+        }
+
+        let candidates = [
+            Point64 {
+                x: curr.x,
+                y: next.y,
+            },
+            Point64 {
+                x: next.x,
+                y: curr.y,
+            },
+        ];
+
+        let mut chosen: Option<Point64> = None;
+        for candidate in candidates {
+            if candidate == curr
+                || candidate == next
+                || candidate == prev
+                || candidate == next_next
+            {
+                continue;
+            }
+            if !point_in_any_fragment(candidate, fragments) {
+                continue;
+            }
+
+            chosen = match chosen {
+                None => Some(candidate),
+                Some(current) => {
+                    let current_key = (current.x, current.y);
+                    let candidate_key = (candidate.x, candidate.y);
+                    if candidate_key < current_key {
+                        Some(candidate)
+                    } else {
+                        Some(current)
+                    }
+                }
+            };
+        }
+
+        if let Some(candidate) = chosen {
+            out.push(candidate);
+        }
+    }
+
+    out
+}
+
+fn point_in_any_fragment(point: Point64, fragments: &[Polygon64]) -> bool {
+    fragments
+        .iter()
+        .any(|fragment| point_in_or_on_ring(point, &fragment.outer))
+}
+
+fn point_in_or_on_ring(point: Point64, ring: &[Point64]) -> bool {
+    let n = ring.len();
+    if n < 3 {
+        return false;
+    }
+
+    for i in 0..n {
+        let a = ring[i];
+        let b = ring[(i + 1) % n];
+        if point_on_segment_inclusive(a, b, point) {
+            return true;
+        }
+    }
+
+    let mut winding = 0_i32;
+    for i in 0..n {
+        let a = ring[i];
+        let b = ring[(i + 1) % n];
+
+        if a.y <= point.y {
+            if b.y > point.y {
+                let cross =
+                    cross_product_i128(b.x - a.x, b.y - a.y, point.x - a.x, point.y - a.y);
+                if cross > 0 {
+                    winding += 1;
+                }
+            }
+        } else if b.y <= point.y {
+            let cross = cross_product_i128(b.x - a.x, b.y - a.y, point.x - a.x, point.y - a.y);
+            if cross < 0 {
+                winding -= 1;
+            }
+        }
+    }
+
+    winding != 0
 }
 
 fn canonical_key(points: &[Point64]) -> Vec<Point64> {

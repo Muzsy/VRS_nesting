@@ -31,7 +31,7 @@ Ez kulonosen akkor kockazat, ha kesobb Python/Rust kozti hash-egyeztetes lesz.
 ## P2 — Közepes prioritás
 
 ### KI-007 tolerance_policy integer-only allitas vs aktiv f64 geometriadontesek
-**Allapot:** OPEN  
+**Allapot:** IN_PROGRESS (nfp_concave_integer_union)  
 **Forras:** Doc-code drift audit, 2026-02-24  
 **Terulet:** `docs/nesting_engine/tolerance_policy.md`, `rust/nesting_engine/src/geometry/offset.rs`, `rust/nesting_engine/src/feasibility/narrow.rs`, `rust/nesting_engine/src/geometry/pipeline.rs`
 
@@ -40,6 +40,16 @@ floating-point kerekitesi nemdeterminizmus kizarhato. A kodban ugyanakkor aktiv
 f64 alapu geometriai predikatumok futnak (offset winding helper-ek, i_overlay
 FloatPredicate overlay containment/intersection, geo sweep-line self-intersection).
 Ez specifikacio-kod szintu eltérés.
+
+**Scope update (2026-02-25):** az `nfp_concave_integer_union` task csak a
+`rust/nesting_engine/src/nfp/concave.rs` stable baseline union float driftjet
+kezeli. Az `offset` / `feasibility` / `pipeline` tovabbi f64 kodutvonalai kulon
+feladatban maradnak.
+
+**Reszleges feloldas (2026-02-25, verify PASS):** a concave stable baseline
+union utvonalrol a `FloatOverlay` kikerult, integer-only `i_overlay::core::overlay::Overlay`
+utvonal aktiv, es a visszacsuszast kulon guard teszt (`nfp_no_float_overlay.rs`)
+vedi. A KI-007 tobbi, nem-concave resze tovabbra is nyitott.
 
 **Javasolt DoD:**  
 - A policy pontositsa, hogy hol kotelezo integer aritmetika es hol engedett f64.  
