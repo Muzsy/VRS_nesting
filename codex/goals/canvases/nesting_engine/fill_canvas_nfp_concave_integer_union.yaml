@@ -1,0 +1,72 @@
+steps:
+  - name: "Felderítés: szabályok + concave union drift pontos helye"
+    description: >
+      Olvasd el: AGENTS.md, docs/codex/*, docs/nesting_engine/tolerance_policy.md,
+      docs/known_issues/nesting_engine_known_issues.md, valamint
+      rust/nesting_engine/src/nfp/concave.rs union_nfp_fragments implementációját.
+      Rögzítsd a canvasban, hol és hogyan történik a float union (pontos importokkal).
+      Derítsd fel, hogy i_overlay 4.4.0-ban elérhető-e integer-only boolean union API
+      (nem float::overlay), és ezt írd le a reportban bizonyítékkal (pontos modulútvonal).
+    outputs:
+      - "canvases/nesting_engine/nfp_concave_integer_union.md"
+
+  - name: "Integer-only union helper bevezetése (ha szükséges külön fájlban)"
+    description: >
+      Ha az integer-only unionhoz érdemes külön helper, hozd létre:
+      rust/nesting_engine/src/geometry/overlay_int.rs.
+      A helper API legyen minimalista:
+      - input: &[Polygon64] (outer-only MVP)
+      - output: Polygon64 (legnagyobb területű outer ring, canonicalizálva)
+      Tilos f64 használat a boolean döntésekhez (nem float::overlay).
+      Minden orientáció/cross predikátum i128-on.
+      Ha nincs szükség külön fájlra, ezt a lépést akkor is hagyd meg, de ne hozz létre fájlt.
+    outputs:
+      - "rust/nesting_engine/src/geometry/overlay_int.rs"
+
+  - name: "Concave stable baseline float union eltávolítása"
+    description: >
+      Módosítsd rust/nesting_engine/src/nfp/concave.rs-ben a union_nfp_fragments()
+      implementációt úgy, hogy:
+      - FloatOverlay és minden i_overlay::float::* union import eltűnjön
+      - a union integer-only útvonalon menjen (a felderítés szerinti legjobb API-val)
+      - a kimenet továbbra is clean_polygon_boundary() / boundary_clean után térjen vissza.
+      A concave stable baseline funkcionalitás nem sérülhet: a fixture regressziók
+      továbbra is PASS.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Known issue frissítés (KI-007 scope kezelés)"
+    description: >
+      Frissítsd docs/known_issues/nesting_engine_known_issues.md fájlt:
+      - KI-007 állapot: IN_PROGRESS (nfp_concave_integer_union)
+      - a leírásban rögzítsd, hogy ez a task csak a concave NFP baseline union float driftjét
+        kezeli; az offset/feasibility egyéb float részek külön scope.
+      A verify PASS után a KI-007-hez add hozzá a részleges feloldás megjegyzést.
+    outputs:
+      - "docs/known_issues/nesting_engine_known_issues.md"
+
+  - name: "Guard teszt: FloatOverlay tiltás concave.rs-ben"
+    description: >
+      Adj hozzá egy célzott tesztet:
+      rust/nesting_engine/tests/nfp_no_float_overlay.rs
+      amely include_str!-ral beolvassa a src/nfp/concave.rs tartalmát, és asserteli, hogy
+      nem tartalmazza:
+      - 'FloatOverlay'
+      - 'i_overlay::float'
+      Ez nem stílus teszt, hanem regressziós védelem a float visszacsúszás ellen.
+    outputs:
+      - "rust/nesting_engine/tests/nfp_no_float_overlay.rs"
+
+  - name: "Repo gate + report"
+    description: >
+      Hozd létre / frissítsd:
+      - codex/codex_checklist/nesting_engine/nfp_concave_integer_union.md
+      - codex/reports/nesting_engine/nfp_concave_integer_union.md
+      A report kövesse a docs/codex/report_standard.md szerkezetét, legyen AUTO_VERIFY blokk.
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_concave_integer_union.md
+      és mentsd a logot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_concave_integer_union.md"
+      - "codex/reports/nesting_engine/nfp_concave_integer_union.md"
+      - "codex/reports/nesting_engine/nfp_concave_integer_union.verify.log"
