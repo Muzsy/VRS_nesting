@@ -143,17 +143,10 @@ fn run_nest() -> Result<(), String> {
         if (resp.status == "ok" || resp.status == "hole_collapsed")
             && !resp.inflated_outer_points_mm.is_empty()
         {
-            let inflated = Polygon64 {
-                outer: resp
-                    .inflated_outer_points_mm
-                    .iter()
-                    .map(|p| Point64 {
-                        x: mm_to_i64(p[0]),
-                        y: mm_to_i64(p[1]),
-                    })
-                    .collect(),
-                holes: resp
-                    .inflated_holes_points_mm
+            let holes = if resp.status == "hole_collapsed" {
+                Vec::new()
+            } else {
+                resp.inflated_holes_points_mm
                     .iter()
                     .map(|hole| {
                         hole.iter()
@@ -163,7 +156,18 @@ fn run_nest() -> Result<(), String> {
                             })
                             .collect()
                     })
+                    .collect()
+            };
+            let inflated = Polygon64 {
+                outer: resp
+                    .inflated_outer_points_mm
+                    .iter()
+                    .map(|p| Point64 {
+                        x: mm_to_i64(p[0]),
+                        y: mm_to_i64(p[1]),
+                    })
                     .collect(),
+                holes,
             };
             let nominal_outer: Vec<Point64> = part
                 .outer_points_mm

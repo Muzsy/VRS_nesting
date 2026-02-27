@@ -63,24 +63,32 @@ fn inflate_single_part(part: PartRequest, delta_mm: f64) -> PartResponse {
     match inflate_part(&nominal, delta_mm) {
         Ok(inflated) => {
             let collapsed_hole_indices = detect_collapsed_holes(&part, delta_mm);
-            let mut diagnostics: Vec<Diagnostic> = collapsed_hole_indices
-                .iter()
-                .map(|&idx| hole_collapsed_diagnostic(&part, idx))
-                .collect();
+            if !collapsed_hole_indices.is_empty() {
+                let diagnostics: Vec<Diagnostic> = collapsed_hole_indices
+                    .iter()
+                    .map(|&idx| hole_collapsed_diagnostic(&part, idx))
+                    .collect();
+                return build_hole_collapsed_outer_only_response(
+                    part_id,
+                    nominal.polygon.outer,
+                    delta_mm,
+                    diagnostics,
+                    "outer-only fallback inflate failed after detect_collapsed_holes",
+                );
+            }
+
+            let mut diagnostics = Vec::new();
             let is_self_intersect = polygon_self_intersects(&inflated.polygon.outer);
             if is_self_intersect {
                 diagnostics.push(self_intersect_diagnostic(
                     "outer polygon self-intersects after inflate",
                 ));
             }
-            let has_hole_collapse = !collapsed_hole_indices.is_empty();
 
             PartResponse {
                 id: part_id,
                 status: if is_self_intersect {
                     STATUS_SELF_INTERSECT.to_string()
-                } else if has_hole_collapse {
-                    STATUS_HOLE_COLLAPSED.to_string()
                 } else {
                     STATUS_OK.to_string()
                 },
@@ -231,12 +239,24 @@ fn handle_hole_collapsed(
     hole_index: usize,
     delta_mm: f64,
 ) -> PartResponse {
-    let part_id = part.id.clone();
-    let mut diagnostics = vec![hole_collapsed_diagnostic(&part, hole_index)];
+    build_hole_collapsed_outer_only_response(
+        part.id.clone(),
+        nominal.polygon.outer,
+        delta_mm,
+        vec![hole_collapsed_diagnostic(&part, hole_index)],
+        "outer-only fallback inflate failed after hole collapse",
+    )
+}
 
-    // Fallback path: inflate the outer boundary only, so feasibility can proceed.
+fn build_hole_collapsed_outer_only_response(
+    part_id: String,
+    nominal_outer: Vec<Point64>,
+    delta_mm: f64,
+    mut diagnostics: Vec<Diagnostic>,
+    offset_error_context: &str,
+) -> PartResponse {
     let fallback_polygon = Polygon64 {
-        outer: nominal.polygon.outer,
+        outer: nominal_outer,
         holes: Vec::new(),
     };
 
@@ -268,10 +288,7 @@ fn handle_hole_collapsed(
                 nominal_hole_bbox_mm: None,
                 preserve_for_export: None,
                 usable_for_nesting: None,
-                detail: format!(
-                    "outer-only fallback inflate failed after hole collapse: {}",
-                    offset_error_detail(&err)
-                ),
+                detail: format!("{offset_error_context}: {}", offset_error_detail(&err)),
             });
             PartResponse {
                 id: part_id,
@@ -530,6 +547,65 @@ mod tests {
         assert_eq!(diag.preserve_for_export, Some(true));
         assert_eq!(diag.usable_for_nesting, Some(false));
         assert!(diag.nominal_hole_bbox_mm.is_some());
+    }
+
+    #[test]
+    fn hole_collapsed_detect_path_forces_outer_only_nesting_geometry() {
+        let part = PartRequest {
+            id: "detect_collapsed_with_surviving_hole".to_string(),
+            outer_points_mm: vec![[0.0, 0.0], [80.0, 0.0], [80.0, 80.0], [0.0, 80.0]],
+            holes_points_mm: vec![
+                vec![[10.0, 10.0], [11.0, 10.0], [11.0, 11.0], [10.0, 11.0]],
+                vec![[30.0, 30.0], [50.0, 30.0], [50.0, 50.0], [30.0, 50.0]],
+            ],
+        };
+        let delta_mm = 1.1;
+
+        let nominal = request_to_geometry(&part);
+        assert!(
+            inflate_part(&nominal, delta_mm).is_ok(),
+            "test setup must hit detect path (inflate_part stays ok)"
+        );
+        let collapsed_indices = detect_collapsed_holes(&part, delta_mm);
+        assert!(
+            !collapsed_indices.is_empty(),
+            "test setup must include a detect_collapsed_holes hit"
+        );
+
+        let req = PipelineRequest {
+            version: "pipeline_v1".to_string(),
+            kerf_mm: 0.2,
+            margin_mm: 1.0,
+            parts: vec![part],
+            stocks: Vec::new(),
+        };
+        let resp = run_inflate_pipeline(req);
+        assert_eq!(resp.parts.len(), 1);
+        let part_resp = &resp.parts[0];
+        assert_eq!(part_resp.status, STATUS_HOLE_COLLAPSED);
+        assert!(
+            !part_resp.inflated_outer_points_mm.is_empty(),
+            "hole_collapsed detect path must still provide outer-only envelope"
+        );
+        assert!(
+            part_resp.inflated_holes_points_mm.is_empty(),
+            "hole_collapsed detect path must strip all holes from nesting geometry"
+        );
+
+        let hole_diags: Vec<&Diagnostic> = part_resp
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == CODE_HOLE_COLLAPSED)
+            .collect();
+        assert!(
+            !hole_diags.is_empty(),
+            "hole_collapsed detect path must emit HOLE_COLLAPSED diagnostics"
+        );
+        assert!(
+            hole_diags.iter().all(|d| d.preserve_for_export == Some(true)
+                && d.usable_for_nesting == Some(false)),
+            "HOLE_COLLAPSED diagnostics must keep preserve_for_export=true and usable_for_nesting=false"
+        );
     }
 
     #[test]

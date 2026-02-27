@@ -1,0 +1,75 @@
+steps:
+  - name: "Felderítés: HOLE_COLLAPSED jelenlegi ágak és drift rögzítése"
+    description: >
+      Nyisd meg és nézd át:
+      - rust/nesting_engine/src/geometry/pipeline.rs (inflate_single_part Ok/Err ág + detect_collapsed_holes + handle_hole_collapsed)
+      - rust/nesting_engine/src/main.rs (run_nest: hole_collapsed státusz kezelése és holes átadása)
+      - docs/nesting_engine/tolerance_policy.md (HoleCollapsed policy drift)
+      - docs/known_issues/nesting_engine_known_issues.md (KI-004/KI-010 releváns-e)
+      A canvasban rögzítsd röviden a drift lényegét (Ok+detect ág: hole_collapsed státusz mellett holes visszaadható).
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_hole_collapsed_solid_policy.md"
+
+  - name: "Pipeline fix: HOLE_COLLAPSED ⇒ always outer-only nesting envelope"
+    description: >
+      A rust/nesting_engine/src/geometry/pipeline.rs fájlban tedd egyértelművé az invariánst:
+      ha a detect_collapsed_holes(...) legalább egy indexet visszaad (has_hole_collapse=true),
+      akkor a PartResponse nesting-geometriája legyen outer-only:
+      - inflated_holes_points_mm: Vec::new()
+      - inflated_outer_points_mm: outer-only inflate_outer(...) eredménye (ne az inflate_part holes-szel számolt eredményt add vissza)
+      - diagnostics maradjon: HOLE_COLLAPSED elemek preserve_for_export=true, usable_for_nesting=false
+      A cél, hogy status == "hole_collapsed" esetén a holes soha ne legyenek jelen a nesting outputban.
+      Ne változtass IO contract struktúrát, csak a kitöltés logikáját.
+    outputs:
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+
+  - name: "Defense-in-depth: main.rs hole_collapsed esetén holes=[]"
+    description: >
+      A rust/nesting_engine/src/main.rs fájlban, amikor a pipeline response status == "hole_collapsed",
+      akkor a placernek átadott inflated Polygon64 holes mezője legyen Vec::new() (ignoráld a resp.inflated_holes_points_mm-t).
+      Ezzel akkor is tiltod a cavity/part-in-part eseteket, ha egy regresszió valaha visszahozná a holes mezőt.
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Unit teszt: detect path HOLE_COLLAPSED ⇒ holes üres"
+    description: >
+      A rust/nesting_engine/src/geometry/pipeline.rs tesztmoduljába adj hozzá új unit tesztet,
+      ami a detect_collapsed_holes(...) ágat lefedi (nem csak az inflate_part Err(HoleCollapsed) ágat).
+      Elvárt assert:
+      - status == STATUS_HOLE_COLLAPSED
+      - inflated_outer_points_mm nem üres
+      - inflated_holes_points_mm üres
+      Tipp: használj több hole-t, ahol az egyik olyan, hogy deflate_hole(delta) HoleCollapsed-re fut
+      (így detect találat van), miközben a pipeline outer-t még ad vissza.
+    outputs:
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+
+  - name: "Doksi szinkron: tolerance_policy HOLE_COLLAPSED nem fatal, outer-only fallback"
+    description: >
+      Frissítsd a docs/nesting_engine/tolerance_policy.md fájlt:
+      - Az OffsetError táblázatot és a HoleCollapsed kezelést igazítsd a valós pipeline policy-hez:
+        HOLE_COLLAPSED → diagnosztika + outer-only fallback (nesting folytatható, de cavity tiltott).
+      - Legyen explicit: exporthoz a nominális hole megmarad (preserve_for_export=true),
+        nestinghez holes=[] (usable_for_nesting=false).
+      Opcionális: a docs/known_issues/nesting_engine_known_issues.md-ben a KI-004/KI-010 státuszt frissítsd
+      IN_PROGRESS/RESOLVED formára a task sluggal (a repo konvenció szerint).
+    outputs:
+      - "docs/nesting_engine/tolerance_policy.md"
+      - "docs/known_issues/nesting_engine_known_issues.md"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a task checklistjét és reportját Report Standard v2 szerint.
+      - Checklist: pipálható DoD pontok a canvas DoD alapján.
+      - Report: DoD → Evidence Matrix + Advisory + AUTO_VERIFY blokk előkészítve.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_hole_collapsed_solid_policy.md"
+      - "codex/reports/nesting_engine/nesting_engine_hole_collapsed_solid_policy.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_hole_collapsed_solid_policy.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_hole_collapsed_solid_policy.md"
+      - "codex/reports/nesting_engine/nesting_engine_hole_collapsed_solid_policy.verify.log"

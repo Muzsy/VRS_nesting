@@ -107,15 +107,31 @@ A `simplify_shape` eltávolítja az önmetsző éleket és degenerált csúcsoka
 
 ---
 
-## 5. OffsetError típusok és kezelési elvek
+## 5. OffsetError típusok és pipeline kezelés
 
-| Variáns | Mikor? | Kezelés |
+Az `offset.rs` valós `OffsetError` enumja jelenleg:
+
+| Variáns | Mikor? | Pipeline kezelés |
 |---|---|---|
-| `HoleCollapsed { hole_index }` | Egy lyuk eltűnik az offset után (üres eredmény) | Fatal: elhelyezés visszautasítása |
-| `SelfIntersection` | Az eredmény önmetsző (a jövőbeni detektáláshoz fenntartva) | Fatal: elhelyezés visszautasítása |
-| `ClipperError(String)` | Az `i_overlay` üres eredményt ad vagy belső hiba | Fatal: elhelyezés visszautasítása |
+| `HoleCollapsed { hole_index }` | Egy lyuk offset közben eltűnik | `hole_collapsed` státusz + HOLE_COLLAPSED diagnosztika; a nesting-geometria outer-only fallback (holes=`[]`) |
+| `ClipperError(String)` | Az `i_overlay` üres eredményt ad vagy belső hiba | `error` státusz (fatal a part elhelyezésére) |
 
-Minden `OffsetError` fatális: a hibás alkatrész geometry nem használható nesting inputként.
+### 5.1 HOLE_COLLAPSED policy (nem fatal a teljes pipeline-ra)
+
+HOLE_COLLAPSED esetben a policy célja, hogy az export/gyártási információ megmaradjon, de cavity/part-in-part ne legyen:
+
+- `diagnostics.code = HOLE_COLLAPSED`
+- `preserve_for_export = true`
+- `usable_for_nesting = false`
+- `inflated_outer_points_mm` outer-only envelope (nem üres, ha az outer inflate sikeres)
+- `inflated_holes_points_mm = []` (nincs nesting-hole)
+
+Ennek megfelelően a `nest` entrypoint defense-in-depth módon `hole_collapsed` státusznál akkor is `holes=[]` polygon-t ad a placernek, ha regresszió miatt a pipeline válaszban lyuk visszakerülne.
+
+### 5.2 Self-intersection policy
+
+A self-intersection jelenleg nem `OffsetError` enum variáns, hanem pipeline szintű detektált állapot.
+`self_intersect` státusz esetén az adott part/stock nem használható elhelyezésre (fatal az érintett elemre).
 
 ---
 
