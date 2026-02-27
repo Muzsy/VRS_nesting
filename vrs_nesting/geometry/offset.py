@@ -341,10 +341,12 @@ def _offset_part_geometry_rust(
     *,
     spacing_mm: float,
 ) -> dict[str, Any]:
+    # kerf_mm remains for legacy compatibility; spacing_mm is the canonical clearance input.
     request = {
         "version": "pipeline_v1",
         "kerf_mm": float(spacing_mm),
         "margin_mm": 0.0,
+        "spacing_mm": float(spacing_mm),
         "parts": [_rust_request_part(payload)],
         "stocks": [],
     }
@@ -370,10 +372,12 @@ def _offset_stock_geometry_rust(
     margin_mm: float,
     spacing_mm: float,
 ) -> dict[str, Any]:
+    # kerf_mm remains for legacy compatibility; spacing_mm is the canonical clearance input.
     request = {
         "version": "pipeline_v1",
         "kerf_mm": float(spacing_mm),
         "margin_mm": float(margin_mm),
+        "spacing_mm": float(spacing_mm),
         "parts": [],
         "stocks": [_rust_request_stock(payload)],
     }
@@ -387,11 +391,12 @@ def _offset_stock_geometry_shapely(
     margin_mm: float,
     spacing_mm: float,
 ) -> dict[str, Any]:
-    clearance = float(margin_mm) + (float(spacing_mm) / 2.0)
-    base = _as_polygon(payload.get("outer_points_mm"), payload.get("holes_points_mm", []), "stock")
+    inflate_delta = float(spacing_mm) / 2.0
+    bin_offset = inflate_delta - float(margin_mm)
+    base_outer = _as_polygon(payload.get("outer_points_mm"), [], "stock.outer")
 
     usable_outer = _largest_polygon(
-        base.buffer(-clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT),
+        base_outer.buffer(bin_offset, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT),
         "stock.outer",
     )
 
@@ -404,7 +409,9 @@ def _offset_stock_geometry_shapely(
     expanded_holes = []
     for idx, hole in enumerate(holes_payload):
         hpoly = _as_polygon(hole, [], f"stock.hole[{idx}]")
-        expanded_holes.append(hpoly.buffer(clearance, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT))
+        expanded_holes.append(
+            hpoly.buffer(inflate_delta, join_style="mitre", mitre_limit=DEFAULT_MITRE_LIMIT)
+        )
 
     if expanded_holes:
         usable = usable_outer.difference(unary_union(expanded_holes))

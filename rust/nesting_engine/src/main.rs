@@ -88,6 +88,8 @@ struct NestSheet {
     height_mm: f64,
     kerf_mm: f64,
     margin_mm: f64,
+    #[serde(default)]
+    spacing_mm: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -113,10 +115,12 @@ fn run_nest() -> Result<(), String> {
         ));
     }
 
+    let spacing_effective_mm = spacing_effective_from_sheet(&input.sheet);
     let pipe_req = PipelineRequest {
         version: "pipeline_v1".to_string(),
         kerf_mm: input.sheet.kerf_mm,
         margin_mm: input.sheet.margin_mm,
+        spacing_mm: input.sheet.spacing_mm,
         parts: input
             .parts
             .iter()
@@ -195,10 +199,12 @@ fn run_nest() -> Result<(), String> {
         }
     }
 
-    let min_x_mm = input.sheet.margin_mm;
-    let min_y_mm = input.sheet.margin_mm;
-    let max_x_mm = (input.sheet.width_mm - input.sheet.margin_mm).max(min_x_mm);
-    let max_y_mm = (input.sheet.height_mm - input.sheet.margin_mm).max(min_y_mm);
+    let (min_x_mm, max_x_mm, min_y_mm, max_y_mm) = rect_bin_bounds(
+        input.sheet.width_mm,
+        input.sheet.height_mm,
+        input.sheet.margin_mm,
+        spacing_effective_mm,
+    );
     let bin = Polygon64 {
         outer: vec![
             Point64 {
@@ -270,6 +276,29 @@ fn compute_utilization_pct(input: &NestInput, result: &MultiSheetResult) -> f64 
     ((used_area / (sheet_area * result.sheets_used as f64)) * 100.0).clamp(0.0, 100.0)
 }
 
+fn spacing_effective_from_sheet(sheet: &NestSheet) -> f64 {
+    sheet.spacing_mm.unwrap_or(sheet.kerf_mm)
+}
+
+fn clamp_axis_bounds(min_value: f64, max_value: f64) -> (f64, f64) {
+    if max_value < min_value {
+        return (min_value, min_value);
+    }
+    (min_value, max_value)
+}
+
+fn rect_bin_bounds(
+    width_mm: f64,
+    height_mm: f64,
+    margin_mm: f64,
+    spacing_effective_mm: f64,
+) -> (f64, f64, f64, f64) {
+    let bin_offset_mm = (spacing_effective_mm * 0.5) - margin_mm;
+    let (min_x_mm, max_x_mm) = clamp_axis_bounds(0.0 - bin_offset_mm, width_mm + bin_offset_mm);
+    let (min_y_mm, max_y_mm) = clamp_axis_bounds(0.0 - bin_offset_mm, height_mm + bin_offset_mm);
+    (min_x_mm, max_x_mm, min_y_mm, max_y_mm)
+}
+
 fn polygon_area_mm2(pts: &[[f64; 2]]) -> f64 {
     if pts.len() < 3 {
         return 0.0;
@@ -281,4 +310,31 @@ fn polygon_area_mm2(pts: &[[f64; 2]]) -> f64 {
         sum += x0 * y1 - x1 * y0;
     }
     sum.abs() * 0.5
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rect_bin_bounds;
+
+    #[test]
+    fn rect_bin_bounds_inflate_when_margin_below_half_spacing() {
+        let (min_x, max_x, min_y, max_y) = rect_bin_bounds(100.0, 60.0, 1.0, 4.0);
+        assert!(min_x < 0.0, "min_x should be negative for bin inflate");
+        assert!(min_y < 0.0, "min_y should be negative for bin inflate");
+        assert!(max_x > 100.0, "max_x should exceed nominal width for bin inflate");
+        assert!(max_y > 60.0, "max_y should exceed nominal height for bin inflate");
+    }
+
+    #[test]
+    fn rect_bin_bounds_clamps_inverted_axis_deterministically() {
+        let (min_x, max_x, min_y, max_y) = rect_bin_bounds(5.0, 8.0, 10.0, 0.0);
+        assert!(
+            (min_x - max_x).abs() < f64::EPSILON,
+            "x bounds must clamp to a deterministic non-inverted interval"
+        );
+        assert!(
+            (min_y - max_y).abs() < f64::EPSILON,
+            "y bounds must clamp to a deterministic non-inverted interval"
+        );
+    }
 }

@@ -6,6 +6,8 @@ pub struct PipelineRequest {
     pub kerf_mm: f64,
     pub margin_mm: f64,
     #[serde(default)]
+    pub spacing_mm: Option<f64>,
+    #[serde(default)]
     pub parts: Vec<PartRequest>,
     #[serde(default)]
     pub stocks: Vec<StockRequest>,

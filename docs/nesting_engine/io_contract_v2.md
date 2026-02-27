@@ -19,6 +19,7 @@
 | `sheet.height_mm` | number (`>0`) | Igen | Tabla magassag | mm |
 | `sheet.kerf_mm` | number (`>=0`) | Igen | Vagasi res (kerf) | mm |
 | `sheet.margin_mm` | number (`>=0`) | Igen | Biztonsagi tabla margó | mm |
+| `sheet.spacing_mm` | number (`>=0`) | Nem | Part-part minimum tavolsag. Ha hianyzik: legacy fallback (`spacing_effective = kerf_mm`) | mm |
 | `parts` | array (nem ures) | Igen | Nestelendo alkatresz tipuskeszlet | - |
 | `parts[].id` | string | Igen | Egyedi part tipuskod | - |
 | `parts[].quantity` | integer (`>0`) | Igen | Gyartando peldanyszam | db |
@@ -32,6 +33,7 @@
 - `outer_points_mm` kontur: legalabb 3 pont, outer irany CCW.
 - `holes_points_mm` konturok: legalabb 3 pont/lyuk, lyuk irany CW.
 - Az input geometria nominalis (nem inflated).
+- Effective spacing szabalya: `spacing_effective_mm = sheet.spacing_mm (ha van)`, kulonben `sheet.kerf_mm`.
 
 ## 3. Output contract (`sample_output_v2.json` szerkezet)
 
@@ -104,6 +106,7 @@ nem a `nest` solver endpointet.
 | `version` | string | Igen | Erteke: `pipeline_v1` |
 | `kerf_mm` | number (`>=0`) | Igen | Vagasi res (kerf) |
 | `margin_mm` | number (`>=0`) | Igen | Kiegeszito margó |
+| `spacing_mm` | number (`>=0`) | Nem | Part-part minimum tavolsag. Ha hianyzik: legacy fallback (`spacing_effective = kerf_mm`) |
 | `parts` | array&lt;PartRequest&gt; | Nem (default `[]`) | Part preprocessing bemenet |
 | `stocks` | array&lt;StockRequest&gt; | Nem (default `[]`) | Stock preprocessing bemenet |
 
@@ -149,10 +152,14 @@ nem a `nest` solver endpointet.
 
 ### 7.3 Normativ offset szabaly (`stocks`)
 
-- `delta_mm = margin_mm + kerf_mm * 0.5`
+- `spacing_effective_mm = spacing_mm (ha van), kulonben kerf_mm` (legacy)
+- `inflate_delta_mm = spacing_effective_mm / 2`
+- `bin_offset_mm = spacing_effective_mm / 2 - margin_mm`
+- Part preprocess szabaly:
+  - part outer/hole inflate: `inflate_delta_mm`
 - Stock preprocess szabaly:
-  - outer kontur: deflate (`inflate_outer(stock_polygon, -delta_mm)`)
-  - hole/defect konturok: inflate (ugyanazon negativ delta hatasara)
+  - outer kontur: `offset(stock_outer, bin_offset_mm)` (negativ = deflate, pozitiv = inflate)
+  - hole/defect konturok: inflate `inflate_delta_mm` alapjan (margin nem resze)
 - Ha nominalis stock self-intersect, akkor a status kotelezoen `self_intersect` (reject, nincs auto-fix).
 
 ## 8. v1 <-> v2 osszehasonlitas
@@ -162,7 +169,7 @@ nem a `nest` solver endpointet.
 | Contract azonosito | `contract_version: v1` | `version: nesting_engine_v2` |
 | Scope | Altalanos solver boundary | Kifejezetten `nesting_engine` boundary |
 | Idolimit mezo | `time_limit_s` | `time_limit_sec` |
-| Tabla leiras | `stocks[]` (width/height/shape opciok) | `sheet` (width/height/kerf/margin) |
+| Tabla leiras | `stocks[]` (width/height/shape opciok) | `sheet` (width/height/kerf/margin/spacing opcionális) |
 | Part geometria | `outer_points` / `holes_points` (opcionalis) | `outer_points_mm` / `holes_points_mm` (explicit mm) |
 | Kimeneti placement mezok | `instance_id`, `sheet_index`, `x`, `y` | `instance`, `sheet`, `x_mm`, `y_mm` |
 | Objective | opcionális `metrics` | kotelezo `objective` |

@@ -5,15 +5,15 @@
     {
       "id": "rect_100x50",
       "status": "ok",
-      "inflated_outer_points_mm": [[-5.1, -5.1], [105.1, -5.1], [105.1, 55.1], [-5.1, 55.1]],
+      "inflated_outer_points_mm": [[-1.0, -1.0], [101.0, -1.0], [101.0, 51.0], [-1.0, 51.0]],
       "inflated_holes_points_mm": [],
       "diagnostics": []
     },
     {
       "id": "ring_60x60",
       "status": "ok",
-      "inflated_outer_points_mm": [[-5.1, -5.1], [65.1, -5.1], [65.1, 65.1], [-5.1, 65.1]],
-      "inflated_holes_points_mm": [[[15.1, 15.1], [44.9, 15.1], [44.9, 44.9], [15.1, 44.9]]],
+      "inflated_outer_points_mm": [[-1.0, -1.0], [61.0, -1.0], [61.0, 61.0], [-1.0, 61.0]],
+      "inflated_holes_points_mm": [[[11.0, 11.0], [49.0, 11.0], [49.0, 49.0], [11.0, 49.0]]],
       "diagnostics": []
     }
   ]

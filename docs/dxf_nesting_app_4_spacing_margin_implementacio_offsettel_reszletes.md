@@ -10,7 +10,7 @@ A 3) lépésből kapott érvényes poligonokat úgy alakítani, hogy a nesting m
 **MVP stratégia:** geometriai offset (buffer/offset) – így a motor „0 clearance” elhelyezést végezhet, mégis garantált a távolság.
 
 **Kimenet:**
-- `PreparedBin`: a tábla „használható” belső területe (insetelt bin poligon)
+- `PreparedBin`: a tabla hasznalhato terulete (`bin_offset` alapjan modositott bin outer + akadalyok)
 - `PreparedPart`: offsetelt part poligon (outer+holes), nestingre kész
 
 ---
@@ -24,12 +24,15 @@ A spacing és margin sokféleképpen értelmezhető. Itt egyértelműen rögzít
 - `margin_mm`: minimális távolság a part *vágandó kontúrja* és a tábla külső széle között
 - `spacing_mm`: minimális távolság a két part *vágandó kontúrjai* között
 
-**MVP képlet (ajánlott):**
-- `d = spacing_mm / 2`
-- **Part**: `offset_out(part, d)`
-- **Bin**: `offset_in(bin, margin_mm + d)`
+**MVP képlet (ajanlott):**
+- `inflate_delta = spacing_mm / 2`
+- `bin_offset = spacing_mm / 2 - margin_mm`
+- **Part**: `offset_out(part, inflate_delta)`
+- **Bin outer**: `offset(bin_outer, bin_offset)` (negativ = deflate, pozitiv = inflate)
+- **Stock hole/defect akadaly**: `offset_out(hole, inflate_delta)`
 
-Ezzel két part között legalább `d + d = spacing_mm` lesz, és a part a széltől legalább `margin_mm`-re marad.
+Ezzel ket part kozott legalabb `spacing_mm` marad, mikozben a part-bin edge tavolsag `margin_mm` marad.
+Kotelezoen tamogatott eset: `margin_mm < spacing_mm/2` (ilyenkor a bin outer kifele no).
 
 **Feladatlista:**
 - [ ] Dokumentáld a képletet és jelentését (`docs/clearance_model.md`)
@@ -72,21 +75,23 @@ A stabil offset a nesting egyik legkényesebb pontja. Két reális opció:
 
 ---
 
-### 4.3. Tábla (bin) poligon létrehozása és inset (margin + spacing/2)
+### 4.3. Tabla (bin) poligon letrehozasa es bin_offset alkalmazasa
 
-**Összefoglaló:**
-A tábla alapból egy téglalap. Ebből készítünk egy poligont, majd befelé offseteljük, hogy létrejöjjön a „használható terület”.
+**Osszefoglalo:**
+A tabla alapbol egy teglalap. Ebbol keszitunk egy poligont, majd a `bin_offset` szerint modositjuk.
 
 **Lépések:**
 1) `bin_rect = [(0,0), (W,0), (W,H), (0,H)]`
-2) `bin_inset = offset_in(bin_rect, margin + spacing/2)`
-3) Validáció: ne legyen üres / túl kicsi
+2) `bin_offset = spacing/2 - margin`
+3) `bin_usable_outer = offset(bin_rect, bin_offset)` (negativ = befele, pozitiv = kifele)
+4) Validacio: ne legyen ures / tul kicsi
 
 **Feladatlista:**
 - [ ] Készíts bin téglalap poligont mm-ben
-- [ ] Offseteld befelé a `bin_inset_dist = margin + spacing/2` értékkel
+- [ ] Szamold: `inflate_delta = spacing/2`, `bin_offset = spacing/2 - margin`
+- [ ] Alkalmazd a `bin_offset`-ot a bin outer konturra (pozitiv esetben is)
 - [ ] Ellenőrzések:
-  - ha `bin_inset_dist` túl nagy → inset üres lesz → hiba
+  - ha tul nagy negativ `bin_offset` miatt invertalodna, determinisztikus clamp kell (`max >= min`)
   - minimális méret: pl. width/height > 0
 - [ ] Add vissza a `PreparedBin`-t:
   - polygon pontlisták
@@ -174,9 +179,9 @@ Ha az offset rossz, a nesting „furcsán” fog viselkedni. Azonnal látni kell
 - [ ] Exportáld SVG-be:
   - eredeti part geometria (3) kimenet
   - offsetelt part geometria (4) kimenet
-  - insetelt bin geometria
+  - `bin_offset` alapjan modositott bin geometria
 - [ ] Fájlok:
-  - `runs/.../debug/bin_inset.svg`
+  - `runs/.../debug/bin_offset.svg`
   - `runs/.../debug/part_<id>_before_offset.svg`
   - `runs/.../debug/part_<id>_after_offset.svg`
 - [ ] Jelöld a távolságot (opcionális): egyszerűen csak a két kontúr eltérése látszódjon
@@ -214,9 +219,10 @@ A nesting modulnak nem kell tudnia semmit a margin/spacing képletről – csak 
 ## 🧪 Tesztállapot
 
 ### Minimum automata tesztek
-- [ ] Bin inset:
-  - W=1500, H=3000, margin=10, spacing=2 → bin_inset méretei csökkennek
-  - túl nagy margin → inset üres → hiba
+- [ ] Bin offset:
+  - W=1500, H=3000, margin=10, spacing=2 -> `bin_offset=-9`, usable outer merete csokken
+  - W=1500, H=3000, margin=0.5, spacing=2 -> `bin_offset=+0.5`, usable outer merete no
+  - tul nagy negativ `bin_offset` eseten determiniztikus clamp (`max>=min`)
 - [ ] Part offset:
   - egyszerű négyzet + d → bbox nő d*2-vel
   - lyukas négyzet: hole terület csökken

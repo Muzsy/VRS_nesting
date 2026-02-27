@@ -24,17 +24,19 @@ const CODE_OFFSET_ERROR: &str = "OFFSET_ERROR";
 
 /// Run the nominal->inflated geometry pipeline for every part in the request.
 pub fn run_inflate_pipeline(req: PipelineRequest) -> PipelineResponse {
-    let delta_mm = req.margin_mm + (req.kerf_mm * 0.5);
+    let spacing_effective_mm = req.spacing_mm.unwrap_or(req.kerf_mm);
+    let inflate_delta_mm = spacing_effective_mm * 0.5;
+    let bin_offset_mm = inflate_delta_mm - req.margin_mm;
     let version = req.version;
     let parts = req
         .parts
         .into_iter()
-        .map(|part| inflate_single_part(part, delta_mm))
+        .map(|part| inflate_single_part(part, inflate_delta_mm))
         .collect();
     let stocks = req
         .stocks
         .into_iter()
-        .map(|stock| inflate_single_stock(stock, delta_mm))
+        .map(|stock| inflate_single_stock(stock, bin_offset_mm, inflate_delta_mm))
         .collect();
 
     PipelineResponse {
@@ -122,7 +124,11 @@ fn inflate_single_part(part: PartRequest, delta_mm: f64) -> PartResponse {
     }
 }
 
-fn inflate_single_stock(stock: StockRequest, delta_mm: f64) -> StockResponse {
+fn inflate_single_stock(
+    stock: StockRequest,
+    bin_offset_mm: f64,
+    inflate_delta_mm: f64,
+) -> StockResponse {
     let stock_id = stock.id.clone();
     let nominal = Polygon64 {
         outer: mm_pairs_to_points(&stock.outer_points_mm),
@@ -169,68 +175,112 @@ fn inflate_single_stock(stock: StockRequest, delta_mm: f64) -> StockResponse {
         }
     }
 
-    match inflate_outer(&nominal, -delta_mm) {
-        Ok(usable) => {
-            let outer_self_intersect = polygon_self_intersects(&usable.outer);
-            let hole_self_intersect_idx = usable
-                .holes
-                .iter()
-                .position(|hole| polygon_self_intersects(hole));
-
-            let mut diagnostics = Vec::new();
-            if outer_self_intersect {
-                diagnostics.push(self_intersect_diagnostic(
-                    "usable stock outer polygon self-intersects after offset",
-                ));
-            }
-            if let Some(hole_idx) = hole_self_intersect_idx {
-                diagnostics.push(Diagnostic {
-                    code: CODE_SELF_INTERSECT.to_string(),
-                    hole_index: Some(hole_idx),
-                    nominal_hole_bbox_mm: hole_bbox_mm(
-                        stock
-                            .holes_points_mm
-                            .get(hole_idx)
-                            .map(Vec::as_slice)
-                            .unwrap_or(&[]),
-                    ),
+    let outer_only = Polygon64 {
+        outer: nominal.outer.clone(),
+        holes: Vec::new(),
+    };
+    let usable_outer = match inflate_outer(&outer_only, bin_offset_mm) {
+        Ok(usable_outer) => usable_outer,
+        Err(err) => {
+            return StockResponse {
+                id: stock_id,
+                status: STATUS_ERROR.to_string(),
+                usable_outer_points_mm: Vec::new(),
+                usable_holes_points_mm: Vec::new(),
+                diagnostics: vec![Diagnostic {
+                    code: CODE_OFFSET_ERROR.to_string(),
+                    hole_index: None,
+                    nominal_hole_bbox_mm: None,
                     preserve_for_export: None,
                     usable_for_nesting: None,
-                    detail: "usable stock hole polygon self-intersects after offset".to_string(),
-                });
-            }
+                    detail: format!("inflate_outer failed for stock outer: {}", offset_error_detail(&err)),
+                }],
+            };
+        }
+    };
 
-            StockResponse {
-                id: stock_id,
-                status: if outer_self_intersect || hole_self_intersect_idx.is_some() {
-                    STATUS_SELF_INTERSECT.to_string()
-                } else {
-                    STATUS_OK.to_string()
-                },
-                usable_outer_points_mm: points_to_mm_pairs(&usable.outer),
-                usable_holes_points_mm: usable
-                    .holes
-                    .iter()
-                    .map(|hole| points_to_mm_pairs(hole))
-                    .collect(),
-                diagnostics,
+    let mut expanded_holes_mm = Vec::with_capacity(stock.holes_points_mm.len());
+    for (hole_idx, hole_mm) in stock.holes_points_mm.iter().enumerate() {
+        match inflate_stock_hole_obstacle(hole_mm, inflate_delta_mm) {
+            Ok(expanded_hole_mm) => expanded_holes_mm.push(expanded_hole_mm),
+            Err(err) => {
+                return StockResponse {
+                    id: stock_id,
+                    status: STATUS_ERROR.to_string(),
+                    usable_outer_points_mm: Vec::new(),
+                    usable_holes_points_mm: Vec::new(),
+                    diagnostics: vec![Diagnostic {
+                        code: CODE_OFFSET_ERROR.to_string(),
+                        hole_index: Some(hole_idx),
+                        nominal_hole_bbox_mm: hole_bbox_mm(hole_mm),
+                        preserve_for_export: None,
+                        usable_for_nesting: None,
+                        detail: format!(
+                            "inflate_outer failed for stock hole obstacle: {}",
+                            offset_error_detail(&err)
+                        ),
+                    }],
+                };
             }
         }
-        Err(err) => StockResponse {
-            id: stock_id,
-            status: STATUS_ERROR.to_string(),
-            usable_outer_points_mm: Vec::new(),
-            usable_holes_points_mm: Vec::new(),
-            diagnostics: vec![Diagnostic {
-                code: CODE_OFFSET_ERROR.to_string(),
-                hole_index: None,
-                nominal_hole_bbox_mm: None,
-                preserve_for_export: None,
-                usable_for_nesting: None,
-                detail: format!("inflate_outer failed: {}", offset_error_detail(&err)),
-            }],
-        },
     }
+
+    let outer_self_intersect = polygon_self_intersects(&usable_outer.outer);
+    let hole_self_intersect_idx = expanded_holes_mm
+        .iter()
+        .position(|hole| polygon_self_intersects(&mm_pairs_to_points(hole)));
+
+    let mut diagnostics = Vec::new();
+    if outer_self_intersect {
+        diagnostics.push(self_intersect_diagnostic(
+            "usable stock outer polygon self-intersects after offset",
+        ));
+    }
+    if let Some(hole_idx) = hole_self_intersect_idx {
+        diagnostics.push(Diagnostic {
+            code: CODE_SELF_INTERSECT.to_string(),
+            hole_index: Some(hole_idx),
+            nominal_hole_bbox_mm: hole_bbox_mm(
+                stock
+                    .holes_points_mm
+                    .get(hole_idx)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            ),
+            preserve_for_export: None,
+            usable_for_nesting: None,
+            detail: "usable stock hole polygon self-intersects after offset".to_string(),
+        });
+    }
+
+    StockResponse {
+        id: stock_id,
+        status: if outer_self_intersect || hole_self_intersect_idx.is_some() {
+            STATUS_SELF_INTERSECT.to_string()
+        } else {
+            STATUS_OK.to_string()
+        },
+        usable_outer_points_mm: points_to_mm_pairs(&usable_outer.outer),
+        usable_holes_points_mm: expanded_holes_mm,
+        diagnostics,
+    }
+}
+
+fn inflate_stock_hole_obstacle(
+    hole_mm: &[[f64; 2]],
+    inflate_delta_mm: f64,
+) -> Result<Vec<[f64; 2]>, OffsetError> {
+    let hole_polygon = Polygon64 {
+        outer: mm_pairs_to_points(hole_mm),
+        holes: Vec::new(),
+    };
+    let expanded = inflate_outer(&hole_polygon, inflate_delta_mm)?;
+    if expanded.outer.is_empty() {
+        return Err(OffsetError::ClipperError(
+            "stock hole obstacle offset produced empty outer".to_string(),
+        ));
+    }
+    Ok(points_to_mm_pairs(&expanded.outer))
 }
 
 fn handle_hole_collapsed(
@@ -484,12 +534,27 @@ mod tests {
         (max_x - min_x, max_y - min_y)
     }
 
+    fn bounds_from_points_mm(points: &[[f64; 2]]) -> (f64, f64, f64, f64) {
+        let mut min_x = points[0][0];
+        let mut min_y = points[0][1];
+        let mut max_x = points[0][0];
+        let mut max_y = points[0][1];
+        for p in &points[1..] {
+            min_x = min_x.min(p[0]);
+            min_y = min_y.min(p[1]);
+            max_x = max_x.max(p[0]);
+            max_y = max_y.max(p[1]);
+        }
+        (min_x, min_y, max_x, max_y)
+    }
+
     #[test]
     fn ok_case_rect_100x50() {
         let req = PipelineRequest {
             version: "pipeline_v1".to_string(),
             kerf_mm: 0.2,
             margin_mm: 5.0,
+            spacing_mm: Some(2.0),
             parts: vec![PartRequest {
                 id: "rect_100x50".to_string(),
                 outer_points_mm: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0]],
@@ -518,6 +583,7 @@ mod tests {
             version: "pipeline_v1".to_string(),
             kerf_mm: 0.2,
             margin_mm: 5.0,
+            spacing_mm: Some(12.0),
             parts: vec![PartRequest {
                 id: "small_with_tiny_hole".to_string(),
                 outer_points_mm: vec![[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
@@ -576,6 +642,7 @@ mod tests {
             version: "pipeline_v1".to_string(),
             kerf_mm: 0.2,
             margin_mm: 1.0,
+            spacing_mm: Some(2.2),
             parts: vec![part],
             stocks: Vec::new(),
         };
@@ -614,6 +681,7 @@ mod tests {
             version: "pipeline_v1".to_string(),
             kerf_mm: 0.2,
             margin_mm: 5.0,
+            spacing_mm: None,
             parts: vec![PartRequest {
                 id: "deterministic_part".to_string(),
                 outer_points_mm: vec![[0.0, 0.0], [30.0, 0.0], [30.0, 10.0], [0.0, 10.0]],
@@ -639,6 +707,7 @@ mod tests {
             version: "pipeline_v1".to_string(),
             kerf_mm: 0.2,
             margin_mm: 5.0,
+            spacing_mm: None,
             parts: vec![PartRequest {
                 id: "bow_tie".to_string(),
                 outer_points_mm: vec![[0.0, 0.0], [10.0, 10.0], [0.0, 10.0], [10.0, 0.0]],
@@ -683,6 +752,7 @@ mod tests {
             version: "pipeline_v1".to_string(),
             kerf_mm: 2.0,
             margin_mm: 3.0,
+            spacing_mm: Some(4.0),
             parts: Vec::new(),
             stocks: vec![StockRequest {
                 id: "irregular_stock_1".to_string(),
@@ -725,6 +795,80 @@ mod tests {
         assert!(
             usable_hole_h > nom_hole_h,
             "stock hole height must grow after inflate"
+        );
+    }
+
+    #[test]
+    fn stock_outer_inflates_when_margin_below_half_spacing() {
+        let nominal_outer = vec![[0.0, 0.0], [100.0, 0.0], [100.0, 60.0], [0.0, 60.0]];
+        let req = PipelineRequest {
+            version: "pipeline_v1".to_string(),
+            kerf_mm: 0.2,
+            margin_mm: 1.0,
+            spacing_mm: Some(4.0),
+            parts: Vec::new(),
+            stocks: vec![StockRequest {
+                id: "inflating_stock".to_string(),
+                outer_points_mm: nominal_outer.clone(),
+                holes_points_mm: Vec::new(),
+            }],
+        };
+
+        let resp = run_inflate_pipeline(req);
+        assert_eq!(resp.stocks.len(), 1);
+        let stock = &resp.stocks[0];
+        assert_eq!(stock.status, STATUS_OK);
+
+        let (nom_outer_w, nom_outer_h) = bbox_from_points_mm(&nominal_outer);
+        let (usable_outer_w, usable_outer_h) = bbox_from_points_mm(&stock.usable_outer_points_mm);
+        assert!(
+            usable_outer_w > nom_outer_w,
+            "stock outer width must grow when margin < spacing/2"
+        );
+        assert!(
+            usable_outer_h > nom_outer_h,
+            "stock outer height must grow when margin < spacing/2"
+        );
+
+        let (min_x, min_y, max_x, max_y) = bounds_from_points_mm(&stock.usable_outer_points_mm);
+        assert!(min_x < 0.0 && min_y < 0.0, "inflated stock min bounds should be negative");
+        assert!(
+            max_x > 100.0 && max_y > 60.0,
+            "inflated stock max bounds should exceed nominal outer bounds"
+        );
+    }
+
+    #[test]
+    fn stock_hole_inflate_uses_spacing_half_without_margin_component() {
+        let nominal_hole = vec![[40.0, 40.0], [60.0, 40.0], [60.0, 60.0], [40.0, 60.0]];
+        let req = PipelineRequest {
+            version: "pipeline_v1".to_string(),
+            kerf_mm: 0.2,
+            margin_mm: 10.0,
+            spacing_mm: Some(4.0),
+            parts: Vec::new(),
+            stocks: vec![StockRequest {
+                id: "stock_hole_spacing_only".to_string(),
+                outer_points_mm: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
+                holes_points_mm: vec![nominal_hole.clone()],
+            }],
+        };
+
+        let resp = run_inflate_pipeline(req);
+        assert_eq!(resp.stocks.len(), 1);
+        let stock = &resp.stocks[0];
+        assert_eq!(stock.status, STATUS_OK);
+        assert_eq!(stock.usable_holes_points_mm.len(), 1);
+
+        let (nom_hole_w, nom_hole_h) = bbox_from_points_mm(&nominal_hole);
+        let (usable_hole_w, usable_hole_h) = bbox_from_points_mm(&stock.usable_holes_points_mm[0]);
+        assert!(
+            usable_hole_w > (nom_hole_w + 3.5) && usable_hole_w < (nom_hole_w + 5.0),
+            "hole width growth should track spacing/2 (expected about +4mm), got {usable_hole_w}"
+        );
+        assert!(
+            usable_hole_h > (nom_hole_h + 3.5) && usable_hole_h < (nom_hole_h + 5.0),
+            "hole height growth should track spacing/2 (expected about +4mm), got {usable_hole_h}"
         );
     }
 }

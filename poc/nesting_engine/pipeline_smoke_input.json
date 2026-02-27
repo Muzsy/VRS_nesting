@@ -2,6 +2,7 @@
   "version": "pipeline_v1",
   "kerf_mm": 0.2,
   "margin_mm": 5.0,
+  "spacing_mm": 2.0,
   "parts": [
     {
       "id": "rect_100x50",

@@ -65,6 +65,7 @@ def test_offset_part_geometry_calls_rust_inflate_parts(monkeypatch: pytest.Monke
     assert request["version"] == "pipeline_v1"
     assert request["kerf_mm"] == pytest.approx(2.0)
     assert request["margin_mm"] == pytest.approx(0.0)
+    assert request["spacing_mm"] == pytest.approx(2.0)
     assert request["parts"][0]["outer_points_mm"] == payload["outer_points_mm"]
     assert out["outer_points_mm"] == [[-1.0, -1.0], [11.0, -1.0], [11.0, 11.0], [-1.0, 11.0]]
 
@@ -201,3 +202,35 @@ def test_stock_fallback_with_env_warns(monkeypatch: pytest.MonkeyPatch, caplog: 
     assert out == fallback_result
     assert offset_mod.ALLOW_SHAPELY_FALLBACK_ENV in caplog.text
     assert "GEO_RUST_TIMEOUT" in caplog.text
+
+
+def test_stock_shapely_model_supports_positive_bin_offset():
+    payload = {
+        "outer_points_mm": [[0.0, 0.0], [100.0, 0.0], [100.0, 60.0], [0.0, 60.0]],
+        "holes_points_mm": [],
+    }
+
+    out = offset_mod._offset_stock_geometry_shapely(payload, margin_mm=1.0, spacing_mm=4.0)
+    min_x, min_y, max_x, max_y = offset_mod.polygon_bbox(out)
+
+    assert min_x < 0.0
+    assert min_y < 0.0
+    assert max_x > 100.0
+    assert max_y > 60.0
+
+
+def test_stock_shapely_hole_expand_uses_spacing_half_only():
+    payload = {
+        "outer_points_mm": [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
+        "holes_points_mm": [[[40.0, 40.0], [60.0, 40.0], [60.0, 60.0], [40.0, 60.0]]],
+    }
+
+    out = offset_mod._offset_stock_geometry_shapely(payload, margin_mm=10.0, spacing_mm=4.0)
+    hole = out["holes_points_mm"][0]
+    xs = [pt[0] for pt in hole]
+    ys = [pt[1] for pt in hole]
+    hole_w = max(xs) - min(xs)
+    hole_h = max(ys) - min(ys)
+
+    assert hole_w == pytest.approx(24.0, abs=0.2)
+    assert hole_h == pytest.approx(24.0, abs=0.2)

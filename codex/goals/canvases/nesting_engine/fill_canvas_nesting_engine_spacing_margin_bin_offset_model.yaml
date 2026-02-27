@@ -1,0 +1,127 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_spacing_margin_bin_offset_model.yaml
+#
+# Mentés helye a repóban:
+#   codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_spacing_margin_bin_offset_model.yaml
+#
+# TASK_SLUG: nesting_engine_spacing_margin_bin_offset_model
+# AREA:      nesting_engine
+
+steps:
+  - name: "Repo-szabályok és érintett fájlok felderítése"
+    description: >
+      Olvasd el kötelezően: AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md.
+      Olvasd el a clearance modell régi leírását és a jelenlegi implementációt:
+      - docs/dxf_nesting_app_4_spacing_margin_implementacio_offsettel_reszletes.md
+      - docs/nesting_engine/io_contract_v2.md
+      - rust/nesting_engine/src/io/pipeline_io.rs
+      - rust/nesting_engine/src/geometry/pipeline.rs
+      - rust/nesting_engine/src/main.rs
+      - vrs_nesting/geometry/offset.py
+      - tests/test_geometry_offset.py
+      Ellenőrizd, hol van a régi képlet (margin + spacing/2) és hol a delta=margin+kerf/2 összemosás.
+      A canvasban rögzítsd röviden a driftet és a frissített kánont (inflate_delta, bin_offset).
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_spacing_margin_bin_offset_model.md"
+
+  - name: "Doksi és POC szinkron (spacing_mm + új képletek)"
+    description: >
+      Frissítsd a dokumentációt az új kánonra:
+      - docs/dxf_nesting_app_4_spacing_margin_implementacio_offsettel_reszletes.md:
+        cseréld a bin inset képletet a bin_offset modellre (inflate_delta=spacing/2, bin_offset=spacing/2 - margin).
+        Legyen explicit a margin < spacing/2 (bin inflate) támogatás.
+      - docs/nesting_engine/io_contract_v2.md:
+        add hozzá a sheet.spacing_mm mezőt (optional) és írd le a legacy fallbackot (spacing hiány -> spacing=kerf).
+        a pipeline_v1 (7.x) részben is vezess be spacing_mm-t a requesthez (optional), és frissítsd a normatív offset szabályt:
+          parts: inflate_delta=spacing/2
+          stocks: bin_offset=spacing/2 - margin, defects inflate_delta=spacing/2
+      - poc/nesting_engine/sample_input_v2.json:
+        add hozzá sheet.spacing_mm példát (pl. 2.0) úgy, hogy a JSON valid maradjon.
+      Opcionális, de ajánlott: frissítsd a pipeline_smoke_input/expected fájlokat úgy, hogy példázzák az új spacing_mm mezőt.
+    outputs:
+      - "docs/dxf_nesting_app_4_spacing_margin_implementacio_offsettel_reszletes.md"
+      - "docs/nesting_engine/io_contract_v2.md"
+      - "poc/nesting_engine/sample_input_v2.json"
+      - "poc/nesting_engine/pipeline_smoke_input.json"
+      - "poc/nesting_engine/pipeline_smoke_expected.json"
+
+  - name: "PipelineRequest bővítése spacing_mm mezővel"
+    description: >
+      A rust/nesting_engine/src/io/pipeline_io.rs fájlban bővítsd a PipelineRequest structot:
+      - adj hozzá egy optional spacing_mm mezőt (serde default), hogy a régi inputok továbbra is parse-olhatók legyenek.
+      Ne módosíts más struct mezőneveket. Cél: backward kompatibilis parse + új mező használható.
+    outputs:
+      - "rust/nesting_engine/src/io/pipeline_io.rs"
+
+  - name: "Rust pipeline logika átállítása (inflate_delta és bin_offset)"
+    description: >
+      A rust/nesting_engine/src/geometry/pipeline.rs fájlban cseréld le a delta_mm számítást:
+      - spacing_effective_mm = req.spacing_mm ha van, különben req.kerf_mm (legacy)
+      - inflate_delta_mm = spacing_effective_mm / 2
+      - bin_offset_mm = (spacing_effective_mm / 2) - req.margin_mm
+      Partok:
+      - inflate_single_part kizárólag inflate_delta_mm-et használjon (margin ne legyen része az inflációnak).
+      Stockok:
+      - a usable outer offset a bin_offset_mm alapján történjen (pozitív esetet is támogatni kell).
+      - a stock hole/defect akadályt inflate_delta_mm alapján tágítsd (margin nélkül), és ezt vond ki a usable outerből.
+      Kötelező: frissítsd a pipeline.rs unit teszteket:
+      - ok_case_rect_100x50: spacing explicit mezővel (ne margin+kerf/2-ből következzen).
+      - stock teszt: legyen külön assert a bin_offset < 0 (outer zsugorodik) és bin_offset > 0 (outer nő) esetre.
+      - kötelező új eset: margin < spacing/2 (bin inflate) legyen lefedve.
+    outputs:
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+
+  - name: "nesting_engine_v2 input bővítése spacing_mm mezővel és bin_offset rect-bin"
+    description: >
+      A rust/nesting_engine/src/main.rs fájlban:
+      - bővítsd a NestSheet structot optional spacing_mm mezővel (serde default).
+      - számold ki spacing_effective_mm-et: ha spacing_mm meg van adva, azt használd, különben kerf_mm (legacy).
+      - a pipeline_v1 requestben add át spacing_mm-t explicit mezőként, ha elérhető.
+      - a rect bin számításnál a min/max koordinátákat a bin_offset_mm = spacing/2 - margin alapján állítsd be:
+        min = 0 - bin_offset, max = W + bin_offset (ugyanígy Y).
+        Ha bin invertálódna (túl nagy negatív), legyen determinisztikus clamp (max>=min).
+      - adj hozzá egy célzott unit tesztet a main.rs-ben:
+        margin < spacing/2 esetén a bin min koordináták negatívak lehetnek és max nagyobb lehet W-nél,
+        de a clamp determinisztikus marad.
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Python offset modell frissítése (stock shapely fallback + spacing mező)"
+    description: >
+      A vrs_nesting/geometry/offset.py fájlban:
+      - a Rust pipeline_v1 requestekbe add át a spacing_mm mezőt is (ha már létezik a rust oldalon),
+        a kerf_mm mező maradhat legacy kompatibilitás miatt.
+      - a _offset_stock_geometry_shapely képletet cseréld:
+        bin_offset = spacing/2 - margin (outerre, lehet pozitív is),
+        defects/hole akadály: inflate_delta = spacing/2 (margin nélkül),
+        usable = outer_offset(bin_offset) minus expanded_holes(inflate_delta)
+      - ne törj API kompatibilitást (offset_part_geometry/offset_stock_geometry signature marad).
+    outputs:
+      - "vrs_nesting/geometry/offset.py"
+
+  - name: "Python tesztek frissítése a spacing_mm mezőre és az új stock modellre"
+    description: >
+      A tests/test_geometry_offset.py fájlban:
+      - frissítsd a rust request assertokat: ha a requestben már van spacing_mm, azt ellenőrizd.
+      - tartsd meg a meglévő guardrail teszteket (self_intersect fail, hole_collapsed nem crash).
+      - adj hozzá legalább egy új tesztet a stock shapely fallback modellre, ami lefedi a margin < spacing/2 esetet
+        (bin_offset pozitív -> outer bbox nő).
+    outputs:
+      - "tests/test_geometry_offset.py"
+
+  - name: "Checklist és report létrehozása"
+    description: >
+      Hozd létre a checklistet és reportot a Report Standard v2 szerint.
+      Checklist: a canvas DoD pontjainak pipálható listája.
+      Report: Meta + Scope + Change summary + How tested + DoD->Evidence Matrix (később kitöltve) + AUTO_VERIFY blokk placeholder.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_spacing_margin_bin_offset_model.md"
+      - "codex/reports/nesting_engine/nesting_engine_spacing_margin_bin_offset_model.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_spacing_margin_bin_offset_model.md
+      Ha FAIL: javítsd és futtasd újra.
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_spacing_margin_bin_offset_model.md"
+      - "codex/reports/nesting_engine/nesting_engine_spacing_margin_bin_offset_model.verify.log"
