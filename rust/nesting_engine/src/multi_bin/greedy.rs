@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use crate::geometry::types::Polygon64;
 use crate::placement::blf::{InflatedPartSpec, UnplacedItem};
+use crate::placement::nfp_placer::NfpPlacerStatsV1;
 use crate::placement::{PlacedItem, PlacementResult, blf_place, nfp_place};
 use nesting_engine::nfp::cache::NfpCache;
 
@@ -25,9 +26,14 @@ pub fn greedy_multi_sheet(
     grid_step_mm: f64,
     time_limit_sec: u64,
     placer_kind: PlacerKind,
-) -> MultiSheetResult {
+) -> (MultiSheetResult, Option<NfpPlacerStatsV1>) {
     let started_at = Instant::now();
     let mut nfp_cache = NfpCache::new();
+    let mut nfp_stats_total = if placer_kind == PlacerKind::Nfp {
+        Some(NfpPlacerStatsV1::default())
+    } else {
+        None
+    };
     let mut sheet_index = 0usize;
     let mut placed: Vec<PlacedItem> = Vec::new();
 
@@ -74,14 +80,22 @@ pub fn greedy_multi_sheet(
                 time_limit_sec,
                 started_at,
             ),
-            PlacerKind::Nfp => nfp_place(
-                &remaining_specs,
-                bin_polygon,
-                grid_step_mm,
-                time_limit_sec,
-                started_at,
-                &mut nfp_cache,
-            ),
+            PlacerKind::Nfp => {
+                let mut round_stats = NfpPlacerStatsV1::default();
+                let round = nfp_place(
+                    &remaining_specs,
+                    bin_polygon,
+                    grid_step_mm,
+                    time_limit_sec,
+                    started_at,
+                    &mut nfp_cache,
+                    &mut round_stats,
+                );
+                if let Some(total) = nfp_stats_total.as_mut() {
+                    total.add_assign(&round_stats);
+                }
+                round
+            }
         };
 
         let mut placed_this_round = 0usize;
@@ -136,11 +150,19 @@ pub fn greedy_multi_sheet(
     } else {
         placed.iter().map(|p| p.sheet).max().unwrap_or(0) + 1
     };
-    MultiSheetResult {
+    let result = MultiSheetResult {
         placed,
         unplaced,
         sheets_used,
+    };
+
+    if let Some(stats) = nfp_stats_total.as_mut() {
+        stats.nfp_cache_entries_end = nfp_cache.stats().entries as u64;
+        stats.effective_placer = "nfp".to_string();
+        stats.sheets_used = result.sheets_used as u64;
     }
+
+    (result, nfp_stats_total)
 }
 
 #[cfg(test)]
@@ -158,7 +180,8 @@ mod tests {
             nominal_bbox_area: bbox_area(&rect_poly(9.0, 9.0).outer),
         };
         let bin = rect_poly(20.0, 20.0);
-        let out = greedy_multi_sheet(&[part], &bin, 1.0, 30, PlacerKind::Blf);
+        let (out, stats) = greedy_multi_sheet(&[part], &bin, 1.0, 30, PlacerKind::Blf);
+        assert!(stats.is_none());
         assert!(!out.placed.is_empty());
     }
 }

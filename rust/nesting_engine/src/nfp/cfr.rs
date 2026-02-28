@@ -33,7 +33,36 @@ struct DecoratedComponent {
     key: SortKey,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CfrStatsV1 {
+    pub cfr_union_calls: u64,
+    pub cfr_diff_calls: u64,
+}
+
+impl CfrStatsV1 {
+    pub fn merge_from(&mut self, other: &Self) {
+        self.cfr_union_calls = self.cfr_union_calls.saturating_add(other.cfr_union_calls);
+        self.cfr_diff_calls = self.cfr_diff_calls.saturating_add(other.cfr_diff_calls);
+    }
+}
+
 pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon64> {
+    compute_cfr_internal(ifp_rect, nfp_polys, None)
+}
+
+pub fn compute_cfr_with_stats(
+    ifp_rect: &Polygon64,
+    nfp_polys: &[Polygon64],
+    stats: &mut CfrStatsV1,
+) -> Vec<Polygon64> {
+    compute_cfr_internal(ifp_rect, nfp_polys, Some(stats))
+}
+
+fn compute_cfr_internal(
+    ifp_rect: &Polygon64,
+    nfp_polys: &[Polygon64],
+    mut stats: Option<&mut CfrStatsV1>,
+) -> Vec<Polygon64> {
     let mut ifp_canon = ifp_rect.clone();
     if !canonicalize_polygon64(&mut ifp_canon) {
         return Vec::new();
@@ -62,11 +91,17 @@ pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon
         return vec![ifp_canon];
     }
 
+    if let Some(cfr_stats) = stats.as_deref_mut() {
+        cfr_stats.cfr_union_calls = cfr_stats.cfr_union_calls.saturating_add(1);
+    }
     let union_shapes = run_overlay(&nfp_shapes, &[], OverlayRule::Union);
     if union_shapes.is_empty() {
         return vec![ifp_canon];
     }
 
+    if let Some(cfr_stats) = stats.as_deref_mut() {
+        cfr_stats.cfr_diff_calls = cfr_stats.cfr_diff_calls.saturating_add(1);
+    }
     let diff_shapes = run_overlay(&[ifp_shape], &union_shapes, OverlayRule::Difference);
     if diff_shapes.is_empty() {
         return Vec::new();

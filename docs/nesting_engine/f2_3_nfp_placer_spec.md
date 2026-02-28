@@ -394,12 +394,27 @@ Megjegyzés: holes-os fixture-t az NFP placer gate nem futtat (3B gating), az BL
 
 ### 16.4 Performance gate
 
-* NFP módban időlimit fixture csomagra (CI-hez hangolva).
-* Kötelező stat log:
+* A gate counter-alapu (nem idomeres), determinisztikus upper-bound ellenorzessel.
+* Stat kimeneti sor (stderr, csak env varral):
 
-  * NFP compute count
-  * cache hit/miss
-  * boolean op count (ha mérhető)
+  * `NESTING_ENGINE_EMIT_NFP_STATS=1` mellett pontosan 1 sor:
+    `NEST_NFP_STATS_V1 {json}`
+  * A JSON minimum mezoi:
+    `nfp_cache_hits`, `nfp_cache_misses`, `nfp_cache_entries_end`,
+    `nfp_compute_calls`, `cfr_calls`, `cfr_union_calls`, `cfr_diff_calls`,
+    `candidates_before_dedupe_total`, `candidates_after_dedupe_total`,
+    `candidates_after_cap_total`, `cap_applied_count`, `effective_placer`, `sheets_used`.
+
+* Baseline file: `poc/nesting_engine/f2_3_nfp_perf_gate_baselines.json`
+  * Record:
+    `python3 scripts/smoke_nfp_placer_stats_and_perf_gate.py --record --bin rust/nesting_engine/target/release/nesting_engine --baseline poc/nesting_engine/f2_3_nfp_perf_gate_baselines.json`
+  * Check:
+    `python3 scripts/smoke_nfp_placer_stats_and_perf_gate.py --check --bin \"$NESTING_ENGINE_BIN_PATH\" --baseline poc/nesting_engine/f2_3_nfp_perf_gate_baselines.json`
+
+* A check fixture-k:
+  * `poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json`
+  * `poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json`
+* Szabaly: minden mért counter `<= baseline.max` (csokkenes OK, novekedes FAIL).
 
 ### 16.5 “No worse than BLF” alapelv (basic fixtures)
 

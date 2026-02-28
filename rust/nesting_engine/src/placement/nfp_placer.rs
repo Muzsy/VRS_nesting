@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use serde::Serialize;
+
 use crate::feasibility::{
     aabb::aabb_from_polygon64,
     can_place, PlacedPart,
@@ -12,7 +14,7 @@ use crate::geometry::{
 };
 use nesting_engine::nfp::{
     cache::{NfpCache, NfpCacheKey, shape_id},
-    cfr::compute_cfr,
+    cfr::{CfrStatsV1, compute_cfr_with_stats},
     concave::compute_concave_nfp_default,
     convex::compute_convex_nfp,
     ifp::{IfpRect, compute_ifp_rect},
@@ -54,6 +56,87 @@ struct Candidate {
     nudge_rank: usize,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct NfpPlacerStatsV1 {
+    pub nfp_cache_hits: u64,
+    pub nfp_cache_misses: u64,
+    pub nfp_cache_entries_end: u64,
+    pub nfp_compute_calls: u64,
+    pub cfr_calls: u64,
+    pub cfr_union_calls: u64,
+    pub cfr_diff_calls: u64,
+    pub candidates_before_dedupe_total: u64,
+    pub candidates_after_dedupe_total: u64,
+    pub candidates_after_cap_total: u64,
+    pub cap_applied_count: u64,
+    pub effective_placer: String,
+    pub sheets_used: u64,
+}
+
+impl Default for NfpPlacerStatsV1 {
+    fn default() -> Self {
+        Self {
+            nfp_cache_hits: 0,
+            nfp_cache_misses: 0,
+            nfp_cache_entries_end: 0,
+            nfp_compute_calls: 0,
+            cfr_calls: 0,
+            cfr_union_calls: 0,
+            cfr_diff_calls: 0,
+            candidates_before_dedupe_total: 0,
+            candidates_after_dedupe_total: 0,
+            candidates_after_cap_total: 0,
+            cap_applied_count: 0,
+            effective_placer: String::new(),
+            sheets_used: 0,
+        }
+    }
+}
+
+impl NfpPlacerStatsV1 {
+    pub fn merge_from(&mut self, other: &Self) {
+        self.nfp_cache_hits = self.nfp_cache_hits.saturating_add(other.nfp_cache_hits);
+        self.nfp_cache_misses = self
+            .nfp_cache_misses
+            .saturating_add(other.nfp_cache_misses);
+        self.nfp_compute_calls = self.nfp_compute_calls.saturating_add(other.nfp_compute_calls);
+        self.cfr_calls = self.cfr_calls.saturating_add(other.cfr_calls);
+        self.cfr_union_calls = self.cfr_union_calls.saturating_add(other.cfr_union_calls);
+        self.cfr_diff_calls = self.cfr_diff_calls.saturating_add(other.cfr_diff_calls);
+        self.candidates_before_dedupe_total = self
+            .candidates_before_dedupe_total
+            .saturating_add(other.candidates_before_dedupe_total);
+        self.candidates_after_dedupe_total = self
+            .candidates_after_dedupe_total
+            .saturating_add(other.candidates_after_dedupe_total);
+        self.candidates_after_cap_total = self
+            .candidates_after_cap_total
+            .saturating_add(other.candidates_after_cap_total);
+        self.cap_applied_count = self.cap_applied_count.saturating_add(other.cap_applied_count);
+
+        if other.nfp_cache_entries_end > 0 {
+            self.nfp_cache_entries_end = other.nfp_cache_entries_end;
+        }
+        if !other.effective_placer.is_empty() {
+            self.effective_placer = other.effective_placer.clone();
+        }
+        if other.sheets_used > 0 {
+            self.sheets_used = other.sheets_used;
+        }
+    }
+
+    pub fn add_assign(&mut self, other: &Self) {
+        self.merge_from(other);
+    }
+}
+
+#[derive(Debug)]
+struct DedupedCandidates {
+    after_cap: Vec<Candidate>,
+    unique_count: usize,
+    cap_applied: bool,
+}
+
 pub fn nfp_place(
     parts: &[InflatedPartSpec],
     bin_polygon: &Polygon64,
@@ -61,6 +144,7 @@ pub fn nfp_place(
     time_limit_sec: u64,
     started_at: Instant,
     cache: &mut NfpCache,
+    stats: &mut NfpPlacerStatsV1,
 ) -> PlacementResult {
     let mut ordered = parts.to_vec();
     ordered.sort_by(|a, b| {
@@ -130,6 +214,7 @@ pub fn nfp_place(
                         rotation_steps_b: normalize_deg(rotation_deg) as i16,
                     };
                     if let Some(cached_rel) = cache.get(&key) {
+                        stats.nfp_cache_hits = stats.nfp_cache_hits.saturating_add(1);
                         let cached_world = translate_polygon(
                             &from_lib_polygon(cached_rel),
                             placed_anchor_x,
@@ -138,6 +223,8 @@ pub fn nfp_place(
                         nfp_polys.push(to_lib_polygon(&cached_world));
                         continue;
                     }
+                    stats.nfp_cache_misses = stats.nfp_cache_misses.saturating_add(1);
+                    stats.nfp_compute_calls = stats.nfp_compute_calls.saturating_add(1);
 
                     let computed = compute_nfp_lib(&placed_normalized, &moving);
                     match computed {
@@ -160,10 +247,20 @@ pub fn nfp_place(
                     continue;
                 }
 
-                let cfr_components: Vec<Polygon64> = compute_cfr(&ifp.polygon, &nfp_polys)
+                stats.cfr_calls = stats.cfr_calls.saturating_add(1);
+                let mut cfr_stats = CfrStatsV1::default();
+                let cfr_components: Vec<Polygon64> = compute_cfr_with_stats(
+                    &ifp.polygon,
+                    &nfp_polys,
+                    &mut cfr_stats,
+                )
                     .iter()
                     .map(from_lib_polygon)
                     .collect();
+                stats.cfr_union_calls = stats
+                    .cfr_union_calls
+                    .saturating_add(cfr_stats.cfr_union_calls);
+                stats.cfr_diff_calls = stats.cfr_diff_calls.saturating_add(cfr_stats.cfr_diff_calls);
                 if cfr_components.is_empty() {
                     continue;
                 }
@@ -197,10 +294,22 @@ pub fn nfp_place(
                 continue;
             }
 
+            stats.candidates_before_dedupe_total = stats
+                .candidates_before_dedupe_total
+                .saturating_add(all_candidates.len() as u64);
             let deduped = sort_and_dedupe_candidates(all_candidates, &rotation_contexts);
+            stats.candidates_after_dedupe_total = stats
+                .candidates_after_dedupe_total
+                .saturating_add(deduped.unique_count as u64);
+            stats.candidates_after_cap_total = stats
+                .candidates_after_cap_total
+                .saturating_add(deduped.after_cap.len() as u64);
+            if deduped.cap_applied {
+                stats.cap_applied_count = stats.cap_applied_count.saturating_add(1);
+            }
 
             let mut placed_this_instance = false;
-            for candidate in deduped {
+            for candidate in deduped.after_cap {
                 if started_at.elapsed().as_secs() >= time_limit_sec {
                     break;
                 }
@@ -249,7 +358,7 @@ pub fn nfp_place(
 fn sort_and_dedupe_candidates(
     mut all_candidates: Vec<Candidate>,
     rotation_contexts: &[RotationContext],
-) -> Vec<Candidate> {
+) -> DedupedCandidates {
     all_candidates.sort_by(|a, b| {
         let ra = rotation_contexts[a.rotation_idx].rotation_rank;
         let rb = rotation_contexts[b.rotation_idx].rotation_rank;
@@ -267,15 +376,20 @@ fn sort_and_dedupe_candidates(
 
     let mut deduped: Vec<Candidate> = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
+    let mut unique_count = 0_usize;
     for candidate in all_candidates {
         if seen.insert((candidate.tx, candidate.ty, candidate.rotation_idx)) {
-            deduped.push(candidate);
-            if deduped.len() >= MAX_CANDIDATES_PER_PART {
-                break;
+            unique_count += 1;
+            if deduped.len() < MAX_CANDIDATES_PER_PART {
+                deduped.push(candidate);
             }
         }
     }
-    deduped
+    DedupedCandidates {
+        after_cap: deduped,
+        unique_count,
+        cap_applied: unique_count > MAX_CANDIDATES_PER_PART,
+    }
 }
 
 fn compute_nfp_lib(placed_polygon: &Polygon64, moving_polygon: &Polygon64) -> Option<LibPolygon64> {
@@ -457,7 +571,10 @@ mod tests {
     use nesting_engine::nfp::ifp::{IfpRect, TranslationRange};
     use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPolygon64};
 
-    use super::{Candidate, InflatedPartSpec, RotationContext, nfp_place, sort_and_dedupe_candidates};
+    use super::{
+        Candidate, InflatedPartSpec, NfpPlacerStatsV1, RotationContext, nfp_place,
+        sort_and_dedupe_candidates,
+    };
     use crate::geometry::{
         scale::mm_to_i64,
         types::{Point64, Polygon64},
@@ -519,7 +636,8 @@ mod tests {
             part("c", 1, 20.0, 20.0, &[0]),
         ];
         let mut cache = NfpCache::new();
-        let out = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache);
+        let mut stats = NfpPlacerStatsV1::default();
+        let out = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache, &mut stats);
         assert!(!out.placed.is_empty());
     }
 
@@ -528,7 +646,8 @@ mod tests {
         let bin = rect(60.0, 40.0);
         let parts = vec![part("big", 1, 120.0, 80.0, &[0]), part("small", 1, 20.0, 20.0, &[0])];
         let mut cache = NfpCache::new();
-        let out = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache);
+        let mut stats = NfpPlacerStatsV1::default();
+        let out = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache, &mut stats);
         assert!(
             out.placed.iter().any(|p| p.part_id == "small"),
             "later feasible part must still be placed"
@@ -544,8 +663,26 @@ mod tests {
         ];
         let mut cache_a = NfpCache::new();
         let mut cache_b = NfpCache::new();
-        let a = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache_a);
-        let b = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache_b);
+        let mut stats_a = NfpPlacerStatsV1::default();
+        let mut stats_b = NfpPlacerStatsV1::default();
+        let a = nfp_place(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            Instant::now(),
+            &mut cache_a,
+            &mut stats_a,
+        );
+        let b = nfp_place(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            Instant::now(),
+            &mut cache_b,
+            &mut stats_b,
+        );
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);
     }
@@ -591,8 +728,12 @@ mod tests {
         ];
 
         let out = sort_and_dedupe_candidates(candidates, &rotation_contexts);
-        assert_eq!(out.len(), 2, "different rotations at same tx/ty must survive dedupe");
-        assert_eq!(out[0].rotation_idx, 0);
-        assert_eq!(out[1].rotation_idx, 1);
+        assert_eq!(
+            out.after_cap.len(),
+            2,
+            "different rotations at same tx/ty must survive dedupe"
+        );
+        assert_eq!(out.after_cap[0].rotation_idx, 0);
+        assert_eq!(out.after_cap[1].rotation_idx, 1);
     }
 }

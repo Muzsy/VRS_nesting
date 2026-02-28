@@ -1,0 +1,41 @@
+{
+  "version": "nfp_perf_gate_v1",
+  "fixtures": [
+    {
+      "id": "f0_sanity",
+      "path": "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json",
+      "max": {
+        "nfp_cache_hits": 0,
+        "nfp_cache_misses": 2,
+        "nfp_cache_entries_end": 2,
+        "nfp_compute_calls": 2,
+        "cfr_calls": 4,
+        "cfr_union_calls": 2,
+        "cfr_diff_calls": 2,
+        "candidates_before_dedupe_total": 1054,
+        "candidates_after_dedupe_total": 1054,
+        "candidates_after_cap_total": 1054,
+        "cap_applied_count": 0,
+        "sheets_used": 1
+      }
+    },
+    {
+      "id": "f4_cfr_order",
+      "path": "poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json",
+      "max": {
+        "nfp_cache_hits": 4,
+        "nfp_cache_misses": 8,
+        "nfp_cache_entries_end": 8,
+        "nfp_compute_calls": 8,
+        "cfr_calls": 8,
+        "cfr_union_calls": 6,
+        "cfr_diff_calls": 6,
+        "candidates_before_dedupe_total": 3932,
+        "candidates_after_dedupe_total": 3932,
+        "candidates_after_cap_total": 3932,
+        "cap_applied_count": 0,
+        "sheets_used": 1
+      }
+    }
+  ]
+}

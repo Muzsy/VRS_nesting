@@ -92,6 +92,7 @@ chmod +x \
   scripts/smoke_real_dxf_nfp_pairs.py \
   scripts/run_real_dxf_sparrow_pipeline.py \
   scripts/smoke_real_dxf_sparrow_pipeline.py \
+  scripts/smoke_nfp_placer_stats_and_perf_gate.py \
   scripts/smoke_nesting_engine_determinism.sh \
   scripts/smoke_svg_export.py || true
 
@@ -479,6 +480,11 @@ if not (hashes[0] == hashes[1] == hashes[2]):
     raise SystemExit(f"F4 determinism gate failed: hashes differ: {hashes}")
 print(f"[NEST][F4] determinism 3x OK: {hashes[0]}")
 PY
+
+  echo "[NEST][F2-3] NFP placer stats/perf counter gate"
+  python3 scripts/smoke_nfp_placer_stats_and_perf_gate.py --check \
+    --bin "$NESTING_ENGINE_BIN_PATH" \
+    --baseline "poc/nesting_engine/f2_3_nfp_perf_gate_baselines.json"
 
   python3 - "poc/nesting_engine/sample_input_v2.json" "$TMP_BASELINE_OUT" <<'PY'
 import json

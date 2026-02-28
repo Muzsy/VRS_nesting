@@ -16,6 +16,7 @@ use crate::{
     geometry::pipeline::run_inflate_pipeline,
     io::pipeline_io::{PartRequest, PipelineRequest},
     multi_bin::{MultiSheetResult, greedy::PlacerKind, greedy_multi_sheet},
+    placement::nfp_placer::NfpPlacerStatsV1,
     placement::blf::{InflatedPartSpec, UnplacedItem, bbox_area},
 };
 
@@ -286,7 +287,7 @@ fn run_nest(requested_placer: PlacerKind) -> Result<(), String> {
         holes: Vec::new(),
     };
 
-    let mut result: MultiSheetResult =
+    let (mut result, nfp_stats_opt): (MultiSheetResult, Option<NfpPlacerStatsV1>) =
         greedy_multi_sheet(&specs, &bin, 1.0, input.time_limit_sec, effective_placer);
     result.unplaced.extend(forced_unplaced);
     result
@@ -307,7 +308,31 @@ fn run_nest(requested_placer: PlacerKind) -> Result<(), String> {
     writer
         .flush()
         .map_err(|err| format!("failed to flush nest output: {err}"))?;
+
+    if should_emit_nfp_stats() {
+        let mut stats = nfp_stats_opt.unwrap_or_default();
+        if stats.effective_placer.is_empty() {
+            stats.effective_placer = match effective_placer {
+                PlacerKind::Nfp => "nfp".to_string(),
+                PlacerKind::Blf => "blf".to_string(),
+            };
+        }
+        if stats.sheets_used == 0 {
+            stats.sheets_used = result.sheets_used as u64;
+        }
+        let payload = serde_json::to_string(&stats)
+            .map_err(|err| format!("failed to serialize NFP stats JSON: {err}"))?;
+        eprintln!("NEST_NFP_STATS_V1 {payload}");
+    }
+
     Ok(())
+}
+
+fn should_emit_nfp_stats() -> bool {
+    matches!(
+        std::env::var("NESTING_ENGINE_EMIT_NFP_STATS"),
+        Ok(value) if value == "1"
+    )
 }
 
 fn compute_utilization_pct(input: &NestInput, result: &MultiSheetResult) -> f64 {
