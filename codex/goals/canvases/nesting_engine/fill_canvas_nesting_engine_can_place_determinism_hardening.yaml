@@ -1,0 +1,82 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_can_place_determinism_hardening.yaml
+
+steps:
+  - name: "Felderítés: can_place jelenlegi float függése és determinisztika kockázatok"
+    description: >
+      Ellenőrizd a következőket:
+      - rust/nesting_engine/src/feasibility/narrow.rs (can_place, FloatPredicateOverlay használat)
+      - rust/nesting_engine/src/feasibility/aabb.rs (TOUCH_TOL, aabb_overlaps policy)
+      - docs/nesting_engine/tolerance_policy.md (integer determinisztika állítások)
+      - scripts/check.sh (nesting_engine blokk: fut-e cargo test?)
+
+      A canvasban rögzítsd röviden:
+      - hol és miért nem ideális a float predicate,
+      - hol kell totális tie-break a narrow-phase sorrendhez.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_can_place_determinism_hardening.md"
+
+  - name: "Rust: integer-only feasibility predicate implementálása"
+    description: >
+      Módosítsd a rust/nesting_engine/src/feasibility/narrow.rs fájlt:
+
+      Kötelező:
+      - Távolítsd el a FloatPredicateOverlay alapú containment/overlap ellenőrzést.
+      - Implementálj integer-only predicate-et:
+        - point-in-polygon (Inside/Outside/OnBoundary) i64/i128 alapon
+        - segment intersection (touching is intersection)
+        - poly_strictly_within(candidate, bin)
+        - polygons_intersect_or_touch(candidate, other)
+
+      Determinisztika:
+      - a query_overlaps eredményt kezeld Vec<(idx, &PlacedPart)> formában,
+        és rendezd AABB + idx tie-break alapján (totális kulcs).
+    outputs:
+      - "rust/nesting_engine/src/feasibility/narrow.rs"
+
+  - name: "Rust unit tesztek: boundary touch + tie determinisztika"
+    description: >
+      A rust/nesting_engine/src/feasibility/narrow.rs meglévő tesztmoduljába adj hozzá:
+
+      - can_place_rejects_touching_bin_boundary
+      - can_place_is_deterministic_for_identical_aabb_ties
+
+      Követelmény:
+      - a tesztek neve 'can_place_' prefix-szel kezdődjön, hogy célzottan futtatható legyen cargo test filterrel.
+    outputs:
+      - "rust/nesting_engine/src/feasibility/narrow.rs"
+
+  - name: "Repo gate: célzott cargo test bekötése a check.sh-ba"
+    description: >
+      A scripts/check.sh nesting_engine blokkban (ahol a cargo build --release már megtörténik),
+      add hozzá a következő lépést:
+
+      - cargo test --manifest-path rust/nesting_engine/Cargo.toml can_place_
+
+      Elvárás:
+      - regresszió esetén a check.sh non-zero exit.
+      - a többi smoke/fixture maradjon változatlan.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Hozd létre a task checklistet és reportot a Report Standard v2 szerint.
+
+      Checklist:
+      - pipálható DoD pontok (a canvas DoD 1:1-ben)
+
+      Report:
+      - Meta + Scope + Change summary
+      - DoD -> Evidence (konkrét fájlok + a can_place_ cargo test parancs)
+      - AUTO_VERIFY blokkot üresen hagyni (verify.sh tölti)
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_can_place_determinism_hardening.md"
+      - "codex/reports/nesting_engine/nesting_engine_can_place_determinism_hardening.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_can_place_determinism_hardening.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_can_place_determinism_hardening.md"
+      - "codex/reports/nesting_engine/nesting_engine_can_place_determinism_hardening.verify.log"
