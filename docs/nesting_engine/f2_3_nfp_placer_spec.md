@@ -64,7 +64,10 @@ A teljes F2-3 placernek determinisztikusnak kell lennie:
 ### 3.2 Választás futásidőben
 
 * **CLI flag**: `--placer blf|nfp` (default: `blf`)
-* A JSON v2 IO contract nem változik.
+* A JSON v2 IO contract **backward kompatibilis** marad.
+* `sheet.spacing_mm` **optional** mező.
+* `spacing_effective = sheet.spacing_mm` ha jelen van, különben `sheet.kerf_mm` (legacy spacing input source).
+* F2-3 matematikában a kerf nem külön kerf-kompenzáció; csak legacy spacing input forrás lehet.
 
 ### 3.3 Multi-sheet felelősség
 
@@ -94,6 +97,7 @@ Következmény: a part AABB-ja `x ∈ [0, w]`, `y ∈ [0, h]` (ahol `w = max_x`,
 ### 4.2 Egységek
 
 * Minden koordináta i64 µm skálán (a meglévő mm→µm skálázási konvenció szerint).
+* A mm→µm konverzió determinisztikus: `mm_to_i64(mm) = round(mm * 1_000_000)` (kódhűen Rust `round()`).
 
 ---
 
@@ -102,30 +106,34 @@ Következmény: a part AABB-ja `x ∈ [0, w]`, `y ∈ [0, h]` (ahol `w = max_x`,
 ### 5.1 Kerf
 
 * **Nem része F2-3-nak**: a kerf-et később a part geóra “ráégetjük” egy külön pipeline lépésben.
-* F2-3-ban a `kerf_mm` nem jelenik meg a placer matematikájában.
+* F2-3-ban a `kerf_mm` nem külön kerf-kompenzációs tényező a placer matematikában.
+* `kerf_mm` kizárólag legacy spacing input forrás: ha `spacing_mm` hiányzik, akkor `spacing_effective = kerf_mm`.
 
 ### 5.2 Spacing (part–part távolság)
 
+* `spacing_effective = spacing_mm` ha jelen van, különben `kerf_mm` (legacy fallback).
 * A spacing-et **part inflate** kezeli.
-* Ajánlott: `inflate_delta = spacing / 2` (ha a spacing a két alkatrész közötti minimális rés). Így két inflált part ütközése pontosan a spacing feltételt kényszeríti.
+* `inflate_delta = spacing_effective / 2`.
+* Így két inflált part ütközése pontosan a part–part spacing feltételt kényszeríti.
 
 ### 5.3 Margin (part–bin edge távolság)
 
-* A margin a **bin belső téglalapjának zsugorításával** van kezelve.
+* A margin a bin offset modell része: `bin_offset = (spacing_effective / 2) - margin`.
 
-### 5.4 Bin belső téglalap (inner rect)
+### 5.4 Adjusted bin (bin offset modell)
 
 Legyen a nyers bin téglalap `B = [bx0..bx1] × [by0..by1]`.
 
-* A part inflate miatt a bin edge-hez is tartani kell a spacing-et (konzervatív, gyártható). Ezért:
-
-**`shrink = margin + spacing/2`**
-
-* A belső bin: `B_in = shrink(B, shrink)`.
+* Definíciók:
+  * `inflate_delta = spacing_effective / 2`
+  * `bin_offset = inflate_delta - margin`
+* Az adjusted bin: `B_adj = offset_rect(B, bin_offset)`.
+* Rect esetben:
+  * `B_adj = [bx0 - bin_offset .. bx1 + bin_offset] × [by0 - bin_offset .. by1 + bin_offset]`
 
 Megjegyzés:
 
-* Ha a `spacing/2` nem egész µm, a determinisztikus kerekítés szabályát rögzíteni kell (pl. floor/ceil). A cél a konzervatív (biztonságos) irány.
+* Margin garancia: ha `offset(part, inflate_delta)` teljesen `B_adj`-ban van, akkor a nominális part benne van `offset(B, -margin)`-ban, így a part–edge távolság nominálisan `margin` körüli akkor is, ha `margin < spacing/2` (bin inflate).
 
 ---
 
@@ -140,15 +148,15 @@ Megjegyzés:
 
 Legyen:
 
-* `B_in = [ix0..ix1] × [iy0..iy1]` a belső bin (margin+spacing/2 után)
+* `B_adj = [ax0..ax1] × [ay0..ay1]` az adjusted bin (bin offset után)
 * a part AABB-ja: `[0..w] × [0..h]`
 
 A megengedett eltolások:
 
-* `tx ∈ [ix0, ix1 - w]`
-* `ty ∈ [iy0, iy1 - h]`
+* `tx ∈ [ax0, ax1 - w]`
+* `ty ∈ [ay0, ay1 - h]`
 
-Ha `ix1 - w < ix0` vagy `iy1 - h < iy0`, akkor az IFP üres.
+Ha `ax1 - w < ax0` vagy `ay1 - h < ay0`, akkor az IFP üres.
 
 ---
 
@@ -425,7 +433,8 @@ Az alábbi anyagok háttérként megőrzendők, de **nem normatívak**:
 * Placer választás: CLI flag, BLF baseline megmarad.
 * IFP: AABB téglalap a transzlációs térben (rect bin).
 * Part ref: normalizált (minx=miny=0).
-* Margin: bin shrink, Spacing: part inflate (+ bin shrink spacing/2).
+* Spacing: `spacing_effective` (spacing_mm vagy legacy kerf_mm), `inflate_delta = spacing_effective/2`.
+* Margin + bin: `bin_offset = spacing_effective/2 - margin`, adjusted bin = `offset_rect(B, bin_offset)`.
 * Holes/hole_collapsed: **BLF gate**, hole-aware NFP/CFR külön ticket.
 * Touching: tiltott, nudge kötelező.
 * CFR: MultiPolygon, canonicalize + sort, regularized boolean.

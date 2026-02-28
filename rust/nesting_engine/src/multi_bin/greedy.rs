@@ -3,7 +3,13 @@ use std::time::Instant;
 
 use crate::geometry::types::Polygon64;
 use crate::placement::blf::{InflatedPartSpec, UnplacedItem};
-use crate::placement::{PlacedItem, PlacementResult, blf_place};
+use crate::placement::{PlacedItem, PlacementResult, blf_place, nfp_place};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacerKind {
+    Blf,
+    Nfp,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MultiSheetResult {
@@ -17,6 +23,7 @@ pub fn greedy_multi_sheet(
     bin_polygon: &Polygon64,
     grid_step_mm: f64,
     time_limit_sec: u64,
+    placer_kind: PlacerKind,
 ) -> MultiSheetResult {
     let started_at = Instant::now();
     let mut sheet_index = 0usize;
@@ -57,13 +64,22 @@ pub fn greedy_multi_sheet(
             break;
         }
 
-        let round: PlacementResult = blf_place(
-            &remaining_specs,
-            bin_polygon,
-            grid_step_mm,
-            time_limit_sec,
-            started_at,
-        );
+        let round: PlacementResult = match placer_kind {
+            PlacerKind::Blf => blf_place(
+                &remaining_specs,
+                bin_polygon,
+                grid_step_mm,
+                time_limit_sec,
+                started_at,
+            ),
+            PlacerKind::Nfp => nfp_place(
+                &remaining_specs,
+                bin_polygon,
+                grid_step_mm,
+                time_limit_sec,
+                started_at,
+            ),
+        };
 
         let mut placed_this_round = 0usize;
         let mut local_count_by_id: BTreeMap<String, usize> = BTreeMap::new();
@@ -139,7 +155,7 @@ mod tests {
             nominal_bbox_area: bbox_area(&rect_poly(9.0, 9.0).outer),
         };
         let bin = rect_poly(20.0, 20.0);
-        let out = greedy_multi_sheet(&[part], &bin, 1.0, 30);
+        let out = greedy_multi_sheet(&[part], &bin, 1.0, 30, PlacerKind::Blf);
         assert!(!out.placed.is_empty());
     }
 }

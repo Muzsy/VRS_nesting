@@ -1,0 +1,82 @@
+steps:
+  - name: "Felderítés: jelenlegi nest belépési pont és smoke"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/nesting_engine/f2_3_nfp_placer_spec.md (placer flag + hybrid gating)
+      - rust/nesting_engine/src/main.rs (jelenlegi CLI parsing)
+      - rust/nesting_engine/src/multi_bin/greedy.rs (jelenlegi BLF-only wrapper)
+      - rust/nesting_engine/src/placement/mod.rs
+      - scripts/check.sh nesting_engine smoke blokk
+      Rögzítsd a canvasban: hol kell bekötni a placer választást és hol kell a smoke-ot bővíteni.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_f2_3_bootstrap_placer_flag_gating.md"
+
+  - name: "Új hole-mentes v2 fixture létrehozása"
+    description: >
+      Hozz létre egy új io_contract_v2 input JSON-t:
+      - poc/nesting_engine/f2_3_noholes_input_v2.json
+      Követelmények:
+      - version: nesting_engine_v2
+      - sheet.spacing_mm legyen explicit (ne legacy)
+      - margin_mm > spacing_mm/2
+      - minden part holes_points_mm legyen üres lista
+      - legalább 2 part legyen, hogy legyen értelme placementnek
+    outputs:
+      - "poc/nesting_engine/f2_3_noholes_input_v2.json"
+
+  - name: "Placer flag parsing és hybrid gating a nesting_engine nest-ben"
+    description: >
+      A rust/nesting_engine/src/main.rs fájlban:
+      - vezesd be a `--placer blf|nfp` flag-et a `nest` subcommandhoz (default: blf)
+      - ismerd fel a `--placer nfp` esetet is (`--placer=nfp` formában is)
+      - hybrid gating: ha nfp kért, de bármely input part holes_points_mm nem üres, vagy bármely pipeline resp.status == hole_collapsed,
+        akkor állítsd vissza a placert BLF-re és írj egy rövid stderr warningot.
+      - a program viselkedése maradjon determinisztikus (stdout JSON byte-stabil, stderr nem része a determinism hashnak).
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Placer választás bekötése a multi-sheet wrapperbe (NFP stub megengedett)"
+    description: >
+      A rust/nesting_engine/src/multi_bin/greedy.rs és rust/nesting_engine/src/placement/mod.rs fájlokban:
+      - vezess be egy PlacerKind enumot (Blf/Nfp) a greedy_multi_sheet hívásba (vagy ekvivalens determinisztikus kapcsolót)
+      - BLF eset: jelenlegi blf_place
+      - NFP eset: hívj egy új függvényt (pl. nfp_place), ami ebben a bootstrap taskban még delegálhat BLF-re (stub),
+        de a hívási pont már legyen kész a későbbi CFR implementációhoz.
+      Hozd létre:
+      - rust/nesting_engine/src/placement/nfp_placer.rs (stub: blf_place delegálás + TODO komment)
+    outputs:
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/placement/mod.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Gate smoke bővítése (placer=nfp útvonal ellenőrzése)"
+    description: >
+      A scripts/check.sh nesting_engine részében bővítsd a smoke-ot:
+      1) Fallback ellenőrzés:
+         - futtasd: nesting_engine nest --placer nfp < poc/nesting_engine/sample_input_v2.json
+         - ellenőrizd, hogy a determinism_hash megegyezik a baseline BLF hash-sel (holes miatt BLF fallback)
+      2) Noholes ellenőrzés:
+         - futtasd kétszer: nesting_engine nest --placer nfp < poc/nesting_engine/f2_3_noholes_input_v2.json
+         - mindkét output JSON valid
+         - determinism_hash egyezik a két futás közt
+      Ne változtasd meg a meglévő baseline smoke és CLI smoke logikát, csak bővítsd.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a task checklistet és reportot a Report Standard v2 szerint.
+      Checklist: pipálható DoD pontok.
+      Report: rövid változásösszefoglaló + DoD->Evidence váz + AUTO_VERIFY blokk.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_f2_3_bootstrap_placer_flag_gating.md"
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_bootstrap_placer_flag_gating.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_f2_3_bootstrap_placer_flag_gating.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_bootstrap_placer_flag_gating.md"
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_bootstrap_placer_flag_gating.verify.log"

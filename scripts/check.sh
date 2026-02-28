@@ -274,6 +274,9 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
 
   TMP_BASELINE_OUT="$(mktemp /tmp/nesting_engine_baseline_out_XXXXXX.json)"
   TMP_BASELINE_OUT_2="$(mktemp /tmp/nesting_engine_baseline_out2_XXXXXX.json)"
+  TMP_NFP_FALLBACK_OUT="$(mktemp /tmp/nesting_engine_nfp_fallback_out_XXXXXX.json)"
+  TMP_NOHOLES_NFP_OUT_A="$(mktemp /tmp/nesting_engine_noholes_nfp_out_a_XXXXXX.json)"
+  TMP_NOHOLES_NFP_OUT_B="$(mktemp /tmp/nesting_engine_noholes_nfp_out_b_XXXXXX.json)"
 
   "$NESTING_ENGINE_BIN_PATH" nest < "poc/nesting_engine/sample_input_v2.json" > "$TMP_BASELINE_OUT"
   python3 -m json.tool "$TMP_BASELINE_OUT" > /dev/null
@@ -316,6 +319,51 @@ hb = b.get("meta", {}).get("determinism_hash")
 if ha != hb:
     raise SystemExit(f"determinism hash mismatch: {ha} != {hb}")
 print("[NEST] determinism OK")
+PY
+
+  echo "[NEST] placer=nfp fallback smoke (holes/hole_collapsed -> blf)"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/sample_input_v2.json" > "$TMP_NFP_FALLBACK_OUT"
+  python3 -m json.tool "$TMP_NFP_FALLBACK_OUT" > /dev/null
+  NFP_FALLBACK_HASH="$(python3 - "$TMP_NFP_FALLBACK_OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(str(out.get("meta", {}).get("determinism_hash", "")).strip())
+PY
+)"
+  if [[ -z "$NFP_FALLBACK_HASH" ]]; then
+    echo "ERROR: missing determinism hash in --placer nfp fallback output" >&2
+    exit 2
+  fi
+  if [[ "$NFP_FALLBACK_HASH" != "$BASELINE_HASH" ]]; then
+    echo "ERROR: --placer nfp fallback hash mismatch vs baseline BLF" >&2
+    echo " baseline=$BASELINE_HASH" >&2
+    echo " nfp_fallback=$NFP_FALLBACK_HASH" >&2
+    exit 2
+  fi
+  echo "[NEST] placer=nfp fallback hash OK"
+
+  echo "[NEST] placer=nfp noholes determinism smoke"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_noholes_input_v2.json" > "$TMP_NOHOLES_NFP_OUT_A"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer=nfp < "poc/nesting_engine/f2_3_noholes_input_v2.json" > "$TMP_NOHOLES_NFP_OUT_B"
+  python3 -m json.tool "$TMP_NOHOLES_NFP_OUT_A" > /dev/null
+  python3 -m json.tool "$TMP_NOHOLES_NFP_OUT_B" > /dev/null
+  python3 - "$TMP_NOHOLES_NFP_OUT_A" "$TMP_NOHOLES_NFP_OUT_B" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+a = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+b = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+ha = a.get("meta", {}).get("determinism_hash")
+hb = b.get("meta", {}).get("determinism_hash")
+if not ha or not hb:
+    raise SystemExit("missing determinism_hash in noholes nfp smoke output")
+if ha != hb:
+    raise SystemExit(f"noholes nfp determinism mismatch: {ha} != {hb}")
+print("[NEST] placer=nfp noholes determinism OK")
 PY
 
   python3 - "poc/nesting_engine/sample_input_v2.json" "$TMP_BASELINE_OUT" <<'PY'

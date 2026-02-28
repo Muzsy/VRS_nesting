@@ -15,7 +15,7 @@ use crate::{
     geometry::{scale::mm_to_i64, types::{Point64, Polygon64}},
     geometry::pipeline::run_inflate_pipeline,
     io::pipeline_io::{PartRequest, PipelineRequest},
-    multi_bin::{MultiSheetResult, greedy_multi_sheet},
+    multi_bin::{MultiSheetResult, greedy::PlacerKind, greedy_multi_sheet},
     placement::blf::{InflatedPartSpec, UnplacedItem, bbox_area},
 };
 
@@ -41,7 +41,7 @@ fn main() {
         return;
     }
     if args.len() >= 2 && args[1] == "nest" {
-        if let Err(err) = run_nest() {
+        if let Err(err) = run_nest_with_args(&args[2..]) {
             eprintln!("nesting_engine nest: {err}");
             std::process::exit(1);
         }
@@ -73,6 +73,50 @@ fn run_inflate_parts() -> Result<(), String> {
     Ok(())
 }
 
+fn run_nest_with_args(args: &[String]) -> Result<(), String> {
+    let requested_placer = parse_requested_placer(args)?;
+    run_nest(requested_placer)
+}
+
+fn parse_requested_placer(args: &[String]) -> Result<PlacerKind, String> {
+    let mut placer = PlacerKind::Blf;
+    let mut idx = 0usize;
+
+    while idx < args.len() {
+        let arg = &args[idx];
+        if arg == "--placer" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --placer (expected: blf|nfp)".to_string());
+            }
+            placer = parse_placer_value(&args[idx])?;
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--placer=") {
+            placer = parse_placer_value(value)?;
+            idx += 1;
+            continue;
+        }
+
+        return Err(format!(
+            "unknown nest argument '{arg}' (supported: --placer blf|nfp)"
+        ));
+    }
+
+    Ok(placer)
+}
+
+fn parse_placer_value(value: &str) -> Result<PlacerKind, String> {
+    match value {
+        "blf" => Ok(PlacerKind::Blf),
+        "nfp" => Ok(PlacerKind::Nfp),
+        other => Err(format!(
+            "unsupported --placer value '{other}' (expected: blf|nfp)"
+        )),
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct NestInput {
     version: String,
@@ -101,7 +145,7 @@ struct NestInputPart {
     holes_points_mm: Vec<Vec<[f64; 2]>>,
 }
 
-fn run_nest() -> Result<(), String> {
+fn run_nest(requested_placer: PlacerKind) -> Result<(), String> {
     let started = Instant::now();
     let stdin = stdio::stdin();
     let reader = BufReader::new(stdin.lock());
@@ -133,6 +177,21 @@ fn run_nest() -> Result<(), String> {
         stocks: Vec::new(),
     };
     let pipe_resp = run_inflate_pipeline(pipe_req);
+    let has_nominal_holes = input.parts.iter().any(|part| !part.holes_points_mm.is_empty());
+    let has_hole_collapsed = pipe_resp
+        .parts
+        .iter()
+        .any(|part| part.status == "hole_collapsed");
+    let effective_placer = if requested_placer == PlacerKind::Nfp
+        && (has_nominal_holes || has_hole_collapsed)
+    {
+        eprintln!(
+            "warning: --placer nfp fallback to blf (hybrid gating: holes or hole_collapsed)"
+        );
+        PlacerKind::Blf
+    } else {
+        requested_placer
+    };
 
     let mut specs: Vec<InflatedPartSpec> = Vec::new();
     let mut forced_unplaced: Vec<UnplacedItem> = Vec::new();
@@ -227,7 +286,8 @@ fn run_nest() -> Result<(), String> {
         holes: Vec::new(),
     };
 
-    let mut result: MultiSheetResult = greedy_multi_sheet(&specs, &bin, 1.0, input.time_limit_sec);
+    let mut result: MultiSheetResult =
+        greedy_multi_sheet(&specs, &bin, 1.0, input.time_limit_sec, effective_placer);
     result.unplaced.extend(forced_unplaced);
     result
         .unplaced

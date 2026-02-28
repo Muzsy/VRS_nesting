@@ -1,0 +1,45 @@
+steps:
+  - name: "Felderítés: jelenlegi kánon és spec drift azonosítása"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/nesting_engine/f2_3_nfp_placer_spec.md
+      - docs/nesting_engine/io_contract_v2.md
+      - rust/nesting_engine/src/main.rs (rect_bin_bounds, spacing_effective)
+      - rust/nesting_engine/src/geometry/pipeline.rs (inflate_delta/bin_offset)
+      A canvasban rögzítsd röviden: a spec 5.4/6.2 shrink modellje nem egyezik a kódban élő bin_offset modellel.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_f2_3_spec_bin_offset_sync.md"
+
+  - name: "Spec frissítése bin_offset modellre"
+    description: >
+      Szerkeszd a docs/nesting_engine/f2_3_nfp_placer_spec.md fájlt úgy, hogy a normatív spec
+      a következőkkel legyen összhangban:
+      - spacing_effective = sheet.spacing_mm ha van, különben sheet.kerf_mm (legacy spacing input source)
+      - inflate_delta = spacing_effective/2
+      - bin_offset = spacing_effective/2 - margin
+      Kötelezően módosítandó részek:
+      - 3.2: IO contract nem “nem változik”, hanem backward kompatibilis; spacing_mm optional; legacy spacing_effective leírva
+      - 5.3/5.4: shrink = margin + spacing/2 lecserélése bin_offset és B_adj definícióra
+      - 6.2: IFP képlet B_adj alapján
+      - Rounding: mm_to_i64 round() szabály explicit rögzítése
+      Ne változtass a spec többi fejezetén feleslegesen (csak ahol a drift miatt szükséges).
+    outputs:
+      - "docs/nesting_engine/f2_3_nfp_placer_spec.md"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a task checklistet és reportot a Report Standard v2 szerint.
+      Checklist: pipálható DoD pontok.
+      Report: rövid változásösszefoglaló + DoD->Evidence váz + AUTO_VERIFY blokk.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_f2_3_spec_bin_offset_sync.md"
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_spec_bin_offset_sync.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_f2_3_spec_bin_offset_sync.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_spec_bin_offset_sync.md"
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_spec_bin_offset_sync.verify.log"
