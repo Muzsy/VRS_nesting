@@ -1,0 +1,142 @@
+steps:
+  - name: "Felderítés és task keret rögzítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/nesting_engine/f2_3_nfp_placer_spec.md (normatív)
+      - canvases/nesting_engine/nesting_engine_backlog.md (F2-3)
+      - rust/nesting_engine/src/placement/nfp_placer.rs (jelenleg stub)
+      - rust/nesting_engine/src/nfp/convex.rs, rust/nesting_engine/src/nfp/concave.rs (NFP compute)
+      - rust/nesting_engine/src/feasibility/narrow.rs (can_place + touching policy)
+      - rust/nesting_engine/src/multi_bin/greedy.rs (wrapper contract)
+      - scripts/check.sh (nesting_engine smoke jelenleg)
+      Frissítsd a canvasban a konkrét DoD-t és az érintett fájllistát, a spec fejezeteire hivatkozva.
+    outputs:
+      - "canvases/nesting_engine/nfp_based_placement_engine.md"
+
+  - name: "IFP modul implementálása (rect bin)"
+    description: >
+      Hozd létre a rust/nesting_engine/src/nfp/ifp.rs modult.
+      Implementáld az IFP rect-et a spec 6. fejezete szerint:
+      - bemenet: bin (B_adj) AABB i64-ben + moving part AABB (normalizált [0..w],[0..h])
+      - kimenet: Option<Polygon64> (téglalap 4 ponttal, CCW) + a tx/ty tartományok
+      Adj hozzá unit teszteket:
+      - normál eset: nem üres IFP és várt koordináták
+      - túl nagy part: üres IFP (None)
+      Frissítsd a rust/nesting_engine/src/nfp/mod.rs fájlt: pub mod ifp;
+    outputs:
+      - "rust/nesting_engine/src/nfp/ifp.rs"
+      - "rust/nesting_engine/src/nfp/mod.rs"
+
+  - name: "NFP cache bővítése: shape_id + hard cap clear_all"
+    description: >
+      Frissítsd a rust/nesting_engine/src/nfp/cache.rs fájlt:
+      - Adj hozzá seed-mentes shape_id(poly: &Polygon64) -> u64 függvényt:
+        canonicalize (ring dedup + orientation fix + lex-min rotate) után sha256 hash első 8 byte.
+      - Vezess be MAX_ENTRIES konstans (spec 14.6) és determinisztikus cap-et:
+        insert előtt ha entries >= MAX_ENTRIES => clear_all().
+      - A clear_all() törölje a store-t és a hit/miss számlálókat is determinisztikusan (vagy dokumentáltan hagyja; de legyen stabil).
+      - Adj hozzá unit tesztet shape_id stabilitásra (azonos polygon -> azonos u64).
+      Ne módosítsd a cache publikus key struktúráját (NfpCacheKey), csak bővíts.
+    outputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+
+  - name: "CFR modul implementálása: union + difference + canonicalize + sort"
+    description: >
+      Hozd létre a rust/nesting_engine/src/nfp/cfr.rs modult.
+      Implementáld:
+      - compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon64>
+      - ha nfp_polys üres: CFR = [IFP]
+      - különben: U = union(nfp_polys), CFR = difference(IFP, U)
+      i_overlay boolean-nal (regularized; FillRule::NonZero).
+      Kötelező postprocess:
+      - 0-területű komponensek eldobása
+      - canonicalize outer+holes ringek (orientáció + lex-min start + collinear dedup determinisztikusan)
+      - komponensek totális rendezése (spec 10.3): min_point, abs(area), vertex_count
+      Adj hozzá unit teszteket:
+      - empty NFP -> CFR 1 komponens, megegyezik IFP-fel
+      - rect minus rect -> CFR determinisztikus (komponens-szám és/vagy hole jelenlét stabil)
+      Frissítsd a rust/nesting_engine/src/nfp/mod.rs fájlt: pub mod cfr;
+    outputs:
+      - "rust/nesting_engine/src/nfp/cfr.rs"
+      - "rust/nesting_engine/src/nfp/mod.rs"
+
+  - name: "NFP placer core implementálása (stub kiváltása)"
+    description: >
+      Frissítsd a rust/nesting_engine/src/placement/nfp_placer.rs fájlt: a blf delegálást cseréld le a spec szerinti
+      IFP/CFR/NFP-alapú placementre.
+      Kötelező elemek:
+      - determinisztikus part ordering (bbox_area desc + id asc)
+      - rotation unique+sort
+      - moving polygon rotate + normalize (min_x=min_y=0)
+      - IFP rect compute (nfp::ifp)
+      - NFP compute minden placed parttal (convex/concave választás; holes nincs a gating miatt)
+      - NFP cache használat (nfp::cache; shape_id + key)
+      - CFR compute (nfp::cfr)
+      - candidates: CFR outer vertexek (cap 512/comp) + nudge (s=1,2,4 µm; 8 irány) + IFP prefilter
+      - candidates totális sort (spec 11.3), dedupe determinisztikusan, cap 4096
+      - first feasible can_place nyer; különben instance unplaced
+      - wrapper contract: nem áll meg az első nem férő partnál; 0 placed csak ha senki sem fér
+      Adj hozzá unit teszteket:
+      - basic: 2-3 téglalap elhelyezhető (placed >= 1)
+      - wrapper contract: első túl nagy, második felmegy (placed >= 1)
+      - determinism: ugyanaz a bemenet kétszer -> azonos placed/unplaced
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Multi-sheet cache scope bekötése (greedy wrapper)"
+    description: >
+      Frissítsd a rust/nesting_engine/src/multi_bin/greedy.rs és rust/nesting_engine/src/placement/mod.rs fájlokat:
+      - A greedy_multi_sheet hozzon létre egy NfpCache példányt a teljes run elején (sheetek között is él).
+      - A nfp_place kapjon mutable ref-et a cache-re (signature frissítés), és a greedy Nfp ágon ezt adja át.
+      - A BLF ág ne kapjon cache-t.
+      Ügyelj rá, hogy a signature változás csak itt és a placement/nfp_placer.rs-ben jelenjen meg (minimális invázió).
+    outputs:
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/placement/mod.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "F2-3 fixture készlet létrehozása (F0–F3, noholes)"
+    description: >
+      Hozd létre a spec 16.1 szerinti minimum v2 fixture készletet (holes_points_mm = [] mindenhol, spacing_mm explicit):
+      - poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json
+      - poc/nesting_engine/f2_3_f1_wrapper_contract_noholes_v2.json
+      - poc/nesting_engine/f2_3_f2_touching_stress_noholes_v2.json
+      - poc/nesting_engine/f2_3_f3_rotation_coverage_noholes_v2.json
+      Követelmények:
+      - mindegyik: version nesting_engine_v2, margin_mm és spacing_mm explicit, legalább 2 part (F3-ban lehet 1 kritikus + 1 kicsi)
+      - F1: legyen egy biztosan nem férő nagy part és egy későbbi kicsi, ami fér
+      - F3: legyen olyan part, ami csak 90°-kal fér fel (allowed_rotations_deg tartalmazza 0 és 90)
+    outputs:
+      - "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json"
+      - "poc/nesting_engine/f2_3_f1_wrapper_contract_noholes_v2.json"
+      - "poc/nesting_engine/f2_3_f2_touching_stress_noholes_v2.json"
+      - "poc/nesting_engine/f2_3_f3_rotation_coverage_noholes_v2.json"
+
+  - name: "Gate smoke bővítése F2-3 core fixture-ökkel"
+    description: >
+      Frissítsd a scripts/check.sh nesting_engine blokkját:
+      - F0: futtasd BLF és NFP módban; ellenőrizd, hogy placed_count(nfp) >= placed_count(blf)
+      - F1: futtasd NFP módban; ellenőrizd placed_count >= 1 (wrapper contract jelleg)
+      - F3: futtasd NFP módban; ellenőrizd, hogy a kritikus part rotation_deg == 90
+      - Determinism gate: válassz egy noholes fixture-t (pl. F0) és futtasd 3x NFP módban; determinism_hash mindháromszor azonos
+      A meglévő baseline és a már meglévő nfp fallback/noholes smoke maradjon, csak bővítsd.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a checklistet és reportot a Report Standard v2 szerint.
+      Checklist: a canvas DoD pontjainak pipálható listája.
+      Report: Scope + változásösszefoglaló + How tested + DoD->Evidence Matrix + Advisory + AUTO_VERIFY blokk.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_based_placement_engine.md"
+      - "codex/reports/nesting_engine/nfp_based_placement_engine.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_based_placement_engine.md
+    outputs:
+      - "codex/reports/nesting_engine/nfp_based_placement_engine.md"
+      - "codex/reports/nesting_engine/nfp_based_placement_engine.verify.log"
