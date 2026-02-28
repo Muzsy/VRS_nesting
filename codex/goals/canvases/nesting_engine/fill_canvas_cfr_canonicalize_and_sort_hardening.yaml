@@ -1,0 +1,72 @@
+steps:
+  - name: "Felderítés: CFR jelenlegi kanonizálás és sort pontok"
+    description: >
+      Olvasd el: AGENTS.md, docs/nesting_engine/f2_3_nfp_placer_spec.md, rust/nesting_engine/src/nfp/cfr.rs, rust/nesting_engine/src/nfp/cache.rs, scripts/check.sh.
+      Azonosítsd, hol történik most a CFR postprocess (tisztítás / orientáció / sort), és mi hiányzik a totális determinisztikához.
+      A canvasban röviden rögzítsd a konkrét drift-kockázatot és a kijavítandó invariánsokat.
+    outputs:
+      - "canvases/nesting_engine/cfr_canonicalize_and_sort_hardening.md"
+
+  - name: "Fix: CFR ring kanonizálás + totális komponens rendezés"
+    description: >
+      Módosítsd a rust/nesting_engine/src/nfp/cfr.rs fájlt:
+      1) Vezess be privát helper-eket:
+         - canonicalize_ring (dupe + collinear cleanup, orientáció fix, lex-min startpoint)
+         - canonicalize_polygon64 (outer+holes)
+         - ring_hash_u64 (sha256 első 8 byte; kanonizált ring reprezentációból)
+      2) A compute_cfr(...) végén:
+         - kanonizáld az összes output Polygon64-ot,
+         - dobd az invalid/0-area komponenseket,
+         - rendezd totálisan: min_point, abs_area, vertex_count, ring_hash_u64
+      Követelmény: ne vezess be új crate-et; a sha256-t a cache.rs-ben már használt megoldással oldd meg.
+    outputs:
+      - "rust/nesting_engine/src/nfp/cfr.rs"
+
+  - name: "Unit tesztek: kanonizálás és sorrend stabilitás"
+    description: >
+      A rust/nesting_engine/src/nfp/cfr.rs tesztmoduljában adj hozzá legalább 3 unit tesztet:
+      - ring canonicalize: ugyanaz a ring eltérő startpointtal -> kanonizált ring azonos
+      - ring canonicalize: reversed orientáció -> kanonizált ring azonos
+      - CFR komponens-sort stabil: compute_cfr(ifp, nfp_polys) ugyanazt adja akkor is, ha nfp_polys sorrendje permutált
+      A tesztek determinisztikusan fussanak (ne random), és legyenek kicsik (téglalapokkal is elég).
+    outputs:
+      - "rust/nesting_engine/src/nfp/cfr.rs"
+
+  - name: "F4 fixture létrehozása (noholes, spacing explicit)"
+    description: >
+      Hozd létre: poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json
+      Követelmények:
+      - version: nesting_engine_v2
+      - sheet.spacing_mm explicit, margin_mm explicit
+      - holes_points_mm minden partnál üres
+      - legalább 3 part (hogy legyen több NFP/boolean futás)
+      - allowed_rotations_deg lehet egyszerű (pl. [0, 90])
+      Cél: stabil futási coverage NFP módban; a multi-component CFR-t a unit tesztek garantálják.
+    outputs:
+      - "poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json"
+
+  - name: "Gate smoke bővítés: F4 3× determinism NFP módban"
+    description: >
+      Módosítsd a scripts/check.sh nesting_engine részét:
+      - futtasd 3x: nesting_engine nest --placer nfp < poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json
+      - ellenőrizd, hogy a determinism_hash mindhárom futásban azonos
+      A meglévő F0–F3 ellenőrzéseket ne bontsd meg, csak bővítsd.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a checklistet és reportot a Report Standard v2 szerint.
+      Checklist: DoD pipálható lista.
+      Report: Scope + változásösszefoglaló + How tested + DoD->Evidence Matrix + Advisory + AUTO_VERIFY blokk.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cfr_canonicalize_and_sort_hardening.md"
+      - "codex/reports/nesting_engine/cfr_canonicalize_and_sort_hardening.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cfr_canonicalize_and_sort_hardening.md
+      Ha FAIL: javítsd és futtasd újra.
+    outputs:
+      - "codex/reports/nesting_engine/cfr_canonicalize_and_sort_hardening.md"
+      - "codex/reports/nesting_engine/cfr_canonicalize_and_sort_hardening.verify.log"

@@ -284,6 +284,9 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   TMP_F1_NFP_OUT="$(mktemp /tmp/nesting_engine_f1_nfp_out_XXXXXX.json)"
   TMP_F2_NFP_OUT="$(mktemp /tmp/nesting_engine_f2_nfp_out_XXXXXX.json)"
   TMP_F3_NFP_OUT="$(mktemp /tmp/nesting_engine_f3_nfp_out_XXXXXX.json)"
+  TMP_F4_NFP_OUT_A="$(mktemp /tmp/nesting_engine_f4_nfp_out_a_XXXXXX.json)"
+  TMP_F4_NFP_OUT_B="$(mktemp /tmp/nesting_engine_f4_nfp_out_b_XXXXXX.json)"
+  TMP_F4_NFP_OUT_C="$(mktemp /tmp/nesting_engine_f4_nfp_out_c_XXXXXX.json)"
 
   "$NESTING_ENGINE_BIN_PATH" nest < "poc/nesting_engine/sample_input_v2.json" > "$TMP_BASELINE_OUT"
   python3 -m json.tool "$TMP_BASELINE_OUT" > /dev/null
@@ -454,6 +457,27 @@ for path in sys.argv[1:]:
 if not (hashes[0] == hashes[1] == hashes[2]):
     raise SystemExit(f"F0 determinism gate failed: hashes differ: {hashes}")
 print(f"[NEST][F0] determinism 3x OK: {hashes[0]}")
+PY
+
+  echo "[NEST][F4] CFR order hardening determinism gate (3x hash)"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json" > "$TMP_F4_NFP_OUT_A"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json" > "$TMP_F4_NFP_OUT_B"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json" > "$TMP_F4_NFP_OUT_C"
+  python3 - "$TMP_F4_NFP_OUT_A" "$TMP_F4_NFP_OUT_B" "$TMP_F4_NFP_OUT_C" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+hashes = []
+for path in sys.argv[1:]:
+    out = json.loads(Path(path).read_text(encoding="utf-8"))
+    h = str(out.get("meta", {}).get("determinism_hash", "")).strip()
+    if not h:
+        raise SystemExit("F4 determinism gate failed: missing determinism_hash")
+    hashes.append(h)
+if not (hashes[0] == hashes[1] == hashes[2]):
+    raise SystemExit(f"F4 determinism gate failed: hashes differ: {hashes}")
+print(f"[NEST][F4] determinism 3x OK: {hashes[0]}")
 PY
 
   python3 - "poc/nesting_engine/sample_input_v2.json" "$TMP_BASELINE_OUT" <<'PY'

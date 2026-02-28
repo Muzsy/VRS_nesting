@@ -9,13 +9,15 @@ use i_overlay::{
     i_float::int::point::IntPoint,
     i_shape::int::shape::{IntContour, IntShape},
 };
+use sha2::{Digest, Sha256};
 
 use crate::geometry::types::{cross_product_i128, Point64, Polygon64};
 
 pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon64> {
-    let Some(ifp_canon) = canonicalize_component(ifp_rect) else {
+    let mut ifp_canon = ifp_rect.clone();
+    if !canonicalize_polygon64(&mut ifp_canon) {
         return Vec::new();
-    };
+    }
     if nfp_polys.is_empty() {
         return vec![ifp_canon];
     }
@@ -28,8 +30,8 @@ pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon
         return vec![ifp_canon];
     };
 
-    let Some(ifp_shape) = encode_polygon(ifp_rect, bounds) else {
-        return vec![ifp_canon];
+    let Some(ifp_shape) = encode_polygon(&ifp_canon, bounds) else {
+        return vec![ifp_canon.clone()];
     };
     let nfp_shapes: Vec<IntShape> = nfp_polys
         .iter()
@@ -53,7 +55,13 @@ pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon
     let mut out: Vec<Polygon64> = diff_shapes
         .iter()
         .filter_map(|shape| decode_shape(shape, bounds))
-        .filter_map(|poly| canonicalize_component(&poly))
+        .filter_map(|mut poly| {
+            if canonicalize_polygon64(&mut poly) {
+                Some(poly)
+            } else {
+                None
+            }
+        })
         .collect();
     sort_components(&mut out);
     out
@@ -85,13 +93,16 @@ fn decode_shape(shape: &IntShape, bounds: OverlayBounds) -> Option<Polygon64> {
 }
 
 fn encode_polygon(poly: &Polygon64, bounds: OverlayBounds) -> Option<IntShape> {
-    let outer = canonicalize_ring(&poly.outer, true)?;
-    let mut shape: IntShape = Vec::with_capacity(1 + poly.holes.len());
-    shape.push(encode_contour(&outer, bounds)?);
+    let mut canonical = poly.clone();
+    if !canonicalize_polygon64(&mut canonical) {
+        return None;
+    }
 
-    for hole in &poly.holes {
-        let hole_ring = canonicalize_ring(hole, false)?;
-        shape.push(encode_contour(&hole_ring, bounds)?);
+    let mut shape: IntShape = Vec::with_capacity(1 + poly.holes.len());
+    shape.push(encode_contour(&canonical.outer, bounds)?);
+
+    for hole in &canonical.holes {
+        shape.push(encode_contour(hole, bounds)?);
     }
     Some(shape)
 }
@@ -120,42 +131,48 @@ fn decode_contour(contour: &IntContour, bounds: OverlayBounds) -> Option<Vec<Poi
     Some(ring)
 }
 
-fn canonicalize_component(poly: &Polygon64) -> Option<Polygon64> {
-    let outer = canonicalize_ring(&poly.outer, true)?;
-    if signed_area2_i128(&outer).abs() == 0 {
-        return None;
+fn canonicalize_polygon64(poly: &mut Polygon64) -> bool {
+    if !canonicalize_ring(&mut poly.outer, true) {
+        return false;
     }
 
-    let mut holes: Vec<Vec<Point64>> = poly
-        .holes
-        .iter()
-        .filter_map(|hole| canonicalize_ring(hole, false))
-        .filter(|hole| signed_area2_i128(hole).abs() > 0)
+    let mut holes: Vec<Vec<Point64>> = std::mem::take(&mut poly.holes)
+        .into_iter()
+        .filter_map(|mut hole| {
+            if canonicalize_ring(&mut hole, false) {
+                Some(hole)
+            } else {
+                None
+            }
+        })
         .collect();
     holes.sort_by(|a, b| compare_ring_lex(a, b));
-    Some(Polygon64 { outer, holes })
+    poly.holes = holes;
+
+    component_area_abs(poly) > 0
 }
 
-fn canonicalize_ring(points: &[Point64], expect_ccw: bool) -> Option<Vec<Point64>> {
+fn canonicalize_ring(points: &mut Vec<Point64>, want_ccw: bool) -> bool {
     let mut ring = dedup_ring(points);
     if ring.len() < 3 {
-        return None;
+        return false;
     }
 
     simplify_collinear(&mut ring);
     if ring.len() < 3 {
-        return None;
+        return false;
     }
 
     let area2 = signed_area2_i128(&ring);
     if area2 == 0 {
-        return None;
+        return false;
     }
-    if (area2 > 0) != expect_ccw {
+    if (area2 > 0) != want_ccw {
         ring.reverse();
     }
     rotate_to_lexicographic_min(&mut ring);
-    Some(ring)
+    *points = ring;
+    true
 }
 
 fn dedup_ring(points: &[Point64]) -> Vec<Point64> {
@@ -240,13 +257,38 @@ fn sort_components(components: &mut [Polygon64]) {
     components.sort_by(|a, b| {
         let min_a = min_point(a);
         let min_b = min_point(b);
+        let ring_hash_a = ring_hash_u64(&a.outer, &a.holes);
+        let ring_hash_b = ring_hash_u64(&b.outer, &b.holes);
         min_a
             .x
             .cmp(&min_b.x)
             .then(min_a.y.cmp(&min_b.y))
             .then(component_area_abs(a).cmp(&component_area_abs(b)))
             .then(vertex_count(a).cmp(&vertex_count(b)))
+            .then(ring_hash_a.cmp(&ring_hash_b))
     });
+}
+
+fn ring_hash_u64(outer: &[Point64], holes: &[Vec<Point64>]) -> u64 {
+    let mut hasher = Sha256::new();
+    hasher.update(b"cfr_ring_hash_v1");
+    hash_ring(&mut hasher, outer);
+    hasher.update((holes.len() as u64).to_le_bytes());
+    for hole in holes {
+        hash_ring(&mut hasher, hole);
+    }
+    let digest = hasher.finalize();
+    let mut first8 = [0_u8; 8];
+    first8.copy_from_slice(&digest[..8]);
+    u64::from_be_bytes(first8)
+}
+
+fn hash_ring(hasher: &mut Sha256, ring: &[Point64]) {
+    hasher.update((ring.len() as u64).to_le_bytes());
+    for point in ring {
+        hasher.update(point.x.to_le_bytes());
+        hasher.update(point.y.to_le_bytes());
+    }
 }
 
 fn min_point(poly: &Polygon64) -> Point64 {
@@ -384,7 +426,7 @@ impl OverlayBounds {
 mod tests {
     use crate::geometry::types::{Point64, Polygon64};
 
-    use super::compute_cfr;
+    use super::{canonicalize_ring, compute_cfr};
 
     fn rect(x0: i64, y0: i64, w: i64, h: i64) -> Polygon64 {
         Polygon64 {
@@ -430,5 +472,59 @@ mod tests {
             a.iter().any(|poly| !poly.holes.is_empty()) || a.len() > 1,
             "rect-minus-rect should keep a stable hole/component structure"
         );
+    }
+
+    #[test]
+    fn canonicalize_ring_normalizes_startpoint() {
+        let mut a = vec![
+            Point64 { x: 0, y: 0 },
+            Point64 { x: 4, y: 0 },
+            Point64 { x: 4, y: 3 },
+            Point64 { x: 0, y: 3 },
+        ];
+        let mut b = vec![
+            Point64 { x: 4, y: 3 },
+            Point64 { x: 0, y: 3 },
+            Point64 { x: 0, y: 0 },
+            Point64 { x: 4, y: 0 },
+        ];
+
+        assert!(canonicalize_ring(&mut a, true));
+        assert!(canonicalize_ring(&mut b, true));
+        assert_eq!(a, b);
+        assert_eq!(a[0], Point64 { x: 0, y: 0 });
+    }
+
+    #[test]
+    fn canonicalize_ring_normalizes_orientation() {
+        let mut ccw = vec![
+            Point64 { x: 0, y: 0 },
+            Point64 { x: 5, y: 0 },
+            Point64 { x: 5, y: 2 },
+            Point64 { x: 0, y: 2 },
+        ];
+        let mut cw = vec![
+            Point64 { x: 0, y: 0 },
+            Point64 { x: 0, y: 2 },
+            Point64 { x: 5, y: 2 },
+            Point64 { x: 5, y: 0 },
+        ];
+
+        assert!(canonicalize_ring(&mut ccw, true));
+        assert!(canonicalize_ring(&mut cw, true));
+        assert_eq!(ccw, cw);
+    }
+
+    #[test]
+    fn cfr_component_order_is_stable_for_permuted_nfp_inputs() {
+        let ifp = rect(0, 0, 30, 10);
+        let blocker_a = rect(9, 0, 2, 10);
+        let blocker_b = rect(19, 0, 2, 10);
+
+        let ab = compute_cfr(&ifp, &[blocker_a.clone(), blocker_b.clone()]);
+        let ba = compute_cfr(&ifp, &[blocker_b, blocker_a]);
+
+        assert_eq!(ab, ba, "component ordering must be stable");
+        assert!(ab.len() >= 2, "fixture must produce multiple CFR components");
     }
 }
