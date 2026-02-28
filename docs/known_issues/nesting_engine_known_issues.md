@@ -79,23 +79,6 @@ a BLF nesting végpont még csak a bbox-ot veszi figyelembe.
 
 ---
 
-### KI-002 Stock clearance szabály: margin vs. margin+kerf/2
-**Állapot:** OPEN  
-**Forrás:** Fázis 1 audit, 2026-02-23  
-**Terület:** `rust/nesting_engine/src/geometry/pipeline.rs`, `docs/nesting_engine/tolerance_policy.md`
-
-A kód `delta_mm = margin_mm + kerf_mm * 0.5` egységesen alkalmaz mind parts,
-mind stocks esetén. A táblaszélnél (stock outer kontúr) ez túlzott lehet: ott
-nem történik vágás, csak az alkatrész elindulási pozícióját befolyásolja a
-margin. Ha a spec mást vár (pl. stock szélnél csak `margin_mm`, alkatrészek
-között `margin_mm + kerf/2`), selejtarány-növekedés lehet az eredmény.
-
-**Javasolt DoD:**  
-- `tolerance_policy.md` explicit rögzíti a stock outer ágon alkalmazott `delta`
-  definícióját és annak gyártástechnológiai indokát.  
-- Ha a szabály megváltozik: `pipeline.rs` frissül és regressziós teszt védi.
-
----
 
 ## P3 — Alacsony prioritás (tech debt / dokumentáció)
 
@@ -114,21 +97,6 @@ változtathatja a seed-et, és semmit sem tapasztal.
 
 ---
 
-### KI-004 tolerance_policy.md és a tényleges HOLE_COLLAPSED kezelés eltér
-**Állapot:** OPEN  
-**Forrás:** Fázis 1 audit, 2026-02-23  
-**Terület:** `docs/nesting_engine/tolerance_policy.md`, `rust/nesting_engine/src/geometry/pipeline.rs`
-
-A kód helyesen kezeli az összeomló lyukakat ("outer-only" fallback, diagnosztika),
-de a policy dokumentum valószínűleg egy korábbi, szigorúbb állapotot tükröz
-(fatal error). A kód jobb a specifikációnál — csak a doksit kell szinkronizálni.
-
-**Javasolt DoD:**  
-- `tolerance_policy.md` tartalmazza: `HOLE_COLLAPSED` → "diagnosztika +
-  outer-only fallback, usable_for_nesting=false"; `SELF_INTERSECT` → "fatal,
-  pipeline reject". Hivatkozik a releváns unit tesztekre.
-
----
 
 ### KI-005 poc/nesting_engine/ alatt illusztrációs placeholder fájlok
 **Állapot:** OPEN  
@@ -195,7 +163,23 @@ status/diagnosztika alapon tortenik. A dokumentacio emiatt pontatlan.
 
 ## Lezárt issue-k (RESOLVED)
 
-*Jelenleg nincs lezárt issue ebben a nyilvántartásban.*
+### KI-002 Stock clearance szabály: margin vs. margin+kerf/2
+**Állapot:** RESOLVED (`nesting_engine_spacing_margin_bin_offset_model`, 2026-02-27)  
+**Eredeti forrás:** Fázis 1 audit, 2026-02-23  
+**Terület:** `rust/nesting_engine/src/geometry/pipeline.rs`, `docs/nesting_engine/io_contract_v2.md`
+
+Lezárás indoka: a clearance modell átállt az új kánonra
+(`inflate_delta = spacing/2`, `bin_offset = spacing/2 - margin`), a korábbi
+`margin + kerf/2` összemosás megszűnt.
+
+### KI-004 tolerance_policy.md és a tényleges HOLE_COLLAPSED kezelés eltér
+**Állapot:** RESOLVED (`nesting_engine_spacing_margin_bin_offset_model`, 2026-02-27)  
+**Eredeti forrás:** Fázis 1 audit, 2026-02-23  
+**Terület:** `docs/nesting_engine/tolerance_policy.md`, `rust/nesting_engine/src/geometry/pipeline.rs`
+
+Lezárás indoka: a policy dokumentáció már explicit tartalmazza a
+`HOLE_COLLAPSED` diagnosztika + outer-only fallback viselkedést, valamint a
+`self_intersect` pipeline-szintű, fatal kezelést.
 
 ---
 
