@@ -1,0 +1,90 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_cfr_sort_key_precompute_perf.yaml
+
+steps:
+  - name: "Felderítés: CFR komponens rendezés jelenlegi megvalósítása és perf hotspot"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - rust/nesting_engine/src/nfp/cfr.rs (sort_components/compare_sort_keys/build_sort_key/ring_hash)
+      - docs/nesting_engine/f2_3_nfp_placer_spec.md (CFR sort key szakasz)
+      - scripts/check.sh (nesting_engine blokk, van-e célzott cargo test)
+
+      A canvasban rögzítsd:
+      - hol számolódik a tie-break hash (különösen: comparatorban-e),
+      - mi a jelenlegi totális kulcs (min_point, abs_area, vertex_count, ring_hash),
+      - miért perf kockázat, ha comparatorban fut.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_cfr_sort_key_precompute_perf.md"
+
+  - name: "Rust: decorated sort + precomputed sort key implementálása CFR komponensekre"
+    description: >
+      Módosítsd a rust/nesting_engine/src/nfp/cfr.rs fájlt úgy, hogy:
+
+      - Vezess be egy precomputed sort key típust (pl. CfrComponentSortKeyV1),
+        ami tartalmazza:
+        - min_point (x,y)
+        - abs_area
+        - vertex_count
+        - tiebreak_hash (a ring_hash szemantikájával egyező u64)
+
+      - A sort_components(...) NE comparatorban számoljon hash-t.
+        Használj decorated sortot:
+        1) építs Vec<(key, poly)>
+        2) rendezd key alapján
+        3) alakítsd vissza Vec<Polygon64>-ra
+
+      - Vezess be component_tiebreak_hash_u64(poly) függvényt (same semantics),
+        és a kulcs építésében ezt hívd egyszer.
+
+      Kötelező: a rendezési sorrend szemantikája nem változhat (csak perf).
+    outputs:
+      - "rust/nesting_engine/src/nfp/cfr.rs"
+
+  - name: "Rust unit teszt: hash ne fusson comparatorban (precompute bizonyítása)"
+    description: >
+      A rust/nesting_engine/src/nfp/cfr.rs tesztmoduljába adj hozzá egy új tesztet:
+
+      - cfr_sort_key_precompute_hash_called_once_per_component
+
+      Megvalósítás:
+      - #[cfg(test)] alatt vezess be egy AtomicUsize számlálót a component_tiebreak_hash_u64 hívásszámára.
+      - A tesztben hozz létre N darab komponenst úgy, hogy a kulcs első 3 eleme azonos legyen
+        (min_point/abs_area/vertex_count), így a tie-break minden elemnél “releváns”.
+      - Hívd sort_components(...) és ellenőrizd:
+        - component_hash_calls == N (vagy <= N).
+    outputs:
+      - "rust/nesting_engine/src/nfp/cfr.rs"
+
+  - name: "Gate: célzott cargo test bekötése a scripts/check.sh-ba"
+    description: >
+      A scripts/check.sh nesting_engine blokkban (ahol már van célzott cargo test a can_place_ tesztekre),
+      add hozzá ezt is:
+
+      - cargo test --manifest-path rust/nesting_engine/Cargo.toml cfr_sort_key_
+
+      Elvárás:
+      - regresszió esetén non-zero exit,
+      - a meglévő smoke/fixture futások maradjanak változatlanok.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Doksi + checklist + report (Report Standard v2)"
+    description: >
+      (Opcionális, de ajánlott) Frissítsd a docs/nesting_engine/f2_3_nfp_placer_spec.md CFR rendezés részét:
+      - jelezd, hogy a ring_hash tie-break decorated sorttal előre számolt (komponensenként egyszer).
+
+      Készítsd el:
+      - codex/codex_checklist/... pipálható DoD lista
+      - codex/reports/... Report Standard v2 + AUTO_VERIFY blokk (üresen, verify tölti)
+    outputs:
+      - "docs/nesting_engine/f2_3_nfp_placer_spec.md"
+      - "codex/codex_checklist/nesting_engine/nesting_engine_cfr_sort_key_precompute_perf.md"
+      - "codex/reports/nesting_engine/nesting_engine_cfr_sort_key_precompute_perf.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_cfr_sort_key_precompute_perf.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_cfr_sort_key_precompute_perf.md"
+      - "codex/reports/nesting_engine/nesting_engine_cfr_sort_key_precompute_perf.verify.log"

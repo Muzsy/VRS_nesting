@@ -1,5 +1,5 @@
 #[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use i_overlay::{
     core::{
@@ -17,20 +17,17 @@ use sha2::{Digest, Sha256};
 use crate::geometry::types::{cross_product_i128, Point64, Polygon64};
 
 #[cfg(test)]
-static RING_HASH_CALLS: AtomicUsize = AtomicUsize::new(0);
+static COMPONENT_HASH_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+static COMPONENT_HASH_COUNTING_ENABLED: AtomicBool = AtomicBool::new(false);
 
-#[derive(Debug, Clone, Copy)]
-struct SortKey {
-    min_point: Point64,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct CfrComponentSortKeyV1 {
+    min_x: i64,
+    min_y: i64,
     abs_area: i128,
     vertex_count: usize,
-    ring_hash: u64,
-}
-
-#[derive(Debug)]
-struct DecoratedComponent {
-    poly: Polygon64,
-    key: SortKey,
+    tiebreak_hash: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -308,47 +305,39 @@ fn point_on_segment(a: Point64, b: Point64, p: Point64) -> bool {
 }
 
 fn sort_components(components: Vec<Polygon64>) -> Vec<Polygon64> {
-    let mut decorated: Vec<DecoratedComponent> = components
+    let mut decorated: Vec<(CfrComponentSortKeyV1, Polygon64)> = components
         .into_iter()
-        .map(|poly| {
-            let key = build_sort_key(&poly);
-            DecoratedComponent { poly, key }
-        })
+        .map(|poly| (build_sort_key_precomputed(&poly), poly))
         .collect();
 
-    decorated.sort_by(|a, b| compare_sort_keys(a.key, b.key));
+    decorated.sort_by(|(ka, _), (kb, _)| ka.cmp(kb));
 
-    decorated.into_iter().map(|entry| entry.poly).collect()
+    decorated.into_iter().map(|(_, poly)| poly).collect()
 }
 
-fn build_sort_key(poly: &Polygon64) -> SortKey {
-    SortKey {
-        min_point: min_point(poly),
+fn build_sort_key_precomputed(poly: &Polygon64) -> CfrComponentSortKeyV1 {
+    let min = min_point(poly);
+    CfrComponentSortKeyV1 {
+        min_x: min.x,
+        min_y: min.y,
         abs_area: component_area_abs(poly),
         vertex_count: vertex_count(poly),
-        ring_hash: ring_hash_u64(&poly.outer, &poly.holes),
+        tiebreak_hash: component_tiebreak_hash_u64(poly),
     }
 }
 
-fn compare_sort_keys(a: SortKey, b: SortKey) -> std::cmp::Ordering {
-    a.min_point
-        .x
-        .cmp(&b.min_point.x)
-        .then(a.min_point.y.cmp(&b.min_point.y))
-        .then(a.abs_area.cmp(&b.abs_area))
-        .then(a.vertex_count.cmp(&b.vertex_count))
-        .then(a.ring_hash.cmp(&b.ring_hash))
-}
-
-fn ring_hash_u64(outer: &[Point64], holes: &[Vec<Point64>]) -> u64 {
+fn component_tiebreak_hash_u64(poly: &Polygon64) -> u64 {
     #[cfg(test)]
     {
-        RING_HASH_CALLS.fetch_add(1, Ordering::Relaxed);
+        if COMPONENT_HASH_COUNTING_ENABLED.load(Ordering::Relaxed) {
+            COMPONENT_HASH_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     let mut hasher = Sha256::new();
     hasher.update(b"cfr_ring_hash_v1");
-    hash_ring(&mut hasher, outer);
+    hash_ring(&mut hasher, &poly.outer);
+    let holes = &poly.holes;
     hasher.update((holes.len() as u64).to_le_bytes());
     for hole in holes {
         hash_ring(&mut hasher, hole);
@@ -416,13 +405,18 @@ fn signed_area2_i128(points: &[Point64]) -> i128 {
 }
 
 #[cfg(test)]
-fn reset_ring_hash_call_count() {
-    RING_HASH_CALLS.store(0, Ordering::Relaxed);
+fn reset_component_tiebreak_hash_call_count() {
+    COMPONENT_HASH_CALLS.store(0, Ordering::Relaxed);
 }
 
 #[cfg(test)]
-fn ring_hash_call_count() -> usize {
-    RING_HASH_CALLS.load(Ordering::Relaxed)
+fn component_tiebreak_hash_call_count() -> usize {
+    COMPONENT_HASH_CALLS.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+fn set_component_tiebreak_hash_counting(enabled: bool) {
+    COMPONENT_HASH_COUNTING_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -513,7 +507,9 @@ mod tests {
     use crate::geometry::types::{Point64, Polygon64};
 
     use super::{
-        canonicalize_ring, compute_cfr, reset_ring_hash_call_count, ring_hash_call_count,
+        canonicalize_ring, component_tiebreak_hash_call_count, compute_cfr,
+        reset_component_tiebreak_hash_call_count, set_component_tiebreak_hash_counting,
+        sort_components,
     };
 
     fn rect(x0: i64, y0: i64, w: i64, h: i64) -> Polygon64 {
@@ -617,29 +613,37 @@ mod tests {
     }
 
     #[test]
-    fn ring_hash_calls_are_bounded_to_precompute_pattern() {
-        let ifp = rect(0, 0, 90, 10);
-        let blockers = vec![
-            rect(9, 0, 2, 10),
-            rect(19, 0, 2, 10),
-            rect(29, 0, 2, 10),
-            rect(39, 0, 2, 10),
-            rect(49, 0, 2, 10),
-            rect(59, 0, 2, 10),
-            rect(69, 0, 2, 10),
+    fn cfr_sort_key_precompute_hash_called_once_per_component() {
+        fn poly(points: &[[i64; 2]]) -> Polygon64 {
+            Polygon64 {
+                outer: points
+                    .iter()
+                    .map(|p| Point64 { x: p[0], y: p[1] })
+                    .collect(),
+                holes: Vec::new(),
+            }
+        }
+
+        let components = vec![
+            poly(&[[0, 0], [20, 0], [20, 5], [0, 5]]),
+            poly(&[[0, 0], [10, 0], [10, 10], [0, 10]]),
+            poly(&[[0, 0], [25, 0], [25, 4], [0, 4]]),
+            poly(&[[0, 0], [5, 0], [5, 20], [0, 20]]),
+            poly(&[[0, 0], [50, 0], [50, 2], [0, 2]]),
+            poly(&[[0, 0], [4, 0], [4, 25], [0, 25]]),
         ];
+        let expected = components.len();
 
-        reset_ring_hash_call_count();
-        let cfr = compute_cfr(&ifp, &blockers);
-        assert!(cfr.len() >= 5, "fixture should generate several components");
+        set_component_tiebreak_hash_counting(true);
+        reset_component_tiebreak_hash_call_count();
+        let sorted = sort_components(components);
+        set_component_tiebreak_hash_counting(false);
+        assert_eq!(sorted.len(), expected);
 
-        let calls = ring_hash_call_count();
-        let min_expected = cfr.len();
-        let max_expected = cfr.len() + 8;
-        assert!(
-            calls >= min_expected && calls <= max_expected,
-            "unexpected ring_hash call count: calls={calls}, components={}, allowed=[{min_expected},{max_expected}]",
-            cfr.len()
+        let calls = component_tiebreak_hash_call_count();
+        assert_eq!(
+            calls, expected,
+            "component_tiebreak_hash_u64 should be called exactly once per component"
         );
     }
 }

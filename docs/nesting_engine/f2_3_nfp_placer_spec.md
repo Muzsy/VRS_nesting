@@ -237,7 +237,7 @@ A komponensek rendezési kulcsa (totális rendezés):
 Megjegyzes:
 
 * A `ring_hash` csak tie-break celra szolgal (nem celfuggveny).
-* A kulcs komponensenkent egyszer kerul kiszamitasra (decorated sort pattern).
+* A kulcs komponensenkent egyszer kerul kiszamitasra (decorated sort pattern), a `ring_hash` nem a comparatorban fut ujra.
 
 ---
 
