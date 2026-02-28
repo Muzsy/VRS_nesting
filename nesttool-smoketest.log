@@ -1,0 +1,244 @@
+Run python3 -m pytest -q
+.F..................................FF.                                  [100%]
+=================================== FAILURES ===================================
+____________ test_cli_dxf_run_contract_end_to_end_with_fake_sparrow ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_cli_dxf_run_contract_end_0')
+
+    def test_cli_dxf_run_contract_end_to_end_with_fake_sparrow(tmp_path: Path):
+        fake_sparrow = tmp_path / "fake_sparrow.py"
+        _write_fake_sparrow(fake_sparrow)
+    
+        stock_fixture = ROOT / "samples" / "dxf_demo" / "stock_rect_1000x2000.dxf"
+        part_fixture = ROOT / "samples" / "dxf_demo" / "part_arc_spline_chaining_ok.dxf"
+        if not stock_fixture.is_file() or not part_fixture.is_file():
+            raise AssertionError("required DXF fixtures are missing")
+    
+        run_root = tmp_path / "runs"
+        project_path = tmp_path / "project_dxf_v1.json"
+        _write_json(
+            project_path,
+            {
+                "version": "dxf_v1",
+                "name": "e2e_cli_dxf_run",
+                "seed": 0,
+                "time_limit_s": 10,
+                "units": "mm",
+                "spacing_mm": 0.0,
+                "margin_mm": 0.0,
+                "stocks_dxf": [{"id": "stock_1", "path": str(stock_fixture), "quantity": 1, "allowed_rotations_deg": [0]}],
+                "parts_dxf": [{"id": "part_1", "path": str(part_fixture), "quantity": 1, "allowed_rotations_deg": [0]}],
+            },
+        )
+    
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "vrs_nesting.cli",
+                "dxf-run",
+                str(project_path),
+                "--run-root",
+                str(run_root),
+                "--sparrow-bin",
+                str(fake_sparrow),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+>       run_dir = _assert_run_dir_stdout_contract(proc)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_cli_end_to_end_contract.py:229: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+proc = CompletedProcess(args=['/usr/bin/python3', '-m', 'vrs_nesting.cli', 'dxf-run', '/tmp/pytest-of-runner/pytest-0/test_cl...PIPELINE: GEO_RUST_BIN_NOT_FOUND: nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN\n')
+
+    def _assert_run_dir_stdout_contract(proc: subprocess.CompletedProcess[str]) -> Path:
+        if proc.returncode != 0:
+>           raise AssertionError(f"CLI failed rc={proc.returncode}, stderr={proc.stderr}")
+E           AssertionError: CLI failed rc=2, stderr=ERROR: E_DXF_PIPELINE: GEO_RUST_BIN_NOT_FOUND: nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN
+
+tests/test_cli_end_to_end_contract.py:126: AssertionError
+_____ test_build_sparrow_inputs_source_base_offset_uses_prepared_geometry ______
+
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_build_sparrow_inputs_sour0')
+
+    def test_build_sparrow_inputs_source_base_offset_uses_prepared_geometry(tmp_path: Path):
+        stock_path = tmp_path / "stock.json"
+        part_path = tmp_path / "part.json"
+    
+        _write_json_fixture(
+            stock_path,
+            [
+                {
+                    "layer": "CUT_OUTER",
+                    "type": "LWPOLYLINE",
+                    "closed": True,
+                    "points": [[0, 0], [100, 0], [100, 100], [0, 100]],
+                }
+            ],
+        )
+        _write_json_fixture(
+            part_path,
+            [
+                {
+                    "layer": "CUT_OUTER",
+                    "type": "LWPOLYLINE",
+                    "closed": True,
+                    "points": [[0, 0], [10, 0], [10, 10], [0, 10]],
+                }
+            ],
+        )
+    
+        project = DxfProjectModel(
+            version="dxf_v1",
+            name="offset_source_base",
+            seed=0,
+            time_limit_s=10,
+            units="mm",
+            spacing_mm=2.0,
+            margin_mm=0.0,
+            stocks_dxf=[DxfAssetSpec(id="stock_1", path=str(stock_path), quantity=1, allowed_rotations_deg=[0])],
+            parts_dxf=[DxfAssetSpec(id="part_1", path=str(part_path), quantity=1, allowed_rotations_deg=[0])],
+        )
+    
+>       _, solver_input, _ = build_sparrow_inputs(project, project_dir=tmp_path)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_sparrow_input_generator.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+vrs_nesting/sparrow/input_generator.py:78: in build_sparrow_inputs
+    _load_asset_geometry(
+vrs_nesting/sparrow/input_generator.py:50: in _load_asset_geometry
+    prepared = offset_stock_geometry(poly, margin_mm=margin_mm, spacing_mm=spacing_mm)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vrs_nesting/geometry/offset.py:474: in offset_stock_geometry
+    return _offset_stock_geometry_rust(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vrs_nesting/geometry/offset.py:384: in _offset_stock_geometry_rust
+    response_payload = _run_rust_pipeline(request)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vrs_nesting/geometry/offset.py:302: in _run_rust_pipeline
+    bin_path = _resolve_nesting_engine_bin()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _resolve_nesting_engine_bin() -> str:
+        repo_root = Path(__file__).resolve().parents[2]
+        check_release_path = repo_root / "rust" / "nesting_engine" / "target" / "release" / "nesting_engine"
+        candidates: list[str] = []
+        for env_name in (RUST_BIN_ENV, SHARED_RUST_BIN_ENV):
+            env_value = os.environ.get(env_name, "").strip()
+            if env_value:
+                candidates.append(env_value)
+        candidates.append(str(check_release_path))
+        candidates.append("nesting_engine")
+    
+        for candidate in candidates:
+            resolved = _resolve_bin_candidate(candidate)
+            if resolved:
+                return resolved
+    
+>       raise GeometryOffsetError(
+            "GEO_RUST_BIN_NOT_FOUND",
+            "nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN",
+        )
+E       vrs_nesting.geometry.offset.GeometryOffsetError: GEO_RUST_BIN_NOT_FOUND: nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN
+
+vrs_nesting/geometry/offset.py:100: GeometryOffsetError
+______ test_build_sparrow_inputs_exposes_spacing_and_margin_for_validator ______
+
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_build_sparrow_inputs_expo0')
+
+    def test_build_sparrow_inputs_exposes_spacing_and_margin_for_validator(tmp_path: Path):
+        stock_path = tmp_path / "stock.json"
+        part_path = tmp_path / "part.json"
+    
+        _write_json_fixture(
+            stock_path,
+            [
+                {
+                    "layer": "CUT_OUTER",
+                    "type": "LWPOLYLINE",
+                    "closed": True,
+                    "points": [[0, 0], [100, 0], [100, 100], [0, 100]],
+                }
+            ],
+        )
+        _write_json_fixture(
+            part_path,
+            [
+                {
+                    "layer": "CUT_OUTER",
+                    "type": "LWPOLYLINE",
+                    "closed": True,
+                    "points": [[0, 0], [10, 0], [10, 10], [0, 10]],
+                }
+            ],
+        )
+    
+        project = DxfProjectModel(
+            version="dxf_v1",
+            name="spacing_margin_presence",
+            seed=0,
+            time_limit_s=10,
+            units="mm",
+            spacing_mm=1.5,
+            margin_mm=0.75,
+            stocks_dxf=[DxfAssetSpec(id="stock_1", path=str(stock_path), quantity=1, allowed_rotations_deg=[0])],
+            parts_dxf=[DxfAssetSpec(id="part_1", path=str(part_path), quantity=1, allowed_rotations_deg=[0])],
+        )
+    
+>       _, solver_input, _ = build_sparrow_inputs(project, project_dir=tmp_path)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_sparrow_input_generator.py:104: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+vrs_nesting/sparrow/input_generator.py:78: in build_sparrow_inputs
+    _load_asset_geometry(
+vrs_nesting/sparrow/input_generator.py:50: in _load_asset_geometry
+    prepared = offset_stock_geometry(poly, margin_mm=margin_mm, spacing_mm=spacing_mm)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vrs_nesting/geometry/offset.py:474: in offset_stock_geometry
+    return _offset_stock_geometry_rust(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vrs_nesting/geometry/offset.py:384: in _offset_stock_geometry_rust
+    response_payload = _run_rust_pipeline(request)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vrs_nesting/geometry/offset.py:302: in _run_rust_pipeline
+    bin_path = _resolve_nesting_engine_bin()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _resolve_nesting_engine_bin() -> str:
+        repo_root = Path(__file__).resolve().parents[2]
+        check_release_path = repo_root / "rust" / "nesting_engine" / "target" / "release" / "nesting_engine"
+        candidates: list[str] = []
+        for env_name in (RUST_BIN_ENV, SHARED_RUST_BIN_ENV):
+            env_value = os.environ.get(env_name, "").strip()
+            if env_value:
+                candidates.append(env_value)
+        candidates.append(str(check_release_path))
+        candidates.append("nesting_engine")
+    
+        for candidate in candidates:
+            resolved = _resolve_bin_candidate(candidate)
+            if resolved:
+                return resolved
+    
+>       raise GeometryOffsetError(
+            "GEO_RUST_BIN_NOT_FOUND",
+            "nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN",
+        )
+E       vrs_nesting.geometry.offset.GeometryOffsetError: GEO_RUST_BIN_NOT_FOUND: nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN
+
+vrs_nesting/geometry/offset.py:100: GeometryOffsetError
+=========================== short test summary info ============================
+FAILED tests/test_cli_end_to_end_contract.py::test_cli_dxf_run_contract_end_to_end_with_fake_sparrow - AssertionError: CLI failed rc=2, stderr=ERROR: E_DXF_PIPELINE: GEO_RUST_BIN_NOT_FOUND: nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN
+FAILED tests/test_sparrow_input_generator.py::test_build_sparrow_inputs_source_base_offset_uses_prepared_geometry - vrs_nesting.geometry.offset.GeometryOffsetError: GEO_RUST_BIN_NOT_FOUND: nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN
+FAILED tests/test_sparrow_input_generator.py::test_build_sparrow_inputs_exposes_spacing_and_margin_for_validator - vrs_nesting.geometry.offset.GeometryOffsetError: GEO_RUST_BIN_NOT_FOUND: nesting_engine binary not found; set VRS_NESTING_ENGINE_BIN or NESTING_ENGINE_BIN
+3 failed, 36 passed in 1.60s
+Error: Process completed with exit code 1.

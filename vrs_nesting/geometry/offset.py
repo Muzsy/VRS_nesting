@@ -48,6 +48,14 @@ def _env_is_truthy(name: str) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _allow_shapely_fallback_for_error(exc: GeometryOffsetError) -> bool:
+    if exc.code == "GEO_RUST_BIN_NOT_FOUND":
+        # Python-only environments (e.g. lightweight smoketests) should keep working
+        # with the deterministic shapely fallback when the Rust binary is unavailable.
+        return True
+    return _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV)
+
+
 def _part_offset_engine() -> str:
     value = os.environ.get(PART_ENGINE_ENV, ENGINE_RUST).strip().lower()
     if value in {ENGINE_RUST, ENGINE_SHAPELY}:
@@ -449,11 +457,11 @@ def offset_part_geometry(
     except GeometryOffsetError as exc:
         if exc.code == "GEO_RUST_SELF_INTERSECT":
             raise
-        if exc.code.startswith("GEO_RUST_") and _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV):
+        if exc.code.startswith("GEO_RUST_") and _allow_shapely_fallback_for_error(exc):
             _LOG.warning(
-                "offset_part_geometry: rust path failed (%s), using explicit shapely fallback via %s",
+                "offset_part_geometry: rust path failed (%s), using shapely fallback%s",
                 exc.code,
-                ALLOW_SHAPELY_FALLBACK_ENV,
+                f" via {ALLOW_SHAPELY_FALLBACK_ENV}" if _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV) else "",
             )
             return _offset_part_geometry_shapely(payload, spacing_mm=spacing_mm)
         raise
@@ -475,11 +483,11 @@ def offset_stock_geometry(
     except GeometryOffsetError as exc:
         if exc.code == "GEO_RUST_SELF_INTERSECT":
             raise
-        if exc.code.startswith("GEO_RUST_") and _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV):
+        if exc.code.startswith("GEO_RUST_") and _allow_shapely_fallback_for_error(exc):
             _LOG.warning(
-                "offset_stock_geometry: rust path failed (%s), using explicit shapely fallback via %s",
+                "offset_stock_geometry: rust path failed (%s), using shapely fallback%s",
                 exc.code,
-                ALLOW_SHAPELY_FALLBACK_ENV,
+                f" via {ALLOW_SHAPELY_FALLBACK_ENV}" if _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV) else "",
             )
             return _offset_stock_geometry_shapely(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
         raise

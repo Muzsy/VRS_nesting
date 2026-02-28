@@ -1,0 +1,199 @@
+determism (x86_64) log:
+
+Run ./scripts/smoke_platform_determinism_rotation.sh
+  ./scripts/smoke_platform_determinism_rotation.sh
+  shell: /usr/bin/bash -e {0}
+  env:
+    CARGO_HOME: /home/runner/.cargo
+    CARGO_INCREMENTAL: 0
+    CARGO_TERM_COLOR: always
+[BUILD] nesting_engine release
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded block-buffer v0.10.4
+  Downloaded approx v0.5.1
+  Downloaded crypto-common v0.1.7
+  Downloaded itoa v1.0.17
+  Downloaded version_check v0.9.5
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded equivalent v1.0.2
+  Downloaded i_float v1.16.0
+  Downloaded zmij v1.0.21
+  Downloaded serde_derive v1.0.228
+  Downloaded unicode-ident v1.0.24
+  Downloaded serde v1.0.228
+  Downloaded memchr v2.8.0
+  Downloaded itertools v0.11.0
+  Downloaded heapless v0.8.0
+  Downloaded serde_json v1.0.149
+  Downloaded hashbrown v0.15.5
+  Downloaded libm v0.2.16
+  Downloaded typenum v1.19.0
+  Downloaded serde_core v1.0.228
+  Downloaded i_overlay v4.4.0
+  Downloaded rstar v0.12.2
+  Downloaded syn v2.0.117
+  Downloaded geo v0.28.0
+  Downloaded proc-macro2 v1.0.106
+  Downloaded num-traits v0.2.19
+  Downloaded log v0.4.29
+  Downloaded geographiclib-rs v0.2.7
+  Downloaded geo-types v0.7.18
+  Downloaded i_tree v0.17.0
+  Downloaded i_shape v1.16.0
+  Downloaded generic-array v0.14.7
+  Downloaded foldhash v0.1.5
+  Downloaded either v1.15.0
+  Downloaded robust v1.2.0
+  Downloaded spade v2.15.0
+  Downloaded smallvec v1.15.1
+  Downloaded sha2 v0.10.9
+  Downloaded earcutr v0.4.3
+   Compiling cfg-if v1.0.4
+   Compiling cpufeatures v0.2.17
+   Compiling itoa v1.0.17
+   Compiling float_next_after v1.0.0
+   Compiling memchr v2.8.0
+   Compiling i_key_sort v0.10.1
+   Compiling log v0.4.29
+   Compiling geo v0.28.0
+   Compiling i_overlay v4.4.0
+   Compiling sha2 v0.10.9
+   Compiling hex v0.4.3
+   Compiling nesting_engine v0.1.0 (/home/runner/work/VRS_nesting/VRS_nesting/rust/nesting_engine)
+    Finished `release` profile [optimized] target(s) in 52.84s
+[RUN] platform determinism rotation smoke
+[nesting-engine-runner] run_dir=/home/runner/work/VRS_nesting/VRS_nesting/runs/20260228T071242Z_f4d97fc0
+[nesting-engine-runner] cmd=/home/runner/work/VRS_nesting/VRS_nesting/rust/nesting_engine/target/release/nesting_engine nest
+ERROR: platform determinism hash mismatch
+[INFO] arch=x86_64
+ expected=e1741617758b37a03c219fd0e99ad927506c6a7eaf02be7ff329f73e02a31862
+ actual=322a996c8179b7efa17a013679d52ec884cf95252f7639789f0103c5e9fe1e05
+ run_dir=/home/runner/work/VRS_nesting/VRS_nesting/runs/20260228T071242Z_f4d97fc0
+[INFO] run_dir=/home/runner/work/VRS_nesting/VRS_nesting/runs/20260228T071242Z_f4d97fc0
+[INFO] runner_output_sha256=c58a41a3e99762404d85f6287a585e2d2633fb27efa8d01f3da34a23d541496d
+[INFO] normalized_output_sha256=322a996c8179b7efa17a013679d52ec884cf95252f7639789f0103c5e9fe1e05
+Error: Process completed with exit code 1.
+
+determism (arm64) log:
+
+Run ./scripts/smoke_platform_determinism_rotation.sh
+[BUILD] nesting_engine release
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cfg-if v1.0.4
+  Downloaded block-buffer v0.10.4
+  Downloaded digest v0.10.7
+  Downloaded approx v0.5.1
+  Downloaded cpufeatures v0.2.17
+  Downloaded crypto-common v0.1.7
+  Downloaded byteorder v1.5.0
+  Downloaded allocator-api2 v0.2.21
+  Downloaded autocfg v1.5.0
+  Downloaded serde_derive v1.0.228
+  Downloaded log v0.4.29
+  Downloaded generic-array v0.14.7
+  Downloaded float_next_after v1.0.0
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded itoa v1.0.17
+  Downloaded hash32 v0.3.1
+  Downloaded equivalent v1.0.2
+  Downloaded i_float v1.16.0
+  Downloaded sha2 v0.10.9
+  Downloaded zmij v1.0.21
+  Downloaded i_shape v1.16.0
+  Downloaded foldhash v0.1.5
+  Downloaded version_check v0.9.5
+  Downloaded quote v1.0.44
+  Downloaded i_tree v0.17.0
+  Downloaded hex v0.4.3
+  Downloaded rstar v0.12.2
+  Downloaded smallvec v1.15.1
+  Downloaded unicode-ident v1.0.24
+  Downloaded typenum v1.19.0
+  Downloaded serde v1.0.228
+  Downloaded memchr v2.8.0
+  Downloaded heapless v0.8.0
+  Downloaded proc-macro2 v1.0.106
+  Downloaded itertools v0.11.0
+  Downloaded serde_json v1.0.149
+  Downloaded hashbrown v0.15.5
+  Downloaded libm v0.2.16
+  Downloaded num-traits v0.2.19
+  Downloaded serde_core v1.0.228
+  Downloaded i_overlay v4.4.0
+  Downloaded geo-types v0.7.18
+  Downloaded geo v0.28.0
+  Downloaded geographiclib-rs v0.2.7
+  Downloaded syn v2.0.117
+  Downloaded either v1.15.0
+  Downloaded robust v1.2.0
+  Downloaded spade v2.15.0
+  Downloaded earcutr v0.4.3
+  Downloaded libc v0.2.182
+  Downloaded i_key_sort v0.10.1
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.0
+   Compiling num-traits v0.2.19
+   Compiling typenum v1.19.0
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.7
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.44
+   Compiling heapless v0.8.0
+   Compiling byteorder v1.5.0
+   Compiling hash32 v0.3.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.228
+   Compiling smallvec v1.15.1
+   Compiling libc v0.2.182
+   Compiling allocator-api2 v0.2.21
+   Compiling equivalent v1.0.2
+   Compiling foldhash v0.1.5
+   Compiling either v1.15.0
+   Compiling zmij v1.0.21
+   Compiling itertools v0.11.0
+   Compiling hashbrown v0.15.5
+   Compiling rstar v0.12.2
+   Compiling syn v2.0.117
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling approx v0.5.1
+   Compiling i_float v1.16.0
+   Compiling serde v1.0.228
+   Compiling robust v1.2.0
+   Compiling serde_json v1.0.149
+   Compiling spade v2.15.0
+   Compiling i_shape v1.16.0
+   Compiling geo-types v0.7.18
+   Compiling digest v0.10.7
+   Compiling serde_derive v1.0.228
+   Compiling cpufeatures v0.2.17
+   Compiling earcutr v0.4.3
+   Compiling geographiclib-rs v0.2.7
+   Compiling memchr v2.8.0
+   Compiling itoa v1.0.17
+   Compiling i_key_sort v0.10.1
+   Compiling cfg-if v1.0.4
+   Compiling log v0.4.29
+   Compiling float_next_after v1.0.0
+   Compiling i_tree v0.17.0
+   Compiling i_overlay v4.4.0
+   Compiling geo v0.28.0
+   Compiling sha2 v0.10.9
+   Compiling hex v0.4.3
+   Compiling nesting_engine v0.1.0 (/home/runner/work/VRS_nesting/VRS_nesting/rust/nesting_engine)
+    Finished `release` profile [optimized] target(s) in 35.86s
+[RUN] platform determinism rotation smoke
+[nesting-engine-runner] run_dir=/home/runner/work/VRS_nesting/VRS_nesting/runs/20260228T071246Z_345c49b2
+[nesting-engine-runner] cmd=/home/runner/work/VRS_nesting/VRS_nesting/rust/nesting_engine/target/release/nesting_engine nest
+ERROR: platform determinism hash mismatch
+[INFO] arch=aarch64
+[INFO] run_dir=/home/runner/work/VRS_nesting/VRS_nesting/runs/20260228T071246Z_345c49b2
+[INFO] runner_output_sha256=c58a41a3e99762404d85f6287a585e2d2633fb27efa8d01f3da34a23d541496d
+[INFO] normalized_output_sha256=322a996c8179b7efa17a013679d52ec884cf95252f7639789f0103c5e9fe1e05
+ expected=e1741617758b37a03c219fd0e99ad927506c6a7eaf02be7ff329f73e02a31862
+ actual=322a996c8179b7efa17a013679d52ec884cf95252f7639789f0103c5e9fe1e05
+ run_dir=/home/runner/work/VRS_nesting/VRS_nesting/runs/20260228T071246Z_345c49b2
+Error: Process completed with exit code 1.
