@@ -277,6 +277,13 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   TMP_NFP_FALLBACK_OUT="$(mktemp /tmp/nesting_engine_nfp_fallback_out_XXXXXX.json)"
   TMP_NOHOLES_NFP_OUT_A="$(mktemp /tmp/nesting_engine_noholes_nfp_out_a_XXXXXX.json)"
   TMP_NOHOLES_NFP_OUT_B="$(mktemp /tmp/nesting_engine_noholes_nfp_out_b_XXXXXX.json)"
+  TMP_F0_BLF_OUT="$(mktemp /tmp/nesting_engine_f0_blf_out_XXXXXX.json)"
+  TMP_F0_NFP_OUT_A="$(mktemp /tmp/nesting_engine_f0_nfp_out_a_XXXXXX.json)"
+  TMP_F0_NFP_OUT_B="$(mktemp /tmp/nesting_engine_f0_nfp_out_b_XXXXXX.json)"
+  TMP_F0_NFP_OUT_C="$(mktemp /tmp/nesting_engine_f0_nfp_out_c_XXXXXX.json)"
+  TMP_F1_NFP_OUT="$(mktemp /tmp/nesting_engine_f1_nfp_out_XXXXXX.json)"
+  TMP_F2_NFP_OUT="$(mktemp /tmp/nesting_engine_f2_nfp_out_XXXXXX.json)"
+  TMP_F3_NFP_OUT="$(mktemp /tmp/nesting_engine_f3_nfp_out_XXXXXX.json)"
 
   "$NESTING_ENGINE_BIN_PATH" nest < "poc/nesting_engine/sample_input_v2.json" > "$TMP_BASELINE_OUT"
   python3 -m json.tool "$TMP_BASELINE_OUT" > /dev/null
@@ -346,8 +353,8 @@ PY
   echo "[NEST] placer=nfp fallback hash OK"
 
   echo "[NEST] placer=nfp noholes determinism smoke"
-  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_noholes_input_v2.json" > "$TMP_NOHOLES_NFP_OUT_A"
-  "$NESTING_ENGINE_BIN_PATH" nest --placer=nfp < "poc/nesting_engine/f2_3_noholes_input_v2.json" > "$TMP_NOHOLES_NFP_OUT_B"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json" > "$TMP_NOHOLES_NFP_OUT_A"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer=nfp < "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json" > "$TMP_NOHOLES_NFP_OUT_B"
   python3 -m json.tool "$TMP_NOHOLES_NFP_OUT_A" > /dev/null
   python3 -m json.tool "$TMP_NOHOLES_NFP_OUT_B" > /dev/null
   python3 - "$TMP_NOHOLES_NFP_OUT_A" "$TMP_NOHOLES_NFP_OUT_B" <<'PY'
@@ -364,6 +371,89 @@ if not ha or not hb:
 if ha != hb:
     raise SystemExit(f"noholes nfp determinism mismatch: {ha} != {hb}")
 print("[NEST] placer=nfp noholes determinism OK")
+PY
+
+  echo "[NEST][F0] no-worse-than-BLF basic check"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer blf < "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json" > "$TMP_F0_BLF_OUT"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json" > "$TMP_F0_NFP_OUT_A"
+  python3 -m json.tool "$TMP_F0_BLF_OUT" > /dev/null
+  python3 -m json.tool "$TMP_F0_NFP_OUT_A" > /dev/null
+  python3 - "$TMP_F0_BLF_OUT" "$TMP_F0_NFP_OUT_A" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+blf = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+nfp = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+placed_blf = len(blf.get("placements", []))
+placed_nfp = len(nfp.get("placements", []))
+if placed_nfp < placed_blf:
+    raise SystemExit(f"F0 regression: nfp({placed_nfp}) < blf({placed_blf})")
+print(f"[NEST][F0] no-worse-than-BLF OK: nfp={placed_nfp}, blf={placed_blf}")
+PY
+
+  echo "[NEST][F1] wrapper contract smoke (placed>=1)"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f1_wrapper_contract_noholes_v2.json" > "$TMP_F1_NFP_OUT"
+  python3 - "$TMP_F1_NFP_OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+placed = len(out.get("placements", []))
+if placed < 1:
+    raise SystemExit("F1 wrapper contract failed: expected placed_count >= 1")
+print(f"[NEST][F1] wrapper contract OK: placed={placed}")
+PY
+
+  echo "[NEST][F2] touching stress smoke (placed>=1)"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f2_touching_stress_noholes_v2.json" > "$TMP_F2_NFP_OUT"
+  python3 - "$TMP_F2_NFP_OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+placed = len(out.get("placements", []))
+if placed < 1:
+    raise SystemExit("F2 touching stress failed: expected placed_count >= 1")
+print(f"[NEST][F2] touching stress OK: placed={placed}")
+PY
+
+  echo "[NEST][F3] rotation coverage (critical part must be 90 deg)"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f3_rotation_coverage_noholes_v2.json" > "$TMP_F3_NFP_OUT"
+  python3 - "$TMP_F3_NFP_OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+critical = [p for p in out.get("placements", []) if p.get("part_id") == "f3_rotation_critical"]
+if not critical:
+    raise SystemExit("F3 rotation coverage failed: critical part is not placed")
+if any(int(p.get("rotation_deg", -1)) != 90 for p in critical):
+    raise SystemExit(f"F3 rotation coverage failed: expected 90 deg, got {critical}")
+print("[NEST][F3] rotation coverage OK: critical part rotation=90")
+PY
+
+  echo "[NEST][F0] placer=nfp determinism gate (3x hash)"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json" > "$TMP_F0_NFP_OUT_B"
+  "$NESTING_ENGINE_BIN_PATH" nest --placer nfp < "poc/nesting_engine/f2_3_f0_sanity_noholes_v2.json" > "$TMP_F0_NFP_OUT_C"
+  python3 - "$TMP_F0_NFP_OUT_A" "$TMP_F0_NFP_OUT_B" "$TMP_F0_NFP_OUT_C" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+hashes = []
+for path in sys.argv[1:]:
+    out = json.loads(Path(path).read_text(encoding="utf-8"))
+    h = str(out.get("meta", {}).get("determinism_hash", "")).strip()
+    if not h:
+        raise SystemExit("F0 determinism gate failed: missing determinism_hash")
+    hashes.append(h)
+if not (hashes[0] == hashes[1] == hashes[2]):
+    raise SystemExit(f"F0 determinism gate failed: hashes differ: {hashes}")
+print(f"[NEST][F0] determinism 3x OK: {hashes[0]}")
 PY
 
   python3 - "poc/nesting_engine/sample_input_v2.json" "$TMP_BASELINE_OUT" <<'PY'

@@ -1,0 +1,28 @@
+{
+  "version": "nesting_engine_v2",
+  "seed": 4201,
+  "time_limit_sec": 30,
+  "sheet": {
+    "width_mm": 120.0,
+    "height_mm": 80.0,
+    "kerf_mm": 0.2,
+    "margin_mm": 5.0,
+    "spacing_mm": 2.0
+  },
+  "parts": [
+    {
+      "id": "f0_rect_a",
+      "quantity": 1,
+      "allowed_rotations_deg": [0, 90],
+      "outer_points_mm": [[0, 0], [40, 0], [40, 20], [0, 20]],
+      "holes_points_mm": []
+    },
+    {
+      "id": "f0_rect_b",
+      "quantity": 1,
+      "allowed_rotations_deg": [0, 90],
+      "outer_points_mm": [[0, 0], [30, 0], [30, 20], [0, 20]],
+      "holes_points_mm": []
+    }
+  ]
+}

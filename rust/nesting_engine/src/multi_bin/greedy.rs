@@ -4,6 +4,7 @@ use std::time::Instant;
 use crate::geometry::types::Polygon64;
 use crate::placement::blf::{InflatedPartSpec, UnplacedItem};
 use crate::placement::{PlacedItem, PlacementResult, blf_place, nfp_place};
+use nesting_engine::nfp::cache::NfpCache;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacerKind {
@@ -26,6 +27,7 @@ pub fn greedy_multi_sheet(
     placer_kind: PlacerKind,
 ) -> MultiSheetResult {
     let started_at = Instant::now();
+    let mut nfp_cache = NfpCache::new();
     let mut sheet_index = 0usize;
     let mut placed: Vec<PlacedItem> = Vec::new();
 
@@ -78,6 +80,7 @@ pub fn greedy_multi_sheet(
                 grid_step_mm,
                 time_limit_sec,
                 started_at,
+                &mut nfp_cache,
             ),
         };
 

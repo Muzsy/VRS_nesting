@@ -6,8 +6,10 @@
 
 pub mod boundary_clean;
 pub mod cache;
+pub mod cfr;
 pub mod concave;
 pub mod convex;
+pub mod ifp;
 
 use std::fmt::{Display, Formatter};
 
