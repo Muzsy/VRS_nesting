@@ -197,31 +197,7 @@ pub fn nfp_place(
                 continue;
             }
 
-            all_candidates.sort_by(|a, b| {
-                let ra = rotation_contexts[a.rotation_idx].rotation_rank;
-                let rb = rotation_contexts[b.rotation_idx].rotation_rank;
-                a.ty
-                    .cmp(&b.ty)
-                    .then(a.tx.cmp(&b.tx))
-                    .then(ra.cmp(&rb))
-                    .then(a.cfr_component_rank.cmp(&b.cfr_component_rank))
-                    .then(
-                        a.vertex_rank_within_component
-                            .cmp(&b.vertex_rank_within_component),
-                    )
-                    .then(a.nudge_rank.cmp(&b.nudge_rank))
-            });
-
-            let mut deduped: Vec<Candidate> = Vec::new();
-            let mut seen = std::collections::BTreeSet::new();
-            for candidate in all_candidates {
-                if seen.insert((candidate.tx, candidate.ty)) {
-                    deduped.push(candidate);
-                    if deduped.len() >= MAX_CANDIDATES_PER_PART {
-                        break;
-                    }
-                }
-            }
+            let deduped = sort_and_dedupe_candidates(all_candidates, &rotation_contexts);
 
             let mut placed_this_instance = false;
             for candidate in deduped {
@@ -268,6 +244,38 @@ pub fn nfp_place(
     }
 
     PlacementResult { placed, unplaced }
+}
+
+fn sort_and_dedupe_candidates(
+    mut all_candidates: Vec<Candidate>,
+    rotation_contexts: &[RotationContext],
+) -> Vec<Candidate> {
+    all_candidates.sort_by(|a, b| {
+        let ra = rotation_contexts[a.rotation_idx].rotation_rank;
+        let rb = rotation_contexts[b.rotation_idx].rotation_rank;
+        a.ty
+            .cmp(&b.ty)
+            .then(a.tx.cmp(&b.tx))
+            .then(ra.cmp(&rb))
+            .then(a.cfr_component_rank.cmp(&b.cfr_component_rank))
+            .then(
+                a.vertex_rank_within_component
+                    .cmp(&b.vertex_rank_within_component),
+            )
+            .then(a.nudge_rank.cmp(&b.nudge_rank))
+    });
+
+    let mut deduped: Vec<Candidate> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for candidate in all_candidates {
+        if seen.insert((candidate.tx, candidate.ty, candidate.rotation_idx)) {
+            deduped.push(candidate);
+            if deduped.len() >= MAX_CANDIDATES_PER_PART {
+                break;
+            }
+        }
+    }
+    deduped
 }
 
 fn compute_nfp_lib(placed_polygon: &Polygon64, moving_polygon: &Polygon64) -> Option<LibPolygon64> {
@@ -446,8 +454,10 @@ mod tests {
 
     use crate::placement::blf::bbox_area;
     use nesting_engine::nfp::cache::NfpCache;
+    use nesting_engine::nfp::ifp::{IfpRect, TranslationRange};
+    use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPolygon64};
 
-    use super::{InflatedPartSpec, nfp_place};
+    use super::{Candidate, InflatedPartSpec, RotationContext, nfp_place, sort_and_dedupe_candidates};
     use crate::geometry::{
         scale::mm_to_i64,
         types::{Point64, Polygon64},
@@ -472,6 +482,18 @@ mod tests {
                     x: mm_to_i64(0.0),
                     y: mm_to_i64(h_mm),
                 },
+            ],
+            holes: Vec::new(),
+        }
+    }
+
+    fn lib_rect_i64(w: i64, h: i64) -> LibPolygon64 {
+        LibPolygon64 {
+            outer: vec![
+                LibPoint64 { x: 0, y: 0 },
+                LibPoint64 { x: w, y: 0 },
+                LibPoint64 { x: w, y: h },
+                LibPoint64 { x: 0, y: h },
             ],
             holes: Vec::new(),
         }
@@ -526,5 +548,51 @@ mod tests {
         let b = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache_b);
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);
+    }
+
+    #[test]
+    fn dedupe_keeps_same_xy_for_different_rotations() {
+        let dummy_ifp = IfpRect {
+            polygon: lib_rect_i64(10, 10),
+            tx: TranslationRange { min: 0, max: 10 },
+            ty: TranslationRange { min: 0, max: 10 },
+        };
+        let rotation_contexts = vec![
+            RotationContext {
+                rotation_deg: 0,
+                rotation_rank: 0,
+                moving_polygon: rect(2.0, 2.0),
+                ifp: dummy_ifp.clone(),
+            },
+            RotationContext {
+                rotation_deg: 90,
+                rotation_rank: 1,
+                moving_polygon: rect(2.0, 2.0),
+                ifp: dummy_ifp,
+            },
+        ];
+        let candidates = vec![
+            Candidate {
+                tx: 100,
+                ty: 200,
+                rotation_idx: 0,
+                cfr_component_rank: 0,
+                vertex_rank_within_component: 0,
+                nudge_rank: 0,
+            },
+            Candidate {
+                tx: 100,
+                ty: 200,
+                rotation_idx: 1,
+                cfr_component_rank: 0,
+                vertex_rank_within_component: 0,
+                nudge_rank: 0,
+            },
+        ];
+
+        let out = sort_and_dedupe_candidates(candidates, &rotation_contexts);
+        assert_eq!(out.len(), 2, "different rotations at same tx/ty must survive dedupe");
+        assert_eq!(out[0].rotation_idx, 0);
+        assert_eq!(out[1].rotation_idx, 1);
     }
 }

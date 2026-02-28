@@ -1,0 +1,49 @@
+steps:
+  - name: "Felderítés: jelenlegi dedupe kulcs azonosítása"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - rust/nesting_engine/src/placement/nfp_placer.rs
+      Keresd meg a candidate sort+dedupe szakaszt.
+      Rögzítsd röviden a canvasban: a dedupe jelenleg csak (tx,ty) kulcsot használ.
+    outputs:
+      - "canvases/nesting_engine/nfp_placer_candidate_dedupe_rotation_key.md"
+
+  - name: "Fix: dedupe kulcs bővítése rotációval"
+    description: >
+      A rust/nesting_engine/src/placement/nfp_placer.rs fájlban módosítsd a dedupe logikát:
+      - régi: seen.insert((tx,ty))
+      - új: seen.insert((tx,ty,rot)) ahol rot lehet rotation_deg (ajánlott) vagy rotation_idx
+      Fontos:
+      - A rendezés és a first-feasible kiválasztás logikája ne változzon.
+      - A determinisztikus candidate cap (4096) maradjon.
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Regressziós unit teszt: same (tx,ty), different rotation nem eshet ki"
+    description: >
+      A rust/nesting_engine/src/placement/nfp_placer.rs test moduljába adj hozzá unit tesztet, amely:
+      - létrehoz 2 Candidate példányt azonos tx,ty értékkel, különböző rotation mezővel,
+      - a production kódban használt sort+dedupe segédet (vagy ugyanazt a logikát) futtatja,
+      - assert: mindkét jelölt megmarad a dedupe után.
+      Ha a production kódban nincs külön helper, vezess be egy privát fn-t (pl. sort_and_dedupe_candidates)
+      és használd azt mind a kódban, mind a tesztben.
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a checklistet és reportot a Report Standard v2 szerint.
+      Checklist: a DoD pipálható listája.
+      Report: rövid change summary + How tested + DoD->Evidence Matrix + AUTO_VERIFY blokk.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nfp_placer_candidate_dedupe_rotation_key.md"
+      - "codex/reports/nesting_engine/nfp_placer_candidate_dedupe_rotation_key.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nfp_placer_candidate_dedupe_rotation_key.md
+    outputs:
+      - "codex/reports/nesting_engine/nfp_placer_candidate_dedupe_rotation_key.md"
+      - "codex/reports/nesting_engine/nfp_placer_candidate_dedupe_rotation_key.verify.log"
