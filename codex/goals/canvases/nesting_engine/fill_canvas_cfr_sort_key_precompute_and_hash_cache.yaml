@@ -1,0 +1,48 @@
+steps:
+  - name: "Felderítés: hol számolódik újra a sort key / ring_hash"
+    description: >
+      Olvasd el: AGENTS.md, rust/nesting_engine/src/nfp/cfr.rs.
+      Keresd meg a komponensek sort szakaszát és azokat a helyeket, ahol a ring_hash_u64 vagy a sort-kulcs
+      a comparatorban vagy többszörösen kerül kiszámításra.
+      Rögzítsd röviden a canvasban a jelenlegi viselkedést és a kívánt “precompute once” mintát.
+    outputs:
+      - "canvases/nesting_engine/cfr_sort_key_precompute_and_hash_cache.md"
+
+  - name: "Fix: sort key előszámítás + decorated rendezés"
+    description: >
+      Módosítsd a rust/nesting_engine/src/nfp/cfr.rs fájlt úgy, hogy:
+      - a canonicalize és invalid drop után minden komponenshez egyszer számold ki a SortKey-t,
+      - a rendezés a SortKey-k összehasonlításával történjen,
+      - ring_hash_u64 (sha256) ne fusson a comparatorban.
+      A kimenet továbbra is Vec<Polygon64> legyen, és byte-stabilan egyezzen az előző implementációval.
+    outputs:
+      - "rust/nesting_engine/src/nfp/cfr.rs"
+
+  - name: "Test-only guardrail: ring_hash hívások számlálása"
+    description: >
+      A rust/nesting_engine/src/nfp/cfr.rs-ben vezess be #[cfg(test)] alatti AtomicUsize számlálót,
+      amit a ring_hash_u64 növel minden híváskor.
+      Adj hozzá unit tesztet:
+      - reset counter
+      - compute_cfr(...) egy olyan eseten, ahol több komponens keletkezik
+      - assert: ring_hash_calls == komponens_szám (vagy <= komponens_szám + kis konstans, ha indokolt)
+      A teszt célja, hogy regresszió esetén bukjon, ha valaki visszateszi a hash számítást a comparatorba.
+    outputs:
+      - "rust/nesting_engine/src/nfp/cfr.rs"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a checklistet és reportot a Report Standard v2 szerint.
+      Checklist: DoD pipálható lista.
+      Report: Scope + változásösszefoglaló + How tested + DoD->Evidence Matrix + Advisory + AUTO_VERIFY blokk.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cfr_sort_key_precompute_and_hash_cache.md"
+      - "codex/reports/nesting_engine/cfr_sort_key_precompute_and_hash_cache.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cfr_sort_key_precompute_and_hash_cache.md
+      Ha FAIL: javítsd és futtasd újra.
+    outputs:
+      - "codex/reports/nesting_engine/cfr_sort_key_precompute_and_hash_cache.md"
+      - "codex/reports/nesting_engine/cfr_sort_key_precompute_and_hash_cache.verify.log"

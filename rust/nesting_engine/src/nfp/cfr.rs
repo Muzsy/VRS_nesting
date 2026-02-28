@@ -1,3 +1,6 @@
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use i_overlay::{
     core::{
         fill_rule::FillRule,
@@ -12,6 +15,23 @@ use i_overlay::{
 use sha2::{Digest, Sha256};
 
 use crate::geometry::types::{cross_product_i128, Point64, Polygon64};
+
+#[cfg(test)]
+static RING_HASH_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug, Clone, Copy)]
+struct SortKey {
+    min_point: Point64,
+    abs_area: i128,
+    vertex_count: usize,
+    ring_hash: u64,
+}
+
+#[derive(Debug)]
+struct DecoratedComponent {
+    poly: Polygon64,
+    key: SortKey,
+}
 
 pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon64> {
     let mut ifp_canon = ifp_rect.clone();
@@ -52,7 +72,7 @@ pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon
         return Vec::new();
     }
 
-    let mut out: Vec<Polygon64> = diff_shapes
+    let out: Vec<Polygon64> = diff_shapes
         .iter()
         .filter_map(|shape| decode_shape(shape, bounds))
         .filter_map(|mut poly| {
@@ -63,8 +83,7 @@ pub fn compute_cfr(ifp_rect: &Polygon64, nfp_polys: &[Polygon64]) -> Vec<Polygon
             }
         })
         .collect();
-    sort_components(&mut out);
-    out
+    sort_components(out)
 }
 
 fn run_overlay(subject: &[IntShape], clip: &[IntShape], rule: OverlayRule) -> Vec<IntShape> {
@@ -253,23 +272,45 @@ fn point_on_segment(a: Point64, b: Point64, p: Point64) -> bool {
     p.x >= min_x && p.x <= max_x && p.y >= min_y && p.y <= max_y
 }
 
-fn sort_components(components: &mut [Polygon64]) {
-    components.sort_by(|a, b| {
-        let min_a = min_point(a);
-        let min_b = min_point(b);
-        let ring_hash_a = ring_hash_u64(&a.outer, &a.holes);
-        let ring_hash_b = ring_hash_u64(&b.outer, &b.holes);
-        min_a
-            .x
-            .cmp(&min_b.x)
-            .then(min_a.y.cmp(&min_b.y))
-            .then(component_area_abs(a).cmp(&component_area_abs(b)))
-            .then(vertex_count(a).cmp(&vertex_count(b)))
-            .then(ring_hash_a.cmp(&ring_hash_b))
-    });
+fn sort_components(components: Vec<Polygon64>) -> Vec<Polygon64> {
+    let mut decorated: Vec<DecoratedComponent> = components
+        .into_iter()
+        .map(|poly| {
+            let key = build_sort_key(&poly);
+            DecoratedComponent { poly, key }
+        })
+        .collect();
+
+    decorated.sort_by(|a, b| compare_sort_keys(a.key, b.key));
+
+    decorated.into_iter().map(|entry| entry.poly).collect()
+}
+
+fn build_sort_key(poly: &Polygon64) -> SortKey {
+    SortKey {
+        min_point: min_point(poly),
+        abs_area: component_area_abs(poly),
+        vertex_count: vertex_count(poly),
+        ring_hash: ring_hash_u64(&poly.outer, &poly.holes),
+    }
+}
+
+fn compare_sort_keys(a: SortKey, b: SortKey) -> std::cmp::Ordering {
+    a.min_point
+        .x
+        .cmp(&b.min_point.x)
+        .then(a.min_point.y.cmp(&b.min_point.y))
+        .then(a.abs_area.cmp(&b.abs_area))
+        .then(a.vertex_count.cmp(&b.vertex_count))
+        .then(a.ring_hash.cmp(&b.ring_hash))
 }
 
 fn ring_hash_u64(outer: &[Point64], holes: &[Vec<Point64>]) -> u64 {
+    #[cfg(test)]
+    {
+        RING_HASH_CALLS.fetch_add(1, Ordering::Relaxed);
+    }
+
     let mut hasher = Sha256::new();
     hasher.update(b"cfr_ring_hash_v1");
     hash_ring(&mut hasher, outer);
@@ -337,6 +378,16 @@ fn signed_area2_i128(points: &[Point64]) -> i128 {
         area2 += (p0.x as i128) * (p1.y as i128) - (p1.x as i128) * (p0.y as i128);
     }
     area2
+}
+
+#[cfg(test)]
+fn reset_ring_hash_call_count() {
+    RING_HASH_CALLS.store(0, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+fn ring_hash_call_count() -> usize {
+    RING_HASH_CALLS.load(Ordering::Relaxed)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -426,7 +477,9 @@ impl OverlayBounds {
 mod tests {
     use crate::geometry::types::{Point64, Polygon64};
 
-    use super::{canonicalize_ring, compute_cfr};
+    use super::{
+        canonicalize_ring, compute_cfr, reset_ring_hash_call_count, ring_hash_call_count,
+    };
 
     fn rect(x0: i64, y0: i64, w: i64, h: i64) -> Polygon64 {
         Polygon64 {
@@ -526,5 +579,32 @@ mod tests {
 
         assert_eq!(ab, ba, "component ordering must be stable");
         assert!(ab.len() >= 2, "fixture must produce multiple CFR components");
+    }
+
+    #[test]
+    fn ring_hash_calls_are_bounded_to_precompute_pattern() {
+        let ifp = rect(0, 0, 90, 10);
+        let blockers = vec![
+            rect(9, 0, 2, 10),
+            rect(19, 0, 2, 10),
+            rect(29, 0, 2, 10),
+            rect(39, 0, 2, 10),
+            rect(49, 0, 2, 10),
+            rect(59, 0, 2, 10),
+            rect(69, 0, 2, 10),
+        ];
+
+        reset_ring_hash_call_count();
+        let cfr = compute_cfr(&ifp, &blockers);
+        assert!(cfr.len() >= 5, "fixture should generate several components");
+
+        let calls = ring_hash_call_count();
+        let min_expected = cfr.len();
+        let max_expected = cfr.len() + 8;
+        assert!(
+            calls >= min_expected && calls <= max_expected,
+            "unexpected ring_hash call count: calls={calls}, components={}, allowed=[{min_expected},{max_expected}]",
+            cfr.len()
+        );
     }
 }
