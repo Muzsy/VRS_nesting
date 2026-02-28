@@ -232,6 +232,12 @@ A komponensek rendezési kulcsa (totális rendezés):
 1. `min_point (x,y)` lexicographic
 2. `abs(area)`
 3. `vertex_count`
+4. `ring_hash` (tie-break, seed-mentes, kanonizalt ringekbol kepzett stabil `u64`)
+
+Megjegyzes:
+
+* A `ring_hash` csak tie-break celra szolgal (nem celfuggveny).
+* A kulcs komponensenkent egyszer kerul kiszamitasra (decorated sort pattern).
 
 ---
 
@@ -285,12 +291,16 @@ A rendezett jelölteket sorban próbáljuk, az első `can_place == true` nyer.
 
 * Minden base vertexhez generáljuk a nudge-olt pontokat.
 * Előszűrés: IFP téglalapon kívül eső pontok eldobása.
-* Dedupe: `(tx,ty)` párok HashSet-ben (determinista bejárással).
+* A jeloltek rendezese elobb megtortenik a 11.3 szerinti tie-break kulccsal.
+* Dedupe kulcs: `(tx, ty, rotation_idx)` (vagy azzal ekvivalens rotation context index).
+* Dedupe adatszerkezet: seed-mentes, determinisztikus rendezett halmaz (pl. BTreeSet jelleg).
+* Indok: azonos `(tx,ty)` mellett kulonbozo rotaciokhoz tartozo jeloltek nem esnek ki.
 
 ### 12.4 Cap / limit
 
-* `MAX_CANDIDATES_PER_PART_PER_ROT = 4096`
+* `MAX_CANDIDATES_PER_PART = 4096` (part instance szinten, az osszes rotacio egyutt)
 * `MAX_VERTICES_PER_COMPONENT = 512` (kanonikus sorrend első 512)
+* A cap a dedupe utan, a determinisztikusan rendezett jeloltekre alkalmazando (elso N policy).
 
 ---
 

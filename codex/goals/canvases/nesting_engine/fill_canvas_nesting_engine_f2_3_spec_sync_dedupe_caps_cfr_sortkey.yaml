@@ -1,0 +1,56 @@
+steps:
+  - name: "Felderítés: spec drift rögzítése a kódbeli referenciákkal"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/nesting_engine/f2_3_nfp_placer_spec.md (különösen: 10.3, 12.3, 12.4)
+      - rust/nesting_engine/src/placement/nfp_placer.rs (MAX_CANDIDATES_PER_PART, sort_and_dedupe_candidates)
+      - rust/nesting_engine/src/nfp/cfr.rs (build_sort_key, compare_sort_keys, ring_hash_u64)
+
+      A canvasban rögzítsd röviden a driftet:
+      - 10.3: spec kulcs nem totális vs kód ring_hash tie-break
+      - 12.3: spec dedupe (tx,ty) vs kód (tx,ty,rotation_idx)
+      - 12.4: spec 4096/rot vs kód 4096/part (összes rotáció együtt)
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_f2_3_spec_sync_dedupe_caps_cfr_sortkey.md"
+
+  - name: "Spec frissítése: dedupe + cap semantics + CFR sort-key"
+    description: >
+      Szerkeszd a docs/nesting_engine/f2_3_nfp_placer_spec.md fájlt úgy, hogy a normatív szöveg
+      1:1-ben egyezzen a jelenlegi implementációval:
+
+      Kötelező módosítások:
+      - 10.3: a komponens-rendezés kulcsa legyen totális: (min_point, abs(area), vertex_count, ring_hash).
+        Röviden írd le, hogy ring_hash tie-break és seed-mentes, kanonizált ringekből képzett stabil u64.
+      - 12.3: dedupe policy: rendezés után dedupe, kulcs (tx,ty,rotation_idx) (vagy “rotation context index”),
+        determinisztikus rendezett halmaz jelleggel (seed-mentes).
+      - 12.4: cap/limit: MAX_CANDIDATES_PER_PART = 4096 (part instance szinten, rotációk együtt), cap a dedupe után.
+        MAX_VERTICES_PER_COMPONENT = 512 marad.
+
+      Ne változtass a spec többi részén feleslegesen (csak a drift által érintett részeket).
+    outputs:
+      - "docs/nesting_engine/f2_3_nfp_placer_spec.md"
+
+  - name: "Checklist + report létrehozása"
+    description: >
+      Hozd létre a task checklistet és reportot a Report Standard v2 szerint.
+
+      Checklist:
+      - pipálható DoD pontok (a canvas DoD 1:1-ben)
+
+      Report:
+      - PASS/FAIL/PASS_WITH_NOTES fejléc (kezdetben FAIL vagy PASS_WITH_NOTES, AUTO_VERIFY fogja frissíteni)
+      - Meta + Scope (Cél/Nem-cél) + Change summary
+      - DoD->Evidence Matrix váz (a bizonyítékok itt: a frissített spec fejezetek és a kódreferenciák)
+      - AUTO_VERIFY blokk (üresen hagyva, a verify.sh tölti)
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_f2_3_spec_sync_dedupe_caps_cfr_sortkey.md"
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_spec_sync_dedupe_caps_cfr_sortkey.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_f2_3_spec_sync_dedupe_caps_cfr_sortkey.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_spec_sync_dedupe_caps_cfr_sortkey.md"
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_spec_sync_dedupe_caps_cfr_sortkey.verify.log"
