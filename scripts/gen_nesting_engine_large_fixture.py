@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE = ROOT / "poc/nesting_engine/f2_3_f4_cfr_order_hardening_noholes_v2.json"
 DEFAULT_OUT_500 = ROOT / "poc/nesting_engine/f2_3_large_500_noholes_v2.json"
 DEFAULT_OUT_1000 = ROOT / "poc/nesting_engine/f2_3_large_1000_noholes_v2.json"
+DEFAULT_TIME_LIMIT_SEC = 300
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -24,9 +25,15 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _make_large_fixture(base_payload: dict[str, Any], total_parts: int) -> dict[str, Any]:
+def _make_large_fixture(
+    base_payload: dict[str, Any],
+    total_parts: int,
+    time_limit_sec: int,
+) -> dict[str, Any]:
     if total_parts <= 0:
         raise ValueError("total_parts must be > 0")
+    if time_limit_sec <= 0:
+        raise ValueError("time_limit_sec must be > 0")
 
     base_parts = base_payload.get("parts")
     if not isinstance(base_parts, list) or not base_parts:
@@ -53,6 +60,7 @@ def _make_large_fixture(base_payload: dict[str, Any], total_parts: int) -> dict[
         generated_parts.append(part)
 
     out["parts"] = generated_parts
+    out["time_limit_sec"] = int(time_limit_sec)
     return out
 
 
@@ -61,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", default=str(DEFAULT_BASE), help="Base noholes fixture JSON path")
     parser.add_argument("--out-500", default=str(DEFAULT_OUT_500), help="Output path for 500 fixture")
     parser.add_argument("--out-1000", default=str(DEFAULT_OUT_1000), help="Output path for 1000 fixture")
+    parser.add_argument(
+        "--time-limit-sec",
+        type=int,
+        default=DEFAULT_TIME_LIMIT_SEC,
+        help="time_limit_sec override for generated large fixtures (default: 300)",
+    )
     args = parser.parse_args(argv)
 
     base = Path(args.base)
@@ -77,14 +91,14 @@ def main(argv: list[str] | None = None) -> int:
         out_1000 = ROOT / out_1000
 
     payload = _read_json(base)
-    fixture_500 = _make_large_fixture(payload, 500)
-    fixture_1000 = _make_large_fixture(payload, 1000)
+    fixture_500 = _make_large_fixture(payload, 500, args.time_limit_sec)
+    fixture_1000 = _make_large_fixture(payload, 1000, args.time_limit_sec)
 
     _write_json(out_500, fixture_500)
     _write_json(out_1000, fixture_1000)
 
-    print(f"[OK] wrote 500 fixture: {out_500}")
-    print(f"[OK] wrote 1000 fixture: {out_1000}")
+    print(f"[OK] wrote 500 fixture: {out_500} (time_limit_sec={args.time_limit_sec})")
+    print(f"[OK] wrote 1000 fixture: {out_1000} (time_limit_sec={args.time_limit_sec})")
     return 0
 
 

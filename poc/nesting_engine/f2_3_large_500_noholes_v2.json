@@ -1,7 +1,7 @@
 {
   "version": "nesting_engine_v2",
   "seed": 4205,
-  "time_limit_sec": 30,
+  "time_limit_sec": 300,
   "sheet": {
     "width_mm": 130.0,
     "height_mm": 90.0,
