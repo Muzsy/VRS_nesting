@@ -22,6 +22,7 @@ STAT_PREFIX = "NEST_NFP_STATS_V1 "
 BENCH_VERSION = "nesting_engine_f2_3_large_fixture_benchmark_v1"
 DEFAULT_BIN = ROOT / "rust/nesting_engine/target/release/nesting_engine"
 DEFAULT_OUT = ROOT / "runs/benchmarks/nesting_engine_f2_3_large_fixture_benchmark.json"
+TIME_LIMIT_RUNTIME_TOLERANCE_SEC = 0.05
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class BenchRun:
     sheets_used: int
     placed_count: int
     utilization_pct: float | None
+    timeout_bound: bool
     nfp_stats: dict[str, Any] | None
 
     def as_json(self) -> dict[str, Any]:
@@ -42,6 +44,7 @@ class BenchRun:
             "sheets_used": self.sheets_used,
             "placed_count": self.placed_count,
             "utilization_pct": self.utilization_pct,
+            "timeout_bound": self.timeout_bound,
             "nfp_stats": self.nfp_stats,
         }
 
@@ -99,7 +102,38 @@ def _as_float_optional(value: Any) -> float | None:
     return float(value)
 
 
-def _run_once(bin_path: Path, input_path: Path, placer: str, run_index: int) -> BenchRun:
+def _read_time_limit_sec(input_path: Path) -> int:
+    payload = _read_json(input_path)
+    raw = payload.get("time_limit_sec")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise AssertionError("input.time_limit_sec must be integer")
+    if raw <= 0:
+        raise AssertionError("input.time_limit_sec must be > 0")
+    return raw
+
+
+def _is_timeout_bound_run(out: dict[str, Any], runtime_sec: float, time_limit_sec: int) -> bool:
+    unplaced = out.get("unplaced")
+    timed_out_reason = False
+    if isinstance(unplaced, list):
+        for item in unplaced:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("reason", "")).strip() == "TIME_LIMIT_EXCEEDED":
+                timed_out_reason = True
+                break
+
+    runtime_near_limit = runtime_sec >= max(0.0, float(time_limit_sec) - TIME_LIMIT_RUNTIME_TOLERANCE_SEC)
+    return timed_out_reason or runtime_near_limit
+
+
+def _run_once(
+    bin_path: Path,
+    input_path: Path,
+    placer: str,
+    run_index: int,
+    time_limit_sec: int,
+) -> BenchRun:
     cmd = [str(bin_path), "nest"]
     require_stats = placer == "nfp"
     if placer == "nfp":
@@ -150,6 +184,7 @@ def _run_once(bin_path: Path, input_path: Path, placer: str, run_index: int) -> 
     utilization: float | None = None
     if isinstance(objective, dict):
         utilization = _as_float_optional(objective.get("utilization_pct"))
+    timeout_bound = _is_timeout_bound_run(out, elapsed, time_limit_sec)
 
     stderr_text = proc.stderr.decode("utf-8", errors="replace")
     nfp_stats = _parse_stats(stderr_text, require_stats=require_stats)
@@ -161,6 +196,7 @@ def _run_once(bin_path: Path, input_path: Path, placer: str, run_index: int) -> 
         sheets_used=sheets_used,
         placed_count=placed_count,
         utilization_pct=utilization,
+        timeout_bound=timeout_bound,
         nfp_stats=nfp_stats,
     )
 
@@ -176,13 +212,22 @@ def _summary(runs: list[BenchRun]) -> dict[str, Any]:
     runtime_values = [r.runtime_sec for r in runs]
     sheets_values = [r.sheets_used for r in runs]
     placed_values = [r.placed_count for r in runs]
+    timeout_bound_present = any(r.timeout_bound for r in runs)
     util_values = [r.utilization_pct for r in runs if r.utilization_pct is not None]
+    if determinism_stable:
+        determinism_class = "stable"
+    elif timeout_bound_present:
+        determinism_class = "timeout_bound_drift"
+    else:
+        determinism_class = "unstable"
 
     return {
         "runs": len(runs),
         "determinism_stable": determinism_stable,
+        "determinism_class": determinism_class,
         "determinism_hash": unique_hashes[0] if determinism_stable else None,
         "determinism_hashes": unique_hashes,
+        "timeout_bound_present": timeout_bound_present,
         "runtime_sec_median": round(float(statistics.median(runtime_values)), 6),
         "runtime_sec_min": round(float(min(runtime_values)), 6),
         "runtime_sec_max": round(float(max(runtime_values)), 6),
@@ -280,26 +325,39 @@ def main(argv: list[str] | None = None) -> int:
 
     placers = ["blf", "nfp"] if args.placer == "both" else [args.placer]
     input_rel = _rel(input_path)
+    time_limit_sec = _read_time_limit_sec(input_path)
 
     for placer in placers:
         print(f"[RUN] input={input_rel} placer={placer} runs={args.runs}")
         run_results: list[BenchRun] = []
         for run_index in range(1, args.runs + 1):
-            res = _run_once(bin_path, input_path, placer, run_index)
+            res = _run_once(bin_path, input_path, placer, run_index, time_limit_sec)
             run_results.append(res)
             print(
                 f"  - run#{run_index}: runtime={res.runtime_sec:.6f}s "
-                f"hash={res.determinism_hash[:18]}... sheets={res.sheets_used} placed={res.placed_count}"
+                f"hash={res.determinism_hash[:18]}... sheets={res.sheets_used} "
+                f"placed={res.placed_count} timeout_bound={res.timeout_bound}"
             )
 
         summary = _summary(run_results)
         if not summary["determinism_stable"]:
             hashes = ", ".join(str(h) for h in summary["determinism_hashes"])
-            print(f"[WARN] placer={placer} determinism hash mismatch across runs: {hashes}")
+            if summary["timeout_bound_present"]:
+                print(
+                    "[WARN] "
+                    f"placer={placer} timeout-bound drift: determinism hash mismatch across runs: {hashes}"
+                )
+            else:
+                print(
+                    "[WARN] "
+                    f"placer={placer} determinism hash mismatch across runs (non-timeout): {hashes}"
+                )
         print(
             "[OK] "
             f"placer={placer} median_runtime={summary['runtime_sec_median']:.6f}s "
-            f"hash_stable={summary['determinism_stable']}"
+            f"hash_stable={summary['determinism_stable']} "
+            f"timeout_bound_present={summary['timeout_bound_present']} "
+            f"class={summary['determinism_class']}"
         )
 
         entry = {

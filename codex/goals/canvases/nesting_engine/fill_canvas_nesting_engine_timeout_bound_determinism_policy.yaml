@@ -1,0 +1,69 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_timeout_bound_determinism_policy.yaml
+
+steps:
+  - name: "Felderítés: timeout és determinisztika jelenlegi definíciói"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/nesting_engine/io_contract_v2.md (TIME_LIMIT_EXCEEDED reason, determinism_hash szakasz)
+      - docs/qa/testing_guidelines.md (determinism elvárások)
+      - docs/nesting_engine/architecture.md (ha van róla szó)
+      - scripts/bench_nesting_engine_f2_3_large_fixture.py (jelenlegi output mezők)
+
+      A canvas alapján rögzítsd a pontos módosítási tervet (doksi + bench script).
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_timeout_bound_determinism_policy.md"
+
+  - name: "Doksi frissítés: determinism vs timeout-bound policy"
+    description: >
+      Frissítsd az alábbi fájlokat:
+
+      - docs/nesting_engine/io_contract_v2.md:
+        - definíció: timeout-bound futás
+        - determinism garancia: nem-timeout futásokra kötelező; timeout-bound best-effort
+        - hivatkozás: TIME_LIMIT_EXCEEDED reason
+
+      - docs/qa/testing_guidelines.md:
+        - determinism gate: csak olyan fixture, ami kényelmesen time_limit alatt végez
+        - benchmarkokban timeout-bound jelölés kötelező
+
+      - docs/nesting_engine/architecture.md:
+        - time_limit wall-clock jelleg + miért lehet drift határ közelében
+        - középtávú irány: determinisztikus work-budget (csak említés, nem implementáció)
+    outputs:
+      - "docs/nesting_engine/io_contract_v2.md"
+      - "docs/qa/testing_guidelines.md"
+      - "docs/nesting_engine/architecture.md"
+
+  - name: "Benchmark script frissítés: timeout-bound jelölés"
+    description: >
+      Módosítsd a scripts/bench_nesting_engine_f2_3_large_fixture.py-t:
+
+      - olvassa az inputból a time_limit_sec értéket
+      - output JSON-ból állapítsa meg a timeout-bound állapotot:
+        - unplaced[].reason == TIME_LIMIT_EXCEEDED, vagy
+        - runtime_sec >= time_limit_sec (kis toleranciával)
+      - az összegzésbe írja ki:
+        - timeout_bound_present (placer+input szinten)
+      - ha determinism instabil és timeout_bound_present igaz: jelölje "timeout-bound drift"-ként (ne algoritmikus regresszióként).
+    outputs:
+      - "scripts/bench_nesting_engine_f2_3_large_fixture.py"
+
+  - name: "Checklist + report"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/nesting_engine_timeout_bound_determinism_policy.md
+      - codex/reports/nesting_engine/nesting_engine_timeout_bound_determinism_policy.md
+
+      Report Standard v2 szerint, AUTO_VERIFY blokk üresen hagyva.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_timeout_bound_determinism_policy.md"
+      - "codex/reports/nesting_engine/nesting_engine_timeout_bound_determinism_policy.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_timeout_bound_determinism_policy.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_timeout_bound_determinism_policy.md"
+      - "codex/reports/nesting_engine/nesting_engine_timeout_bound_determinism_policy.verify.log"

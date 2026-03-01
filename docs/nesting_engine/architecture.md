@@ -60,3 +60,25 @@ This keeps the placement output byte-stable across CPU architectures (x86_64, ar
 
 - `docs/nesting_engine/tolerance_policy.md` (SCALE, contour winding, touching policy)
 - `docs/nesting_engine/json_canonicalization.md` (determinism reference)
+
+## 6. Timeout-Bound Determinism Policy
+
+The placement flow currently enforces `time_limit_sec` via wall-clock checks (`Instant::elapsed()`)
+at coarse checkpoints (for example per item/round), not at every inner iteration.
+
+Implication:
+
+- Near the time-limit boundary, small scheduler/CPU jitter can change whether a final placement
+  attempt is completed before cutoff.
+- In such timeout-bound runs, run-to-run placement count or hash drift can appear even with
+  identical input and seed.
+
+Policy alignment:
+
+- Determinism guarantees are strict for non-timeout-bound runs.
+- Timeout-bound runs are best-effort and should be labeled explicitly in benchmark/report tooling.
+
+Medium-term direction (not part of current implementation):
+
+- Introduce a deterministic work-budget model (operation-budget style cutoff) for placement loops,
+  while keeping wall-clock timeout as a safety guard.

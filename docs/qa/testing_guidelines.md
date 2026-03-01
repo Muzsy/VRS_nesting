@@ -98,6 +98,19 @@ A smoketest célja nem a „legjobb nesting”, hanem a **stabil contract és a 
 * `SEED` környezeti változóval fixáljuk (alap: `0`)
 * `TIME_LIMIT` környezeti változóval korlátozzuk (alap: `60`)
 
+### 3.1.1 Timeout-bound determinism policy
+
+Definicio: timeout-bound futasnak tekintjuk, ha a futasban `TIME_LIMIT_EXCEEDED` reason jelenik meg,
+vagy a futasi ido a `time_limit` hatart eleri.
+
+Szabaly:
+
+* Determinizmus gate-et csak olyan fixture-re szabad kotelezo merge-gate checkkent hasznalni,
+  ami kenyelmesen a `time_limit` alatt vegez (nem timeout-hatarkozeli).
+* Timeout-hatarkozeli benchmarknal a hash driftet kulon timeout-bound kategoriakent kell jelenteni,
+  es nem szabad automatikusan algoritmikus nondeterminizmus regressziokent kezelni.
+* Benchmark/report futasban a timeout-bound allapotot explicit flaggel jelolni kell.
+
 ### 3.2 Sparrow feloldás + verzió pin
 
 A Sparrow bináris feloldását a `scripts/ensure_sparrow.sh` végzi:

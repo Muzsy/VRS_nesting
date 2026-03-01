@@ -94,6 +94,24 @@ A `meta.determinism_hash` mezo szamitasi szabalyai normativan itt vannak rogzitv
 Ebben a dokumentumban nincs canonicalization-szabaly duplikacio: a hash-kepzeshez a
 fenti normativ dokumentum kovetese kotelezo.
 
+### 6.1 Determinizmus es timeout-bound policy (normativ)
+
+Definicio: egy futas **timeout-bound**, ha az alabbiak barmelyike igaz:
+
+- az output `unplaced[]` tombjeben van legalabb egy `reason == "TIME_LIMIT_EXCEEDED"` elem, vagy
+- a futas a `time_limit_sec` hatart eleri (wall-clock alapon).
+
+Normativ elvaras:
+
+- Azonos input + azonos seed + nem-timeout-bound futas eseten a `meta.determinism_hash` stabilitasa elvart.
+- Timeout-bound futas eseten a hash stabilitas **best-effort**: kisebb run-to-run elteres megengedett.
+
+Megjegyzes:
+
+- A `time_limit_sec` ellenorzese wall-clock jellegu, jellemzoen durvabb checkpointokkal.
+- Ezert a limit-hatar kozeleben termeszetes lehet, hogy ket futas kozott 1-2 placement elteres jelenik meg.
+- Az ilyen eset benchmark/report oldalon kulon timeout-bound kategoriakent kezelendo, nem automatikus algoritmikus regressziokent.
+
 ## 7. Pipeline preprocessing contract (pipeline_v1)
 
 Ez a szekcio a `nesting_engine inflate-parts` stdin/stdout JSON contractjat rogziti,
