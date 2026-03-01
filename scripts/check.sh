@@ -269,6 +269,9 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   echo "[NEST] Targeted can_place_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml can_place_
 
+  echo "[NEST] Targeted blf_budget_ unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml blf_budget_
+
   echo "[NEST] Targeted cfr_sort_key_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml cfr_sort_key_
 

@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::feasibility::{
     aabb::aabb_from_polygon64,
     can_place, PlacedPart,
@@ -10,6 +8,7 @@ use crate::geometry::{
     trig_lut::{round_div_i128, normalize_deg, COS_Q, SIN_Q, TRIG_SCALE_I128},
     types::{Point64, Polygon64},
 };
+use crate::multi_bin::greedy::StopPolicy;
 
 #[derive(Debug, Clone)]
 pub struct InflatedPartSpec {
@@ -47,8 +46,7 @@ pub fn blf_place(
     parts: &[InflatedPartSpec],
     bin_polygon: &Polygon64,
     grid_step_mm: f64,
-    time_limit_sec: u64,
-    started_at: Instant,
+    stop: &mut StopPolicy,
 ) -> PlacementResult {
     let mut ordered = parts.to_vec();
     ordered.sort_by(|a, b| {
@@ -64,8 +62,8 @@ pub fn blf_place(
     let mut unplaced: Vec<UnplacedItem> = Vec::new();
 
     for part in &ordered {
-        for instance in 0..part.quantity {
-            if started_at.elapsed().as_secs() >= time_limit_sec {
+        'instance_loop: for instance in 0..part.quantity {
+            if stop.should_stop() {
                 unplaced.push(UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
@@ -104,11 +102,24 @@ pub fn blf_place(
                 global_ty_max = global_ty_max.max(bin_aabb.max_y - aabb.max_y);
             }
 
+            let mut timed_out_current = false;
             let mut ty = global_ty_min;
             while ty <= global_ty_max && !found {
+                if stop.consume(1) {
+                    timed_out_current = true;
+                    break;
+                }
                 let mut tx = global_tx_min;
                 while tx <= global_tx_max && !found {
+                    if stop.consume(1) {
+                        timed_out_current = true;
+                        break;
+                    }
                     for (rotation, rotated, rotated_aabb) in &rotation_candidates {
+                        if stop.consume(1) {
+                            timed_out_current = true;
+                            break;
+                        }
                         let tx_min = bin_aabb.min_x - rotated_aabb.min_x;
                         let ty_min = bin_aabb.min_y - rotated_aabb.min_y;
                         let tx_max = bin_aabb.max_x - rotated_aabb.max_x;
@@ -136,16 +147,33 @@ pub fn blf_place(
                             break;
                         }
                     }
+                    if timed_out_current {
+                        break;
+                    }
                     tx = tx.saturating_add(step);
                 }
+                if timed_out_current {
+                    break;
+                }
                 ty = ty.saturating_add(step);
+            }
+
+            if timed_out_current {
+                for remaining_instance in instance..part.quantity {
+                    unplaced.push(UnplacedItem {
+                        part_id: part.id.clone(),
+                        instance: remaining_instance,
+                        reason: "TIME_LIMIT_EXCEEDED".to_string(),
+                    });
+                }
+                break 'instance_loop;
             }
 
             if !found {
                 unplaced.push(UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
-                    reason: if started_at.elapsed().as_secs() >= time_limit_sec {
+                    reason: if stop.should_stop() {
                         "TIME_LIMIT_EXCEEDED".to_string()
                     } else {
                         "PART_NEVER_FITS_SHEET".to_string()
@@ -243,6 +271,8 @@ pub fn rect_poly(w_mm: f64, h_mm: f64) -> Polygon64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::multi_bin::greedy::StopPolicy;
+    use std::time::Instant;
 
     #[test]
     fn basic_placement() {
@@ -254,7 +284,8 @@ mod tests {
             nominal_bbox_area: bbox_area(&rect_poly(10.0, 10.0).outer),
         };
         let bin = rect_poly(30.0, 30.0);
-        let res = blf_place(&[part], &bin, 1.0, 30, Instant::now());
+        let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());
+        let res = blf_place(&[part], &bin, 1.0, &mut stop);
         assert_eq!(res.placed.len(), 2);
     }
 
@@ -268,10 +299,39 @@ mod tests {
             nominal_bbox_area: bbox_area(&rect_poly(10.0, 8.0).outer),
         };
         let bin = rect_poly(40.0, 40.0);
-        let a = blf_place(&[part.clone()], &bin, 1.0, 30, Instant::now());
-        let b = blf_place(&[part], &bin, 1.0, 30, Instant::now());
+        let mut stop_a = StopPolicy::wall_clock_for_test(30, Instant::now());
+        let a = blf_place(&[part.clone()], &bin, 1.0, &mut stop_a);
+        let mut stop_b = StopPolicy::wall_clock_for_test(30, Instant::now());
+        let b = blf_place(&[part], &bin, 1.0, &mut stop_b);
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);
+    }
+
+    #[test]
+    fn blf_budget_stop_is_deterministic() {
+        let part = InflatedPartSpec {
+            id: "p".to_string(),
+            quantity: 120,
+            allowed_rotations_deg: vec![0, 90],
+            inflated_polygon: rect_poly(10.0, 8.0),
+            nominal_bbox_area: bbox_area(&rect_poly(10.0, 8.0).outer),
+        };
+        let bin = rect_poly(40.0, 40.0);
+        let mut stop_a = StopPolicy::work_budget_for_test(30, 2_500, 1_000, Instant::now());
+        let out_a = blf_place(&[part.clone()], &bin, 1.0, &mut stop_a);
+
+        let mut stop_b = StopPolicy::work_budget_for_test(30, 2_500, 1_000, Instant::now());
+        let out_b = blf_place(&[part], &bin, 1.0, &mut stop_b);
+
+        assert_eq!(out_a.placed, out_b.placed);
+        assert_eq!(out_a.unplaced, out_b.unplaced);
+        assert!(
+            out_a
+                .unplaced
+                .iter()
+                .any(|u| u.reason == "TIME_LIMIT_EXCEEDED"),
+            "work-budget test expects cutoff to happen"
+        );
     }
 
     #[test]

@@ -13,6 +13,153 @@ pub enum PlacerKind {
     Nfp,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopMode {
+    WallClock,
+    WorkBudget,
+}
+
+#[derive(Debug, Clone)]
+pub struct StopPolicy {
+    mode: StopMode,
+    started_at: Instant,
+    time_limit_sec: u64,
+    hard_timeout_grace_sec: u64,
+    work_budget_remaining: Option<u64>,
+    timed_out: bool,
+}
+
+impl StopPolicy {
+    const DEFAULT_WORK_UNITS_PER_SEC: u64 = 50_000;
+    const DEFAULT_HARD_TIMEOUT_GRACE_SEC: u64 = 60;
+
+    pub fn from_env(time_limit_sec: u64, started_at: Instant) -> Self {
+        let mode = match std::env::var("NESTING_ENGINE_STOP_MODE")
+            .unwrap_or_else(|_| "wall_clock".to_string())
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "work_budget" => StopMode::WorkBudget,
+            _ => StopMode::WallClock,
+        };
+
+        let hard_timeout_grace_sec = Self::read_env_u64(
+            "NESTING_ENGINE_HARD_TIMEOUT_GRACE_SEC",
+            Self::DEFAULT_HARD_TIMEOUT_GRACE_SEC,
+        );
+
+        let work_budget_remaining = if mode == StopMode::WorkBudget {
+            let units_per_sec = Self::read_env_u64(
+                "NESTING_ENGINE_WORK_UNITS_PER_SEC",
+                Self::DEFAULT_WORK_UNITS_PER_SEC,
+            )
+            .max(1);
+            Some(time_limit_sec.saturating_mul(units_per_sec).max(1))
+        } else {
+            None
+        };
+
+        Self {
+            mode,
+            started_at,
+            time_limit_sec,
+            hard_timeout_grace_sec,
+            work_budget_remaining,
+            timed_out: false,
+        }
+    }
+
+    fn read_env_u64(key: &str, default: u64) -> u64 {
+        std::env::var(key)
+            .ok()
+            .and_then(|raw| raw.trim().parse::<u64>().ok())
+            .unwrap_or(default)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn wall_clock_for_test(time_limit_sec: u64, started_at: Instant) -> Self {
+        Self {
+            mode: StopMode::WallClock,
+            started_at,
+            time_limit_sec,
+            hard_timeout_grace_sec: Self::DEFAULT_HARD_TIMEOUT_GRACE_SEC,
+            work_budget_remaining: None,
+            timed_out: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn work_budget_for_test(
+        time_limit_sec: u64,
+        work_budget_units: u64,
+        hard_timeout_grace_sec: u64,
+        started_at: Instant,
+    ) -> Self {
+        Self {
+            mode: StopMode::WorkBudget,
+            started_at,
+            time_limit_sec,
+            hard_timeout_grace_sec,
+            work_budget_remaining: Some(work_budget_units.max(1)),
+            timed_out: false,
+        }
+    }
+
+    pub fn consume(&mut self, units: u64) -> bool {
+        if self.should_stop() {
+            return true;
+        }
+        if self.mode != StopMode::WorkBudget {
+            return false;
+        }
+        if units == 0 {
+            return self.should_stop();
+        }
+
+        let remaining = self.work_budget_remaining.unwrap_or(0);
+        if remaining <= units {
+            self.work_budget_remaining = Some(0);
+            self.timed_out = true;
+            return true;
+        }
+
+        self.work_budget_remaining = Some(remaining - units);
+        false
+    }
+
+    pub fn should_stop(&mut self) -> bool {
+        let elapsed_sec = self.started_at.elapsed().as_secs();
+        if self.mode == StopMode::WallClock && elapsed_sec >= self.time_limit_sec {
+            self.timed_out = true;
+            return true;
+        }
+
+        if self.mode == StopMode::WorkBudget {
+            if self.work_budget_remaining.unwrap_or(0) == 0 {
+                self.timed_out = true;
+                return true;
+            }
+            let hard_deadline = self
+                .time_limit_sec
+                .saturating_add(self.hard_timeout_grace_sec);
+            if elapsed_sec >= hard_deadline {
+                self.timed_out = true;
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn mark_timed_out(&mut self) {
+        self.timed_out = true;
+    }
+
+    pub fn is_timed_out(&self) -> bool {
+        self.timed_out
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MultiSheetResult {
     pub placed: Vec<PlacedItem>,
@@ -28,6 +175,7 @@ pub fn greedy_multi_sheet(
     placer_kind: PlacerKind,
 ) -> (MultiSheetResult, Option<NfpPlacerStatsV1>) {
     let started_at = Instant::now();
+    let mut stop = StopPolicy::from_env(time_limit_sec, started_at);
     let mut nfp_cache = NfpCache::new();
     let mut nfp_stats_total = if placer_kind == PlacerKind::Nfp {
         Some(NfpPlacerStatsV1::default())
@@ -68,18 +216,12 @@ pub fn greedy_multi_sheet(
         if remaining_specs.is_empty() {
             break;
         }
-        if started_at.elapsed().as_secs() >= time_limit_sec {
+        if stop.should_stop() {
             break;
         }
 
         let round: PlacementResult = match placer_kind {
-            PlacerKind::Blf => blf_place(
-                &remaining_specs,
-                bin_polygon,
-                grid_step_mm,
-                time_limit_sec,
-                started_at,
-            ),
+            PlacerKind::Blf => blf_place(&remaining_specs, bin_polygon, grid_step_mm, &mut stop),
             PlacerKind::Nfp => {
                 let mut round_stats = NfpPlacerStatsV1::default();
                 let round = nfp_place(
@@ -118,7 +260,10 @@ pub fn greedy_multi_sheet(
             .unplaced
             .iter()
             .any(|u| u.reason == "TIME_LIMIT_EXCEEDED");
-        if round_timed_out || started_at.elapsed().as_secs() >= time_limit_sec {
+        if round_timed_out {
+            stop.mark_timed_out();
+        }
+        if round_timed_out || stop.should_stop() {
             break;
         }
         if placed_this_round == 0 {
@@ -129,7 +274,7 @@ pub fn greedy_multi_sheet(
     }
 
     let mut unplaced: Vec<UnplacedItem> = Vec::new();
-    let timed_out = started_at.elapsed().as_secs() >= time_limit_sec;
+    let timed_out = stop.is_timed_out() || started_at.elapsed().as_secs() >= time_limit_sec;
     for (id, total) in total_by_id {
         let placed_cnt = *placed_count_by_id.get(&id).unwrap_or(&0);
         for idx in placed_cnt..total {

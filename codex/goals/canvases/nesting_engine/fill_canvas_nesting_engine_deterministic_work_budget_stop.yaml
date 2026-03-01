@@ -1,0 +1,102 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_deterministic_work_budget_stop.yaml
+
+steps:
+  - name: "Felderítés: BLF + greedy time-limit checkpointok és stop igény"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - rust/nesting_engine/src/multi_bin/greedy.rs (time_limit checkpointok)
+      - rust/nesting_engine/src/placement/blf.rs (inner search loopok + time_limit check)
+      - docs/nesting_engine/io_contract_v2.md (TIME_LIMIT_EXCEEDED)
+      - docs/nesting_engine/architecture.md (timeout/determinism rész)
+
+      A canvas alapján rögzítsd röviden:
+      - hol okoz driftet a wall-clock stop,
+      - milyen pontokon érdemes determinisztikus work-budget consume-ot tenni.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_deterministic_work_budget_stop.md"
+
+  - name: "Rust: StopPolicy bevezetése greedy.rs-ben (env vezérlés)"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/multi_bin/greedy.rs
+
+      Vezesd be a StopMode/StopPolicy-t (greedy.rs-ben vagy közös belső modulrészben),
+      és hozz létre StopPolicy::from_env(time_limit_sec, started_at) konstruktorral:
+      - NESTING_ENGINE_STOP_MODE=wall_clock|work_budget (default wall_clock)
+      - NESTING_ENGINE_WORK_UNITS_PER_SEC (default 50000)
+      - NESTING_ENGINE_HARD_TIMEOUT_GRACE_SEC (default 60)
+
+      A sheet-loopban használd a stop policy-t a megálláshoz (budget vagy wall-clock),
+      és BLF placer hívásnál add át &mut stop-ot.
+    outputs:
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+
+  - name: "Rust: BLF work-budget stop (inner loop consume kapuk)"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/placement/blf.rs
+
+      Változtasd a szignatúrát úgy, hogy a greedy.rs tudjon StopPolicy-t átadni:
+      - blf_place(..., stop: &mut StopPolicy)
+
+      Implementáld:
+      - wall_clock módban: jelenlegi viselkedés maradjon
+      - work_budget módban:
+        - inner loopok elején stop.consume(1) kapu (ty/tx/rotation)
+        - ha stop triggel: TIME_LIMIT_EXCEEDED a current és remaining példányokra
+        - a keresésből lépj ki determinisztikusan
+    outputs:
+      - "rust/nesting_engine/src/placement/blf.rs"
+
+  - name: "Rust unit teszt: work-budget stop determinisztika"
+    description: >
+      A rust/nesting_engine/src/placement/blf.rs tesztmoduljába add hozzá:
+
+      - blf_budget_stop_is_deterministic
+
+      Követelmények:
+      - StopMode::WorkBudget explicit konstruktor a tesztben (ne env var)
+      - 2 futás ugyanazzal a bemenettel: placed/unplaced lista egyezzen
+      - a teszt neve blf_budget_ prefix-szel kezdődjön.
+    outputs:
+      - "rust/nesting_engine/src/placement/blf.rs"
+
+  - name: "Doksi frissítés: TIME_LIMIT_EXCEEDED + work-budget mód"
+    description: >
+      Frissítsd:
+      - docs/nesting_engine/io_contract_v2.md: jelezd, hogy TIME_LIMIT_EXCEEDED lehet wall-clock vagy work-budget stop eredménye.
+      - docs/nesting_engine/architecture.md: StopMode rövid leírás + hard wall-clock guard (grace) magyarázat.
+
+      Ne bővíts IO contract mezőket, csak dokumentáció.
+    outputs:
+      - "docs/nesting_engine/io_contract_v2.md"
+      - "docs/nesting_engine/architecture.md"
+
+  - name: "Gate: célzott blf_budget_ cargo test bekötése"
+    description: >
+      A scripts/check.sh nesting_engine blokkban add hozzá:
+      - cargo test --manifest-path rust/nesting_engine/Cargo.toml blf_budget_
+
+      Elvárás: regressziónál non-zero exit.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/nesting_engine_deterministic_work_budget_stop.md
+      - codex/reports/nesting_engine/nesting_engine_deterministic_work_budget_stop.md
+
+      Report Standard v2 szerint, AUTO_VERIFY blokk üresen hagyva.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_deterministic_work_budget_stop.md"
+      - "codex/reports/nesting_engine/nesting_engine_deterministic_work_budget_stop.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_deterministic_work_budget_stop.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_deterministic_work_budget_stop.md"
+      - "codex/reports/nesting_engine/nesting_engine_deterministic_work_budget_stop.verify.log"

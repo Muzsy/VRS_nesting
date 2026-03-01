@@ -84,7 +84,7 @@ ezert csak a `determinism_hash` mezot adja vissza. A futasido (`elapsed_sec`) ru
 | Kod | Jelentes |
 |---|---|
 | `PART_NEVER_FITS_SHEET` | A part nominalis + belso inflate utan sem fer el a hasznos tabla teruleten. |
-| `TIME_LIMIT_EXCEEDED` | A `time_limit_sec` limit elert, mielott minden peldany elhelyezheto lett volna. |
+| `TIME_LIMIT_EXCEEDED` | A stop policy (wall-clock vagy work-budget) limitet ert el, mielott minden peldany elhelyezheto lett volna. |
 
 ## 6. `determinism_hash` szamitasi mod (normativ hivatkozas)
 
@@ -105,6 +105,9 @@ Normativ elvaras:
 
 - Azonos input + azonos seed + nem-timeout-bound futas eseten a `meta.determinism_hash` stabilitasa elvart.
 - Timeout-bound futas eseten a hash stabilitas **best-effort**: kisebb run-to-run elteres megengedett.
+- A timeout-bound stop forrasa lehet:
+  - wall-clock limit (`time_limit_sec`), vagy
+  - determinisztikus work-budget cutoff (ha a solver ilyen stop modban fut).
 
 Megjegyzes:
 
