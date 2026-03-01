@@ -1,0 +1,36 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_f2_3_large_fixture_benchmark_refresh_time_limit_300.yaml
+
+steps:
+  - name: "Állapotfelmérés: time_limit=300 large fixture-ek ellenőrzése"
+    description: >
+      Ellenőrizd a generátort és a két large fixture-t:
+      - scripts/gen_nesting_engine_large_fixture.py (default=300, --time-limit-sec paraméter)
+      - poc/nesting_engine/f2_3_large_500_noholes_v2.json (time_limit_sec=300)
+      - poc/nesting_engine/f2_3_large_1000_noholes_v2.json (time_limit_sec=300)
+
+      A canvasban rögzítsd röviden, hogy a report frissítés miért szükséges.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_f2_3_large_fixture_benchmark_refresh_time_limit_300.md"
+
+  - name: "Benchmark újramérés (500/1000, BLF+NFP) és report frissítése"
+    description: >
+      Build:
+      - cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+
+      Futás:
+      - python3 scripts/bench_nesting_engine_f2_3_large_fixture.py --placer both --runs 5 --input poc/nesting_engine/f2_3_large_500_noholes_v2.json
+      - python3 scripts/bench_nesting_engine_f2_3_large_fixture.py --placer both --runs 5 --input poc/nesting_engine/f2_3_large_1000_noholes_v2.json
+
+      Frissítsd a reportot:
+      - codex/reports/nesting_engine/nesting_engine_f2_3_large_fixture_benchmark.md
+      Úgy, hogy a táblázat és a determinism megjegyzések a 300s time_limit mellett mért eredményt tükrözzék.
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_large_fixture_benchmark.md"
+
+  - name: "Verify wrapper"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_f2_3_large_fixture_benchmark.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_large_fixture_benchmark.md"
+      - "codex/reports/nesting_engine/nesting_engine_f2_3_large_fixture_benchmark.verify.log"
