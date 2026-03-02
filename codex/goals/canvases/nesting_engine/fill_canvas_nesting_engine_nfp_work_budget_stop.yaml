@@ -1,0 +1,75 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_nfp_work_budget_stop.yaml
+
+steps:
+  - name: "Felderítés: NFP placer time-limit check és a StopPolicy jelenlegi helye"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - rust/nesting_engine/src/placement/nfp_placer.rs (time_limit_sec/started_at checkek)
+      - rust/nesting_engine/src/multi_bin/greedy.rs (StopPolicy, NFP hívás paraméterei)
+      - rust/nesting_engine/src/placement/blf.rs (StopPolicy használat mintának)
+
+      A canvasban rögzítsd: hol kell szignatúrát és stop logikát módosítani.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_nfp_work_budget_stop.md"
+
+  - name: "Rust: StopPolicy átvezetése a NFP placerbe"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/placement/nfp_placer.rs
+      - rust/nesting_engine/src/multi_bin/greedy.rs
+
+      Kötelező:
+      - nfp_place(...) kapjon &mut StopPolicy paramétert.
+      - Távolítsd el a közvetlen wall-clock: started_at.elapsed().as_secs() >= time_limit_sec ellenőrzést.
+      - Work_budget módban determinisztikus stop.consume kapuk:
+        - instance loop elején
+        - CFR compute előtt
+        - candidate loopban minden can_place előtt
+      - Stop esetén: TIME_LIMIT_EXCEEDED a remaining instance-ekre, determinisztikus korai visszatérés.
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+
+  - name: "Rust unit teszt: NFP work-budget stop determinisztika"
+    description: >
+      A rust/nesting_engine/src/placement/nfp_placer.rs tesztmoduljába add hozzá:
+      - nfp_budget_stop_is_deterministic
+
+      Követelmények:
+      - StopPolicy::work_budget_for_test(...) konstruktor használata
+      - 2 futás azonos inputra -> azonos placed/unplaced eredmény
+      - a tesztnév kezdődjön 'nfp_budget_' prefix-szel.
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Gate: célzott nfp_budget_ cargo test bekötése"
+    description: >
+      A scripts/check.sh nesting_engine blokkban add hozzá:
+      - cargo test --manifest-path rust/nesting_engine/Cargo.toml nfp_budget_
+
+      Elvárás: regressziónál non-zero exit.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Doksi frissítés (architecture) + checklist + report"
+    description: >
+      Frissítsd:
+      - docs/nesting_engine/architecture.md: jelezd, hogy work_budget stop BLF és NFP útvonalon is elérhető.
+
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/nesting_engine_nfp_work_budget_stop.md
+      - codex/reports/nesting_engine/nesting_engine_nfp_work_budget_stop.md
+      Report Standard v2 szerint, AUTO_VERIFY blokkot üresen hagyva.
+    outputs:
+      - "docs/nesting_engine/architecture.md"
+      - "codex/codex_checklist/nesting_engine/nesting_engine_nfp_work_budget_stop.md"
+      - "codex/reports/nesting_engine/nesting_engine_nfp_work_budget_stop.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_nfp_work_budget_stop.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_nfp_work_budget_stop.md"
+      - "codex/reports/nesting_engine/nesting_engine_nfp_work_budget_stop.verify.log"

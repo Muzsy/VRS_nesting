@@ -66,7 +66,7 @@ This keeps the placement output byte-stable across CPU architectures (x86_64, ar
 The placement flow supports two stop modes:
 
 - `wall_clock` (default): cutoff driven by `time_limit_sec` wall-clock checks.
-- `work_budget`: deterministic operation-budget cutoff inside BLF search loops.
+- `work_budget`: deterministic operation-budget cutoff inside BLF and NFP search loops.
 
 For `work_budget` mode, a hard wall-clock safety guard is still applied:
 

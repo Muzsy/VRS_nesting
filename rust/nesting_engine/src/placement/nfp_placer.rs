@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use serde::Serialize;
 
 use crate::feasibility::{
@@ -12,6 +10,7 @@ use crate::geometry::{
     trig_lut::{normalize_deg, round_div_i128, COS_Q, SIN_Q, TRIG_SCALE_I128},
     types::{is_convex, Point64, Polygon64},
 };
+use crate::multi_bin::greedy::StopPolicy;
 use nesting_engine::nfp::{
     cache::{NfpCache, NfpCacheKey, shape_id},
     cfr::{CfrStatsV1, compute_cfr_with_stats},
@@ -141,8 +140,7 @@ pub fn nfp_place(
     parts: &[InflatedPartSpec],
     bin_polygon: &Polygon64,
     _grid_step_mm: f64,
-    time_limit_sec: u64,
-    started_at: Instant,
+    stop: &mut StopPolicy,
     cache: &mut NfpCache,
     stats: &mut NfpPlacerStatsV1,
 ) -> PlacementResult {
@@ -159,15 +157,14 @@ pub fn nfp_place(
     let mut placed = Vec::new();
     let mut unplaced = Vec::new();
 
-    for part in &ordered {
+    for (part_idx, part) in ordered.iter().enumerate() {
         for instance in 0..part.quantity {
-            if started_at.elapsed().as_secs() >= time_limit_sec {
-                unplaced.push(super::blf::UnplacedItem {
-                    part_id: part.id.clone(),
-                    instance,
-                    reason: "TIME_LIMIT_EXCEEDED".to_string(),
-                });
-                continue;
+            if stop.consume(1) {
+                if !stop.is_timed_out() {
+                    stop.mark_timed_out();
+                }
+                append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                return PlacementResult { placed, unplaced };
             }
 
             let mut rotation_values = part.allowed_rotations_deg.clone();
@@ -247,6 +244,14 @@ pub fn nfp_place(
                     continue;
                 }
 
+                if stop.consume(1) {
+                    if !stop.is_timed_out() {
+                        stop.mark_timed_out();
+                    }
+                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    return PlacementResult { placed, unplaced };
+                }
+
                 stats.cfr_calls = stats.cfr_calls.saturating_add(1);
                 let mut cfr_stats = CfrStatsV1::default();
                 let cfr_components: Vec<Polygon64> = compute_cfr_with_stats(
@@ -282,14 +287,17 @@ pub fn nfp_place(
             }
 
             if all_candidates.is_empty() {
+                if stop.should_stop() {
+                    if !stop.is_timed_out() {
+                        stop.mark_timed_out();
+                    }
+                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    return PlacementResult { placed, unplaced };
+                }
                 unplaced.push(super::blf::UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
-                    reason: if started_at.elapsed().as_secs() >= time_limit_sec {
-                        "TIME_LIMIT_EXCEEDED".to_string()
-                    } else {
-                        "PART_NEVER_FITS_SHEET".to_string()
-                    },
+                    reason: "PART_NEVER_FITS_SHEET".to_string(),
                 });
                 continue;
             }
@@ -310,8 +318,12 @@ pub fn nfp_place(
 
             let mut placed_this_instance = false;
             for candidate in deduped.after_cap {
-                if started_at.elapsed().as_secs() >= time_limit_sec {
-                    break;
+                if stop.consume(1) {
+                    if !stop.is_timed_out() {
+                        stop.mark_timed_out();
+                    }
+                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    return PlacementResult { placed, unplaced };
                 }
                 let ctx = &rotation_contexts[candidate.rotation_idx];
                 let candidate_poly = translate_polygon(&ctx.moving_polygon, candidate.tx, candidate.ty);
@@ -339,20 +351,41 @@ pub fn nfp_place(
             }
 
             if !placed_this_instance {
+                if stop.should_stop() {
+                    if !stop.is_timed_out() {
+                        stop.mark_timed_out();
+                    }
+                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    return PlacementResult { placed, unplaced };
+                }
                 unplaced.push(super::blf::UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
-                    reason: if started_at.elapsed().as_secs() >= time_limit_sec {
-                        "TIME_LIMIT_EXCEEDED".to_string()
-                    } else {
-                        "PART_NEVER_FITS_SHEET".to_string()
-                    },
+                    reason: "PART_NEVER_FITS_SHEET".to_string(),
                 });
             }
         }
     }
 
     PlacementResult { placed, unplaced }
+}
+
+fn append_timeout_unplaced_for_remaining(
+    ordered: &[InflatedPartSpec],
+    part_idx: usize,
+    instance_idx: usize,
+    out: &mut Vec<super::blf::UnplacedItem>,
+) {
+    for (idx, part) in ordered.iter().enumerate().skip(part_idx) {
+        let start_instance = if idx == part_idx { instance_idx } else { 0 };
+        for instance in start_instance..part.quantity {
+            out.push(super::blf::UnplacedItem {
+                part_id: part.id.clone(),
+                instance,
+                reason: "TIME_LIMIT_EXCEEDED".to_string(),
+            });
+        }
+    }
 }
 
 fn sort_and_dedupe_candidates(
@@ -566,6 +599,7 @@ fn from_lib_polygon(poly: &LibPolygon64) -> Polygon64 {
 mod tests {
     use std::time::Instant;
 
+    use crate::multi_bin::greedy::StopPolicy;
     use crate::placement::blf::bbox_area;
     use nesting_engine::nfp::cache::NfpCache;
     use nesting_engine::nfp::ifp::{IfpRect, TranslationRange};
@@ -637,7 +671,8 @@ mod tests {
         ];
         let mut cache = NfpCache::new();
         let mut stats = NfpPlacerStatsV1::default();
-        let out = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache, &mut stats);
+        let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());
+        let out = nfp_place(&parts, &bin, 1.0, &mut stop, &mut cache, &mut stats);
         assert!(!out.placed.is_empty());
     }
 
@@ -647,7 +682,8 @@ mod tests {
         let parts = vec![part("big", 1, 120.0, 80.0, &[0]), part("small", 1, 20.0, 20.0, &[0])];
         let mut cache = NfpCache::new();
         let mut stats = NfpPlacerStatsV1::default();
-        let out = nfp_place(&parts, &bin, 1.0, 30, Instant::now(), &mut cache, &mut stats);
+        let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());
+        let out = nfp_place(&parts, &bin, 1.0, &mut stop, &mut cache, &mut stats);
         assert!(
             out.placed.iter().any(|p| p.part_id == "small"),
             "later feasible part must still be placed"
@@ -665,26 +701,53 @@ mod tests {
         let mut cache_b = NfpCache::new();
         let mut stats_a = NfpPlacerStatsV1::default();
         let mut stats_b = NfpPlacerStatsV1::default();
+        let mut stop_a = StopPolicy::wall_clock_for_test(30, Instant::now());
         let a = nfp_place(
             &parts,
             &bin,
             1.0,
-            30,
-            Instant::now(),
+            &mut stop_a,
             &mut cache_a,
             &mut stats_a,
         );
+        let mut stop_b = StopPolicy::wall_clock_for_test(30, Instant::now());
         let b = nfp_place(
             &parts,
             &bin,
             1.0,
-            30,
-            Instant::now(),
+            &mut stop_b,
             &mut cache_b,
             &mut stats_b,
         );
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);
+    }
+
+    #[test]
+    fn nfp_budget_stop_is_deterministic() {
+        let bin = rect(120.0, 100.0);
+        let parts = vec![
+            part("p1", 3, 40.0, 30.0, &[0, 90]),
+            part("p2", 4, 20.0, 20.0, &[0, 90]),
+            part("p3", 4, 18.0, 12.0, &[0, 90]),
+        ];
+
+        let mut cache_a = NfpCache::new();
+        let mut cache_b = NfpCache::new();
+        let mut stats_a = NfpPlacerStatsV1::default();
+        let mut stats_b = NfpPlacerStatsV1::default();
+        let mut stop_a = StopPolicy::work_budget_for_test(30, 16, 60, Instant::now());
+        let mut stop_b = StopPolicy::work_budget_for_test(30, 16, 60, Instant::now());
+
+        let a = nfp_place(&parts, &bin, 1.0, &mut stop_a, &mut cache_a, &mut stats_a);
+        let b = nfp_place(&parts, &bin, 1.0, &mut stop_b, &mut cache_b, &mut stats_b);
+
+        assert_eq!(a.placed, b.placed);
+        assert_eq!(a.unplaced, b.unplaced);
+        assert!(
+            a.unplaced.iter().any(|u| u.reason == "TIME_LIMIT_EXCEEDED"),
+            "test budget must trigger timeout"
+        );
     }
 
     #[test]

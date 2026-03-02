@@ -228,8 +228,7 @@ pub fn greedy_multi_sheet(
                     &remaining_specs,
                     bin_polygon,
                     grid_step_mm,
-                    time_limit_sec,
-                    started_at,
+                    &mut stop,
                     &mut nfp_cache,
                     &mut round_stats,
                 );
