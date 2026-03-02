@@ -1,0 +1,55 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_blf_work_budget_validation_real_dxf_500.yaml
+
+steps:
+  - name: "Felderítés: stop-mode env-ek és bench script jelenlegi futtatása"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - rust/nesting_engine/src/multi_bin/greedy.rs (NESTING_ENGINE_STOP_MODE / WORK_UNITS_PER_SEC / HARD_TIMEOUT_GRACE_SEC)
+      - scripts/bench_nesting_engine_f2_3_large_fixture.py (subprocess env kezelés)
+
+      A canvasban rögzítsd, milyen CLI opciókat adsz hozzá a bench scripthez.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.md"
+
+  - name: "Bench script bővítés: stop-mode CLI opciók -> env továbbítás"
+    description: >
+      Módosítsd:
+      - scripts/bench_nesting_engine_f2_3_large_fixture.py
+
+      Add hozzá:
+      - --stop-mode (wall_clock|work_budget)
+      - --work-units-per-sec
+      - --hard-timeout-grace-sec
+
+      Követelmények:
+      - ha nincs megadva --stop-mode: ne állíts be env varokat (marad a binary default)
+      - ha stop-mode=work_budget: állítsd be mindhárom env-et (a hiányzókat defaultold a scriptben)
+      - a bench JSON meta részébe írd bele a használt stop-mode konfigurációt.
+    outputs:
+      - "scripts/bench_nesting_engine_f2_3_large_fixture.py"
+
+  - name: "Mérés lefuttatása (500/BLF): wall_clock vs work_budget + report"
+    description: >
+      Build:
+      - cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+
+      Futás:
+      1) python3 scripts/bench_nesting_engine_f2_3_large_fixture.py --placer blf --runs 5 --input poc/nesting_engine/real_dxf_quality_500_outer_only_v2.json
+      2) python3 scripts/bench_nesting_engine_f2_3_large_fixture.py --placer blf --runs 5 --stop-mode work_budget --work-units-per-sec 50000 --hard-timeout-grace-sec 60 --input poc/nesting_engine/real_dxf_quality_500_outer_only_v2.json
+
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.md
+      - codex/reports/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.md
+      Report Standard v2 szerint, AUTO_VERIFY blokk üresen hagyva.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.md"
+      - "codex/reports/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.md"
+      - "codex/reports/nesting_engine/nesting_engine_blf_work_budget_validation_real_dxf_500.verify.log"

@@ -23,6 +23,8 @@ BENCH_VERSION = "nesting_engine_f2_3_large_fixture_benchmark_v1"
 DEFAULT_BIN = ROOT / "rust/nesting_engine/target/release/nesting_engine"
 DEFAULT_OUT = ROOT / "runs/benchmarks/nesting_engine_f2_3_large_fixture_benchmark.json"
 TIME_LIMIT_RUNTIME_TOLERANCE_SEC = 0.05
+DEFAULT_WORK_UNITS_PER_SEC = 50_000
+DEFAULT_HARD_TIMEOUT_GRACE_SEC = 60
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,7 @@ def _run_once(
     placer: str,
     run_index: int,
     time_limit_sec: int,
+    stop_mode_env: dict[str, str] | None,
 ) -> BenchRun:
     cmd = [str(bin_path), "nest"]
     require_stats = placer == "nfp"
@@ -144,6 +147,8 @@ def _run_once(
         env["NESTING_ENGINE_EMIT_NFP_STATS"] = "1"
     else:
         env.pop("NESTING_ENGINE_EMIT_NFP_STATS", None)
+    if stop_mode_env:
+        env.update(stop_mode_env)
 
     started = time.perf_counter()
     proc = subprocess.run(
@@ -268,13 +273,49 @@ def _merge_entry(payload: dict[str, Any], entry: dict[str, Any]) -> None:
 
     key_input = entry["input"]
     key_placer = entry["placer"]
+    key_stop_mode = entry.get("meta", {}).get("stop_mode_env")
     for idx, existing in enumerate(entries):
         if not isinstance(existing, dict):
             continue
-        if existing.get("input") == key_input and existing.get("placer") == key_placer:
+        existing_stop_mode = existing.get("meta", {}).get("stop_mode_env")
+        if (
+            existing.get("input") == key_input
+            and existing.get("placer") == key_placer
+            and existing_stop_mode == key_stop_mode
+        ):
             entries[idx] = entry
             return
     entries.append(entry)
+
+
+def _build_stop_mode_env(args: argparse.Namespace) -> dict[str, str] | None:
+    stop_mode = args.stop_mode
+    work_units_per_sec = args.work_units_per_sec
+    hard_timeout_grace_sec = args.hard_timeout_grace_sec
+
+    if stop_mode is None:
+        if work_units_per_sec is not None or hard_timeout_grace_sec is not None:
+            raise AssertionError(
+                "--work-units-per-sec/--hard-timeout-grace-sec only allowed when --stop-mode is set"
+            )
+        return None
+
+    if work_units_per_sec is not None and work_units_per_sec <= 0:
+        raise AssertionError("--work-units-per-sec must be > 0")
+    if hard_timeout_grace_sec is not None and hard_timeout_grace_sec < 0:
+        raise AssertionError("--hard-timeout-grace-sec must be >= 0")
+
+    env = {"NESTING_ENGINE_STOP_MODE": stop_mode}
+    if stop_mode == "work_budget":
+        env["NESTING_ENGINE_WORK_UNITS_PER_SEC"] = str(
+            work_units_per_sec if work_units_per_sec is not None else DEFAULT_WORK_UNITS_PER_SEC
+        )
+        env["NESTING_ENGINE_HARD_TIMEOUT_GRACE_SEC"] = str(
+            hard_timeout_grace_sec
+            if hard_timeout_grace_sec is not None
+            else DEFAULT_HARD_TIMEOUT_GRACE_SEC
+        )
+    return env
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -292,6 +333,24 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         default=str(DEFAULT_OUT),
         help="Output benchmark JSON path (merged/updated if exists)",
+    )
+    parser.add_argument(
+        "--stop-mode",
+        choices=["wall_clock", "work_budget"],
+        default=None,
+        help="Optional stop mode override passed via env to nesting_engine",
+    )
+    parser.add_argument(
+        "--work-units-per-sec",
+        type=int,
+        default=None,
+        help="Optional work budget units/sec (used with --stop-mode work_budget)",
+    )
+    parser.add_argument(
+        "--hard-timeout-grace-sec",
+        type=int,
+        default=None,
+        help="Optional hard wall-clock grace in sec (used with --stop-mode work_budget)",
     )
     args = parser.parse_args(argv)
 
@@ -314,12 +373,14 @@ def main(argv: list[str] | None = None) -> int:
     if not out_path.is_absolute():
         out_path = ROOT / out_path
 
+    stop_mode_env = _build_stop_mode_env(args)
     env_info = {
         "python_version": sys.version.split()[0],
         "platform": platform.platform(),
         "nesting_engine_bin": _rel(bin_path),
         "nesting_engine_bin_sha256": _sha256_file(bin_path),
         "host_machine": platform.machine(),
+        "stop_mode_env": stop_mode_env,
     }
     payload = _load_out(out_path, env_info)
 
@@ -328,10 +389,17 @@ def main(argv: list[str] | None = None) -> int:
     time_limit_sec = _read_time_limit_sec(input_path)
 
     for placer in placers:
-        print(f"[RUN] input={input_rel} placer={placer} runs={args.runs}")
+        print(f"[RUN] input={input_rel} placer={placer} runs={args.runs} stop_mode_env={stop_mode_env}")
         run_results: list[BenchRun] = []
         for run_index in range(1, args.runs + 1):
-            res = _run_once(bin_path, input_path, placer, run_index, time_limit_sec)
+            res = _run_once(
+                bin_path,
+                input_path,
+                placer,
+                run_index,
+                time_limit_sec,
+                stop_mode_env,
+            )
             run_results.append(res)
             print(
                 f"  - run#{run_index}: runtime={res.runtime_sec:.6f}s "
@@ -363,6 +431,9 @@ def main(argv: list[str] | None = None) -> int:
         entry = {
             "input": input_rel,
             "placer": placer,
+            "meta": {
+                "stop_mode_env": stop_mode_env,
+            },
             "runs": [r.as_json() for r in run_results],
             "summary": summary,
         }
