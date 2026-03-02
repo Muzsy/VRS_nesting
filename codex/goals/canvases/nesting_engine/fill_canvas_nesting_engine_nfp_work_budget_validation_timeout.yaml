@@ -1,0 +1,46 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_nesting_engine_nfp_work_budget_validation_timeout.yaml
+
+steps:
+  - name: "Felderítés: input fixture + bench script opciók"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - poc/nesting_engine/f2_3_large_1000_noholes_v2.json (time_limit_sec, parts count)
+      - scripts/bench_nesting_engine_f2_3_large_fixture.py (stop-mode args, timeout_bound_present)
+
+      A canvasban rögzítsd a futtatandó 2 szcenárió parancsait.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.md"
+
+  - name: "Mérés lefuttatása (A: timeout, B: normál) + checklist + report"
+    description: >
+      Build:
+      - cargo build --release --manifest-path rust/nesting_engine/Cargo.toml
+
+      A) Timeout kényszerítés (5 run):
+      - python3 scripts/bench_nesting_engine_f2_3_large_fixture.py --placer nfp --runs 5 \
+          --stop-mode work_budget --work-units-per-sec 200 --hard-timeout-grace-sec 60 \
+          --input poc/nesting_engine/f2_3_large_1000_noholes_v2.json
+
+      B) Normál budget (2 run):
+      - python3 scripts/bench_nesting_engine_f2_3_large_fixture.py --placer nfp --runs 2 \
+          --stop-mode work_budget --work-units-per-sec 50000 --hard-timeout-grace-sec 60 \
+          --input poc/nesting_engine/f2_3_large_1000_noholes_v2.json
+
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.md
+      - codex/reports/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.md
+      Report Standard v2 szerint, AUTO_VERIFY blokk üresen hagyva.
+
+      A reportban legyen 2 soros összefoglaló táblázat (A/B) és a következtetés.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.md"
+      - "codex/reports/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.md
+    outputs:
+      - "codex/reports/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.md"
+      - "codex/reports/nesting_engine/nesting_engine_nfp_work_budget_validation_timeout.verify.log"
