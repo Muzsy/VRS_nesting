@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use crate::geometry::types::Polygon64;
@@ -11,6 +11,12 @@ use nesting_engine::nfp::cache::NfpCache;
 pub enum PlacerKind {
     Blf,
     Nfp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartOrderPolicy {
+    ByArea,
+    ByInputOrder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +179,7 @@ pub fn greedy_multi_sheet(
     grid_step_mm: f64,
     time_limit_sec: u64,
     placer_kind: PlacerKind,
+    order_policy: PartOrderPolicy,
 ) -> (MultiSheetResult, Option<NfpPlacerStatsV1>) {
     let started_at = Instant::now();
     let mut stop = StopPolicy::from_env(time_limit_sec, started_at);
@@ -188,28 +195,58 @@ pub fn greedy_multi_sheet(
     let mut total_by_id: BTreeMap<String, usize> = BTreeMap::new();
     let mut placed_count_by_id: BTreeMap<String, usize> = BTreeMap::new();
     let mut spec_by_id: BTreeMap<String, InflatedPartSpec> = BTreeMap::new();
+    let mut input_order_ids: Vec<String> = Vec::new();
+    let mut seen_ids: BTreeSet<String> = BTreeSet::new();
     for spec in parts {
         total_by_id.insert(spec.id.clone(), spec.quantity);
         placed_count_by_id.insert(spec.id.clone(), 0);
         spec_by_id.insert(spec.id.clone(), spec.clone());
+        if seen_ids.insert(spec.id.clone()) {
+            input_order_ids.push(spec.id.clone());
+        }
     }
 
     loop {
         let mut remaining_specs: Vec<InflatedPartSpec> = Vec::new();
-        for (id, total) in &total_by_id {
-            let placed_cnt = *placed_count_by_id.get(id).unwrap_or(&0);
-            let remaining = total.saturating_sub(placed_cnt);
-            if remaining == 0 {
-                continue;
+        match order_policy {
+            PartOrderPolicy::ByArea => {
+                for (id, total) in &total_by_id {
+                    let placed_cnt = *placed_count_by_id.get(id).unwrap_or(&0);
+                    let remaining = total.saturating_sub(placed_cnt);
+                    if remaining == 0 {
+                        continue;
+                    }
+                    if let Some(base) = spec_by_id.get(id) {
+                        remaining_specs.push(InflatedPartSpec {
+                            id: id.clone(),
+                            quantity: remaining,
+                            allowed_rotations_deg: base.allowed_rotations_deg.clone(),
+                            inflated_polygon: base.inflated_polygon.clone(),
+                            nominal_bbox_area: base.nominal_bbox_area,
+                        });
+                    }
+                }
             }
-            if let Some(base) = spec_by_id.get(id) {
-                remaining_specs.push(InflatedPartSpec {
-                    id: id.clone(),
-                    quantity: remaining,
-                    allowed_rotations_deg: base.allowed_rotations_deg.clone(),
-                    inflated_polygon: base.inflated_polygon.clone(),
-                    nominal_bbox_area: base.nominal_bbox_area,
-                });
+            PartOrderPolicy::ByInputOrder => {
+                for id in &input_order_ids {
+                    let Some(total) = total_by_id.get(id) else {
+                        continue;
+                    };
+                    let placed_cnt = *placed_count_by_id.get(id).unwrap_or(&0);
+                    let remaining = total.saturating_sub(placed_cnt);
+                    if remaining == 0 {
+                        continue;
+                    }
+                    if let Some(base) = spec_by_id.get(id) {
+                        remaining_specs.push(InflatedPartSpec {
+                            id: id.clone(),
+                            quantity: remaining,
+                            allowed_rotations_deg: base.allowed_rotations_deg.clone(),
+                            inflated_polygon: base.inflated_polygon.clone(),
+                            nominal_bbox_area: base.nominal_bbox_area,
+                        });
+                    }
+                }
             }
         }
 
@@ -221,7 +258,9 @@ pub fn greedy_multi_sheet(
         }
 
         let round: PlacementResult = match placer_kind {
-            PlacerKind::Blf => blf_place(&remaining_specs, bin_polygon, grid_step_mm, &mut stop),
+            PlacerKind::Blf => {
+                blf_place(&remaining_specs, bin_polygon, grid_step_mm, &mut stop, order_policy)
+            }
             PlacerKind::Nfp => {
                 let mut round_stats = NfpPlacerStatsV1::default();
                 let round = nfp_place(
@@ -231,6 +270,7 @@ pub fn greedy_multi_sheet(
                     &mut stop,
                     &mut nfp_cache,
                     &mut round_stats,
+                    order_policy,
                 );
                 if let Some(total) = nfp_stats_total.as_mut() {
                     total.add_assign(&round_stats);
@@ -324,7 +364,14 @@ mod tests {
             nominal_bbox_area: bbox_area(&rect_poly(9.0, 9.0).outer),
         };
         let bin = rect_poly(20.0, 20.0);
-        let (out, stats) = greedy_multi_sheet(&[part], &bin, 1.0, 30, PlacerKind::Blf);
+        let (out, stats) = greedy_multi_sheet(
+            &[part],
+            &bin,
+            1.0,
+            30,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+        );
         assert!(stats.is_none());
         assert!(!out.placed.is_empty());
     }

@@ -1,0 +1,91 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_simulated_annealing_search.yaml
+
+steps:
+  - name: "Felderítés: F2-4 DoD + jelenlegi placer belső rendezések"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - canvases/nesting_engine/nesting_engine_backlog.md (F2-4 DoD)
+      - rust/nesting_engine/src/placement/blf.rs (belső sort)
+      - rust/nesting_engine/src/placement/nfp_placer.rs (belső sort)
+      - rust/nesting_engine/src/multi_bin/greedy.rs (placer dispatch)
+
+      A canvasban rögzítsd: miért kell PartOrderPolicy (ByArea vs ByInputOrder) az SA-hoz.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search.md"
+
+  - name: "Rust: PartOrderPolicy bevezetése és átvezetése BLF/NFP placerbe"
+    description: >
+      Vezess be egy PartOrderPolicy enumot (ByArea default, ByInputOrder SA-hoz), és vezesd át:
+
+      - rust/nesting_engine/src/multi_bin/greedy.rs:
+        - greedy_multi_sheet kapjon új paramétert: order_policy
+        - default hívás (main.rs) marad ByArea
+
+      - rust/nesting_engine/src/placement/blf.rs:
+        - blf_place kapjon order_policy-t, és csak ByArea esetén rendezzen
+
+      - rust/nesting_engine/src/placement/nfp_placer.rs:
+        - nfp_place kapjon order_policy-t, és csak ByArea esetén rendezzen
+
+      Követelmény: meglévő default viselkedés változatlan marad (ByArea).
+    outputs:
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/placement/blf.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Rust: SA modul (search/sa.rs) + SA core determinisztika teszt"
+    description: >
+      Hozd létre:
+      - rust/nesting_engine/src/search/mod.rs
+      - rust/nesting_engine/src/search/sa.rs
+
+      Implementáld:
+      - SplitMix64 PRNG (crate nélkül)
+      - SA loop (swap + rotate neighbor)
+      - acceptance: temp / (temp + delta) (integer arány)
+      - sa_core_ prefixű unit teszt fake evaluatorral: sa_core_is_deterministic_fixed_seed
+    outputs:
+      - "rust/nesting_engine/src/search/mod.rs"
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "CLI integráció: --search sa"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/main.rs
+
+      Add hozzá a nest args parsinghoz:
+      - --search none|sa
+      - --sa-iters, --sa-temp-start, --sa-temp-end, --sa-eval-time-limit-sec
+
+      SA módban:
+      - futtasd a pipeline-t (inflate) a szokásos módon
+      - készíts instance-szintű listát (quantity szétnyitás)
+      - SA evaluator: greedy_multi_sheet(..., order_policy=ByInputOrder, placer_kind=nfp, eval_time_limit_sec)
+      - output marad build_output_v2.
+
+      Követelmény: --search hiányában a jelenlegi működés változatlan.
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Doksi + checklist + report"
+    description: >
+      Frissítsd:
+      - docs/nesting_engine/architecture.md (F2-4 SA arch + determinisztika)
+
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search.md
+      - codex/reports/nesting_engine/simulated_annealing_search.md
+      Report Standard v2 szerint, AUTO_VERIFY blokk üresen hagyva.
+    outputs:
+      - "docs/nesting_engine/architecture.md"
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search.md"
+
+  - name: "Repo gate (verify wrapper)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search.md
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search.verify.log"
