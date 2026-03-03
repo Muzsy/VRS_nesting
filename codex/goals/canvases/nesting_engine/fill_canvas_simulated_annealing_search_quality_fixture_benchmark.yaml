@@ -1,0 +1,60 @@
+steps:
+  - name: "Repo szabályok + canvas véglegesítése"
+    description: >
+      Olvasd el: AGENTS.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md,
+      és a releváns F2-4 canvasokat.
+      Véglegesítsd a canvas-t: cél a “SA javít” bizonyítása 1 kicsi fixture-rel, teszttel + reporttal.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.md"
+
+  - name: "Új SA quality fixture (v2 input) létrehozása"
+    description: >
+      Hozd létre: poc/nesting_engine/f2_4_sa_quality_fixture_v2.json
+      Követelmény: nesting_engine_v2 schema, 100x100 sheet, kerf=0, margin=0, spacing_mm=0.
+      Parts:
+      - A: 90x40 rectangle polygon, quantity=1, rotations=[0,90]
+      - B: 40x90 rectangle polygon, quantity=1, rotations=[0]
+      Holes: üres listák.
+    outputs:
+      - "poc/nesting_engine/f2_4_sa_quality_fixture_v2.json"
+
+  - name: "Rust: új sa_ unit teszt a fixture javulására"
+    description: >
+      Módosítsd: rust/nesting_engine/src/search/sa.rs
+
+      Adj hozzá egy új unit tesztet (sa_ prefix):
+      - fn sa_quality_fixture_improves_sheets_used()
+
+      Elvárások:
+      1) Állítsd NESTING_ENGINE_STOP_MODE=work_budget.
+      2) Készíts 2 InflatedPartSpec-et (A és B) a meglévő tesztek helper mintájával (rect_poly + bbox_area).
+         A id legyen lexikografikusan kisebb mint B (pl. "A", "B"), hogy ByArea rendezés A-t tegye előre.
+      3) Bin: rect_poly(100.0, 100.0).
+      4) Baseline: greedy_multi_sheet(..., PlacerKind::Blf, PartOrderPolicy::ByArea) -> assert sheets_used == 2.
+      5) SA: run_sa_search_over_specs(..., PlacerKind::Blf, SaSearchConfig{iters:128,temp_start:10000,temp_end:50,seed:2026,eval_budget_sec:2})
+         -> assert sheets_used == 1 (vagy < baseline).
+    outputs:
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.md
+      - codex/reports/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.md
+
+      Követelmények:
+      - DoD → Evidence Matrix (fixture path + teszt + kód)
+      - AUTO_VERIFY marker blokk (verify.sh tölti)
+      - A reportban legyen baseline vs SA CLI futás parancs + kimeneti sheets_used rögzítve.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.md"
+
+  - name: "Repo gate (verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.md
+      Az AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_quality_fixture_benchmark.verify.log"

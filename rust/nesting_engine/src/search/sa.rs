@@ -480,7 +480,7 @@ fn lexicographically_precedes(a: &SaState, b: &SaState) -> bool {
 mod tests {
     use super::{run_sa_core, run_sa_search_over_specs, SaConfig, SaSearchConfig, SaState};
     use crate::{
-        multi_bin::greedy::PlacerKind,
+        multi_bin::{greedy::PartOrderPolicy, greedy::PlacerKind, greedy_multi_sheet},
         placement::blf::{bbox_area, rect_poly, InflatedPartSpec},
     };
 
@@ -577,5 +577,43 @@ mod tests {
 
         assert_eq!(run_a.0, run_b.0);
         assert_eq!(run_a.1, run_b.1);
+    }
+
+    #[test]
+    fn sa_quality_fixture_improves_sheets_used() {
+        std::env::set_var("NESTING_ENGINE_STOP_MODE", "work_budget");
+
+        let specs = vec![
+            tiny_part("A", 90.0, 40.0, vec![0, 90]),
+            tiny_part("B", 40.0, 90.0, vec![0]),
+        ];
+        let bin = rect_poly(100.0, 100.0);
+
+        let (baseline, _baseline_stats) =
+            greedy_multi_sheet(&specs, &bin, 1.0, 2, PlacerKind::Blf, PartOrderPolicy::ByArea);
+        assert_eq!(
+            baseline.sheets_used, 2,
+            "baseline fixture expectation must stay stable"
+        );
+
+        let sa_cfg = SaSearchConfig {
+            iters: 128,
+            temp_start: 10_000,
+            temp_end: 50,
+            seed: 2026,
+            eval_budget_sec: 2,
+        };
+        let (sa_result, _sa_stats) =
+            run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, sa_cfg)
+                .expect("SA run must succeed on quality fixture");
+
+        assert!(
+            sa_result.sheets_used < baseline.sheets_used,
+            "SA must improve sheets_used on quality fixture"
+        );
+        assert_eq!(
+            sa_result.sheets_used, 1,
+            "SA quality fixture expectation must stay stable"
+        );
     }
 }
