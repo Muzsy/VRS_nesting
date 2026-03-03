@@ -1,0 +1,66 @@
+steps:
+  - name: "Repo szabályok és canvas rögzítése"
+    description: >
+      Olvasd el a repo szabályokat (AGENTS.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md),
+      majd véglegesítsd a canvas-t úgy, hogy a feladat fókusza: bizonyító tesztek + report/verify lezárás.
+      Ellenőrizd a valós kódban, hogy a PartOrderPolicy wiring már létezik, és csak a teszt/evidence hiányzik.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_part_order_policy_wiring_evidence.md"
+
+  - name: "BLF: ordering helper factoring + ordering unit teszt"
+    description: >
+      Módosítsd a rust/nesting_engine/src/placement/blf.rs fájlt.
+
+      Követelmények:
+      1) Vezess be egy privát helper függvényt (pl. order_parts_for_policy),
+         ami a jelenlegi blf_place ordering logikáját bitazonosan megőrzi:
+         - ByArea: a meglévő comparator szerinti rendezés (area-desc + meglévő tie-break)
+         - ByInputOrder: nincs rendezés
+      2) A blf_place a helper kimenetét használja (viselkedés ne változzon).
+      3) Adj új unit tesztet: order_policy_by_input_order_preserves_input_order
+         - a meglévő tesztekben használt InflatedPartSpec létrehozási mintát használd (ne találj ki új mezőket),
+         - állíts elő 3 eltérő “méretű/area-jú” partot,
+         - assert: ByInputOrder megőrzi az input sorrendet, ByArea átrendez area-desc szerint.
+    outputs:
+      - "rust/nesting_engine/src/placement/blf.rs"
+
+  - name: "NFP: ordering helper factoring + ordering unit teszt"
+    description: >
+      Módosítsd a rust/nesting_engine/src/placement/nfp_placer.rs fájlt.
+
+      Követelmények:
+      1) Vezess be egy privát helper függvényt (pl. order_parts_for_policy),
+         ami a jelenlegi nfp_place ordering logikáját bitazonosan megőrzi:
+         - ByArea: a meglévő comparator szerinti rendezés (area-desc + meglévő tie-break)
+         - ByInputOrder: nincs rendezés
+      2) A nfp_place a helper kimenetét használja (viselkedés ne változzon).
+      3) Adj új unit tesztet: order_policy_by_input_order_preserves_input_order
+         - a meglévő tesztekben használt InflatedPartSpec létrehozási mintát használd,
+         - 3 eltérő area-jú part,
+         - assert: ByInputOrder megőrzi az input sorrendet, ByArea átrendez.
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Hozd létre a checklistet és a reportot.
+
+      Követelmények:
+      - A report legyen Report Standard v2 szerinti.
+      - Legyen DoD → Evidence Matrix (teszt + kód path+fn).
+      - Legyen benne AUTO_VERIFY marker blokk (üresen; verify.sh tölti).
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_part_order_policy_wiring_evidence.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_wiring_evidence.md"
+
+  - name: "Repo gate (verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_wiring_evidence.md
+
+      Kötelező:
+      - Az AUTO_VERIFY blokkot ne szerkeszd kézzel.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_wiring_evidence.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_wiring_evidence.verify.log"

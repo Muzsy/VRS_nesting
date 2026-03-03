@@ -49,14 +49,7 @@ pub fn blf_place(
     stop: &mut StopPolicy,
     order_policy: PartOrderPolicy,
 ) -> PlacementResult {
-    let mut ordered = parts.to_vec();
-    if order_policy == PartOrderPolicy::ByArea {
-        ordered.sort_by(|a, b| {
-            b.nominal_bbox_area
-                .cmp(&a.nominal_bbox_area)
-                .then_with(|| a.id.cmp(&b.id))
-        });
-    }
+    let ordered = order_parts_for_policy(parts, order_policy);
 
     let step = mm_to_i64(if grid_step_mm <= 0.0 { 1.0 } else { grid_step_mm }).max(1);
     let bin_aabb = aabb_from_polygon64(bin_polygon);
@@ -187,6 +180,21 @@ pub fn blf_place(
     }
 
     PlacementResult { placed, unplaced }
+}
+
+fn order_parts_for_policy(
+    parts: &[InflatedPartSpec],
+    order_policy: PartOrderPolicy,
+) -> Vec<InflatedPartSpec> {
+    let mut ordered = parts.to_vec();
+    if order_policy == PartOrderPolicy::ByArea {
+        ordered.sort_by(|a, b| {
+            b.nominal_bbox_area
+                .cmp(&a.nominal_bbox_area)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+    }
+    ordered
 }
 
 fn rotate_polygon(poly: &Polygon64, rotation_deg: i32) -> Polygon64 {
@@ -363,5 +371,44 @@ mod tests {
                 y: -5_835_458,
             }
         );
+    }
+
+    #[test]
+    fn order_policy_by_input_order_preserves_input_order() {
+        let small_poly = rect_poly(8.0, 8.0);
+        let large_poly = rect_poly(20.0, 20.0);
+        let medium_poly = rect_poly(15.0, 10.0);
+        let parts = vec![
+            InflatedPartSpec {
+                id: "small".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: small_poly.clone(),
+                nominal_bbox_area: bbox_area(&small_poly.outer),
+            },
+            InflatedPartSpec {
+                id: "large".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: large_poly.clone(),
+                nominal_bbox_area: bbox_area(&large_poly.outer),
+            },
+            InflatedPartSpec {
+                id: "medium".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: medium_poly.clone(),
+                nominal_bbox_area: bbox_area(&medium_poly.outer),
+            },
+        ];
+
+        let by_input = order_parts_for_policy(&parts, PartOrderPolicy::ByInputOrder);
+        let by_area = order_parts_for_policy(&parts, PartOrderPolicy::ByArea);
+
+        let by_input_ids: Vec<&str> = by_input.iter().map(|p| p.id.as_str()).collect();
+        let by_area_ids: Vec<&str> = by_area.iter().map(|p| p.id.as_str()).collect();
+
+        assert_eq!(by_input_ids, vec!["small", "large", "medium"]);
+        assert_eq!(by_area_ids, vec!["large", "medium", "small"]);
     }
 }

@@ -145,14 +145,7 @@ pub fn nfp_place(
     stats: &mut NfpPlacerStatsV1,
     order_policy: PartOrderPolicy,
 ) -> PlacementResult {
-    let mut ordered = parts.to_vec();
-    if order_policy == PartOrderPolicy::ByArea {
-        ordered.sort_by(|a, b| {
-            b.nominal_bbox_area
-                .cmp(&a.nominal_bbox_area)
-                .then_with(|| a.id.cmp(&b.id))
-        });
-    }
+    let ordered = order_parts_for_policy(parts, order_policy);
 
     let bin_aabb = aabb_from_polygon64(bin_polygon);
     let mut placed_state = PlacedIndex::new();
@@ -371,6 +364,21 @@ pub fn nfp_place(
     }
 
     PlacementResult { placed, unplaced }
+}
+
+fn order_parts_for_policy(
+    parts: &[InflatedPartSpec],
+    order_policy: PartOrderPolicy,
+) -> Vec<InflatedPartSpec> {
+    let mut ordered = parts.to_vec();
+    if order_policy == PartOrderPolicy::ByArea {
+        ordered.sort_by(|a, b| {
+            b.nominal_bbox_area
+                .cmp(&a.nominal_bbox_area)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+    }
+    ordered
 }
 
 fn append_timeout_unplaced_for_remaining(
@@ -610,6 +618,7 @@ mod tests {
 
     use super::{
         Candidate, InflatedPartSpec, NfpPlacerStatsV1, RotationContext, nfp_place,
+        order_parts_for_policy,
         sort_and_dedupe_candidates,
     };
     use crate::geometry::{
@@ -785,6 +794,24 @@ mod tests {
             a.unplaced.iter().any(|u| u.reason == "TIME_LIMIT_EXCEEDED"),
             "test budget must trigger timeout"
         );
+    }
+
+    #[test]
+    fn order_policy_by_input_order_preserves_input_order() {
+        let parts = vec![
+            part("small", 1, 8.0, 8.0, &[0]),
+            part("large", 1, 20.0, 20.0, &[0]),
+            part("medium", 1, 15.0, 10.0, &[0]),
+        ];
+
+        let by_input = order_parts_for_policy(&parts, PartOrderPolicy::ByInputOrder);
+        let by_area = order_parts_for_policy(&parts, PartOrderPolicy::ByArea);
+
+        let by_input_ids: Vec<&str> = by_input.iter().map(|p| p.id.as_str()).collect();
+        let by_area_ids: Vec<&str> = by_area.iter().map(|p| p.id.as_str()).collect();
+
+        assert_eq!(by_input_ids, vec!["small", "large", "medium"]);
+        assert_eq!(by_area_ids, vec!["large", "medium", "small"]);
     }
 
     #[test]
