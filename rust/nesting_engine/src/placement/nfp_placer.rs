@@ -10,7 +10,7 @@ use crate::geometry::{
     trig_lut::{normalize_deg, round_div_i128, COS_Q, SIN_Q, TRIG_SCALE_I128},
     types::{is_convex, Point64, Polygon64},
 };
-use crate::multi_bin::greedy::StopPolicy;
+use crate::multi_bin::greedy::{PartOrderPolicy, StopPolicy};
 use nesting_engine::nfp::{
     cache::{NfpCache, NfpCacheKey, shape_id},
     cfr::{CfrStatsV1, compute_cfr_with_stats},
@@ -143,13 +143,16 @@ pub fn nfp_place(
     stop: &mut StopPolicy,
     cache: &mut NfpCache,
     stats: &mut NfpPlacerStatsV1,
+    order_policy: PartOrderPolicy,
 ) -> PlacementResult {
     let mut ordered = parts.to_vec();
-    ordered.sort_by(|a, b| {
-        b.nominal_bbox_area
-            .cmp(&a.nominal_bbox_area)
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    if order_policy == PartOrderPolicy::ByArea {
+        ordered.sort_by(|a, b| {
+            b.nominal_bbox_area
+                .cmp(&a.nominal_bbox_area)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+    }
 
     let bin_aabb = aabb_from_polygon64(bin_polygon);
     let mut placed_state = PlacedIndex::new();
@@ -599,7 +602,7 @@ fn from_lib_polygon(poly: &LibPolygon64) -> Polygon64 {
 mod tests {
     use std::time::Instant;
 
-    use crate::multi_bin::greedy::StopPolicy;
+    use crate::multi_bin::greedy::{PartOrderPolicy, StopPolicy};
     use crate::placement::blf::bbox_area;
     use nesting_engine::nfp::cache::NfpCache;
     use nesting_engine::nfp::ifp::{IfpRect, TranslationRange};
@@ -672,7 +675,15 @@ mod tests {
         let mut cache = NfpCache::new();
         let mut stats = NfpPlacerStatsV1::default();
         let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());
-        let out = nfp_place(&parts, &bin, 1.0, &mut stop, &mut cache, &mut stats);
+        let out = nfp_place(
+            &parts,
+            &bin,
+            1.0,
+            &mut stop,
+            &mut cache,
+            &mut stats,
+            PartOrderPolicy::ByArea,
+        );
         assert!(!out.placed.is_empty());
     }
 
@@ -683,7 +694,15 @@ mod tests {
         let mut cache = NfpCache::new();
         let mut stats = NfpPlacerStatsV1::default();
         let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());
-        let out = nfp_place(&parts, &bin, 1.0, &mut stop, &mut cache, &mut stats);
+        let out = nfp_place(
+            &parts,
+            &bin,
+            1.0,
+            &mut stop,
+            &mut cache,
+            &mut stats,
+            PartOrderPolicy::ByArea,
+        );
         assert!(
             out.placed.iter().any(|p| p.part_id == "small"),
             "later feasible part must still be placed"
@@ -709,6 +728,7 @@ mod tests {
             &mut stop_a,
             &mut cache_a,
             &mut stats_a,
+            PartOrderPolicy::ByArea,
         );
         let mut stop_b = StopPolicy::wall_clock_for_test(30, Instant::now());
         let b = nfp_place(
@@ -718,6 +738,7 @@ mod tests {
             &mut stop_b,
             &mut cache_b,
             &mut stats_b,
+            PartOrderPolicy::ByArea,
         );
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);
@@ -739,8 +760,24 @@ mod tests {
         let mut stop_a = StopPolicy::work_budget_for_test(30, 16, 60, Instant::now());
         let mut stop_b = StopPolicy::work_budget_for_test(30, 16, 60, Instant::now());
 
-        let a = nfp_place(&parts, &bin, 1.0, &mut stop_a, &mut cache_a, &mut stats_a);
-        let b = nfp_place(&parts, &bin, 1.0, &mut stop_b, &mut cache_b, &mut stats_b);
+        let a = nfp_place(
+            &parts,
+            &bin,
+            1.0,
+            &mut stop_a,
+            &mut cache_a,
+            &mut stats_a,
+            PartOrderPolicy::ByArea,
+        );
+        let b = nfp_place(
+            &parts,
+            &bin,
+            1.0,
+            &mut stop_b,
+            &mut cache_b,
+            &mut stats_b,
+            PartOrderPolicy::ByArea,
+        );
 
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);

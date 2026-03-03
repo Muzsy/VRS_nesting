@@ -8,7 +8,7 @@ use crate::geometry::{
     trig_lut::{round_div_i128, normalize_deg, COS_Q, SIN_Q, TRIG_SCALE_I128},
     types::{Point64, Polygon64},
 };
-use crate::multi_bin::greedy::StopPolicy;
+use crate::multi_bin::greedy::{PartOrderPolicy, StopPolicy};
 
 #[derive(Debug, Clone)]
 pub struct InflatedPartSpec {
@@ -47,13 +47,16 @@ pub fn blf_place(
     bin_polygon: &Polygon64,
     grid_step_mm: f64,
     stop: &mut StopPolicy,
+    order_policy: PartOrderPolicy,
 ) -> PlacementResult {
     let mut ordered = parts.to_vec();
-    ordered.sort_by(|a, b| {
-        b.nominal_bbox_area
-            .cmp(&a.nominal_bbox_area)
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    if order_policy == PartOrderPolicy::ByArea {
+        ordered.sort_by(|a, b| {
+            b.nominal_bbox_area
+                .cmp(&a.nominal_bbox_area)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+    }
 
     let step = mm_to_i64(if grid_step_mm <= 0.0 { 1.0 } else { grid_step_mm }).max(1);
     let bin_aabb = aabb_from_polygon64(bin_polygon);
@@ -271,7 +274,7 @@ pub fn rect_poly(w_mm: f64, h_mm: f64) -> Polygon64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::multi_bin::greedy::StopPolicy;
+    use crate::multi_bin::greedy::{PartOrderPolicy, StopPolicy};
     use std::time::Instant;
 
     #[test]
@@ -285,7 +288,7 @@ mod tests {
         };
         let bin = rect_poly(30.0, 30.0);
         let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());
-        let res = blf_place(&[part], &bin, 1.0, &mut stop);
+        let res = blf_place(&[part], &bin, 1.0, &mut stop, PartOrderPolicy::ByArea);
         assert_eq!(res.placed.len(), 2);
     }
 
@@ -300,9 +303,15 @@ mod tests {
         };
         let bin = rect_poly(40.0, 40.0);
         let mut stop_a = StopPolicy::wall_clock_for_test(30, Instant::now());
-        let a = blf_place(&[part.clone()], &bin, 1.0, &mut stop_a);
+        let a = blf_place(
+            &[part.clone()],
+            &bin,
+            1.0,
+            &mut stop_a,
+            PartOrderPolicy::ByArea,
+        );
         let mut stop_b = StopPolicy::wall_clock_for_test(30, Instant::now());
-        let b = blf_place(&[part], &bin, 1.0, &mut stop_b);
+        let b = blf_place(&[part], &bin, 1.0, &mut stop_b, PartOrderPolicy::ByArea);
         assert_eq!(a.placed, b.placed);
         assert_eq!(a.unplaced, b.unplaced);
     }
@@ -318,10 +327,16 @@ mod tests {
         };
         let bin = rect_poly(40.0, 40.0);
         let mut stop_a = StopPolicy::work_budget_for_test(30, 2_500, 1_000, Instant::now());
-        let out_a = blf_place(&[part.clone()], &bin, 1.0, &mut stop_a);
+        let out_a = blf_place(
+            &[part.clone()],
+            &bin,
+            1.0,
+            &mut stop_a,
+            PartOrderPolicy::ByArea,
+        );
 
         let mut stop_b = StopPolicy::work_budget_for_test(30, 2_500, 1_000, Instant::now());
-        let out_b = blf_place(&[part], &bin, 1.0, &mut stop_b);
+        let out_b = blf_place(&[part], &bin, 1.0, &mut stop_b, PartOrderPolicy::ByArea);
 
         assert_eq!(out_a.placed, out_b.placed);
         assert_eq!(out_a.unplaced, out_b.unplaced);

@@ -15,7 +15,7 @@ use crate::{
     geometry::{scale::mm_to_i64, types::{Point64, Polygon64}},
     geometry::pipeline::run_inflate_pipeline,
     io::pipeline_io::{PartRequest, PipelineRequest},
-    multi_bin::{MultiSheetResult, greedy::PlacerKind, greedy_multi_sheet},
+    multi_bin::{MultiSheetResult, greedy::{PartOrderPolicy, PlacerKind}, greedy_multi_sheet},
     placement::nfp_placer::NfpPlacerStatsV1,
     placement::blf::{InflatedPartSpec, UnplacedItem, bbox_area},
 };
@@ -288,7 +288,14 @@ fn run_nest(requested_placer: PlacerKind) -> Result<(), String> {
     };
 
     let (mut result, nfp_stats_opt): (MultiSheetResult, Option<NfpPlacerStatsV1>) =
-        greedy_multi_sheet(&specs, &bin, 1.0, input.time_limit_sec, effective_placer);
+        greedy_multi_sheet(
+            &specs,
+            &bin,
+            1.0,
+            input.time_limit_sec,
+            effective_placer,
+            PartOrderPolicy::ByArea,
+        );
     result.unplaced.extend(forced_unplaced);
     result
         .unplaced
