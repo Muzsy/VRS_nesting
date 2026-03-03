@@ -13,13 +13,57 @@ use serde::Deserialize;
 
 use crate::{
     export::build_output_v2,
-    geometry::{scale::mm_to_i64, types::{Point64, Polygon64}},
     geometry::pipeline::run_inflate_pipeline,
+    geometry::{
+        scale::mm_to_i64,
+        types::{Point64, Polygon64},
+    },
     io::pipeline_io::{PartRequest, PipelineRequest},
-    multi_bin::{MultiSheetResult, greedy::{PartOrderPolicy, PlacerKind}, greedy_multi_sheet},
+    multi_bin::{
+        greedy::{PartOrderPolicy, PlacerKind},
+        greedy_multi_sheet, MultiSheetResult,
+    },
+    placement::blf::{bbox_area, InflatedPartSpec, UnplacedItem},
     placement::nfp_placer::NfpPlacerStatsV1,
-    placement::blf::{InflatedPartSpec, UnplacedItem, bbox_area},
+    search::sa::{run_sa_search_over_specs, SaSearchConfig},
 };
+
+const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>";
+const DEFAULT_SA_ITERS: u64 = 256;
+const DEFAULT_SA_TEMP_START: u64 = 10_000;
+const DEFAULT_SA_TEMP_END: u64 = 50;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchMode {
+    None,
+    Sa,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SaCliArgs {
+    iters: Option<u64>,
+    temp_start: Option<u64>,
+    temp_end: Option<u64>,
+    seed: Option<u64>,
+    eval_budget_sec: Option<u64>,
+}
+
+impl SaCliArgs {
+    fn has_any(self) -> bool {
+        self.iters.is_some()
+            || self.temp_start.is_some()
+            || self.temp_end.is_some()
+            || self.seed.is_some()
+            || self.eval_budget_sec.is_some()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NestCliArgs {
+    placer: PlacerKind,
+    search_mode: SearchMode,
+    sa: SaCliArgs,
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -76,12 +120,14 @@ fn run_inflate_parts() -> Result<(), String> {
 }
 
 fn run_nest_with_args(args: &[String]) -> Result<(), String> {
-    let requested_placer = parse_requested_placer(args)?;
-    run_nest(requested_placer)
+    let cli = parse_nest_cli_args(args)?;
+    run_nest(cli)
 }
 
-fn parse_requested_placer(args: &[String]) -> Result<PlacerKind, String> {
+fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
     let mut placer = PlacerKind::Blf;
+    let mut search_mode = SearchMode::None;
+    let mut sa = SaCliArgs::default();
     let mut idx = 0usize;
 
     while idx < args.len() {
@@ -100,13 +146,105 @@ fn parse_requested_placer(args: &[String]) -> Result<PlacerKind, String> {
             idx += 1;
             continue;
         }
+        if arg == "--search" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --search (expected: none|sa)".to_string());
+            }
+            search_mode = parse_search_mode(&args[idx])?;
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--search=") {
+            search_mode = parse_search_mode(value)?;
+            idx += 1;
+            continue;
+        }
+        if arg == "--sa-iters" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --sa-iters (expected: u64)".to_string());
+            }
+            sa.iters = Some(parse_u64_arg("--sa-iters", &args[idx])?);
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--sa-iters=") {
+            sa.iters = Some(parse_u64_arg("--sa-iters", value)?);
+            idx += 1;
+            continue;
+        }
+        if arg == "--sa-temp-start" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --sa-temp-start (expected: u64)".to_string());
+            }
+            sa.temp_start = Some(parse_u64_arg("--sa-temp-start", &args[idx])?);
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--sa-temp-start=") {
+            sa.temp_start = Some(parse_u64_arg("--sa-temp-start", value)?);
+            idx += 1;
+            continue;
+        }
+        if arg == "--sa-temp-end" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --sa-temp-end (expected: u64)".to_string());
+            }
+            sa.temp_end = Some(parse_u64_arg("--sa-temp-end", &args[idx])?);
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--sa-temp-end=") {
+            sa.temp_end = Some(parse_u64_arg("--sa-temp-end", value)?);
+            idx += 1;
+            continue;
+        }
+        if arg == "--sa-seed" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --sa-seed (expected: u64)".to_string());
+            }
+            sa.seed = Some(parse_u64_arg("--sa-seed", &args[idx])?);
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--sa-seed=") {
+            sa.seed = Some(parse_u64_arg("--sa-seed", value)?);
+            idx += 1;
+            continue;
+        }
+        if arg == "--sa-eval-budget-sec" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --sa-eval-budget-sec (expected: u64)".to_string());
+            }
+            sa.eval_budget_sec = Some(parse_u64_arg("--sa-eval-budget-sec", &args[idx])?);
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--sa-eval-budget-sec=") {
+            sa.eval_budget_sec = Some(parse_u64_arg("--sa-eval-budget-sec", value)?);
+            idx += 1;
+            continue;
+        }
 
         return Err(format!(
-            "unknown nest argument '{arg}' (supported: --placer blf|nfp)"
+            "unknown nest argument '{arg}' (supported: {SUPPORTED_NEST_FLAGS})"
         ));
     }
 
-    Ok(placer)
+    if search_mode != SearchMode::Sa && sa.has_any() {
+        return Err("SA flags require --search sa".to_string());
+    }
+
+    Ok(NestCliArgs {
+        placer,
+        search_mode,
+        sa,
+    })
 }
 
 fn parse_placer_value(value: &str) -> Result<PlacerKind, String> {
@@ -117,6 +255,54 @@ fn parse_placer_value(value: &str) -> Result<PlacerKind, String> {
             "unsupported --placer value '{other}' (expected: blf|nfp)"
         )),
     }
+}
+
+fn parse_search_mode(value: &str) -> Result<SearchMode, String> {
+    match value {
+        "none" => Ok(SearchMode::None),
+        "sa" => Ok(SearchMode::Sa),
+        other => Err(format!(
+            "unsupported --search value '{other}' (expected: none|sa)"
+        )),
+    }
+}
+
+fn parse_u64_arg(flag: &str, value: &str) -> Result<u64, String> {
+    value
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| format!("invalid value for {flag}: '{value}' (expected: u64)"))
+}
+
+fn default_sa_eval_budget_sec(time_limit_sec: u64) -> u64 {
+    let capped_limit = time_limit_sec.max(1);
+    let tenth = capped_limit / 10;
+    tenth.clamp(1, capped_limit)
+}
+
+fn build_sa_search_config(input: &NestInput, sa: SaCliArgs) -> Result<SaSearchConfig, String> {
+    let iters = sa.iters.unwrap_or(DEFAULT_SA_ITERS);
+    if iters == 0 {
+        return Err("--sa-iters must be >= 1".to_string());
+    }
+
+    let temp_start = sa.temp_start.unwrap_or(DEFAULT_SA_TEMP_START);
+    let temp_end = sa.temp_end.unwrap_or(DEFAULT_SA_TEMP_END);
+    let seed = sa.seed.unwrap_or(input.seed);
+
+    let time_limit_cap = input.time_limit_sec.max(1);
+    let eval_budget_sec = sa
+        .eval_budget_sec
+        .unwrap_or_else(|| default_sa_eval_budget_sec(input.time_limit_sec))
+        .clamp(1, time_limit_cap);
+
+    Ok(SaSearchConfig {
+        iters,
+        temp_start,
+        temp_end,
+        seed,
+        eval_budget_sec,
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -147,7 +333,7 @@ struct NestInputPart {
     holes_points_mm: Vec<Vec<[f64; 2]>>,
 }
 
-fn run_nest(requested_placer: PlacerKind) -> Result<(), String> {
+fn run_nest(cli: NestCliArgs) -> Result<(), String> {
     let started = Instant::now();
     let stdin = stdio::stdin();
     let reader = BufReader::new(stdin.lock());
@@ -179,20 +365,21 @@ fn run_nest(requested_placer: PlacerKind) -> Result<(), String> {
         stocks: Vec::new(),
     };
     let pipe_resp = run_inflate_pipeline(pipe_req);
-    let has_nominal_holes = input.parts.iter().any(|part| !part.holes_points_mm.is_empty());
+    let has_nominal_holes = input
+        .parts
+        .iter()
+        .any(|part| !part.holes_points_mm.is_empty());
     let has_hole_collapsed = pipe_resp
         .parts
         .iter()
         .any(|part| part.status == "hole_collapsed");
-    let effective_placer = if requested_placer == PlacerKind::Nfp
+    let effective_placer = if cli.placer == PlacerKind::Nfp
         && (has_nominal_holes || has_hole_collapsed)
     {
-        eprintln!(
-            "warning: --placer nfp fallback to blf (hybrid gating: holes or hole_collapsed)"
-        );
+        eprintln!("warning: --placer nfp fallback to blf (hybrid gating: holes or hole_collapsed)");
         PlacerKind::Blf
     } else {
-        requested_placer
+        cli.placer
     };
 
     let mut specs: Vec<InflatedPartSpec> = Vec::new();
@@ -289,14 +476,20 @@ fn run_nest(requested_placer: PlacerKind) -> Result<(), String> {
     };
 
     let (mut result, nfp_stats_opt): (MultiSheetResult, Option<NfpPlacerStatsV1>) =
-        greedy_multi_sheet(
-            &specs,
-            &bin,
-            1.0,
-            input.time_limit_sec,
-            effective_placer,
-            PartOrderPolicy::ByArea,
-        );
+        match cli.search_mode {
+            SearchMode::None => greedy_multi_sheet(
+                &specs,
+                &bin,
+                1.0,
+                input.time_limit_sec,
+                effective_placer,
+                PartOrderPolicy::ByArea,
+            ),
+            SearchMode::Sa => {
+                let sa_cfg = build_sa_search_config(&input, cli.sa)?;
+                run_sa_search_over_specs(&specs, &bin, 1.0, effective_placer, sa_cfg)?
+            }
+        };
     result.unplaced.extend(forced_unplaced);
     result
         .unplaced
@@ -414,8 +607,14 @@ mod tests {
         let (min_x, max_x, min_y, max_y) = rect_bin_bounds(100.0, 60.0, 1.0, 4.0);
         assert!(min_x < 0.0, "min_x should be negative for bin inflate");
         assert!(min_y < 0.0, "min_y should be negative for bin inflate");
-        assert!(max_x > 100.0, "max_x should exceed nominal width for bin inflate");
-        assert!(max_y > 60.0, "max_y should exceed nominal height for bin inflate");
+        assert!(
+            max_x > 100.0,
+            "max_x should exceed nominal width for bin inflate"
+        );
+        assert!(
+            max_y > 60.0,
+            "max_y should exceed nominal height for bin inflate"
+        );
     }
 
     #[test]

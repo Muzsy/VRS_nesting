@@ -1,9 +1,31 @@
+use std::sync::Once;
+
+use crate::{
+    geometry::types::Polygon64,
+    multi_bin::{
+        greedy::{PartOrderPolicy, PlacerKind},
+        greedy_multi_sheet, MultiSheetResult,
+    },
+    placement::{blf::InflatedPartSpec, nfp_placer::NfpPlacerStatsV1},
+};
+
+static SA_WORK_BUDGET_NOTICE: Once = Once::new();
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SaConfig {
     pub iters: u64,
     pub temp_start: u64,
     pub temp_end: u64,
     pub seed: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaSearchConfig {
+    pub iters: u64,
+    pub temp_start: u64,
+    pub temp_end: u64,
+    pub seed: u64,
+    pub eval_budget_sec: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +45,12 @@ pub struct SaRunResult {
 #[derive(Debug, Clone)]
 pub struct SplitMix64 {
     state: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CostEncoding {
+    unplaced_weight: u128,
+    sheets_weight: u128,
 }
 
 impl SplitMix64 {
@@ -90,6 +118,224 @@ where
         final_state: current_state,
         final_cost: current_cost,
     })
+}
+
+pub fn run_sa_search_over_specs(
+    base_specs: &[InflatedPartSpec],
+    bin: &Polygon64,
+    grid_step_mm: f64,
+    placer_kind: PlacerKind,
+    config: SaSearchConfig,
+) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
+    if config.eval_budget_sec == 0 {
+        return Err("sa eval budget must be >= 1 second".to_string());
+    }
+
+    ensure_sa_stop_mode();
+
+    if base_specs.is_empty() {
+        return Ok(greedy_multi_sheet(
+            base_specs,
+            bin,
+            grid_step_mm,
+            config.eval_budget_sec,
+            placer_kind,
+            PartOrderPolicy::ByInputOrder,
+        ));
+    }
+
+    let rotation_options_len = rotation_options_len(base_specs)?;
+    let total_instances = total_instances(base_specs)?;
+    let cost_encoding = CostEncoding::new(total_instances)?;
+
+    let initial_state = SaState {
+        order: (0..base_specs.len()).collect(),
+        rot_choice: vec![0; base_specs.len()],
+    };
+    let core_cfg = SaConfig {
+        iters: config.iters,
+        temp_start: config.temp_start,
+        temp_end: config.temp_end,
+        seed: config.seed,
+    };
+
+    let mut eval_error: Option<String> = None;
+    let run =
+        run_sa_core(
+            initial_state,
+            &rotation_options_len,
+            core_cfg,
+            |state| match eval_state_cost(
+                state,
+                base_specs,
+                bin,
+                grid_step_mm,
+                placer_kind,
+                config.eval_budget_sec,
+                total_instances,
+                cost_encoding,
+            ) {
+                Ok(cost) => cost,
+                Err(err) => {
+                    if eval_error.is_none() {
+                        eval_error = Some(err);
+                    }
+                    i64::MAX
+                }
+            },
+        )?;
+    if let Some(err) = eval_error {
+        return Err(err);
+    }
+
+    let best_specs = specs_for_state(base_specs, &run.best_state);
+    Ok(greedy_multi_sheet(
+        &best_specs,
+        bin,
+        grid_step_mm,
+        config.eval_budget_sec,
+        placer_kind,
+        PartOrderPolicy::ByInputOrder,
+    ))
+}
+
+fn ensure_sa_stop_mode() {
+    if std::env::var_os("NESTING_ENGINE_STOP_MODE").is_some() {
+        return;
+    }
+
+    SA_WORK_BUDGET_NOTICE.call_once(|| {
+        if std::env::var_os("NESTING_ENGINE_STOP_MODE").is_none() {
+            std::env::set_var("NESTING_ENGINE_STOP_MODE", "work_budget");
+            eprintln!("SA: forcing work_budget stop mode");
+        }
+    });
+}
+
+fn total_instances(base_specs: &[InflatedPartSpec]) -> Result<u64, String> {
+    let mut total = 0_u64;
+    for spec in base_specs {
+        let qty = u64::try_from(spec.quantity)
+            .map_err(|_| "part quantity does not fit into u64".to_string())?;
+        total = total
+            .checked_add(qty)
+            .ok_or_else(|| "total part instance count overflow".to_string())?;
+    }
+    Ok(total)
+}
+
+impl CostEncoding {
+    fn new(total_instances: u64) -> Result<Self, String> {
+        let axis = u128::from(total_instances).saturating_add(1);
+        let sheets_weight = axis;
+        let unplaced_weight = axis
+            .checked_mul(axis)
+            .ok_or_else(|| "sa cost encoding overflow while computing weights".to_string())?;
+
+        let max_total = u128::from(total_instances);
+        let max_cost = max_total
+            .checked_mul(unplaced_weight)
+            .and_then(|v| v.checked_add(max_total.checked_mul(sheets_weight)?))
+            .and_then(|v| v.checked_add(max_total))
+            .ok_or_else(|| "sa cost encoding overflow while computing max cost".to_string())?;
+        if max_cost > i64::MAX as u128 {
+            return Err("sa cost encoding exceeds i64 range for this input size".to_string());
+        }
+
+        Ok(Self {
+            unplaced_weight,
+            sheets_weight,
+        })
+    }
+
+    fn encode(self, unplaced_count: u64, sheets_used: u64, not_placed: u64) -> Result<i64, String> {
+        let cost = u128::from(unplaced_count)
+            .checked_mul(self.unplaced_weight)
+            .and_then(|v| v.checked_add(u128::from(sheets_used).checked_mul(self.sheets_weight)?))
+            .and_then(|v| v.checked_add(u128::from(not_placed)))
+            .ok_or_else(|| "sa cost encoding overflow during evaluation".to_string())?;
+
+        i64::try_from(cost).map_err(|_| "sa cost value does not fit into i64".to_string())
+    }
+}
+
+fn eval_state_cost(
+    state: &SaState,
+    base_specs: &[InflatedPartSpec],
+    bin: &Polygon64,
+    grid_step_mm: f64,
+    placer_kind: PlacerKind,
+    eval_budget_sec: u64,
+    total_instances: u64,
+    cost_encoding: CostEncoding,
+) -> Result<i64, String> {
+    let specs = specs_for_state(base_specs, state);
+    let (result, _stats) = greedy_multi_sheet(
+        &specs,
+        bin,
+        grid_step_mm,
+        eval_budget_sec,
+        placer_kind,
+        PartOrderPolicy::ByInputOrder,
+    );
+
+    let placed_count = u64::try_from(result.placed.len())
+        .map_err(|_| "placed item count does not fit into u64".to_string())?;
+    let unplaced_count = u64::try_from(result.unplaced.len())
+        .map_err(|_| "unplaced item count does not fit into u64".to_string())?;
+    let sheets_used = u64::try_from(result.sheets_used)
+        .map_err(|_| "sheet count does not fit into u64".to_string())?;
+    let not_placed = total_instances.saturating_sub(placed_count);
+
+    cost_encoding.encode(unplaced_count, sheets_used, not_placed)
+}
+
+fn rotation_options_len(base_specs: &[InflatedPartSpec]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(base_specs.len());
+    for spec in base_specs {
+        let unique_count = unique_rotation_count(&spec.allowed_rotations_deg);
+        let normalized = if unique_count == 0 { 1 } else { unique_count };
+        let as_u8 = u8::try_from(normalized)
+            .map_err(|_| "too many rotation options for SA state (max 255)".to_string())?;
+        out.push(as_u8);
+    }
+    Ok(out)
+}
+
+fn unique_rotation_count(values: &[i32]) -> usize {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut deduped = values.to_vec();
+    deduped.sort_unstable();
+    deduped.dedup();
+    deduped.len()
+}
+
+fn specs_for_state(base_specs: &[InflatedPartSpec], state: &SaState) -> Vec<InflatedPartSpec> {
+    let mut out = Vec::with_capacity(base_specs.len());
+    for &spec_idx in &state.order {
+        let mut spec = base_specs[spec_idx].clone();
+        let rot_offset = usize::from(state.rot_choice[spec_idx]);
+        spec.allowed_rotations_deg = rotate_slice(&spec.allowed_rotations_deg, rot_offset);
+        out.push(spec);
+    }
+    out
+}
+
+fn rotate_slice(values: &[i32], offset: usize) -> Vec<i32> {
+    if values.len() <= 1 {
+        return values.to_vec();
+    }
+    let shift = offset % values.len();
+    if shift == 0 {
+        return values.to_vec();
+    }
+
+    let mut rotated = Vec::with_capacity(values.len());
+    rotated.extend_from_slice(&values[shift..]);
+    rotated.extend_from_slice(&values[..shift]);
+    rotated
 }
 
 fn validate_state(state: &SaState, rotation_options_len: &[u8]) -> Result<(), String> {
@@ -232,7 +478,11 @@ fn lexicographically_precedes(a: &SaState, b: &SaState) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{SaConfig, SaState, run_sa_core};
+    use super::{run_sa_core, run_sa_search_over_specs, SaConfig, SaSearchConfig, SaState};
+    use crate::{
+        multi_bin::greedy::PlacerKind,
+        placement::blf::{bbox_area, rect_poly, InflatedPartSpec},
+    };
 
     fn eval_cost(state: &SaState) -> i64 {
         let mut inversions = 0_i64;
@@ -284,5 +534,48 @@ mod tests {
         assert_eq!(run_a.best_state, run_b.best_state);
         assert_eq!(run_a.final_cost, run_b.final_cost);
         assert_eq!(run_a.final_state, run_b.final_state);
+    }
+
+    fn tiny_part(
+        id: &str,
+        w_mm: f64,
+        h_mm: f64,
+        allowed_rotations_deg: Vec<i32>,
+    ) -> InflatedPartSpec {
+        let poly = rect_poly(w_mm, h_mm);
+        InflatedPartSpec {
+            id: id.to_string(),
+            quantity: 1,
+            allowed_rotations_deg,
+            nominal_bbox_area: bbox_area(&poly.outer),
+            inflated_polygon: poly,
+        }
+    }
+
+    #[test]
+    fn sa_search_is_deterministic_tiny_blf_case() {
+        std::env::set_var("NESTING_ENGINE_STOP_MODE", "work_budget");
+
+        let specs = vec![
+            tiny_part("a", 18.0, 10.0, vec![0, 90]),
+            tiny_part("b", 12.0, 12.0, vec![0]),
+            tiny_part("c", 10.0, 8.0, vec![0, 90]),
+        ];
+        let bin = rect_poly(30.0, 20.0);
+        let cfg = SaSearchConfig {
+            iters: 96,
+            temp_start: 10_000,
+            temp_end: 50,
+            seed: 2026,
+            eval_budget_sec: 2,
+        };
+
+        let run_a = run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, cfg)
+            .expect("run_a must succeed");
+        let run_b = run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, cfg)
+            .expect("run_b must succeed");
+
+        assert_eq!(run_a.0, run_b.0);
+        assert_eq!(run_a.1, run_b.1);
     }
 }

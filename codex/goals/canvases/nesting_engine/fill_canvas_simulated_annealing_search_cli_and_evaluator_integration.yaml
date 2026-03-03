@@ -1,0 +1,108 @@
+steps:
+  - name: "Repo szabályok + F2-4 kontextus + canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/codex/yaml_schema.md
+      - docs/codex/report_standard.md
+      - docs/qa/testing_guidelines.md
+      - canvases/nesting_engine/simulated_annealing_search.md
+      - canvases/nesting_engine/simulated_annealing_search_sa_core_mvp.md
+
+      Véglegesítsd a canvas-t a SA CLI + evaluator integráció scope szerint.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.md"
+
+  - name: "Rust: CLI parse bővítés (nest --search ... + SA paramok)"
+    description: >
+      Módosítsd: rust/nesting_engine/src/main.rs
+
+      Teendők:
+      1) A nest argument parser támogassa:
+         - --search none|sa és --search=...
+         - --sa-iters, --sa-temp-start, --sa-temp-end, --sa-seed, --sa-eval-budget-sec (mind u64)
+      2) Default: search=none.
+      3) Hibák: ismeretlen flag esetén a hibaüzenet sorolja fel a supported flag-eket.
+      4) A default (search=none) ág pontosan a jelenlegi greedy_multi_sheet hívást tartsa meg.
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Rust: SA evaluator integráció a search/sa.rs-ben (core kiterjesztés)"
+    description: >
+      Módosítsd: rust/nesting_engine/src/search/sa.rs
+
+      Teendők:
+      1) Adj egy SaSearchConfig structot (iters/temp_start/temp_end/seed/eval_budget_sec).
+      2) Implementálj egy publikus függvényt:
+         run_sa_search_over_specs(
+           base_specs: &[InflatedPartSpec],
+           bin: &Polygon64,
+           grid_step_mm: f64,
+           placer_kind: PlacerKind,
+           config: SaSearchConfig
+         ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String>
+      3) A state.order permutációval rendezd a spec-eket, és hívd:
+         greedy_multi_sheet(..., time_limit_sec=config.eval_budget_sec, order_policy=PartOrderPolicy::ByInputOrder)
+      4) Cost legyen determinisztikus integer (unplaced_count, sheets_used, not_placed).
+      5) Tie-break legyen determinisztikus (a sa core már lexikografikusan dönt state alapján).
+      6) SA módban (ha nincs env-ben):
+         állítsd be: NESTING_ENGINE_STOP_MODE=work_budget,
+         és írj stderr-re egy egyszeri diagnosztikát.
+      7) Adj unit tesztet (sa_ prefix):
+         sa_search_is_deterministic_tiny_blf_case
+         - 2 futás azonos seed-del azonos MultiSheetResultot ad.
+    outputs:
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "Rust: main.rs SA ág bekötése (output contract sértetlen)"
+    description: >
+      Módosítsd: rust/nesting_engine/src/main.rs
+
+      Teendők:
+      - Ha --search sa:
+        - állítsd össze a SaSearchConfigot (CLI paramokból, defaultokkal),
+        - hívd a search::sa integrációs függvényt,
+        - a visszakapott MultiSheetResultot ugyanúgy dolgozd fel, mint baseline-ban:
+          forced_unplaced hozzáfűzés + unplaced sort + build_output_v2.
+      - Fontos: output JSON contract ne változzon (csak a placements/unplaced tartalom változhat).
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Gate: scripts/check.sh bővítése SA unit tesztekre"
+    description: >
+      Módosítsd: scripts/check.sh
+
+      Teendő:
+      - A nesting_engine blokkban add hozzá:
+        echo "[NEST] Targeted sa_ unit tests"
+        cargo test --manifest-path rust/nesting_engine/Cargo.toml sa_
+
+      Cél:
+      - A sa_core_is_deterministic_fixed_seed és az SA integrációs tesztek biztosan fussanak CI-ban.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.md
+      - codex/reports/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.md
+
+      Követelmények:
+      - DoD → Evidence Matrix (kód + teszt + gate)
+      - AUTO_VERIFY marker blokk (verify.sh tölti)
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.md"
+
+  - name: "Repo gate (verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.md
+
+      Kötelező:
+      - AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_cli_and_evaluator_integration.verify.log"
