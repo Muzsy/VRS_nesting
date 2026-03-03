@@ -4,6 +4,7 @@ mod geometry;
 mod io;
 mod multi_bin;
 mod placement;
+mod search;
 
 use std::io::{self as stdio, BufReader, BufWriter, Write};
 use std::time::Instant;

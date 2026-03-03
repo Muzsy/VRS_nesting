@@ -1,0 +1,81 @@
+steps:
+  - name: "Repo szabályok + F2-4 kontextus + canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/codex/yaml_schema.md
+      - docs/codex/report_standard.md
+      - docs/qa/testing_guidelines.md
+      - canvases/nesting_engine/nesting_engine_backlog.md (F2-4)
+      - canvases/nesting_engine/simulated_annealing_search.md (SA core elv)
+
+      Véglegesítsd a canvas-t úgy, hogy ez a task kizárólag a SA motor MVP-re (search/sa.rs) fókuszáljon,
+      determinisztikus unit teszttel bizonyítva, CLI/evaluator integráció nélkül.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_sa_core_mvp.md"
+
+  - name: "Rust: search modul scaffold + SA core motor + determinisztika unit teszt"
+    description: >
+      Hozd létre:
+      - rust/nesting_engine/src/search/mod.rs
+      - rust/nesting_engine/src/search/sa.rs
+
+      Követelmények (sa.rs):
+      1) Implementálj determinisztikus PRNG-t: SplitMix64 (u64 state, next_u64()).
+      2) Definiálj SA configot: iters, temp_start, temp_end, seed.
+      3) Definiálj SA state-et:
+         - order: Vec<usize>
+         - rot_choice: Vec<u8>
+      4) Neighbor műveletek:
+         - swap(i,j) (különböző indexek)
+         - rotate(k) (csak ha az adott instance-hez tartozó rotation_options_len > 1)
+      5) Acceptance: float nélkül (u128 arány): num=temp, denom=temp+delta.
+      6) Cooling: lineáris schedule (u64, u128 köztes számítás engedett).
+      7) Adj unit tesztet a sa.rs-ben (#[cfg(test)]):
+         - fn sa_core_is_deterministic_fixed_seed()
+         - ugyanazzal a seed-del 2 futtatás -> azonos best_cost és azonos best_state (order+rot_choice).
+
+      Megjegyzés:
+      - a tesztben használj egyszerű, teljesen integer cost függvényt (pl. inversion count + rot büntetés),
+        ami stabil és gyors.
+    outputs:
+      - "rust/nesting_engine/src/search/mod.rs"
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "Rust: search modul bekötése a crate-be (csak compile célból)"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/main.rs
+
+      Teendő:
+      - Add hozzá a top-level mod listához: mod search;
+
+      Követelmény:
+      - Ne változzon semmilyen CLI viselkedés (csak új modul forduljon).
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search_sa_core_mvp.md
+      - codex/reports/nesting_engine/simulated_annealing_search_sa_core_mvp.md
+
+      Követelmények:
+      - DoD → Evidence Matrix (teszt + kód path+fn)
+      - AUTO_VERIFY marker blokk legyen benne (üresen; verify.sh tölti)
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_sa_core_mvp.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_sa_core_mvp.md"
+
+  - name: "Repo gate (verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_sa_core_mvp.md
+
+      Kötelező:
+      - AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_sa_core_mvp.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_sa_core_mvp.verify.log"
