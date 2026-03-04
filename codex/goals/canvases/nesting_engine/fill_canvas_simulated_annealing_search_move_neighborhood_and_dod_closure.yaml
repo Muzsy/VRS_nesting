@@ -1,0 +1,66 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_simulated_annealing_search_move_neighborhood_and_dod_closure.yaml
+
+steps:
+  - name: "Repo szabályok + canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/codex/yaml_schema.md
+      - docs/codex/report_standard.md
+      - docs/qa/testing_guidelines.md
+      - canvases/nesting_engine/nesting_engine_backlog.md (F2-4 DoD)
+      - rust/nesting_engine/src/search/sa.rs (jelenlegi neighborhood: swap+rotate)
+
+      Véglegesítsd a canvas-t: move/relocate operátor + sa_ teszt + F2-4 fő report lezárás.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_move_neighborhood_and_dod_closure.md"
+
+  - name: "Rust: move/relocate neighborhood operátor + sa_ unit teszt"
+    description: >
+      Módosítsd: rust/nesting_engine/src/search/sa.rs
+
+      Teendők:
+      1) Adj új privát függvényt:
+         - fn apply_move(state: &mut SaState, rng: &mut SplitMix64)
+         A state.order-ben relocation-t csinál: from!=to, remove+insert.
+      2) Frissítsd apply_neighbor-t úgy, hogy swap/move/rotate közül válasszon
+         (PRNG alapú, determinisztikus).
+      3) Adj új unit tesztet (sa_ prefix, hogy a gate biztosan futtassa):
+         - fn sa_move_neighbor_preserves_permutation()
+         Elvárások:
+         - state.order kezdetben ismert permutáció (pl. [0,1,2,3,4])
+         - apply_move lefut -> order megváltozik
+         - az elemek halmaza változatlan (ugyanazok az indexek, egyszer-egyszer)
+         - rot_choice változatlan marad
+    outputs:
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "F2-4 fő checklist + report (Report Standard v2)"
+    description: >
+      Hozd létre:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search.md
+      - codex/reports/nesting_engine/simulated_annealing_search.md
+
+      Követelmények:
+      - Report Standard v2 szerkezet
+      - DoD → Evidence Matrix az F2-4 backlog DoD pontjaira:
+        * determinisztika (tesztek + sa.rs)
+        * javulás (quality fixture + teszt + CLI parancs)
+        * time limit/budget (main.rs build_sa_search_config + sa.rs ensure_sa_stop_mode)
+        * verify PASS
+      - AUTO_VERIFY_START/END marker blokk legyen benne (üresen; verify.sh tölti).
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search.md"
+
+  - name: "Repo gate (verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search.md
+
+      Kötelező:
+      - AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search.verify.log"

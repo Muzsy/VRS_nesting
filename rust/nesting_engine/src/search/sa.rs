@@ -378,23 +378,41 @@ fn apply_neighbor(state: &mut SaState, rotation_options_len: &[u8], rng: &mut Sp
     }
 
     let can_swap = n >= 2;
+    let can_move = n >= 2;
     let can_rotate = rotation_options_len.iter().any(|&len| len > 1);
 
-    if !can_swap && !can_rotate {
+    if !can_swap && !can_move && !can_rotate {
         return;
     }
 
-    let prefer_swap = (rng.next_u64() & 1) == 0;
-    if prefer_swap {
-        if can_swap {
+    let mut op_count = 0usize;
+    if can_swap {
+        op_count += 1;
+    }
+    if can_move {
+        op_count += 1;
+    }
+    if can_rotate {
+        op_count += 1;
+    }
+
+    let mut selected = random_index(rng, op_count);
+    if can_swap {
+        if selected == 0 {
             apply_swap(state, rng);
-        } else {
-            apply_rotate(state, rotation_options_len, rng);
+            return;
         }
-    } else if can_rotate {
+        selected -= 1;
+    }
+    if can_move {
+        if selected == 0 {
+            apply_move(state, rng);
+            return;
+        }
+        selected -= 1;
+    }
+    if can_rotate && selected == 0 {
         apply_rotate(state, rotation_options_len, rng);
-    } else {
-        apply_swap(state, rng);
     }
 }
 
@@ -410,6 +428,22 @@ fn apply_swap(state: &mut SaState, rng: &mut SplitMix64) {
         j += 1;
     }
     state.order.swap(i, j);
+}
+
+fn apply_move(state: &mut SaState, rng: &mut SplitMix64) {
+    let n = state.order.len();
+    if n < 2 {
+        return;
+    }
+
+    let from = random_index(rng, n);
+    let mut to = random_index(rng, n - 1);
+    if to >= from {
+        to += 1;
+    }
+
+    let moved = state.order.remove(from);
+    state.order.insert(to, moved);
 }
 
 fn apply_rotate(state: &mut SaState, rotation_options_len: &[u8], rng: &mut SplitMix64) {
@@ -478,7 +512,10 @@ fn lexicographically_precedes(a: &SaState, b: &SaState) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{run_sa_core, run_sa_search_over_specs, SaConfig, SaSearchConfig, SaState};
+    use super::{
+        apply_move, run_sa_core, run_sa_search_over_specs, SaConfig, SaSearchConfig, SaState,
+        SplitMix64,
+    };
     use crate::{
         multi_bin::{greedy::PartOrderPolicy, greedy::PlacerKind, greedy_multi_sheet},
         placement::blf::{bbox_area, rect_poly, InflatedPartSpec},
@@ -614,6 +651,37 @@ mod tests {
         assert_eq!(
             sa_result.sheets_used, 1,
             "SA quality fixture expectation must stay stable"
+        );
+    }
+
+    #[test]
+    fn sa_move_neighbor_preserves_permutation() {
+        let mut state = SaState {
+            order: vec![0, 1, 2, 3, 4],
+            rot_choice: vec![0, 1, 0, 1, 0],
+        };
+        let original_order = state.order.clone();
+        let original_rot_choice = state.rot_choice.clone();
+        let mut rng = SplitMix64::new(2026);
+
+        apply_move(&mut state, &mut rng);
+
+        assert_ne!(
+            state.order, original_order,
+            "move neighbor must change order for len>=2"
+        );
+        assert_eq!(
+            state.rot_choice, original_rot_choice,
+            "move neighbor must not mutate rot_choice"
+        );
+
+        let mut expected = original_order;
+        let mut actual = state.order.clone();
+        expected.sort_unstable();
+        actual.sort_unstable();
+        assert_eq!(
+            actual, expected,
+            "move neighbor must preserve the same permutation elements"
         );
     }
 }
