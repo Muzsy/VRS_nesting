@@ -1,0 +1,70 @@
+steps:
+  - name: "Repo szabályok + P0 follow-up canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/codex/yaml_schema.md
+      - docs/codex/report_standard.md
+      - docs/qa/testing_guidelines.md
+      - canvases/nesting_engine/nesting_engine_backlog.md
+      - canvases/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md
+      - rust/nesting_engine/src/search/sa.rs
+
+      Ellenőrizd, hogy a canvas explicit leírja:
+      - a jelenlegi rés okát (minimum 1 iter + final rerun),
+      - a helyes hard budget modellt (`1 + iters` eval),
+      - a 0 iteráció engedését,
+      - a best evaluated result reuse-ot,
+      - az új teszteket és DoD pontokat.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.md"
+
+  - name: "Rust: SA hard global budget closure + result reuse"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/search/sa.rs
+
+      Teendők:
+      1) Javítsd az iter clamp logikát úgy, hogy 0 iteráció is megengedett legyen,
+         és a teljes hard budget modell a `1 initial eval + iters candidate eval` formulára épüljön.
+      2) Szűntesd meg a külön final greedy rerun-t a search végén.
+      3) Az evaluatorból származó best eredményt reuse-old visszatéréskor
+         (`MultiSheetResult` + `Option<NfpPlacerStatsV1>`).
+      4) Tartsd meg a wall-clock stop hook-ot defense-in-depth célra.
+      5) Adj hozzá új `sa_` teszteket:
+         - sa_iters_clamp_allows_zero_when_only_initial_eval_fits
+         - sa_search_zero_iter_budget_returns_initial_eval_result
+         - sa_search_reuses_best_evaluated_result_without_final_rerun
+      6) Ügyelj arra, hogy a meglévő `sa_` tesztek továbbra is zöldek maradjanak.
+    outputs:
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.md
+      - codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.md
+
+      Követelmények:
+      - Report Standard v2 szerkezet.
+      - DoD → Evidence Matrix tartalmazza:
+        - clamp formula helye,
+        - 0-iter támogatás bizonyítéka,
+        - final rerun eltávolításának evidenciája,
+        - új `sa_` tesztek evidenciája.
+      - AUTO_VERIFY marker blokk legyen benne.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.md
+
+      Kötelező:
+      - AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_hard_cap_p0.verify.log"

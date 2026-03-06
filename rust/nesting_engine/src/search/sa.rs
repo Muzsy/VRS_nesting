@@ -1,5 +1,5 @@
-use std::time::{Duration, Instant};
 use std::sync::Once;
+use std::time::{Duration, Instant};
 
 use crate::{
     geometry::types::Polygon64,
@@ -69,6 +69,7 @@ impl SplitMix64 {
     }
 }
 
+#[allow(dead_code)]
 pub fn run_sa_core<F>(
     initial_state: SaState,
     rotation_options_len: &[u8],
@@ -87,24 +88,48 @@ where
     )
 }
 
+#[allow(dead_code)]
 fn run_sa_core_with_stop_hook<F, S>(
     initial_state: SaState,
     rotation_options_len: &[u8],
     config: SaConfig,
     mut evaluate: F,
-    mut should_stop: S,
+    should_stop: S,
 ) -> Result<SaRunResult, String>
 where
     F: FnMut(&SaState) -> i64,
     S: FnMut() -> bool,
 {
+    let (run, _best_payload) = run_sa_core_with_stop_hook_and_payload(
+        initial_state,
+        rotation_options_len,
+        config,
+        |state| Ok((evaluate(state), ())),
+        should_stop,
+    )?;
+    Ok(run)
+}
+
+fn run_sa_core_with_stop_hook_and_payload<F, S, T>(
+    initial_state: SaState,
+    rotation_options_len: &[u8],
+    config: SaConfig,
+    mut evaluate: F,
+    mut should_stop: S,
+) -> Result<(SaRunResult, T), String>
+where
+    F: FnMut(&SaState) -> Result<(i64, T), String>,
+    S: FnMut() -> bool,
+    T: Clone,
+{
     validate_state(&initial_state, rotation_options_len)?;
 
     let mut rng = SplitMix64::new(config.seed);
     let mut current_state = initial_state.clone();
-    let mut current_cost = evaluate(&current_state);
+    let (mut current_cost, mut current_payload) = evaluate(&current_state)?;
     let mut best_state = current_state.clone();
     let mut best_cost = current_cost;
+    let mut best_payload = current_payload.clone();
 
     for iter in 0..config.iters {
         if should_stop() {
@@ -113,7 +138,7 @@ where
         let mut candidate = current_state.clone();
         apply_neighbor(&mut candidate, rotation_options_len, &mut rng);
 
-        let candidate_cost = evaluate(&candidate);
+        let (candidate_cost, candidate_payload) = evaluate(&candidate)?;
         let delta = (candidate_cost as i128) - (current_cost as i128);
         let temp = linear_temp(config.temp_start, config.temp_end, config.iters, iter);
 
@@ -126,6 +151,7 @@ where
         if accept {
             current_state = candidate;
             current_cost = candidate_cost;
+            current_payload = candidate_payload;
         }
 
         if current_cost < best_cost
@@ -134,15 +160,19 @@ where
         {
             best_state = current_state.clone();
             best_cost = current_cost;
+            best_payload = current_payload.clone();
         }
     }
 
-    Ok(SaRunResult {
-        best_state,
-        best_cost,
-        final_state: current_state,
-        final_cost: current_cost,
-    })
+    Ok((
+        SaRunResult {
+            best_state,
+            best_cost,
+            final_state: current_state,
+            final_cost: current_cost,
+        },
+        best_payload,
+    ))
 }
 
 pub fn clamp_sa_iters_by_time_limit_and_eval_budget(
@@ -154,14 +184,16 @@ pub fn clamp_sa_iters_by_time_limit_and_eval_budget(
         return requested_iters;
     }
 
-    // Worst-case SA search evaluations are `iters + 2`:
-    // 1 initial eval before the loop, `iters` candidate evals in-loop, and 1 final greedy eval.
+    // Hard SA budget model: `1 + iters` evaluations.
+    // 1 initial eval before the loop and `iters` candidate evals in-loop.
     // Clamp by evaluation slots: max_evals = floor(time_limit_sec / eval_budget_sec),
-    // max_iters = max_evals.saturating_sub(2), effective_iters = min(requested_iters, max(1, max_iters)).
+    // max_iters = max_evals.saturating_sub(1), effective_iters = min(requested_iters, max_iters).
     let max_evals = time_limit_sec / eval_budget_sec;
-    let max_iters = max_evals.saturating_sub(2);
-    requested_iters.min(max_iters.max(1))
+    let max_iters = max_evals.saturating_sub(1);
+    requested_iters.min(max_iters)
 }
+
+type SaEvaluatedLayout = (MultiSheetResult, Option<NfpPlacerStatsV1>);
 
 pub fn run_sa_search_over_specs(
     base_specs: &[InflatedPartSpec],
@@ -170,6 +202,27 @@ pub fn run_sa_search_over_specs(
     placer_kind: PlacerKind,
     config: SaSearchConfig,
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
+    run_sa_search_over_specs_with_eval_hook(
+        base_specs,
+        bin,
+        grid_step_mm,
+        placer_kind,
+        config,
+        || {},
+    )
+}
+
+fn run_sa_search_over_specs_with_eval_hook<E>(
+    base_specs: &[InflatedPartSpec],
+    bin: &Polygon64,
+    grid_step_mm: f64,
+    placer_kind: PlacerKind,
+    config: SaSearchConfig,
+    mut on_eval: E,
+) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String>
+where
+    E: FnMut(),
+{
     if config.eval_budget_sec == 0 {
         return Err("sa eval budget must be >= 1 second".to_string());
     }
@@ -212,12 +265,13 @@ pub fn run_sa_search_over_specs(
         .checked_add(Duration::from_secs(config.time_limit_sec))
         .ok_or_else(|| "sa deadline overflow".to_string())?;
 
-    let mut eval_error: Option<String> = None;
-    let run = run_sa_core_with_stop_hook(
-            initial_state,
-            &rotation_options_len,
-            core_cfg,
-            |state| match eval_state_cost(
+    let (_run, best_payload) = run_sa_core_with_stop_hook_and_payload(
+        initial_state,
+        &rotation_options_len,
+        core_cfg,
+        |state| {
+            on_eval();
+            eval_state_cost_with_result(
                 state,
                 base_specs,
                 bin,
@@ -226,30 +280,12 @@ pub fn run_sa_search_over_specs(
                 config.eval_budget_sec,
                 total_instances,
                 cost_encoding,
-                ) {
-                    Ok(cost) => cost,
-                    Err(err) => {
-                    if eval_error.is_none() {
-                        eval_error = Some(err);
-                    }
-                    i64::MAX
-                }
-            },
-            || Instant::now() >= deadline,
-        )?;
-    if let Some(err) = eval_error {
-        return Err(err);
-    }
+            )
+        },
+        || Instant::now() >= deadline,
+    )?;
 
-    let best_specs = specs_for_state(base_specs, &run.best_state);
-    Ok(greedy_multi_sheet(
-        &best_specs,
-        bin,
-        grid_step_mm,
-        config.eval_budget_sec,
-        placer_kind,
-        PartOrderPolicy::ByInputOrder,
-    ))
+    Ok(best_payload)
 }
 
 fn ensure_sa_stop_mode() {
@@ -312,7 +348,7 @@ impl CostEncoding {
     }
 }
 
-fn eval_state_cost(
+fn eval_state_cost_with_result(
     state: &SaState,
     base_specs: &[InflatedPartSpec],
     bin: &Polygon64,
@@ -321,9 +357,9 @@ fn eval_state_cost(
     eval_budget_sec: u64,
     total_instances: u64,
     cost_encoding: CostEncoding,
-) -> Result<i64, String> {
+) -> Result<(i64, SaEvaluatedLayout), String> {
     let specs = specs_for_state(base_specs, state);
-    let (result, _stats) = greedy_multi_sheet(
+    let (result, stats) = greedy_multi_sheet(
         &specs,
         bin,
         grid_step_mm,
@@ -340,7 +376,8 @@ fn eval_state_cost(
         .map_err(|_| "sheet count does not fit into u64".to_string())?;
     let not_placed = total_instances.saturating_sub(placed_count);
 
-    cost_encoding.encode(unplaced_count, sheets_used, not_placed)
+    let cost = cost_encoding.encode(unplaced_count, sheets_used, not_placed)?;
+    Ok((cost, (result, stats)))
 }
 
 fn rotation_options_len(base_specs: &[InflatedPartSpec]) -> Result<Vec<u8>, String> {
@@ -565,10 +602,12 @@ fn lexicographically_precedes(a: &SaState, b: &SaState) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::{
         apply_move, clamp_sa_iters_by_time_limit_and_eval_budget, run_sa_core,
-        run_sa_core_with_stop_hook, run_sa_search_over_specs, SaConfig, SaSearchConfig, SaState,
-        SplitMix64,
+        run_sa_core_with_stop_hook, run_sa_search_over_specs,
+        run_sa_search_over_specs_with_eval_hook, SaConfig, SaSearchConfig, SaState, SplitMix64,
     };
     use crate::{
         multi_bin::{greedy::PartOrderPolicy, greedy::PlacerKind, greedy_multi_sheet},
@@ -742,16 +781,21 @@ mod tests {
     }
 
     #[test]
-    fn sa_iters_are_clamped_by_time_limit_and_eval_budget() {
+    fn sa_iters_clamp_allows_zero_when_only_initial_eval_fits() {
         assert_eq!(
-            clamp_sa_iters_by_time_limit_and_eval_budget(256, 60, 6),
-            8,
-            "60/6 gives 10 eval slots, so max iters is 8 due to the +2 overhead evals"
+            clamp_sa_iters_by_time_limit_and_eval_budget(256, 1, 1),
+            0,
+            "one eval slot can only run the initial evaluation"
         );
         assert_eq!(
-            clamp_sa_iters_by_time_limit_and_eval_budget(256, 60, 1),
-            58,
-            "60 eval slots minus 2 overhead evals leaves 58 iterations"
+            clamp_sa_iters_by_time_limit_and_eval_budget(256, 2, 1),
+            1,
+            "two eval slots allow exactly one SA iteration"
+        );
+        assert_eq!(
+            clamp_sa_iters_by_time_limit_and_eval_budget(256, 60, 6),
+            9,
+            "10 eval slots minus the single initial eval leaves 9 iterations"
         );
     }
 
@@ -785,5 +829,91 @@ mod tests {
         assert_eq!(eval_calls, 1, "only the initial evaluation must run");
         assert_eq!(run.final_state, initial, "final state must stay initial");
         assert_eq!(run.best_state, initial, "best state must stay initial");
+    }
+
+    #[test]
+    fn sa_search_zero_iter_budget_returns_initial_eval_result() {
+        std::env::set_var("NESTING_ENGINE_STOP_MODE", "work_budget");
+
+        let specs = vec![
+            tiny_part("a", 18.0, 10.0, vec![0, 90]),
+            tiny_part("b", 12.0, 12.0, vec![0]),
+            tiny_part("c", 10.0, 8.0, vec![0, 90]),
+        ];
+        let bin = rect_poly(30.0, 20.0);
+        let cfg = SaSearchConfig {
+            iters: 256,
+            temp_start: 10_000,
+            temp_end: 50,
+            seed: 2026,
+            time_limit_sec: 1,
+            eval_budget_sec: 1,
+        };
+        assert_eq!(
+            clamp_sa_iters_by_time_limit_and_eval_budget(
+                cfg.iters,
+                cfg.time_limit_sec,
+                cfg.eval_budget_sec
+            ),
+            0
+        );
+
+        let expected = greedy_multi_sheet(
+            &specs,
+            &bin,
+            1.0,
+            cfg.eval_budget_sec,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByInputOrder,
+        );
+        let actual = run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, cfg)
+            .expect("SA run must succeed even when only initial eval fits");
+
+        assert_eq!(
+            actual, expected,
+            "zero-iter SA must return the initial evaluated placement result"
+        );
+    }
+
+    #[test]
+    fn sa_search_reuses_best_evaluated_result_without_final_rerun() {
+        std::env::set_var("NESTING_ENGINE_STOP_MODE", "work_budget");
+
+        let specs = vec![
+            tiny_part("a", 18.0, 10.0, vec![0, 90]),
+            tiny_part("b", 12.0, 12.0, vec![0]),
+            tiny_part("c", 10.0, 8.0, vec![0, 90]),
+        ];
+        let bin = rect_poly(30.0, 20.0);
+        let cfg = SaSearchConfig {
+            iters: 64,
+            temp_start: 10_000,
+            temp_end: 50,
+            seed: 2026,
+            time_limit_sec: 5,
+            eval_budget_sec: 1,
+        };
+        let effective_iters = clamp_sa_iters_by_time_limit_and_eval_budget(
+            cfg.iters,
+            cfg.time_limit_sec,
+            cfg.eval_budget_sec,
+        );
+        let eval_calls = Cell::new(0_u64);
+
+        let _run = run_sa_search_over_specs_with_eval_hook(
+            &specs,
+            &bin,
+            1.0,
+            PlacerKind::Blf,
+            cfg,
+            || eval_calls.set(eval_calls.get().saturating_add(1)),
+        )
+        .expect("SA run must succeed");
+
+        assert_eq!(
+            eval_calls.get(),
+            1 + effective_iters,
+            "SA must not execute an additional final rerun beyond initial+iter evaluations"
+        );
     }
 }
