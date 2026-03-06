@@ -1,0 +1,97 @@
+
+---
+
+# 2) Goal YAML
+
+**Ajánlott útvonal:**  
+`codex/goals/canvases/nesting_engine/fill_canvas_simulated_annealing_search_cli_smoke_gate_p1.yaml`
+
+```yaml
+steps:
+  - name: "Repo szabályok + SA CLI smoke canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/codex/yaml_schema.md
+      - docs/codex/report_standard.md
+      - docs/qa/testing_guidelines.md
+      - canvases/nesting_engine/nesting_engine_backlog.md
+      - canvases/nesting_engine/simulated_annealing_search.md
+      - rust/nesting_engine/src/main.rs
+      - scripts/check.sh
+
+      Ellenőrizd, hogy a canvas explicit leírja:
+      - a jelenlegi gapet (nincs SA CLI end-to-end smoke a gate-ben),
+      - a smoke célját (JSON + determinism + quality threshold),
+      - az érintett valós fájlokat,
+      - a DoD pontokat és rollbacket.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.md"
+
+  - name: "Python smoke script: nesting_engine SA CLI end-to-end ellenőrzés"
+    description: >
+      Hozd létre:
+      - scripts/smoke_nesting_engine_sa_cli.py
+
+      Követelmények:
+      1) A script fogadja:
+         - --bin <nesting_engine binary path>
+         - --input <fixture json path>
+      2) A script a binárist a következő módon futtassa:
+         - nesting_engine nest --search sa
+         - stdin-re adja az input JSON-t
+      3) A script legalább 2 futást végezzen ugyanazzal az inputtal.
+      4) Minden futásnál ellenőrizze:
+         - stdout parse-olható JSON
+         - version = nesting_engine_v2
+         - meta.determinism_hash nem üres
+      5) Hasonlítsa össze a hash-eket, és hiba esetén non-zero exit.
+      6) Ellenőrizze a quality fixture minimális küszöbét:
+         - sheets_used <= 1
+      7) A script rövid, jól olvasható, action-oriented hibákat írjon stderr-re.
+    outputs:
+      - "scripts/smoke_nesting_engine_sa_cli.py"
+
+  - name: "Repo gate: SA CLI smoke bekötése a check.sh-ba"
+    description: >
+      Módosítsd:
+      - scripts/check.sh
+
+      Teendők:
+      1) A nesting_engine blokkban, a `cargo test ... sa_` után hívd meg az új smoke scriptet.
+      2) A smoke a meglévő NESTING_ENGINE_BIN_PATH változót használja.
+      3) A fixture legyen:
+         - poc/nesting_engine/f2_4_sa_quality_fixture_v2.json
+      4) A logok legyenek rövidek és a check.sh stílusához illeszkedők.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.md
+      - codex/reports/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.md
+
+      Követelmények:
+      - Report Standard v2 szerkezet.
+      - DoD -> Evidence Matrix tartalmazza:
+        - új smoke script helye,
+        - check.sh bekötés evidenciája,
+        - determinism ellenőrzés evidenciája,
+        - quality threshold ellenőrzés evidenciája.
+      - AUTO_VERIFY marker blokk legyen benne.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.md
+
+      Kötelező:
+      - AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_cli_smoke_gate_p1.verify.log"

@@ -288,6 +288,11 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
     exit 2
   fi
 
+  echo "[NEST][SA] CLI end-to-end smoke"
+  python3 scripts/smoke_nesting_engine_sa_cli.py \
+    --bin "$NESTING_ENGINE_BIN_PATH" \
+    --input "poc/nesting_engine/f2_4_sa_quality_fixture_v2.json"
+
   TMP_BASELINE_OUT="$(mktemp /tmp/nesting_engine_baseline_out_XXXXXX.json)"
   TMP_BASELINE_OUT_2="$(mktemp /tmp/nesting_engine_baseline_out2_XXXXXX.json)"
   TMP_NFP_FALLBACK_OUT="$(mktemp /tmp/nesting_engine_nfp_fallback_out_XXXXXX.json)"
