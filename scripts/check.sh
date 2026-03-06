@@ -281,6 +281,9 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   echo "[NEST] Targeted sa_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml sa_
 
+  echo "[NEST] Targeted order_policy evidence unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml order_policy_by_input_order_preserves_input_order
+
   echo "[NEST] Baseline nesting_engine smoke"
   NESTING_ENGINE_BIN_PATH="$ROOT_DIR/rust/nesting_engine/target/release/nesting_engine"
   if [[ ! -x "$NESTING_ENGINE_BIN_PATH" ]]; then

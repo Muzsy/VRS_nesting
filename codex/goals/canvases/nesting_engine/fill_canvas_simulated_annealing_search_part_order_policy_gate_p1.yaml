@@ -1,0 +1,78 @@
+steps:
+  - name: "Repo szabályok + PartOrderPolicy gate canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/codex/yaml_schema.md
+      - docs/codex/report_standard.md
+      - docs/qa/testing_guidelines.md
+      - canvases/nesting_engine/simulated_annealing_search_part_order_policy_wiring_evidence.md
+      - rust/nesting_engine/src/placement/blf.rs
+      - rust/nesting_engine/src/placement/nfp_placer.rs
+      - scripts/check.sh
+
+      Ellenőrizd, hogy a canvas explicit leírja:
+      - a jelenlegi gapet (evidence megvan, merge gate még nem futtatja célzottan),
+      - az érintett valós fájlokat,
+      - a minimal-invazív megoldást,
+      - a DoD pontokat és rollbacket.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.md"
+
+  - name: "Repo gate: célzott PartOrderPolicy ordering tesztek bekötése"
+    description: >
+      Módosítsd:
+      - scripts/check.sh
+
+      Teendők:
+      1) Adj hozzá külön targeted blokkot a nesting_engine részhez az order-policy evidence tesztekre.
+      2) A blokk futtassa a BLF és NFP ordering teszteket egy szűk, stabil tesztfilterrel.
+      3) A logok legyenek rövidek és a check.sh meglévő stílusához illeszkedők.
+      4) Csak akkor módosíts Rust tesztneveket, ha a stabil célzott szűréshez tényleg szükséges.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Rust tesztnevek igazítása csak ha a gate-szűréshez szükséges"
+    description: >
+      Csak akkor módosítsd ezeket a fájlokat, ha a célzott gate-szűrés a jelenlegi tesztnevekkel
+      nem elég stabil vagy nem elég egyértelmű:
+      - rust/nesting_engine/src/placement/blf.rs
+      - rust/nesting_engine/src/placement/nfp_placer.rs
+
+      Szabály:
+      - ne változzon a tesztek tényleges logikája,
+      - csak a név / szűrhetőség javítható,
+      - a meglévő evidence jelentés tartalma maradjon igaz.
+    outputs:
+      - "rust/nesting_engine/src/placement/blf.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.md
+      - codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.md
+
+      Követelmények:
+      - Report Standard v2 szerkezet.
+      - DoD -> Evidence Matrix tartalmazza:
+        - a check.sh új order-policy blokkját,
+        - a BLF evidence teszt bizonyítékát,
+        - az NFP evidence teszt bizonyítékát,
+        - a verify futás bizonyítékát.
+      - AUTO_VERIFY marker blokk legyen benne.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.md
+
+      Kötelező:
+      - AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_part_order_policy_gate_p1.verify.log"
