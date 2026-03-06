@@ -1,3 +1,4 @@
+use std::time::{Duration, Instant};
 use std::sync::Once;
 
 use crate::{
@@ -25,6 +26,7 @@ pub struct SaSearchConfig {
     pub temp_start: u64,
     pub temp_end: u64,
     pub seed: u64,
+    pub time_limit_sec: u64,
     pub eval_budget_sec: u64,
 }
 
@@ -76,6 +78,26 @@ pub fn run_sa_core<F>(
 where
     F: FnMut(&SaState) -> i64,
 {
+    run_sa_core_with_stop_hook(
+        initial_state,
+        rotation_options_len,
+        config,
+        &mut evaluate,
+        || false,
+    )
+}
+
+fn run_sa_core_with_stop_hook<F, S>(
+    initial_state: SaState,
+    rotation_options_len: &[u8],
+    config: SaConfig,
+    mut evaluate: F,
+    mut should_stop: S,
+) -> Result<SaRunResult, String>
+where
+    F: FnMut(&SaState) -> i64,
+    S: FnMut() -> bool,
+{
     validate_state(&initial_state, rotation_options_len)?;
 
     let mut rng = SplitMix64::new(config.seed);
@@ -85,6 +107,9 @@ where
     let mut best_cost = current_cost;
 
     for iter in 0..config.iters {
+        if should_stop() {
+            break;
+        }
         let mut candidate = current_state.clone();
         apply_neighbor(&mut candidate, rotation_options_len, &mut rng);
 
@@ -120,6 +145,24 @@ where
     })
 }
 
+pub fn clamp_sa_iters_by_time_limit_and_eval_budget(
+    requested_iters: u64,
+    time_limit_sec: u64,
+    eval_budget_sec: u64,
+) -> u64 {
+    if eval_budget_sec == 0 {
+        return requested_iters;
+    }
+
+    // Worst-case SA search evaluations are `iters + 2`:
+    // 1 initial eval before the loop, `iters` candidate evals in-loop, and 1 final greedy eval.
+    // Clamp by evaluation slots: max_evals = floor(time_limit_sec / eval_budget_sec),
+    // max_iters = max_evals.saturating_sub(2), effective_iters = min(requested_iters, max(1, max_iters)).
+    let max_evals = time_limit_sec / eval_budget_sec;
+    let max_iters = max_evals.saturating_sub(2);
+    requested_iters.min(max_iters.max(1))
+}
+
 pub fn run_sa_search_over_specs(
     base_specs: &[InflatedPartSpec],
     bin: &Polygon64,
@@ -129,6 +172,9 @@ pub fn run_sa_search_over_specs(
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
     if config.eval_budget_sec == 0 {
         return Err("sa eval budget must be >= 1 second".to_string());
+    }
+    if config.time_limit_sec == 0 {
+        return Err("sa time limit must be >= 1 second".to_string());
     }
 
     ensure_sa_stop_mode();
@@ -153,15 +199,21 @@ pub fn run_sa_search_over_specs(
         rot_choice: vec![0; base_specs.len()],
     };
     let core_cfg = SaConfig {
-        iters: config.iters,
+        iters: clamp_sa_iters_by_time_limit_and_eval_budget(
+            config.iters,
+            config.time_limit_sec,
+            config.eval_budget_sec,
+        ),
         temp_start: config.temp_start,
         temp_end: config.temp_end,
         seed: config.seed,
     };
+    let deadline = Instant::now()
+        .checked_add(Duration::from_secs(config.time_limit_sec))
+        .ok_or_else(|| "sa deadline overflow".to_string())?;
 
     let mut eval_error: Option<String> = None;
-    let run =
-        run_sa_core(
+    let run = run_sa_core_with_stop_hook(
             initial_state,
             &rotation_options_len,
             core_cfg,
@@ -174,15 +226,16 @@ pub fn run_sa_search_over_specs(
                 config.eval_budget_sec,
                 total_instances,
                 cost_encoding,
-            ) {
-                Ok(cost) => cost,
-                Err(err) => {
+                ) {
+                    Ok(cost) => cost,
+                    Err(err) => {
                     if eval_error.is_none() {
                         eval_error = Some(err);
                     }
                     i64::MAX
                 }
             },
+            || Instant::now() >= deadline,
         )?;
     if let Some(err) = eval_error {
         return Err(err);
@@ -513,7 +566,8 @@ fn lexicographically_precedes(a: &SaState, b: &SaState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_move, run_sa_core, run_sa_search_over_specs, SaConfig, SaSearchConfig, SaState,
+        apply_move, clamp_sa_iters_by_time_limit_and_eval_budget, run_sa_core,
+        run_sa_core_with_stop_hook, run_sa_search_over_specs, SaConfig, SaSearchConfig, SaState,
         SplitMix64,
     };
     use crate::{
@@ -604,6 +658,7 @@ mod tests {
             temp_start: 10_000,
             temp_end: 50,
             seed: 2026,
+            time_limit_sec: 300,
             eval_budget_sec: 2,
         };
 
@@ -638,6 +693,7 @@ mod tests {
             temp_start: 10_000,
             temp_end: 50,
             seed: 2026,
+            time_limit_sec: 300,
             eval_budget_sec: 2,
         };
         let (sa_result, _sa_stats) =
@@ -683,5 +739,51 @@ mod tests {
             actual, expected,
             "move neighbor must preserve the same permutation elements"
         );
+    }
+
+    #[test]
+    fn sa_iters_are_clamped_by_time_limit_and_eval_budget() {
+        assert_eq!(
+            clamp_sa_iters_by_time_limit_and_eval_budget(256, 60, 6),
+            8,
+            "60/6 gives 10 eval slots, so max iters is 8 due to the +2 overhead evals"
+        );
+        assert_eq!(
+            clamp_sa_iters_by_time_limit_and_eval_budget(256, 60, 1),
+            58,
+            "60 eval slots minus 2 overhead evals leaves 58 iterations"
+        );
+    }
+
+    #[test]
+    fn sa_core_stop_hook_can_short_circuit_before_first_iter() {
+        let initial = SaState {
+            order: vec![0, 1, 2],
+            rot_choice: vec![0, 0, 0],
+        };
+        let rotation_options_len = vec![1, 1, 1];
+        let config = SaConfig {
+            iters: 64,
+            temp_start: 10_000,
+            temp_end: 50,
+            seed: 11,
+        };
+
+        let mut eval_calls = 0u64;
+        let run = run_sa_core_with_stop_hook(
+            initial.clone(),
+            &rotation_options_len,
+            config,
+            |state| {
+                eval_calls = eval_calls.saturating_add(1);
+                eval_cost(state)
+            },
+            || true,
+        )
+        .expect("run must succeed");
+
+        assert_eq!(eval_calls, 1, "only the initial evaluation must run");
+        assert_eq!(run.final_state, initial, "final state must stay initial");
+        assert_eq!(run.best_state, initial, "best state must stay initial");
     }
 }

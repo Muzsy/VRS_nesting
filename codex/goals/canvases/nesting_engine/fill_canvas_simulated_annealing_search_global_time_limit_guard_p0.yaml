@@ -1,0 +1,81 @@
+steps:
+  - name: "Repo szabályok + F2-4 DoD kontextus + canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - docs/codex/yaml_schema.md
+      - docs/codex/report_standard.md
+      - docs/qa/testing_guidelines.md
+      - canvases/nesting_engine/nesting_engine_backlog.md (F2-4 DoD)
+      - canvases/nesting_engine/simulated_annealing_search.md
+      - rust/nesting_engine/src/search/sa.rs
+      - rust/nesting_engine/src/main.rs
+
+      Ellenőrizd, hogy a canvas a P0 scope-ra szűk (globális time-limit betartása SA esetén),
+      és tartalmazza a determinisztikus iters-cap képletet (iters+2 evaluation), a safety deadline hook-ot,
+      a teszttervet és a DoD pontokat.
+    outputs:
+      - "canvases/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md"
+
+  - name: "Rust: SA globális time-limit guard + stop hook + unit tesztek"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/search/sa.rs
+
+      Teendők:
+      1) Bővítsd a SaSearchConfig-ot egy új mezővel:
+         - time_limit_sec: u64
+      2) Vezess be egy determinisztikus iters clamp-et a time_limit_sec és eval_budget_sec alapján,
+         figyelembe véve, hogy a teljes SA futás worst-case evaluation hívásai: iters + 2.
+         (A képlet legyen kommentben dokumentálva.)
+      3) Vezess be egy SA core "stop hook" lehetőséget:
+         - egy belső/core helper, ami iteráció elején tud break-elni (closure alapján).
+         - A meglévő run_sa_core publikus API maradhat változatlan, de a search integráció használjon stop hook-ot.
+      4) A run_sa_search_over_specs-ben használj wall-clock deadline guard-ot:
+         - deadline = now + Duration::from_secs(time_limit_sec)
+         - stop hook ezt ellenőrzi.
+      5) Frissítsd a meglévő SA teszteket (SaSearchConfig új mező).
+      6) Adj hozzá 2 új unit tesztet (mindkettő tartalmazzon "sa_" prefixet a névben):
+         - sa_iters_are_clamped_by_time_limit_and_eval_budget
+         - sa_core_stop_hook_can_short_circuit_before_first_iter
+    outputs:
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "Rust: SA config wiring a CLI input time_limit_sec-hez"
+    description: >
+      Módosítsd:
+      - rust/nesting_engine/src/main.rs
+
+      Teendők:
+      1) build_sa_search_config(...) állítsa be SaSearchConfig.time_limit_sec mezőjét a bemeneti NestInput.time_limit_sec alapján.
+      2) A default iters számítás maradhat a jelenlegi default, de az elkészített configban (vagy a sa.rs-ben)
+         érvényesülnie kell a globális iters-capnek.
+      3) Ügyelj rá, hogy --search none és a baseline viselkedés ne változzon.
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md
+      - codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md
+
+      Követelmények:
+      - Report Standard v2 szerkezet.
+      - DoD → Evidence Matrix: iters-cap képlet helye (path+fn) + stop hook + új unit tesztek.
+      - AUTO_VERIFY marker blokk legyen benne (üresen; verify.sh tölti).
+    outputs:
+      - "codex/codex_checklist/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md
+
+      Kötelező:
+      - AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+      - A verify logot mentsd el a report mellé.
+    outputs:
+      - "codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.md"
+      - "codex/reports/nesting_engine/simulated_annealing_search_global_time_limit_guard_p0.verify.log"

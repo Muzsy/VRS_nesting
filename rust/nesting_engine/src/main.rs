@@ -25,7 +25,9 @@ use crate::{
     },
     placement::blf::{bbox_area, InflatedPartSpec, UnplacedItem},
     placement::nfp_placer::NfpPlacerStatsV1,
-    search::sa::{run_sa_search_over_specs, SaSearchConfig},
+    search::sa::{
+        clamp_sa_iters_by_time_limit_and_eval_budget, run_sa_search_over_specs, SaSearchConfig,
+    },
 };
 
 const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>";
@@ -281,8 +283,8 @@ fn default_sa_eval_budget_sec(time_limit_sec: u64) -> u64 {
 }
 
 fn build_sa_search_config(input: &NestInput, sa: SaCliArgs) -> Result<SaSearchConfig, String> {
-    let iters = sa.iters.unwrap_or(DEFAULT_SA_ITERS);
-    if iters == 0 {
+    let requested_iters = sa.iters.unwrap_or(DEFAULT_SA_ITERS);
+    if requested_iters == 0 {
         return Err("--sa-iters must be >= 1".to_string());
     }
 
@@ -296,11 +298,18 @@ fn build_sa_search_config(input: &NestInput, sa: SaCliArgs) -> Result<SaSearchCo
         .unwrap_or_else(|| default_sa_eval_budget_sec(input.time_limit_sec))
         .clamp(1, time_limit_cap);
 
+    let iters = clamp_sa_iters_by_time_limit_and_eval_budget(
+        requested_iters,
+        time_limit_cap,
+        eval_budget_sec,
+    );
+
     Ok(SaSearchConfig {
         iters,
         temp_start,
         temp_end,
         seed,
+        time_limit_sec: time_limit_cap,
         eval_budget_sec,
     })
 }
