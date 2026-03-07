@@ -41,6 +41,31 @@ def test_import_part_raw_invalid_dxf_content_maps_to_dxf_read_failed(tmp_path):
     assert exc.value.code == "DXF_READ_FAILED"
 
 
+def test_import_part_raw_curve_contour_self_intersection_maps_to_dxf_invalid_ring(tmp_path):
+    fixture_path = tmp_path / "self_intersecting_curve.json"
+    fixture_path.write_text(
+        json.dumps(
+            {
+                "entities": [
+                    {
+                        "layer": "CUT_OUTER",
+                        "type": "SPLINE",
+                        "closed": True,
+                        "points": [[0, 0], [10, 10], [0, 10], [10, 0]],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DxfImportError) as exc:
+        import_part_raw(fixture_path)
+
+    assert exc.value.code == "DXF_INVALID_RING"
+    assert "self-intersecting" in str(exc.value)
+
+
 def test_import_part_raw_dxf_ellipse_outer_supported(tmp_path):
     ezdxf = pytest.importorskip("ezdxf")
     path = tmp_path / "ellipse_outer.dxf"

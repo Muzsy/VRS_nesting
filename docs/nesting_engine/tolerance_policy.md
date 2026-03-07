@@ -135,9 +135,39 @@ A self-intersection jelenleg nem `OffsetError` enum variáns, hanem pipeline szi
 
 ---
 
-## 6. Kapcsolódások
+## 6. DXF curve polygonization policy (Python importer)
+
+**Scope:** `vrs_nesting/dxf/importer.py` + `vrs_nesting/geometry/polygonize.py`
+
+Repo-level policy:
+
+- `arc_tolerance_mm = 0.2` a source-of-truth curve flatten/polygonization tolerancia.
+- A policy-kód konstansai:
+  - `vrs_nesting/geometry/polygonize.py::ARC_TOLERANCE_MM`
+  - `vrs_nesting/geometry/polygonize.py::CURVE_FLATTEN_TOLERANCE_MM`
+  - `vrs_nesting/geometry/polygonize.py::ARC_POLYGONIZE_MIN_SEGMENTS`
+
+Alkalmazási szabály:
+
+- ARC polygonizálás (`arc_to_points`) ezt a toleranciát használja.
+- SPLINE/ELLIPSE flattening (`curve_entity.flattening`) ehhez a toleranciához igazított `flatten_tol` értéket használ.
+- Ezzel az ARC és a SPLINE/ELLIPSE útvonal ugyanarra a curve policy-ra van zárva.
+
+## 7. Endpoint chaining epsilon policy (külön fogalom)
+
+`CHAIN_ENDPOINT_EPSILON_MM = 0.2` a szegmensláncolási illesztési küszöb:
+
+- csak az endpoint-csatlakoztatásra és ring-zárásra szolgál a chaining lépésben;
+- nem a görbe flattening pontossági policy része.
+
+Fontos: a flatten tolerance és a chain endpoint epsilon jelenleg numerikusan azonos,
+de külön policy-fogalmak, külön konstansként kell kezelni őket.
+
+## 8. Kapcsolódások
 
 - `src/geometry/scale.rs` — SCALE, TOUCH_TOL, mm_to_i64(), i64_to_mm()
 - `src/geometry/offset.rs` — inflate_outer(), deflate_hole(), inflate_part(), OffsetError
 - `src/geometry/types.rs` — Point64, Polygon64, PartGeometry
+- `vrs_nesting/geometry/polygonize.py` — ARC/SPLINE/ELLIPSE curve flatten policy konstansok
+- `vrs_nesting/dxf/importer.py` — endpoint chaining epsilon + DXF polygonizációs policy alkalmazás
 - `canvases/nesting_engine/nesting_engine_crate_scaffold.md` — feladat specifikáció

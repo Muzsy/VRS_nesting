@@ -5,6 +5,7 @@ import json
 import pytest
 
 from vrs_nesting.dxf.importer import DxfImportError, _chain_segments_to_rings, import_part_raw
+from vrs_nesting.geometry.polygonize import ARC_POLYGONIZE_MIN_SEGMENTS
 
 
 def _write_fixture(path, entities):
@@ -135,6 +136,40 @@ def test_import_part_raw_json_fixture_closed_spline_endpoint_drift_passes(tmp_pa
 
     part = import_part_raw(fixture_path)
     assert len(part.outer_points_mm) >= 4
+
+
+def test_import_part_raw_json_fixture_arc_heavy_chain_passes(tmp_path):
+    fixture_path = tmp_path / "part_arc_heavy_chain.json"
+    _write_fixture(
+        fixture_path,
+        [
+            {
+                "layer": "CUT_OUTER",
+                "type": "ARC",
+                "center": [0.0, 0.0],
+                "radius": 60.0,
+                "start_angle": i * 45.0,
+                "end_angle": (i + 1) * 45.0,
+            }
+            for i in range(8)
+        ]
+        + [
+            {
+                "layer": "CUT_INNER",
+                "type": "ARC",
+                "center": [0.0, 0.0],
+                "radius": 20.0,
+                "start_angle": i * 90.0,
+                "end_angle": (i + 1) * 90.0,
+            }
+            for i in range(4)
+        ],
+    )
+
+    part = import_part_raw(fixture_path)
+    assert len(part.outer_points_mm) >= ARC_POLYGONIZE_MIN_SEGMENTS * 6
+    assert len(part.holes_points_mm) == 1
+    assert all(len(hole) >= ARC_POLYGONIZE_MIN_SEGMENTS for hole in part.holes_points_mm)
 
 
 def test_chain_segments_to_rings_many_segments_still_closes_ring():

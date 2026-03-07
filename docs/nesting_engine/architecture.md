@@ -56,7 +56,36 @@ Placement rotation in `rust/nesting_engine/src/placement/blf.rs` must be platfor
 
 This keeps the placement output byte-stable across CPU architectures (x86_64, arm64) for identical input.
 
-## 5. Search layer (F2-4 Simulated Annealing)
+## 5. DXF curve polygonization policy (nominal truth-layer prep)
+
+The Python DXF importer is the nominal geometry truth-layer input for downstream solver/export flows.
+Curve handling must stay policy-locked and deterministic across ARC/SPLINE/ELLIPSE entities.
+
+Source-of-truth policy constants:
+
+- `vrs_nesting/geometry/polygonize.py`
+  - `ARC_TOLERANCE_MM = 0.2`
+  - `CURVE_FLATTEN_TOLERANCE_MM = ARC_TOLERANCE_MM`
+  - `ARC_POLYGONIZE_MIN_SEGMENTS = 12`
+- `vrs_nesting/dxf/importer.py`
+  - `CHAIN_ENDPOINT_EPSILON_MM = 0.2` (separate policy concept from curve flatten tolerance)
+
+Importer contract:
+
+- ARC polygonization (`arc_to_points`) uses the curve tolerance policy above.
+- SPLINE/ELLIPSE flattening (`curve_entity.flattening(flatten_tol)`) is derived from the same
+  curve tolerance policy.
+- Endpoint chaining epsilon is used only for segment stitching/ring closure and is not a flatten
+  precision knob, even if its numeric value currently matches.
+
+Fixture coverage policy:
+
+- Real DXF curve regression fixtures live under `samples/dxf_demo/`.
+- Positive fixtures must remain non-self-intersecting after polygonization.
+- Negative self-intersecting curve fixtures must fail deterministically with importer error code
+  `DXF_INVALID_RING`.
+
+## 6. Search layer (F2-4 Simulated Annealing)
 
 F2-4 introduces an optional deterministic search layer on top of the existing constructive placers.
 
@@ -121,7 +150,7 @@ Search result contract:
 - The search does not perform an extra final constructive rerun after the best state is chosen.
 - This is required so the global evaluation budget remains hard-bounded by the configured SA limits.
 
-## 6. Timeout-Bound Determinism Policy
+## 7. Timeout-Bound Determinism Policy
 
 The placement flow supports two stop modes:
 
@@ -163,8 +192,9 @@ Policy alignment:
 - Determinism guarantees are strict for non-timeout-bound runs.
 - Timeout-bound runs are best-effort and should be labeled explicitly in benchmark/report tooling.
 
-## 7. References
+## 8. References
 
 - `docs/nesting_engine/tolerance_policy.md` (SCALE, contour winding, touching policy)
 - `docs/nesting_engine/json_canonicalization.md` (determinism reference)
 - `canvases/nesting_engine/simulated_annealing_search.md` (F2-4 feature intent / task-level design)
+- `canvases/nesting_engine/arc_spline_polygonization_policy.md` (F3-1 curve policy intent)

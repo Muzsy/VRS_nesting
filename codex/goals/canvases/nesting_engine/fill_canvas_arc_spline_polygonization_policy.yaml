@@ -1,0 +1,116 @@
+# codex/goals/canvases/nesting_engine/fill_canvas_arc_spline_polygonization_policy.yaml
+
+steps:
+  - name: "Felderítés és F3-1 canvas véglegesítése"
+    description: >
+      Olvasd el:
+      - AGENTS.md
+      - canvases/nesting_engine/nesting_engine_backlog.md (F3-1 DoD)
+      - vrs_nesting/geometry/polygonize.py
+      - vrs_nesting/dxf/importer.py
+      - scripts/smoke_real_dxf_fixtures.py
+      - tests/test_dxf_importer_json_fixture.py
+      - tests/test_dxf_importer_error_handling.py
+
+      Véglegesítsd a canvasban a repo-native döntést:
+      az arc-heavy valós DXF fixture-k a `samples/dxf_demo/` alatt élnek,
+      nem új, párhuzamos `poc/dxf_fixtures/` hierarchiában.
+      Rögzítsd benne azt is, hogy a curve flatten tolerance és a chain endpoint
+      epsilon külön policy-fogalom, még ha numerikusan jelenleg azonos is.
+    outputs:
+      - "canvases/nesting_engine/arc_spline_polygonization_policy.md"
+
+  - name: "Curve polygonization policy centralizálása a Python geometry/importer rétegben"
+    description: >
+      Zárd egyértelmű, névvel jelölt source-of-truth policy-ra a curve
+      polygonization/flatten tolerance-ot.
+
+      Módosítsd:
+      - vrs_nesting/geometry/polygonize.py
+      - vrs_nesting/dxf/importer.py
+
+      Követelmény:
+      - az ARC polygonizálás és a SPLINE/ELLIPSE flattening ugyanazt a dokumentált
+        tolerance-policy-t használja;
+      - az `arc_tolerance_mm = 0.2` repo policy legyen ténylegesen alkalmazva;
+      - a chain endpoint epsilon maradjon külön fogalom és külön konstans;
+      - a meglévő importer hiba-kód szerződés ne sérüljön.
+    outputs:
+      - "vrs_nesting/geometry/polygonize.py"
+      - "vrs_nesting/dxf/importer.py"
+
+  - name: "Unit és importer regressziós tesztek bővítése"
+    description: >
+      Adj hozzá közvetlen regressziós bizonyítékot a polygonization policy-ra.
+
+      Hozd létre / frissítsd:
+      - tests/test_geometry_polygonize.py
+      - tests/test_dxf_importer_json_fixture.py
+      - tests/test_dxf_importer_error_handling.py
+
+      Minimum elvárás:
+      - legyen közvetlen teszt az `arc_to_points()` chord-error / min-segment
+        viselkedésére;
+      - maradjon regresszió a spline endpoint drift pozitív ágra;
+      - legyen importer szintű negatív teszt self-intersecting curve-contour esetre,
+        stabil `DxfImportError` kóddal.
+    outputs:
+      - "tests/test_geometry_polygonize.py"
+      - "tests/test_dxf_importer_json_fixture.py"
+      - "tests/test_dxf_importer_error_handling.py"
+
+  - name: "Arc-heavy valós DXF fixture-ek és smoke lefedés"
+    description: >
+      Bővítsd a valós DXF fixture-készletet repo-native módon a `samples/dxf_demo/`
+      alatt, és vezesd át a smoke scriptbe.
+
+      Hozd létre / frissítsd:
+      - samples/dxf_demo/README.md
+      - samples/dxf_demo/part_arc_heavy_ok.dxf
+      - samples/dxf_demo/part_arc_heavy_self_intersect_fail.dxf
+      - scripts/smoke_real_dxf_fixtures.py
+
+      Követelmény:
+      - a pozitív fixture import PASS és curve-heavy legyen;
+      - a negatív fixture stabil, dokumentált importer hibával bukjon;
+      - a smoke script explicit ellenőrizze, hogy a pozitív fixture polygonizálása
+        után nincs self-intersection.
+    outputs:
+      - "samples/dxf_demo/README.md"
+      - "samples/dxf_demo/part_arc_heavy_ok.dxf"
+      - "samples/dxf_demo/part_arc_heavy_self_intersect_fail.dxf"
+      - "scripts/smoke_real_dxf_fixtures.py"
+
+  - name: "Dokumentáció, checklist és report szinkron"
+    description: >
+      Szinkronizáld a kóddal a Phase 3 F3-1 dokumentációt és készítsd el a task
+      kísérő artefaktjait.
+
+      Frissítsd:
+      - canvases/nesting_engine/nesting_engine_backlog.md
+      - docs/nesting_engine/tolerance_policy.md
+      - docs/nesting_engine/architecture.md
+
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/arc_spline_polygonization_policy.md
+      - codex/reports/nesting_engine/arc_spline_polygonization_policy.md
+
+      Követelmény:
+      - a backlog F3-1 DoD repo-native fixture pathra legyen igazítva;
+      - a tolerance policy egyértelműen leírja az `arc_tolerance_mm = 0.2`
+        alkalmazását és a chain epsilon külön fogalmát;
+      - a report a Report Standard v2 szerint készüljön, AUTO_VERIFY blokk nélkül.
+    outputs:
+      - "canvases/nesting_engine/nesting_engine_backlog.md"
+      - "docs/nesting_engine/tolerance_policy.md"
+      - "docs/nesting_engine/architecture.md"
+      - "codex/codex_checklist/nesting_engine/arc_spline_polygonization_policy.md"
+      - "codex/reports/nesting_engine/arc_spline_polygonization_policy.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/arc_spline_polygonization_policy.md
+    outputs:
+      - "codex/reports/nesting_engine/arc_spline_polygonization_policy.md"
+      - "codex/reports/nesting_engine/arc_spline_polygonization_policy.verify.log"

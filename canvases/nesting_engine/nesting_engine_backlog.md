@@ -320,7 +320,7 @@ Multi-sheet: iteratív "amennyit befér egy táblára" stratégia. Az NFP majd e
 
 **DoD:**
 - [ ] `arc_tolerance_mm` = 0.2 dokumentálva és alkalmazva
-- [ ] "Arc-heavy" fixture (sok ív) tesztkészlet `poc/dxf_fixtures/arc_heavy/` alatt
+- [ ] "Arc-heavy" fixture (sok ív) tesztkészlet `samples/dxf_demo/` alatt
 - [ ] 0 self-intersection a polygonizálás után ezeken a fixture-ökön
 - [ ] `./scripts/verify.sh --report codex/reports/nesting_engine/arc_spline_polygonization_policy.md` PASS
 

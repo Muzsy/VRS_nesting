@@ -8,6 +8,10 @@ from typing import Any
 
 from vrs_nesting.geometry.clean import clean_ring
 
+ARC_TOLERANCE_MM = 0.2
+CURVE_FLATTEN_TOLERANCE_MM = ARC_TOLERANCE_MM
+ARC_POLYGONIZE_MIN_SEGMENTS = 12
+
 
 def _clean_holes(raw_holes: Any, *, min_edge_len: float, where: str) -> list[list[list[float]]]:
     if raw_holes is None:
@@ -66,8 +70,8 @@ def arc_to_points(
     radius: float,
     start_angle_deg: float,
     end_angle_deg: float,
-    max_chord_error_mm: float = 0.2,
-    min_segments: int = 12,
+    max_chord_error_mm: float = CURVE_FLATTEN_TOLERANCE_MM,
+    min_segments: int = ARC_POLYGONIZE_MIN_SEGMENTS,
 ) -> list[list[float]]:
     if radius <= 0:
         raise ValueError("radius must be > 0")

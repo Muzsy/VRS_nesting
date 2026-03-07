@@ -15,14 +15,18 @@ from pathlib import Path
 from typing import Any
 
 from vrs_nesting.geometry.clean import GeometryCleanError, clean_ring
-from vrs_nesting.geometry.polygonize import arc_to_points
+from vrs_nesting.geometry.polygonize import (
+    ARC_POLYGONIZE_MIN_SEGMENTS,
+    CURVE_FLATTEN_TOLERANCE_MM,
+    arc_to_points,
+)
 
 
 OUTER_LAYER_DEFAULT = "CUT_OUTER"
 INNER_LAYER_DEFAULT = "CUT_INNER"
 SUPPORTED_LAYER_ENTITY_TYPES = {"LWPOLYLINE", "POLYLINE", "LINE", "ARC", "CIRCLE", "SPLINE", "ELLIPSE"}
 CHAIN_ENDPOINT_EPSILON_MM = 0.2
-ARC_CHORD_ERROR_MM = 0.2
+# Keep this separate from curve flatten tolerance: same numeric value, different policy purpose.
 ELLIPSE_CLOSED_PARAM_EPSILON = 1e-6
 MAX_INSERT_EXPANSION_DEPTH = 8
 RING_INTERSECTION_EPS = 1e-9
@@ -183,7 +187,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
         raise DxfImportError("DXF_READ_FAILED", f"could not read dxf: {path}: {exc}") from exc
 
     unit_scale_to_mm = _resolve_insunits_scale_to_mm(doc)
-    flatten_tol_in_source_units = ARC_CHORD_ERROR_MM / unit_scale_to_mm
+    flatten_tol_in_source_units = CURVE_FLATTEN_TOLERANCE_MM / unit_scale_to_mm
     msp = doc.modelspace()
     out: list[dict[str, Any]] = []
     for idx, entity in enumerate(msp):
@@ -616,8 +620,8 @@ def _entity_to_path(entity: dict[str, Any], where: str) -> list[list[float]]:
             radius=float(radius),
             start_angle_deg=float(start),
             end_angle_deg=float(end),
-            max_chord_error_mm=ARC_CHORD_ERROR_MM,
-            min_segments=12,
+            max_chord_error_mm=CURVE_FLATTEN_TOLERANCE_MM,
+            min_segments=ARC_POLYGONIZE_MIN_SEGMENTS,
         )
         if len(points) >= 2 and points[0] == points[-1]:
             points = points[:-1]
