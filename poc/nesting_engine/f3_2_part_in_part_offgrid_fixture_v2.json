@@ -1,0 +1,30 @@
+{
+  "version": "nesting_engine_v2",
+  "seed": 20260308,
+  "time_limit_sec": 30,
+  "sheet": {
+    "width_mm": 102.0,
+    "height_mm": 102.0,
+    "kerf_mm": 0.0,
+    "margin_mm": 0.0,
+    "spacing_mm": 0.0
+  },
+  "parts": [
+    {
+      "id": "frame_offgrid_hole",
+      "quantity": 1,
+      "allowed_rotations_deg": [0],
+      "outer_points_mm": [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
+      "holes_points_mm": [
+        [[20.3, 20.4], [30.8, 20.4], [30.8, 31.1], [20.3, 31.1]]
+      ]
+    },
+    {
+      "id": "small_insert",
+      "quantity": 1,
+      "allowed_rotations_deg": [0],
+      "outer_points_mm": [[0.0, 0.0], [10.2, 0.0], [10.2, 10.2], [0.0, 10.2]],
+      "holes_points_mm": []
+    }
+  ]
+}

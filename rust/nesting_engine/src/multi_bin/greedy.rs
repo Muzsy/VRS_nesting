@@ -20,6 +20,12 @@ pub enum PartOrderPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartInPartMode {
+    Off,
+    Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopMode {
     WallClock,
     WorkBudget,
@@ -180,6 +186,7 @@ pub fn greedy_multi_sheet(
     time_limit_sec: u64,
     placer_kind: PlacerKind,
     order_policy: PartOrderPolicy,
+    part_in_part_mode: PartInPartMode,
 ) -> (MultiSheetResult, Option<NfpPlacerStatsV1>) {
     let started_at = Instant::now();
     let mut stop = StopPolicy::from_env(time_limit_sec, started_at);
@@ -258,9 +265,14 @@ pub fn greedy_multi_sheet(
         }
 
         let round: PlacementResult = match placer_kind {
-            PlacerKind::Blf => {
-                blf_place(&remaining_specs, bin_polygon, grid_step_mm, &mut stop, order_policy)
-            }
+            PlacerKind::Blf => blf_place(
+                &remaining_specs,
+                bin_polygon,
+                grid_step_mm,
+                &mut stop,
+                order_policy,
+                part_in_part_mode,
+            ),
             PlacerKind::Nfp => {
                 let mut round_stats = NfpPlacerStatsV1::default();
                 let round = nfp_place(
@@ -371,6 +383,7 @@ mod tests {
             30,
             PlacerKind::Blf,
             PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
         );
         assert!(stats.is_none());
         assert!(!out.placed.is_empty());

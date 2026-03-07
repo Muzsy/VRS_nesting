@@ -163,11 +163,32 @@ Alkalmazási szabály:
 Fontos: a flatten tolerance és a chain endpoint epsilon jelenleg numerikusan azonos,
 de külön policy-fogalmak, külön konstansként kell kezelni őket.
 
-## 8. Kapcsolódások
+## 8. Part-in-part cavity policy (F3-2)
+
+**Scope:** `rust/nesting_engine/src/placement/blf.rs`
+
+F3-2-ben a part-in-part kiterjesztés a BLF candidate generation rétegben történik:
+
+- CLI aktiválás: `--part-in-part off|auto` (default: `off`).
+- `off`: baseline BLF út változatlan.
+- `auto`: determinisztikus cavity-anchor jelöltek a már elhelyezett partok hole geometriájából.
+
+Policy-korlátok:
+
+- Cavity-forrás kizárólag `inflated_polygon.holes`.
+- Outer-only / `hole_collapsed`-szerű source (`holes=[]`) nem adhat cavity-jelöltet.
+- A cavity-jelöltek validálása mindig a meglévő `can_place()` narrow-phase-szal történik
+  (containment + touching/overlap policy változatlan).
+- Sikertelen cavity-próbálás után a normál globális BLF grid-scan fut tovább.
+- Hole-aware NFP/CFR ebben a körben továbbra is out-of-scope.
+
+## 9. Kapcsolódások
 
 - `src/geometry/scale.rs` — SCALE, TOUCH_TOL, mm_to_i64(), i64_to_mm()
 - `src/geometry/offset.rs` — inflate_outer(), deflate_hole(), inflate_part(), OffsetError
 - `src/geometry/types.rs` — Point64, Polygon64, PartGeometry
+- `src/placement/blf.rs` — cavity candidate generation + `can_place()` validation
+- `src/main.rs` — `--part-in-part off|auto` CLI kapcsoló
 - `vrs_nesting/geometry/polygonize.py` — ARC/SPLINE/ELLIPSE curve flatten policy konstansok
 - `vrs_nesting/dxf/importer.py` — endpoint chaining epsilon + DXF polygonizációs policy alkalmazás
 - `canvases/nesting_engine/nesting_engine_crate_scaffold.md` — feladat specifikáció

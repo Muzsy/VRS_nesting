@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::{
     geometry::types::Polygon64,
     multi_bin::{
-        greedy::{PartOrderPolicy, PlacerKind},
+        greedy::{PartInPartMode, PartOrderPolicy, PlacerKind},
         greedy_multi_sheet, MultiSheetResult,
     },
     placement::{blf::InflatedPartSpec, nfp_placer::NfpPlacerStatsV1},
@@ -201,6 +201,7 @@ pub fn run_sa_search_over_specs(
     grid_step_mm: f64,
     placer_kind: PlacerKind,
     config: SaSearchConfig,
+    part_in_part_mode: PartInPartMode,
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
     run_sa_search_over_specs_with_eval_hook(
         base_specs,
@@ -208,6 +209,7 @@ pub fn run_sa_search_over_specs(
         grid_step_mm,
         placer_kind,
         config,
+        part_in_part_mode,
         || {},
     )
 }
@@ -218,6 +220,7 @@ fn run_sa_search_over_specs_with_eval_hook<E>(
     grid_step_mm: f64,
     placer_kind: PlacerKind,
     config: SaSearchConfig,
+    part_in_part_mode: PartInPartMode,
     mut on_eval: E,
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String>
 where
@@ -240,6 +243,7 @@ where
             config.eval_budget_sec,
             placer_kind,
             PartOrderPolicy::ByInputOrder,
+            part_in_part_mode,
         ));
     }
 
@@ -280,6 +284,7 @@ where
                 config.eval_budget_sec,
                 total_instances,
                 cost_encoding,
+                part_in_part_mode,
             )
         },
         || Instant::now() >= deadline,
@@ -357,6 +362,7 @@ fn eval_state_cost_with_result(
     eval_budget_sec: u64,
     total_instances: u64,
     cost_encoding: CostEncoding,
+    part_in_part_mode: PartInPartMode,
 ) -> Result<(i64, SaEvaluatedLayout), String> {
     let specs = specs_for_state(base_specs, state);
     let (result, stats) = greedy_multi_sheet(
@@ -366,6 +372,7 @@ fn eval_state_cost_with_result(
         eval_budget_sec,
         placer_kind,
         PartOrderPolicy::ByInputOrder,
+        part_in_part_mode,
     );
 
     let placed_count = u64::try_from(result.placed.len())
@@ -610,7 +617,10 @@ mod tests {
         run_sa_search_over_specs_with_eval_hook, SaConfig, SaSearchConfig, SaState, SplitMix64,
     };
     use crate::{
-        multi_bin::{greedy::PartOrderPolicy, greedy::PlacerKind, greedy_multi_sheet},
+        multi_bin::{
+            greedy::PartInPartMode, greedy::PartOrderPolicy, greedy::PlacerKind,
+            greedy_multi_sheet,
+        },
         placement::blf::{bbox_area, rect_poly, InflatedPartSpec},
     };
 
@@ -701,9 +711,23 @@ mod tests {
             eval_budget_sec: 2,
         };
 
-        let run_a = run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, cfg)
+        let run_a = run_sa_search_over_specs(
+            &specs,
+            &bin,
+            1.0,
+            PlacerKind::Blf,
+            cfg,
+            PartInPartMode::Off,
+        )
             .expect("run_a must succeed");
-        let run_b = run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, cfg)
+        let run_b = run_sa_search_over_specs(
+            &specs,
+            &bin,
+            1.0,
+            PlacerKind::Blf,
+            cfg,
+            PartInPartMode::Off,
+        )
             .expect("run_b must succeed");
 
         assert_eq!(run_a.0, run_b.0);
@@ -720,8 +744,15 @@ mod tests {
         ];
         let bin = rect_poly(100.0, 100.0);
 
-        let (baseline, _baseline_stats) =
-            greedy_multi_sheet(&specs, &bin, 1.0, 2, PlacerKind::Blf, PartOrderPolicy::ByArea);
+        let (baseline, _baseline_stats) = greedy_multi_sheet(
+            &specs,
+            &bin,
+            1.0,
+            2,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+        );
         assert_eq!(
             baseline.sheets_used, 2,
             "baseline fixture expectation must stay stable"
@@ -735,9 +766,15 @@ mod tests {
             time_limit_sec: 300,
             eval_budget_sec: 2,
         };
-        let (sa_result, _sa_stats) =
-            run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, sa_cfg)
-                .expect("SA run must succeed on quality fixture");
+        let (sa_result, _sa_stats) = run_sa_search_over_specs(
+            &specs,
+            &bin,
+            1.0,
+            PlacerKind::Blf,
+            sa_cfg,
+            PartInPartMode::Off,
+        )
+        .expect("SA run must succeed on quality fixture");
 
         assert!(
             sa_result.sheets_used < baseline.sheets_used,
@@ -865,9 +902,17 @@ mod tests {
             cfg.eval_budget_sec,
             PlacerKind::Blf,
             PartOrderPolicy::ByInputOrder,
+            PartInPartMode::Off,
         );
-        let actual = run_sa_search_over_specs(&specs, &bin, 1.0, PlacerKind::Blf, cfg)
-            .expect("SA run must succeed even when only initial eval fits");
+        let actual = run_sa_search_over_specs(
+            &specs,
+            &bin,
+            1.0,
+            PlacerKind::Blf,
+            cfg,
+            PartInPartMode::Off,
+        )
+        .expect("SA run must succeed even when only initial eval fits");
 
         assert_eq!(
             actual, expected,
@@ -906,6 +951,7 @@ mod tests {
             1.0,
             PlacerKind::Blf,
             cfg,
+            PartInPartMode::Off,
             || eval_calls.set(eval_calls.get().saturating_add(1)),
         )
         .expect("SA run must succeed");

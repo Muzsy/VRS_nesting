@@ -20,7 +20,7 @@ use crate::{
     },
     io::pipeline_io::{PartRequest, PipelineRequest},
     multi_bin::{
-        greedy::{PartOrderPolicy, PlacerKind},
+        greedy::{PartInPartMode, PartOrderPolicy, PlacerKind},
         greedy_multi_sheet, MultiSheetResult,
     },
     placement::blf::{bbox_area, InflatedPartSpec, UnplacedItem},
@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>";
+const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --part-in-part off|auto, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>";
 const DEFAULT_SA_ITERS: u64 = 256;
 const DEFAULT_SA_TEMP_START: u64 = 10_000;
 const DEFAULT_SA_TEMP_END: u64 = 50;
@@ -63,6 +63,7 @@ impl SaCliArgs {
 #[derive(Debug, Clone, Copy)]
 struct NestCliArgs {
     placer: PlacerKind,
+    part_in_part_mode: PartInPartMode,
     search_mode: SearchMode,
     sa: SaCliArgs,
 }
@@ -128,6 +129,7 @@ fn run_nest_with_args(args: &[String]) -> Result<(), String> {
 
 fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
     let mut placer = PlacerKind::Blf;
+    let mut part_in_part_mode = PartInPartMode::Off;
     let mut search_mode = SearchMode::None;
     let mut sa = SaCliArgs::default();
     let mut idx = 0usize;
@@ -154,6 +156,20 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
                 return Err("missing value for --search (expected: none|sa)".to_string());
             }
             search_mode = parse_search_mode(&args[idx])?;
+            idx += 1;
+            continue;
+        }
+        if arg == "--part-in-part" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --part-in-part (expected: off|auto)".to_string());
+            }
+            part_in_part_mode = parse_part_in_part_mode(&args[idx])?;
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--part-in-part=") {
+            part_in_part_mode = parse_part_in_part_mode(value)?;
             idx += 1;
             continue;
         }
@@ -244,6 +260,7 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
 
     Ok(NestCliArgs {
         placer,
+        part_in_part_mode,
         search_mode,
         sa,
     })
@@ -265,6 +282,16 @@ fn parse_search_mode(value: &str) -> Result<SearchMode, String> {
         "sa" => Ok(SearchMode::Sa),
         other => Err(format!(
             "unsupported --search value '{other}' (expected: none|sa)"
+        )),
+    }
+}
+
+fn parse_part_in_part_mode(value: &str) -> Result<PartInPartMode, String> {
+    match value {
+        "off" => Ok(PartInPartMode::Off),
+        "auto" => Ok(PartInPartMode::Auto),
+        other => Err(format!(
+            "unsupported --part-in-part value '{other}' (expected: off|auto)"
         )),
     }
 }
@@ -493,10 +520,18 @@ fn run_nest(cli: NestCliArgs) -> Result<(), String> {
                 input.time_limit_sec,
                 effective_placer,
                 PartOrderPolicy::ByArea,
+                cli.part_in_part_mode,
             ),
             SearchMode::Sa => {
                 let sa_cfg = build_sa_search_config(&input, cli.sa)?;
-                run_sa_search_over_specs(&specs, &bin, 1.0, effective_placer, sa_cfg)?
+                run_sa_search_over_specs(
+                    &specs,
+                    &bin,
+                    1.0,
+                    effective_placer,
+                    sa_cfg,
+                    cli.part_in_part_mode,
+                )?
             }
         };
     result.unplaced.extend(forced_unplaced);

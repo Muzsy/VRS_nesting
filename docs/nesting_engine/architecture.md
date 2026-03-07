@@ -192,9 +192,31 @@ Policy alignment:
 - Determinism guarantees are strict for non-timeout-bound runs.
 - Timeout-bound runs are best-effort and should be labeled explicitly in benchmark/report tooling.
 
-## 8. References
+## 8. Part-in-part pipeline policy (F3-2)
+
+F3-2 introduces an opt-in cavity-aware extension in the BLF placer only.
+
+Activation and scope:
+
+- `nest` gets `--part-in-part off|auto`.
+- Default is `off`, so baseline behavior stays unchanged when the flag is omitted.
+- `auto` enables extra cavity candidate generation in BLF before the global grid scan.
+- This iteration does not introduce hole-aware NFP/CFR; hybrid gating remains unchanged
+  (`--placer nfp` still falls back to BLF when holes or `hole_collapsed` are present).
+
+Cavity source and validation rules:
+
+- Cavity candidates are generated only from already placed polygons' `inflated_polygon.holes`.
+- Outer-only / `hole_collapsed`-like sources (`holes=[]`) are ignored as cavity sources.
+- Candidate anchors are deterministic and hole-geometry-based (bbox/vertex + deterministic nudges),
+  so off-grid cavity placements can be reached.
+- Every cavity candidate is validated through the existing `can_place()` narrow-phase.
+- If no cavity candidate is feasible, the original global BLF grid-scan path runs unchanged.
+
+## 9. References
 
 - `docs/nesting_engine/tolerance_policy.md` (SCALE, contour winding, touching policy)
 - `docs/nesting_engine/json_canonicalization.md` (determinism reference)
 - `canvases/nesting_engine/simulated_annealing_search.md` (F2-4 feature intent / task-level design)
 - `canvases/nesting_engine/arc_spline_polygonization_policy.md` (F3-1 curve policy intent)
+- `canvases/nesting_engine/part_in_part_pipeline.md` (F3-2 feature intent / task-level design)

@@ -93,6 +93,7 @@ chmod +x \
   scripts/run_real_dxf_sparrow_pipeline.py \
   scripts/smoke_real_dxf_sparrow_pipeline.py \
   scripts/smoke_nfp_placer_stats_and_perf_gate.py \
+  scripts/smoke_part_in_part_pipeline.py \
   scripts/smoke_nesting_engine_determinism.sh \
   scripts/smoke_svg_export.py || true
 
@@ -272,6 +273,9 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   echo "[NEST] Targeted blf_budget_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml blf_budget_
 
+  echo "[NEST] Targeted blf_part_in_part_ unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml blf_part_in_part_
+
   echo "[NEST] Targeted nfp_budget_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml nfp_budget_
 
@@ -295,6 +299,11 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   python3 scripts/smoke_nesting_engine_sa_cli.py \
     --bin "$NESTING_ENGINE_BIN_PATH" \
     --input "poc/nesting_engine/f2_4_sa_quality_fixture_v2.json"
+
+  echo "[NEST][F3-2] part-in-part pipeline smoke"
+  python3 scripts/smoke_part_in_part_pipeline.py \
+    --bin "$NESTING_ENGINE_BIN_PATH" \
+    --input "poc/nesting_engine/f3_2_part_in_part_offgrid_fixture_v2.json"
 
   TMP_BASELINE_OUT="$(mktemp /tmp/nesting_engine_baseline_out_XXXXXX.json)"
   TMP_BASELINE_OUT_2="$(mktemp /tmp/nesting_engine_baseline_out2_XXXXXX.json)"
