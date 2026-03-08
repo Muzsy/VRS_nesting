@@ -1,0 +1,130 @@
+steps:
+  - name: "Repo szabályok + canvas véglegesítése"
+    description: >
+      Olvasd el: AGENTS.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md,
+      docs/qa/testing_guidelines.md, továbbá a releváns nesting_engine architektúra és backlog fájlokat.
+      Véglegesítsd a canvas-t a jelenlegi repoállapothoz: F3-3 itt proxy remnant model,
+      nem exact remnant polygon extraction.
+    outputs:
+      - "canvases/nesting_engine/remnant_value_model.md"
+
+  - name: "BLF placement metadata előkészítése a remnant proxyhoz"
+    description: >
+      Módosítsd: rust/nesting_engine/src/placement/blf.rs
+
+      Cél: a MultiSheetResult később determinisztikusan tudja számolni a sheetenkénti occupied envelope-ot.
+      Ehhez egészítsd ki a PlacedItem-et a szükséges, NEM exportált placement-extents mezőkkel
+      (például placed AABB width/height mm vagy scaled integer formában).
+      Csak annyi új adatot vezess be, amennyi kell a remnant proxy számításhoz.
+      A meglévő export / determinism hash contractot ne bontsd meg.
+    outputs:
+      - "rust/nesting_engine/src/placement/blf.rs"
+
+  - name: "Remnant proxy score implementálása a greedy/multi-sheet rétegben"
+    description: >
+      Módosítsd: rust/nesting_engine/src/multi_bin/greedy.rs
+
+      Követelmények:
+      - MultiSheetResult kapjon új objective mezőket:
+        remnant_value_ppm,
+        remnant_area_score_ppm,
+        remnant_compactness_score_ppm,
+        remnant_min_width_score_ppm.
+      - A score integer-only legyen, ppm skálán (0..=1_000_000 komponensenként).
+      - A score a sheet AABB + occupied envelope proxyból számoljon.
+      - A per-sheet score-okat összegezd a teljes eredményhez.
+      - A számítás legyen determinisztikus és stabil azonos input mellett.
+
+      Kötelező targeted Rust tesztek ugyanitt vagy a releváns cfg(test) blokkban (`remnant_` prefix):
+      - remnant_score_prefers_more_compact_proxy_layout
+      - remnant_score_is_integer_and_deterministic
+    outputs:
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+
+  - name: "SA objective átvezetése az új P2 remnant modellre"
+    description: >
+      Módosítsd: rust/nesting_engine/src/search/sa.rs
+
+      Vezesd át az SA cost / objective logikát úgy, hogy:
+      - először továbbra is az unplaced számítson,
+      - utána a sheets_used,
+      - és csak egyenlőség esetén a magasabb remnant_value_ppm legyen jobb.
+
+      Fontos:
+      - maradjon integer-only és determinisztikus,
+      - a meglévő tie-break contract ne sérüljön,
+      - ahol szükséges, frissítsd a kísérő teszteket.
+
+      Kötelező targeted teszt (`remnant_` prefix vagy egyértelmű remnant név):
+      - sa_prefers_higher_remnant_value_when_sheets_tie
+    outputs:
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "Output v2 objective blokk bővítése"
+    description: >
+      Módosítsd: rust/nesting_engine/src/export/output_v2.rs
+
+      Az output JSON `objective` blokkja kapja meg az új mezőket:
+      - remnant_value_ppm
+      - remnant_area_score_ppm
+      - remnant_compactness_score_ppm
+      - remnant_min_width_score_ppm
+
+      Kötelező targeted teszt:
+      - remnant_objective_is_exposed_in_output_v2
+
+      A determinism hash számítását ne változtasd meg.
+    outputs:
+      - "rust/nesting_engine/src/export/output_v2.rs"
+
+  - name: "Dokumentáció frissítése: architektúra + IO contract"
+    description: >
+      Módosítsd:
+      - docs/nesting_engine/architecture.md
+      - docs/nesting_engine/io_contract_v2.md
+
+      Dokumentáld világosan:
+      - hogy az F3-3 első verziója proxy remnant model,
+      - a P1 -> P2 objective sorrendet,
+      - az integer / ppm skálát,
+      - az új output mezőket,
+      - és hogy a determinism hash contract ettől nem változik.
+    outputs:
+      - "docs/nesting_engine/architecture.md"
+      - "docs/nesting_engine/io_contract_v2.md"
+
+  - name: "Repo gate bővítése targeted remnant teszttel"
+    description: >
+      Módosítsd: scripts/check.sh
+
+      Adj hozzá egy explicit targeted futást:
+      cargo test --manifest-path rust/nesting_engine/Cargo.toml remnant_
+
+      A check.sh meglévő sorrendjét és logikáját ne borítsd fel; csak minimálisan bővítsd.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/remnant_value_model.md
+      - codex/reports/nesting_engine/remnant_value_model.md
+
+      Követelmények:
+      - DoD -> Evidence Matrix
+      - AUTO_VERIFY marker blokk
+      - A reportban szerepeljen a targeted remnant_ cargo test futás
+      - Szerepeljen legalább egy kis CLI példa, amelyben az output objective blokk már tartalmazza az új remnant mezőket
+      - Írd le expliciten: "proxy remnant model, nem exact polygon remnant"
+    outputs:
+      - "codex/codex_checklist/nesting_engine/remnant_value_model.md"
+      - "codex/reports/nesting_engine/remnant_value_model.md"
+
+  - name: "Repo gate (verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/remnant_value_model.md
+      Az AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+    outputs:
+      - "codex/reports/nesting_engine/remnant_value_model.md"
+      - "codex/reports/nesting_engine/remnant_value_model.verify.log"

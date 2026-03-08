@@ -30,6 +30,7 @@ steps:
       - rust/nesting_engine/src/multi_bin/greedy.rs
         - greedy_multi_sheet kapjon új paramétert: `part_in_part_mode`
         - ezt add tovább a BLF placernek
+        - és vezesd át minden meglévő hívóhelyre, beleértve az SA keresési útvonalat is
         - a meglévő NFP fallback policy-t ne bontsd meg
 
       - rust/nesting_engine/src/placement/blf.rs
@@ -41,6 +42,7 @@ steps:
     outputs:
       - "rust/nesting_engine/src/main.rs"
       - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/search/sa.rs"
       - "rust/nesting_engine/src/placement/blf.rs"
 
   - name: "BLF cavity-aware candidate generation implementálása"
