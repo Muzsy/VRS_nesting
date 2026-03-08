@@ -56,8 +56,12 @@
 | `unplaced[].instance` | integer (`>=0`) | Igen | Peldany index | - |
 | `unplaced[].reason` | string | Igen | Elhelyezes sikertelensegenek oka | - |
 | `objective` | object | Igen | Cel-fuggveny osszegzes | - |
-| `objective.sheets_used` | integer (`>=0`) | Igen | Elsoleges cel metrika | db |
-| `objective.utilization_pct` | number (`0..100`) | Igen | Tabla-kihasznaltsag | % |
+| `objective.sheets_used` | integer (`>=0`) | Igen | Elsoleges cel metrika (P1) | db |
+| `objective.utilization_pct` | number (`0..100`) | Igen | Tabla-kihasznaltsag (diagnosztika) | % |
+| `objective.remnant_value_ppm` | integer (`>=0`) | Igen | P2 proxy remnant aggregate score | ppm |
+| `objective.remnant_area_score_ppm` | integer (`>=0`) | Igen | P2 komponens: free proxy area score | ppm |
+| `objective.remnant_compactness_score_ppm` | integer (`>=0`) | Igen | P2 komponens: strip compactness score | ppm |
+| `objective.remnant_min_width_score_ppm` | integer (`>=0`) | Igen | P2 komponens: min usable width proxy score | ppm |
 | `meta` | object | Igen | Futasi metaadatok | - |
 | `meta.elapsed_sec` | number (`>=0`) | Nem | Python runner-level meres (`runner_meta.json`), nem Rust kernel stdout mezo | sec |
 | `meta.determinism_hash` | string | Igen | Determinisztikus hash ertek | - |
@@ -66,6 +70,16 @@
 Megjegyzes: a Rust `nest` stdout output `meta` objektuma determinisztikus kimenetre optimalizalt,
 ezert csak a `determinism_hash` mezot adja vissza. A futasido (`elapsed_sec`) runner artifact szinten
 (`runs/<run_id>/runner_meta.json`) erheto el.
+
+### 3.1 Objective sorrend (normativ)
+
+- A solver objective prioritasa:
+  1. kevesebb `unplaced`
+  2. kevesebb `sheets_used`
+  3. magasabb `objective.remnant_value_ppm`
+- Az F3-3 iteracio `remnant_*_ppm` mezoi proxy modellen alapulnak (sheet AABB + occupied envelope),
+  nem exact polygon-remnant topologian.
+- A `meta.determinism_hash` canonicalization contract valtozatlan; az objective blokk bovulese ezt nem modositja.
 
 ## 4. Geometria egyezmenyek (kobe vesett)
 

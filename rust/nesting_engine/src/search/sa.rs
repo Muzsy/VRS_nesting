@@ -53,6 +53,7 @@ pub struct SplitMix64 {
 struct CostEncoding {
     unplaced_weight: u128,
     sheets_weight: u128,
+    remnant_axis: u128,
 }
 
 impl SplitMix64 {
@@ -282,7 +283,6 @@ where
                 grid_step_mm,
                 placer_kind,
                 config.eval_budget_sec,
-                total_instances,
                 cost_encoding,
                 part_in_part_mode,
             )
@@ -320,17 +320,24 @@ fn total_instances(base_specs: &[InflatedPartSpec]) -> Result<u64, String> {
 
 impl CostEncoding {
     fn new(total_instances: u64) -> Result<Self, String> {
+        const MAX_SCORE_PER_SHEET_PPM: u128 = 1_000_000;
+
         let axis = u128::from(total_instances).saturating_add(1);
-        let sheets_weight = axis;
+        let remnant_axis = u128::from(total_instances)
+            .saturating_mul(MAX_SCORE_PER_SHEET_PPM)
+            .saturating_add(1);
+        let sheets_weight = remnant_axis;
         let unplaced_weight = axis
             .checked_mul(axis)
+            .and_then(|v| v.checked_mul(MAX_SCORE_PER_SHEET_PPM))
             .ok_or_else(|| "sa cost encoding overflow while computing weights".to_string())?;
 
         let max_total = u128::from(total_instances);
+        let max_remnant_penalty = remnant_axis.saturating_sub(1);
         let max_cost = max_total
             .checked_mul(unplaced_weight)
             .and_then(|v| v.checked_add(max_total.checked_mul(sheets_weight)?))
-            .and_then(|v| v.checked_add(max_total))
+            .and_then(|v| v.checked_add(max_remnant_penalty))
             .ok_or_else(|| "sa cost encoding overflow while computing max cost".to_string())?;
         if max_cost > i64::MAX as u128 {
             return Err("sa cost encoding exceeds i64 range for this input size".to_string());
@@ -339,14 +346,18 @@ impl CostEncoding {
         Ok(Self {
             unplaced_weight,
             sheets_weight,
+            remnant_axis,
         })
     }
 
-    fn encode(self, unplaced_count: u64, sheets_used: u64, not_placed: u64) -> Result<i64, String> {
+    fn encode(self, unplaced_count: u64, sheets_used: u64, remnant_value_ppm: u64) -> Result<i64, String> {
+        let remnant_cap = self.remnant_axis.saturating_sub(1);
+        let remnant_value = u128::from(remnant_value_ppm).min(remnant_cap);
+        let remnant_penalty = remnant_cap.saturating_sub(remnant_value);
         let cost = u128::from(unplaced_count)
             .checked_mul(self.unplaced_weight)
             .and_then(|v| v.checked_add(u128::from(sheets_used).checked_mul(self.sheets_weight)?))
-            .and_then(|v| v.checked_add(u128::from(not_placed)))
+            .and_then(|v| v.checked_add(remnant_penalty))
             .ok_or_else(|| "sa cost encoding overflow during evaluation".to_string())?;
 
         i64::try_from(cost).map_err(|_| "sa cost value does not fit into i64".to_string())
@@ -360,7 +371,6 @@ fn eval_state_cost_with_result(
     grid_step_mm: f64,
     placer_kind: PlacerKind,
     eval_budget_sec: u64,
-    total_instances: u64,
     cost_encoding: CostEncoding,
     part_in_part_mode: PartInPartMode,
 ) -> Result<(i64, SaEvaluatedLayout), String> {
@@ -375,15 +385,13 @@ fn eval_state_cost_with_result(
         part_in_part_mode,
     );
 
-    let placed_count = u64::try_from(result.placed.len())
-        .map_err(|_| "placed item count does not fit into u64".to_string())?;
     let unplaced_count = u64::try_from(result.unplaced.len())
         .map_err(|_| "unplaced item count does not fit into u64".to_string())?;
     let sheets_used = u64::try_from(result.sheets_used)
         .map_err(|_| "sheet count does not fit into u64".to_string())?;
-    let not_placed = total_instances.saturating_sub(placed_count);
+    let remnant_value_ppm = result.remnant_value_ppm;
 
-    let cost = cost_encoding.encode(unplaced_count, sheets_used, not_placed)?;
+    let cost = cost_encoding.encode(unplaced_count, sheets_used, remnant_value_ppm)?;
     Ok((cost, (result, stats)))
 }
 
@@ -612,7 +620,7 @@ mod tests {
     use std::cell::Cell;
 
     use super::{
-        apply_move, clamp_sa_iters_by_time_limit_and_eval_budget, run_sa_core,
+        CostEncoding, apply_move, clamp_sa_iters_by_time_limit_and_eval_budget, run_sa_core,
         run_sa_core_with_stop_hook, run_sa_search_over_specs,
         run_sa_search_over_specs_with_eval_hook, SaConfig, SaSearchConfig, SaState, SplitMix64,
     };
@@ -783,6 +791,22 @@ mod tests {
         assert_eq!(
             sa_result.sheets_used, 1,
             "SA quality fixture expectation must stay stable"
+        );
+    }
+
+    #[test]
+    fn sa_prefers_higher_remnant_value_when_sheets_tie() {
+        let encoding = CostEncoding::new(8).expect("encoding must fit into i64");
+        let lower_remnant_cost = encoding
+            .encode(0, 1, 300_000)
+            .expect("encoding low remnant must succeed");
+        let higher_remnant_cost = encoding
+            .encode(0, 1, 800_000)
+            .expect("encoding high remnant must succeed");
+
+        assert!(
+            higher_remnant_cost < lower_remnant_cost,
+            "for equal unplaced and sheets, higher remnant_value_ppm must be preferred"
         );
     }
 

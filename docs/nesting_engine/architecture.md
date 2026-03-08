@@ -128,7 +128,7 @@ State and evaluation model:
 - Cost is encoded lexicographically as integer score:
   1. fewer unplaced instances
   2. fewer sheets used
-  3. better fill / fewer leftover placements
+  3. higher `remnant_value_ppm` (proxy remnant model, integer-only ppm)
 
 Order-sensitivity contract:
 
@@ -143,6 +143,17 @@ Determinism contract:
   - lower cost wins
   - on equal cost, lexicographically earlier state wins
 - Acceptance uses integer arithmetic only; no floating-point probability logic is used.
+
+F3-3 remnant objective notes:
+
+- The first F3-3 iteration is a proxy model and does not extract exact free-space remnant polygons.
+- Remnant scoring is computed from sheet AABB + occupied envelope proxy per used sheet:
+  - `remnant_area_score_ppm`
+  - `remnant_compactness_score_ppm`
+  - `remnant_min_width_score_ppm`
+  - weighted aggregate: `remnant_value_ppm`
+- Objective priority stays fixed: `unplaced -> sheets_used -> remnant_value_ppm`.
+- Determinism hash contract remains tied to placement canonical view only and is unchanged by objective field extension.
 
 Search result contract:
 
@@ -220,3 +231,4 @@ Cavity source and validation rules:
 - `canvases/nesting_engine/simulated_annealing_search.md` (F2-4 feature intent / task-level design)
 - `canvases/nesting_engine/arc_spline_polygonization_policy.md` (F3-1 curve policy intent)
 - `canvases/nesting_engine/part_in_part_pipeline.md` (F3-2 feature intent / task-level design)
+- `canvases/nesting_engine/remnant_value_model.md` (F3-3 proxy remnant objective intent)

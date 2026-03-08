@@ -1,11 +1,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+use crate::feasibility::aabb::aabb_from_polygon64;
+use crate::geometry::scale::mm_to_i64;
 use crate::geometry::types::Polygon64;
-use crate::placement::blf::{InflatedPartSpec, UnplacedItem};
+use crate::placement::blf::{InflatedPartSpec, UnplacedItem, placed_extents_max_xy_i64};
 use crate::placement::nfp_placer::NfpPlacerStatsV1;
 use crate::placement::{PlacedItem, PlacementResult, blf_place, nfp_place};
 use nesting_engine::nfp::cache::NfpCache;
+
+const SCORE_PPM_SCALE: u128 = 1_000_000;
+const REMNANT_AREA_WEIGHT_PPM: u128 = 500_000;
+const REMNANT_COMPACTNESS_WEIGHT_PPM: u128 = 300_000;
+const REMNANT_MIN_WIDTH_WEIGHT_PPM: u128 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacerKind {
@@ -177,6 +184,159 @@ pub struct MultiSheetResult {
     pub placed: Vec<PlacedItem>,
     pub unplaced: Vec<UnplacedItem>,
     pub sheets_used: usize,
+    pub remnant_value_ppm: u64,
+    pub remnant_area_score_ppm: u64,
+    pub remnant_compactness_score_ppm: u64,
+    pub remnant_min_width_score_ppm: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct RemnantObjectiveTotals {
+    value_ppm: u64,
+    area_score_ppm: u64,
+    compactness_score_ppm: u64,
+    min_width_score_ppm: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct RemnantSheetScore {
+    value_ppm: u64,
+    area_score_ppm: u64,
+    compactness_score_ppm: u64,
+    min_width_score_ppm: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SheetEnvelopeExtents {
+    max_x: i64,
+    max_y: i64,
+}
+
+fn ppm_ratio(numerator: i128, denominator: i128) -> u64 {
+    if denominator <= 0 {
+        return 0;
+    }
+    let num = numerator.clamp(0, denominator) as u128;
+    let den = denominator as u128;
+    let raw = num.saturating_mul(SCORE_PPM_SCALE) / den;
+    raw.min(SCORE_PPM_SCALE) as u64
+}
+
+fn compute_sheet_remnant_score(
+    sheet_width: i128,
+    sheet_height: i128,
+    occupied_envelope_width: i128,
+    occupied_envelope_height: i128,
+) -> RemnantSheetScore {
+    if sheet_width <= 0 || sheet_height <= 0 {
+        return RemnantSheetScore::default();
+    }
+    let envelope_w = occupied_envelope_width.clamp(0, sheet_width);
+    let envelope_h = occupied_envelope_height.clamp(0, sheet_height);
+
+    let sheet_area = sheet_width.saturating_mul(sheet_height);
+    let right_strip_width = sheet_width.saturating_sub(envelope_w);
+    let top_strip_height = sheet_height.saturating_sub(envelope_h);
+    let right_strip_area = right_strip_width.saturating_mul(sheet_height);
+    let top_strip_area = envelope_w.saturating_mul(top_strip_height);
+    let free_proxy_area = right_strip_area.saturating_add(top_strip_area);
+
+    let area_score_ppm = ppm_ratio(free_proxy_area, sheet_area);
+    let compactness_score_ppm = ppm_ratio(
+        right_strip_area.max(top_strip_area),
+        free_proxy_area.max(1),
+    );
+    let min_width_score_ppm = ppm_ratio(
+        right_strip_width.max(top_strip_height),
+        sheet_width.min(sheet_height).max(1),
+    );
+
+    let weighted_value = REMNANT_AREA_WEIGHT_PPM
+        .saturating_mul(area_score_ppm as u128)
+        .saturating_add(REMNANT_COMPACTNESS_WEIGHT_PPM.saturating_mul(compactness_score_ppm as u128))
+        .saturating_add(REMNANT_MIN_WIDTH_WEIGHT_PPM.saturating_mul(min_width_score_ppm as u128))
+        / SCORE_PPM_SCALE;
+
+    let value_ppm = weighted_value.min(SCORE_PPM_SCALE) as u64;
+    RemnantSheetScore {
+        value_ppm,
+        area_score_ppm,
+        compactness_score_ppm,
+        min_width_score_ppm,
+    }
+}
+
+fn compute_remnant_proxy_totals(
+    placed: &[PlacedItem],
+    parts: &[InflatedPartSpec],
+    bin_polygon: &Polygon64,
+) -> RemnantObjectiveTotals {
+    if placed.is_empty() {
+        return RemnantObjectiveTotals::default();
+    }
+
+    let sheet_bbox = aabb_from_polygon64(bin_polygon);
+    let sheet_width = (sheet_bbox.max_x as i128).saturating_sub(sheet_bbox.min_x as i128);
+    let sheet_height = (sheet_bbox.max_y as i128).saturating_sub(sheet_bbox.min_y as i128);
+    if sheet_width <= 0 || sheet_height <= 0 {
+        return RemnantObjectiveTotals::default();
+    }
+
+    let mut part_by_id: BTreeMap<&str, &InflatedPartSpec> = BTreeMap::new();
+    for spec in parts {
+        part_by_id.insert(spec.id.as_str(), spec);
+    }
+
+    let mut per_rotation_max_cache: BTreeMap<(String, i32), (i64, i64)> = BTreeMap::new();
+    let mut envelope_by_sheet: BTreeMap<usize, SheetEnvelopeExtents> = BTreeMap::new();
+
+    for item in placed {
+        let tx = mm_to_i64(item.x_mm);
+        let ty = mm_to_i64(item.y_mm);
+
+        let entry = envelope_by_sheet
+            .entry(item.sheet)
+            .or_insert(SheetEnvelopeExtents {
+                max_x: sheet_bbox.min_x,
+                max_y: sheet_bbox.min_y,
+            });
+
+        let cache_key = (item.part_id.clone(), item.rotation_deg);
+        let (rot_max_x, rot_max_y) = if let Some(v) = per_rotation_max_cache.get(&cache_key) {
+            *v
+        } else if let Some(spec) = part_by_id.get(item.part_id.as_str()) {
+            let max_xy =
+                placed_extents_max_xy_i64(&spec.inflated_polygon, item.rotation_deg, 0, 0);
+            per_rotation_max_cache.insert(cache_key, max_xy);
+            max_xy
+        } else {
+            (0, 0)
+        };
+
+        let occupied_max_x = tx.saturating_add(rot_max_x);
+        let occupied_max_y = ty.saturating_add(rot_max_y);
+        entry.max_x = entry.max_x.max(occupied_max_x);
+        entry.max_y = entry.max_y.max(occupied_max_y);
+    }
+
+    let mut totals = RemnantObjectiveTotals::default();
+    for extents in envelope_by_sheet.values() {
+        let envelope_w =
+            (extents.max_x as i128).saturating_sub(sheet_bbox.min_x as i128).clamp(0, sheet_width);
+        let envelope_h =
+            (extents.max_y as i128).saturating_sub(sheet_bbox.min_y as i128).clamp(0, sheet_height);
+        let score = compute_sheet_remnant_score(sheet_width, sheet_height, envelope_w, envelope_h);
+        totals.value_ppm = totals.value_ppm.saturating_add(score.value_ppm);
+        totals.area_score_ppm = totals.area_score_ppm.saturating_add(score.area_score_ppm);
+        totals.compactness_score_ppm = totals
+            .compactness_score_ppm
+            .saturating_add(score.compactness_score_ppm);
+        totals.min_width_score_ppm = totals
+            .min_width_score_ppm
+            .saturating_add(score.min_width_score_ppm);
+    }
+
+    totals
 }
 
 pub fn greedy_multi_sheet(
@@ -346,10 +506,15 @@ pub fn greedy_multi_sheet(
     } else {
         placed.iter().map(|p| p.sheet).max().unwrap_or(0) + 1
     };
+    let remnant = compute_remnant_proxy_totals(&placed, parts, bin_polygon);
     let result = MultiSheetResult {
         placed,
         unplaced,
         sheets_used,
+        remnant_value_ppm: remnant.value_ppm,
+        remnant_area_score_ppm: remnant.area_score_ppm,
+        remnant_compactness_score_ppm: remnant.compactness_score_ppm,
+        remnant_min_width_score_ppm: remnant.min_width_score_ppm,
     };
 
     if let Some(stats) = nfp_stats_total.as_mut() {
@@ -364,7 +529,7 @@ pub fn greedy_multi_sheet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::placement::blf::{InflatedPartSpec, bbox_area, rect_poly};
+    use crate::placement::blf::{InflatedPartSpec, PlacedItem, bbox_area, rect_poly};
 
     #[test]
     fn basic_greedy_multi_sheet() {
@@ -387,5 +552,84 @@ mod tests {
         );
         assert!(stats.is_none());
         assert!(!out.placed.is_empty());
+        assert!(out.remnant_value_ppm > 0);
+        assert!(out.remnant_area_score_ppm > 0);
+    }
+
+    #[test]
+    fn remnant_score_prefers_more_compact_proxy_layout() {
+        let bin = rect_poly(100.0, 100.0);
+        let compact_poly = rect_poly(100.0, 60.0);
+        let split_poly = rect_poly(80.0, 75.0);
+        let parts = vec![
+            InflatedPartSpec {
+                id: "compact".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: compact_poly.clone(),
+                nominal_bbox_area: bbox_area(&compact_poly.outer),
+            },
+            InflatedPartSpec {
+                id: "split".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: split_poly.clone(),
+                nominal_bbox_area: bbox_area(&split_poly.outer),
+            },
+        ];
+
+        let compact_layout = vec![PlacedItem {
+            part_id: "compact".to_string(),
+            instance: 0,
+            sheet: 0,
+            x_mm: 0.0,
+            y_mm: 0.0,
+            rotation_deg: 0,
+        }];
+        let split_layout = vec![PlacedItem {
+            part_id: "split".to_string(),
+            instance: 0,
+            sheet: 0,
+            x_mm: 0.0,
+            y_mm: 0.0,
+            rotation_deg: 0,
+        }];
+
+        let compact_score = compute_remnant_proxy_totals(&compact_layout, &parts, &bin);
+        let split_score = compute_remnant_proxy_totals(&split_layout, &parts, &bin);
+
+        assert_eq!(compact_score.area_score_ppm, split_score.area_score_ppm);
+        assert!(compact_score.compactness_score_ppm > split_score.compactness_score_ppm);
+        assert!(compact_score.value_ppm > split_score.value_ppm);
+    }
+
+    #[test]
+    fn remnant_score_is_integer_and_deterministic() {
+        let bin = rect_poly(100.0, 100.0);
+        let part_poly = rect_poly(60.0, 35.0);
+        let parts = vec![InflatedPartSpec {
+            id: "p".to_string(),
+            quantity: 1,
+            allowed_rotations_deg: vec![0, 90],
+            inflated_polygon: part_poly.clone(),
+            nominal_bbox_area: bbox_area(&part_poly.outer),
+        }];
+        let layout = vec![PlacedItem {
+            part_id: "p".to_string(),
+            instance: 0,
+            sheet: 0,
+            x_mm: 7.0,
+            y_mm: 3.0,
+            rotation_deg: 90,
+        }];
+
+        let score_a = compute_remnant_proxy_totals(&layout, &parts, &bin);
+        let score_b = compute_remnant_proxy_totals(&layout, &parts, &bin);
+
+        assert_eq!(score_a, score_b);
+        assert!(score_a.value_ppm <= 1_000_000);
+        assert!(score_a.area_score_ppm <= 1_000_000);
+        assert!(score_a.compactness_score_ppm <= 1_000_000);
+        assert!(score_a.min_width_score_ppm <= 1_000_000);
     }
 }

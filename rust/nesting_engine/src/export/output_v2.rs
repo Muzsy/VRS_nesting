@@ -60,7 +60,11 @@ pub fn build_output_v2(
         "unplaced": unplaced_json,
         "objective": {
             "sheets_used": result.sheets_used,
-            "utilization_pct": utilization_pct
+            "utilization_pct": utilization_pct,
+            "remnant_value_ppm": result.remnant_value_ppm,
+            "remnant_area_score_ppm": result.remnant_area_score_ppm,
+            "remnant_compactness_score_ppm": result.remnant_compactness_score_ppm,
+            "remnant_min_width_score_ppm": result.remnant_min_width_score_ppm
         },
         "meta": {
             "determinism_hash": determinism_hash
@@ -154,6 +158,10 @@ mod tests {
                 reason: "PART_NEVER_FITS_SHEET".to_string(),
             }],
             sheets_used: 1,
+            remnant_value_ppm: 742_000,
+            remnant_area_score_ppm: 380_000,
+            remnant_compactness_score_ppm: 900_000,
+            remnant_min_width_score_ppm: 700_000,
         };
 
         let a = build_output_v2(42, 0.1, 12.0, &res);
@@ -200,5 +208,31 @@ mod tests {
             canonical, expected,
             "canonical hash-view JSON bytes changed unexpectedly"
         );
+    }
+
+    #[test]
+    fn remnant_objective_is_exposed_in_output_v2() {
+        let res = MultiSheetResult {
+            placed: vec![PlacedItem {
+                part_id: "a".to_string(),
+                instance: 0,
+                sheet: 0,
+                x_mm: 0.0,
+                y_mm: 0.0,
+                rotation_deg: 0,
+            }],
+            unplaced: vec![],
+            sheets_used: 1,
+            remnant_value_ppm: 742_000,
+            remnant_area_score_ppm: 380_000,
+            remnant_compactness_score_ppm: 900_000,
+            remnant_min_width_score_ppm: 700_000,
+        };
+
+        let out = build_output_v2(1, 0.0, 87.5, &res);
+        assert_eq!(out["objective"]["remnant_value_ppm"], 742_000);
+        assert_eq!(out["objective"]["remnant_area_score_ppm"], 380_000);
+        assert_eq!(out["objective"]["remnant_compactness_score_ppm"], 900_000);
+        assert_eq!(out["objective"]["remnant_min_width_score_ppm"], 700_000);
     }
 }

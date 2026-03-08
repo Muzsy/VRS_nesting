@@ -389,6 +389,24 @@ fn rotate_polygon(poly: &Polygon64, rotation_deg: i32) -> Polygon64 {
     }
 }
 
+pub(crate) fn rotated_inflated_aabb(inflated_polygon: &Polygon64, rotation_deg: i32) -> Aabb {
+    let rotated = rotate_polygon(inflated_polygon, rotation_deg);
+    aabb_from_polygon64(&rotated)
+}
+
+pub(crate) fn placed_extents_max_xy_i64(
+    inflated_polygon: &Polygon64,
+    rotation_deg: i32,
+    tx: i64,
+    ty: i64,
+) -> (i64, i64) {
+    let rotated_aabb = rotated_inflated_aabb(inflated_polygon, rotation_deg);
+    (
+        tx.saturating_add(rotated_aabb.max_x),
+        ty.saturating_add(rotated_aabb.max_y),
+    )
+}
+
 fn rotate_point(p: Point64, rotation_deg: i32) -> Point64 {
     let norm = normalize_deg(rotation_deg);
     match norm {

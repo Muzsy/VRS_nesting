@@ -285,6 +285,9 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   echo "[NEST] Targeted sa_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml sa_
 
+  echo "[NEST] Targeted remnant_ unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml remnant_
+
   echo "[NEST] Targeted order_policy evidence unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml order_policy_by_input_order_preserves_input_order
 
