@@ -11,35 +11,6 @@
 
 ## P2 — Közepes prioritás
 
-### KI-007 tolerance_policy integer-only allitas vs aktiv f64 geometriadontesek
-**Allapot:** IN_PROGRESS (nfp_concave_integer_union)  
-**Forras:** Doc-code drift audit, 2026-02-24  
-**Terulet:** `docs/nesting_engine/tolerance_policy.md`, `rust/nesting_engine/src/geometry/offset.rs`, `rust/nesting_engine/src/feasibility/narrow.rs`, `rust/nesting_engine/src/geometry/pipeline.rs`
-
-A policy szoveg szerint az egesz aritmetika integer-determinisztikus, es a
-floating-point kerekitesi nemdeterminizmus kizarhato. A kodban ugyanakkor aktiv
-f64 alapu geometriai predikatumok futnak (offset winding helper-ek, i_overlay
-FloatPredicate overlay containment/intersection, geo sweep-line self-intersection).
-Ez specifikacio-kod szintu eltérés.
-
-**Scope update (2026-02-25):** az `nfp_concave_integer_union` task csak a
-`rust/nesting_engine/src/nfp/concave.rs` stable baseline union float driftjet
-kezeli. Az `offset` / `feasibility` / `pipeline` tovabbi f64 kodutvonalai kulon
-feladatban maradnak.
-
-**Reszleges feloldas (2026-02-25, verify PASS):** a concave stable baseline
-union utvonalrol a `FloatOverlay` kikerult, integer-only `i_overlay::core::overlay::Overlay`
-utvonal aktiv, es a visszacsuszast kulon guard teszt (`nfp_no_float_overlay.rs`)
-vedi. A KI-007 tobbi, nem-concave resze tovabbra is nyitott.
-
-**Javasolt DoD:**  
-- A policy pontositsa, hogy hol kotelezo integer aritmetika es hol engedett f64.  
-- A feasibility/pipeline f64 reszekre explicit determinisztikus policy keruljon
-  (platform, epsilon/tolerancia, rendezesi szabalyok).  
-- Adjunk dedikalt regresszios tesztet a float erintett kodutvonalakra.
-
----
-
 ### KI-001 Irreguláris bin/stock nem megy át end-to-end a v2 solverig
 **Állapot:** OPEN  
 **Forrás:** Fázis 1 audit, 2026-02-23  
@@ -128,6 +99,15 @@ status/diagnosztika alapon tortenik. A dokumentacio emiatt pontatlan.
 ---
 
 ## Lezárt issue-k (RESOLVED)
+
+### KI-007 tolerance_policy integer-only allitas vs aktiv f64 geometriadontesek
+**Allapot:** RESOLVED (`tolerance_policy_f64_determinism_alignment`, 2026-03-08)  
+**Eredeti forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/tolerance_policy.md`, `docs/nesting_engine/architecture.md`, `rust/nesting_engine/src/geometry/{float_policy,offset,pipeline}.rs`, `rust/nesting_engine/src/feasibility/narrow.rs`
+
+Lezaras indoka: bevezetesre kerult az A/B/C determinism boundary modell, a geometry
+float-compare policy kozpontositva lett (`float_policy.rs`), es dedikalt regresszios
+tesztek + float-boundary determinism smoke kerult a gate-be.
 
 ### KI-006 `determinism_hash` canonicalization: normativ JCS spec vs jelenlegi implementacio
 **Allapot:** RESOLVED (`full_pipeline_determinism_hardening`, 2026-03-08)  

@@ -6,8 +6,10 @@ use i_overlay::{
         style::{LineJoin, OutlineStyle},
     },
 };
+use std::cmp::Ordering;
 
 use crate::geometry::{
+    float_policy::{AREA_EPS_MM2, GEOM_EPS_MM, cmp_eps, eq_eps, is_near_zero},
     scale::{i64_to_mm, mm_to_i64},
     types::{PartGeometry, Point64, Polygon64},
 };
@@ -49,7 +51,8 @@ fn signed_area_2d(pts: &[MmPt]) -> f64 {
 /// Ensure points are in counter-clockwise (CCW) order.
 /// i_overlay requires outer boundaries to be CCW.
 fn ensure_ccw(mut pts: Vec<MmPt>) -> Vec<MmPt> {
-    if signed_area_2d(&pts) < 0.0 {
+    let area = signed_area_2d(&pts);
+    if !is_near_zero(area, AREA_EPS_MM2) && cmp_eps(area, 0.0, AREA_EPS_MM2) == Ordering::Less {
         pts.reverse();
     }
     pts
@@ -58,10 +61,65 @@ fn ensure_ccw(mut pts: Vec<MmPt>) -> Vec<MmPt> {
 /// Ensure points are in clockwise (CW) order.
 /// i_overlay requires holes to be CW.
 fn ensure_cw(mut pts: Vec<MmPt>) -> Vec<MmPt> {
-    if signed_area_2d(&pts) > 0.0 {
+    let area = signed_area_2d(&pts);
+    if !is_near_zero(area, AREA_EPS_MM2) && cmp_eps(area, 0.0, AREA_EPS_MM2) == Ordering::Greater {
         pts.reverse();
     }
     pts
+}
+
+fn point_cmp(a: &MmPt, b: &MmPt) -> Ordering {
+    let x_cmp = cmp_eps(a[0], b[0], GEOM_EPS_MM);
+    if x_cmp != Ordering::Equal {
+        return x_cmp;
+    }
+    cmp_eps(a[1], b[1], GEOM_EPS_MM)
+}
+
+fn canonicalize_ring_start(mut pts: Vec<MmPt>) -> Vec<MmPt> {
+    if pts.len() < 2 {
+        return pts;
+    }
+    if eq_eps(pts[0][0], pts[pts.len() - 1][0], GEOM_EPS_MM)
+        && eq_eps(pts[0][1], pts[pts.len() - 1][1], GEOM_EPS_MM)
+    {
+        pts.pop();
+    }
+    if pts.is_empty() {
+        return pts;
+    }
+    let mut min_idx = 0usize;
+    for idx in 1..pts.len() {
+        if point_cmp(&pts[idx], &pts[min_idx]) == Ordering::Less {
+            min_idx = idx;
+        }
+    }
+    pts.rotate_left(min_idx);
+    pts
+}
+
+fn ring_key_scaled(path: &[MmPt]) -> Vec<(i64, i64)> {
+    path.iter()
+        .map(|pt| (mm_to_i64(pt[0]), mm_to_i64(pt[1])))
+        .collect()
+}
+
+fn canonicalize_offset_shape(mut shape: MmShape) -> MmShape {
+    if shape.is_empty() {
+        return shape;
+    }
+
+    let outer = canonicalize_ring_start(ensure_ccw(shape.remove(0)));
+    let mut holes: Vec<Vec<MmPt>> = shape
+        .into_iter()
+        .map(|hole| canonicalize_ring_start(ensure_cw(hole)))
+        .collect();
+    holes.sort_by(|a, b| ring_key_scaled(a).cmp(&ring_key_scaled(b)));
+
+    let mut out = Vec::with_capacity(1 + holes.len());
+    out.push(outer);
+    out.extend(holes);
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +160,7 @@ fn do_offset(shape: MmShape, delta_mm: f64) -> Result<MmShape, OffsetError> {
     result
         .into_iter()
         .next()
+        .map(canonicalize_offset_shape)
         .ok_or_else(|| OffsetError::ClipperError("outline produced empty result".into()))
 }
 
@@ -294,5 +353,33 @@ mod tests {
             result_b.polygon.outer,
             "inflate_part is not deterministic: two identical calls produced different outer contours"
         );
+    }
+
+    #[test]
+    fn offset_determinism_canonicalizes_hole_order() {
+        let hole_a = vec![[40.0, 40.0], [50.0, 40.0], [50.0, 50.0], [40.0, 50.0]];
+        let hole_b = vec![[10.0, 10.0], [20.0, 10.0], [20.0, 20.0], [10.0, 20.0]];
+        let shape_a = vec![
+            vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
+            hole_a.clone(),
+            hole_b.clone(),
+        ];
+        let shape_b = vec![
+            vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
+            hole_b,
+            hole_a,
+        ];
+
+        let canonical_a = canonicalize_offset_shape(shape_a);
+        let canonical_b = canonicalize_offset_shape(shape_b);
+        assert_eq!(canonical_a, canonical_b);
+    }
+
+    #[test]
+    fn offset_determinism_near_zero_area_keeps_winding_stable() {
+        let ring = vec![[0.0, 0.0], [1e-10, 0.0], [0.0, 1e-10]];
+        let ccw_once = ensure_ccw(ring.clone());
+        let ccw_twice = ensure_ccw(ring);
+        assert_eq!(ccw_once, ccw_twice);
     }
 }

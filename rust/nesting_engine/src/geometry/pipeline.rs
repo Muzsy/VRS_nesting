@@ -4,6 +4,7 @@ use geo::{
 };
 
 use crate::geometry::{
+    float_policy::{GEOM_EPS_MM, cmp_eps, eq_eps},
     offset::{deflate_hole, inflate_outer, inflate_part, OffsetError},
     scale::{i64_to_mm, mm_to_i64},
     types::{PartGeometry, Point64, Polygon64},
@@ -12,6 +13,7 @@ use crate::io::pipeline_io::{
     Diagnostic, PartRequest, PartResponse, PipelineRequest, PipelineResponse, StockRequest,
     StockResponse,
 };
+use std::cmp::Ordering;
 
 const STATUS_OK: &str = "ok";
 const STATUS_HOLE_COLLAPSED: &str = "hole_collapsed";
@@ -280,7 +282,7 @@ fn inflate_stock_hole_obstacle(
             "stock hole obstacle offset produced empty outer".to_string(),
         ));
     }
-    Ok(points_to_mm_pairs(&expanded.outer))
+    Ok(canonicalize_mm_ring_start(points_to_mm_pairs(&expanded.outer)))
 }
 
 fn handle_hole_collapsed(
@@ -428,12 +430,66 @@ fn hole_bbox_mm(hole: &[[f64; 2]]) -> Option<[f64; 4]> {
     let mut max_x = first[0];
     let mut max_y = first[1];
     for p in &hole[1..] {
-        min_x = min_x.min(p[0]);
-        min_y = min_y.min(p[1]);
-        max_x = max_x.max(p[0]);
-        max_y = max_y.max(p[1]);
+        min_x = min_with_policy(min_x, p[0]);
+        min_y = min_with_policy(min_y, p[1]);
+        max_x = max_with_policy(max_x, p[0]);
+        max_y = max_with_policy(max_y, p[1]);
     }
     Some([min_x, min_y, max_x, max_y])
+}
+
+fn min_with_policy(current: f64, candidate: f64) -> f64 {
+    match cmp_eps(candidate, current, GEOM_EPS_MM) {
+        Ordering::Less => candidate,
+        Ordering::Equal => {
+            if candidate.total_cmp(&current) == Ordering::Less {
+                candidate
+            } else {
+                current
+            }
+        }
+        Ordering::Greater => current,
+    }
+}
+
+fn max_with_policy(current: f64, candidate: f64) -> f64 {
+    match cmp_eps(candidate, current, GEOM_EPS_MM) {
+        Ordering::Greater => candidate,
+        Ordering::Equal => {
+            if candidate.total_cmp(&current) == Ordering::Greater {
+                candidate
+            } else {
+                current
+            }
+        }
+        Ordering::Less => current,
+    }
+}
+
+fn canonicalize_mm_ring_start(mut ring: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+    if ring.len() < 2 {
+        return ring;
+    }
+    if eq_eps(ring[0][0], ring[ring.len() - 1][0], GEOM_EPS_MM)
+        && eq_eps(ring[0][1], ring[ring.len() - 1][1], GEOM_EPS_MM)
+    {
+        ring.pop();
+    }
+    if ring.is_empty() {
+        return ring;
+    }
+    let mut min_idx = 0usize;
+    for idx in 1..ring.len() {
+        let ax = mm_to_i64(ring[idx][0]);
+        let ay = mm_to_i64(ring[idx][1]);
+        let bx = mm_to_i64(ring[min_idx][0]);
+        let by = mm_to_i64(ring[min_idx][1]);
+        if (ax, ay) < (bx, by) {
+            min_idx = idx;
+        }
+    }
+    ring.rotate_left(min_idx);
+    ring
 }
 
 fn offset_error_detail(err: &OffsetError) -> String {
@@ -540,10 +596,10 @@ mod tests {
         let mut max_x = points[0][0];
         let mut max_y = points[0][1];
         for p in &points[1..] {
-            min_x = min_x.min(p[0]);
-            min_y = min_y.min(p[1]);
-            max_x = max_x.max(p[0]);
-            max_y = max_y.max(p[1]);
+            min_x = min_with_policy(min_x, p[0]);
+            min_y = min_with_policy(min_y, p[1]);
+            max_x = max_with_policy(max_x, p[0]);
+            max_y = max_with_policy(max_y, p[1]);
         }
         (min_x, min_y, max_x, max_y)
     }
@@ -699,6 +755,57 @@ mod tests {
             serialized_a, serialized_b,
             "pipeline output is not deterministic"
         );
+    }
+
+    #[test]
+    fn pipeline_float_policy_hole_bbox_near_equal_bounds_are_stable() {
+        let hole = vec![
+            [10.0, 10.0],
+            [20.0, 10.0],
+            [20.0 + 5e-10, 20.0],
+            [10.0, 20.0],
+        ];
+        let bbox_a = hole_bbox_mm(&hole).expect("bbox must exist");
+        let bbox_b = hole_bbox_mm(&hole).expect("bbox must exist");
+        assert_eq!(bbox_a, bbox_b);
+    }
+
+    #[test]
+    fn pipeline_float_policy_stock_hole_obstacle_ring_start_is_canonical() {
+        let hole = vec![[10.0, 10.0], [30.0, 10.0], [30.0, 30.0], [10.0, 30.0]];
+        let expanded = inflate_stock_hole_obstacle(&hole, 1.0).expect("stock hole inflate must work");
+        let first = expanded.first().expect("expanded ring must not be empty");
+        let min_pt = expanded
+            .iter()
+            .min_by_key(|p| (mm_to_i64(p[0]), mm_to_i64(p[1])))
+            .expect("expanded ring must have min point");
+        assert_eq!(mm_to_i64(first[0]), mm_to_i64(min_pt[0]));
+        assert_eq!(mm_to_i64(first[1]), mm_to_i64(min_pt[1]));
+    }
+
+    #[test]
+    fn pipeline_float_policy_repeated_request_is_byte_identical() {
+        let req = PipelineRequest {
+            version: "pipeline_v1".to_string(),
+            kerf_mm: 0.2,
+            margin_mm: 5.0,
+            spacing_mm: Some(0.6),
+            parts: vec![PartRequest {
+                id: "near_hole".to_string(),
+                outer_points_mm: vec![[0.0, 0.0], [60.0, 0.0], [60.0, 60.0], [0.0, 60.0]],
+                holes_points_mm: vec![vec![
+                    [19.9999996, 20.0],
+                    [40.0000004, 20.0],
+                    [40.0000004, 40.0],
+                    [19.9999996, 40.0],
+                ]],
+            }],
+            stocks: Vec::new(),
+        };
+
+        let out_a = serde_json::to_string(&run_inflate_pipeline(req.clone())).expect("serialize A");
+        let out_b = serde_json::to_string(&run_inflate_pipeline(req)).expect("serialize B");
+        assert_eq!(out_a, out_b);
     }
 
     #[test]

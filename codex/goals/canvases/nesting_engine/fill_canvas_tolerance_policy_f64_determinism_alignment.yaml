@@ -1,0 +1,143 @@
+steps:
+  - name: "Repo szabalyok + canvas veglegesitese"
+    description: >
+      Olvasd el: AGENTS.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md,
+      docs/qa/testing_guidelines.md, valamint a relevans tolerance/architecture/known-issues fajlokat.
+      Veglegesitsd a canvas-t a jelenlegi repoallapothoz: ez stabilizacios, policy-alignment task,
+      nem teljes integer-only geometriai ujrairas.
+    outputs:
+      - "canvases/nesting_engine/tolerance_policy_f64_determinism_alignment.md"
+
+  - name: "Task runner prompt letrehozasa"
+    description: >
+      Hozd letre a task-specifikus futtato promptot, amely kotelezove teszi a YAML step-sorrend
+      koveteset, outputs-lista betartasat, minimal-invaziv valtoztatast es a verify.sh vegfutast.
+    outputs:
+      - "codex/prompts/nesting_engine/tolerance_policy_f64_determinism_alignment/run.md"
+
+  - name: "Float policy helper modul bevezetese"
+    description: >
+      Hozd letre a kozos float policy helper modult:
+      - rust/nesting_engine/src/geometry/float_policy.rs
+      Es vezesd be a geometry modul exportba:
+      - rust/nesting_engine/src/geometry/mod.rs
+
+      Minimum API:
+      - is_near_zero
+      - eq_eps
+      - cmp_eps
+
+      Kovetelmeny:
+      - dokumentalt, kozponti epsilon policy;
+      - ne maradjon ad hoc epsilon-logika a celzott modulok kritikus pontjain.
+    outputs:
+      - "rust/nesting_engine/src/geometry/float_policy.rs"
+      - "rust/nesting_engine/src/geometry/mod.rs"
+
+  - name: "offset.rs determinism hardening"
+    description: >
+      Modositsd: rust/nesting_engine/src/geometry/offset.rs
+
+      Celozd meg:
+      - float-osszehasonlitasok kozpontositasa a float_policy helperre,
+      - winding / near-zero branch-ek explicit policy-hez kotese,
+      - ahol szukseges, stabil ordering/canonicalizalas a kimeneti ring-ekre.
+
+      Adj hozza targeted evidencia teszteket `offset_determinism_` prefixszel.
+    outputs:
+      - "rust/nesting_engine/src/geometry/offset.rs"
+
+  - name: "pipeline.rs float boundary hardening"
+    description: >
+      Modositsd: rust/nesting_engine/src/geometry/pipeline.rs
+
+      Celozd meg:
+      - float-erintett dontesi hatarok centralis policy-hez kotese,
+      - stabil ordering/canonicalizalas ott, ahol tobb egyenerteku eredmeny lehet,
+      - determinisztikus viselkedes dokumentalt epsilon/tie-break mellett.
+
+      Adj hozza targeted evidencia teszteket `pipeline_float_policy_` prefixszel.
+    outputs:
+      - "rust/nesting_engine/src/geometry/pipeline.rs"
+
+  - name: "narrow.rs policy evidence tesztek"
+    description: >
+      Modositsd: rust/nesting_engine/src/feasibility/narrow.rs
+
+      Celozd meg:
+      - `narrow_float_policy_` prefixu evidencia tesztek hozzaadasa,
+      - touching policy valtozatlan fenntartasa (`touching = infeasible`).
+    outputs:
+      - "rust/nesting_engine/src/feasibility/narrow.rs"
+
+  - name: "Float-boundary fixture + smoke"
+    description: >
+      Hozd letre:
+      - poc/nesting_engine/float_policy_near_touching_fixture_v2.json
+      - scripts/smoke_nesting_engine_float_policy_determinism.sh
+
+      Kovetelmenyek:
+      - fix fixture near-touching / near-boundary jellegu geometriaval,
+      - smoke futas default RUNS=10,
+      - teljes output byte-azonossag ellenorzes a meglvo determinism smoke-ra tamaszkodva.
+    outputs:
+      - "poc/nesting_engine/float_policy_near_touching_fixture_v2.json"
+      - "scripts/smoke_nesting_engine_float_policy_determinism.sh"
+
+  - name: "Repo gate bovitese targeted float-policy ellenorzessel"
+    description: >
+      Modositsd: scripts/check.sh
+
+      Adj hozza minimal-invazivan:
+      - cargo test --manifest-path rust/nesting_engine/Cargo.toml offset_determinism_
+      - cargo test --manifest-path rust/nesting_engine/Cargo.toml pipeline_float_policy_
+      - cargo test --manifest-path rust/nesting_engine/Cargo.toml narrow_float_policy_
+      - ./scripts/smoke_nesting_engine_float_policy_determinism.sh
+
+      Fontos:
+      - a meglvo sorrendet ne boritsd fel,
+      - a jelenlegi smoke-ok maradjanak meg.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Dokumentacio es KI-007 allapot rendezese"
+    description: >
+      Modositsd:
+      - docs/nesting_engine/tolerance_policy.md
+      - docs/nesting_engine/architecture.md
+      - docs/known_issues/nesting_engine_known_issues.md
+
+      Kovetelmenyek:
+      - A/B/C determinism boundary modell explicit legyen,
+      - ne allitson tobbet a dokumentacio, mint amit a kod tenylegesen garantal,
+      - KI-007 ne maradjon tul-tag gyujto issue statuszban:
+        - vagy RESOLVED erre a taskra,
+        - vagy szukitett uj issue(ke)re bontott allapot.
+    outputs:
+      - "docs/nesting_engine/tolerance_policy.md"
+      - "docs/nesting_engine/architecture.md"
+      - "docs/known_issues/nesting_engine_known_issues.md"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Keszitsd el:
+      - codex/codex_checklist/nesting_engine/tolerance_policy_f64_determinism_alignment.md
+      - codex/reports/nesting_engine/tolerance_policy_f64_determinism_alignment.md
+
+      Kovetelmenyek:
+      - DoD -> Evidence Matrix
+      - AUTO_VERIFY marker blokk
+      - reportban szerepeljenek a float-policy targeted tesztek es a dedikalt smoke futas
+      - report mondja ki expliciten: stabilizacios/policy alignment task, nem teljes integer-only rewrite.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/tolerance_policy_f64_determinism_alignment.md"
+      - "codex/reports/nesting_engine/tolerance_policy_f64_determinism_alignment.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/tolerance_policy_f64_determinism_alignment.md
+      Az AUTO_VERIFY blokkot tilos kezzel szerkeszteni.
+    outputs:
+      - "codex/reports/nesting_engine/tolerance_policy_f64_determinism_alignment.md"
+      - "codex/reports/nesting_engine/tolerance_policy_f64_determinism_alignment.verify.log"

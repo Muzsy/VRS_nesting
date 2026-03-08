@@ -95,6 +95,7 @@ chmod +x \
   scripts/smoke_nfp_placer_stats_and_perf_gate.py \
   scripts/smoke_part_in_part_pipeline.py \
   scripts/smoke_nesting_engine_determinism.sh \
+  scripts/smoke_nesting_engine_float_policy_determinism.sh \
   scripts/smoke_svg_export.py || true
 
 # --- Sparrow binary resolve/build ---
@@ -293,6 +294,15 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
 
   echo "[NEST] Targeted touching_policy_ evidence unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml touching_policy_
+
+  echo "[NEST] Targeted offset_determinism_ unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml offset_determinism_
+
+  echo "[NEST] Targeted pipeline_float_policy_ unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml pipeline_float_policy_
+
+  echo "[NEST] Targeted narrow_float_policy_ unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml narrow_float_policy_
 
   echo "[NEST] Targeted order_policy evidence unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml order_policy_by_input_order_preserves_input_order
@@ -605,6 +615,9 @@ if isinstance(payload, dict):
 dst.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 PY
   RUNS=10 INPUT_JSON="$NEST_DET_INPUT" ./scripts/smoke_nesting_engine_determinism.sh
+
+  echo "[NEST] Float-boundary determinism smoke"
+  RUNS=10 ./scripts/smoke_nesting_engine_float_policy_determinism.sh
 fi
 
 echo "[DONE] smoketest OK"

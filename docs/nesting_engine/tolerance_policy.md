@@ -23,7 +23,7 @@ Minden koordináta `i64` típusú egész számként tárolódik:
 | Tipikus táblaméret | ≤ 4 000 mm → ~bőven belül esik |
 
 **Miért `i64`?**
-Az egész aritmetika determinisztikus és hordozható: ugyanazon bemenetre mindig ugyanazt az eredményt adja, platform- és fordítóverziótól függetlenül. A floating-point kerekítés okozta nemdeterminizmus kizárt.
+Az egész aritmetika determinisztikus és hordozható: ugyanazon bemenetre mindig ugyanazt az eredményt adja, platform- és fordítóverziótól függetlenül. A placement-es export szerzodes magja integer-determinista.
 
 **Miért 1 000 000?**
 1 µm pontosság elegendő CNC-alapú lemezmegmunkáláshoz (ahol a gyártási tolerancia jellemzően 50–200 µm). A 6 tizedesjegy elegendő tér a Clipper/offset számításokhoz, és az `i64` tartományát nem meríti ki.
@@ -52,9 +52,43 @@ round_trip_error = |i64_to_mm(mm_to_i64(x)) - x| < 1e-6  (garantált)
 
 ---
 
-## 2. Touching Policy
+## 2. Determinizmus boundary modell (A/B/C)
 
-### 2.1 TOUCH_TOL konstans
+### 2.1 A-zóna — kötelező integer-only
+
+Ezeken a pontokon a szerződés kötelezően integer-determinista:
+
+- placement acceptance / rejection döntések
+- ordering / ranking (tie-break)
+- determinism hash-view előállítás
+- canonical JSON hash contract
+
+### 2.2 B-zóna — float-assisted, de policy-vezérelt
+
+Az alábbi útvonalakon maradhat f64, de csak explicit policy mellett:
+
+- geometriai előfeldolgozás (`offset`, `simplify`, `self-intersection` jellegű predikátumok)
+- külső könyvtár által megkövetelt float alapú helper számítások
+
+Kötelező szabály:
+
+- központi epsilon helper használat (`src/geometry/float_policy.rs`)
+- explicit tie-break / ordering ott, ahol több ekvivalens eredmény lehetséges
+- visszavezetés stabil integer határra (mm<->i64 konverzió)
+
+### 2.3 C-zóna — tiltott mintázatok
+
+Tiltott:
+
+- ad hoc, szétszórt epsilon branch-ek
+- nem dokumentált implicit float ordering
+- raw float összehasonlítás döntési forrásként policy-réteg nélkül
+
+---
+
+## 3. Touching Policy
+
+### 3.1 TOUCH_TOL konstans
 
 ```
 TOUCH_TOL = 1i64   (= 1 µm)
@@ -62,7 +96,7 @@ TOUCH_TOL = 1i64   (= 1 µm)
 
 Két polygon **érintkezőnek** (touching) minősül, ha bármely pontjaik közötti távolság ≤ TOUCH_TOL unit = 1 µm.
 
-### 2.2 Touching = infeasible (konzervatív)
+### 3.2 Touching = infeasible (konzervatív)
 
 Az érintkezés **nem engedélyezett elhelyezés**: az alkatrészek közt legalább 1 µm résnek kell maradnia. Ez a **konzervatív oldal** — gyártási biztonság:
 
@@ -83,7 +117,7 @@ Evidence tesztek:
 
 ---
 
-## 3. Kontúr-irány Policy
+## 4. Kontúr-irány Policy
 
 Az `i_overlay` offset API az alábbi kontúr-irányokat várja el:
 
@@ -99,7 +133,7 @@ Az `i_overlay` csendesen rossz eredményt adhat helytelen kontúr-irány esetén
 
 ---
 
-## 4. Simplify Policy (inflate_part előfeltétele)
+## 5. Simplify Policy (inflate_part előfeltétele)
 
 Minden `inflate_part()` hívás előtt kötelező a `simplify_shape(FillRule::NonZero)` előfeldolgozás:
 
@@ -118,7 +152,7 @@ A `simplify_shape` eltávolítja az önmetsző éleket és degenerált csúcsoka
 
 ---
 
-## 5. OffsetError típusok és pipeline kezelés
+## 6. OffsetError típusok és pipeline kezelés
 
 Az `offset.rs` valós `OffsetError` enumja jelenleg:
 
@@ -127,7 +161,7 @@ Az `offset.rs` valós `OffsetError` enumja jelenleg:
 | `HoleCollapsed { hole_index }` | Egy lyuk offset közben eltűnik | `hole_collapsed` státusz + HOLE_COLLAPSED diagnosztika; a nesting-geometria outer-only fallback (holes=`[]`) |
 | `ClipperError(String)` | Az `i_overlay` üres eredményt ad vagy belső hiba | `error` státusz (fatal a part elhelyezésére) |
 
-### 5.1 HOLE_COLLAPSED policy (nem fatal a teljes pipeline-ra)
+### 6.1 HOLE_COLLAPSED policy (nem fatal a teljes pipeline-ra)
 
 HOLE_COLLAPSED esetben a policy célja, hogy az export/gyártási információ megmaradjon, de cavity/part-in-part ne legyen:
 
@@ -139,14 +173,14 @@ HOLE_COLLAPSED esetben a policy célja, hogy az export/gyártási információ m
 
 Ennek megfelelően a `nest` entrypoint defense-in-depth módon `hole_collapsed` státusznál akkor is `holes=[]` polygon-t ad a placernek, ha regresszió miatt a pipeline válaszban lyuk visszakerülne.
 
-### 5.2 Self-intersection policy
+### 6.2 Self-intersection policy
 
 A self-intersection jelenleg nem `OffsetError` enum variáns, hanem pipeline szintű detektált állapot.
 `self_intersect` státusz esetén az adott part/stock nem használható elhelyezésre (fatal az érintett elemre).
 
 ---
 
-## 6. DXF curve polygonization policy (Python importer)
+## 7. DXF curve polygonization policy (Python importer)
 
 **Scope:** `vrs_nesting/dxf/importer.py` + `vrs_nesting/geometry/polygonize.py`
 
@@ -164,7 +198,7 @@ Alkalmazási szabály:
 - SPLINE/ELLIPSE flattening (`curve_entity.flattening`) ehhez a toleranciához igazított `flatten_tol` értéket használ.
 - Ezzel az ARC és a SPLINE/ELLIPSE útvonal ugyanarra a curve policy-ra van zárva.
 
-## 7. Endpoint chaining epsilon policy (külön fogalom)
+## 8. Endpoint chaining epsilon policy (külön fogalom)
 
 `CHAIN_ENDPOINT_EPSILON_MM = 0.2` a szegmensláncolási illesztési küszöb:
 
@@ -174,7 +208,7 @@ Alkalmazási szabály:
 Fontos: a flatten tolerance és a chain endpoint epsilon jelenleg numerikusan azonos,
 de külön policy-fogalmak, külön konstansként kell kezelni őket.
 
-## 8. Part-in-part cavity policy (F3-2)
+## 9. Part-in-part cavity policy (F3-2)
 
 **Scope:** `rust/nesting_engine/src/placement/blf.rs`
 
@@ -193,9 +227,10 @@ Policy-korlátok:
 - Sikertelen cavity-próbálás után a normál globális BLF grid-scan fut tovább.
 - Hole-aware NFP/CFR ebben a körben továbbra is out-of-scope.
 
-## 9. Kapcsolódások
+## 10. Kapcsolódások
 
 - `src/geometry/scale.rs` — SCALE, TOUCH_TOL, mm_to_i64(), i64_to_mm()
+- `src/geometry/float_policy.rs` — cmp_eps(), eq_eps(), is_near_zero(), epsilon konstansok
 - `src/geometry/offset.rs` — inflate_outer(), deflate_hole(), inflate_part(), OffsetError
 - `src/geometry/types.rs` — Point64, Polygon64, PartGeometry
 - `src/placement/blf.rs` — cavity candidate generation + `can_place()` validation

@@ -5,7 +5,7 @@
 The crate is organized so nominal geometry handling and inflated feasibility logic stay separated.
 
 - `geometry/`
-  - Current: SCALE conversions, polygon types, offset operations, and the nominal->inflated pipeline orchestrator.
+  - Current: SCALE conversions, polygon types, float-policy helpers, offset operations, and the nominal->inflated pipeline orchestrator.
   - Responsibility: pure geometry transforms (`mm <-> i64`, `inflate_part`, pipeline diagnostics).
 - `nesting/` (planned)
   - Responsibility: high-level nesting flow orchestration across candidate generation and feasibility checks.
@@ -18,7 +18,31 @@ The crate is organized so nominal geometry handling and inflated feasibility log
 - `export/` (planned)
   - Responsibility: output generation from nominal geometry (DXF/export-facing representation).
 
-## 2. Non-negotiable nominal vs inflated rule
+## 2. Determinism boundary model
+
+The crate uses a zone model to avoid doc-code drift around f64 usage.
+
+- A-zone (integer-only required):
+  - placement decisions (accept/reject)
+  - ranking/tie-break objective
+  - determinism hash-view and canonical JSON contract
+
+- B-zone (float-assisted geometry, policy constrained):
+  - offset/simplify/self-intersection helper paths in `geometry/*`
+  - only with centralized epsilon + deterministic ordering policy
+
+- C-zone (forbidden):
+  - ad hoc epsilon branches
+  - undocumented implicit float ordering in decision points
+  - raw float compare as contract boundary without policy helper
+
+Implementation anchors:
+
+- `rust/nesting_engine/src/geometry/float_policy.rs`
+- `rust/nesting_engine/src/geometry/offset.rs`
+- `rust/nesting_engine/src/geometry/pipeline.rs`
+
+## 3. Non-negotiable nominal vs inflated rule
 
 ```
 A solver feasibility engine CSAK inflated geometriaval dolgozik.
@@ -30,7 +54,7 @@ Implementation implication:
 - The `inflate-parts` pipeline exists only to produce feasibility geometry.
 - Nominal points are preserved for downstream export responsibilities.
 
-## 3. Inflate pipeline flow
+## 4. Inflate pipeline flow
 
 ```text
 Python DXF importer (nominal points)
@@ -42,7 +66,7 @@ Python DXF importer (nominal points)
 
 The pipeline does not mutate export-side nominal definitions.
 
-## 4. Rotation determinism policy (placement)
+## 5. Rotation determinism policy (placement)
 
 Placement rotation in `rust/nesting_engine/src/placement/blf.rs` must be platform-stable:
 
@@ -56,7 +80,7 @@ Placement rotation in `rust/nesting_engine/src/placement/blf.rs` must be platfor
 
 This keeps the placement output byte-stable across CPU architectures (x86_64, arm64) for identical input.
 
-## 5. DXF curve polygonization policy (nominal truth-layer prep)
+## 6. DXF curve polygonization policy (nominal truth-layer prep)
 
 The Python DXF importer is the nominal geometry truth-layer input for downstream solver/export flows.
 Curve handling must stay policy-locked and deterministic across ARC/SPLINE/ELLIPSE entities.
@@ -85,7 +109,7 @@ Fixture coverage policy:
 - Negative self-intersecting curve fixtures must fail deterministically with importer error code
   `DXF_INVALID_RING`.
 
-## 6. Search layer (F2-4 Simulated Annealing)
+## 7. Search layer (F2-4 Simulated Annealing)
 
 F2-4 introduces an optional deterministic search layer on top of the existing constructive placers.
 
@@ -161,7 +185,7 @@ Search result contract:
 - The search does not perform an extra final constructive rerun after the best state is chosen.
 - This is required so the global evaluation budget remains hard-bounded by the configured SA limits.
 
-## 7. Timeout-Bound Determinism Policy
+## 8. Timeout-Bound Determinism Policy
 
 The placement flow supports two stop modes:
 
@@ -203,7 +227,7 @@ Policy alignment:
 - Determinism guarantees are strict for non-timeout-bound runs.
 - Timeout-bound runs are best-effort and should be labeled explicitly in benchmark/report tooling.
 
-## 8. Part-in-part pipeline policy (F3-2)
+## 9. Part-in-part pipeline policy (F3-2)
 
 F3-2 introduces an opt-in cavity-aware extension in the BLF placer only.
 
@@ -224,7 +248,7 @@ Cavity source and validation rules:
 - Every cavity candidate is validated through the existing `can_place()` narrow-phase.
 - If no cavity candidate is feasible, the original global BLF grid-scan path runs unchanged.
 
-## 9. References
+## 10. References
 
 - `docs/nesting_engine/tolerance_policy.md` (SCALE, contour winding, touching policy)
 - `docs/nesting_engine/json_canonicalization.md` (determinism reference)

@@ -440,6 +440,53 @@ mod tests {
     }
 
     #[test]
+    fn narrow_float_policy_mm_rounding_near_touching_is_deterministic() {
+        let bin = rect(0.0, 0.0, 100.0, 100.0);
+        let candidate = rect(10.0, 10.0, 10.0, 10.0);
+
+        let touching_after_round_poly = rect(20.00000049, 10.0, 10.0, 10.0);
+        let touching_after_round = PlacedPart {
+            aabb: aabb_from_polygon64(&touching_after_round_poly),
+            inflated_polygon: touching_after_round_poly,
+        };
+        let mut placed_touch = PlacedIndex::new();
+        placed_touch.insert(touching_after_round);
+        assert!(
+            !can_place(&candidate, &bin, &placed_touch),
+            "rounding-near touching candidate must stay infeasible"
+        );
+
+        let one_micron_gap_poly = rect(20.00000051, 10.0, 10.0, 10.0);
+        let one_micron_gap = PlacedPart {
+            aabb: aabb_from_polygon64(&one_micron_gap_poly),
+            inflated_polygon: one_micron_gap_poly,
+        };
+        let mut placed_gap = PlacedIndex::new();
+        placed_gap.insert(one_micron_gap);
+        assert!(
+            can_place(&candidate, &bin, &placed_gap),
+            "1um gap after scaling should remain feasible"
+        );
+    }
+
+    #[test]
+    fn narrow_float_policy_identical_input_is_stable() {
+        let bin = rect(0.0, 0.0, 100.0, 100.0);
+        let candidate = rect(10.0, 10.0, 10.0, 10.0);
+        let other_poly = rect(20.00000049, 10.0, 10.0, 10.0);
+        let other = PlacedPart {
+            aabb: aabb_from_polygon64(&other_poly),
+            inflated_polygon: other_poly,
+        };
+        let mut placed = PlacedIndex::new();
+        placed.insert(other);
+
+        let first = can_place(&candidate, &bin, &placed);
+        let second = can_place(&candidate, &bin, &placed);
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn can_place_is_deterministic_for_identical_aabb_ties() {
         let bin = rect(0.0, 0.0, 100.0, 100.0);
         let candidate = rect(32.0, 32.0, 2.0, 2.0);
