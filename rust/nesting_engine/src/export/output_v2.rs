@@ -126,6 +126,7 @@ fn hash_view_v1_canonical_json_bytes(placements: &[PlacedItem]) -> String {
         Value::String("nesting_engine.hash_view.v1".to_string()),
     );
 
+    // Repo-native canonical bytes contract: compact JSON + key-sorted objects.
     serde_json::to_string(&hash_view).unwrap_or_else(|_| "{}".to_string())
 }
 
@@ -174,7 +175,40 @@ mod tests {
     }
 
     #[test]
-    fn hash_view_v1_canonical_json_is_byte_identical() {
+    fn determinism_full_output_json_is_byte_identical() {
+        let res = MultiSheetResult {
+            placed: vec![PlacedItem {
+                part_id: "a".to_string(),
+                instance: 0,
+                sheet: 0,
+                x_mm: 1.0,
+                y_mm: 2.0,
+                rotation_deg: 0,
+            }],
+            unplaced: vec![UnplacedItem {
+                part_id: "b".to_string(),
+                instance: 0,
+                reason: "PART_NEVER_FITS_SHEET".to_string(),
+            }],
+            sheets_used: 1,
+            remnant_value_ppm: 742_000,
+            remnant_area_score_ppm: 380_000,
+            remnant_compactness_score_ppm: 900_000,
+            remnant_min_width_score_ppm: 700_000,
+        };
+
+        let first = serde_json::to_string(&build_output_v2(42, 0.1, 12.0, &res))
+            .expect("first output JSON must serialize");
+        let second = serde_json::to_string(&build_output_v2(42, 0.1, 12.0, &res))
+            .expect("second output JSON must serialize");
+        assert_eq!(
+            first, second,
+            "full output JSON bytes changed for identical input"
+        );
+    }
+
+    #[test]
+    fn determinism_hash_view_v1_canonical_json_is_byte_identical() {
         let placements = vec![
             PlacedItem {
                 part_id: "b".to_string(),

@@ -381,6 +381,20 @@ mod tests {
     }
 
     #[test]
+    fn touching_policy_part_part_touching_is_infeasible() {
+        let bin = rect(0.0, 0.0, 100.0, 100.0);
+        let candidate = rect(10.0, 10.0, 10.0, 10.0);
+        let other_poly = rect(20.0, 10.0, 10.0, 10.0);
+        let other = PlacedPart {
+            aabb: aabb_from_polygon64(&other_poly),
+            inflated_polygon: other_poly,
+        };
+        let mut placed = PlacedIndex::new();
+        placed.insert(other);
+        assert!(!can_place(&candidate, &bin, &placed));
+    }
+
+    #[test]
     fn broad_phase_query_result_is_deterministic_after_sort() {
         let bin = rect(0.0, 0.0, 100.0, 100.0);
         let candidate = rect(10.0, 10.0, 10.0, 10.0);
@@ -411,6 +425,14 @@ mod tests {
 
     #[test]
     fn can_place_rejects_touching_bin_boundary() {
+        let bin = rect(0.0, 0.0, 100.0, 100.0);
+        let candidate = rect(0.0, 10.0, 10.0, 10.0);
+        let placed = PlacedIndex::new();
+        assert!(!can_place(&candidate, &bin, &placed));
+    }
+
+    #[test]
+    fn touching_policy_bin_boundary_touching_is_infeasible() {
         let bin = rect(0.0, 0.0, 100.0, 100.0);
         let candidate = rect(0.0, 10.0, 10.0, 10.0);
         let placed = PlacedIndex::new();

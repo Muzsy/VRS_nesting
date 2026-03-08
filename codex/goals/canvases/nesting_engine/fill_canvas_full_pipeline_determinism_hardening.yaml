@@ -1,0 +1,121 @@
+steps:
+  - name: "Repo szabályok + canvas véglegesítése"
+    description: >
+      Olvasd el: AGENTS.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md,
+      docs/qa/testing_guidelines.md, továbbá a releváns determinism/tolerance/backlog fájlokat.
+      Véglegesítsd a canvas-t a jelenlegi repoállapothoz:
+      F3-4 itt nem teljes geometriai újraírás, hanem repo-native determinism contract hardening.
+      Rögzítsd benne, hogy a PR gate-et a scripts/check.sh + repo-gate.yml útvonalon kell lezárni,
+      és hogy a platform-determinism-rotation workflow külön extra réteg marad.
+    outputs:
+      - "canvases/nesting_engine/full_pipeline_determinism_hardening.md"
+
+  - name: "Touching policy evidence tesztek explicit prefixszel"
+    description: >
+      Módosítsd: rust/nesting_engine/src/feasibility/narrow.rs
+
+      Cél:
+      - a már meglévő touching policy viselkedést tedd explicit, külön futtatható evidence tesztekkel elérhetővé;
+      - adj hozzá legalább két targeted tesztet `touching_policy_` prefixszel:
+        `touching_policy_part_part_touching_is_infeasible`
+        `touching_policy_bin_boundary_touching_is_infeasible`
+      - a meglévő viselkedést ne változtasd meg;
+      - touching továbbra is infeasible maradjon.
+    outputs:
+      - "rust/nesting_engine/src/feasibility/narrow.rs"
+
+  - name: "Output canonicalization és determinism evidence tesztek keményítése"
+    description: >
+      Módosítsd: rust/nesting_engine/src/export/output_v2.rs
+
+      Követelmények:
+      - a jelenlegi `nesting_engine.hash_view.v1` hash-view contract ne sérüljön;
+      - ahol szükséges, tedd explicitebbé / kommenteld a canonicalization logikát;
+      - adj hozzá targeted `determinism_` prefixű evidence teszteket,
+        amelyek legalább ezt fedik:
+        1) azonos inputból két buildelt output byte-azonos JSON-t ad;
+        2) a hash-view canonical bytes regresszió ellen védett;
+      - a `meta.determinism_hash` mező és a schema_version contract ne változzon,
+        hacsak a canonical bytes ténylegesen nem változnak.
+    outputs:
+      - "rust/nesting_engine/src/export/output_v2.rs"
+
+  - name: "10-run determinism smoke keményítése"
+    description: >
+      Módosítsd: scripts/smoke_nesting_engine_determinism.sh
+
+      Követelmények:
+      - default RUNS=10;
+      - a smoke a teljes `nest` stdout JSON byte-identitását hasonlítsa össze futásról futásra;
+      - ne csak a `meta.determinism_hash` egyezését nézze;
+      - eltérésnél mentse ki a baseline és a mismatched outputot diagnosztikára;
+      - másodlagos assertként számolja újra Python oldalon a canonical hash-view SHA-256 értéket,
+        és ellenőrizze, hogy ez egyezik a solver `meta.determinism_hash` mezőjével.
+    outputs:
+      - "scripts/smoke_nesting_engine_determinism.sh"
+
+  - name: "Repo gate bővítése determinism és touching hardeninggel"
+    description: >
+      Módosítsd: scripts/check.sh
+
+      Adj hozzá minimál-invazívan:
+      - `cargo test --manifest-path rust/nesting_engine/Cargo.toml determinism_`
+      - `cargo test --manifest-path rust/nesting_engine/Cargo.toml touching_policy_`
+      - `RUNS=10 ./scripts/smoke_nesting_engine_determinism.sh`
+
+      Fontos:
+      - a meglévő sorrendet és smoke/logikát ne borítsd fel;
+      - ne vedd ki a meglévő targeted teszteket;
+      - ne vezess be új workflow függőséget; a PR gate-et a meglévő repo-gate workflow-n keresztül kell lezárni.
+    outputs:
+      - "scripts/check.sh"
+
+  - name: "Dokumentáció és known issue státusz igazítása"
+    description: >
+      Módosítsd:
+      - docs/nesting_engine/json_canonicalization.md
+      - docs/nesting_engine/io_contract_v2.md
+      - docs/nesting_engine/tolerance_policy.md
+      - docs/known_issues/nesting_engine_known_issues.md
+
+      Követelmények:
+      - a canonicalization contract legyen doksi-kód szinten egységes;
+      - a szöveg ne állítson többet, mint amit a Rust/Python implementáció ténylegesen garantál;
+      - explicit szerepeljen: `touching = infeasible`;
+      - dokumentáld, hogy a 10-run determinism smoke a check.sh része,
+        ezért a repo-gate PR-on automatikusan fut;
+      - a KI-006 státuszát frissítsd a ténylegesen választott megoldás szerint
+        (pl. RESOLVED vagy pontosan szűkített állapot), ne hagyd elavult OPEN állapotban,
+        ha a contract immár egyértelműen a repo-native canonicalizationre van zárva.
+    outputs:
+      - "docs/nesting_engine/json_canonicalization.md"
+      - "docs/nesting_engine/io_contract_v2.md"
+      - "docs/nesting_engine/tolerance_policy.md"
+      - "docs/known_issues/nesting_engine_known_issues.md"
+
+  - name: "Checklist + report (Report Standard v2)"
+    description: >
+      Készítsd el:
+      - codex/codex_checklist/nesting_engine/full_pipeline_determinism_hardening.md
+      - codex/reports/nesting_engine/full_pipeline_determinism_hardening.md
+
+      Követelmények:
+      - DoD -> Evidence Matrix
+      - AUTO_VERIFY marker blokk
+      - A reportban szerepeljen a `RUNS=10 ./scripts/smoke_nesting_engine_determinism.sh` futás
+      - Szerepeljen egy rövid bizonyíték arra, hogy a solver `meta.determinism_hash` mezője
+        egyezik a Python oldali canonical hash újraszámolással
+      - Írd le expliciten: ez a kör repo-native determinism contract hardening,
+        nem teljes geometriai integer-only átírás.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/full_pipeline_determinism_hardening.md"
+      - "codex/reports/nesting_engine/full_pipeline_determinism_hardening.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/full_pipeline_determinism_hardening.md
+      Az AUTO_VERIFY blokkot tilos kézzel szerkeszteni.
+    outputs:
+      - "codex/reports/nesting_engine/full_pipeline_determinism_hardening.md"
+      - "codex/reports/nesting_engine/full_pipeline_determinism_hardening.verify.log"

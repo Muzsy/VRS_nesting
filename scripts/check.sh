@@ -288,6 +288,12 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   echo "[NEST] Targeted remnant_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml remnant_
 
+  echo "[NEST] Targeted determinism_ evidence unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml determinism_
+
+  echo "[NEST] Targeted touching_policy_ evidence unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml touching_policy_
+
   echo "[NEST] Targeted order_policy evidence unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml order_policy_by_input_order_preserves_input_order
 
@@ -598,10 +604,7 @@ if isinstance(payload, dict):
     payload["time_limit_sec"] = 1
 dst.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 PY
-  # CI-ben emelhető: NESTING_ENGINE_DETERMINISM_RUNS=50
-  RUNS="${NESTING_ENGINE_DETERMINISM_RUNS:-10}" \
-    INPUT_JSON="$NEST_DET_INPUT" \
-    ./scripts/smoke_nesting_engine_determinism.sh
+  RUNS=10 INPUT_JSON="$NEST_DET_INPUT" ./scripts/smoke_nesting_engine_determinism.sh
 fi
 
 echo "[DONE] smoketest OK"

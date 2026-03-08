@@ -106,7 +106,8 @@ A `meta.determinism_hash` mezo szamitasi szabalyai normativan itt vannak rogzitv
 `docs/nesting_engine/json_canonicalization.md`.
 
 Ebben a dokumentumban nincs canonicalization-szabaly duplikacio: a hash-kepzeshez a
-fenti normativ dokumentum kovetese kotelezo.
+fenti normativ dokumentum kovetese kotelezo. A jelenlegi contract verzioja
+valtozatlanul `nesting_engine.hash_view.v1`.
 
 ### 6.1 Determinizmus es timeout-bound policy (normativ)
 
@@ -128,6 +129,15 @@ Megjegyzes:
 - A `time_limit_sec` ellenorzese wall-clock jellegu, jellemzoen durvabb checkpointokkal.
 - Ezert a limit-hatar kozeleben termeszetes lehet, hogy ket futas kozott 1-2 placement elteres jelenik meg.
 - Az ilyen eset benchmark/report oldalon kulon timeout-bound kategoriakent kezelendo, nem automatikus algoritmikus regressziokent.
+
+### 6.2 Repo gate evidence (PR)
+
+- A PR merge gate a `.github/workflows/repo-gate.yml` workflow, ami a `scripts/check.sh`-t futtatja.
+- A `check.sh` determinism hardening reszekent fut:
+  - `cargo test --manifest-path rust/nesting_engine/Cargo.toml determinism_`
+  - `RUNS=10 ./scripts/smoke_nesting_engine_determinism.sh`
+- A determinism smoke a teljes `nest` stdout JSON byte-azonossagat ellenorzi es
+  Python oldalon ujraszamolja a canonical hash-view SHA-256 erteket.
 
 ## 7. Pipeline preprocessing contract (pipeline_v1)
 

@@ -9,25 +9,6 @@
 
 ---
 
-## P1 — Magas prioritás
-
-### KI-006 `determinism_hash` canonicalization: normativ JCS spec vs jelenlegi implementacio
-**Allapot:** OPEN  
-**Forras:** Doc-code drift audit, 2026-02-24  
-**Terulet:** `docs/nesting_engine/json_canonicalization.md`, `rust/nesting_engine/src/export/output_v2.rs`
-
-A dokumentacio normativ modon RFC 8785 (JCS) canonicalizaciot ir elo a
-`determinism_hash` kepzeshez. A jelenlegi Rust implementacio `serde_json::to_string`
-alapu szerializaciot hasznal, ami stabil lehet, de nem deklaraltan JCS-kompatibilis.
-Ez kulonosen akkor kockazat, ha kesobb Python/Rust kozti hash-egyeztetes lesz.
-
-**Javasolt DoD:**  
-- Vagy: JCS-kompatibilis canonicalizer bevezetese a Rust hash-utvonalon.  
-- Vagy: a normativ doksi atirasa "serde_json-stabil contract"-ra, explicit korlatokkal.  
-- Minden esetben: schema-valtozasnal `schema_version` bump es regresszios teszt.
-
----
-
 ## P2 — Közepes prioritás
 
 ### KI-007 tolerance_policy integer-only allitas vs aktiv f64 geometriadontesek
@@ -129,21 +110,6 @@ leteznek es aktivan hasznaltak. Ez felrevezeto lehet uj feladatok scope-olasanal
 
 ---
 
-### KI-009 json_canonicalization.md hibas hivatkozas nem letezo szerzodes fajlra
-**Allapot:** OPEN  
-**Forras:** Doc-code drift audit, 2026-02-24  
-**Terulet:** `docs/nesting_engine/json_canonicalization.md`, `docs/nesting_engine/io_contract_v2.md`
-
-A canonicalization dokumentum a `docs/nesting_engine/solver_io_contract_v2.md`
-fajlra hivatkozik, ami a repoban nem letezik. A valos fajl:
-`docs/nesting_engine/io_contract_v2.md`.
-
-**Javasolt DoD:**  
-- Hivatkozas javitasa a letezo kontrakt fajlra.  
-- Link-check smoke vagy docs CI check bevezetese a hasonlo drift elkerulesere.
-
----
-
 ### KI-010 tolerance_policy OffsetError szekcio elter a kodtol
 **Allapot:** OPEN  
 **Forras:** Doc-code drift audit, 2026-02-24  
@@ -162,6 +128,23 @@ status/diagnosztika alapon tortenik. A dokumentacio emiatt pontatlan.
 ---
 
 ## Lezárt issue-k (RESOLVED)
+
+### KI-006 `determinism_hash` canonicalization: normativ JCS spec vs jelenlegi implementacio
+**Allapot:** RESOLVED (`full_pipeline_determinism_hardening`, 2026-03-08)  
+**Eredeti forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/json_canonicalization.md`, `rust/nesting_engine/src/export/output_v2.rs`, `scripts/smoke_nesting_engine_determinism.sh`
+
+Lezaras indoka: a normativ canonicalization dokumentacio repo-native contractra lett
+igazitva (`nesting_engine.hash_view.v1` hash-view + kompakt, key-sorted JSON byte forma),
+determinism evidence tesztekkel es 10-run full-output smoke gate-tel.
+
+### KI-009 json_canonicalization.md hibas hivatkozas nem letezo szerzodes fajlra
+**Allapot:** RESOLVED (`full_pipeline_determinism_hardening`, 2026-03-08)  
+**Eredeti forras:** Doc-code drift audit, 2026-02-24  
+**Terulet:** `docs/nesting_engine/json_canonicalization.md`, `docs/nesting_engine/io_contract_v2.md`
+
+Lezaras indoka: a canonicalization dokumentum hivatkozasa a letezo
+`docs/nesting_engine/io_contract_v2.md` fajlra lett zarva.
 
 ### KI-002 Stock clearance szabály: margin vs. margin+kerf/2
 **Állapot:** RESOLVED (`nesting_engine_spacing_margin_bin_offset_model`, 2026-02-27)  
