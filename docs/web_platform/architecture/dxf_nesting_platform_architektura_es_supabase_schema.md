@@ -1,0 +1,1296 @@
+# DXF Nesting alkalmazás – architektúra, folyamat, technológiai modell, roadmap és javasolt Supabase SQL séma
+
+## 1. Dokumentum célja
+
+Ez a dokumentum egy egységesített, kibővített tervezési alap a DXF Nesting alkalmazáshoz.  
+A cél nem egy „webapp, ami néha meghív egy nestert”, hanem egy **workflow-platform**, amelyben a nesting engine egy **szerződésvezérelt számítási modul**.
+
+A dokumentum összefoglalja:
+
+- a rendszer architekturális alapelveit,
+- a moduláris felépítést,
+- az end-to-end folyamatot,
+- a technológiai és gyártási rétegek szétválasztását,
+- a fejlesztési roadmap-et,
+- valamint egy **konkrét, Supabase/PostgreSQL alapú, tábla- és mezőszintű javasolt sémát**.
+
+## 2. Vezérelvek
+
+### 2.1 A nesting engine ne legyen maga a teljes rendszer
+A jelenlegi repo és a korábbi auditok alapján a nesting engine már nem alapkutatási fázisban van, hanem stabilizált számítási magként kezelhető. Emiatt a következő nagy munka nem az „alap matematika”, hanem a köré épített platform: projekt, technológia, DXF ingest, audit, snapshot, queue, artifact, viewer, export.
+
+### 2.2 Definíció, használat, snapshot és artifact ne keveredjen
+Ez a legfontosabb adatmodellezési szabály.
+
+Példák:
+
+- a part definíció nem ugyanaz, mint a part adott revíziója,
+- a projektbeli darabszámigény nem ugyanaz, mint maga az alkatrész,
+- a technológiai profil nem ugyanaz, mint az adott futásba befagyasztott snapshot,
+- a solver output nem ugyanaz, mint a UI által query-zhető projection,
+- a viewer SVG nem ugyanaz, mint a rendszer source of truth-ja.
+
+### 2.3 A worker csak snapshotból dolgozzon
+A worker ne élő üzleti táblákból „okoskodjon”, hanem kizárólag run snapshotból dolgozzon.  
+Ez biztosítja a reprodukálhatóságot, auditálhatóságot és a későbbi újrafuttathatóságot.
+
+### 2.4 A belső geometria ne DXF és ne SVG legyen
+A helyes modell:
+
+- **DXF** = forrás- és exportformátum,
+- **SVG** = viewer / preview artifact,
+- **belső geometria** = verziózott, kanonikus JSON-alapú reprezentáció.
+
+### 2.5 Két belső geometriai derivált kell
+A rendszer hosszabb távon két eltérő célú belső geometriai deriváltat igényel:
+
+- **nesting_canonical**: polygonizált, determinisztikus, solver-barát,
+- **manufacturing_canonical**: gyártásközelibb, lead-in/lead-out és gépfüggő export felé alkalmas.
+
+### 2.6 A nesting, a gyártási szabályrendszer és a gépfüggő export külön modul maradjon
+A solver ne tudjon gépspecifikus kimenetet.  
+A helyes lánc:
+
+1. normalizált input
+2. nesting
+3. univerzális placement eredmény
+4. manufacturing szabályok alkalmazása
+5. postprocess / export adapter
+6. gépspecifikus kimenet
+
+## 3. Javasolt moduláris felépítés
+
+## 3.1 Project & Identity modul
+Feladat:
+
+- felhasználó, profil, projekt
+- projekt státusz
+- projekt szintű beállítások
+- UI és workflow preference-ek
+
+Fő entitások:
+
+- profiles
+- projects
+- project_settings
+
+## 3.2 Technology modul
+Feladat:
+
+- géptípus, anyag, vastagság
+- spacing, margin
+- kerf lookup
+- nestinghez tartozó technológiai profilok és verziók
+
+Fő entitások:
+
+- machine_catalog
+- material_catalog
+- kerf_lookup_rules
+- technology_profiles
+- technology_profile_versions
+- project_technology_selection
+
+## 3.3 Manufacturing modul
+Feladat:
+
+- gyártási szabályrendszer
+- lead-in / lead-out
+- contour policy
+- cut order, pierce, entry policy
+- postprocess kapcsolat
+
+Fő entitások:
+
+- manufacturing_profiles
+- manufacturing_profile_versions
+- project_manufacturing_selection
+- cut_rule_sets
+- cut_contour_rules
+- postprocessor_profiles
+- postprocessor_profile_versions
+
+## 3.4 Files & Geometry modul
+Feladat:
+
+- nyers feltöltött fájlok
+- normalizált geometria
+- geometry audit
+- review queue
+- derivált geometriai reprezentációk
+
+Fő entitások:
+
+- file_objects
+- geometry_revisions
+- geometry_derivatives
+- geometry_validation_reports
+- geometry_review_actions
+
+## 3.5 Parts modul
+Feladat:
+
+- alkatrész definíció
+- revíziók
+- projektbeli darabszámigény
+- placement priority
+
+Fő entitások:
+
+- part_definitions
+- part_revisions
+- project_part_requirements
+
+## 3.6 Sheets modul
+Feladat:
+
+- kézi téglalap tábla
+- DXF alapú alakos tábla
+- szabványméret katalógus
+- projektben bevont táblák
+- sheet prioritás / cost hint
+
+Fő entitások:
+
+- sheet_definitions
+- sheet_revisions
+- standard_sheet_catalog
+- project_sheet_inputs
+
+## 3.7 Run Orchestration modul
+Feladat:
+
+- nesting run törzs
+- befagyasztott run snapshot
+- queue
+- logok
+- státuszkezelés
+- artifact manifest
+
+Fő entitások:
+
+- nesting_runs
+- nesting_run_snapshots
+- run_queue
+- run_logs
+- run_artifacts
+
+## 3.8 Results / Viewer / Export modul
+Feladat:
+
+- query-zhető UI projection
+- structured layout data
+- viewer overlay
+- report és letölthető bundle
+- machine-ready export artifactok
+
+Fő entitások:
+
+- run_layout_sheets
+- run_layout_placements
+- run_layout_unplaced
+- run_metrics
+
+## 3.9 Későbbi külön modulok
+Tudatosan későbbre hagyandó:
+
+- Inventory / stock / remnants
+- Composite / mini-nest blocks
+- szervezeti / RBAC mélyítés
+- audit trail és abuse/quota mélyítés
+
+## 4. End-to-end folyamat
+
+## 4.1 Projekt létrehozás
+A felhasználó létrehoz egy projektet.  
+A projekt a teljes workflow fő konténere.
+
+## 4.2 Technológiai kiválasztás
+A projekthez kiválasztásra kerül egy aktív `technology_profile_version`.
+
+Ebben van:
+
+- machine
+- material
+- thickness
+- spacing
+- margin
+- kerf source
+- effective kerf
+- allowed rotations
+- default time limit
+
+## 4.3 Gyártási profil kiválasztás
+A projekthez kiválasztásra kerül egy aktív `manufacturing_profile_version`.
+
+Ebben van:
+
+- outer és inner contour rule set
+- cut order policy
+- entry point policy
+- pierce strategy
+- kapcsolt postprocessor profil verzió
+
+## 4.4 Fájl feltöltés
+A nyers DXF fájl storage-ba kerül, metaadata a `file_objects` táblába.
+
+## 4.5 Geometria normalizálás és audit
+A feltöltött DXF-ből létrejön egy `geometry_revision`, majd abból derivált reprezentációk:
+
+- `nesting_canonical`
+- `manufacturing_canonical`
+- opcionálisan `viewer_outline`
+
+Ezután külön audit pipeline fut:
+
+- issue detektálás
+- severity / confidence
+- auto-fix
+- review queue
+
+## 4.6 Part és sheet revíziók képzése
+A validált geometria alapján:
+
+- part_definition + part_revision
+- sheet_definition + sheet_revision
+
+## 4.7 Projektigény rögzítése
+A projekt megmondja:
+
+- mely partból mennyi kell,
+- milyen placement priority-val,
+- mely táblákból mennyi áll rendelkezésre,
+- milyen prioritással / cost hinttel.
+
+## 4.8 Run snapshot fagyasztás
+Run indításkor a rendszer nem élő üzleti állapotból dolgozik, hanem befagyasztja:
+
+- part requirement snapshot
+- sheet input snapshot
+- technology snapshot
+- manufacturing snapshot
+- geometry snapshot
+- engine input contract szerinti payload
+
+## 4.9 Queue + worker futás
+A worker:
+
+- snapshotot vesz át
+- engine adapterként fut
+- artifactokat állít elő
+- UI projection táblákat tölt
+- státuszt ír vissza
+
+## 4.10 Eredmény és export
+Az eredmény több rétegben él:
+
+- nyers artifactok
+- query-zhető projection táblák
+- viewer SVG
+- DXF export
+- ZIP bundle
+- később machine-ready export
+
+## 5. Kritikus technológiai döntések
+
+## 5.1 Alkatrész-prioritás a nestingben
+A prioritást nem a part definícióra, hanem a projektbeli igényre kell tenni.
+
+Ezért a kulcstábla:
+- `project_part_requirements`
+
+Javasolt mezők:
+- `placement_priority`
+- `placement_policy`
+
+Ajánlott jelentés:
+
+- `hard_first`: előrehozott placement, akár optimalizációs ár árán is
+- `soft_prefer`: rendezési előny, de nem kényszer
+- `normal`: normál
+- `defer`: később próbáljuk
+
+Fontos:
+**placement order priority != final run scoring**
+
+## 5.2 Lead-in / lead-out
+A ráfutás/kifutás nem a nesting alapgeometria része.  
+Ez gyártási szabályrendszer.
+
+Ezért:
+
+- ne torzítsa el a solver geometriát,
+- contour rule setből jöjjön,
+- outer és inner contour külön szabályozható legyen,
+- gép + anyag + vastagság függő legyen.
+
+## 5.3 Gépfüggő postprocessor
+A nesting engine univerzális placement eredményt adjon.  
+A gépfüggő kimenet külön adapterrétegben keletkezzen.
+
+## 5.4 Viewer source of truth
+A viewer ne kizárólag SVG-t olvasson.  
+A valódi source of truth a strukturált projection réteg:
+
+- run_layout_sheets
+- run_layout_placements
+- run_layout_unplaced
+- run_metrics
+
+Az SVG csak render artifact.
+
+## 6. Fejlesztési roadmap
+
+## 6.1 Fázis A – Contract + Domain Freeze
+Cél:
+
+- normalized geometry contract
+- run input contract
+- run output contract
+- run snapshot contract
+- artifact taxonomy
+- viewer contract
+
+Ezt előbb kell lezárni, mint a képernyőket.
+
+## 6.2 Fázis B – Core platform v1
+Cél:
+
+- profiles
+- projects
+- project_settings
+- technology domain
+- rect sheets
+- part requirements
+- run wrapper
+- queue
+- artifact mentés
+
+Ez az első használható rendszer.
+
+## 6.3 Fázis C – DXF ingest + audit + normalized parts
+Cél:
+
+- DXF upload
+- parse
+- normalize
+- audit
+- review queue
+- geometry revisions
+- part revisions
+
+Ez a kritikus korai modul.
+
+## 6.4 Fázis D – Standard sheet catalog + irregular sheets
+Cél:
+
+- standard catalog
+- DXF alapú alakos táblák
+- közös sheet domain
+- egységes project_sheet_inputs
+
+## 6.5 Fázis E – Viewer + export + reporting
+Cél:
+
+- per-sheet SVG viewer
+- structured overlay
+- report projection
+- ZIP bundle
+- export manifest
+
+## 6.6 Fázis F – Manufacturing rules + postprocess
+Cél:
+
+- manufacturing profile verziózás
+- cut rule setek
+- lead-in / lead-out
+- postprocessor adapter
+- machine-ready artifactok
+
+## 6.7 Fázis G – Inventory / remnants
+Cél:
+
+- stock transactions
+- remnant életciklus
+- reservations
+- inbound/outbound mozgások
+
+## 6.8 Fázis H – Composite / mini-nest
+Cél:
+
+- placeable unit általánosítás
+- composite definíciók
+- blokk geometria
+- editor
+
+## 7. SQL tervezési alapelvek
+
+## 7.1 Supabase kompatibilitás
+A séma PostgreSQL / Supabase kompatibilis.  
+A `profiles.id` az `auth.users(id)`-re mutat.
+
+## 7.2 UUID alapú kulcsok
+Minden üzleti entitás UUID primary key-t kap.
+
+## 7.3 Verziózás
+A „profile”, „revision”, „snapshot”, „artifact” típusú entitások külön táblában élnek.
+
+## 7.4 JSONB használat
+JSONB csak ott legyen, ahol valóban félig strukturált mező kell:
+
+- geometry_jsonb
+- bbox_jsonb
+- issues_jsonb
+- fixes_applied_jsonb
+- settings_jsonb
+- snapshot_jsonb
+- metrics_jsonb
+- meta_jsonb
+
+## 7.5 Enumok
+Supabase/Postgres oldalon érdemes explicit enumokkal dolgozni, mert ettől a séma olvashatóbb és konzisztens lesz.
+
+---
+
+# 8. Javasolt Supabase SQL séma
+
+## 8.1 Extensions és enumok
+
+```sql
+create extension if not exists pgcrypto;
+
+create type project_status as enum ('draft', 'active', 'archived');
+
+create type kerf_source_type as enum ('lookup', 'manual_override');
+
+create type file_kind as enum ('part_source', 'sheet_source', 'project_import', 'other');
+
+create type geometry_role as enum ('part', 'sheet');
+
+create type validation_status as enum ('ok', 'auto_fix_accept', 'needs_review', 'reject');
+
+create type review_action_type as enum ('approve', 'reject', 'revert_fix', 'mark_inactive');
+
+create type revision_status as enum ('draft', 'active', 'replaced');
+
+create type sheet_geometry_type as enum ('rect', 'polygon');
+
+create type sheet_source_type as enum ('manual', 'catalog', 'inventory', 'remnant');
+
+create type availability_mode as enum ('finite', 'infinite');
+
+create type selection_source_type as enum ('manual', 'catalog', 'inventory');
+
+create type run_status as enum (
+  'draft',
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'cancel_requested',
+  'cancelled'
+);
+
+create type queue_status as enum ('queued', 'leased', 'done', 'failed');
+
+create type artifact_kind as enum (
+  'project_snapshot',
+  'report_json',
+  'solver_input',
+  'solver_output',
+  'sheet_dxf',
+  'sheet_svg',
+  'bundle_zip',
+  'cut_plan_json',
+  'machine_program',
+  'machine_preview_svg',
+  'machine_ready_dxf',
+  'other'
+);
+
+create type geometry_derivative_kind as enum (
+  'nesting_canonical',
+  'manufacturing_canonical',
+  'viewer_outline'
+);
+
+create type placement_policy_type as enum ('hard_first', 'soft_prefer', 'normal', 'defer');
+
+create type contour_kind_type as enum ('outer', 'inner');
+
+create type feature_class_type as enum (
+  'default',
+  'small_hole',
+  'slot',
+  'tiny_inner',
+  'narrow_channel'
+);
+
+create type lead_type as enum ('none', 'line', 'arc', 'line_arc');
+
+create type entry_side_policy_type as enum ('auto', 'left', 'right', 'tangent_best');
+
+create type derivative_target_type as enum ('solver', 'manufacturing', 'viewer');
+
+create type postprocess_output_format as enum (
+  'generic_dxf',
+  'generic_json',
+  'machine_native',
+  'svg_preview',
+  'zip_bundle'
+);
+```
+
+## 8.2 Identity és Project Core
+
+```sql
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  display_name text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.projects (
+  id uuid primary key default gen_random_uuid(),
+  owner_user_id uuid not null references public.profiles(id) on delete cascade,
+  name text not null,
+  description text,
+  status project_status not null default 'draft',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.project_settings (
+  project_id uuid primary key references public.projects(id) on delete cascade,
+  default_units text not null default 'mm',
+  viewer_preferences_json jsonb not null default '{}'::jsonb,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_projects_owner_user_id
+  on public.projects(owner_user_id);
+```
+
+## 8.3 Technology Domain
+
+```sql
+create table if not exists public.machine_catalog (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.material_catalog (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.kerf_lookup_rules (
+  id uuid primary key default gen_random_uuid(),
+  machine_id uuid not null references public.machine_catalog(id),
+  material_id uuid not null references public.material_catalog(id),
+  thickness_mm numeric(10,3) not null,
+  kerf_mm numeric(10,3) not null,
+  effective_from date,
+  effective_to date,
+  rule_version integer not null default 1,
+  created_at timestamptz not null default now(),
+  check (thickness_mm > 0),
+  check (kerf_mm >= 0)
+);
+
+create index if not exists idx_kerf_lookup_rules_match
+  on public.kerf_lookup_rules(machine_id, material_id, thickness_mm);
+
+create table if not exists public.technology_profiles (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  name text not null,
+  is_default boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (project_id, name)
+);
+
+create table if not exists public.technology_profile_versions (
+  id uuid primary key default gen_random_uuid(),
+  technology_profile_id uuid not null references public.technology_profiles(id) on delete cascade,
+  version_no integer not null,
+  spacing_mm numeric(10,3) not null default 0,
+  margin_mm numeric(10,3) not null default 0,
+  machine_id uuid not null references public.machine_catalog(id),
+  material_id uuid not null references public.material_catalog(id),
+  thickness_mm numeric(10,3) not null,
+  kerf_source_type kerf_source_type not null default 'lookup',
+  kerf_lookup_rule_id uuid references public.kerf_lookup_rules(id),
+  kerf_mm_effective numeric(10,3),
+  rotations_json jsonb not null default '[]'::jsonb,
+  time_limit_s_default integer not null default 60,
+  notes text,
+  created_at timestamptz not null default now(),
+  unique (technology_profile_id, version_no),
+  check (spacing_mm >= 0),
+  check (margin_mm >= 0),
+  check (thickness_mm > 0),
+  check (time_limit_s_default > 0)
+);
+
+create table if not exists public.project_technology_selection (
+  project_id uuid primary key references public.projects(id) on delete cascade,
+  active_technology_profile_version_id uuid not null references public.technology_profile_versions(id),
+  selected_at timestamptz not null default now(),
+  selected_by uuid references public.profiles(id)
+);
+```
+
+## 8.4 Manufacturing Domain
+
+```sql
+create table if not exists public.postprocessor_profiles (
+  id uuid primary key default gen_random_uuid(),
+  machine_id uuid not null references public.machine_catalog(id),
+  name text not null,
+  adapter_key text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (machine_id, name)
+);
+
+create table if not exists public.postprocessor_profile_versions (
+  id uuid primary key default gen_random_uuid(),
+  postprocessor_profile_id uuid not null references public.postprocessor_profiles(id) on delete cascade,
+  version_no integer not null,
+  output_format postprocess_output_format not null,
+  settings_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (postprocessor_profile_id, version_no)
+);
+
+create table if not exists public.cut_rule_sets (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  machine_id uuid not null references public.machine_catalog(id),
+  material_id uuid not null references public.material_catalog(id),
+  thickness_mm numeric(10,3) not null,
+  version_no integer not null default 1,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  check (thickness_mm > 0)
+);
+
+create index if not exists idx_cut_rule_sets_match
+  on public.cut_rule_sets(machine_id, material_id, thickness_mm);
+
+create table if not exists public.cut_contour_rules (
+  id uuid primary key default gen_random_uuid(),
+  cut_rule_set_id uuid not null references public.cut_rule_sets(id) on delete cascade,
+  contour_kind contour_kind_type not null,
+  feature_class feature_class_type not null default 'default',
+  lead_in_type lead_type not null default 'none',
+  lead_in_length_mm numeric(10,3),
+  lead_in_radius_mm numeric(10,3),
+  lead_out_type lead_type not null default 'none',
+  lead_out_length_mm numeric(10,3),
+  lead_out_radius_mm numeric(10,3),
+  entry_side_policy entry_side_policy_type not null default 'auto',
+  min_contour_length_mm numeric(10,3),
+  max_contour_length_mm numeric(10,3),
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  check (lead_in_length_mm is null or lead_in_length_mm >= 0),
+  check (lead_in_radius_mm is null or lead_in_radius_mm >= 0),
+  check (lead_out_length_mm is null or lead_out_length_mm >= 0),
+  check (lead_out_radius_mm is null or lead_out_radius_mm >= 0),
+  check (min_contour_length_mm is null or min_contour_length_mm >= 0),
+  check (max_contour_length_mm is null or max_contour_length_mm >= 0)
+);
+
+create table if not exists public.manufacturing_profiles (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  name text not null,
+  is_default boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (project_id, name)
+);
+
+create table if not exists public.manufacturing_profile_versions (
+  id uuid primary key default gen_random_uuid(),
+  manufacturing_profile_id uuid not null references public.manufacturing_profiles(id) on delete cascade,
+  version_no integer not null,
+  machine_id uuid not null references public.machine_catalog(id),
+  material_id uuid not null references public.material_catalog(id),
+  thickness_mm numeric(10,3) not null,
+  outer_cut_rule_set_id uuid references public.cut_rule_sets(id),
+  inner_cut_rule_set_id uuid references public.cut_rule_sets(id),
+  pierce_strategy_jsonb jsonb not null default '{}'::jsonb,
+  cut_order_policy_jsonb jsonb not null default '{}'::jsonb,
+  entry_point_policy_jsonb jsonb not null default '{}'::jsonb,
+  postprocessor_profile_version_id uuid references public.postprocessor_profile_versions(id),
+  notes text,
+  created_at timestamptz not null default now(),
+  unique (manufacturing_profile_id, version_no),
+  check (thickness_mm > 0)
+);
+
+create table if not exists public.project_manufacturing_selection (
+  project_id uuid primary key references public.projects(id) on delete cascade,
+  active_manufacturing_profile_version_id uuid not null references public.manufacturing_profile_versions(id),
+  selected_at timestamptz not null default now(),
+  selected_by uuid references public.profiles(id)
+);
+```
+
+## 8.5 Files & Geometry Domain
+
+```sql
+create table if not exists public.file_objects (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  storage_bucket text not null,
+  storage_key text not null,
+  original_filename text not null,
+  mime_type text,
+  file_kind file_kind not null default 'other',
+  size_bytes bigint,
+  content_hash_sha256 text,
+  uploaded_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  unique (storage_bucket, storage_key)
+);
+
+create index if not exists idx_file_objects_project_id
+  on public.file_objects(project_id);
+
+create table if not exists public.geometry_revisions (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  source_file_object_id uuid references public.file_objects(id) on delete set null,
+  geometry_role geometry_role not null,
+  canonical_format_version text not null,
+  units text not null default 'mm',
+  geometry_jsonb jsonb not null,
+  bbox_jsonb jsonb,
+  area_mm2 numeric(18,3),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_geometry_revisions_project_id
+  on public.geometry_revisions(project_id);
+
+create table if not exists public.geometry_derivatives (
+  id uuid primary key default gen_random_uuid(),
+  geometry_revision_id uuid not null references public.geometry_revisions(id) on delete cascade,
+  derivative_kind geometry_derivative_kind not null,
+  derivative_target derivative_target_type not null,
+  format_version text not null,
+  geometry_jsonb jsonb not null,
+  bbox_jsonb jsonb,
+  area_mm2 numeric(18,3),
+  source_hash text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (geometry_revision_id, derivative_kind, format_version)
+);
+
+create table if not exists public.geometry_validation_reports (
+  id uuid primary key default gen_random_uuid(),
+  geometry_revision_id uuid not null references public.geometry_revisions(id) on delete cascade,
+  status validation_status not null,
+  severity text,
+  confidence_score numeric(5,4),
+  issues_jsonb jsonb not null default '[]'::jsonb,
+  fixes_applied_jsonb jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  check (confidence_score is null or (confidence_score >= 0 and confidence_score <= 1))
+);
+
+create table if not exists public.geometry_review_actions (
+  id uuid primary key default gen_random_uuid(),
+  geometry_validation_report_id uuid not null references public.geometry_validation_reports(id) on delete cascade,
+  action review_action_type not null,
+  actor_user_id uuid not null references public.profiles(id),
+  comment text,
+  created_at timestamptz not null default now()
+);
+```
+
+## 8.6 Part Domain
+
+```sql
+create table if not exists public.part_definitions (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  part_code text not null,
+  name text not null,
+  current_revision_id uuid,
+  created_at timestamptz not null default now(),
+  unique (project_id, part_code)
+);
+
+create table if not exists public.part_revisions (
+  id uuid primary key default gen_random_uuid(),
+  part_definition_id uuid not null references public.part_definitions(id) on delete cascade,
+  geometry_revision_id uuid not null references public.geometry_revisions(id),
+  source_file_object_id uuid references public.file_objects(id),
+  revision_no integer not null,
+  status revision_status not null default 'draft',
+  meta_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (part_definition_id, revision_no)
+);
+
+alter table public.part_definitions
+  add constraint fk_part_definitions_current_revision
+  foreign key (current_revision_id) references public.part_revisions(id)
+  deferrable initially deferred;
+
+create table if not exists public.project_part_requirements (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  part_definition_id uuid not null references public.part_definitions(id) on delete cascade,
+  required_qty integer not null,
+  placement_priority smallint not null default 50,
+  placement_policy placement_policy_type not null default 'normal',
+  is_active boolean not null default true,
+  notes text,
+  created_at timestamptz not null default now(),
+  unique (project_id, part_definition_id),
+  check (required_qty > 0),
+  check (placement_priority between 0 and 100)
+);
+
+create index if not exists idx_project_part_requirements_project_id
+  on public.project_part_requirements(project_id);
+
+create index if not exists idx_project_part_requirements_priority
+  on public.project_part_requirements(project_id, placement_priority, placement_policy);
+```
+
+## 8.7 Sheet Domain
+
+```sql
+create table if not exists public.standard_sheet_catalog (
+  id uuid primary key default gen_random_uuid(),
+  vendor text,
+  material_family text,
+  width_mm numeric(10,3) not null,
+  height_mm numeric(10,3) not null,
+  is_active boolean not null default true,
+  meta_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  check (width_mm > 0),
+  check (height_mm > 0)
+);
+
+create table if not exists public.sheet_definitions (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references public.projects(id) on delete cascade,
+  sheet_code text not null,
+  name text not null,
+  geometry_type sheet_geometry_type not null,
+  source_type sheet_source_type not null,
+  created_at timestamptz not null default now(),
+  unique (project_id, sheet_code)
+);
+
+create table if not exists public.sheet_revisions (
+  id uuid primary key default gen_random_uuid(),
+  sheet_definition_id uuid not null references public.sheet_definitions(id) on delete cascade,
+  revision_no integer not null,
+  width_mm numeric(10,3),
+  height_mm numeric(10,3),
+  geometry_revision_id uuid references public.geometry_revisions(id),
+  standard_sheet_catalog_id uuid references public.standard_sheet_catalog(id),
+  meta_jsonb jsonb not null default '{}'::jsonb,
+  status revision_status not null default 'active',
+  created_at timestamptz not null default now(),
+  unique (sheet_definition_id, revision_no),
+  check (
+    (width_mm is null or width_mm > 0)
+    and (height_mm is null or height_mm > 0)
+  )
+);
+
+create table if not exists public.project_sheet_inputs (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  sheet_definition_id uuid not null references public.sheet_definitions(id) on delete cascade,
+  sheet_revision_id uuid not null references public.sheet_revisions(id) on delete cascade,
+  availability_mode availability_mode not null default 'finite',
+  available_qty integer,
+  selection_source selection_source_type not null default 'manual',
+  priority smallint not null default 50,
+  cost_hint numeric(12,2),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  check (available_qty is null or available_qty >= 0),
+  check (priority between 0 and 100)
+);
+
+create index if not exists idx_project_sheet_inputs_project_id
+  on public.project_sheet_inputs(project_id);
+
+create index if not exists idx_project_sheet_inputs_priority
+  on public.project_sheet_inputs(project_id, priority);
+```
+
+## 8.8 Runs, Snapshots, Queue, Logs, Artifacts
+
+```sql
+create table if not exists public.nesting_runs (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  status run_status not null default 'draft',
+  seed integer,
+  requested_by uuid references public.profiles(id),
+  started_at timestamptz,
+  finished_at timestamptz,
+  error_code text,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_nesting_runs_project_id
+  on public.nesting_runs(project_id, created_at desc);
+
+create table if not exists public.nesting_run_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null unique references public.nesting_runs(id) on delete cascade,
+  snapshot_version text not null,
+  project_snapshot_jsonb jsonb not null default '{}'::jsonb,
+  technology_snapshot_jsonb jsonb not null default '{}'::jsonb,
+  manufacturing_snapshot_jsonb jsonb not null default '{}'::jsonb,
+  parts_snapshot_jsonb jsonb not null default '[]'::jsonb,
+  sheets_snapshot_jsonb jsonb not null default '[]'::jsonb,
+  geometry_snapshot_jsonb jsonb not null default '{}'::jsonb,
+  solver_input_jsonb jsonb not null default '{}'::jsonb,
+  snapshot_hash_sha256 text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.run_queue (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null unique references public.nesting_runs(id) on delete cascade,
+  queue_name text not null default 'default',
+  status queue_status not null default 'queued',
+  lease_expires_at timestamptz,
+  attempt_count integer not null default 0,
+  last_error text,
+  enqueued_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_run_queue_status
+  on public.run_queue(status, enqueued_at);
+
+create table if not exists public.run_logs (
+  id bigserial primary key,
+  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  logged_at timestamptz not null default now(),
+  level text not null,
+  message text not null,
+  payload_jsonb jsonb
+);
+
+create index if not exists idx_run_logs_run_id
+  on public.run_logs(run_id, logged_at);
+
+create table if not exists public.run_artifacts (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  artifact_kind artifact_kind not null,
+  file_object_id uuid references public.file_objects(id) on delete set null,
+  relative_path text,
+  mime_type text,
+  byte_size bigint,
+  checksum_sha256 text,
+  artifact_meta_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_run_artifacts_run_id
+  on public.run_artifacts(run_id, artifact_kind);
+```
+
+## 8.9 Results / Viewer Projection
+
+```sql
+create table if not exists public.run_layout_sheets (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  sheet_no integer not null,
+  sheet_definition_id uuid references public.sheet_definitions(id),
+  sheet_revision_id uuid references public.sheet_revisions(id),
+  width_mm numeric(12,3),
+  height_mm numeric(12,3),
+  utilization_ratio numeric(8,6),
+  remnant_area_mm2 numeric(18,3),
+  remnant_value numeric(18,4),
+  bbox_jsonb jsonb,
+  meta_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (run_id, sheet_no)
+);
+
+create table if not exists public.run_layout_placements (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  run_layout_sheet_id uuid not null references public.run_layout_sheets(id) on delete cascade,
+  stable_placement_key text not null,
+  part_definition_id uuid references public.part_definitions(id),
+  part_revision_id uuid references public.part_revisions(id),
+  project_part_requirement_id uuid references public.project_part_requirements(id),
+  placement_index integer not null,
+  x_mm numeric(18,6) not null,
+  y_mm numeric(18,6) not null,
+  rotation_deg numeric(10,4) not null default 0,
+  mirrored boolean not null default false,
+  bbox_jsonb jsonb,
+  centroid_jsonb jsonb,
+  meta_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (run_id, stable_placement_key)
+);
+
+create index if not exists idx_run_layout_placements_run_sheet
+  on public.run_layout_placements(run_layout_sheet_id, placement_index);
+
+create table if not exists public.run_layout_unplaced (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  part_definition_id uuid references public.part_definitions(id),
+  part_revision_id uuid references public.part_revisions(id),
+  project_part_requirement_id uuid references public.project_part_requirements(id),
+  missing_qty integer not null default 1,
+  reason text,
+  meta_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  check (missing_qty > 0)
+);
+
+create table if not exists public.run_metrics (
+  run_id uuid primary key references public.nesting_runs(id) on delete cascade,
+  placed_count integer not null default 0,
+  unplaced_count integer not null default 0,
+  sheet_count integer not null default 0,
+  total_part_area_mm2 numeric(18,3),
+  total_sheet_area_mm2 numeric(18,3),
+  global_utilization_ratio numeric(8,6),
+  total_remnant_area_mm2 numeric(18,3),
+  total_remnant_value numeric(18,4),
+  solver_runtime_ms bigint,
+  metrics_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+```
+
+## 8.10 Opcionális segédfüggvények és updated_at trigger
+
+```sql
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profiles_updated_at on public.profiles;
+create trigger trg_profiles_updated_at
+before update on public.profiles
+for each row execute procedure public.set_updated_at();
+
+drop trigger if exists trg_projects_updated_at on public.projects;
+create trigger trg_projects_updated_at
+before update on public.projects
+for each row execute procedure public.set_updated_at();
+
+drop trigger if exists trg_project_settings_updated_at on public.project_settings;
+create trigger trg_project_settings_updated_at
+before update on public.project_settings
+for each row execute procedure public.set_updated_at();
+
+drop trigger if exists trg_run_queue_updated_at on public.run_queue;
+create trigger trg_run_queue_updated_at
+before update on public.run_queue
+for each row execute procedure public.set_updated_at();
+```
+
+---
+
+# 9. Minimális RLS irány
+
+Ez itt még nem teljes policy-csomag, de a modell alap logikája:
+
+- minden projecthez kapcsolódó üzleti adat `projects.owner_user_id` alapján szűrhető,
+- storage objektumok is projekt-alapú tulajdonosi logikára épüljenek,
+- worker szolgáltatás külön service role-lal írja:
+  - run_queue
+  - run_logs
+  - run_artifacts
+  - run_layout_*
+  - run_metrics
+
+Ajánlott mintázat:
+
+1. felhasználói oldal csak a saját projectjeit látja,
+2. projekt alatti összes child tábla parent projecthez kötött policy-vel olvasható,
+3. worker csak service role-ból ír,
+4. public anon hozzáférés nincs üzleti táblákra.
+
+---
+
+# 10. Mi kerüljön V1-be, V1.5-be és későbbre
+
+## 10.1 V1 – azonnal érdemes bevezetni
+- profiles
+- projects
+- project_settings
+- machine_catalog
+- material_catalog
+- kerf_lookup_rules
+- technology_profiles
+- technology_profile_versions
+- project_technology_selection
+- file_objects
+- geometry_revisions
+- geometry_validation_reports
+- geometry_review_actions
+- part_definitions
+- part_revisions
+- project_part_requirements
+- sheet_definitions
+- sheet_revisions
+- project_sheet_inputs
+- nesting_runs
+- nesting_run_snapshots
+- run_queue
+- run_logs
+- run_artifacts
+- run_layout_sheets
+- run_layout_placements
+- run_layout_unplaced
+- run_metrics
+
+## 10.2 V1.5 – nagyon korai bővítés
+- geometry_derivatives
+- manufacturing_profiles
+- manufacturing_profile_versions
+- project_manufacturing_selection
+- standard_sheet_catalog
+
+## 10.3 V2
+- cut_rule_sets
+- cut_contour_rules
+- postprocessor_profiles
+- postprocessor_profile_versions
+- machine-ready export artifactok
+- bővített viewer meta és reporting
+
+## 10.4 V3+
+- inventory_lots
+- inventory_movements
+- remnant_items
+- reservation_locks
+- composite_definitions
+- composite_definition_items
+- composite_geometry_revisions
+- RBAC / team / org mélyítés
+- quota / abuse prevention
+- teljes audit trail
+
+---
+
+# 11. Javasolt implementációs sorrend
+
+## 11.1 Első kör
+- contract freeze
+- DB schema v1
+- auth + projects
+- basic storage
+- run wrapper
+- basic artifact mentés
+
+## 11.2 Második kör
+- DXF ingest
+- geometry normalization
+- validation
+- review queue
+- part lifecycle
+
+## 11.3 Harmadik kör
+- sheet lifecycle
+- standard catalog
+- irregular sheets
+- structured viewer projection
+
+## 11.4 Negyedik kör
+- manufacturing domain
+- contour rules
+- lead-in / lead-out
+- postprocessor adapter
+
+## 11.5 Ötödik kör
+- inventory és remnants
+- composite / mini-nest
+- advanced planning
+
+---
+
+# 12. Nyitott kérdések
+
+1. A manufacturing_canonical geometria mennyire őrizze meg az eredeti ív/spline információt?
+2. A postprocessor adapterek egy közös belső cut-plan formátumra épüljenek-e?
+3. A part priority legyen-e csak rendezési súly, vagy opcionálisan kötelező placement policy?
+4. A run snapshot hash része legyen-e a geometry derivative hash is?  
+   Igen, javasolt.
+5. A standard sheet catalog projektfüggetlen globális törzs legyen-e?  
+   Igen, javasolt.
+6. A remnant value modell mikor lépjen át külön inventory domainbe?  
+   Amint a maradék nemcsak run eredmény, hanem újrafelhasználható készlet is lesz.
+
+---
+
+# 13. Tömör végkövetkeztetés
+
+A helyes irány nem az, hogy gyorsan felkerül pár Supabase tábla, hanem az, hogy már az elején domain-alapon különválasztjuk:
+
+- projekt,
+- technológia,
+- gyártási szabályrendszer,
+- nyers fájl,
+- normalizált geometria,
+- geometriai derivált,
+- alkatrész-definíció,
+- tábla-definíció,
+- projekt-specifikus igény,
+- run snapshot,
+- artifact,
+- viewer/report projection.
+
+Ha ez most tisztán le van rakva, akkor a későbbi inventory, remnants, composite és machine export modulok nem szétverik a rendszert, hanem szabályosan ráépülnek.
+
+---
+
+# 14. Forrásalap
+
+A dokumentum az alábbi projektanyagok és beszélgetések szintézise alapján készült:
+
+- VRS Nesting – Felhős Web Platform Specifikáció
+- VRS Nesting Web Platform Implementációs Útmutató
+- ChatGPT – DXF Nesting alkalmazás beszélgetés
+- DXF Nesting alkalmazás – Repo áttekintés és fázis 3 beszélgetés
+
+A mostani verzió ezekből kiindulva már egy továbbfejlesztett, egységesített architekturális és adatmodellezési javaslatot ad.
