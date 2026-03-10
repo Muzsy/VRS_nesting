@@ -25,6 +25,7 @@ Elsőként ezt érdemes elolvasni:
 
 - `architecture/dxf_nesting_platform_architektura_es_supabase_schema.md`
 - `architecture/h0_modulhatarok_es_boundary_szerzodes.md` (modulhatar source-of-truth)
+- `architecture/h0_domain_entitasterkep_es_ownership_matrix.md` (domain entitas source-of-truth)
 
 Ez a platform alapdokumentuma:
 - modulhatárok
@@ -33,6 +34,7 @@ Ez a platform alapdokumentuma:
 - alap storage és RLS elvek
 
 Modulhatar/ownership kerdesben a `h0_modulhatarok_es_boundary_szerzodes.md` az elsosegi forras.
+Domain entitas/aggregate ownership kerdesben a `h0_domain_entitasterkep_es_ownership_matrix.md` az elsosegi forras.
 
 ### 2. Összevont roadmap
 Utána ez jön:
@@ -88,6 +90,7 @@ docs/
     architecture/
       dxf_nesting_platform_architektura_es_supabase_schema.md
       h0_modulhatarok_es_boundary_szerzodes.md
+      h0_domain_entitasterkep_es_ownership_matrix.md
     roadmap/
       dxf_nesting_platform_h0_reszletes.md
       dxf_nesting_platform_h1_reszletes.md

@@ -8,6 +8,7 @@ A modulhatarokkal kapcsolatos vitaban ez a dokumentum elsoseget elvez a README, 
 Kapcsolodo dokumentumok:
 - `docs/web_platform/README.md`
 - `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md`
+- `docs/web_platform/architecture/h0_domain_entitasterkep_es_ownership_matrix.md`
 - `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md`
 
 ## 2. Kotelezo boundary alapelvek
@@ -266,3 +267,6 @@ H1 kovetkezmeny:
 
 Ha ket dokumentum ellentmond, modulhatar, ownership es source-of-truth temaban ez a dokumentum az ervenyes.
 A tobbi dokumentum rovid hivatkozassal erre kell visszamutasson.
+
+Domain entitas-tipus, aggregate root, es definition/usage/demand/snapshot/result/export szeparacio
+kerdesben a `h0_domain_entitasterkep_es_ownership_matrix.md` az elsosegi forras.

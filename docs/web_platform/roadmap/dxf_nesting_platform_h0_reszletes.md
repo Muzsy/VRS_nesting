@@ -41,6 +41,8 @@ A H0 végére a rendszernek az alábbi alapelveket kell teljesítenie:
 
 H0 modulhatar source-of-truth:
 - `docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md`
+H0 domain entitasterkep source-of-truth:
+- `docs/web_platform/architecture/h0_domain_entitasterkep_es_ownership_matrix.md`
 
 ---
 

@@ -16,6 +16,8 @@ A dokumentum összefoglalja:
 
 Modulhatar es ownership szerzodes source-of-truth:
 - `docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md`
+Domain entitas- es aggregate ownership source-of-truth:
+- `docs/web_platform/architecture/h0_domain_entitasterkep_es_ownership_matrix.md`
 
 Ez a dokumentum az architekturalis kontextust adja; a konkret boundary donteseket a fenti hivatkozas rogziti normativan.
 
