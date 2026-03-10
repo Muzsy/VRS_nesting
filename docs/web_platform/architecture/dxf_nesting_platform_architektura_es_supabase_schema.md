@@ -14,6 +14,11 @@ A dokumentum összefoglalja:
 - a fejlesztési roadmap-et,
 - valamint egy **konkrét, Supabase/PostgreSQL alapú, tábla- és mezőszintű javasolt sémát**.
 
+Modulhatar es ownership szerzodes source-of-truth:
+- `docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md`
+
+Ez a dokumentum az architekturalis kontextust adja; a konkret boundary donteseket a fenti hivatkozas rogziti normativan.
+
 ## 2. Vezérelvek
 
 ### 2.1 A nesting engine ne legyen maga a teljes rendszer

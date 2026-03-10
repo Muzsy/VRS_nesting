@@ -1,0 +1,60 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E1-T1 modulhatarok veglegesitese task alap artefaktjait:
+      canvas, goal YAML, runner prompt, checklist es report.
+      A fajlnevek es eleresi utak pontosan a web_platform area konvenciot kovessek.
+    outputs:
+      - "canvases/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e1_t1_modulhatarok_veglegesitese.yaml"
+      - "codex/prompts/web_platform/h0_e1_t1_modulhatarok_veglegesitese/run.md"
+      - "codex/codex_checklist/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md"
+      - "codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md"
+
+  - name: "H0 boundary source-of-truth dokumentum letrehozasa"
+    description: >
+      Hozd letre a dedikalt H0 boundary dokumentumot. A dokumentum rogzitese:
+      1) a 7 fo modul celjat es ownership hatarait,
+      2) a modulon beluli source-of-truth felelosseget,
+      3) az inbound/outbound contractokat,
+      4) a tiltott felelossegeket es couplingokat,
+      5) a definicio / hasznalat / snapshot / artifact / projection kulonvalasztast,
+      6) a snapshot-first es engine adapter boundary szabalyait.
+      A dokumentum legyen eleg konkret ahhoz, hogy a H0-E2 schema es a H1
+      implementacio mar erre tudjon tamaszkodni.
+    outputs:
+      - "docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md"
+
+  - name: "Web platform hivatkozasok es architektura szinkron frissitese"
+    description: >
+      Frissitsd a web_platform dokumentacio fo entrypontjait ugy, hogy az uj
+      H0 boundary dokumentum legyen a modulhatarok explicit source of truth-ja.
+      A README-ben, a fo architektura dokumentumban es a H0 reszletes roadmapban
+      legyen egyertelmu hivatkozas az uj boundary dokumentumra.
+      Minimal-invaziv modon dolgozz: a mar meglevo tartalom ne legyen feleslegesen
+      atszerkesztve, csak a source-of-truth hivatkozasok es rovid rogzitesek
+      keruljenek be.
+    outputs:
+      - "docs/web_platform/README.md"
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Hozd letre vagy frissitsd a task checklistet es reportot.
+      A checklist rovid, pipalhato statuszlista legyen.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix
+      resszel. Evidence nelkul nincs PASS.
+      Mivel ez docs-only task, a bizonyitekok elsosorban dokumentum path + line
+      hivatkozasok legyenek.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md"
+      - "codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md
+    outputs:
+      - "codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md"
+      - "codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.verify.log"

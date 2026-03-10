@@ -24,12 +24,15 @@ A konkrét végrehajtási feladatok továbbra is a `canvases/web_platform/` és 
 Elsőként ezt érdemes elolvasni:
 
 - `architecture/dxf_nesting_platform_architektura_es_supabase_schema.md`
+- `architecture/h0_modulhatarok_es_boundary_szerzodes.md` (modulhatar source-of-truth)
 
 Ez a platform alapdokumentuma:
 - modulhatárok
 - geometry / nesting / manufacturing / postprocess szétválasztás
 - Supabase SQL-szintű domainmodell
 - alap storage és RLS elvek
+
+Modulhatar/ownership kerdesben a `h0_modulhatarok_es_boundary_szerzodes.md` az elsosegi forras.
 
 ### 2. Összevont roadmap
 Utána ez jön:
@@ -84,6 +87,7 @@ docs/
     platform_roadmap_reszletes.md
     architecture/
       dxf_nesting_platform_architektura_es_supabase_schema.md
+      h0_modulhatarok_es_boundary_szerzodes.md
     roadmap/
       dxf_nesting_platform_h0_reszletes.md
       dxf_nesting_platform_h1_reszletes.md

@@ -39,6 +39,9 @@ A H0 végére a rendszernek az alábbi alapelveket kell teljesítenie:
 6. **A nesting, manufacturing és postprocess külön réteg legyen**  
    Ezek egymásra épülnek, de nem keverhetők össze.
 
+H0 modulhatar source-of-truth:
+- `docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md`
+
 ---
 
 ## H0 scope
