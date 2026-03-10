@@ -465,89 +465,30 @@ Supabase/Postgres oldalon érdemes explicit enumokkal dolgozni, mert ettől a s�
 
 ## 8.1 Extensions és enumok
 
+A H0-E2-T1 óta a tényleges schema source of truth a
+`supabase/migrations/20260310220000_h0_e2_t1_app_schema_es_enumok.sql`.
+Az alábbi blokk a bázis migráció irányát rögzíti (nem teljes táblaséma).
+
 ```sql
 create extension if not exists pgcrypto;
 
-create type project_status as enum ('draft', 'active', 'archived');
+create schema if not exists app;
 
-create type kerf_source_type as enum ('lookup', 'manual_override');
-
-create type file_kind as enum ('part_source', 'sheet_source', 'project_import', 'other');
-
-create type geometry_role as enum ('part', 'sheet');
-
-create type validation_status as enum ('ok', 'auto_fix_accept', 'needs_review', 'reject');
-
-create type review_action_type as enum ('approve', 'reject', 'revert_fix', 'mark_inactive');
-
-create type revision_status as enum ('draft', 'active', 'replaced');
-
-create type sheet_geometry_type as enum ('rect', 'polygon');
-
-create type sheet_source_type as enum ('manual', 'catalog', 'inventory', 'remnant');
-
-create type availability_mode as enum ('finite', 'infinite');
-
-create type selection_source_type as enum ('manual', 'catalog', 'inventory');
-
-create type run_status as enum (
-  'draft',
-  'queued',
-  'running',
-  'succeeded',
-  'failed',
-  'cancel_requested',
-  'cancelled'
-);
-
-create type queue_status as enum ('queued', 'leased', 'done', 'failed');
-
-create type artifact_kind as enum (
-  'project_snapshot',
-  'report_json',
-  'solver_input',
-  'solver_output',
-  'sheet_dxf',
-  'sheet_svg',
-  'bundle_zip',
-  'cut_plan_json',
-  'machine_program',
-  'machine_preview_svg',
-  'machine_ready_dxf',
-  'other'
-);
-
-create type geometry_derivative_kind as enum (
-  'nesting_canonical',
-  'manufacturing_canonical',
-  'viewer_outline'
-);
-
-create type placement_policy_type as enum ('hard_first', 'soft_prefer', 'normal', 'defer');
-
-create type contour_kind_type as enum ('outer', 'inner');
-
-create type feature_class_type as enum (
-  'default',
-  'small_hole',
-  'slot',
-  'tiny_inner',
-  'narrow_channel'
-);
-
-create type lead_type as enum ('none', 'line', 'arc', 'line_arc');
-
-create type entry_side_policy_type as enum ('auto', 'left', 'right', 'tangent_best');
-
-create type derivative_target_type as enum ('solver', 'manufacturing', 'viewer');
-
-create type postprocess_output_format as enum (
-  'generic_dxf',
-  'generic_json',
-  'machine_native',
-  'svg_preview',
-  'zip_bundle'
-);
+-- H0-E2-T1 core enum inventory:
+-- app.project_lifecycle
+-- app.revision_lifecycle
+-- app.file_kind
+-- app.geometry_role
+-- app.geometry_validation_status
+-- app.geometry_derivative_kind
+-- app.sheet_geometry_type
+-- app.sheet_source_kind
+-- app.sheet_availability_status
+-- app.run_request_status
+-- app.run_snapshot_status
+-- app.run_attempt_status
+-- app.artifact_kind
+-- app.placement_policy
 ```
 
 ## 8.2 Identity és Project Core

@@ -275,68 +275,35 @@ Ezek közül a manufacturing/postprocess rész lehet kezdetben minimális, de a 
 
 ## 2. Supabase SQL séma — H0 minimum
 
-Az alábbi séma H0 szintű, részletes kiinduló struktúra.
+Az alábbi blokk a H0-E2-T1 bázismigrációhoz igazított minimum irány.
+A tényleges source of truth:
+`supabase/migrations/20260310220000_h0_e2_t1_app_schema_es_enumok.sql`.
 
 ```sql
 create extension if not exists pgcrypto;
 
 create schema if not exists app;
 
-create type app.file_kind as enum (
-  'source_dxf',
-  'source_svg',
-  'import_report',
-  'artifact'
-);
-
-create type app.geometry_status as enum (
-  'uploaded',
-  'parsed',
-  'validated',
-  'approved',
-  'rejected'
-);
-
-create type app.derivative_kind as enum (
-  'nesting_canonical',
-  'manufacturing_canonical',
-  'viewer_outline'
-);
-
-create type app.run_status as enum (
-  'draft',
-  'queued',
-  'running',
-  'succeeded',
-  'failed',
-  'cancelled'
-);
-
-create type app.queue_status as enum (
-  'pending',
-  'leased',
-  'done',
-  'error'
-);
-
-create type app.artifact_kind as enum (
-  'solver_output',
-  'report_json',
-  'sheet_dxf',
-  'sheet_svg',
-  'bundle_zip',
-  'cut_plan_json',
-  'machine_preview_svg',
-  'machine_program'
-);
-
-create type app.placement_policy as enum (
-  'hard_first',
-  'soft_prefer',
-  'normal',
-  'defer'
-);
+-- H0-E2-T1 core enum inventory:
+-- app.project_lifecycle
+-- app.revision_lifecycle
+-- app.file_kind
+-- app.geometry_role
+-- app.geometry_validation_status
+-- app.geometry_derivative_kind
+-- app.sheet_geometry_type
+-- app.sheet_source_kind
+-- app.sheet_availability_status
+-- app.run_request_status
+-- app.run_snapshot_status
+-- app.run_attempt_status
+-- app.artifact_kind
+-- app.placement_policy
 ```
+
+Megjegyzés:
+- Ebben a fázisban csak schema + extension + enum baseline készül;
+  domain táblák (`profiles`, `projects`, `run_*`) még nem.
 
 ---
 

@@ -1,0 +1,55 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E2-T1 enumok es core schema letrehozasa task teljes
+      artefaktlancat: canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e2_t1_enumok_es_core_schema_letrehozasa.yaml"
+      - "codex/prompts/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa/run.md"
+      - "codex/codex_checklist/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.md"
+      - "codex/reports/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.md"
+
+  - name: "Bazis Supabase migracio letrehozasa az app schemahoz es enumokhoz"
+    description: >
+      Hozd letre az elso valodi H0-E2 bazismigraciot a supabase/migrations alatt.
+      A migracio:
+      1) hozza letre a szukseges extension(oke)t,
+      2) hozza letre az `app` schema-t,
+      3) hozza letre a H0/H1 core enumokat,
+      4) ne hozzon letre meg domain tablakat,
+      5) duplicate-safe modon mukodjon fejlesztoi ujrafuttatasnal is.
+      A vegleges enum-keszletet a H0-E1-T1/T2/T3 source-of-truth doksikbol vezesd le,
+      ne a regi leegyszerusitett SQL snippet vak masolasabol.
+    outputs:
+      - "supabase/migrations/20260310220000_h0_e2_t1_app_schema_es_enumok.sql"
+
+  - name: "Minimal docs szinkron az enum/schema iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es H0 roadmap dokumentumot, ha
+      a bennuk szereplo SQL-pelda vagy enum-felsorolas mar stale vagy leegyszerusitett
+      a vegleges H0-E2-T1 migraciohoz kepest.
+      A cel nem a teljes doksi atszerkesztese, hanem a konkret migracios irany
+      es a source-of-truth allapot helyreallitasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix
+      resszel. Kulon sorold fel a vegleges enum inventoryt, es jelezd egyertelmuen,
+      hogy a task nem hozott letre meg domain tablakat.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.md"
+      - "codex/reports/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.md
+    outputs:
+      - "codex/reports/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.md"
+      - "codex/reports/web_platform/h0_e2_t1_enumok_es_core_schema_letrehozasa.verify.log"
