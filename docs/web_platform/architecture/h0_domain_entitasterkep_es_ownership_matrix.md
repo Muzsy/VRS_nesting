@@ -13,6 +13,7 @@ Prioritas konfliktus eseten:
 Kapcsolodo dokumentumok:
 - `docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md`
 - `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md`
+- `docs/web_platform/architecture/h0_snapshot_first_futasi_es_adatkontraktus.md`
 - `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md`
 
 ## 2. Domain vilagok explicit szetvalasztasa
@@ -208,3 +209,5 @@ A kovetkezo core schema feladatban kotelezoen ervenyesitendo:
 Ha domain entitas-tipus, aggregate ownership, vagy source-of-truth kerdesben ket dokumentum
 ellentmond, ez a dokumentum az ervenyes domain-nezet.
 A modulhatar-szintu tiltasokban a `h0_modulhatarok_es_boundary_szerzodes.md` az elsosegi forras.
+A run lifecycle/snapshot contract szemantikaban a
+`h0_snapshot_first_futasi_es_adatkontraktus.md` az elsosegi forras.

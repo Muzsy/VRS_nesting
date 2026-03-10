@@ -1,0 +1,64 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E1-T3 snapshot-first futasi es adatkontraktus formalizalasa
+      task alap artefaktjait: canvas, goal YAML, runner prompt, checklist es report.
+      A fajlnevek es eleresi utak pontosan a web_platform area konvenciot kovessek.
+    outputs:
+      - "canvases/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.yaml"
+      - "codex/prompts/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa/run.md"
+      - "codex/codex_checklist/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.md"
+      - "codex/reports/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.md"
+
+  - name: "H0 snapshot-first source-of-truth dokumentum letrehozasa"
+    description: >
+      Hozd letre a dedikalt H0 snapshot-first futasi es adatkontraktus dokumentumot.
+      A dokumentum rogzitese:
+      1) a run request / run snapshot / run attempt / run state / run result /
+         projection / export artifact fogalmakat,
+      2) a snapshot build logikat es forrasait,
+      3) a worker input/output boundary-t,
+      4) a run lifecycle allapotgepet,
+      5) a retry / timeout / lease / cancel / idempotencia szabalyokat,
+      6) a H0-E2 schema feladathoz szukseges kovetkezmenyeket.
+      A dokumentum mar ne csak architekturailag legyen korrekt, hanem schema-
+      tervezesi inputkent is hasznalhato legyen.
+    outputs:
+      - "docs/web_platform/architecture/h0_snapshot_first_futasi_es_adatkontraktus.md"
+
+  - name: "Web platform dokumentacio szinkron frissitese"
+    description: >
+      Frissitsd a fo web_platform dokumentumokat ugy, hogy az uj H0 snapshot-first
+      dokumentum legyen a futasi es adatkontraktus-szintu source of truth.
+      A README-ben, a fo architektura dokumentumban, a domain entitasterkep
+      dokumentumban es a H0 reszletes roadmapban jelenjen meg egyertelmu
+      hivatkozas az uj doksira.
+      Minimal-invaziv modon dolgozz: ne irj at feleslegesen meglevo blokkot, csak
+      a szukseges hivatkozasokat es rovid pontositasokat vezesd be.
+    outputs:
+      - "docs/web_platform/README.md"
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/architecture/h0_domain_entitasterkep_es_ownership_matrix.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Hozd letre vagy frissitsd a task checklistet es reportot.
+      A checklist rovid, pipalhato statuszlista legyen.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix
+      resszel. Evidence nelkul nincs PASS.
+      Mivel ez docs-only task, a bizonyitekok elsosorban dokumentum path + line
+      hivatkozasok legyenek.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.md"
+      - "codex/reports/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.md
+    outputs:
+      - "codex/reports/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.md"
+      - "codex/reports/web_platform/h0_e1_t3_snapshot_first_futasi_es_adatkontraktus_formalizalasa.verify.log"
