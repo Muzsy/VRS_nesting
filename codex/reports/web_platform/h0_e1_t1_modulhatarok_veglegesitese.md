@@ -66,35 +66,25 @@ PASS
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-03-10T21:05:39+01:00 → 2026-03-10T21:09:11+01:00 (212s)
+- futás: 2026-03-10T21:33:59+01:00 → 2026-03-10T21:37:27+01:00 (208s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.verify.log`
-- git: `main@02b1906`
-- módosított fájlok (git status): 11
+- git: `main@69bbdba`
+- módosított fájlok (git status): 2
 
 **git diff --stat**
 
 ```text
- docs/web_platform/README.md                                          | 4 ++++
- .../dxf_nesting_platform_architektura_es_supabase_schema.md          | 5 +++++
- docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md       | 3 +++
- 3 files changed, 12 insertions(+)
+ ...canvas_h0_e1_t1_modulhatarok_veglegesitese.yaml | 60 ------------------
+ .../h0_e1_t1_modulhatarok_veglegesitese.verify.log | 72 +++++++++++-----------
+ 2 files changed, 36 insertions(+), 96 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
- M docs/web_platform/README.md
- M docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md
- M docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md
-?? canvases/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md
-?? codex/codex_checklist/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md
-?? codex/goals/canvases/web_platform/fill_canvas_h0_e1_t1_modulhatarok_veglegesitese.yaml
-?? codex/goals/canvases/web_platform/ill_canvas_h0_e1_t1_modulhatarok_veglegesitese.yaml
-?? codex/prompts/web_platform/
-?? codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.md
-?? codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.verify.log
-?? docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md
+ D codex/goals/canvases/web_platform/ill_canvas_h0_e1_t1_modulhatarok_veglegesitese.yaml
+ M codex/reports/web_platform/h0_e1_t1_modulhatarok_veglegesitese.verify.log
 ```
 
 <!-- AUTO_VERIFY_END -->
