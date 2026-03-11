@@ -569,7 +569,7 @@ create index if not exists idx_kerf_lookup_rules_match
 
 create table if not exists public.technology_profiles (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   name text not null,
   is_default boolean not null default false,
   created_at timestamptz not null default now(),
@@ -600,10 +600,10 @@ create table if not exists public.technology_profile_versions (
 );
 
 create table if not exists public.project_technology_selection (
-  project_id uuid primary key references public.projects(id) on delete cascade,
+  project_id uuid primary key references app.projects(id) on delete cascade,
   active_technology_profile_version_id uuid not null references public.technology_profile_versions(id),
   selected_at timestamptz not null default now(),
-  selected_by uuid references public.profiles(id)
+  selected_by uuid references app.profiles(id)
 );
 ```
 
@@ -671,7 +671,7 @@ create table if not exists public.cut_contour_rules (
 
 create table if not exists public.manufacturing_profiles (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   name text not null,
   is_default boolean not null default false,
   created_at timestamptz not null default now(),
@@ -698,10 +698,10 @@ create table if not exists public.manufacturing_profile_versions (
 );
 
 create table if not exists public.project_manufacturing_selection (
-  project_id uuid primary key references public.projects(id) on delete cascade,
+  project_id uuid primary key references app.projects(id) on delete cascade,
   active_manufacturing_profile_version_id uuid not null references public.manufacturing_profile_versions(id),
   selected_at timestamptz not null default now(),
-  selected_by uuid references public.profiles(id)
+  selected_by uuid references app.profiles(id)
 );
 ```
 
@@ -710,7 +710,7 @@ create table if not exists public.project_manufacturing_selection (
 ```sql
 create table if not exists public.file_objects (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   storage_bucket text not null,
   storage_key text not null,
   original_filename text not null,
@@ -718,7 +718,7 @@ create table if not exists public.file_objects (
   file_kind file_kind not null default 'other',
   size_bytes bigint,
   content_hash_sha256 text,
-  uploaded_by uuid references public.profiles(id),
+  uploaded_by uuid references app.profiles(id),
   created_at timestamptz not null default now(),
   unique (storage_bucket, storage_key)
 );
@@ -728,7 +728,7 @@ create index if not exists idx_file_objects_project_id
 
 create table if not exists public.geometry_revisions (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   source_file_object_id uuid references public.file_objects(id) on delete set null,
   geometry_role geometry_role not null,
   canonical_format_version text not null,
@@ -774,7 +774,7 @@ create table if not exists public.geometry_review_actions (
   id uuid primary key default gen_random_uuid(),
   geometry_validation_report_id uuid not null references public.geometry_validation_reports(id) on delete cascade,
   action review_action_type not null,
-  actor_user_id uuid not null references public.profiles(id),
+  actor_user_id uuid not null references app.profiles(id),
   comment text,
   created_at timestamptz not null default now()
 );
@@ -785,7 +785,7 @@ create table if not exists public.geometry_review_actions (
 ```sql
 create table if not exists public.part_definitions (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   part_code text not null,
   name text not null,
   current_revision_id uuid,
@@ -812,7 +812,7 @@ alter table public.part_definitions
 
 create table if not exists public.project_part_requirements (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   part_definition_id uuid not null references public.part_definitions(id) on delete cascade,
   required_qty integer not null,
   placement_priority smallint not null default 50,
@@ -850,7 +850,7 @@ create table if not exists public.standard_sheet_catalog (
 
 create table if not exists public.sheet_definitions (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid references public.projects(id) on delete cascade,
+  project_id uuid references app.projects(id) on delete cascade,
   sheet_code text not null,
   name text not null,
   geometry_type sheet_geometry_type not null,
@@ -879,7 +879,7 @@ create table if not exists public.sheet_revisions (
 
 create table if not exists public.project_sheet_inputs (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   sheet_definition_id uuid not null references public.sheet_definitions(id) on delete cascade,
   sheet_revision_id uuid not null references public.sheet_revisions(id) on delete cascade,
   availability_mode availability_mode not null default 'finite',
@@ -905,10 +905,10 @@ create index if not exists idx_project_sheet_inputs_priority
 ```sql
 create table if not exists public.nesting_runs (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
+  project_id uuid not null references app.projects(id) on delete cascade,
   status run_status not null default 'draft',
   seed integer,
-  requested_by uuid references public.profiles(id),
+  requested_by uuid references app.profiles(id),
   started_at timestamptz,
   finished_at timestamptz,
   error_code text,
