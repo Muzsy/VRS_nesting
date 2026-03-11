@@ -314,7 +314,8 @@ create table if not exists app.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  check (display_name is null or length(btrim(display_name)) > 0)
 );
 
 create table if not exists app.projects (
@@ -322,19 +323,33 @@ create table if not exists app.projects (
   owner_user_id uuid not null references app.profiles(id) on delete restrict,
   name text not null,
   description text,
-  status text not null default 'active',
+  lifecycle app.project_lifecycle not null default 'draft',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  check (length(btrim(name)) > 0)
 );
 
 create table if not exists app.project_settings (
   project_id uuid primary key references app.projects(id) on delete cascade,
-  default_rotation_step_deg integer,
+  default_units text not null default 'mm',
+  default_rotation_step_deg integer not null default 90,
   notes text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  check (default_units in ('mm', 'cm', 'm', 'in')),
+  check (default_rotation_step_deg > 0 and default_rotation_step_deg <= 360)
 );
+
+create index if not exists idx_projects_owner_user_id
+  on app.projects(owner_user_id);
+
+create index if not exists idx_projects_lifecycle
+  on app.projects(lifecycle);
 ```
+
+Megjegyzés:
+- A H0-E2-T2 migráció az `updated_at` mezőkhöz minimális, `app.set_updated_at()`
+  helper + trigger mintát is ad erre a három táblára.
 
 ---
 
