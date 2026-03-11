@@ -227,12 +227,8 @@ A H0 domainmodell legalább az alábbi csoportokra bomlik:
 - project_settings
 
 ### Technológiai alapok
-- machine_catalog
-- material_catalog
-- kerf_lookup_rules
-- technology_profiles
-- technology_profile_versions
-- project_technology_selection
+- technology_presets
+- project_technology_setups
 
 ### Fájl és geometria
 - file_objects
@@ -355,73 +351,57 @@ Megjegyzés:
 
 ## 4. Technológiai alapok
 
+A H0-E2-T3 ota a technology domain aktualis source of truth migracioja:
+`supabase/migrations/20260310230000_h0_e2_t3_technology_domain_alapok.sql`.
+A bazis ketretegu: reusable preset katalogus + project-bound setup truth.
+
 ```sql
-create table if not exists app.machine_catalog (
+create table if not exists app.technology_presets (
   id uuid primary key default gen_random_uuid(),
-  code text not null unique,
-  name text not null,
-  manufacturer text,
-  metadata_jsonb jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists app.material_catalog (
-  id uuid primary key default gen_random_uuid(),
-  code text not null unique,
-  name text not null,
-  group_name text,
-  metadata_jsonb jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists app.kerf_lookup_rules (
-  id uuid primary key default gen_random_uuid(),
-  machine_id uuid not null references app.machine_catalog(id) on delete cascade,
-  material_id uuid not null references app.material_catalog(id) on delete cascade,
+  preset_code text not null unique,
+  display_name text not null,
+  machine_code text not null,
+  material_code text not null,
   thickness_mm numeric(10,3) not null,
   kerf_mm numeric(10,3) not null,
-  effective_from timestamptz,
-  effective_to timestamptz,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_kerf_lookup_rules_key
-  on app.kerf_lookup_rules(machine_id, material_id, thickness_mm);
-
-create table if not exists app.technology_profiles (
-  id uuid primary key default gen_random_uuid(),
-  owner_user_id uuid not null references app.profiles(id) on delete restrict,
-  name text not null,
-  description text,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists app.technology_profile_versions (
-  id uuid primary key default gen_random_uuid(),
-  technology_profile_id uuid not null references app.technology_profiles(id) on delete cascade,
-  version_no integer not null,
-  machine_id uuid not null references app.machine_catalog(id) on delete restrict,
-  material_id uuid not null references app.material_catalog(id) on delete restrict,
-  thickness_mm numeric(10,3) not null,
-  spacing_mm numeric(10,3),
-  margin_mm numeric(10,3),
-  rotation_step_deg integer,
+  spacing_mm numeric(10,3) not null default 0,
+  margin_mm numeric(10,3) not null default 0,
+  rotation_step_deg integer not null default 90,
   allow_free_rotation boolean not null default false,
-  time_limit_ms integer,
-  kerf_source text,
-  kerf_mm numeric(10,3),
-  config_jsonb jsonb not null default '{}'::jsonb,
+  lifecycle app.revision_lifecycle not null default 'approved',
+  is_active boolean not null default true,
+  notes text,
   created_at timestamptz not null default now(),
-  unique (technology_profile_id, version_no)
+  updated_at timestamptz not null default now()
 );
 
-create table if not exists app.project_technology_selection (
-  project_id uuid primary key references app.projects(id) on delete cascade,
-  active_technology_profile_version_id uuid not null references app.technology_profile_versions(id) on delete restrict,
-  selected_at timestamptz not null default now(),
-  selected_by uuid references app.profiles(id) on delete set null
+create table if not exists app.project_technology_setups (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references app.projects(id) on delete cascade,
+  preset_id uuid references app.technology_presets(id) on delete set null,
+  display_name text not null,
+  lifecycle app.revision_lifecycle not null default 'draft',
+  is_default boolean not null default false,
+  machine_code text not null,
+  material_code text not null,
+  thickness_mm numeric(10,3) not null,
+  kerf_mm numeric(10,3) not null,
+  spacing_mm numeric(10,3) not null default 0,
+  margin_mm numeric(10,3) not null default 0,
+  rotation_step_deg integer not null default 90,
+  allow_free_rotation boolean not null default false,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+create index if not exists idx_project_technology_setups_project_id
+  on app.project_technology_setups(project_id);
 ```
+
+Megjegyzés:
+- A részletesebb machine/material/kerf lookup katalogus, illetve a full
+  technology profile-version réteg későbbi H0-E2/H1 bővítésként kerül be.
 
 ---
 

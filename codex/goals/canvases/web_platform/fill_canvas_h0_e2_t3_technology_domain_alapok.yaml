@@ -1,0 +1,63 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E2-T3 technology domain alapok task teljes artefaktlancat:
+      canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e2_t3_technology_domain_alapok.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e2_t3_technology_domain_alapok.yaml"
+      - "codex/prompts/web_platform/h0_e2_t3_technology_domain_alapok/run.md"
+      - "codex/codex_checklist/web_platform/h0_e2_t3_technology_domain_alapok.md"
+      - "codex/reports/web_platform/h0_e2_t3_technology_domain_alapok.md"
+
+  - name: "Technology domain alap migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0-E2 migraciot a technology domain bazisahoz.
+      A migracio:
+      1) az `app` schema-n belul dolgozzon,
+      2) hozzon letre egy reusable technology catalog/preset tablavilagot,
+      3) hozzon letre egy projekt-szintu technology setup/profile tablavilagot,
+      4) kapcsolodjon a mar meglevo `app.projects` strukturahoz,
+      5) ne hozzon letre part/file/revision/run/remnant/export tablakat,
+      6) ne vezessen be meg RLS-t.
+      A vegleges oszlopkeszletet a H0-E1 dokumentumokbol es a web_platform
+      architecture/H0 roadmap technology iranyabol vezesd le, ne veletlenszeru
+      JSON dump megoldassal.
+    outputs:
+      - "supabase/migrations/20260310230000_h0_e2_t3_technology_domain_alapok.sql"
+
+  - name: "Minimal docs szinkron a technology domain iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es H0 roadmap dokumentumot, ha a
+      technology domain tablairany ott meg stale, leegyszerusitett vagy nem eleg
+      egyertelmu a mostani konkret migraciohoz kepest.
+      A cel nem a teljes doksi atszerkesztese, hanem a source-of-truth irany
+      helyreallitasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix
+      resszel.
+      Kulon sorold fel:
+      - a technology preset tabla vegleges oszlopkeszletet;
+      - a project technology setup tabla vegleges oszlopkeszletet;
+      - az FK kapcsolatokat es indexeket;
+      - hogy a task szandekosan NEM hozott letre part/file/revision/run/remnant/export
+        domain tablakat;
+      - hogy nem kerult bele RLS policy.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e2_t3_technology_domain_alapok.md"
+      - "codex/reports/web_platform/h0_e2_t3_technology_domain_alapok.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e2_t3_technology_domain_alapok.md
+    outputs:
+      - "codex/reports/web_platform/h0_e2_t3_technology_domain_alapok.md"
+      - "codex/reports/web_platform/h0_e2_t3_technology_domain_alapok.verify.log"
