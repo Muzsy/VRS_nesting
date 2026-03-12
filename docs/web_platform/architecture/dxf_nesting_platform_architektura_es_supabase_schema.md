@@ -920,7 +920,7 @@ create table if not exists public.run_artifacts (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references public.nesting_runs(id) on delete cascade,
   artifact_kind artifact_kind not null,
-  file_object_id uuid references public.file_objects(id) on delete set null,
+  file_object_id uuid references app.file_objects(id) on delete set null,
   relative_path text,
   mime_type text,
   byte_size bigint,
