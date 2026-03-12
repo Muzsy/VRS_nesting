@@ -407,9 +407,10 @@ Megjegyzés:
 
 ## 5. Fájl és geometria
 
-A H0-E3-T1 ota a file-domain aktualis source of truth migracioja:
-`supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`.
-Ez a lepes szandekosan csak az `app.file_objects` tablavilagot vezeti be.
+A H0-E3-T2 ota a files+geometry-revision domain aktualis source of truth migracioi:
+- `supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`
+- `supabase/migrations/20260312003000_h0_e3_t2_geometry_revision_modell.sql`
+Ez a lepes a file-object bazis utan bevezeti az `app.geometry_revisions` tablavilagot.
 
 ```sql
 create table if not exists app.file_objects (
@@ -434,12 +435,41 @@ create index if not exists idx_file_objects_project_id
 
 create index if not exists idx_file_objects_uploaded_by
   on app.file_objects(uploaded_by);
+
+create table if not exists app.geometry_revisions (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references app.projects(id) on delete cascade,
+  source_file_object_id uuid not null references app.file_objects(id) on delete restrict,
+  geometry_role app.geometry_role not null,
+  revision_no integer not null,
+  status app.geometry_validation_status not null default 'uploaded',
+  canonical_format_version text not null,
+  canonical_geometry_jsonb jsonb,
+  canonical_hash_sha256 text,
+  source_hash_sha256 text,
+  bbox_jsonb jsonb,
+  created_by uuid references app.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (source_file_object_id, revision_no),
+  check (revision_no > 0),
+  check (length(btrim(canonical_format_version)) > 0)
+);
+
+create index if not exists idx_geometry_revisions_project_id
+  on app.geometry_revisions(project_id);
+
+create index if not exists idx_geometry_revisions_source_file_object_id
+  on app.geometry_revisions(source_file_object_id);
+
+create index if not exists idx_geometry_revisions_status
+  on app.geometry_revisions(status);
 ```
 
 Megjegyzes:
-- A geometry revision/validation/review/derivative tablak ebben a taskban
-  szandekosan nincsenek bevezetve; ezek kovetkezo schema lepesekben jonnek.
-- A file object ownership itt csak storage-reference + metadata truth.
+- A geometry revision ebben a lepesben a canonical geometry truth helye.
+- A geometry validation/review/derivative tablak tovabbra is kovetkezo schema lepesekben jonnek.
+- A file object ownership tovabbra is storage-reference + metadata truth.
 
 ---
 

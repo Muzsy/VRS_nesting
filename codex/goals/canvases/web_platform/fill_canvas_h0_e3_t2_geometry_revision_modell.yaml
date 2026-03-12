@@ -1,0 +1,64 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E3-T2 geometry revision modell task teljes artefaktlancat:
+      canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e3_t2_geometry_revision_modell.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e3_t2_geometry_revision_modell.yaml"
+      - "codex/prompts/web_platform/h0_e3_t2_geometry_revision_modell/run.md"
+      - "codex/codex_checklist/web_platform/h0_e3_t2_geometry_revision_modell.md"
+      - "codex/reports/web_platform/h0_e3_t2_geometry_revision_modell.md"
+
+  - name: "Geometry revision bazis migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0 migraciot az `app.geometry_revisions` tablaval.
+      A migracio:
+      1) az `app` schema-n belul dolgozzon,
+      2) kapcsolja a geometry revision rekordot egy source `app.file_objects` rekordhoz,
+      3) tarolja a `geometry_role`, `status`, `canonical_format_version` adatokat,
+      4) biztositson JSON-alapu canonical geometry helyet,
+      5) tartalmazza a szukseges PK/FK kapcsolatokat, revision-integritast es alap indexeket,
+      6) ne hozzon letre `geometry_validation_reports`, `geometry_review_actions`,
+         `geometry_derivatives`, run vagy export tablakat,
+      7) ne vezessen be meg RLS-t.
+      A vegleges oszlopkeszletet a web_platform H0 docs canonical geometry elveibol vezesd le,
+      de maradj minimalis es stabil scope-ban.
+    outputs:
+      - "supabase/migrations/20260312003000_h0_e3_t2_geometry_revision_modell.sql"
+
+  - name: "Minimal docs szinkron a geometry-revision iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es H0 roadmap dokumentumot, ha a
+      geometry-revision blokk ott meg stale, `public.*` schemaju vagy ownership
+      szempontbol pontatlan a mostani konkret migraciohoz kepest.
+      A cel nem a teljes doksi atszerkesztese, hanem a source-of-truth irany helyreallitasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a `geometry_revisions` vegleges oszlopkeszletet;
+      - a PK/FK kapcsolatokat;
+      - az indexeket es revision-integritast;
+      - a source-file lineage-et;
+      - a canonical format version mezot;
+      - a JSON-alapu canonical geometry helyet;
+      - hogy a task szandekosan NEM hozott letre validation/review/derivative/run/export tablakat;
+      - hogy nem kerult bele RLS policy.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e3_t2_geometry_revision_modell.md"
+      - "codex/reports/web_platform/h0_e3_t2_geometry_revision_modell.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e3_t2_geometry_revision_modell.md
+    outputs:
+      - "codex/reports/web_platform/h0_e3_t2_geometry_revision_modell.md"
+      - "codex/reports/web_platform/h0_e3_t2_geometry_revision_modell.verify.log"
