@@ -685,78 +685,41 @@ create table if not exists public.project_manufacturing_selection (
 
 ## 8.5 Files & Geometry Domain
 
+A H0-E3-T1 ota a file-domain aktualis source of truth migracioja:
+`supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`.
+Ez a lepes szandekosan csak az `app.file_objects` tablavilagot vezeti be.
+
 ```sql
-create table if not exists public.file_objects (
+create table if not exists app.file_objects (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references app.projects(id) on delete cascade,
   storage_bucket text not null,
-  storage_key text not null,
-  original_filename text not null,
+  storage_path text not null,
+  file_name text not null,
   mime_type text,
-  file_kind file_kind not null default 'other',
-  size_bytes bigint,
-  content_hash_sha256 text,
-  uploaded_by uuid references app.profiles(id),
+  file_kind app.file_kind not null,
+  byte_size bigint,
+  sha256 text,
+  uploaded_by uuid references app.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
-  unique (storage_bucket, storage_key)
+  unique (storage_bucket, storage_path),
+  check (length(btrim(storage_bucket)) > 0),
+  check (length(btrim(storage_path)) > 0),
+  check (length(btrim(file_name)) > 0),
+  check (byte_size is null or byte_size >= 0)
 );
 
 create index if not exists idx_file_objects_project_id
-  on public.file_objects(project_id);
+  on app.file_objects(project_id);
 
-create table if not exists public.geometry_revisions (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references app.projects(id) on delete cascade,
-  source_file_object_id uuid references public.file_objects(id) on delete set null,
-  geometry_role geometry_role not null,
-  canonical_format_version text not null,
-  units text not null default 'mm',
-  geometry_jsonb jsonb not null,
-  bbox_jsonb jsonb,
-  area_mm2 numeric(18,3),
-  is_active boolean not null default true,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_geometry_revisions_project_id
-  on public.geometry_revisions(project_id);
-
-create table if not exists public.geometry_derivatives (
-  id uuid primary key default gen_random_uuid(),
-  geometry_revision_id uuid not null references public.geometry_revisions(id) on delete cascade,
-  derivative_kind geometry_derivative_kind not null,
-  derivative_target derivative_target_type not null,
-  format_version text not null,
-  geometry_jsonb jsonb not null,
-  bbox_jsonb jsonb,
-  area_mm2 numeric(18,3),
-  source_hash text,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (geometry_revision_id, derivative_kind, format_version)
-);
-
-create table if not exists public.geometry_validation_reports (
-  id uuid primary key default gen_random_uuid(),
-  geometry_revision_id uuid not null references public.geometry_revisions(id) on delete cascade,
-  status validation_status not null,
-  severity text,
-  confidence_score numeric(5,4),
-  issues_jsonb jsonb not null default '[]'::jsonb,
-  fixes_applied_jsonb jsonb not null default '[]'::jsonb,
-  created_at timestamptz not null default now(),
-  check (confidence_score is null or (confidence_score >= 0 and confidence_score <= 1))
-);
-
-create table if not exists public.geometry_review_actions (
-  id uuid primary key default gen_random_uuid(),
-  geometry_validation_report_id uuid not null references public.geometry_validation_reports(id) on delete cascade,
-  action review_action_type not null,
-  actor_user_id uuid not null references app.profiles(id),
-  comment text,
-  created_at timestamptz not null default now()
-);
+create index if not exists idx_file_objects_uploaded_by
+  on app.file_objects(uploaded_by);
 ```
+
+Megjegyzes:
+- A geometry revision/validation/review/derivative tablak ebben a taskban
+  szandekosan nincsenek bevezetve; ezek kulon, kovetkezo schema taskokban jonnek.
+- A file object ownership itt csak storage-reference + metadata truth.
 
 ## 8.6 Part Domain
 

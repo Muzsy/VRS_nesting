@@ -407,6 +407,10 @@ Megjegyzés:
 
 ## 5. Fájl és geometria
 
+A H0-E3-T1 ota a file-domain aktualis source of truth migracioja:
+`supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`.
+Ez a lepes szandekosan csak az `app.file_objects` tablavilagot vezeti be.
+
 ```sql
 create table if not exists app.file_objects (
   id uuid primary key default gen_random_uuid(),
@@ -422,57 +426,20 @@ create table if not exists app.file_objects (
   created_at timestamptz not null default now()
 );
 
-create unique index if not exists idx_file_objects_bucket_path
+create unique index if not exists uq_file_objects_storage_bucket_path
   on app.file_objects(storage_bucket, storage_path);
 
-create table if not exists app.geometry_revisions (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references app.projects(id) on delete cascade,
-  source_file_object_id uuid not null references app.file_objects(id) on delete restrict,
-  canonical_format_version text not null,
-  geometry_jsonb jsonb not null,
-  bbox_jsonb jsonb not null default '{}'::jsonb,
-  area_mm2 numeric(18,4),
-  perimeter_mm numeric(18,4),
-  status app.geometry_status not null default 'uploaded',
-  source_hash text,
-  created_by uuid references app.profiles(id) on delete set null,
-  created_at timestamptz not null default now()
-);
+create index if not exists idx_file_objects_project_id
+  on app.file_objects(project_id);
 
-create index if not exists idx_geometry_revisions_project
-  on app.geometry_revisions(project_id);
-
-create table if not exists app.geometry_validation_reports (
-  id uuid primary key default gen_random_uuid(),
-  geometry_revision_id uuid not null references app.geometry_revisions(id) on delete cascade,
-  report_jsonb jsonb not null,
-  severity_summary_jsonb jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists app.geometry_review_actions (
-  id uuid primary key default gen_random_uuid(),
-  geometry_revision_id uuid not null references app.geometry_revisions(id) on delete cascade,
-  action_type text not null,
-  action_notes text,
-  created_by uuid references app.profiles(id) on delete set null,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists app.geometry_derivatives (
-  id uuid primary key default gen_random_uuid(),
-  geometry_revision_id uuid not null references app.geometry_revisions(id) on delete cascade,
-  derivative_kind app.derivative_kind not null,
-  format_version text not null,
-  geometry_jsonb jsonb not null,
-  bbox_jsonb jsonb not null default '{}'::jsonb,
-  area_mm2 numeric(18,4),
-  source_hash text,
-  created_at timestamptz not null default now(),
-  unique (geometry_revision_id, derivative_kind, format_version)
-);
+create index if not exists idx_file_objects_uploaded_by
+  on app.file_objects(uploaded_by);
 ```
+
+Megjegyzes:
+- A geometry revision/validation/review/derivative tablak ebben a taskban
+  szandekosan nincsenek bevezetve; ezek kovetkezo schema lepesekben jonnek.
+- A file object ownership itt csak storage-reference + metadata truth.
 
 ---
 
