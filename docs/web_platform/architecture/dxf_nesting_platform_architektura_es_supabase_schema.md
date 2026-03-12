@@ -760,54 +760,61 @@ create table if not exists public.geometry_review_actions (
 
 ## 8.6 Part Domain
 
+A H0-E2-T4 ota a part domain aktualis source of truth migracioja:
+`supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql`.
+Ez a bazis expliciten kuloniti a definition / revision / demand retegeket.
+
 ```sql
-create table if not exists public.part_definitions (
+create table if not exists app.part_definitions (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references app.projects(id) on delete cascade,
-  part_code text not null,
+  owner_user_id uuid not null references app.profiles(id) on delete restrict,
+  code text not null,
   name text not null,
+  description text,
   current_revision_id uuid,
   created_at timestamptz not null default now(),
-  unique (project_id, part_code)
+  updated_at timestamptz not null default now(),
+  unique (owner_user_id, code)
 );
 
-create table if not exists public.part_revisions (
+create table if not exists app.part_revisions (
   id uuid primary key default gen_random_uuid(),
-  part_definition_id uuid not null references public.part_definitions(id) on delete cascade,
-  geometry_revision_id uuid not null references public.geometry_revisions(id),
-  source_file_object_id uuid references public.file_objects(id),
+  part_definition_id uuid not null references app.part_definitions(id) on delete cascade,
   revision_no integer not null,
-  status revision_status not null default 'draft',
-  meta_jsonb jsonb not null default '{}'::jsonb,
+  lifecycle app.revision_lifecycle not null default 'draft',
+  source_label text,
+  source_checksum_sha256 text,
+  notes text,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique (part_definition_id, revision_no)
 );
 
-alter table public.part_definitions
+alter table app.part_definitions
   add constraint fk_part_definitions_current_revision
-  foreign key (current_revision_id) references public.part_revisions(id)
+  foreign key (current_revision_id) references app.part_revisions(id)
   deferrable initially deferred;
 
-create table if not exists public.project_part_requirements (
+create table if not exists app.project_part_requirements (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references app.projects(id) on delete cascade,
-  part_definition_id uuid not null references public.part_definitions(id) on delete cascade,
+  part_revision_id uuid not null references app.part_revisions(id) on delete restrict,
   required_qty integer not null,
-  placement_priority smallint not null default 50,
-  placement_policy placement_policy_type not null default 'normal',
+  placement_priority smallint not null default 50 check (placement_priority between 0 and 100),
+  placement_policy app.placement_policy not null default 'normal',
   is_active boolean not null default true,
   notes text,
   created_at timestamptz not null default now(),
-  unique (project_id, part_definition_id),
-  check (required_qty > 0),
-  check (placement_priority between 0 and 100)
+  updated_at timestamptz not null default now(),
+  unique (project_id, part_revision_id),
+  check (required_qty > 0)
 );
 
-create index if not exists idx_project_part_requirements_project_id
-  on public.project_part_requirements(project_id);
+create index if not exists idx_part_revisions_part_definition_id
+  on app.part_revisions(part_definition_id);
 
 create index if not exists idx_project_part_requirements_priority
-  on public.project_part_requirements(project_id, placement_priority, placement_policy);
+  on app.project_part_requirements(project_id, placement_priority, placement_policy);
 ```
 
 ## 8.7 Sheet Domain
@@ -981,9 +988,9 @@ create table if not exists public.run_layout_placements (
   run_id uuid not null references public.nesting_runs(id) on delete cascade,
   run_layout_sheet_id uuid not null references public.run_layout_sheets(id) on delete cascade,
   stable_placement_key text not null,
-  part_definition_id uuid references public.part_definitions(id),
-  part_revision_id uuid references public.part_revisions(id),
-  project_part_requirement_id uuid references public.project_part_requirements(id),
+  part_definition_id uuid references app.part_definitions(id),
+  part_revision_id uuid references app.part_revisions(id),
+  project_part_requirement_id uuid references app.project_part_requirements(id),
   placement_index integer not null,
   x_mm numeric(18,6) not null,
   y_mm numeric(18,6) not null,
@@ -1002,9 +1009,9 @@ create index if not exists idx_run_layout_placements_run_sheet
 create table if not exists public.run_layout_unplaced (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references public.nesting_runs(id) on delete cascade,
-  part_definition_id uuid references public.part_definitions(id),
-  part_revision_id uuid references public.part_revisions(id),
-  project_part_requirement_id uuid references public.project_part_requirements(id),
+  part_definition_id uuid references app.part_definitions(id),
+  part_revision_id uuid references app.part_revisions(id),
+  project_part_requirement_id uuid references app.project_part_requirements(id),
   missing_qty integer not null default 1,
   reason text,
   meta_jsonb jsonb not null default '{}'::jsonb,

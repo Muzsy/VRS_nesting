@@ -478,6 +478,9 @@ create table if not exists app.geometry_derivatives (
 
 ## 6. Part és sheet definíciók
 
+A H0-E2-T4 ota a part domain aktualis source of truth migracioja:
+`supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql`.
+
 ```sql
 create table if not exists app.part_definitions (
   id uuid primary key default gen_random_uuid(),
@@ -485,7 +488,9 @@ create table if not exists app.part_definitions (
   code text not null,
   name text not null,
   description text,
+  current_revision_id uuid,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique (owner_user_id, code)
 );
 
@@ -493,13 +498,19 @@ create table if not exists app.part_revisions (
   id uuid primary key default gen_random_uuid(),
   part_definition_id uuid not null references app.part_definitions(id) on delete cascade,
   revision_no integer not null,
-  geometry_revision_id uuid not null references app.geometry_revisions(id) on delete restrict,
-  approved_nesting_derivative_id uuid references app.geometry_derivatives(id) on delete restrict,
-  approved_manufacturing_derivative_id uuid references app.geometry_derivatives(id) on delete restrict,
-  metadata_jsonb jsonb not null default '{}'::jsonb,
+  lifecycle app.revision_lifecycle not null default 'draft',
+  source_label text,
+  source_checksum_sha256 text,
+  notes text,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique (part_definition_id, revision_no)
 );
+
+alter table app.part_definitions
+  add constraint fk_part_definitions_current_revision
+  foreign key (current_revision_id) references app.part_revisions(id)
+  deferrable initially deferred;
 
 create table if not exists app.project_part_requirements (
   id uuid primary key default gen_random_uuid(),
@@ -511,11 +522,15 @@ create table if not exists app.project_part_requirements (
   is_active boolean not null default true,
   notes text,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique (project_id, part_revision_id)
 );
 
 create index if not exists idx_project_part_requirements_project
   on app.project_part_requirements(project_id);
+
+create index if not exists idx_project_part_requirements_priority
+  on app.project_part_requirements(project_id, placement_priority, placement_policy);
 
 create table if not exists app.sheet_definitions (
   id uuid primary key default gen_random_uuid(),
