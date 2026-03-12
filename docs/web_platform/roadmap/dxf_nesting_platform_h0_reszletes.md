@@ -543,7 +543,10 @@ create table if not exists app.sheet_definitions (
   owner_user_id uuid not null references app.profiles(id) on delete restrict,
   code text not null,
   name text not null,
+  description text,
+  current_revision_id uuid,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique (owner_user_id, code)
 );
 
@@ -551,24 +554,49 @@ create table if not exists app.sheet_revisions (
   id uuid primary key default gen_random_uuid(),
   sheet_definition_id uuid not null references app.sheet_definitions(id) on delete cascade,
   revision_no integer not null,
+  lifecycle app.revision_lifecycle not null default 'draft',
   width_mm numeric(12,3) not null,
   height_mm numeric(12,3) not null,
-  usable_geometry_jsonb jsonb,
-  metadata_jsonb jsonb not null default '{}'::jsonb,
+  grain_direction text,
+  source_label text,
+  source_checksum_sha256 text,
+  notes text,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique (sheet_definition_id, revision_no)
 );
+
+alter table app.sheet_revisions
+  add constraint uq_sheet_revisions_id_definition
+  unique (id, sheet_definition_id);
+
+alter table app.sheet_definitions
+  add constraint fk_sheet_definitions_current_revision
+  foreign key (current_revision_id, id)
+  references app.sheet_revisions(id, sheet_definition_id)
+  on delete set null (current_revision_id)
+  deferrable initially deferred;
 
 create table if not exists app.project_sheet_inputs (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references app.projects(id) on delete cascade,
   sheet_revision_id uuid not null references app.sheet_revisions(id) on delete restrict,
-  quantity integer not null check (quantity > 0),
-  priority smallint not null default 50,
-  cost_hint numeric(14,2),
+  required_qty integer not null check (required_qty > 0),
   is_active boolean not null default true,
-  created_at timestamptz not null default now()
+  is_default boolean not null default false,
+  placement_priority smallint not null default 50,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (project_id, sheet_revision_id),
+  check (placement_priority between 0 and 100)
 );
+
+create index if not exists idx_sheet_revisions_sheet_definition_id
+  on app.sheet_revisions(sheet_definition_id);
+
+create index if not exists idx_project_sheet_inputs_priority
+  on app.project_sheet_inputs(project_id, placement_priority, is_active);
 ```
 
 ---

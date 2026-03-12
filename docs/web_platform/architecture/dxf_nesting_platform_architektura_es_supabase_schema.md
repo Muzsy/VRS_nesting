@@ -825,70 +825,71 @@ create index if not exists idx_project_part_requirements_priority
 
 ## 8.7 Sheet Domain
 
+A H0-E2-T5 ota a sheet domain aktualis source of truth migracioja:
+`supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`.
+Ez a bazis expliciten kuloniti a definition / revision / project-input retegeket.
+
 ```sql
-create table if not exists public.standard_sheet_catalog (
+create table if not exists app.sheet_definitions (
   id uuid primary key default gen_random_uuid(),
-  vendor text,
-  material_family text,
-  width_mm numeric(10,3) not null,
-  height_mm numeric(10,3) not null,
-  is_active boolean not null default true,
-  meta_jsonb jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  check (width_mm > 0),
-  check (height_mm > 0)
-);
-
-create table if not exists public.sheet_definitions (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid references app.projects(id) on delete cascade,
-  sheet_code text not null,
+  owner_user_id uuid not null references app.profiles(id) on delete restrict,
+  code text not null,
   name text not null,
-  geometry_type sheet_geometry_type not null,
-  source_type sheet_source_type not null,
+  description text,
+  current_revision_id uuid,
   created_at timestamptz not null default now(),
-  unique (project_id, sheet_code)
+  updated_at timestamptz not null default now(),
+  unique (owner_user_id, code)
 );
 
-create table if not exists public.sheet_revisions (
+create table if not exists app.sheet_revisions (
   id uuid primary key default gen_random_uuid(),
-  sheet_definition_id uuid not null references public.sheet_definitions(id) on delete cascade,
+  sheet_definition_id uuid not null references app.sheet_definitions(id) on delete cascade,
   revision_no integer not null,
-  width_mm numeric(10,3),
-  height_mm numeric(10,3),
-  geometry_revision_id uuid references public.geometry_revisions(id),
-  standard_sheet_catalog_id uuid references public.standard_sheet_catalog(id),
-  meta_jsonb jsonb not null default '{}'::jsonb,
-  status revision_status not null default 'active',
+  lifecycle app.revision_lifecycle not null default 'draft',
+  width_mm numeric(12,3) not null,
+  height_mm numeric(12,3) not null,
+  grain_direction text,
+  source_label text,
+  source_checksum_sha256 text,
+  notes text,
   created_at timestamptz not null default now(),
-  unique (sheet_definition_id, revision_no),
-  check (
-    (width_mm is null or width_mm > 0)
-    and (height_mm is null or height_mm > 0)
-  )
+  updated_at timestamptz not null default now(),
+  unique (sheet_definition_id, revision_no)
 );
 
-create table if not exists public.project_sheet_inputs (
+alter table app.sheet_revisions
+  add constraint uq_sheet_revisions_id_definition
+  unique (id, sheet_definition_id);
+
+alter table app.sheet_definitions
+  add constraint fk_sheet_definitions_current_revision
+  foreign key (current_revision_id, id)
+  references app.sheet_revisions(id, sheet_definition_id)
+  on delete set null (current_revision_id)
+  deferrable initially deferred;
+
+create table if not exists app.project_sheet_inputs (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references app.projects(id) on delete cascade,
-  sheet_definition_id uuid not null references public.sheet_definitions(id) on delete cascade,
-  sheet_revision_id uuid not null references public.sheet_revisions(id) on delete cascade,
-  availability_mode availability_mode not null default 'finite',
-  available_qty integer,
-  selection_source selection_source_type not null default 'manual',
-  priority smallint not null default 50,
-  cost_hint numeric(12,2),
+  sheet_revision_id uuid not null references app.sheet_revisions(id) on delete restrict,
+  required_qty integer not null,
   is_active boolean not null default true,
+  is_default boolean not null default false,
+  placement_priority smallint not null default 50,
+  notes text,
   created_at timestamptz not null default now(),
-  check (available_qty is null or available_qty >= 0),
-  check (priority between 0 and 100)
+  updated_at timestamptz not null default now(),
+  unique (project_id, sheet_revision_id),
+  check (required_qty > 0),
+  check (placement_priority between 0 and 100)
 );
 
-create index if not exists idx_project_sheet_inputs_project_id
-  on public.project_sheet_inputs(project_id);
+create index if not exists idx_sheet_revisions_sheet_definition_id
+  on app.sheet_revisions(sheet_definition_id);
 
 create index if not exists idx_project_sheet_inputs_priority
-  on public.project_sheet_inputs(project_id, priority);
+  on app.project_sheet_inputs(project_id, placement_priority, is_active);
 ```
 
 ## 8.8 Runs, Snapshots, Queue, Logs, Artifacts

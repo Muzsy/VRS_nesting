@@ -1,0 +1,65 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E2-T5 sheet definition, revision es project input alapok task teljes
+      artefaktlancat: canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.yaml"
+      - "codex/prompts/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok/run.md"
+      - "codex/codex_checklist/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md"
+      - "codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md"
+
+  - name: "Sheet-domain bazis migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0-E2 migraciot a `sheet_definitions`,
+      `sheet_revisions` es `project_sheet_inputs` tablavilaghoz.
+      A migracio:
+      1) az `app` schema-n belul dolgozzon,
+      2) kulonitse el a definition / revision / project input vilagot,
+      3) a project inputot a veglegesitett domain modellnek megfeleloen a
+         `sheet_revisions` vilagra kösse,
+      4) tartalmazza a szukseges PK/FK kapcsolatokat es minimalis indexeket,
+      5) kezelje helyesen a `current_revision_id` integritast,
+      6) ne hozzon letre remnant/inventory/file/geometry/run/export tablakat,
+      7) ne vezessen be meg RLS-t.
+      Ha a file/geometry pipeline tablák meg nincsenek letéve, ne eroszakolj be
+      hianyzo FK-ket; a revision tabla most minimalis, de stabil domain bazis legyen.
+    outputs:
+      - "supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql"
+
+  - name: "Minimal docs szinkron a sheet-domain iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es H0 roadmap dokumentumot, ha a
+      sheet-domain tablairany ott meg stale, `public.*` schemaju, vagy a project
+      input vilagot hibasan a definitionhoz koti a veglegesitett domain ownershiphoz kepest.
+      A cel nem a teljes doksi atszerkesztese, hanem a source-of-truth irany helyreallitasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a `sheet_definitions` vegleges oszlopkeszletet;
+      - a `sheet_revisions` vegleges oszlopkeszletet;
+      - a `project_sheet_inputs` vegleges oszlopkeszletet;
+      - a PK/FK kapcsolatokat es indexeket;
+      - hogy a project input a revisionhoz kotott;
+      - hogy a `current_revision_id` integritas hogyan van vedve;
+      - hogy a task szandekosan NEM hozott letre remnant/inventory/file/geometry/run/export tablakat;
+      - hogy nem kerult bele RLS policy.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md"
+      - "codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md
+    outputs:
+      - "codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md"
+      - "codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.verify.log"
