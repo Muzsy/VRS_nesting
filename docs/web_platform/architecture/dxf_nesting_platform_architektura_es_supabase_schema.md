@@ -790,9 +790,15 @@ create table if not exists app.part_revisions (
   unique (part_definition_id, revision_no)
 );
 
+alter table app.part_revisions
+  add constraint uq_part_revisions_id_definition
+  unique (id, part_definition_id);
+
 alter table app.part_definitions
   add constraint fk_part_definitions_current_revision
-  foreign key (current_revision_id) references app.part_revisions(id)
+  foreign key (current_revision_id, id)
+  references app.part_revisions(id, part_definition_id)
+  on delete set null (current_revision_id)
   deferrable initially deferred;
 
 create table if not exists app.project_part_requirements (

@@ -29,13 +29,21 @@ create table if not exists app.part_revisions (
   check (revision_no > 0)
 );
 
+alter table app.part_revisions
+  drop constraint if exists uq_part_revisions_id_definition;
+
+alter table app.part_revisions
+  add constraint uq_part_revisions_id_definition
+  unique (id, part_definition_id);
+
 alter table app.part_definitions
   drop constraint if exists fk_part_definitions_current_revision;
 
 alter table app.part_definitions
   add constraint fk_part_definitions_current_revision
-  foreign key (current_revision_id) references app.part_revisions(id)
-  on delete set null
+  foreign key (current_revision_id, id)
+  references app.part_revisions(id, part_definition_id)
+  on delete set null (current_revision_id)
   deferrable initially deferred;
 
 create table if not exists app.project_part_requirements (

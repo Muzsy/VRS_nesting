@@ -5,7 +5,7 @@ PASS
 - Kapcsolodo canvas: `canvases/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md`
 - Kapcsolodo goal YAML: `codex/goals/canvases/web_platform/fill_canvas_h0_e2_t4_part_definition_revision_es_demand_alapok.yaml`
 - Futas datuma: `2026-03-12`
-- Branch / commit: `main @ 5d6d644 (dirty working tree)`
+- Branch / commit: `main @ cd8c694 (dirty working tree)`
 - Fokusz terulet: `Schema + Docs`
 
 ## 2) Scope
@@ -66,6 +66,7 @@ PASS
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 - `unique (part_definition_id, revision_no)`
+- `unique (id, part_definition_id)` (current revision ownership integrityhez)
 - `check (revision_no > 0)`
 
 ### 5.3 `app.project_part_requirements` oszlopok
@@ -86,7 +87,7 @@ PASS
 - PK: `part_definitions(id)`, `part_revisions(id)`, `project_part_requirements(id)`
 - FK: `part_definitions.owner_user_id -> app.profiles(id)`
 - FK: `part_revisions.part_definition_id -> app.part_definitions(id)`
-- FK: `part_definitions.current_revision_id -> app.part_revisions(id)`
+- FK: `(part_definitions.current_revision_id, part_definitions.id) -> (app.part_revisions.id, app.part_revisions.part_definition_id)` (`on delete set null (current_revision_id)`)
 - FK: `project_part_requirements.project_id -> app.projects(id)`
 - FK: `project_part_requirements.part_revision_id -> app.part_revisions(id)`
 
@@ -106,12 +107,12 @@ PASS
 | DoD pont | Statusz | Bizonyitek (path + line) | Magyarazat | Kapcsolodo ellenorzes |
 | --- | --- | --- | --- | --- |
 | Letrejon a `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql` fajl. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:1` | A T4 migraciofajl letrejott. | `./scripts/verify.sh --report ...` |
-| A migracio letrehozza az `app.part_definitions`, `app.part_revisions`, `app.project_part_requirements` tablakat. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:4`; `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:19`; `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:42` | Mindharom core part-domain tabla explicit letrejon. | `./scripts/verify.sh --report ...` |
-| A demand tabla a `part_revisions` vilagra ul, nem kozvetlenul a definitionre. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:45` | A demand FK a `part_revision_id` mezon keresztul kotodik. | `./scripts/verify.sh --report ...` |
-| A migracio nem hoz letre geometry/file/sheet/run/remnant/export tablakat. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:94` | Explicit scope note rogziti a kizart domaineket. | `./scripts/verify.sh --report ...` |
-| A task nem ad hozza RLS policyt. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:95` | Explicit note + nincs RLS SQL. | `./scripts/verify.sh --report ...` |
+| A migracio letrehozza az `app.part_definitions`, `app.part_revisions`, `app.project_part_requirements` tablakat. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:4`; `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:18`; `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:49` | Mindharom core part-domain tabla explicit letrejon. | `./scripts/verify.sh --report ...` |
+| A demand tabla a `part_revisions` vilagra ul, nem kozvetlenul a definitionre. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:52` | A demand FK a `part_revision_id` mezon keresztul kotodik. | `./scripts/verify.sh --report ...` |
+| A migracio nem hoz letre geometry/file/sheet/run/remnant/export tablakat. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:96` | Explicit scope note rogziti a kizart domaineket. | `./scripts/verify.sh --report ...` |
+| A task nem ad hozza RLS policyt. | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql:97` | Explicit note + nincs RLS SQL. | `./scripts/verify.sh --report ...` |
 | A `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md` es a `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md` minimalisan szinkronba kerul a konkret migracios irannyal. | PASS | `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md:761`; `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md:479` | A part-domain blokk `app.*` schema es revision-based demand iranyra lett szinkronizalva. | `./scripts/verify.sh --report ...` |
-| A report DoD -> Evidence Matrix konkret fajl- es line-hivatkozasokkal kitoltott. | PASS | `codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md:104` | A matrix kitoltve, path+line referenciakkal. | `./scripts/verify.sh --report ...` |
+| A report DoD -> Evidence Matrix konkret fajl- es line-hivatkozasokkal kitoltott. | PASS | `codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md:105` | A matrix kitoltve, path+line referenciakkal. | `./scripts/verify.sh --report ...` |
 | `./scripts/verify.sh --report codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md` PASS. | PASS | `codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.verify.log:1` | A gate sikeresen lefutott. | `./scripts/verify.sh --report ...` |
 
 ## 7) Advisory notes
@@ -123,32 +124,31 @@ PASS
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-03-12T01:16:04+01:00 → 2026-03-12T01:19:33+01:00 (209s)
+- futás: 2026-03-12T01:27:06+01:00 → 2026-03-12T01:30:37+01:00 (211s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.verify.log`
-- git: `main@5d6d644`
-- módosított fájlok (git status): 9
+- git: `main@cd8c694`
+- módosított fájlok (git status): 5
 
 **git diff --stat**
 
 ```text
- ...ing_platform_architektura_es_supabase_schema.md | 63 ++++++++++++----------
- .../roadmap/dxf_nesting_platform_h0_reszletes.md   | 23 ++++++--
- 2 files changed, 54 insertions(+), 32 deletions(-)
+ ...t4_part_definition_revision_es_demand_alapok.md | 11 +--
+ ...definition_revision_es_demand_alapok.verify.log | 96 +++++++++++-----------
+ ...ing_platform_architektura_es_supabase_schema.md |  8 +-
+ .../roadmap/dxf_nesting_platform_h0_reszletes.md   |  8 +-
+ ...4_part_definition_revision_es_demand_alapok.sql | 12 ++-
+ 5 files changed, 78 insertions(+), 57 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
+ M codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md
+ M codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.verify.log
  M docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md
  M docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md
-?? canvases/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md
-?? codex/codex_checklist/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md
-?? codex/goals/canvases/web_platform/fill_canvas_h0_e2_t4_part_definition_revision_es_demand_alapok.yaml
-?? codex/prompts/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok/
-?? codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md
-?? codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.verify.log
-?? supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql
+ M supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql
 ```
 
 <!-- AUTO_VERIFY_END -->
