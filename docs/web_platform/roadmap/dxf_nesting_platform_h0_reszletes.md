@@ -436,10 +436,14 @@ create index if not exists idx_file_objects_project_id
 create index if not exists idx_file_objects_uploaded_by
   on app.file_objects(uploaded_by);
 
+alter table app.file_objects
+  add constraint uq_file_objects_project_id_id
+  unique (project_id, id);
+
 create table if not exists app.geometry_revisions (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references app.projects(id) on delete cascade,
-  source_file_object_id uuid not null references app.file_objects(id) on delete restrict,
+  source_file_object_id uuid not null,
   geometry_role app.geometry_role not null,
   revision_no integer not null,
   status app.geometry_validation_status not null default 'uploaded',
@@ -464,6 +468,12 @@ create index if not exists idx_geometry_revisions_source_file_object_id
 
 create index if not exists idx_geometry_revisions_status
   on app.geometry_revisions(status);
+
+alter table app.geometry_revisions
+  add constraint fk_geometry_revisions_source_file_project
+  foreign key (project_id, source_file_object_id)
+  references app.file_objects(project_id, id)
+  on delete restrict;
 ```
 
 Megjegyzes:

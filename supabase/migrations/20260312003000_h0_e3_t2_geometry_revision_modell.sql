@@ -4,7 +4,7 @@
 create table if not exists app.geometry_revisions (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references app.projects(id) on delete cascade,
-  source_file_object_id uuid not null references app.file_objects(id) on delete restrict,
+  source_file_object_id uuid not null,
   geometry_role app.geometry_role not null,
   revision_no integer not null,
   status app.geometry_validation_status not null default 'uploaded',
@@ -20,6 +20,25 @@ create table if not exists app.geometry_revisions (
   check (revision_no > 0),
   check (length(btrim(canonical_format_version)) > 0)
 );
+
+alter table app.file_objects
+  drop constraint if exists uq_file_objects_project_id_id;
+
+alter table app.file_objects
+  add constraint uq_file_objects_project_id_id
+  unique (project_id, id);
+
+alter table app.geometry_revisions
+  drop constraint if exists geometry_revisions_source_file_object_id_fkey;
+
+alter table app.geometry_revisions
+  drop constraint if exists fk_geometry_revisions_source_file_project;
+
+alter table app.geometry_revisions
+  add constraint fk_geometry_revisions_source_file_project
+  foreign key (project_id, source_file_object_id)
+  references app.file_objects(project_id, id)
+  on delete restrict;
 
 create index if not exists idx_geometry_revisions_project_id
   on app.geometry_revisions(project_id);

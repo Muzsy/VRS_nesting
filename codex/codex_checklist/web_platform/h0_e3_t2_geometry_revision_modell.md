@@ -4,6 +4,7 @@
 - [x] Letrejott a bazis migracio: `supabase/migrations/20260312003000_h0_e3_t2_geometry_revision_modell.sql`
 - [x] A migracio letrehozza az `app.geometry_revisions` tablat
 - [x] A geometry revision rekord visszavezetheto source `app.file_objects` rekordra
+- [x] A source lineage project-konzisztenciaja kompozit FK-val kenyszeritett
 - [x] A canonical format version tarolasa es a JSON-alapu canonical geometry hely biztositott
 - [x] PK/FK kapcsolatok, revision-integritas es alap indexek letrejottek
 - [x] A migracio nem hoz letre validation/review/derivative/run/export tablakat
