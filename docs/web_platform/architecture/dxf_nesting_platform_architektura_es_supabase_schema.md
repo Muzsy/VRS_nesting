@@ -685,10 +685,11 @@ create table if not exists public.project_manufacturing_selection (
 
 ## 8.5 Files & Geometry Domain
 
-A H0-E3-T2 ota a files+geometry-revision domain aktualis source of truth migracioi:
+A H0-E3-T3 ota a files+geometry/audit/review domain aktualis source of truth migracioi:
 - `supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`
 - `supabase/migrations/20260312003000_h0_e3_t2_geometry_revision_modell.sql`
-Ez a lepes a file-object bazis utan bevezeti az `app.geometry_revisions` tablavilagot.
+- `supabase/migrations/20260312005000_h0_e3_t3_validation_es_review_tablak.sql`
+Ez a lepes a file-object es geometry-revision bazis utan bevezeti az audit/review reteg tablait.
 
 ```sql
 create table if not exists app.file_objects (
@@ -754,11 +755,65 @@ alter table app.geometry_revisions
   foreign key (project_id, source_file_object_id)
   references app.file_objects(project_id, id)
   on delete restrict;
+
+create table if not exists app.geometry_validation_reports (
+  id uuid primary key default gen_random_uuid(),
+  geometry_revision_id uuid not null references app.geometry_revisions(id) on delete cascade,
+  validation_seq integer not null,
+  status app.geometry_validation_status not null,
+  validator_version text not null,
+  summary_jsonb jsonb,
+  report_jsonb jsonb not null,
+  source_hash_sha256 text,
+  created_at timestamptz not null default now(),
+  unique (geometry_revision_id, validation_seq),
+  check (validation_seq > 0),
+  check (length(btrim(validator_version)) > 0)
+);
+
+alter table app.geometry_validation_reports
+  add constraint uq_geometry_validation_reports_geometry_revision_id_id
+  unique (geometry_revision_id, id);
+
+create index if not exists idx_geometry_validation_reports_geometry_revision_id
+  on app.geometry_validation_reports(geometry_revision_id);
+
+create index if not exists idx_geometry_validation_reports_status
+  on app.geometry_validation_reports(status);
+
+create table if not exists app.geometry_review_actions (
+  id uuid primary key default gen_random_uuid(),
+  geometry_revision_id uuid not null references app.geometry_revisions(id) on delete cascade,
+  validation_report_id uuid,
+  action_kind text not null,
+  actor_user_id uuid references app.profiles(id) on delete set null,
+  note text,
+  metadata_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  check (action_kind in ('approve', 'reject', 'request_changes', 'comment'))
+);
+
+alter table app.geometry_review_actions
+  add constraint fk_geometry_review_actions_validation_report_same_geometry
+  foreign key (geometry_revision_id, validation_report_id)
+  references app.geometry_validation_reports(geometry_revision_id, id)
+  on delete restrict;
+
+create index if not exists idx_geometry_review_actions_geometry_revision_id
+  on app.geometry_review_actions(geometry_revision_id);
+
+create index if not exists idx_geometry_review_actions_actor_user_id
+  on app.geometry_review_actions(actor_user_id);
+
+create index if not exists idx_geometry_review_actions_validation_report_id
+  on app.geometry_review_actions(validation_report_id);
 ```
 
 Megjegyzes:
 - A geometry revision ebben a lepesben a canonical geometry truth helye.
-- A geometry validation/review/derivative tablak tovabbra is kulon, kovetkezo schema taskokban jonnek.
+- A geometry_validation_reports audit/report reteget, a geometry_review_actions emberi dontesi reteget ad.
+- A same-geometry report-hivatkozas kompozit FK-val vedett.
+- A derivative tablak tovabbra is kulon, kovetkezo schema taskokban jonnek.
 - A file object ownership tovabbra is storage-reference + metadata truth.
 
 ## 8.6 Part Domain

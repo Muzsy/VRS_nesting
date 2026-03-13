@@ -1,0 +1,64 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E3-T3 validation es review tablak task teljes artefaktlancat:
+      canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e3_t3_validation_es_review_tablak.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e3_t3_validation_es_review_tablak.yaml"
+      - "codex/prompts/web_platform/h0_e3_t3_validation_es_review_tablak/run.md"
+      - "codex/codex_checklist/web_platform/h0_e3_t3_validation_es_review_tablak.md"
+      - "codex/reports/web_platform/h0_e3_t3_validation_es_review_tablak.md"
+
+  - name: "Validation es review bazis migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0 migraciot az `app.geometry_validation_reports`
+      es az `app.geometry_review_actions` tablakkal.
+      A migracio:
+      1) az `app` schema-n belul dolgozzon,
+      2) kapcsolja a validation reportokat az `app.geometry_revisions` tablaho,
+      3) kapcsolja a review actionoket az `app.geometry_revisions` tablaho,
+      4) ha a review action validation reportot hivatkozik, adatbazis-szinten
+         vedje, hogy az csak ugyanahhoz a geometry revisionhoz tartozo report lehessen,
+      5) tartalmazza a szukseges PK/FK kapcsolatokat, audit-integritast es alap indexeket,
+      6) ne hozzon letre `geometry_derivatives`, binding, run vagy export tablakat,
+      7) ne vezessen be meg RLS-t.
+      Ha szukseges review action tipus vedelmehez uj enum vagy check constraint,
+      azt ebben a migracioban hozd letre, ne regi migracio atirasaval.
+    outputs:
+      - "supabase/migrations/20260312005000_h0_e3_t3_validation_es_review_tablak.sql"
+
+  - name: "Minimal docs szinkron a validation-review iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es H0 roadmap dokumentumot, ha a
+      validation/review blokk ott meg stale, `public.*` schemaju vagy ownership
+      szempontbol pontatlan a mostani konkret migraciohoz kepest.
+      A cel nem a teljes doksi atszerkesztese, hanem a source-of-truth irany helyreallitasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a `geometry_validation_reports` vegleges oszlopkeszletet;
+      - a `geometry_review_actions` vegleges oszlopkeszletet;
+      - a PK/FK kapcsolatokat;
+      - az indexeket es audit-integritast;
+      - hogy a review action validation report-hivatkozasa same-geometry vedelmet kapott;
+      - hogy a task szandekosan NEM hozott letre derivative/binding/run/export tablakat;
+      - hogy nem kerult bele RLS policy.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e3_t3_validation_es_review_tablak.md"
+      - "codex/reports/web_platform/h0_e3_t3_validation_es_review_tablak.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e3_t3_validation_es_review_tablak.md
+    outputs:
+      - "codex/reports/web_platform/h0_e3_t3_validation_es_review_tablak.md"
+      - "codex/reports/web_platform/h0_e3_t3_validation_es_review_tablak.verify.log"
