@@ -407,11 +407,12 @@ Megjegyzés:
 
 ## 5. Fájl és geometria
 
-A H0-E3-T3 ota a files+geometry/audit/review domain aktualis source of truth migracioi:
+A H0-E3-T4 ota a files+geometry/audit/review/derivative domain aktualis source of truth migracioi:
 - `supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`
 - `supabase/migrations/20260312003000_h0_e3_t2_geometry_revision_modell.sql`
 - `supabase/migrations/20260312005000_h0_e3_t3_validation_es_review_tablak.sql`
-Ez a lepes a file-object es geometry-revision bazis utan bevezeti az audit/review reteg tablait.
+- `supabase/migrations/20260312007000_h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.sql`
+Ez a lepes a file-object es geometry-revision bazis utan bevezeti az audit/review es derivative reteg tablait.
 
 ```sql
 create table if not exists app.file_objects (
@@ -527,13 +528,35 @@ create index if not exists idx_geometry_review_actions_actor_user_id
 
 create index if not exists idx_geometry_review_actions_validation_report_id
   on app.geometry_review_actions(validation_report_id);
+
+create table if not exists app.geometry_derivatives (
+  id uuid primary key default gen_random_uuid(),
+  geometry_revision_id uuid not null references app.geometry_revisions(id) on delete cascade,
+  derivative_kind app.geometry_derivative_kind not null,
+  producer_version text not null,
+  format_version text not null,
+  derivative_jsonb jsonb not null,
+  derivative_hash_sha256 text,
+  source_geometry_hash_sha256 text,
+  created_at timestamptz not null default now(),
+  unique (geometry_revision_id, derivative_kind),
+  check (length(btrim(producer_version)) > 0),
+  check (length(btrim(format_version)) > 0)
+);
+
+create index if not exists idx_geometry_derivatives_geometry_revision_id
+  on app.geometry_derivatives(geometry_revision_id);
+
+create index if not exists idx_geometry_derivatives_kind
+  on app.geometry_derivatives(derivative_kind);
 ```
 
 Megjegyzes:
 - A geometry revision ebben a lepesben a canonical geometry truth helye.
 - A geometry_validation_reports audit/report reteget, a geometry_review_actions emberi dontesi reteget ad.
 - A same-geometry report-hivatkozas kompozit FK-val vedett.
-- A derivative tablak tovabbra is kovetkezo schema lepesekben jonnek.
+- A geometry_derivatives a cel-specifikus, ujraeloallithato derivative reteg.
+- A derivative kind vilag explicit: `nesting_canonical`, `manufacturing_canonical`, `viewer_outline`.
 - A file object ownership tovabbra is storage-reference + metadata truth.
 
 ---

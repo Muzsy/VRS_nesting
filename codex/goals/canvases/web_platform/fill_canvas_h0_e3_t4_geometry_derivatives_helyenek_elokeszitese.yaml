@@ -1,0 +1,64 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E3-T4 geometry derivatives helyenek elokeszitese task teljes
+      artefaktlancat: canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.yaml"
+      - "codex/prompts/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese/run.md"
+      - "codex/codex_checklist/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md"
+      - "codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md"
+
+  - name: "Geometry derivatives bazis migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0 migraciot az `app.geometry_derivatives` tablaval.
+      A migracio:
+      1) az `app` schema-n belul dolgozzon,
+      2) kapcsolja a derivative rekordot egy source `app.geometry_revisions` rekordhoz,
+      3) hasznalja az `app.geometry_derivative_kind` enumot,
+      4) tarolja a `producer_version`, `format_version`, `derivative_jsonb`,
+         `derivative_hash_sha256` adatokat,
+      5) H0-ban kontrollalt uniquenesset adjon legalabb `(geometry_revision_id, derivative_kind)`
+         szinten,
+      6) ne hozzon letre binding, run vagy export tablakat,
+      7) ne vezessen be meg RLS-t.
+      A vegleges oszlopkeszletet a web_platform H0 docs derivative elveibol vezesd le,
+      de maradj minimalis es stabil scope-ban.
+    outputs:
+      - "supabase/migrations/20260312007000_h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.sql"
+
+  - name: "Minimal docs szinkron a derivative iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es H0 roadmap dokumentumot, ha a
+      derivative blokk ott meg stale, `public.*` schemaju vagy ownership szempontbol
+      pontatlan a mostani konkret migraciohoz kepest.
+      A cel nem a teljes doksi atszerkesztese, hanem a source-of-truth irany helyreallitasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a `geometry_derivatives` vegleges oszlopkeszletet;
+      - a PK/FK kapcsolatokat;
+      - az indexeket es uniqueness vedelmet;
+      - a derivative kind enum hasznalatat;
+      - a payload + version + hash mezoket;
+      - hogy a task szandekosan NEM hozott letre binding/run/export tablakat;
+      - hogy nem kerult bele RLS policy.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md"
+      - "codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md
+    outputs:
+      - "codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md"
+      - "codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.verify.log"
