@@ -973,10 +973,11 @@ create index if not exists idx_project_sheet_inputs_priority
   on app.project_sheet_inputs(project_id, placement_priority, is_active);
 ```
 
-## 8.8 Runs es Snapshots (H0-E5-T1 source of truth)
+## 8.8 Runs, Snapshots, Queue, Logs (H0-E5-T1/T2 source of truth)
 
-A H0-E5-T1 ota a run-vilag request/snapshot bazis source of truth migracioja:
+A H0-E5-T1/T2 ota a run-vilag source of truth migracioi:
 - `supabase/migrations/20260314100000_h0_e5_t1_nesting_run_es_snapshot_modellek.sql`
+- `supabase/migrations/20260314103000_h0_e5_t2_queue_es_log_modellek.sql`
 
 Fogalmi/fizikai megfeleltetes:
 - Run Request aggregate -> `app.nesting_runs`
@@ -1025,18 +1026,79 @@ create unique index if not exists uq_nesting_run_snapshots_snapshot_hash_sha256
 
 create index if not exists idx_nesting_run_snapshots_status
   on app.nesting_run_snapshots(status);
+
+create table if not exists app.run_queue (
+  run_id uuid primary key references app.nesting_runs(id) on delete cascade,
+  snapshot_id uuid not null unique,
+  queue_state text not null default 'pending',
+  attempt_no integer not null default 0,
+  attempt_status app.run_attempt_status,
+  priority integer not null default 100,
+  available_at timestamptz not null default now(),
+  leased_by text,
+  lease_token uuid,
+  leased_at timestamptz,
+  lease_expires_at timestamptz,
+  heartbeat_at timestamptz,
+  started_at timestamptz,
+  finished_at timestamptz,
+  last_error_code text,
+  last_error_message text,
+  retry_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (queue_state in ('pending', 'leased', 'done', 'error', 'cancel_requested', 'cancelled')),
+  check (attempt_no >= 0),
+  check (retry_count >= 0),
+  check (queue_state <> 'leased' or (lease_token is not null and lease_expires_at is not null))
+);
+
+alter table app.run_queue
+  add constraint fk_run_queue_snapshot_same_run
+  foreign key (run_id, snapshot_id)
+  references app.nesting_run_snapshots(run_id, id)
+  on delete cascade;
+
+create index if not exists idx_run_queue_state_available_at
+  on app.run_queue(queue_state, available_at);
+
+create index if not exists idx_run_queue_lease_expires_at
+  on app.run_queue(lease_expires_at);
+
+create table if not exists app.run_logs (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references app.nesting_runs(id) on delete cascade,
+  snapshot_id uuid references app.nesting_run_snapshots(id) on delete set null,
+  attempt_no integer not null default 0,
+  log_level text not null,
+  log_kind text not null,
+  message text not null,
+  payload_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  check (attempt_no >= 0),
+  check (length(btrim(log_level)) > 0),
+  check (length(btrim(log_kind)) > 0),
+  check (length(btrim(message)) > 0)
+);
+
+create index if not exists idx_run_logs_run_id_created_at
+  on app.run_logs(run_id, created_at);
+
+create index if not exists idx_run_logs_snapshot_id_created_at
+  on app.run_logs(snapshot_id, created_at);
 ```
 
 Megjegyzes:
 - A snapshot tabla append-only szemantikaju (nincs `updated_at` mezo).
-- A queue/attempt/log es result/artifact/projection tablavilag kulon H0-E5-T2/T3 taskban jon.
+- A T2-ben az attempt szemantika a `run_queue` rekordban jelenik meg (`attempt_no`, `attempt_status`), kulon `run_attempts` tabla nelkul.
+- A result/artifact/projection tablavilag kulon H0-E5-T3 taskban jon.
 
 ## 8.9 Results / Viewer Projection
 
 ```sql
 create table if not exists public.run_layout_sheets (
   id uuid primary key default gen_random_uuid(),
-  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  run_id uuid not null references app.nesting_runs(id) on delete cascade,
   sheet_no integer not null,
   sheet_definition_id uuid references app.sheet_definitions(id),
   sheet_revision_id uuid references app.sheet_revisions(id),
@@ -1053,7 +1115,7 @@ create table if not exists public.run_layout_sheets (
 
 create table if not exists public.run_layout_placements (
   id uuid primary key default gen_random_uuid(),
-  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  run_id uuid not null references app.nesting_runs(id) on delete cascade,
   run_layout_sheet_id uuid not null references public.run_layout_sheets(id) on delete cascade,
   stable_placement_key text not null,
   part_definition_id uuid references app.part_definitions(id),
@@ -1076,7 +1138,7 @@ create index if not exists idx_run_layout_placements_run_sheet
 
 create table if not exists public.run_layout_unplaced (
   id uuid primary key default gen_random_uuid(),
-  run_id uuid not null references public.nesting_runs(id) on delete cascade,
+  run_id uuid not null references app.nesting_runs(id) on delete cascade,
   part_definition_id uuid references app.part_definitions(id),
   part_revision_id uuid references app.part_revisions(id),
   project_part_requirement_id uuid references app.project_part_requirements(id),
@@ -1088,7 +1150,7 @@ create table if not exists public.run_layout_unplaced (
 );
 
 create table if not exists public.run_metrics (
-  run_id uuid primary key references public.nesting_runs(id) on delete cascade,
+  run_id uuid primary key references app.nesting_runs(id) on delete cascade,
   placed_count integer not null default 0,
   unplaced_count integer not null default 0,
   sheet_count integer not null default 0,

@@ -179,18 +179,24 @@ A H0-E5-T1 ota a run-vilag fogalmi/fizikai megfeleltetese:
 - Fogalmi Run Request aggregate fizikai taroloja: `app.nesting_runs`.
 - Fogalmi Run Snapshot immutable truth fizikai taroloja: `app.nesting_run_snapshots`.
 
-Az aktualis source-of-truth migracio:
+Aktualis source-of-truth migraciok:
 - `supabase/migrations/20260314100000_h0_e5_t1_nesting_run_es_snapshot_modellek.sql`
+- `supabase/migrations/20260314103000_h0_e5_t2_queue_es_log_modellek.sql`
 
-Kotelezo bazis-integritas:
+Kotelezo bazis-integritas (T1):
 - A request status az `app.run_request_status` enumot hasznalja.
 - A snapshot status az `app.run_snapshot_status` enumot hasznalja.
 - A request es snapshot kulon tablakban van, 1:1 kapcsolattal.
 - A snapshot append-only szemantikaju (nincs `updated_at` mezot igenylo mutacios modell).
 - A snapshot hash + strukturalt manifest blokkok explicit oszlopokban vannak.
 
-Kovetkezo, kulon H0-E5 taskokban letrehozando:
-- `run_queue`, `run_attempts`, `run_logs` tablavilag (T2).
+Kotelezo bazis-integritas (T2):
+- A queue/lease/allapot reteg fizikai taroloja: `app.run_queue`.
+- A log/audit event reteg fizikai taroloja: `app.run_logs`.
+- A T2-ben az attempt szemantika a queue sorban jelenik meg (`attempt_no`, `attempt_status`), kulon `run_attempts` tabla nelkul.
+- A `attempt_status` az `app.run_attempt_status` enumot hasznalja.
+
+Kovetkezo, kulon H0-E5 taskban letrehozando:
 - `run_results`, `run_artifacts`, `run_layout_*`, `run_metrics` tablavilag (T3).
 
 ## 10. Anti-pattern lista

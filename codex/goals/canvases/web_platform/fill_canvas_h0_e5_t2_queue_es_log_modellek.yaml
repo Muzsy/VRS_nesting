@@ -1,0 +1,78 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E5-T2 queue es log modellek task teljes artefaktlancat:
+      canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e5_t2_queue_es_log_modellek.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e5_t2_queue_es_log_modellek.yaml"
+      - "codex/prompts/web_platform/h0_e5_t2_queue_es_log_modellek/run.md"
+      - "codex/codex_checklist/web_platform/h0_e5_t2_queue_es_log_modellek.md"
+      - "codex/reports/web_platform/h0_e5_t2_queue_es_log_modellek.md"
+
+  - name: "Queue es log bazis migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0 migraciot az `app.run_queue` es `app.run_logs`
+      tablakkal.
+      A migracio:
+      1) az `app` schema-n belul dolgozzon,
+      2) kapcsolja a queue rekordot egy `app.nesting_runs` es egy
+         `app.nesting_run_snapshots` rekordhoz,
+      3) hasznalja az `app.run_attempt_status` enumot az attempt-level allapothoz,
+      4) formalizalja a queue-level allapotot legalabb `pending`, `leased`, `done`,
+         `error`, `cancel_requested`, `cancelled` iranyban,
+      5) tartalmazzon lease/heartbeat/retry mezoket,
+      6) a `run_logs` tabla append-only log event tarolo legyen,
+      7) szandekosan ne hozzon letre kulon `run_attempts` tablat,
+      8) ne hozzon letre result/artifact/projection tablakat,
+      9) ne vezessen be meg RLS-t.
+      A vegleges oszlopkeszletet a snapshot-first futasi szerzodes,
+      a mar meglevo enum inventory es a backlog T2 outputjai alapjan vezesd le,
+      de maradj minimalis es stabil H0 scope-ban.
+    outputs:
+      - "supabase/migrations/20260314103000_h0_e5_t2_queue_es_log_modellek.sql"
+
+  - name: "Minimal docs szinkron a queue/lease/log iranyhoz"
+    description: >
+      Minimalisan frissitsd a snapshot-first source-of-truth, a fo architecture
+      es a H0 roadmap dokumentumot, hogy egyertelmu legyen:
+      1) a T2 fizikai outputja `app.run_queue` es `app.run_logs`,
+      2) a fogalmi attempt/lease vilag H0-E5-T2-ben a `run_queue` rekordban
+         jelenik meg `attempt_no` + `attempt_status` + lease mezokkel,
+      3) kulon `run_attempts` tabla most nem jon letre,
+      4) a result/artifact/projection vilag tovabbra is T3 scope,
+      5) ahol a kozeli run-vilag blokkokban meg stale `public.nesting_runs`
+         vagy `public.nesting_run_snapshots` schema-prefix maradt, azt
+         minimalisan igazitsd az `app.*` iranyhoz, amennyiben ez nem noveli meg
+         a task blast radiusat.
+    outputs:
+      - "docs/web_platform/architecture/h0_snapshot_first_futasi_es_adatkontraktus.md"
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - az `app.run_queue` vegleges oszlopkeszletet;
+      - az `app.run_logs` vegleges oszlopkeszletet;
+      - a PK/FK kapcsolatokat;
+      - a `queue_state` es `attempt_status` szerepet;
+      - a lease/heartbeat/retry mezoket;
+      - hogy a log tabla append-only;
+      - hogy a task szandekosan NEM hozott letre kulon `run_attempts` tablat;
+      - hogy a task NEM hozott letre result/artifact/projection tablakat;
+      - hogy nem kerult bele RLS policy.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e5_t2_queue_es_log_modellek.md"
+      - "codex/reports/web_platform/h0_e5_t2_queue_es_log_modellek.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e5_t2_queue_es_log_modellek.md
+    outputs:
+      - "codex/reports/web_platform/h0_e5_t2_queue_es_log_modellek.md"
+      - "codex/reports/web_platform/h0_e5_t2_queue_es_log_modellek.verify.log"
