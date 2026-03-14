@@ -1,0 +1,68 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E6-T1 storage bucket strategia es path policy task teljes
+      artefaktlancat: canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e6_t1_storage_bucket_strategia_es_path_policy.yaml"
+      - "codex/prompts/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy/run.md"
+      - "codex/codex_checklist/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md"
+      - "codex/reports/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md"
+
+  - name: "Dedikalt storage source-of-truth dokumentum letrehozasa"
+    description: >
+      Hozd letre a `docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md`
+      dokumentumot, amely H0 source-of-truth szinten rogzitese:
+      1) a kanonikus H0 bucket inventoryt,
+      2) az entitas -> bucket mappinget,
+      3) a bucketenkenti kanonikus path naming mintakat,
+      4) az immutabilitas / overwrite alapelveket,
+      5) az environment ownership es kesobbi policy iranyokat,
+      6) hogy az `app.geometry_derivatives` nem storage bucket/path truth.
+      A dokumentum legyen konkret, de tovabbra is H0-szintu: policy- es naming-source-of-truth,
+      ne implementacios leiras bucket-provisioningrol.
+    outputs:
+      - "docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md"
+
+  - name: "Minimal docs szinkron a storage source-of-truth iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es a H0 roadmap dokumentumot, hogy
+      egyertelmu legyen:
+      1) a kanonikus H0 bucket inventory,
+      2) a `file_objects` es `run_artifacts` storage szerepe,
+      3) a `geometry-artifacts` reserved szerepe,
+      4) hogy az `app.geometry_derivatives` tovabbra is DB-truth, nem storage-truth,
+      5) hogy a reszletes storage provisioning es security enforcement a kovetkezo
+         taskokhoz tartozik.
+      A cel nem a teljes docs-csomag ujraszerkesztese, hanem a H0-E6-T1 storage
+      szerzodes source-of-truth lezarasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a vegleges bucket inventoryt;
+      - az entitas -> bucket mappinget;
+      - a bucketenkenti kanonikus path mintakat;
+      - az immutabilitas / overwrite elveket;
+      - hogy a `geometry_derivatives` miert nem storage-truth;
+      - hogy a task szandekosan NEM hozott letre migraciot;
+      - hogy a task NEM hozott letre storage provisioning scriptet;
+      - hogy a task NEM hozott letre RLS policyt.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md"
+      - "codex/reports/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md
+    outputs:
+      - "codex/reports/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md"
+      - "codex/reports/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.verify.log"

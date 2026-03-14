@@ -900,6 +900,16 @@ create table if not exists app.run_metrics (
 );
 ```
 
+### 8.1 Storage bucket strategia es path policy (H0-E6-T1, docs-only)
+
+- H0 kanonikus bucket inventory: `source-files`, `geometry-artifacts`, `run-artifacts`.
+- `app.file_objects` -> `source-files`; `app.run_artifacts` -> `run-artifacts`.
+- `geometry-artifacts` reserved bucket a jovobeli file-backed geometry artifactokhoz.
+- `app.geometry_derivatives` nem storage bucket/path truth, hanem DB-ben tarolt derivalt reteg.
+- Bucket/path source-of-truth dokumentum: `docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md`.
+- H0-E6-T1 szandekosan nem hoz migraciot, provisioning scriptet vagy RLS policyt.
+- A tenyleges storage access enforcement a H0-E6-T2 taskban jon.
+
 ---
 
 ## 9. Manufacturing és postprocess helyének előkészítése
