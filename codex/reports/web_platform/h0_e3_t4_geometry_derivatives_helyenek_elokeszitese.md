@@ -106,32 +106,27 @@ PASS
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-03-13T23:29:11+01:00 → 2026-03-13T23:32:43+01:00 (212s)
+- futás: 2026-03-14T09:25:52+01:00 → 2026-03-14T09:29:23+01:00 (211s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.verify.log`
-- git: `main@b53faad`
-- módosított fájlok (git status): 9
+- git: `main@7e41142`
+- módosított fájlok (git status): 3
 
 **git diff --stat**
 
 ```text
- ...ing_platform_architektura_es_supabase_schema.md | 29 +++++++++++++++++++---
- .../roadmap/dxf_nesting_platform_h0_reszletes.md   | 29 +++++++++++++++++++---
- 2 files changed, 52 insertions(+), 6 deletions(-)
+ ...4_geometry_derivatives_helyenek_elokeszitese.md |  1 +
+ ...4_geometry_derivatives_helyenek_elokeszitese.md | 27 ++++----
+ ...ry_derivatives_helyenek_elokeszitese.verify.log | 78 +++++++++++-----------
+ 3 files changed, 52 insertions(+), 54 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
- M docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md
- M docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md
-?? canvases/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md
-?? codex/codex_checklist/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md
-?? codex/goals/canvases/web_platform/fill_canvas_h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.yaml
-?? codex/prompts/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese/
-?? codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md
-?? codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.verify.log
-?? supabase/migrations/20260312007000_h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.sql
+ M canvases/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md
+ M codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.md
+ M codex/reports/web_platform/h0_e3_t4_geometry_derivatives_helyenek_elokeszitese.verify.log
 ```
 
 <!-- AUTO_VERIFY_END -->

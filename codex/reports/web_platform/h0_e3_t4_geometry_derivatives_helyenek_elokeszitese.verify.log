@@ -1,22 +1,22 @@
 [PYTEST] Unit tests
 .............................................                            [100%]
-45 passed in 2.67s
+45 passed in 2.64s
 [MYPY] Type check
 Success: no issues found in 25 source files
 [SPARROW] Resolve/build via scripts/ensure_sparrow.sh
 [ensure_sparrow] pin commit (fallback_cache): c95454e390276231b278c879d25b39708398b7d3
 HEAD is now at c95454e Merge pull request #132 from JeroenGar/rand-0.10
 [ensure_sparrow] build source: .cache/sparrow (/home/muszy/projects/VRS_nesting/.cache/sparrow)
-    Finished `release` profile [optimized] target(s) in 0.65s
+    Finished `release` profile [optimized] target(s) in 0.11s
 [3/3] Sparrow IO smoketest
 [1/2] Sparrow run via runner module
-[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260313T222916Z_6560822e
-[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260313T222916Z_6560822e/instance.json -t 60 -s 0
-[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260313T222916Z_6560822e
-[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260313T222916Z_6560822e/output/final_swim.json
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260314T082558Z_051f4f4c
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260314T082558Z_051f4f4c/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260314T082558Z_051f4f4c
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260314T082558Z_051f4f4c/output/final_swim.json
 PASS ✅
  strip_height=5752.0
- strip_width =5926.511
+ strip_width =5926.5767
  placed_items=48 (demand_sum=48)
  overlap-check: PASS
 [DXF] Import convention smoke
@@ -30,10 +30,10 @@ PASS ✅
 [DXF] Source geometry BLOCK/INSERT export smoke
 [OK] source geometry export smoke passed
 [DXF] Multi-sheet wrapper edge-cases smoke
-[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_mnrovus_/run_a/sheets/sheet_001
-[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_mnrovus_/run_a/sheets/sheet_001/instance.json -t 2 -s 0
-[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_mnrovus_/run_b/sheets/sheet_001
-[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_mnrovus_/run_b/sheets/sheet_001/instance.json -t 2 -s 0
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_t9onb2ik/run_a/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_t9onb2ik/run_a/sheets/sheet_001/instance.json -t 2 -s 0
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_t9onb2ik/run_b/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_t9onb2ik/run_b/sheets/sheet_001/instance.json -t 2 -s 0
 [OK] multisheet wrapper edge-cases smoke passed
 [DXF] Real fixture import smoke
 [OK] real DXF fixture smoke passed
@@ -44,23 +44,23 @@ PASS ✅
 [DXF] SVG export artifact smoke
 [OK] svg export smoke passed
 [4/5] Nesting solution validator smoke
-    Finished `release` profile [optimized] target(s) in 0.29s
-[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260313T223114Z_c4c89329
-[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260313T223114Z_c4c89329/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260313T223114Z_c4c89329/solver_output.json --seed 0 --time-limit 60
-[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260313T223114Z_c4c89329
+    Finished `release` profile [optimized] target(s) in 0.42s
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260314T082755Z_c1c4d2e4
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260314T082755Z_c1c4d2e4/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260314T082755Z_c1c4d2e4/solver_output.json --seed 0 --time-limit 60
+[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260314T082755Z_c1c4d2e4
 PASS: nesting solution is valid
- input=/home/muszy/projects/VRS_nesting/runs/20260313T223114Z_c4c89329/solver_input.json
- output=/home/muszy/projects/VRS_nesting/runs/20260313T223114Z_c4c89329/solver_output.json
+ input=/home/muszy/projects/VRS_nesting/runs/20260314T082755Z_c1c4d2e4/solver_input.json
+ output=/home/muszy/projects/VRS_nesting/runs/20260314T082755Z_c1c4d2e4/solver_output.json
 [5/5] Determinism hash stability smoke
-[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260313T223115Z_d02a86bc
-[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260313T223115Z_d02a86bc/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260313T223115Z_d02a86bc/solver_output.json --seed 0 --time-limit 60
-[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260313T223115Z_b3e78df9
-[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260313T223115Z_b3e78df9/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260313T223115Z_b3e78df9/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260314T082756Z_894d608b
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260314T082756Z_894d608b/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260314T082756Z_894d608b/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260314T082756Z_6a93ab00
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260314T082756Z_6a93ab00/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260314T082756Z_6a93ab00/solver_output.json --seed 0 --time-limit 60
 [INFO] Determinism hash stable: 6fa835403323f854933aadd5e00de5807aeff5225dd923b5d2844e28a9f6a8f7
 [6/6] Timeout/perf guard smoke
 [OK] timeout/perf guard smoke passed
 [BUILD] nesting_engine (release)
-    Finished `release` profile [optimized] target(s) in 0.24s
+    Finished `release` profile [optimized] target(s) in 0.23s
 [NEST] Targeted can_place_ unit tests
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
      Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
@@ -155,7 +155,7 @@ test placement::blf::tests::blf_part_in_part_off_mode_preserves_baseline ... ok
 test placement::blf::tests::blf_part_in_part_offgrid_hole_improves_sheet_count ... ok
 test placement::blf::tests::blf_part_in_part_hole_collapsed_like_outer_only_source_is_ignored ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.29s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.33s
 
      Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
 
@@ -260,7 +260,7 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
 
 [NEST] Targeted sa_ unit tests
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
      Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
 
 running 0 tests
@@ -272,15 +272,15 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; fin
 running 9 tests
 test search::sa::tests::sa_core_stop_hook_can_short_circuit_before_first_iter ... ok
 test search::sa::tests::sa_iters_clamp_allows_zero_when_only_initial_eval_fits ... ok
-test search::sa::tests::sa_move_neighbor_preserves_permutation ... ok
 test search::sa::tests::sa_prefers_higher_remnant_value_when_sheets_tie ... ok
+test search::sa::tests::sa_move_neighbor_preserves_permutation ... ok
 test search::sa::tests::sa_core_is_deterministic_fixed_seed ... ok
 test search::sa::tests::sa_search_zero_iter_budget_returns_initial_eval_result ... ok
 test search::sa::tests::sa_search_reuses_best_evaluated_result_without_final_rerun ... ok
 test search::sa::tests::sa_search_is_deterministic_tiny_blf_case ... ok
 test search::sa::tests::sa_quality_fixture_improves_sheets_used ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 1.10s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 1.15s
 
      Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
 
@@ -317,9 +317,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; fin
      Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
 
 running 4 tests
+test search::sa::tests::sa_prefers_higher_remnant_value_when_sheets_tie ... ok
 test multi_bin::greedy::tests::remnant_score_is_integer_and_deterministic ... ok
 test multi_bin::greedy::tests::remnant_score_prefers_more_compact_proxy_layout ... ok
-test search::sa::tests::sa_prefers_higher_remnant_value_when_sheets_tie ... ok
 test export::output_v2::tests::remnant_objective_is_exposed_in_output_v2 ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 64 filtered out; finished in 0.00s
@@ -349,7 +349,7 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
 
 [NEST] Targeted determinism_ evidence unit tests
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
      Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
 
 running 3 tests
@@ -363,13 +363,13 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; fin
 
 running 6 tests
 test geometry::offset::tests::offset_determinism_canonicalizes_hole_order ... ok
-test geometry::offset::tests::offset_determinism_near_zero_area_keeps_winding_stable ... ok
 test export::output_v2::tests::determinism_hash_view_v1_canonical_json_is_byte_identical ... ok
+test geometry::offset::tests::offset_determinism_near_zero_area_keeps_winding_stable ... ok
 test export::output_v2::tests::determinism_hash_is_stable ... ok
 test export::output_v2::tests::determinism_full_output_json_is_byte_identical ... ok
 test geometry::pipeline::tests::determinism_case_same_request_same_output ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 62 filtered out; finished in 0.01s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 62 filtered out; finished in 0.00s
 
      Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
 
@@ -436,7 +436,7 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
 
 [NEST] Targeted offset_determinism_ unit tests
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
      Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
 
 running 2 tests
@@ -478,12 +478,12 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
 
 [NEST] Targeted pipeline_float_policy_ unit tests
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
      Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
 
 running 3 tests
-test geometry::pipeline::tests::pipeline_float_policy_hole_bbox_near_equal_bounds_are_stable ... ok
 test geometry::pipeline::tests::pipeline_float_policy_stock_hole_obstacle_ring_start_is_canonical ... ok
+test geometry::pipeline::tests::pipeline_float_policy_hole_bbox_near_equal_bounds_are_stable ... ok
 test geometry::pipeline::tests::pipeline_float_policy_repeated_request_is_byte_identical ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.01s
@@ -495,7 +495,7 @@ test geometry::pipeline::tests::pipeline_float_policy_hole_bbox_near_equal_bound
 test geometry::pipeline::tests::pipeline_float_policy_stock_hole_obstacle_ring_start_is_canonical ... ok
 test geometry::pipeline::tests::pipeline_float_policy_repeated_request_is_byte_identical ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.01s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s
 
      Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
 
@@ -532,8 +532,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; fin
      Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
 
 running 2 tests
-test feasibility::narrow::tests::narrow_float_policy_mm_rounding_near_touching_is_deterministic ... ok
 test feasibility::narrow::tests::narrow_float_policy_identical_input_is_stable ... ok
+test feasibility::narrow::tests::narrow_float_policy_mm_rounding_near_touching_is_deterministic ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 66 filtered out; finished in 0.00s
 
@@ -572,8 +572,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; fin
      Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
 
 running 2 tests
-test placement::blf::tests::order_policy_by_input_order_preserves_input_order ... ok
 test placement::nfp_placer::tests::order_policy_by_input_order_preserves_input_order ... ok
+test placement::blf::tests::order_policy_by_input_order_preserves_input_order ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 66 filtered out; finished in 0.00s
 
@@ -635,14 +635,14 @@ FAIL: overlap detected: sheet=0 rect_100x50#0 vs rect_100x50#1
 [NEST] Validator PASS smoke (baseline output)
 PASS: nesting_engine_v2 solution is valid
  input=/home/muszy/projects/VRS_nesting/poc/nesting_engine/sample_input_v2.json
- output=/tmp/nesting_engine_baseline_out_fsUqFe.json
+ output=/tmp/nesting_engine_baseline_out_OEIFLt.json
 [NEST] CLI smoke (nest-v2)
-[nesting-engine-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260313T223214Z_ce2e6103
+[nesting-engine-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260314T082854Z_a4f3bb47
 [nesting-engine-runner] cmd=/home/muszy/projects/VRS_nesting/rust/nesting_engine/target/release/nesting_engine nest
 [NEST] CLI determinism OK
 [NEST] Canonical JSON determinism smoke
 [BUILD] nesting_engine release
-    Finished `release` profile [optimized] target(s) in 0.08s
+    Finished `release` profile [optimized] target(s) in 0.26s
 [RUN] deterministic smoke (10 runs)
 [OK] determinism smoke passed (10/10 full outputs are byte-identical)
 [OK] determinism smoke hash check passed (python canonical hash == solver meta.determinism_hash)
