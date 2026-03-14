@@ -156,11 +156,11 @@ Szabaly:
 
 | Objektum | Mi ez | Source of truth statusz | Ujraepitheto |
 | --- | --- | --- | --- |
-| RunResult | Canonical futasi eredmeny | Igen (result vilag) | Nem, ez a referencia alap |
-| PlacementProjection | UI/API query nezet | Nem (derived) | Igen, RunResult-bol |
-| RunMetricsProjection | Riport-nezet | Nem (derived) | Igen, RunResult-bol |
-| ViewerSvgArtifact | Render artifact | Nem | Igen, projection/result alapjan |
-| SheetDxfArtifact | Export artifact | Nem | Igen, result/manufacturing alapjan |
+| RunOutcome (composite) | H0 canonical futasi eredmeny modellje (`app.run_metrics` + `app.run_layout_*` + `app.run_artifacts`) | Igen (osszetett) | Nem, ez a referencia alap |
+| PlacementProjection | UI/API query nezet (`app.run_layout_*`) | Nem (derived projection) | Igen, snapshot + solver output alapjan |
+| RunMetricsProjection | Riport-nezet (`app.run_metrics`) | Nem (derived projection) | Igen, projection/adatforras alapjan |
+| ViewerSvgArtifact | Render artifact (`app.run_artifacts`) | Nem | Igen, projection alapjan |
+| SheetDxfArtifact | Export artifact (`app.run_artifacts`) | Nem | Igen, projection/manufacturing alapjan |
 | MachineProgramArtifact | Gepfuggo export | Nem | Igen, manufacturing package alapjan |
 
 ## 8. Snapshot immutabilitas szabaly
@@ -182,6 +182,7 @@ A H0-E5-T1 ota a run-vilag fogalmi/fizikai megfeleltetese:
 Aktualis source-of-truth migraciok:
 - `supabase/migrations/20260314100000_h0_e5_t1_nesting_run_es_snapshot_modellek.sql`
 - `supabase/migrations/20260314103000_h0_e5_t2_queue_es_log_modellek.sql`
+- `supabase/migrations/20260314110000_h0_e5_t3_artifact_es_projection_modellek.sql`
 
 Kotelezo bazis-integritas (T1):
 - A request status az `app.run_request_status` enumot hasznalja.
@@ -196,8 +197,11 @@ Kotelezo bazis-integritas (T2):
 - A T2-ben az attempt szemantika a queue sorban jelenik meg (`attempt_no`, `attempt_status`), kulon `run_attempts` tabla nelkul.
 - A `attempt_status` az `app.run_attempt_status` enumot hasznalja.
 
-Kovetkezo, kulon H0-E5 taskban letrehozando:
-- `run_results`, `run_artifacts`, `run_layout_*`, `run_metrics` tablavilag (T3).
+Kotelezo bazis-integritas (T3):
+- Az artifact reteg fizikai taroloja: `app.run_artifacts`.
+- A query-zheto projection reteg fizikai taroloi: `app.run_layout_sheets`, `app.run_layout_placements`, `app.run_layout_unplaced`.
+- A run-level osszegzett metrika tarolo: `app.run_metrics`.
+- H0-E5-T3-ban nincs kulon `app.run_results` tabla; a fogalmi eredmeny a fenti retegek osszetette.
 
 ## 10. Anti-pattern lista
 

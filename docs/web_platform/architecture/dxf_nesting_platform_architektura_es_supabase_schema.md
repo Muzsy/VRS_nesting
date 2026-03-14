@@ -1091,77 +1091,92 @@ create index if not exists idx_run_logs_snapshot_id_created_at
 Megjegyzes:
 - A snapshot tabla append-only szemantikaju (nincs `updated_at` mezo).
 - A T2-ben az attempt szemantika a `run_queue` rekordban jelenik meg (`attempt_no`, `attempt_status`), kulon `run_attempts` tabla nelkul.
-- A result/artifact/projection tablavilag kulon H0-E5-T3 taskban jon.
+- A T3 ota a canonical output reteg: `app.run_artifacts` + `app.run_layout_*` + `app.run_metrics`, kulon `app.run_results` tabla nelkul.
 
-## 8.9 Results / Viewer Projection
+## 8.9 Artifact + projection + metrics (H0-E5-T3)
 
 ```sql
-create table if not exists public.run_layout_sheets (
+create table if not exists app.run_artifacts (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references app.nesting_runs(id) on delete cascade,
-  sheet_no integer not null,
-  sheet_definition_id uuid references app.sheet_definitions(id),
-  sheet_revision_id uuid references app.sheet_revisions(id),
+  snapshot_id uuid references app.nesting_run_snapshots(id) on delete set null,
+  artifact_kind app.artifact_kind not null,
+  storage_bucket text not null,
+  storage_path text not null,
+  metadata_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  check (length(btrim(storage_bucket)) > 0),
+  check (length(btrim(storage_path)) > 0)
+);
+
+create index if not exists idx_run_artifacts_run
+  on app.run_artifacts(run_id);
+
+create table if not exists app.run_layout_sheets (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references app.nesting_runs(id) on delete cascade,
+  sheet_index integer not null,
+  sheet_revision_id uuid references app.sheet_revisions(id) on delete set null,
   width_mm numeric(12,3),
   height_mm numeric(12,3),
-  utilization_ratio numeric(8,6),
-  remnant_area_mm2 numeric(18,3),
-  remnant_value numeric(18,4),
-  bbox_jsonb jsonb,
-  meta_jsonb jsonb not null default '{}'::jsonb,
+  utilization_ratio numeric(8,5),
+  metadata_jsonb jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  unique (run_id, sheet_no)
+  check (sheet_index >= 0),
+  unique (run_id, sheet_index)
 );
 
-create table if not exists public.run_layout_placements (
+create index if not exists idx_run_layout_sheets_run
+  on app.run_layout_sheets(run_id);
+
+create table if not exists app.run_layout_placements (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references app.nesting_runs(id) on delete cascade,
-  run_layout_sheet_id uuid not null references public.run_layout_sheets(id) on delete cascade,
-  stable_placement_key text not null,
-  part_definition_id uuid references app.part_definitions(id),
-  part_revision_id uuid references app.part_revisions(id),
-  project_part_requirement_id uuid references app.project_part_requirements(id),
+  sheet_id uuid not null references app.run_layout_sheets(id) on delete cascade,
+  part_revision_id uuid references app.part_revisions(id) on delete set null,
   placement_index integer not null,
-  x_mm numeric(18,6) not null,
-  y_mm numeric(18,6) not null,
-  rotation_deg numeric(10,4) not null default 0,
-  mirrored boolean not null default false,
-  bbox_jsonb jsonb,
-  centroid_jsonb jsonb,
-  meta_jsonb jsonb not null default '{}'::jsonb,
+  quantity integer not null default 1,
+  transform_jsonb jsonb not null,
+  bbox_jsonb jsonb not null default '{}'::jsonb,
+  metadata_jsonb jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  unique (run_id, stable_placement_key)
+  check (placement_index >= 0),
+  check (quantity > 0),
+  unique (sheet_id, placement_index)
 );
 
-create index if not exists idx_run_layout_placements_run_sheet
-  on public.run_layout_placements(run_layout_sheet_id, placement_index);
+create index if not exists idx_run_layout_placements_sheet_id_placement_index
+  on app.run_layout_placements(sheet_id, placement_index);
 
-create table if not exists public.run_layout_unplaced (
+create index if not exists idx_run_layout_placements_run
+  on app.run_layout_placements(run_id);
+
+create table if not exists app.run_layout_unplaced (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references app.nesting_runs(id) on delete cascade,
-  part_definition_id uuid references app.part_definitions(id),
-  part_revision_id uuid references app.part_revisions(id),
-  project_part_requirement_id uuid references app.project_part_requirements(id),
-  missing_qty integer not null default 1,
+  part_revision_id uuid references app.part_revisions(id) on delete set null,
+  remaining_qty integer not null,
   reason text,
-  meta_jsonb jsonb not null default '{}'::jsonb,
+  metadata_jsonb jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  check (missing_qty > 0)
+  check (remaining_qty > 0)
 );
 
-create table if not exists public.run_metrics (
+create index if not exists idx_run_layout_unplaced_run
+  on app.run_layout_unplaced(run_id);
+
+create table if not exists app.run_metrics (
   run_id uuid primary key references app.nesting_runs(id) on delete cascade,
   placed_count integer not null default 0,
   unplaced_count integer not null default 0,
-  sheet_count integer not null default 0,
-  total_part_area_mm2 numeric(18,3),
-  total_sheet_area_mm2 numeric(18,3),
-  global_utilization_ratio numeric(8,6),
-  total_remnant_area_mm2 numeric(18,3),
-  total_remnant_value numeric(18,4),
-  solver_runtime_ms bigint,
+  used_sheet_count integer not null default 0,
+  utilization_ratio numeric(8,5),
+  remnant_value numeric(14,2),
   metrics_jsonb jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  check (placed_count >= 0),
+  check (unplaced_count >= 0),
+  check (used_sheet_count >= 0)
 );
 ```
 
