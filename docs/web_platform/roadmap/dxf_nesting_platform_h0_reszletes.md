@@ -688,52 +688,67 @@ create index if not exists idx_project_sheet_inputs_priority
 
 ## 7. Run orchestration
 
+A H0-E5-T1 ota a run-vilag request/snapshot bazis source of truth migracioja:
+- `supabase/migrations/20260314100000_h0_e5_t1_nesting_run_es_snapshot_modellek.sql`
+
+Fogalmi/fizikai megfeleltetes:
+- Run Request aggregate -> `app.nesting_runs`
+- Run Snapshot immutable truth -> `app.nesting_run_snapshots`
+
 ```sql
 create table if not exists app.nesting_runs (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references app.projects(id) on delete cascade,
   requested_by uuid references app.profiles(id) on delete set null,
-  status app.run_status not null default 'draft',
-  engine_version text,
-  started_at timestamptz,
-  finished_at timestamptz,
-  error_message text,
-  created_at timestamptz not null default now()
+  status app.run_request_status not null default 'draft',
+  run_purpose text not null default 'nesting',
+  idempotency_key text,
+  request_payload_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (length(btrim(run_purpose)) > 0),
+  check (idempotency_key is null or length(btrim(idempotency_key)) > 0)
 );
 
 create table if not exists app.nesting_run_snapshots (
-  run_id uuid primary key references app.nesting_runs(id) on delete cascade,
-  snapshot_jsonb jsonb not null,
-  snapshot_hash text not null,
-  created_at timestamptz not null default now()
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null unique references app.nesting_runs(id) on delete cascade,
+  status app.run_snapshot_status not null default 'building',
+  snapshot_version text not null,
+  snapshot_hash_sha256 text,
+  project_manifest_jsonb jsonb not null default '{}'::jsonb,
+  technology_manifest_jsonb jsonb not null default '{}'::jsonb,
+  parts_manifest_jsonb jsonb not null default '[]'::jsonb,
+  sheets_manifest_jsonb jsonb not null default '[]'::jsonb,
+  geometry_manifest_jsonb jsonb not null default '[]'::jsonb,
+  solver_config_jsonb jsonb not null default '{}'::jsonb,
+  manufacturing_manifest_jsonb jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  check (length(btrim(snapshot_version)) > 0)
 );
 
-create unique index if not exists idx_nesting_run_snapshots_hash
-  on app.nesting_run_snapshots(snapshot_hash);
+create index if not exists idx_nesting_runs_project_id_created_at_desc
+  on app.nesting_runs(project_id, created_at desc);
 
-create table if not exists app.run_queue (
-  run_id uuid primary key references app.nesting_runs(id) on delete cascade,
-  status app.queue_status not null default 'pending',
-  lease_token uuid,
-  leased_until timestamptz,
-  worker_id text,
-  retry_count integer not null default 0,
-  available_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
-);
+create index if not exists idx_nesting_runs_status
+  on app.nesting_runs(status);
 
-create index if not exists idx_run_queue_status_available
-  on app.run_queue(status, available_at);
+create unique index if not exists uq_nesting_runs_project_idempotency_key
+  on app.nesting_runs(project_id, idempotency_key)
+  where idempotency_key is not null;
 
-create table if not exists app.run_logs (
-  id bigint generated always as identity primary key,
-  run_id uuid not null references app.nesting_runs(id) on delete cascade,
-  level text not null,
-  message text not null,
-  payload_jsonb jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
+create unique index if not exists uq_nesting_run_snapshots_snapshot_hash_sha256
+  on app.nesting_run_snapshots(snapshot_hash_sha256)
+  where snapshot_hash_sha256 is not null;
+
+create index if not exists idx_nesting_run_snapshots_status
+  on app.nesting_run_snapshots(status);
 ```
+
+Megjegyzes:
+- A snapshot tabla append-only szemantikaju (nincs `updated_at` mezo).
+- A `run_queue` / `run_attempts` / `run_logs` tablavilag H0-E5-T2 scope.
+- A `run_results` / `run_artifacts` / `run_layout_*` / `run_metrics` tablavilag H0-E5-T3 scope.
 
 ---
 

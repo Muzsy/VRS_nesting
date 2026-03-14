@@ -173,15 +173,25 @@ Kovetkezmeny:
 - a worker nem elo domain allapotbol dolgozik,
 - a futas reprodukalhato hash es snapshot_id alapjan.
 
-## 9. H0-E2 schema kovetkezmenyek
+## 9. H0-E5 schema kovetkezmenyek
 
-A kovetkezo core schema feladathoz kotelezo:
-- Kulon entitasok: `run_requests`, `run_snapshots`, `run_attempts`, `run_results`.
-- `run_snapshots` tabla immutable mezokkel es hash mezovel rendelkezzen.
-- `run_attempts` tartalmazza lease owner, heartbeat, timeout deadline mezoket.
-- `run_results` a canonical payloadot tarolja; projection kulon tablaban legyen.
-- Artifactok manifest + blob referencia modellel tarolodjanak.
-- Cancel/timeout/retry allapotok explicit enum szinten jelenjenek meg.
+A H0-E5-T1 ota a run-vilag fogalmi/fizikai megfeleltetese:
+- Fogalmi Run Request aggregate fizikai taroloja: `app.nesting_runs`.
+- Fogalmi Run Snapshot immutable truth fizikai taroloja: `app.nesting_run_snapshots`.
+
+Az aktualis source-of-truth migracio:
+- `supabase/migrations/20260314100000_h0_e5_t1_nesting_run_es_snapshot_modellek.sql`
+
+Kotelezo bazis-integritas:
+- A request status az `app.run_request_status` enumot hasznalja.
+- A snapshot status az `app.run_snapshot_status` enumot hasznalja.
+- A request es snapshot kulon tablakban van, 1:1 kapcsolattal.
+- A snapshot append-only szemantikaju (nincs `updated_at` mezot igenylo mutacios modell).
+- A snapshot hash + strukturalt manifest blokkok explicit oszlopokban vannak.
+
+Kovetkezo, kulon H0-E5 taskokban letrehozando:
+- `run_queue`, `run_attempts`, `run_logs` tablavilag (T2).
+- `run_results`, `run_artifacts`, `run_layout_*`, `run_metrics` tablavilag (T3).
 
 ## 10. Anti-pattern lista
 

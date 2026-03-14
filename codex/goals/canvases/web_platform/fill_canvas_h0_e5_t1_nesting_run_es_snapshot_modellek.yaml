@@ -1,0 +1,74 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E5-T1 nesting run es snapshot modellek task teljes
+      artefaktlancat: canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e5_t1_nesting_run_es_snapshot_modellek.yaml"
+      - "codex/prompts/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek/run.md"
+      - "codex/codex_checklist/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.md"
+      - "codex/reports/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.md"
+
+  - name: "Run request es snapshot bazis migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0 migraciot az `app.nesting_runs` es
+      `app.nesting_run_snapshots` tablakkal.
+      A migracio:
+      1) az `app` schema-n belul dolgozzon,
+      2) a run tabla az `app.run_request_status` enumot hasznalja,
+      3) a snapshot tabla az `app.run_snapshot_status` enumot hasznalja,
+      4) 1:1 kapcsolatot adjon a run es a hozza tartozo snapshot kozott,
+      5) a run tabla tartalmazzon minimalis request metadata helyet
+         (`run_purpose`, `idempotency_key`, `request_payload_jsonb` jelleggel),
+      6) a snapshot tabla tartalmazzon hash-et es strukturalt manifest/payload
+         helyet a projekt/technology/parts/sheets/geometry/solver konfiguraciohoz,
+      7) a snapshot append-only szemantikaju legyen,
+      8) ne hozzon letre queue/log/result/artifact/projection tablakat,
+      9) ne vezessen be meg RLS-t.
+      A vegleges oszlopkeszletet a web_platform H0 docs es a mar letezo enum inventory
+      alapjan vezesd le, de maradj minimalis es stabil H0 scope-ban.
+    outputs:
+      - "supabase/migrations/20260314100000_h0_e5_t1_nesting_run_es_snapshot_modellek.sql"
+
+  - name: "Minimal docs szinkron a run request / snapshot iranyhoz"
+    description: >
+      Minimalisan frissitsd a snapshot-first source-of-truth, a fo architecture
+      es a H0 roadmap dokumentumot, hogy egyertelmu legyen:
+      1) a fogalmi Run Request / Run Snapshot kulonvalasztas,
+      2) ennek H0 fizikai taroloi az `app.nesting_runs` es
+         `app.nesting_run_snapshots`,
+      3) a helyes enumok `app.run_request_status` es `app.run_snapshot_status`,
+      4) a queue/result/artifact retegek tovabbra is kulon taskok.
+      A cel nem a teljes web_platform dokumentaciocsomag atnevezese, hanem a
+      H0-E5-T1 source-of-truth irany helyreallitasa.
+    outputs:
+      - "docs/web_platform/architecture/h0_snapshot_first_futasi_es_adatkontraktus.md"
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - az `app.nesting_runs` vegleges oszlopkeszletet;
+      - az `app.nesting_run_snapshots` vegleges oszlopkeszletet;
+      - a PK/FK kapcsolatokat;
+      - az enum hasznalatot;
+      - a snapshot hash es manifest blokkokat;
+      - hogy a snapshot append-only szemantikaju;
+      - hogy a task szandekosan NEM hozott letre queue/log/result/artifact/projection tablakat;
+      - hogy nem kerult bele RLS policy.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.md"
+      - "codex/reports/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.md
+    outputs:
+      - "codex/reports/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.md"
+      - "codex/reports/web_platform/h0_e5_t1_nesting_run_es_snapshot_modellek.verify.log"
