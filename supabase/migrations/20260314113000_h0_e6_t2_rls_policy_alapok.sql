@@ -649,56 +649,19 @@ to authenticated
 using (true);
 
 -- ---------------------------------------------------------------------------
--- storage.objects minimal policy for canonical H0 buckets
+-- storage.objects policy rollout is intentionally deferred
 -- ---------------------------------------------------------------------------
-
-alter table storage.objects enable row level security;
-
-drop policy if exists h0_e6_t2_storage_source_files_select_owner on storage.objects;
-create policy h0_e6_t2_storage_source_files_select_owner
-on storage.objects
-for select
-to authenticated
-using (
-  bucket_id = 'source-files'
-  and app.storage_object_project_id(name) is not null
-  and app.is_project_owner(app.storage_object_project_id(name))
-);
-
-drop policy if exists h0_e6_t2_storage_source_files_insert_owner on storage.objects;
-create policy h0_e6_t2_storage_source_files_insert_owner
-on storage.objects
-for insert
-to authenticated
-with check (
-  bucket_id = 'source-files'
-  and app.storage_object_project_id(name) is not null
-  and app.is_project_owner(app.storage_object_project_id(name))
-);
-
-drop policy if exists h0_e6_t2_storage_geometry_artifacts_select_owner on storage.objects;
-create policy h0_e6_t2_storage_geometry_artifacts_select_owner
-on storage.objects
-for select
-to authenticated
-using (
-  bucket_id = 'geometry-artifacts'
-  and app.storage_object_project_id(name) is not null
-  and app.is_project_owner(app.storage_object_project_id(name))
-);
-
-drop policy if exists h0_e6_t2_storage_run_artifacts_select_owner on storage.objects;
-create policy h0_e6_t2_storage_run_artifacts_select_owner
-on storage.objects
-for select
-to authenticated
-using (
-  bucket_id = 'run-artifacts'
-  and app.storage_object_project_id(name) is not null
-  and app.is_project_owner(app.storage_object_project_id(name))
-);
+-- NOTE:
+-- In hosted Supabase environments the migration runner role may not own
+-- `storage.objects`. `ALTER TABLE storage.objects ...` and `CREATE POLICY ... ON
+-- storage.objects` can fail with:
+--   ERROR: must be owner of table objects
+--
+-- To keep H0 app-domain RLS rollout unblockable, the storage.objects policy
+-- segment is handled as a separate infra step. See:
+-- docs/known_issues/web_platform_known_issues.md (KI-001)
 
 -- NOTE:
--- - anon role has no explicit policy on app.* or storage.objects in this migration.
+-- - anon role has no explicit policy on app.* tables in this migration.
 -- - service-role boundary remains the write path for worker/output worlds.
 -- - auth auto-provisioning trigger and worker/API implementation stay out of scope.
