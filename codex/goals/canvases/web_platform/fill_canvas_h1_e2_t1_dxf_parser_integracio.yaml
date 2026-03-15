@@ -1,0 +1,63 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E2-T1 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglévő web_platform
+      taskmintákhoz igazítva.
+    outputs:
+      - "canvases/web_platform/h1_e2_t1_dxf_parser_integracio.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e2_t1_dxf_parser_integracio.yaml"
+      - "codex/codex_checklist/web_platform/h1_e2_t1_dxf_parser_integracio.md"
+      - "codex/reports/web_platform/h1_e2_t1_dxf_parser_integracio.md"
+
+  - name: "DXF geometry import service bevezetese"
+    description: >
+      Hozz letre kulon service reteget, amely a kanonikus source storage objectbol
+      letolti a feltoltott DXF-et, ideiglenes fajlbol parse-olja a meglévő
+      `vrs_nesting.dxf.importer.import_part_raw` helperrel, majd a sikeres parse-bol
+      minimum H1 geometry revision payloadot allit elo. A service szamolja a
+      `canonical_hash_sha256` es `bbox_jsonb` mezoket, a `source_hash_sha256` a
+      kapcsolt `app.file_objects` truth-ra uljon, es a megoldas ne hozzon letre
+      uj parhuzamos DXF parser logikat.
+    outputs:
+      - "api/services/dxf_geometry_import.py"
+
+  - name: "Files route parser bekotese"
+    description: >
+      Igazitsd a files ingest flow-t ugy, hogy sikeres `source_dxf` complete_upload
+      utan a geometry parser service elinduljon, es sikeres parse eseten
+      `app.geometry_revisions` rekord jojjon letre. A record legalabb a H0 schema
+      kotelezo mezoit toltse: `project_id`, `source_file_object_id`, `geometry_role`,
+      `revision_no`, `status`, `canonical_format_version`, `canonical_geometry_jsonb`,
+      `canonical_hash_sha256`, `source_hash_sha256`, `bbox_jsonb`, `created_by`.
+      Sikertelen letoltes vagy parse eseten ne jojjon letre hamis `status='parsed'`
+      rekord. A task ne lepjen at validation report vagy derivative generator scope-ba.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Task-specifikus parser smoke ellenorzes letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely fake storage + API flow mellett bizonyitja,
+      hogy egy tipikus DXF feltoltesbol letrejon legalabb egy `app.geometry_revisions`
+      rekord a helyes lineage/hash/bbox/status ertekekkel, es hogy parse hiba vagy
+      missing object eseten nem keletkezik felrevezeto `parsed` rekord.
+    outputs:
+      - "scripts/smoke_h1_e2_t1_dxf_parser_integracio.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett H1-E2-T1
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon jelolve,
+      hogy mi lett most megoldva a parser integration scope-ban, es mi marad
+      H1-E2-T2/H1-E2-T3/H1-E2-T4 tovabbi scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h1_e2_t1_dxf_parser_integracio.md"
+      - "codex/reports/web_platform/h1_e2_t1_dxf_parser_integracio.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h1_e2_t1_dxf_parser_integracio.md
+    outputs:
+      - "codex/reports/web_platform/h1_e2_t1_dxf_parser_integracio.md"
+      - "codex/reports/web_platform/h1_e2_t1_dxf_parser_integracio.verify.log"
