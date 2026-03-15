@@ -1,0 +1,59 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E1-T1 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglévő taskmintákhoz igazítva.
+    outputs:
+      - "canvases/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e1_t1_upload_endpoint_service_h0_schema_realignment.yaml"
+      - "codex/codex_checklist/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.md"
+      - "codex/reports/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.md"
+
+  - name: "Projects route H0 schema igazitas"
+    description: >
+      Igazitsd a projects route-ot a H0 `app.projects` valos schemajahoz:
+      `owner_user_id`, `lifecycle`, `updated_at` es a soft-archive viselkedes
+      legyen a source-of-truth. Ne maradjon bent `owner_id` vagy `archived_at`
+      alapu logika a route-ban.
+    outputs:
+      - "api/routes/projects.py"
+
+  - name: "Files route es DXF validation H0 file_objects igazitas"
+    description: >
+      Igazitsd a files route-ot a H0 `app.file_objects` metadata modellhez es a
+      H0 storage path policyhez. A source upload path a `projects/{project_id}/files/{file_object_id}/{sanitized_original_name}`
+      mintat kovesse, es a route ne hasznalja tovabb a legacy `project_files`
+      tablat vagy annak mezoit. A kapcsolodo DXF validation service se probaljon
+      nem letezo legacy oszlopokba irni. Ha szukseges, a config default bucketje
+      H0-kanonikus `source-files` legyen.
+    outputs:
+      - "api/routes/files.py"
+      - "api/services/dxf_validation.py"
+      - "api/config.py"
+
+  - name: "Task-specifikus smoke ellenorzes letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely bizonyitja a H0-aligned project CRUD +
+      upload-url + file complete/list/delete flow mukodeset. A script kifejezetten
+      az `app.projects` es `app.file_objects` modellre es a H0 path policyre
+      ellenorizzen, ne a legacy Phase1 tablakra.
+    outputs:
+      - "scripts/smoke_h1_e1_t1_upload_endpoint_service_h0_schema_realignment.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett H1-E1-T1
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon jelolve,
+      hogy a legacy `project_files`/`owner_id` vilagbol mi lett kivezetve es mi maradt
+      tovabbi H1/H2 scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.md"
+      - "codex/reports/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.md
+    outputs:
+      - "codex/reports/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.md"
+      - "codex/reports/web_platform/h1_e1_t1_upload_endpoint_service_h0_schema_realignment.verify.log"

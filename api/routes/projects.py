@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -26,12 +25,12 @@ class ProjectUpdateRequest(BaseModel):
 
 class ProjectResponse(BaseModel):
     id: str
-    owner_id: str
+    owner_user_id: str
+    lifecycle: str
     name: str
     description: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
-    archived_at: str | None = None
 
 
 class ProjectListResponse(BaseModel):
@@ -41,19 +40,15 @@ class ProjectListResponse(BaseModel):
     page_size: int
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def _to_project_response(payload: dict[str, Any]) -> ProjectResponse:
     return ProjectResponse(
         id=str(payload.get("id", "")),
-        owner_id=str(payload.get("owner_id", "")),
+        owner_user_id=str(payload.get("owner_user_id", "")),
+        lifecycle=str(payload.get("lifecycle", "")),
         name=str(payload.get("name", "")),
         description=payload.get("description"),
         created_at=payload.get("created_at"),
         updated_at=payload.get("updated_at"),
-        archived_at=payload.get("archived_at"),
     )
 
 
@@ -64,12 +59,12 @@ def create_project(
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectResponse:
     payload = {
-        "owner_id": user.id,
+        "owner_user_id": user.id,
         "name": req.name.strip(),
         "description": req.description.strip() or None,
     }
     try:
-        row = supabase.insert_row(table="projects", access_token=user.access_token, payload=payload)
+        row = supabase.insert_row(table="app.projects", access_token=user.access_token, payload=payload)
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"create project failed: {exc}") from exc
     return _to_project_response(row)
@@ -85,16 +80,16 @@ def list_projects(
 ) -> ProjectListResponse:
     offset = (page - 1) * page_size
     params = {
-        "select": "id,owner_id,name,description,created_at,updated_at,archived_at",
-        "owner_id": f"eq.{user.id}",
+        "select": "id,owner_user_id,lifecycle,name,description,created_at,updated_at",
+        "owner_user_id": f"eq.{user.id}",
         "order": "updated_at.desc.nullslast,created_at.desc",
         "limit": str(page_size),
         "offset": str(offset),
     }
-    params["archived_at"] = "not.is.null" if archived else "is.null"
+    params["lifecycle"] = "eq.archived" if archived else "neq.archived"
 
     try:
-        rows = supabase.select_rows(table="projects", access_token=user.access_token, params=params)
+        rows = supabase.select_rows(table="app.projects", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"list projects failed: {exc}") from exc
 
@@ -109,13 +104,13 @@ def get_project(
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectResponse:
     params = {
-        "select": "id,owner_id,name,description,created_at,updated_at,archived_at",
+        "select": "id,owner_user_id,lifecycle,name,description,created_at,updated_at",
         "id": f"eq.{project_id}",
-        "owner_id": f"eq.{user.id}",
+        "owner_user_id": f"eq.{user.id}",
         "limit": "1",
     }
     try:
-        rows = supabase.select_rows(table="projects", access_token=user.access_token, params=params)
+        rows = supabase.select_rows(table="app.projects", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"get project failed: {exc}") from exc
 
@@ -131,18 +126,21 @@ def patch_project(
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectResponse:
-    payload: dict[str, Any] = {"updated_at": _now_iso()}
+    payload: dict[str, Any] = {}
     if req.name is not None:
         payload["name"] = req.name.strip()
     if req.description is not None:
         payload["description"] = req.description.strip() or None
 
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no fields to update")
+
     try:
         rows = supabase.update_rows(
-            table="projects",
+            table="app.projects",
             access_token=user.access_token,
             payload=payload,
-            filters={"id": f"eq.{project_id}", "owner_id": f"eq.{user.id}"},
+            filters={"id": f"eq.{project_id}", "owner_user_id": f"eq.{user.id}"},
         )
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"patch project failed: {exc}") from exc
@@ -158,13 +156,13 @@ def archive_project(
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> Response:
-    payload = {"archived_at": _now_iso(), "updated_at": _now_iso()}
+    payload = {"lifecycle": "archived"}
     try:
         rows = supabase.update_rows(
-            table="projects",
+            table="app.projects",
             access_token=user.access_token,
             payload=payload,
-            filters={"id": f"eq.{project_id}", "owner_id": f"eq.{user.id}"},
+            filters={"id": f"eq.{project_id}", "owner_user_id": f"eq.{user.id}"},
         )
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"archive project failed: {exc}") from exc

@@ -121,7 +121,7 @@ def load_settings() -> Settings:
         supabase_project_ref=_resolve_env("SUPABASE_PROJECT_REF"),
         supabase_db_password=_resolve_env("SUPABASE_DB_PASSWORD"),
         database_url=_resolve_env("DATABASE_URL"),
-        storage_bucket=_resolve_env("API_STORAGE_BUCKET", "vrs-nesting"),
+        storage_bucket=_resolve_env("API_STORAGE_BUCKET", "source-files"),
         max_dxf_size_mb=max_dxf_size_mb,
         rate_limit_window_s=rate_limit_window_s,
         rate_limit_runs_per_window=runs_limit,
