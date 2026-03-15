@@ -1,0 +1,21 @@
+# Codex checklist - h0_e6_t2_rls_policy_alapok
+
+- [x] Canvas + goal YAML + run prompt artefaktok elerhetoek
+- [x] Letrejott a bazis RLS migracio: `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`
+- [x] A migracio bekapcsolja a RLS-t a fo `app.*` tablavilagon
+- [x] `anon` nem kap uzleti tabla-hozzaferest
+- [x] `app.profiles` self-row policy alatt all
+- [x] `app.projects` owner-only policy alatt all
+- [x] A projekthez kotott child tablavilag project-owner policy alatt all
+- [x] A `part_*` / `sheet_*` definicio+revision vilag owner-only policy alatt all
+- [x] A geometry audit/review/derivative vilag geometry/project policy alatt all
+- [x] A `nesting_run_snapshots` es `run_*` output tablavilag user-oldalon read-only
+- [x] A `technology_presets` authenticated read-only
+- [x] Minimal `storage.objects` policy letrejott a kanonikus bucket inventoryra
+- [x] Letrejott a dedikalt security source-of-truth doksi: `docs/web_platform/architecture/h0_security_rls_alapok.md`
+- [x] A docs explicit rogzitette a service-role boundaryt
+- [x] Minimal docs szinkron megtortent a fo architecture es roadmap dokumentumban
+- [x] A task nem vezetett be auth auto-provisioning triggert
+- [x] A task nem vezetett be worker vagy API implementaciot
+- [x] `./scripts/verify.sh --report codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.md` PASS
+- [x] Report DoD -> Evidence matrix kitoltve

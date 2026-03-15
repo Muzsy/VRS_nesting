@@ -1,0 +1,93 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E6-T2 RLS policy alapok task teljes artefaktlancat:
+      canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e6_t2_rls_policy_alapok.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e6_t2_rls_policy_alapok.yaml"
+      - "codex/prompts/web_platform/h0_e6_t2_rls_policy_alapok/run.md"
+      - "codex/codex_checklist/web_platform/h0_e6_t2_rls_policy_alapok.md"
+      - "codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.md"
+
+  - name: "Alap RLS es storage policy migracio elkeszitese"
+    description: >
+      Hozd letre a kovetkezo H0 migraciot az alap DB-RLS es minimal storage policy
+      csomaggal.
+      A migracio:
+      1) kapcsolja be a RLS-t a fo `app.*` uzleti tablavilagon,
+      2) ne adjon uzleti tabla-hozzaferest `anon` role-nak,
+      3) `app.profiles` tablaban self-row policy-t adjon,
+      4) `app.projects` es direkt project child tablavilagon owner/project-bound policy-t adjon,
+      5) `part_*` / `sheet_*` definicio es revision vilagon owner-only policy-t adjon,
+      6) `geometry_validation_reports`, `geometry_review_actions`, `geometry_derivatives`
+         vilagot geometry/project alapu policyval vedje,
+      7) `app.technology_presets`-et authenticated read-only modba tegye,
+      8) `app.nesting_runs`-t user-oldalon owner-controlled modon kezelje,
+      9) a `app.nesting_run_snapshots`, `app.run_queue`, `app.run_logs`,
+         `app.run_artifacts`, `app.run_layout_*`, `app.run_metrics` tablavilagot
+         user-oldalon read-only modon vedje,
+      10) minimal `storage.objects` policy-t vezessen be a kanonikus bucket inventoryra,
+      11) a storage policy a H0-E6-T1 path szerzodesre epuljon,
+      12) ne vezessen be auth auto-provisioning triggert,
+      13) ne valtoztasson worker vagy API implementacion.
+      A vegleges policy-ket a mar letezo schema es a H0 docs alapjan vezesd le,
+      de maradj minimalis, biztonsagos H0 scope-ban.
+    outputs:
+      - "supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql"
+
+  - name: "Dedikalt security/RLS source-of-truth dokumentum letrehozasa"
+    description: >
+      Hozd letre a `docs/web_platform/architecture/h0_security_rls_alapok.md`
+      dokumentumot, amely H0 source-of-truth szinten rogzitese:
+      1) a tablankenti hozzaferesi matrixot,
+      2) a user-oldalon irhato vs csak olvashato tablavilagot,
+      3) a service-role boundaryt,
+      4) a storage policy fo szabalyait a kanonikus bucket inventoryra,
+      5) hogy a `geometry_derivatives` vedelme DB-RLS alapu, nem storage-truth.
+      A dokumentum legyen konkret, de tovabbra is H0-szintu: alap policy-szerzodes,
+      ne teljes H1/H2 jogosultsagi rendszer.
+    outputs:
+      - "docs/web_platform/architecture/h0_security_rls_alapok.md"
+
+  - name: "Minimal docs szinkron a security/RLS source-of-truth iranyhoz"
+    description: >
+      Minimalisan frissitsd a fo architecture es a H0 roadmap dokumentumot, hogy
+      egyertelmu legyen:
+      1) az alap H0 RLS matrix,
+      2) a service-role boundary,
+      3) a `technology_presets` read-only szerepe,
+      4) a snapshot/output tablavilag user-oldali read-only szerepe,
+      5) a storage policy a H0-E6-T1 bucket/path szerzodesre epul.
+      A cel nem a teljes docs-csomag ujraszerkesztese, hanem a H0-E6-T2 source-of-truth
+      szinkron lezarasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a vegleges helper fuggvenyeket (ha lettek);
+      - a tablankenti policy matrixot;
+      - mely tablakat irhat a user es melyek read-only-k user oldalon;
+      - a `technology_presets` read-only szabalyat;
+      - a run/snapshot/output tablavilag user-oldali szerepet;
+      - a `storage.objects` policy fo szabalyat;
+      - a service-role boundaryt;
+      - hogy a task szandekosan NEM vezetett be auto-provisioning triggert;
+      - hogy a task NEM vezetett be worker vagy API implementaciot.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e6_t2_rls_policy_alapok.md"
+      - "codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.md
+    outputs:
+      - "codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.md"
+      - "codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.verify.log"
