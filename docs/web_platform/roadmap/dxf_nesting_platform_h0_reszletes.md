@@ -908,17 +908,28 @@ create table if not exists app.run_metrics (
 - `app.geometry_derivatives` nem storage bucket/path truth, hanem DB-ben tarolt derivalt reteg.
 - Bucket/path source-of-truth dokumentum: `docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md`.
 - H0-E6-T1 szandekosan nem hoz migraciot, provisioning scriptet vagy RLS policyt.
-- A tenyleges storage access enforcement H0-E6-T2-ben kerult bevezetesre.
+- A tenyleges storage access enforcement H0-E6-T2-ben split rollouttal valosult meg:
+  - `app.*` baseline RLS policyk migracios uton;
+  - `storage.objects` minimal policyk manualis Dashboard/Studio provisioninggel.
 
 ### 8.2 H0-E6-T2 RLS policy alapok (migracios task)
 
-- Migracio: `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`.
+- Repo migracio: `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql` (`app.*` baseline RLS).
 - `anon` uzleti tabla-hozzaferes tiltva, policyk `authenticated` role-ra celzottak.
 - `app.profiles` self-row, `app.projects` owner-only, project child tablavilag project-owner policy alatt.
 - `part_*`/`sheet_*` definicio+revision vilag owner-bound policy alatt.
 - `app.technology_presets` authenticated read-only.
 - `nesting_run_snapshots` es `run_*` output tablavilag user-oldalon read-only.
-- `storage.objects` policy a kanonikus bucket inventoryra es `projects/{project_id}/...` path szerzodesre epul.
+- Hosted storage allapot:
+  - bucketek: `source-files`, `geometry-artifacts`, `run-artifacts` (mind `private`);
+  - `storage.objects` minimal policyk manualisan provisionalva, funkcionalis matrix szerint:
+    - `source-files`: authenticated `select` + `insert`, owner/project-bound path;
+    - `geometry-artifacts`: authenticated `select`, owner/project-bound;
+    - `run-artifacts`: authenticated `select`, owner/project-bound;
+    - `anon`: nincs policy.
+- A storage rollout utja elter a sima migracios uttol: a `storage.objects` DDL/policy szegmens
+  hosted owner-limit miatt splitelve maradt a repoban.
+- Policynev-egyezes helyett a functionalis szabaly-egyezes az elvart.
 - Security source-of-truth: `docs/web_platform/architecture/h0_security_rls_alapok.md`.
 
 ---

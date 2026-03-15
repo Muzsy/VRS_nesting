@@ -26,11 +26,13 @@ Ez a dokumentum nem feature-specifikáció, hanem döntési kapu.
   - core domain tablakat,
   - file/geometry/audit/review/derivative reteget,
   - run/snapshot/queue/log/output reteget,
-  - baseline RLS + storage policy alapokat.
+  - baseline `app.*` RLS alapokat.
+- A storage baseline security allapot hosted projekten funkcionalisan teljesuljon, akkor is,
+  ha a rollout utja nem tisztan migracios (split/provisioning caveat).
 
 ### 2.4 Security/storage kriteriumok
 - DB-RLS ownership/project-bound alapok aktivak legyenek.
-- Storage policy a kanonikus H0 bucket/path szerzodesre epuljon.
+- Storage policy funkcionalisan a kanonikus H0 bucket/path szerzodesre epuljon.
 - Service-role boundary egyertelmu legyen.
 
 ## 3. H0 completion matrix
@@ -53,7 +55,7 @@ Ez a dokumentum nem feature-specifikáció, hanem döntési kapu.
 | H0-E5-T2 | PASS | `supabase/migrations/20260314103000_h0_e5_t2_queue_es_log_modellek.sql`; `codex/reports/web_platform/h0_e5_t2_queue_es_log_modellek.md` |
 | H0-E5-T3 | PASS | `supabase/migrations/20260314110000_h0_e5_t3_artifact_es_projection_modellek.sql`; `codex/reports/web_platform/h0_e5_t3_artifact_es_projection_modellek.md` |
 | H0-E6-T1 | PASS | `docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md`; `codex/reports/web_platform/h0_e6_t1_storage_bucket_strategia_es_path_policy.md` |
-| H0-E6-T2 | PASS | `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`; `docs/web_platform/architecture/h0_security_rls_alapok.md`; `codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.md` |
+| H0-E6-T2 | PASS (split rollout caveat) | `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`; `docs/web_platform/architecture/h0_security_rls_alapok.md`; `docs/known_issues/web_platform_known_issues.md` (KI-001 RESOLVED); `codex/reports/web_platform/h0_e6_t2_rls_policy_alapok.md` |
 
 Megjegyzes:
 - A korai H0 taskok namingje helyenkent rovidebb slugot hasznal (`*_veglegesitese`), de tartalmilag megfelel a H0-E1-T1/T2 celpontoknak.
@@ -63,7 +65,8 @@ Megjegyzes:
 ### 4.1 Osszhangban levo pontok
 - A run/snapshot/queue/output tablavilag migraciosan letezik es docsban is explicit.
 - Az artifact/projection szetvalasztas konzisztens (`run_artifacts` vs `run_layout_*` + `run_metrics`).
-- A storage bucket/path source-of-truth es a baseline RLS/storage policy dokumentalt + migralt.
+- A storage bucket/path source-of-truth es a baseline security allapot dokumentalt + funkcionalisan aktiv:
+  `app.*` RLS migraciosan, `storage.objects` policy manualis hosted provisioninggel.
 - A geometry derivative DB-truth hatar explicit maradt (nem storage-truth).
 
 ### 4.2 Minimalis tisztitas ebben a taskban
@@ -86,10 +89,13 @@ Megjegyzes:
 Indoklas:
 - A H0 strukturális build-up teljesult, a taskok evidence-alapon PASS allapotban vannak.
 - A H1 indulashoz szukseges domain/run/security/storage alapok konzisztensen leteznek.
+- A storage rollout utja eltert a sima migracios uttol (hosted owner-limit miatti split), de a
+  celzott minimalis H0 security allapot funkcionalisan teljesult.
 - Marado pontok advisory jelleguek, nem H1-blokkolok.
 
 ## 7. Mit jelent ez a gyakorlatban?
 
 - A H1 indithato a jelenlegi H0 alapokon.
 - H0-ban nem szukseges ujranyitni a core schema, run backbone, storage/RLS baseline retegeket.
+- A storage provisioning caveat tortenetileg relevans marad, de nem csokkenti a H0 lezarhatósagat.
 - A H1 soran figyelemben tartando advisory: H2 elott erdemes a nem-H0 docs SQL peldak namespace konzisztencia auditjat vegrehajtani.

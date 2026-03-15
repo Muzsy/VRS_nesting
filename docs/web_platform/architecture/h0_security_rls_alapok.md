@@ -16,6 +16,15 @@ Out-of-scope H0-E6-T2-ben:
 - bucket provisioning script;
 - teljes H1/H2 jogosultsagi rendszer.
 
+Rollout allapot (tenyleges):
+- Source-of-truth modell: owner/project-bound DB-RLS + minimal storage policy matrix.
+- Repo migracios allapot: a `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`
+  az `app.*` RLS rolloutot tartalmazza; a `storage.objects` policy DDL szegmens hosted owner-limit
+  miatt kulon lett valasztva.
+- Hosted Supabase allapot: az `app.*` RLS policyk migracios uton aktivak; a storage bucketek
+  (`source-files`, `geometry-artifacts`, `run-artifacts`) private modon provisionalva vannak; a
+  `storage.objects` H0 minimal policyk manualis Dashboard/Studio provisioninggel aktivak.
+
 ## 2. H0 szerepkor elvek
 
 - `anon`: uzleti tabla-hozzaferes nincs.
@@ -24,7 +33,8 @@ Out-of-scope H0-E6-T2-ben:
 
 ## 3. Policy helper fuggvenyek
 
-A migracio az alabbi helper fuggvenyeket hasznalja az olvashato policy-definiciohoz:
+A repo migracio (es a vele azonos szabalylogikara epulo storage provisioning) az alabbi helper
+fuggvenyeket hasznalja:
 - `app.current_user_id()`
 - `app.is_project_owner(project_uuid uuid)`
 - `app.owns_part_definition(part_definition_uuid uuid)`
@@ -75,6 +85,12 @@ H0 minimal storage policy matrix (`storage.objects`):
   - authenticated select: owner-bound project path
   - user write nincs (service-role irasi oldal)
 - `anon`: nincs policy
+
+Rollout-megjegyzes:
+- A fenti matrix funkcionalisan el a hosted projekten, de nem teljesen a
+  `20260314113000` migracio storage szegmensebol, hanem manualis storage policy provisioninggel.
+- A policynevek hosted oldalon roviditettek lehetnek (Supabase nevhossz-limit); a dokumentum
+  a szabalylogikat tekinti source-of-truthnak.
 
 ## 6. Service-role boundary
 

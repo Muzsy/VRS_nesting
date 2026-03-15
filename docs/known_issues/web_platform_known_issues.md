@@ -11,7 +11,7 @@
 ## P1 - Magas prioritas
 
 ### KI-001 Hosted Supabase owner-limit miatt storage.objects policy DDL megbukik
-**Allapot:** IN_PROGRESS (`h0_e6_t2_rls_policy_alapok_storage_policy_rollout_split`)  
+**Allapot:** RESOLVED (`h0_e6_t2_rls_policy_alapok_storage_policy_rollout_split`, 2026-03-15)  
 **Forras:** Migration apply hiba, 2026-03-15  
 **Terulet:** `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`, `storage.objects`
 
@@ -24,18 +24,21 @@ kovetkezo DDL-ek megbuknak:
 Tipikus hiba:
 `ERROR: must be owner of table objects`
 
-Kovetkezmeny:
-- a H0 app-domain (`app.*`) RLS rollout nem szabad, hogy ezen elakadjon.
-- a storage policy rolloutot kulon infra lepeskent kell kezelni.
+Veglegesitett allapot:
+- A migracio split indokoltan megmaradt: az `app.*` RLS policyk SQL migraciobol mentek fel,
+  a `storage.objects` DDL/policy szegmens kulon provisioningre maradt.
+- Hosted Supabase-ben a kanonikus bucket inventory (`source-files`, `geometry-artifacts`,
+  `run-artifacts`) letrehozva, mindharom bucket `private`.
+- A H0 minimal storage policy matrix funkcionalisan el:
+  - `source-files`: authenticated `select` + `insert`, owner/project-bound path szaballyal;
+  - `geometry-artifacts`: authenticated `select`, owner/project-bound;
+  - `run-artifacts`: authenticated `select`, owner/project-bound;
+  - `anon`: policy nelkul.
+- A storage oldali rollout manualis Dashboard/Studio provisioninggel tortent, nem a
+  `20260314113000` migracio storage szegmensenek futtatasaval.
 
-Atmeneti workaround:
-- backend/service-role alapu storage hozzaferes (signed URL + service path),
-  user-facing storage.objects policy nelkul.
-
-Javasolt vegleges DoD:
-- storage policy rollout kulon, owner-kompatibilis modon vegrehajthato;
-- legalabb a `source-files` bucketre definialt owner/project-bound policy
-  tenylegesen deployolt;
-- rollout utan regresszioellenorzes: upload/list/download authz smoke.
+Megjegyzes:
+- A policynevek hosted oldalon roviditettek lehetnek (Supabase nevhossz-limit), a
+  functionalis szabalyok az iranyadok.
 
 ---

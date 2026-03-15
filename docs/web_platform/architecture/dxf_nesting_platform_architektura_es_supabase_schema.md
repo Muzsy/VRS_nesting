@@ -1188,8 +1188,9 @@ create table if not exists app.run_metrics (
 - A `geometry-artifacts` reserved/canonical bucket jovobeli file-backed geometry/viewer/manufacturing artifactokhoz.
 - Az `app.geometry_derivatives` tovabbra sem storage bucket/path truth, hanem DB-ben tarolt, ujraeloallithato derivalt reteg.
 - A reszletes path naming policy source-of-truth: `docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md`.
-- A tenyleges storage access enforcement es baseline RLS policy H0-E6-T2-ben kerult bevezetesre:
-  `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`.
+- A tenyleges rollout H0-E6-T2-ben split utvonalon tortent:
+  - `app.*` baseline RLS policyk migracios uton mentek fel (`supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`);
+  - a `storage.objects` minimal policyk hosted oldalon manualis Dashboard/Studio provisioninggel lettek aktivalva.
 
 ## 8.10 Opcionális segédfüggvények és updated_at trigger
 
@@ -1242,15 +1243,24 @@ Ajánlott mintázat:
 3. worker csak service role-ból ír,
 4. public anon hozzáférés nincs üzleti táblákra.
 
-### 9.1 H0-E6-T2 baseline RLS + storage policy (implementalt)
+### 9.1 H0-E6-T2 baseline RLS + storage policy (implementalt, split rollout)
 
-- Migracio: `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`.
+- Repo migracio: `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql` (app-domain RLS rollout).
 - `anon` uzleti tabla-hozzaferes nincs; policyk `authenticated` role-ra keszultek.
 - `app.profiles` self-row; `app.projects` owner-only; project child tablavilag project-owner policy alatt.
 - `part_*`/`sheet_*` definicio+revision vilag owner-bound.
 - `app.technology_presets` authenticated read-only.
 - `app.nesting_run_snapshots` es `app.run_*` output tablavilag user-oldalon read-only.
-- `storage.objects` policy a kanonikus bucket inventoryra (`source-files`, `geometry-artifacts`, `run-artifacts`) es a `projects/{project_id}/...` path szerzodesre epul.
+- Hosted storage allapot:
+  - bucketek: `source-files`, `geometry-artifacts`, `run-artifacts` (mind `private`);
+  - `storage.objects` minimal policyk manualisan provisionalva, funkcionalis matrix szerint:
+    - `source-files`: authenticated `select` + `insert` owner/project-bound path ellenorzessel;
+    - `geometry-artifacts`: authenticated `select` owner/project-bound;
+    - `run-artifacts`: authenticated `select` owner/project-bound;
+    - `anon`: nincs policy.
+- A `storage.objects` rollout nem a fenti migracio storage DDL szegmensen keresztul ment, mert hosted
+  oldalon owner-limit miatt a migracio ott nem megbizhato.
+- A policynevek lehetnek roviditettek; a functionalis szabalyok tekintendok canonical allapotnak.
 - Reszletes security source-of-truth: `docs/web_platform/architecture/h0_security_rls_alapok.md`.
 
 ### 9.2 H0 strukturális lezárás (H0-E7-T1)
