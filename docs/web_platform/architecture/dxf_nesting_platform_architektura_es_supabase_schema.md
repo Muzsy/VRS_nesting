@@ -1253,6 +1253,11 @@ Ajánlott mintázat:
 - `storage.objects` policy a kanonikus bucket inventoryra (`source-files`, `geometry-artifacts`, `run-artifacts`) es a `projects/{project_id}/...` path szerzodesre epul.
 - Reszletes security source-of-truth: `docs/web_platform/architecture/h0_security_rls_alapok.md`.
 
+### 9.2 H0 strukturális lezárás (H0-E7-T1)
+
+- H0 zaro gate dokumentum: `docs/web_platform/roadmap/h0_lezarasi_kriteriumok_es_h1_entry_gate.md`.
+- A H0 verdict: `PASS WITH ADVISORIES` (H1 indithato, marado pontok nem blokkolo jelleguek).
+
 ---
 
 # 10. Mi kerüljön V1-be, V1.5-be és későbbre

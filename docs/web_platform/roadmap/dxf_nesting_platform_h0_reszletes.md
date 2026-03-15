@@ -1258,11 +1258,12 @@ Ezeket nem szabad “majd később rendbe rakjuk” alapon eltolni.
 
 A H0 lezárásához ideális esetben legyen:
 
-- `docs/platform/h0_architecture.md`
-- `docs/platform/h0_domain_model.md`
-- `docs/platform/h0_run_contract.md`
-- `docs/platform/h0_storage_and_artifacts.md`
-- `docs/platform/h0_security_rls.md`
+- `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md`
+- `docs/web_platform/architecture/h0_domain_entitasterkep_es_ownership_matrix.md`
+- `docs/web_platform/architecture/h0_snapshot_first_futasi_es_adatkontraktus.md`
+- `docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md`
+- `docs/web_platform/architecture/h0_security_rls_alapok.md`
+- `docs/web_platform/roadmap/h0_lezarasi_kriteriumok_es_h1_entry_gate.md`
 - `supabase/migrations/...`
 - opcionálisan első seed fájlok machine/material cataloghoz
 

@@ -1,0 +1,67 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H0-E7-T1 H0 end-to-end struktura audit task teljes
+      artefaktlancat: canvas, goal YAML, runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h0_e7_t1_h0_end_to_end_struktura_audit.yaml"
+      - "codex/prompts/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit/run.md"
+      - "codex/codex_checklist/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.md"
+      - "codex/reports/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.md"
+
+  - name: "Dedikalt H0 lezarasi / H1 entry gate dokumentum letrehozasa"
+    description: >
+      Hozd letre a `docs/web_platform/roadmap/h0_lezarasi_kriteriumok_es_h1_entry_gate.md`
+      dokumentumot, amely evidence-alapon rogzitese:
+      1) a H0 lezarasi kriteriumokat,
+      2) a H0 completion matrixot taskonkent,
+      3) a blokkolo vs advisory eltereseket,
+      4) a vegso H1 entry gate iteletet,
+      5) mit jelent ez a gyakorlatban a H1 indulasa szempontjabol.
+      A dokumentum legyen oszinte auditanyag: ne csak osszefoglalo, hanem kapu-
+      es dontesi dokumentum.
+    outputs:
+      - "docs/web_platform/roadmap/h0_lezarasi_kriteriumok_es_h1_entry_gate.md"
+
+  - name: "H0 source-of-truth es task tree audit + minimal docs tisztitas"
+    description: >
+      Vizsgald at a H0 source-of-truth es roadmap dokumentumokat a tenyleges
+      migracios/task-allapottal osszevetve.
+      Ellenorizd kulonosen:
+      1) `app.*` vs regebbi `public.*` maradvanyok,
+      2) Run Request / Snapshot / Queue / Output naming konzisztenciat,
+      3) projection vs artifact szetvalasztast,
+      4) geometry derivative vs storage-truth szetvalasztast,
+      5) a H0 task tree es a tenylegesen vegrehajtott taskok osszhangjat.
+      Ha maradt kisebb, nem feature-jellegu stale vagy naming eltérés,
+      azt minimalisan tisztitsd ki ebben a taskban.
+      A cel nem docs-refaktor, hanem a H0 lezarasi allapot konzisztens kimondasa.
+    outputs:
+      - "docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_implementacios_backlog_task_tree.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a H0 completion matrix roviditett eredmenyet;
+      - a blokkolo vs advisory eltereseket;
+      - a H1 entry gate vegso iteletet;
+      - a javitott docs-konzisztencia pontokat;
+      - hogy a task szandekosan NEM hozott letre uj feature-t;
+      - hogy a task szandekosan NEM hozott letre uj domain migraciot, ha erre nem volt kritikus ok.
+    outputs:
+      - "codex/codex_checklist/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.md"
+      - "codex/reports/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.md
+    outputs:
+      - "codex/reports/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.md"
+      - "codex/reports/web_platform/h0_e7_t1_h0_end_to_end_struktura_audit.verify.log"

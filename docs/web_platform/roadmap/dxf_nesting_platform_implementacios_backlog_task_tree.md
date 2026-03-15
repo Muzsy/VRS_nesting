@@ -136,6 +136,10 @@ Ennek megfelelően a backlog fő sorrendje:
 
 ## H0-E4 — Part, sheet és project input gerinc
 
+Megjegyzes (H0 audit mapping):
+- A H0 vegleges taskfaban ez a resz tartalmilag a `H0-E2-T4` (part) es `H0-E2-T5` (sheet) taskokban kerult vegrehajtasra.
+- A jelen szekcio historikus bontas, a completion matrixban az E2-T4/E2-T5 tasknevek az elsodlegesek.
+
 ### H0-E4-T1 — Part definition és revision modellek
 **Cél:** part definíciók és revíziók létrehozása.  
 **Output:** `part_definitions`, `part_revisions`.  
@@ -207,6 +211,9 @@ Ennek megfelelően a backlog fő sorrendje:
 **Output:** H0 audit checklista / report.  
 **Függőség:** H0 összes előző epic.  
 **DoD:** a H1 tiszta alapra építhető.
+
+H0 zaro gate source-of-truth:
+- `docs/web_platform/roadmap/h0_lezarasi_kriteriumok_es_h1_entry_gate.md`
 
 ---
 
