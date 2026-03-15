@@ -114,6 +114,9 @@ def load_settings() -> Settings:
 
     security_headers_raw = _resolve_env("API_ENABLE_SECURITY_HEADERS", "1").strip().lower()
     enable_security_headers = security_headers_raw not in {"0", "false", "no", "off"}
+    storage_bucket = _resolve_env("API_STORAGE_BUCKET", "source-files").strip()
+    if not storage_bucket:
+        raise SettingsError("API_STORAGE_BUCKET cannot be empty")
 
     return Settings(
         supabase_url=supabase_url.rstrip("/"),
@@ -121,7 +124,7 @@ def load_settings() -> Settings:
         supabase_project_ref=_resolve_env("SUPABASE_PROJECT_REF"),
         supabase_db_password=_resolve_env("SUPABASE_DB_PASSWORD"),
         database_url=_resolve_env("DATABASE_URL"),
-        storage_bucket=_resolve_env("API_STORAGE_BUCKET", "source-files"),
+        storage_bucket=storage_bucket,
         max_dxf_size_mb=max_dxf_size_mb,
         rate_limit_window_s=rate_limit_window_s,
         rate_limit_runs_per_window=runs_limit,

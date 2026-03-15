@@ -1,0 +1,63 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E1-T2 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglévő web_platform
+      taskmintákhoz igazítva.
+    outputs:
+      - "canvases/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e1_t2_file_hash_es_metadata_kezeles.yaml"
+      - "codex/codex_checklist/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.md"
+      - "codex/reports/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.md"
+
+  - name: "Ingest metadata helper bevezetese"
+    description: >
+      Hozz letre vagy vezess be kulon helper logikat a source object metadata
+      szerveroldali eloallitasara. A helper a kanonikus source bucket/path alapjan
+      legyen kepes a feltoltott objektumot letolteni, es ebbol kiszamitani legalabb
+      a byte_size + sha256 + mime_type truth-ot. A megoldas ne hozzon letre uj
+      domain tablat vagy migraciot.
+    outputs:
+      - "api/services/file_ingest_metadata.py"
+
+  - name: "Files route metadata truth hardening"
+    description: >
+      Igazitsd a complete_upload flow-t ugy, hogy a DB-be irt `app.file_objects`
+      rekord metadata truth-ja szerveroldalrol jojjon. A `storage_bucket` ne a kliens
+      override-bol jojjon, hanem a kanonikus source bucketbol; a `file_name` a
+      storage_path basename-jebol kepzodjon; a `byte_size` es `sha256` a tenyleges
+      storage objectbol szamolodjon. Sikertelen object letoltes eseten ne jojjon letre
+      felig ervenyes rekord. Legacy request mezonevek legfeljebb backward-compat parsingra
+      maradhatnak, de nem irhatjak felul a szerver truth-ot.
+    outputs:
+      - "api/routes/files.py"
+      - "api/services/dxf_validation.py"
+      - "api/config.py"
+
+  - name: "Task-specifikus metadata smoke ellenorzes letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely bizonyitja, hogy a kliensoldali hibas vagy
+      eltero metadata (`storage_bucket`, `byte_size`, `mime_type`, `sha256`, `file_name`)
+      ellenere a complete upload a szerveroldali truth-ot irja a DB-be, es a source bucket
+      kanonikus marad. A smoke ellenorizze azt is, hogy nem letezo storage object eseten a
+      flow nem hoz letre felrevezeto file_objects rekordot.
+    outputs:
+      - "scripts/smoke_h1_e1_t2_file_hash_es_metadata_kezeles.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett H1-E1-T2
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon jelolve,
+      hogy a metadata truth mely mezoknel kerult teljesen szerverre, es mi marad
+      tovabbi ingest/geometry scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.md"
+      - "codex/reports/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.md
+    outputs:
+      - "codex/reports/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.md"
+      - "codex/reports/web_platform/h1_e1_t2_file_hash_es_metadata_kezeles.verify.log"

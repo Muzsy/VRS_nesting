@@ -12,6 +12,7 @@ from api.config import Settings
 from api.deps import get_settings, get_supabase_client
 from api.rate_limit import enforce_user_rate_limit
 from api.services.dxf_validation import validate_dxf_file_async
+from api.services.file_ingest_metadata import canonical_file_name_from_storage_path, load_file_ingest_metadata
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
 
@@ -202,25 +203,35 @@ def complete_upload(
             detail="forbidden storage path for project/file",
         )
 
-    file_name = _sanitize_filename((req.file_name or req.original_filename or "").strip())
     normalized_kind = _normalize_file_kind(file_kind=req.file_kind, file_type=req.file_type)
-    byte_size = req.byte_size if req.byte_size is not None else req.size_bytes
-    if byte_size is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing byte_size")
-    mime_type = (req.mime_type or req.content_type or "application/octet-stream").strip()
-    storage_bucket = (req.storage_bucket or settings.storage_bucket).strip()
-    sha256 = req.sha256 or req.content_hash_sha256
+    storage_bucket = settings.storage_bucket.strip()
+    if not storage_bucket:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="invalid storage bucket config")
+    try:
+        canonical_file_name = canonical_file_name_from_storage_path(storage_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    try:
+        ingest_metadata = load_file_ingest_metadata(
+            supabase=supabase,
+            access_token=user.access_token,
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            signed_url_ttl_s=settings.signed_url_ttl_s,
+        )
+    except (SupabaseHTTPError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"metadata extraction failed: {exc}") from exc
 
     payload = {
         "id": req.file_id,
         "project_id": project_id,
         "storage_bucket": storage_bucket,
         "storage_path": storage_path,
-        "file_name": file_name,
-        "mime_type": mime_type,
+        "file_name": _sanitize_filename(canonical_file_name),
+        "mime_type": ingest_metadata.mime_type,
         "file_kind": normalized_kind,
-        "byte_size": byte_size,
-        "sha256": sha256,
+        "byte_size": ingest_metadata.byte_size,
+        "sha256": ingest_metadata.sha256,
         "uploaded_by": user.id,
     }
 
@@ -229,7 +240,7 @@ def complete_upload(
     except SupabaseHTTPError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"file metadata insert failed: {exc}") from exc
 
-    if normalized_kind == "source_dxf" and file_name.lower().endswith(".dxf"):
+    if normalized_kind == "source_dxf" and ingest_metadata.file_name.lower().endswith(".dxf"):
         background_tasks.add_task(
             validate_dxf_file_async,
             supabase=supabase,
