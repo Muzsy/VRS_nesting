@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from api.services.geometry_derivative_generator import generate_h1_minimum_geometry_derivatives
 from api.services.file_ingest_metadata import download_storage_object_blob
 from api.services.geometry_validation_report import create_geometry_validation_report
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
@@ -218,9 +219,16 @@ def import_source_dxf_geometry_revision(
         geometry_revision=geometry_revision,
     )
     validated_geometry_revision = validation_result.get("geometry_revision")
+    current_geometry_revision = geometry_revision
     if isinstance(validated_geometry_revision, dict):
-        return validated_geometry_revision
-    return geometry_revision
+        current_geometry_revision = validated_geometry_revision
+
+    generate_h1_minimum_geometry_derivatives(
+        supabase=supabase,
+        access_token=access_token,
+        geometry_revision=current_geometry_revision,
+    )
+    return current_geometry_revision
 
 
 def import_source_dxf_geometry_revision_async(

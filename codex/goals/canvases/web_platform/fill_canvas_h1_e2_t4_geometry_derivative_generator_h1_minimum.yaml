@@ -1,0 +1,61 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E2-T4 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglevo web_platform
+      taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e2_t4_geometry_derivative_generator_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.md"
+
+  - name: "Geometry derivative generator service kialakitasa"
+    description: >
+      Vezess be explicit derivative generator service reteget a validalt,
+      normalized geometry truth fole. A service a meglevo
+      `app.geometry_derivatives` tablat hasznalja, legalabb
+      `nesting_canonical` es `viewer_outline` derivative-et allit elo,
+      determinisztikus payloaddal, format/prodducer verzioval es hashekkel,
+      valamint kontrollalt ujrageneralasi logikaval ugyanarra a
+      `(geometry_revision_id, derivative_kind)` kulcsra.
+    outputs:
+      - "api/services/geometry_derivative_generator.py"
+
+  - name: "Geometry import lanc derivative bekotese"
+    description: >
+      Igazitsd a geometry import/validation flow-t ugy, hogy validalt geometry
+      eseten automatikusan lefusson a H1 minimum derivative generalas. Rejected
+      geometry eseten ne jojjon letre derivative, es a task ne lepjen at
+      manufacturing, part-binding vagy run snapshot scope-ba.
+    outputs:
+      - "api/services/dxf_geometry_import.py"
+
+  - name: "Task-specifikus derivative smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely fake storage + API flow mellett bizonyitja,
+      hogy tipikus DXF feltoltesbol valid geometry eseten ket derivative jon
+      letre, azok payloadja es hash-e determinisztikus, ujrageneralas nem torik
+      uniqueness hibaba, rejected geometry eseten nincs derivative, parse/import
+      failure eseten pedig tovabbra sem keletkezik hamis geometry revision vagy
+      derivative.
+    outputs:
+      - "scripts/smoke_h1_e2_t4_geometry_derivative_generator_h1_minimum.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett H1-E2-T4
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon
+      jelolve, hogy mi lett most a H1 minimum derivative scope-ban leszallitva,
+      es mi marad H1-E3 / manufacturing / run snapshot scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e2_t4_geometry_derivative_generator_h1_minimum.verify.log"
