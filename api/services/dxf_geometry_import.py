@@ -10,41 +10,56 @@ from typing import Any
 from api.services.file_ingest_metadata import download_storage_object_blob
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 from vrs_nesting.dxf.importer import DxfImportError, PartRaw, import_part_raw
+from vrs_nesting.geometry.clean import clean_ring
 
 logger = logging.getLogger("vrs_api.dxf_geometry_import")
 
-_CANONICAL_FORMAT_VERSION = "part_raw.v1"
+_CANONICAL_FORMAT_VERSION = "normalized_geometry.v1"
 _IMPORTER_REF = "vrs_nesting.dxf.importer.import_part_raw"
+_NORMALIZER_REF = "api.services.dxf_geometry_import._normalize_part_raw_geometry"
+_MIN_EDGE_LEN_MM = 1e-6
 
 
-def _build_canonical_geometry_payload(
+def _rotate_ring_to_canonical_start(ring: list[list[float]]) -> list[list[float]]:
+    if len(ring) < 3:
+        raise ValueError("ring must contain at least 3 points")
+
+    best_index = 0
+    best_key: tuple[float, float, float, float] | None = None
+    ring_len = len(ring)
+    for idx, point in enumerate(ring):
+        next_point = ring[(idx + 1) % ring_len]
+        key = (float(point[0]), float(point[1]), float(next_point[0]), float(next_point[1]))
+        if best_key is None or key < best_key:
+            best_key = key
+            best_index = idx
+    return [list(point) for point in (ring[best_index:] + ring[:best_index])]
+
+
+def _normalize_ring(
     *,
-    part_raw: PartRaw,
-    storage_bucket: str,
-    storage_path: str,
-) -> dict[str, Any]:
-    return {
-        "geometry_role": "part",
-        "format": _CANONICAL_FORMAT_VERSION,
-        "outer_points_mm": part_raw.outer_points_mm,
-        "holes_points_mm": part_raw.holes_points_mm,
-        "source_lineage": {
-            "storage_bucket": storage_bucket,
-            "storage_path": storage_path,
-            "importer": _IMPORTER_REF,
-            "importer_source_path": part_raw.source_path,
-        },
-    }
+    points: list[list[float]],
+    ccw: bool,
+    where: str,
+) -> list[list[float]]:
+    cleaned = clean_ring(points, min_edge_len=_MIN_EDGE_LEN_MM, ccw=ccw, where=where)
+    return _rotate_ring_to_canonical_start(cleaned)
 
 
-def _canonical_hash_sha256(payload: dict[str, Any]) -> str:
-    canonical_json = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+def _ring_sort_key(ring: list[list[float]]) -> tuple[float, ...]:
+    flattened: list[float] = []
+    for point in ring:
+        flattened.extend((float(point[0]), float(point[1])))
+    return tuple(flattened)
 
 
-def _compute_bbox_jsonb(part_raw: PartRaw) -> dict[str, float]:
-    all_points: list[list[float]] = list(part_raw.outer_points_mm)
-    for ring in part_raw.holes_points_mm:
+def _compute_bbox_jsonb(
+    *,
+    outer_ring: list[list[float]],
+    hole_rings: list[list[list[float]]],
+) -> dict[str, float]:
+    all_points: list[list[float]] = list(outer_ring)
+    for ring in hole_rings:
         all_points.extend(ring)
     if not all_points:
         raise ValueError("missing geometry points for bbox")
@@ -63,6 +78,55 @@ def _compute_bbox_jsonb(part_raw: PartRaw) -> dict[str, float]:
         "width": max_x - min_x,
         "height": max_y - min_y,
     }
+
+
+def _normalize_part_raw_geometry(
+    *,
+    part_raw: PartRaw,
+    storage_bucket: str,
+    storage_path: str,
+) -> tuple[dict[str, Any], dict[str, float]]:
+    outer_ring = _normalize_ring(points=part_raw.outer_points_mm, ccw=True, where="outer_ring")
+    hole_rings = [
+        _normalize_ring(points=hole_points, ccw=False, where=f"hole_rings[{idx}]")
+        for idx, hole_points in enumerate(part_raw.holes_points_mm)
+    ]
+    hole_rings.sort(key=_ring_sort_key)
+    bbox = _compute_bbox_jsonb(outer_ring=outer_ring, hole_rings=hole_rings)
+
+    payload = {
+        "geometry_role": "part",
+        "format_version": _CANONICAL_FORMAT_VERSION,
+        "units": "mm",
+        "outer_ring": outer_ring,
+        "hole_rings": hole_rings,
+        "bbox": bbox,
+        "normalizer_meta": {
+            "normalizer": _NORMALIZER_REF,
+            "normalizer_version": _CANONICAL_FORMAT_VERSION,
+            "importer": _IMPORTER_REF,
+            "ring_policy": {
+                "outer_orientation": "ccw",
+                "hole_orientation": "cw",
+                "start_point_rule": "lexicographic_min_xy_then_next",
+                "min_edge_len_mm": _MIN_EDGE_LEN_MM,
+            },
+            "source_entities_count": len(part_raw.source_entities),
+        },
+        "source_lineage": {
+            "storage_bucket": storage_bucket,
+            "storage_path": storage_path,
+            "source_object_ref": f"{storage_bucket}/{storage_path}",
+            "importer": _IMPORTER_REF,
+            "normalizer": _NORMALIZER_REF,
+        },
+    }
+    return payload, bbox
+
+
+def _canonical_hash_sha256(payload: dict[str, Any]) -> str:
+    canonical_json = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 def _next_revision_no(
@@ -117,13 +181,15 @@ def import_source_dxf_geometry_revision(
         tmp_path.write_bytes(blob)
         part_raw = import_part_raw(str(tmp_path))
 
-    canonical_geometry_jsonb = _build_canonical_geometry_payload(
+    canonical_geometry_jsonb, bbox_jsonb = _normalize_part_raw_geometry(
         part_raw=part_raw,
         storage_bucket=storage_bucket,
         storage_path=storage_path,
     )
     canonical_hash_sha256 = _canonical_hash_sha256(canonical_geometry_jsonb)
-    bbox_jsonb = _compute_bbox_jsonb(part_raw)
+    source_hash = source_hash_sha256.strip()
+    if not source_hash:
+        raise ValueError("missing source_hash_sha256")
     revision_no = _next_revision_no(
         supabase=supabase,
         access_token=access_token,
@@ -140,7 +206,7 @@ def import_source_dxf_geometry_revision(
         "canonical_format_version": _CANONICAL_FORMAT_VERSION,
         "canonical_geometry_jsonb": canonical_geometry_jsonb,
         "canonical_hash_sha256": canonical_hash_sha256,
-        "source_hash_sha256": source_hash_sha256.strip(),
+        "source_hash_sha256": source_hash,
         "bbox_jsonb": bbox_jsonb,
         "created_by": created_by,
     }

@@ -223,6 +223,10 @@ def complete_upload(
     except (SupabaseHTTPError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"metadata extraction failed: {exc}") from exc
 
+    source_hash_sha256 = str(ingest_metadata.sha256 or "").strip()
+    if not source_hash_sha256:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="metadata extraction failed: missing sha256")
+
     payload = {
         "id": req.file_id,
         "project_id": project_id,
@@ -232,7 +236,7 @@ def complete_upload(
         "mime_type": ingest_metadata.mime_type,
         "file_kind": normalized_kind,
         "byte_size": ingest_metadata.byte_size,
-        "sha256": ingest_metadata.sha256,
+        "sha256": source_hash_sha256,
         "uploaded_by": user.id,
     }
 
@@ -258,7 +262,7 @@ def complete_upload(
             source_file_object_id=req.file_id,
             storage_bucket=storage_bucket,
             storage_path=storage_path,
-            source_hash_sha256=str(ingest_metadata.sha256),
+            source_hash_sha256=source_hash_sha256,
             created_by=user.id,
             signed_url_ttl_s=settings.signed_url_ttl_s,
         )

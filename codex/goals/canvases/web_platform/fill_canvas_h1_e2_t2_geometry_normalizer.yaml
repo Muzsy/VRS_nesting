@@ -1,0 +1,60 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E2-T2 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglévő web_platform
+      taskmintákhoz igazítva.
+    outputs:
+      - "canvases/web_platform/h1_e2_t2_geometry_normalizer.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e2_t2_geometry_normalizer.yaml"
+      - "codex/codex_checklist/web_platform/h1_e2_t2_geometry_normalizer.md"
+      - "codex/reports/web_platform/h1_e2_t2_geometry_normalizer.md"
+
+  - name: "Geometry normalizer service reteget kialakitasa"
+    description: >
+      Vezess be explicit normalizer reteget a meglévő DXF import service-ben vagy
+      kis segedmodulban ugy, hogy a `vrs_nesting.dxf.importer.import_part_raw`
+      eredmenyebol determinisztikus, stabil canonical geometry payload kepzodjon.
+      A normalizer kezelje a ring-ek tisztitasat/rendezhetoseget, a stabil outer/hole
+      szerkezetet, a kanonikus bbox/meta eloallitasat, es ne hozzon letre uj,
+      parhuzamos parser logikat.
+    outputs:
+      - "api/services/dxf_geometry_import.py"
+
+  - name: "Files ingest flow igazitas a normalized geometry truth-ra"
+    description: >
+      Igazitsd a files ingest flow-t ugy, hogy sikeres `source_dxf` complete_upload
+      utan a geometry revision mar a normalizalt canonical payloadot kapja.
+      A `canonical_format_version` a normalizalt truth-ot tukrozze, a
+      `canonical_hash_sha256` a normalized payloadbol kepzodjon, es parse hiba
+      eseten tovabbra se jojjon letre felrevezeto rekord. A task ne lepjen at
+      validation report vagy derivative generator scope-ba.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Task-specifikus geometry normalizer smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely fake storage + API flow mellett bizonyitja,
+      hogy egy tipikus DXF feltoltesbol normalizalt `app.geometry_revisions` rekord
+      jon letre, a canonical payload/hash determinisztikus, es hibas parse vagy
+      missing object eseten nem keletkezik felrevezeto normalizalt rekord.
+    outputs:
+      - "scripts/smoke_h1_e2_t2_geometry_normalizer.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett H1-E2-T2
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon jelolve,
+      hogy mi lett most megoldva a normalizer scope-ban, es mi marad H1-E2-T3
+      validation illetve H1-E2-T4 derivative scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h1_e2_t2_geometry_normalizer.md"
+      - "codex/reports/web_platform/h1_e2_t2_geometry_normalizer.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h1_e2_t2_geometry_normalizer.md
+    outputs:
+      - "codex/reports/web_platform/h1_e2_t2_geometry_normalizer.md"
+      - "codex/reports/web_platform/h1_e2_t2_geometry_normalizer.verify.log"
