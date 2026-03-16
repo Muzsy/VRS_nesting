@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from api.services.file_ingest_metadata import download_storage_object_blob
+from api.services.geometry_validation_report import create_geometry_validation_report
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 from vrs_nesting.dxf.importer import DxfImportError, PartRaw, import_part_raw
 from vrs_nesting.geometry.clean import clean_ring
@@ -210,7 +211,16 @@ def import_source_dxf_geometry_revision(
         "bbox_jsonb": bbox_jsonb,
         "created_by": created_by,
     }
-    return supabase.insert_row(table="app.geometry_revisions", access_token=access_token, payload=payload)
+    geometry_revision = supabase.insert_row(table="app.geometry_revisions", access_token=access_token, payload=payload)
+    validation_result = create_geometry_validation_report(
+        supabase=supabase,
+        access_token=access_token,
+        geometry_revision=geometry_revision,
+    )
+    validated_geometry_revision = validation_result.get("geometry_revision")
+    if isinstance(validated_geometry_revision, dict):
+        return validated_geometry_revision
+    return geometry_revision
 
 
 def import_source_dxf_geometry_revision_async(

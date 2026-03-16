@@ -247,14 +247,6 @@ def complete_upload(
 
     if normalized_kind == "source_dxf" and ingest_metadata.file_name.lower().endswith(".dxf"):
         background_tasks.add_task(
-            validate_dxf_file_async,
-            supabase=supabase,
-            access_token=user.access_token,
-            bucket=storage_bucket,
-            file_object_id=req.file_id,
-            storage_path=storage_path,
-        )
-        background_tasks.add_task(
             import_source_dxf_geometry_revision_async,
             supabase=supabase,
             access_token=user.access_token,
@@ -265,6 +257,15 @@ def complete_upload(
             source_hash_sha256=source_hash_sha256,
             created_by=user.id,
             signed_url_ttl_s=settings.signed_url_ttl_s,
+        )
+        # Legacy, file-level DXF readability check kept as a secondary signal.
+        background_tasks.add_task(
+            validate_dxf_file_async,
+            supabase=supabase,
+            access_token=user.access_token,
+            bucket=storage_bucket,
+            file_object_id=req.file_id,
+            storage_path=storage_path,
         )
 
     return _as_file_response(row)

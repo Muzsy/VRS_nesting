@@ -1,0 +1,62 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E2-T3 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglévo web_platform
+      taskmintakhoz igazítva.
+    outputs:
+      - "canvases/web_platform/h1_e2_t3_validation_report_generator.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e2_t3_validation_report_generator.yaml"
+      - "codex/codex_checklist/web_platform/h1_e2_t3_validation_report_generator.md"
+      - "codex/reports/web_platform/h1_e2_t3_validation_report_generator.md"
+
+  - name: "Geometry validation report service kialakitasa"
+    description: >
+      Vezess be explicit validation report service reteget a normalized geometry
+      truth fole. A service a meglévo `app.geometry_validation_reports` tablat
+      hasznalja, determinisztikus issue-listat, severity osszesitest,
+      `summary_jsonb` es `report_jsonb` payloadot allit elo, kezeli a
+      `validation_seq` koveteset, es a verdicthez igazitja a geometry revision
+      statuszt legalabb `validated` / `rejected` iranyba.
+    outputs:
+      - "api/services/geometry_validation_report.py"
+
+  - name: "Geometry import lanc validation report bekotese"
+    description: >
+      Igazitsd a geometry import/async flow-t ugy, hogy sikeres geometry revision
+      letrehozas utan automatikusan lefusson a validation report generator.
+      A parse/import failure tovabbra se hozzon letre felrevezeto parsed geometry
+      revision rekordot, es a task ne lepjen at review workflow vagy derivative
+      generator scope-ba.
+    outputs:
+      - "api/services/dxf_geometry_import.py"
+      - "api/routes/files.py"
+
+  - name: "Task-specifikus validation report smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely fake storage + API flow mellett bizonyitja,
+      hogy tipikus DXF feltoltesbol geometry revision es hozza strukturalt
+      validation report jon letre, a summary/report JSON query-zheto,
+      valid geometry eseten `validated`, hibas canonical geometry eseten
+      `rejected` verdict keletkezik, mikozben parse/import failure eseten
+      tovabbra sem keletkezik hamis parsed geometry revision.
+    outputs:
+      - "scripts/smoke_h1_e2_t3_validation_report_generator.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett H1-E2-T3
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon
+      jelolve, hogy mi lett most megoldva a validation report scope-ban, es mi
+      marad H1-E2-T4 derivative illetve kesobbi review/approval scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h1_e2_t3_validation_report_generator.md"
+      - "codex/reports/web_platform/h1_e2_t3_validation_report_generator.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h1_e2_t3_validation_report_generator.md
+    outputs:
+      - "codex/reports/web_platform/h1_e2_t3_validation_report_generator.md"
+      - "codex/reports/web_platform/h1_e2_t3_validation_report_generator.verify.log"
