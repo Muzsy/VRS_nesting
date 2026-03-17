@@ -1,0 +1,59 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E3-T1 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglevo web_platform
+      taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+
+  - name: "Part revision schema es geometry-derivative binding rendezese"
+    description: >
+      Keszits H1-minimum schema bovitest a `part_revisions` tablahoz ugy, hogy
+      a domain revision explicit hivatkozast tudjon tarolni a forras
+      `geometry_revision`-ra es a solverhez valasztott `nesting_canonical`
+      derivative-re. Keruld a redundans, a meglévo `lifecycle`-fal uzletileg
+      ugyanazt jelento approval mezok bevezeteset. A valtozas kulon migracioban
+      tortenjen, a H0 truth-ra epitve.
+    outputs:
+      - "supabase/migrations/20260317110000_h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.sql"
+      - "codex/reports/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+
+  - name: "Part creation service es API endpoint kialakitasa"
+    description: >
+      Vezess be explicit service reteget es minimalis API endpointot a
+      projektbe tartozo, `validated` geometry revision alapjan torteno
+      part-leteszteshez. A service oldja fel a kapcsolt
+      `nesting_canonical` derivative-et, kezelje az uj es meglevo
+      `part_definition` agat, hozzon letre uj `part_revision` rekordot,
+      es frissitse a `current_revision_id`-t. A route ne fogadjon el
+      idegen projektbol szarmazo geometry-t, hianyzo derivative-et vagy
+      nem-validalt statuszt.
+    outputs:
+      - "api/services/part_creation.py"
+      - "api/routes/parts.py"
+      - "api/main.py"
+      - "codex/reports/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet a sikeres, meglevo-definition,
+      hianyzo-derivative, nem-validalt geometry es idegen-projekt agakra.
+      Frissitsd a checklistet es a reportot DoD->Evidence matrixszal,
+      evidence-alapon.
+    outputs:
+      - "scripts/smoke_h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t1_part_creation_service_es_derivative_binding_h1_minimum.verify.log"

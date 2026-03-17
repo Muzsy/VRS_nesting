@@ -11,6 +11,7 @@ from api.deps import get_settings
 from api.deps import get_supabase_client
 from api.routes.projects import router as projects_router
 from api.routes.files import router as files_router
+from api.routes.parts import router as parts_router
 from api.routes.run_configs import router as run_configs_router
 from api.routes.runs import router as runs_router
 from api.supabase_client import SupabaseClient
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
 
     app.include_router(projects_router, prefix="/v1")
     app.include_router(files_router, prefix="/v1")
+    app.include_router(parts_router, prefix="/v1")
     app.include_router(run_configs_router, prefix="/v1")
     app.include_router(runs_router, prefix="/v1")
 
