@@ -11,6 +11,8 @@ from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
 logger = logging.getLogger("vrs_api.rate_limit")
 
+_ALLOWED_TIMESTAMP_FIELDS = frozenset({"created_at", "queued_at", "updated_at"})
+
 
 def _parse_timestamp(value: Any) -> datetime | None:
     if not isinstance(value, str):
@@ -49,6 +51,9 @@ def enforce_user_rate_limit(
     route_key: str,
     filters: dict[str, str] | None = None,
 ) -> None:
+    if timestamp_field not in _ALLOWED_TIMESTAMP_FIELDS:
+        raise ValueError(f"enforce_user_rate_limit: disallowed timestamp_field={timestamp_field!r}")
+
     if limit <= 0:
         return
 

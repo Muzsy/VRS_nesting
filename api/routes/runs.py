@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ from api.rate_limit import enforce_user_rate_limit
 from api.routes.run_configs import RunConfigPartEntry
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
+
+logger = logging.getLogger("vrs_api.runs")
 
 router = APIRouter(prefix="/projects/{project_id}/runs", tags=["runs"])
 
@@ -310,8 +313,14 @@ def _insert_run_and_queue(
     except SupabaseHTTPError as exc:
         try:
             supabase.delete_rows(table="runs", access_token=access_token, filters={"id": f"eq.{run_id}"})
-        except SupabaseHTTPError:
-            pass
+        except SupabaseHTTPError as rollback_exc:
+            logger.error(
+                "orphan_run_created run_id=%s: queue insert failed and rollback delete also failed; "
+                "run row may be orphaned. queue_error=%s rollback_error=%s",
+                run_id,
+                exc,
+                rollback_exc,
+            )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"queue insert failed: {exc}") from exc
 
     return run_row

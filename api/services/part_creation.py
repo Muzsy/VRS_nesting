@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from api.supabase_client import SupabaseClient, SupabaseHTTPError
+from api.supabase_client import SupabaseClient
 
 
 @dataclass
@@ -24,32 +24,6 @@ def _sanitize_optional(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
-
-
-def _next_revision_no(
-    *,
-    supabase: SupabaseClient,
-    access_token: str,
-    part_definition_id: str,
-) -> int:
-    params = {
-        "select": "revision_no",
-        "part_definition_id": f"eq.{part_definition_id}",
-        "order": "revision_no.desc",
-        "limit": "1",
-    }
-    rows = supabase.select_rows(table="app.part_revisions", access_token=access_token, params=params)
-    if not rows:
-        return 1
-
-    raw = rows[0].get("revision_no")
-    try:
-        latest = int(raw)
-    except (TypeError, ValueError):
-        latest = 0
-    if latest < 0:
-        latest = 0
-    return latest + 1
 
 
 def _load_project_for_owner(
@@ -155,47 +129,42 @@ def _create_part_definition(
     return supabase.insert_row(table="app.part_definitions", access_token=access_token, payload=payload)
 
 
-def _insert_part_revision_with_retry(
+def _create_part_revision_atomic(
     *,
     supabase: SupabaseClient,
     access_token: str,
     part_definition_id: str,
+    source_geometry_revision_id: str,
+    selected_nesting_derivative_id: str,
     source_label: str | None,
     source_checksum_sha256: str | None,
     notes: str | None,
-    source_geometry_revision_id: str,
-    selected_nesting_derivative_id: str,
-    max_attempts: int = 3,
-) -> dict[str, Any]:
-    for attempt in range(max_attempts):
-        revision_no = _next_revision_no(
-            supabase=supabase,
-            access_token=access_token,
-            part_definition_id=part_definition_id,
-        )
-        payload: dict[str, Any] = {
-            "part_definition_id": part_definition_id,
-            "revision_no": revision_no,
-            "lifecycle": "draft",
-            "source_geometry_revision_id": source_geometry_revision_id,
-            "selected_nesting_derivative_id": selected_nesting_derivative_id,
-        }
-        if source_label is not None:
-            payload["source_label"] = source_label
-        if source_checksum_sha256 is not None:
-            payload["source_checksum_sha256"] = source_checksum_sha256
-        if notes is not None:
-            payload["notes"] = notes
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Insert a part_revision and update part_definition.current_revision_id atomically.
 
-        try:
-            return supabase.insert_row(table="app.part_revisions", access_token=access_token, payload=payload)
-        except SupabaseHTTPError as exc:
-            # Retry concurrent revision_no race on unique(part_definition_id, revision_no).
-            if "part_revisions_part_definition_id_revision_no_key" not in str(exc) and "duplicate key" not in str(exc):
-                raise
-            if attempt == max_attempts - 1:
-                raise
-    raise RuntimeError("part revision insert retry exhausted")
+    Returns (part_definition, part_revision) as returned by the DB function.
+    The PostgreSQL function holds a SELECT FOR UPDATE lock on the definition row,
+    so revision_no is assigned safely without application-level retries.
+    """
+    rpc_result = supabase.execute_rpc(
+        function_name="create_part_revision_atomic",
+        access_token=access_token,
+        payload={
+            "p_part_definition_id": part_definition_id,
+            "p_source_geometry_revision_id": source_geometry_revision_id,
+            "p_selected_nesting_derivative_id": selected_nesting_derivative_id,
+            "p_source_label": source_label,
+            "p_source_checksum_sha256": source_checksum_sha256,
+            "p_notes": notes,
+        },
+    )
+    if not isinstance(rpc_result, dict):
+        raise PartCreationError(status_code=500, detail="create_part_revision_atomic returned unexpected payload")
+    part_definition = rpc_result.get("part_definition")
+    part_revision = rpc_result.get("part_revision")
+    if not isinstance(part_definition, dict) or not isinstance(part_revision, dict):
+        raise PartCreationError(status_code=500, detail="create_part_revision_atomic returned incomplete payload")
+    return part_definition, part_revision
 
 
 def create_part_from_geometry_revision(
@@ -265,31 +234,16 @@ def create_part_from_geometry_revision(
     if not derivative_id:
         raise PartCreationError(status_code=500, detail="derivative lookup returned empty id")
 
-    part_revision = _insert_part_revision_with_retry(
+    part_definition, part_revision = _create_part_revision_atomic(
         supabase=supabase,
         access_token=access_token,
         part_definition_id=part_definition_id,
+        source_geometry_revision_id=geometry_id,
+        selected_nesting_derivative_id=derivative_id,
         source_label=source_label,
         source_checksum_sha256=source_checksum_sha256,
         notes=notes,
-        source_geometry_revision_id=geometry_id,
-        selected_nesting_derivative_id=derivative_id,
     )
-
-    part_revision_id = str(part_revision.get("id") or "").strip()
-    if not part_revision_id:
-        raise PartCreationError(status_code=500, detail="part_revision insert returned empty id")
-
-    updated_definitions = supabase.update_rows(
-        table="app.part_definitions",
-        access_token=access_token,
-        payload={"current_revision_id": part_revision_id},
-        filters={"id": f"eq.{part_definition_id}"},
-    )
-    if updated_definitions:
-        part_definition = updated_definitions[0]
-    else:
-        part_definition["current_revision_id"] = part_revision_id
 
     return {
         "part_definition": part_definition,

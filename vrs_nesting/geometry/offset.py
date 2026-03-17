@@ -450,10 +450,14 @@ def offset_part_geometry(
 
     if _part_offset_engine() == ENGINE_SHAPELY:
         _LOG.warning("offset_part_geometry: explicit shapely engine selected via %s", PART_ENGINE_ENV)
-        return _offset_part_geometry_shapely(payload, spacing_mm=spacing_mm)
+        result = _offset_part_geometry_shapely(payload, spacing_mm=spacing_mm)
+        result["offset_engine"] = ENGINE_SHAPELY
+        return result
 
     try:
-        return _offset_part_geometry_rust(payload, spacing_mm=spacing_mm)
+        result = _offset_part_geometry_rust(payload, spacing_mm=spacing_mm)
+        result["offset_engine"] = ENGINE_RUST
+        return result
     except GeometryOffsetError as exc:
         if exc.code == "GEO_RUST_SELF_INTERSECT":
             raise
@@ -463,7 +467,9 @@ def offset_part_geometry(
                 exc.code,
                 f" via {ALLOW_SHAPELY_FALLBACK_ENV}" if _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV) else "",
             )
-            return _offset_part_geometry_shapely(payload, spacing_mm=spacing_mm)
+            result = _offset_part_geometry_shapely(payload, spacing_mm=spacing_mm)
+            result["offset_engine"] = ENGINE_SHAPELY
+            return result
         raise
 
 
@@ -479,7 +485,9 @@ def offset_stock_geometry(
         raise GeometryOffsetError("GEO_PARAM_RANGE", "spacing_mm must be >= 0")
 
     try:
-        return _offset_stock_geometry_rust(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+        result = _offset_stock_geometry_rust(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+        result["offset_engine"] = ENGINE_RUST
+        return result
     except GeometryOffsetError as exc:
         if exc.code == "GEO_RUST_SELF_INTERSECT":
             raise
@@ -489,5 +497,7 @@ def offset_stock_geometry(
                 exc.code,
                 f" via {ALLOW_SHAPELY_FALLBACK_ENV}" if _env_is_truthy(ALLOW_SHAPELY_FALLBACK_ENV) else "",
             )
-            return _offset_stock_geometry_shapely(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+            result = _offset_stock_geometry_shapely(payload, margin_mm=margin_mm, spacing_mm=spacing_mm)
+            result["offset_engine"] = ENGINE_SHAPELY
+            return result
         raise

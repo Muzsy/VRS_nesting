@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import time
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -84,9 +85,12 @@ class SupabaseClient:
 
     def _request_stream_to_file(self, method: str, absolute_url: str, destination_path: str) -> None:
         req = Request(url=absolute_url, method=method.upper())
+        deadline = time.monotonic() + 300  # 5-minute wall-clock cap regardless of per-chunk timing
         try:
             with urlopen(req, timeout=60) as resp, Path(destination_path).open("wb") as out:
                 while True:
+                    if time.monotonic() > deadline:
+                        raise SupabaseHTTPError(f"{method} {absolute_url} download exceeded total time limit")
                     chunk = resp.read(1024 * 64)
                     if not chunk:
                         break
