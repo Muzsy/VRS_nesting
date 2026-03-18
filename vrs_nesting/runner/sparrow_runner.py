@@ -41,6 +41,12 @@ class SparrowNonZeroExitError(SparrowRunnerError):
     code = "E_SPARROW_NON_ZERO_EXIT"
 
 
+class SparrowTimeoutError(SparrowRunnerError):
+    """Raised when Sparrow exceeds runner timeout."""
+
+    code = "E_SPARROW_TIMEOUT"
+
+
 class SparrowOutputNotFoundError(SparrowRunnerError):
     """Raised when expected output json is missing."""
 
@@ -186,19 +192,29 @@ def _run_sparrow_with_snapshot(
     cmd = [bin_path, "-i", str(snapshot_json), "-t", str(int(time_limit)), "-s", str(int(seed))]
     started = _utc_now_iso()
     started_mono = monotonic()
+    timeout_grace = float(os.environ.get("SPARROW_TIMEOUT_GRACE_S", "10.0"))
+    effective_timeout = max(1.0, float(int(time_limit)) + timeout_grace)
 
     _eprint(f"[runner] run_dir={run_dir}")
     _eprint(f"[runner] cmd={' '.join(cmd)}")
 
+    timed_out = False
+    return_code = 0
     with stdout_log.open("w", encoding="utf-8") as out_handle, stderr_log.open("w", encoding="utf-8") as err_handle:
-        proc = subprocess.run(
-            cmd,
-            cwd=run_dir,
-            stdout=out_handle,
-            stderr=err_handle,
-            text=True,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=run_dir,
+                stdout=out_handle,
+                stderr=err_handle,
+                text=True,
+                check=False,
+                timeout=effective_timeout,
+            )
+            return_code = int(proc.returncode)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            return_code = 124
 
     duration = round(monotonic() - started_mono, 3)
     ended = _utc_now_iso()
@@ -212,12 +228,13 @@ def _run_sparrow_with_snapshot(
         "cmd": cmd,
         "seed": int(seed),
         "time_limit": int(time_limit),
+        "effective_timeout_s": effective_timeout,
         "sparrow_bin": bin_path,
         "input_sha256": _sha256_file(snapshot_json),
         "started_at_utc": started,
         "ended_at_utc": ended,
         "duration_sec": duration,
-        "return_code": proc.returncode,
+        "return_code": return_code,
         "final_json_path": "",
         "final_svg_path": "",
         "strip_width": None,
@@ -225,10 +242,16 @@ def _run_sparrow_with_snapshot(
         "placed_count": None,
     }
 
-    if proc.returncode != 0:
+    if timed_out:
+        _write_json(meta_path, meta)
+        raise SparrowTimeoutError(
+            f"Sparrow process timed out after {effective_timeout:.3f}s (time_limit={time_limit}). run_dir={run_dir}"
+        )
+
+    if return_code != 0:
         _write_json(meta_path, meta)
         raise SparrowNonZeroExitError(
-            f"Sparrow process failed with non-zero exit code (exit={proc.returncode}). run_dir={run_dir}"
+            f"Sparrow process failed with non-zero exit code (exit={return_code}). run_dir={run_dir}"
         )
 
     final_json = _discover_final_json(run_dir, snapshot_json, input_json)

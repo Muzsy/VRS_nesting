@@ -99,6 +99,8 @@ class WorkerSettings:
     alert_backlog_seconds: int
     run_timeout_extra_s: int
     run_log_sync_interval_s: float
+    queue_heartbeat_s: float
+    stale_temp_cleanup_max_age_s: float
     run_root: Path
     temp_root: Path
     sparrow_bin: str
@@ -129,8 +131,14 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
     alert_backlog_seconds = int(_resolve_env("WORKER_ALERT_BACKLOG_SECONDS", "300"))
     timeout_extra_s = int(_resolve_env("WORKER_TIMEOUT_EXTRA_S", "120"))
     log_sync_interval_s = float(_resolve_env("WORKER_RUN_LOG_SYNC_INTERVAL_S", "2"))
+    queue_heartbeat_s = float(_resolve_env("WORKER_QUEUE_HEARTBEAT_S", "60"))
+    stale_temp_cleanup_max_age_s = float(_resolve_env("WORKER_STALE_TEMP_MAX_AGE_S", "3600"))
     if log_sync_interval_s <= 0:
         raise WorkerSettingsError("WORKER_RUN_LOG_SYNC_INTERVAL_S must be > 0")
+    if queue_heartbeat_s <= 0:
+        raise WorkerSettingsError("WORKER_QUEUE_HEARTBEAT_S must be > 0")
+    if stale_temp_cleanup_max_age_s <= 0:
+        raise WorkerSettingsError("WORKER_STALE_TEMP_MAX_AGE_S must be > 0")
 
     worker_id = _resolve_env("WORKER_ID", f"worker-{os.getpid()}")
     run_root = Path(_resolve_env("WORKER_RUN_ROOT", "runs")).resolve()
@@ -148,6 +156,8 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         alert_backlog_seconds=alert_backlog_seconds,
         run_timeout_extra_s=timeout_extra_s,
         run_log_sync_interval_s=log_sync_interval_s,
+        queue_heartbeat_s=queue_heartbeat_s,
+        stale_temp_cleanup_max_age_s=stale_temp_cleanup_max_age_s,
         run_root=run_root,
         temp_root=temp_root,
         sparrow_bin=_resolve_env("SPARROW_BIN", ""),
@@ -203,37 +213,64 @@ class WorkerSupabaseClient:
     def claim_next_queue_item(self, worker_id: str) -> dict[str, Any] | None:
         sql = f"""
 with candidate as (
-  select q.id
-  from public.run_queue q
-  join public.runs r on r.id = q.run_id
-  where q.visible_after <= now()
-    and (q.locked_by is null or q.locked_at < now() - interval '10 minutes')
-    and r.status in ('queued','running')
+  select q.run_id
+  from app.run_queue q
+  join app.nesting_runs r on r.id = q.run_id
+  where q.available_at <= now()
+    and (
+      q.queue_state = 'pending'
+      or (q.queue_state = 'leased' and q.leased_at < now() - interval '10 minutes')
+    )
+    and r.status::text in ('queued','running')
   order by q.priority desc, q.created_at asc
   for update skip locked
   limit 1
+),
+claimed as (
+  update app.run_queue q
+  set leased_by = {_sql_literal(worker_id)},
+      leased_at = now(),
+      attempt_no = q.attempt_no + 1,
+      queue_state = 'leased',
+      updated_at = now()
+  from candidate c
+  where q.run_id = c.run_id
+  returning q.run_id, q.attempt_no
 )
-update public.run_queue q
-set locked_by = {_sql_literal(worker_id)},
-    locked_at = now(),
-    attempts = q.attempts + 1
-from candidate c
-where q.id = c.id
-returning q.id, q.run_id, q.attempts, q.max_attempts;
+select
+  c.run_id as id,
+  c.run_id,
+  c.attempt_no as attempts,
+  3::integer as max_attempts
+from claimed c;
 """
         rows = self._management_query(sql)
         return rows[0] if rows else None
+
+    def heartbeat_queue_item(self, *, queue_id: str, worker_id: str) -> None:
+        sql = f"""
+update app.run_queue
+set leased_at = now(),
+    updated_at = now()
+where run_id = {_sql_literal(queue_id)}
+  and leased_by = {_sql_literal(worker_id)}
+  and queue_state = 'leased';
+"""
+        self._management_query(sql)
 
     def fetch_backlog_metrics(self) -> tuple[int, float]:
         sql = """
 select
   count(*)::int as pending_count,
   coalesce(extract(epoch from (now() - min(q.created_at))), 0)::double precision as oldest_age_s
-from public.run_queue q
-join public.runs r on r.id = q.run_id
-where q.visible_after <= now()
-  and (q.locked_by is null or q.locked_at < now() - interval '10 minutes')
-  and r.status in ('queued','running');
+from app.run_queue q
+join app.nesting_runs r on r.id = q.run_id
+where q.available_at <= now()
+  and (
+    q.queue_state = 'pending'
+    or (q.queue_state = 'leased' and q.leased_at < now() - interval '10 minutes')
+  )
+  and r.status::text in ('queued','running');
 """
         rows = self._management_query(sql)
         if not rows:
@@ -253,8 +290,8 @@ select
   coalesce(rc.margin_mm, 5.0) as margin_mm,
   rc.stock_file_id,
   rc.parts_config
-from public.runs r
-left join public.run_configs rc on rc.id = r.run_config_id
+from app.nesting_runs r
+left join app.run_configs rc on rc.id = r.run_config_id
 where r.id = {_sql_literal(run_id)}
 limit 1;
 """
@@ -265,8 +302,13 @@ limit 1;
 
     def fetch_project_file(self, file_id: str) -> dict[str, Any]:
         sql = f"""
-select id, original_filename, storage_key, file_type
-from public.project_files
+select
+  id,
+  file_name as original_filename,
+  storage_path as storage_key,
+  file_kind::text as file_type,
+  storage_bucket
+from app.file_objects
 where id = {_sql_literal(file_id)}
 limit 1;
 """
@@ -278,7 +320,7 @@ limit 1;
     def fetch_run_status(self, run_id: str) -> str:
         sql = f"""
 select status
-from public.runs
+from app.nesting_runs
 where id = {_sql_literal(run_id)}
 limit 1;
 """
@@ -289,97 +331,115 @@ limit 1;
 
     def mark_run_running(self, run_id: str) -> None:
         sql = f"""
-update public.runs
-set status = 'running',
+update app.nesting_runs
+set status = 'running'::app.run_request_status,
     started_at = now(),
     finished_at = null,
     duration_sec = null,
     solver_exit_code = null,
-    error_message = null
+    error_message = null,
+    updated_at = now()
 where id = {_sql_literal(run_id)};
 """
         self._management_query(sql)
 
-    def mark_run_done(
+    def complete_run_done_and_dequeue(
         self,
         *,
         run_id: str,
-        run_dir_key: str,
-        worker_run_id: str,
         solver_exit_code: int,
         placements_count: int,
         unplaced_count: int,
         sheet_count: int,
     ) -> None:
         sql = f"""
-update public.runs
-set status = 'done',
-    finished_at = now(),
-    duration_sec = extract(epoch from now() - coalesce(started_at, queued_at)),
-    run_dir_key = {_sql_literal(run_dir_key)},
-    worker_run_id = {_sql_literal(worker_run_id)},
-    solver_exit_code = {solver_exit_code},
-    placements_count = {placements_count},
-    unplaced_count = {unplaced_count},
-    sheet_count = {sheet_count},
-    error_message = null
-where id = {_sql_literal(run_id)};
+with updated as (
+  update app.nesting_runs
+  set status = 'done'::app.run_request_status,
+      finished_at = now(),
+      duration_sec = extract(epoch from now() - coalesce(started_at, queued_at)),
+      solver_exit_code = {solver_exit_code},
+      placements_count = {placements_count},
+      unplaced_count = {unplaced_count},
+      sheet_count = {sheet_count},
+      error_message = null,
+      updated_at = now()
+  where id = {_sql_literal(run_id)}
+  returning id
+)
+delete from app.run_queue q
+using updated u
+where q.run_id = u.id;
 """
         self._management_query(sql)
 
-    def mark_run_failed(self, *, run_id: str, message: str) -> None:
+    def complete_run_failed_and_dequeue(self, *, run_id: str, message: str) -> None:
         sql = f"""
-update public.runs
-set status = 'failed',
-    finished_at = now(),
-    duration_sec = extract(epoch from now() - coalesce(started_at, queued_at)),
-    error_message = {_sql_literal(message[:2000])}
-where id = {_sql_literal(run_id)};
+with updated as (
+  update app.nesting_runs
+  set status = 'failed'::app.run_request_status,
+      finished_at = now(),
+      duration_sec = extract(epoch from now() - coalesce(started_at, queued_at)),
+      error_message = {_sql_literal(message[:2000])},
+      updated_at = now()
+  where id = {_sql_literal(run_id)}
+  returning id
+)
+delete from app.run_queue q
+using updated u
+where q.run_id = u.id;
 """
         self._management_query(sql)
 
-    def mark_run_queued_for_retry(self, *, run_id: str, message: str) -> None:
+    def requeue_run_with_delay(self, *, run_id: str, message: str, retry_delay_s: int) -> None:
         sql = f"""
-update public.runs
-set status = 'queued',
-    started_at = null,
-    finished_at = null,
-    duration_sec = null,
-    error_message = {_sql_literal(message[:2000])}
-where id = {_sql_literal(run_id)};
+with updated as (
+  update app.nesting_runs
+  set status = 'queued'::app.run_request_status,
+      started_at = null,
+      finished_at = null,
+      duration_sec = null,
+      error_message = {_sql_literal(message[:2000])},
+      updated_at = now()
+  where id = {_sql_literal(run_id)}
+  returning id
+)
+update app.run_queue q
+set leased_by = null,
+    leased_at = null,
+    queue_state = 'pending',
+    available_at = now() + interval '{int(retry_delay_s)} seconds',
+    updated_at = now()
+from updated u
+where q.run_id = u.id;
 """
         self._management_query(sql)
 
-    def mark_run_cancelled(self, *, run_id: str, message: str) -> None:
+    def complete_run_cancelled_and_dequeue(self, *, run_id: str, message: str) -> None:
         sql = f"""
-update public.runs
-set status = 'cancelled',
-    finished_at = coalesce(finished_at, now()),
-    duration_sec = extract(epoch from coalesce(finished_at, now()) - coalesce(started_at, queued_at)),
-    error_message = {_sql_literal(message[:2000])}
-where id = {_sql_literal(run_id)};
+with updated as (
+  update app.nesting_runs
+  set status = 'cancelled'::app.run_request_status,
+      finished_at = coalesce(finished_at, now()),
+      duration_sec = extract(epoch from coalesce(finished_at, now()) - coalesce(started_at, queued_at)),
+      error_message = {_sql_literal(message[:2000])},
+      updated_at = now()
+  where id = {_sql_literal(run_id)}
+  returning id
+)
+delete from app.run_queue q
+using updated u
+where q.run_id = u.id;
 """
         self._management_query(sql)
 
     def set_run_input_snapshot_hash(self, *, run_id: str, snapshot_hash: str) -> None:
         sql = f"""
-update public.runs
-set input_snapshot_hash = {_sql_literal(snapshot_hash)}
+update app.nesting_runs
+set request_payload_jsonb = coalesce(request_payload_jsonb, '{{}}'::jsonb)
+    || jsonb_build_object('input_snapshot_hash', {_sql_literal(snapshot_hash)}),
+    updated_at = now()
 where id = {_sql_literal(run_id)};
-"""
-        self._management_query(sql)
-
-    def complete_queue_item(self, *, queue_id: str) -> None:
-        sql = f"delete from public.run_queue where id = {_sql_literal(queue_id)};"
-        self._management_query(sql)
-
-    def requeue_item(self, *, queue_id: str, retry_delay_s: int) -> None:
-        sql = f"""
-update public.run_queue
-set locked_by = null,
-    locked_at = null,
-    visible_after = now() + interval '{int(retry_delay_s)} seconds'
-where id = {_sql_literal(queue_id)};
 """
         self._management_query(sql)
 
@@ -387,43 +447,55 @@ where id = {_sql_literal(queue_id)};
         self,
         *,
         run_id: str,
+        storage_bucket: str,
         artifact_type: str,
         filename: str,
         storage_key: str,
         size_bytes: int,
         sheet_index: int | None,
     ) -> None:
-        sheet_value = "null" if sheet_index is None else str(sheet_index)
+        metadata_json = json.dumps(
+            {
+                "legacy_artifact_type": artifact_type,
+                "filename": filename,
+                "size_bytes": int(size_bytes),
+                "sheet_index": sheet_index,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+        )
         sql = f"""
-insert into public.run_artifacts(run_id, artifact_type, filename, storage_key, size_bytes, sheet_index)
-values (
-  {_sql_literal(run_id)},
-  {_sql_literal(artifact_type)},
-  {_sql_literal(filename)},
-  {_sql_literal(storage_key)},
-  {size_bytes},
-  {sheet_value}
-);
-"""
-        self._management_query(sql)
-
-    def replace_run_log_artifact(self, *, run_id: str, storage_key: str, size_bytes: int) -> None:
-        sql = f"""
-delete from public.run_artifacts
+delete from app.run_artifacts
 where run_id = {_sql_literal(run_id)}
-  and artifact_type = 'run_log';
+  and storage_path = {_sql_literal(storage_key)};
 
-insert into public.run_artifacts(run_id, artifact_type, filename, storage_key, size_bytes, sheet_index)
+insert into app.run_artifacts(
+  run_id,
+  artifact_kind,
+  storage_bucket,
+  storage_path,
+  metadata_jsonb
+)
 values (
   {_sql_literal(run_id)},
-  'run_log',
-  'run.log',
+  app.legacy_artifact_type_to_kind({_sql_literal(artifact_type)}),
+  {_sql_literal(storage_bucket)},
   {_sql_literal(storage_key)},
-  {int(size_bytes)},
-  null
+  jsonb_strip_nulls({_sql_literal(metadata_json)}::jsonb)
 );
 """
         self._management_query(sql)
+
+    def replace_run_log_artifact(self, *, run_id: str, storage_bucket: str, storage_key: str, size_bytes: int) -> None:
+        self.insert_run_artifact(
+            run_id=run_id,
+            storage_bucket=storage_bucket,
+            artifact_type="run_log",
+            filename="run.log",
+            storage_key=storage_key,
+            size_bytes=int(size_bytes),
+            sheet_index=None,
+        )
 
     def _storage_request(
         self,
@@ -883,7 +955,12 @@ def _sync_run_log_artifact(
     payload = run_log_path.read_bytes()
     storage_key = f"runs/{run_id}/artifacts/run.log"
     client.upload_object(bucket=settings.storage_bucket, object_key=storage_key, payload=payload)
-    client.replace_run_log_artifact(run_id=run_id, storage_key=storage_key, size_bytes=len(payload))
+    client.replace_run_log_artifact(
+        run_id=run_id,
+        storage_bucket=settings.storage_bucket,
+        storage_key=storage_key,
+        size_bytes=len(payload),
+    )
     return len(payload)
 
 
@@ -908,6 +985,7 @@ def _upload_run_artifacts(
         artifact_type, sheet_index = _artifact_type_for_path(relative)
         client.insert_run_artifact(
             run_id=run_id,
+            storage_bucket=settings.storage_bucket,
             artifact_type=artifact_type,
             filename=rel_text,
             storage_key=storage_key,
@@ -951,11 +1029,12 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         for file_id in sorted(file_ids):
             row = client.fetch_project_file(file_id)
             storage_key = str(row.get("storage_key", "")).strip()
+            storage_bucket = str(row.get("storage_bucket", "")).strip() or settings.storage_bucket
             if not storage_key:
                 raise WorkerError(f"run {run_id}: missing storage_key for project_file {file_id}")
             filename = Path(str(row.get("original_filename") or file_id)).name
             destination = input_dir / f"{file_id}_{filename}"
-            blob = client.download_object(bucket=settings.storage_bucket, object_key=storage_key)
+            blob = client.download_object(bucket=storage_bucket, object_key=storage_key)
             destination.write_bytes(blob)
             local_paths_by_file_id[file_id] = destination
             if file_id == stock_file_id:
@@ -1008,57 +1087,79 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         discovered_run_dir: Path | None = None
         last_log_size = -1
         next_log_sync_at = 0.0
+        next_heartbeat_at = 0.0
         cancel_requested = False
         timeout_hit = False
         deadline = time.monotonic() + timeout_s
 
-        while proc.poll() is None:
-            now = time.monotonic()
-            if now >= deadline:
-                timeout_hit = True
-                proc.terminate()
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                break
-
-            run_status = client.fetch_run_status(run_id)
-            if run_status == "cancelled":
-                cancel_requested = True
-                proc.terminate()
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                break
-
-            if discovered_run_dir is None:
-                discovered_run_dir = _discover_cli_run_dir(run_root)
-
-            if discovered_run_dir is not None and now >= next_log_sync_at:
-                next_log_sync_at = now + settings.run_log_sync_interval_s
-                run_log_path = discovered_run_dir / "run.log"
-                if run_log_path.is_file():
-                    current_size = run_log_path.stat().st_size
-                    if current_size != last_log_size:
-                        try:
-                            last_log_size = _sync_run_log_artifact(
-                                client=client,
-                                settings=settings,
-                                run_id=run_id,
-                                run_log_path=run_log_path,
-                            )
-                        except WorkerError:
-                            pass
-
-            time.sleep(1.0)
-
         try:
-            stdout, stderr = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
+            while proc.poll() is None:
+                now = time.monotonic()
+                if now >= deadline:
+                    timeout_hit = True
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    break
+
+                run_status = client.fetch_run_status(run_id)
+                if run_status == "cancelled":
+                    cancel_requested = True
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    break
+
+                if now >= next_heartbeat_at:
+                    next_heartbeat_at = now + settings.queue_heartbeat_s
+                    try:
+                        client.heartbeat_queue_item(queue_id=queue_id, worker_id=settings.worker_id)
+                    except WorkerError as exc:
+                        logger.warning(
+                            "event=queue_heartbeat_failed worker_id=%s run_id=%s queue_id=%s error=%s",
+                            settings.worker_id,
+                            run_id,
+                            queue_id,
+                            exc,
+                        )
+
+                if discovered_run_dir is None:
+                    discovered_run_dir = _discover_cli_run_dir(run_root)
+
+                if discovered_run_dir is not None and now >= next_log_sync_at:
+                    next_log_sync_at = now + settings.run_log_sync_interval_s
+                    run_log_path = discovered_run_dir / "run.log"
+                    if run_log_path.is_file():
+                        current_size = run_log_path.stat().st_size
+                        if current_size != last_log_size:
+                            try:
+                                last_log_size = _sync_run_log_artifact(
+                                    client=client,
+                                    settings=settings,
+                                    run_id=run_id,
+                                    run_log_path=run_log_path,
+                                )
+                            except WorkerError:
+                                pass
+
+                time.sleep(1.0)
+
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
 
         run_dir: Path | None = discovered_run_dir
         if proc.returncode == 0:
@@ -1088,43 +1189,66 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         _upload_run_artifacts(client=client, settings=settings, run_id=run_id, run_dir=run_dir)
 
         placements_count, unplaced_count, sheet_count = _read_run_metrics(run_dir)
-        client.mark_run_done(
+        client.complete_run_done_and_dequeue(
             run_id=run_id,
-            run_dir_key=f"runs/{run_id}/artifacts",
-            worker_run_id=run_dir.name,
             solver_exit_code=0,
             placements_count=placements_count,
             unplaced_count=unplaced_count,
             sheet_count=sheet_count,
         )
-        client.complete_queue_item(queue_id=queue_id)
 
     except WorkerCancelledError as exc:
-        client.mark_run_cancelled(run_id=run_id, message=str(exc))
-        client.complete_queue_item(queue_id=queue_id)
+        try:
+            client.complete_run_cancelled_and_dequeue(run_id=run_id, message=str(exc))
+        except Exception as inner_exc:  # noqa: BLE001
+            logger.error(
+                "event=cancel_handler_failed run_id=%s queue_id=%s error=%s original=%s",
+                run_id,
+                queue_id,
+                inner_exc,
+                exc,
+            )
         raise
     except Exception as exc:
-        message = str(exc)
-        current_status = client.fetch_run_status(run_id)
-        if current_status == "cancelled":
-            client.mark_run_cancelled(run_id=run_id, message=message)
-            client.complete_queue_item(queue_id=queue_id)
-            raise
-
-        if attempts >= max_attempts:
-            client.mark_run_failed(run_id=run_id, message=message)
-            client.complete_queue_item(queue_id=queue_id)
-        else:
-            client.mark_run_queued_for_retry(run_id=run_id, message=message)
-            client.requeue_item(queue_id=queue_id, retry_delay_s=settings.retry_delay_s)
+        try:
+            message = str(exc)
+            current_status = client.fetch_run_status(run_id)
+            if current_status == "cancelled":
+                client.complete_run_cancelled_and_dequeue(run_id=run_id, message=message)
+            elif attempts >= max_attempts:
+                client.complete_run_failed_and_dequeue(run_id=run_id, message=message)
+            else:
+                client.requeue_run_with_delay(run_id=run_id, message=message, retry_delay_s=settings.retry_delay_s)
+        except Exception as inner_exc:  # noqa: BLE001
+            logger.error(
+                "event=error_handler_failed run_id=%s queue_id=%s error=%s original=%s",
+                run_id,
+                queue_id,
+                inner_exc,
+                exc,
+            )
         raise
     finally:
         shutil.rmtree(job_temp_dir, ignore_errors=True)
 
 
+def _cleanup_stale_temp_dirs(temp_root: Path, *, max_age_s: float) -> None:
+    cutoff = time.time() - max_age_s
+    for entry in temp_root.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime >= cutoff:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+
+
 def run_worker_loop(settings: WorkerSettings) -> int:
     settings.temp_root.mkdir(parents=True, exist_ok=True)
     settings.run_root.mkdir(parents=True, exist_ok=True)
+    _cleanup_stale_temp_dirs(settings.temp_root, max_age_s=settings.stale_temp_cleanup_max_age_s)
 
     client = WorkerSupabaseClient(settings)
     last_processed_at = time.monotonic()
