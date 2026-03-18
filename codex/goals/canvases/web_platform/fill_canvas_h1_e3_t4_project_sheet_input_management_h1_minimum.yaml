@@ -1,0 +1,46 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E3-T4 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglevo web_platform
+      taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e3_t4_project_sheet_input_management_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e3_t4_project_sheet_input_management_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e3_t4_project_sheet_input_management_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t4_project_sheet_input_management_h1_minimum.md"
+
+  - name: "Project sheet input service es API workflow kialakitasa"
+    description: >
+      Vezess be explicit service reteget es minimalis API endpoint(ek)et a
+      `app.project_sheet_inputs` H1-minimum kezelesere. A workflow projekt-szintu
+      create-or-update legyen `project_id` + `sheet_revision_id` parra,
+      kezelje a `required_qty`, `is_active`, `is_default`, `placement_priority`
+      es `notes` mezoket, es bizonyithatoan ne termeljen duplikalt rekordot.
+      A service ellenorizze a projekt-owner es sheet-owner scope-ot, es
+      kontrollalja az `is_default` allapotot projekt-szinten.
+    outputs:
+      - "api/services/project_sheet_inputs.py"
+      - "api/routes/project_sheet_inputs.py"
+      - "api/main.py"
+      - "codex/reports/web_platform/h1_e3_t4_project_sheet_input_management_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet az uj rekord, update-instead-of-
+      duplicate, default-switch, idegen projekt, idegen sheet revision es
+      ervenytelen qty/priority agakra. Frissitsd a checklistet es a reportot
+      evidence-alapon, DoD -> Evidence matrixszal, es nevezd meg kulon, hogy a
+      task mit szallit le a project sheet input workflowhoz, illetve mi marad
+      a kesobbi run snapshot / inventory scope-ban.
+    outputs:
+      - "scripts/smoke_h1_e3_t4_project_sheet_input_management_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e3_t4_project_sheet_input_management_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t4_project_sheet_input_management_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a repo kotelezo gate-et a task reportjara kotve, es ellenorizd,
+      hogy a report AUTO_VERIFY blokkja a valos eredmenyeket tukrozi.
+    outputs:
+      - "codex/reports/web_platform/h1_e3_t4_project_sheet_input_management_h1_minimum.verify.log"
