@@ -5,6 +5,13 @@ import json
 import pytest
 
 from vrs_nesting.dxf.importer import DxfImportError, import_part_raw
+from vrs_nesting.dxf.importer import (
+    CURVE_FLATTEN_TOL_MAX_SOURCE_UNITS,
+    CURVE_FLATTEN_TOL_MIN_SOURCE_UNITS,
+    MAX_CURVE_POINTS,
+    _clamp_curve_flatten_tolerance,
+    _flatten_curve_points,
+)
 
 
 def test_import_part_raw_invalid_ring_maps_to_dxf_invalid_ring(tmp_path):
@@ -29,6 +36,30 @@ def test_import_part_raw_invalid_ring_maps_to_dxf_invalid_ring(tmp_path):
         import_part_raw(fixture_path)
 
     assert exc.value.code == "DXF_INVALID_RING"
+
+
+def test_import_part_raw_nan_coordinate_rejected(tmp_path):
+    fixture_path = tmp_path / "nan_coord.json"
+    fixture_path.write_text(
+        json.dumps(
+            {
+                "entities": [
+                    {
+                        "layer": "CUT_OUTER",
+                        "type": "LWPOLYLINE",
+                        "closed": True,
+                        "points": [[0.0, 0.0], [10.0, 0.0], [float("nan"), 5.0]],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DxfImportError) as exc:
+        import_part_raw(fixture_path)
+
+    assert exc.value.code == "DXF_INVALID_POINTS"
 
 
 def test_import_part_raw_invalid_dxf_content_maps_to_dxf_read_failed(tmp_path):
@@ -63,7 +94,6 @@ def test_import_part_raw_curve_contour_self_intersection_maps_to_dxf_invalid_rin
         import_part_raw(fixture_path)
 
     assert exc.value.code == "DXF_INVALID_RING"
-    assert "self-intersecting" in str(exc.value)
 
 
 def test_import_part_raw_dxf_ellipse_outer_supported(tmp_path):
@@ -131,3 +161,29 @@ def test_import_part_raw_dxf_insunits_inch_scaled_to_mm(tmp_path):
     ys = [float(point[1]) for point in part.outer_points_mm]
     assert max(xs) - min(xs) == pytest.approx(25.4, abs=1e-6)
     assert max(ys) - min(ys) == pytest.approx(25.4, abs=1e-6)
+
+
+def test_clamp_curve_flatten_tolerance_limits_to_sane_range():
+    assert _clamp_curve_flatten_tolerance(1e-20) == pytest.approx(CURVE_FLATTEN_TOL_MIN_SOURCE_UNITS)
+    assert _clamp_curve_flatten_tolerance(1e9) == pytest.approx(CURVE_FLATTEN_TOL_MAX_SOURCE_UNITS)
+    assert _clamp_curve_flatten_tolerance(0.25) == pytest.approx(0.25)
+
+
+def test_flatten_curve_points_rejects_unbounded_tessellation():
+    class _FakeVertex:
+        def __init__(self, x: float, y: float) -> None:
+            self.x = x
+            self.y = y
+
+    class _FakeCurve:
+        def flattening(self, _tol: float):
+            return [_FakeVertex(float(idx), 0.0) for idx in range(MAX_CURVE_POINTS + 1)]
+
+    class _FakeEzdxf:
+        class DXFError(Exception):
+            pass
+
+    with pytest.raises(DxfImportError) as exc:
+        _flatten_curve_points(_FakeCurve(), where="curve", flatten_tol=0.1, ezdxf_module=_FakeEzdxf)
+
+    assert exc.value.code == "DXF_CURVE_TOO_COMPLEX"

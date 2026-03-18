@@ -30,6 +30,11 @@ CHAIN_ENDPOINT_EPSILON_MM = 0.2
 ELLIPSE_CLOSED_PARAM_EPSILON = 1e-6
 MAX_INSERT_EXPANSION_DEPTH = 8
 RING_INTERSECTION_EPS = 1e-9
+POINT_CLOSE_EPSILON_MM = 1e-6
+CURVE_FLATTEN_TOL_MIN_SOURCE_UNITS = 1e-6
+CURVE_FLATTEN_TOL_MAX_SOURCE_UNITS = 1e3
+MAX_CURVE_POINTS = 10000
+MAX_SELF_INTERSECTION_SEGMENTS = 5000
 INSUNITS_MM_SCALE = {
     0: 1.0,
     1: 25.4,
@@ -82,6 +87,33 @@ class PartRaw:
         }
 
 
+def _is_finite_number(value: Any) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    return math.isfinite(float(value))
+
+
+def _as_finite_float(value: Any, *, where: str) -> float:
+    if not _is_finite_number(value):
+        raise DxfImportError("DXF_INVALID_POINTS", f"{where} must be finite numeric value")
+    return float(value)
+
+
+def _as_finite_float_entity(value: Any, *, where: str) -> float:
+    if not _is_finite_number(value):
+        raise DxfImportError("DXF_ENTITY_INVALID", f"{where} must be finite numeric value")
+    return float(value)
+
+
+def _clamp_curve_flatten_tolerance(tolerance_source_units: float) -> float:
+    if not math.isfinite(tolerance_source_units) or tolerance_source_units <= 0:
+        return CURVE_FLATTEN_TOL_MIN_SOURCE_UNITS
+    return min(
+        CURVE_FLATTEN_TOL_MAX_SOURCE_UNITS,
+        max(CURVE_FLATTEN_TOL_MIN_SOURCE_UNITS, float(tolerance_source_units)),
+    )
+
+
 def _normalize_points(raw: Any, where: str, *, min_points: int = 3) -> list[list[float]]:
     if not isinstance(raw, list):
         raise DxfImportError("DXF_INVALID_POINTS", f"{where} must be list")
@@ -91,8 +123,8 @@ def _normalize_points(raw: Any, where: str, *, min_points: int = 3) -> list[list
         if not isinstance(item, (list, tuple)) or len(item) != 2:
             raise DxfImportError("DXF_INVALID_POINTS", f"{where}[{idx}] must be [x, y]")
         x, y = item
-        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-            raise DxfImportError("DXF_INVALID_POINTS", f"{where}[{idx}] coordinates must be numeric")
+        if not _is_finite_number(x) or not _is_finite_number(y):
+            raise DxfImportError("DXF_INVALID_POINTS", f"{where}[{idx}] coordinates must be finite numbers")
         points.append([float(x), float(y)])
 
     if len(points) < min_points:
@@ -150,16 +182,17 @@ def _extract_entities_from_json(path: Path) -> list[dict[str, Any]]:
                 raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.center must be [x, y]")
             cx, cy = center
             radius = entity.get("radius")
-            start = float(entity.get("start_angle", 0.0))
-            end = float(entity.get("end_angle", 360.0 if etype == "CIRCLE" else 0.0))
-            if not isinstance(cx, (int, float)) or not isinstance(cy, (int, float)):
-                raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.center coordinates must be numeric")
-            if not isinstance(radius, (int, float)) or float(radius) <= 0:
+            cx_f = _as_finite_float_entity(cx, where=f"{where}.center[0]")
+            cy_f = _as_finite_float_entity(cy, where=f"{where}.center[1]")
+            radius_f = _as_finite_float_entity(radius, where=f"{where}.radius")
+            start = _as_finite_float_entity(entity.get("start_angle", 0.0), where=f"{where}.start_angle")
+            end = _as_finite_float_entity(entity.get("end_angle", 360.0 if etype == "CIRCLE" else 0.0), where=f"{where}.end_angle")
+            if radius_f <= 0:
                 raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.radius must be positive number")
             out_entity.update(
                 {
-                    "center": [float(cx), float(cy)],
-                    "radius": float(radius),
+                    "center": [cx_f, cy_f],
+                    "radius": radius_f,
                     "start_angle": start,
                     "end_angle": end,
                 }
@@ -187,7 +220,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
         raise DxfImportError("DXF_READ_FAILED", f"could not read dxf: {path}: {exc}") from exc
 
     unit_scale_to_mm = _resolve_insunits_scale_to_mm(doc)
-    flatten_tol_in_source_units = CURVE_FLATTEN_TOLERANCE_MM / unit_scale_to_mm
+    flatten_tol_in_source_units = _clamp_curve_flatten_tolerance(CURVE_FLATTEN_TOLERANCE_MM / unit_scale_to_mm)
     msp = doc.modelspace()
     out: list[dict[str, Any]] = []
     for idx, entity in enumerate(msp):
@@ -341,16 +374,34 @@ def _scale_entity_to_mm(entity: dict[str, Any], *, scale_to_mm: float) -> dict[s
     return scaled
 
 
+def _points_from_curve_vertices(vertices: Any, *, where: str) -> list[list[float]]:
+    points: list[list[float]] = []
+    for idx, vertex in enumerate(vertices):
+        x = _as_finite_float(getattr(vertex, "x", None), where=f"{where}[{idx}].x")
+        y = _as_finite_float(getattr(vertex, "y", None), where=f"{where}[{idx}].y")
+        points.append([x, y])
+        if len(points) > MAX_CURVE_POINTS:
+            raise DxfImportError(
+                "DXF_CURVE_TOO_COMPLEX",
+                f"{where} produced more than {MAX_CURVE_POINTS} points",
+            )
+    return points
+
+
 def _flatten_curve_points(curve_entity: Any, *, where: str, flatten_tol: float, ezdxf_module: Any) -> list[list[float]]:
     try:
-        return [[float(v.x), float(v.y)] for v in curve_entity.flattening(flatten_tol)]
+        points = _points_from_curve_vertices(curve_entity.flattening(flatten_tol), where=f"{where}.flattening")
+        if points:
+            return points
     except (AttributeError, TypeError, ValueError, ezdxf_module.DXFError):
-        fit_points = list(getattr(curve_entity, "fit_points", []) or [])
-        if fit_points:
-            return [[float(v.x), float(v.y)] for v in fit_points]
-        control_points = list(getattr(curve_entity, "control_points", []) or [])
-        if control_points:
-            return [[float(v.x), float(v.y)] for v in control_points]
+        pass
+
+    fit_points = list(getattr(curve_entity, "fit_points", []) or [])
+    if fit_points:
+        return _points_from_curve_vertices(fit_points, where=f"{where}.fit_points")
+    control_points = list(getattr(curve_entity, "control_points", []) or [])
+    if control_points:
+        return _points_from_curve_vertices(control_points, where=f"{where}.control_points")
     raise DxfImportError("DXF_ENTITY_INVALID", f"{where} has no usable points")
 
 
@@ -451,6 +502,11 @@ def _ring_has_self_intersection(ring: list[list[float]]) -> bool:
 
 
 def _assert_non_self_intersecting(ring: list[list[float]], *, where: str) -> None:
+    if len(ring) > MAX_SELF_INTERSECTION_SEGMENTS:
+        raise DxfImportError(
+            "DXF_RING_TOO_COMPLEX",
+            f"{where} has too many segments ({len(ring)} > {MAX_SELF_INTERSECTION_SEGMENTS})",
+        )
     if _ring_has_self_intersection(ring):
         raise DxfImportError("DXF_INVALID_RING", f"self-intersecting contour at {where}")
 
@@ -489,18 +545,34 @@ def _prepend_path(dst: list[list[float]], src: list[list[float]]) -> None:
 
 
 def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
-    remaining = [seg for seg in segments if len(seg) >= 2]
-    rings: list[list[list[float]]] = []
-    open_paths: list[list[list[float]]] = []
-
-    if not remaining:
-        return rings, open_paths
-
     epsilon = CHAIN_ENDPOINT_EPSILON_MM
     scale = 1.0 / epsilon if epsilon > 0 else 1.0
 
     def _endpoint_key(point: list[float]) -> tuple[int, int]:
         return (int(round(float(point[0]) * scale)), int(round(float(point[1]) * scale)))
+
+    def _segment_signature(segment: list[list[float]]) -> tuple[tuple[int, int], ...]:
+        forward = tuple(_endpoint_key(point) for point in segment)
+        reverse = tuple(reversed(forward))
+        return forward if forward <= reverse else reverse
+
+    remaining: list[list[list[float]]] = []
+    seen_segments: set[tuple[tuple[int, int], ...]] = set()
+    for segment in segments:
+        if len(segment) < 2:
+            continue
+        normalized_segment = [[float(point[0]), float(point[1])] for point in segment]
+        signature = _segment_signature(normalized_segment)
+        if signature in seen_segments:
+            continue
+        seen_segments.add(signature)
+        remaining.append(normalized_segment)
+
+    rings: list[list[list[float]]] = []
+    open_paths: list[list[list[float]]] = []
+
+    if not remaining:
+        return rings, open_paths
 
     alive: set[int] = set(range(len(remaining)))
     start_index: dict[tuple[int, int], set[int]] = {}
@@ -600,8 +672,10 @@ def _entity_to_path(entity: dict[str, Any], where: str) -> list[list[float]]:
         points = entity.get("points")
         if not isinstance(points, list):
             raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.points must be list")
-        out = [[float(p[0]), float(p[1])] for p in points]
-        if etype != "LINE" and len(out) >= 2 and out[0] == out[-1]:
+        out = _normalize_points(points, f"{where}.points", min_points=2)
+        entity_closed = bool(entity.get("closed", False))
+        should_strip_closing_point = etype != "LINE" and entity_closed
+        if should_strip_closing_point and len(out) >= 2 and _distance(out[0], out[-1]) <= POINT_CLOSE_EPSILON_MM:
             out = out[:-1]
         return out
 
@@ -612,18 +686,24 @@ def _entity_to_path(entity: dict[str, Any], where: str) -> list[list[float]]:
         end = entity.get("end_angle", 360.0)
         if not isinstance(center, list) or len(center) != 2:
             raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.center must be [x, y]")
-        if not isinstance(radius, (int, float)):
-            raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.radius must be numeric")
+        center_x = _as_finite_float_entity(center[0], where=f"{where}.center[0]")
+        center_y = _as_finite_float_entity(center[1], where=f"{where}.center[1]")
+        radius_f = _as_finite_float_entity(radius, where=f"{where}.radius")
+        start_f = _as_finite_float_entity(start, where=f"{where}.start_angle")
+        end_f = _as_finite_float_entity(end, where=f"{where}.end_angle")
+        if radius_f <= 0:
+            raise DxfImportError("DXF_ENTITY_INVALID", f"{where}.radius must be positive number")
         points = arc_to_points(
-            center_x=float(center[0]),
-            center_y=float(center[1]),
-            radius=float(radius),
-            start_angle_deg=float(start),
-            end_angle_deg=float(end),
+            center_x=center_x,
+            center_y=center_y,
+            radius=radius_f,
+            start_angle_deg=start_f,
+            end_angle_deg=end_f,
             max_chord_error_mm=CURVE_FLATTEN_TOLERANCE_MM,
             min_segments=ARC_POLYGONIZE_MIN_SEGMENTS,
         )
-        if len(points) >= 2 and points[0] == points[-1]:
+        points = _normalize_points(points, f"{where}.arc_points", min_points=2)
+        if etype == "CIRCLE" and len(points) >= 2 and _distance(points[0], points[-1]) <= POINT_CLOSE_EPSILON_MM:
             points = points[:-1]
         return points
 

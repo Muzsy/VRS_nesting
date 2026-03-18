@@ -70,6 +70,11 @@ def test_offset_part_geometry_calls_rust_inflate_parts(monkeypatch: pytest.Monke
     assert out["outer_points_mm"] == [[-1.0, -1.0], [11.0, -1.0], [11.0, 11.0], [-1.0, 11.0]]
 
 
+def test_to_closed_ring_rejects_non_finite_coordinate():
+    with pytest.raises(GeometryOffsetError, match="must be finite"):
+        offset_mod._to_closed_ring([[0.0, 0.0], [float("inf"), 1.0], [1.0, 1.0]], "part.outer")
+
+
 def test_offset_part_geometry_self_intersect_status_raises(monkeypatch: pytest.MonkeyPatch):
     payload = {
         "outer_points_mm": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],

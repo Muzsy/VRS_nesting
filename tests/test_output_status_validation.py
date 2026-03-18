@@ -135,3 +135,31 @@ def test_validate_multi_sheet_output_rejects_margin_violation():
 
     with pytest.raises(ValueError, match="margin violation"):
         validate_multi_sheet_output(input_payload, output_payload)
+
+
+def test_validate_multi_sheet_output_accepts_near_canonical_rotation_noise():
+    input_payload = {
+        "contract_version": "v1",
+        "project_name": "rotation_noise_validation",
+        "seed": 0,
+        "time_limit_s": 60,
+        "stocks": [{"id": "SHEET_A", "width": 20, "height": 20, "quantity": 1}],
+        "parts": [{"id": "PART_A", "width": 4, "height": 4, "quantity": 1, "allowed_rotations_deg": [90]}],
+    }
+    output_payload = {
+        "contract_version": "v1",
+        "status": "ok",
+        "placements": [
+            {
+                "instance_id": "PART_A__0001",
+                "part_id": "PART_A",
+                "sheet_index": 0,
+                "x": 8,
+                "y": 8,
+                "rotation_deg": 90.0000001,
+            }
+        ],
+        "unplaced": [],
+    }
+
+    validate_multi_sheet_output(input_payload, output_payload)

@@ -6,6 +6,9 @@ from __future__ import annotations
 import math
 from typing import Iterable
 
+POINT_CLOSE_EPSILON = 1e-9
+AREA_MIN_EPSILON = 1e-12
+
 
 class GeometryCleanError(ValueError):
     """Deterministic geometry clean error with stable code + message."""
@@ -22,7 +25,11 @@ def _as_point(raw: object, where: str) -> tuple[float, float]:
     x, y = raw
     if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
         raise GeometryCleanError("GEO_POINT_TYPE", f"{where} coordinates must be numeric")
-    return float(x), float(y)
+    xf = float(x)
+    yf = float(y)
+    if not math.isfinite(xf) or not math.isfinite(yf):
+        raise GeometryCleanError("GEO_POINT_TYPE", f"{where} coordinates must be finite")
+    return xf, yf
 
 
 def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -35,12 +42,20 @@ def points_are_close(a: tuple[float, float], b: tuple[float, float], epsilon: fl
     return _dist(a, b) <= epsilon
 
 
-def normalize_input_ring(points: Iterable[object], *, where: str = "ring") -> list[tuple[float, float]]:
+def normalize_input_ring(
+    points: Iterable[object],
+    *,
+    where: str = "ring",
+    close_epsilon: float = POINT_CLOSE_EPSILON,
+) -> list[tuple[float, float]]:
+    if close_epsilon < 0:
+        raise GeometryCleanError("GEO_PARAM_RANGE", "close_epsilon must be >= 0")
+
     parsed = [_as_point(point, f"{where}[{idx}]") for idx, point in enumerate(points)]
     if len(parsed) < 3:
         raise GeometryCleanError("GEO_RING_TOO_SHORT", f"{where} must contain at least 3 points")
 
-    if parsed[0] == parsed[-1]:
+    if points_are_close(parsed[0], parsed[-1], close_epsilon):
         parsed = parsed[:-1]
 
     if len(parsed) < 3:
@@ -57,14 +72,15 @@ def dedupe_and_prune_ring(
     if min_edge_len < 0:
         raise GeometryCleanError("GEO_PARAM_RANGE", "min_edge_len must be >= 0")
 
-    ring = normalize_input_ring(points, where=where)
+    dedupe_epsilon = max(float(min_edge_len), POINT_CLOSE_EPSILON)
+    ring = normalize_input_ring(points, where=where, close_epsilon=dedupe_epsilon)
 
     deduped: list[tuple[float, float]] = []
     for point in ring:
-        if not deduped or _dist(point, deduped[-1]) > 0:
+        if not deduped or _dist(point, deduped[-1]) >= dedupe_epsilon:
             deduped.append(point)
 
-    if len(deduped) >= 2 and _dist(deduped[0], deduped[-1]) == 0:
+    if len(deduped) >= 2 and _dist(deduped[0], deduped[-1]) < dedupe_epsilon:
         deduped = deduped[:-1]
 
     if len(deduped) < 3:
@@ -113,6 +129,9 @@ def clean_ring(
     ring = dedupe_and_prune_ring(points, min_edge_len=min_edge_len, where=where)
     if ccw is not None:
         ring = orient_ring(ring, ccw=ccw, where=where)
+    area_epsilon = max(float(min_edge_len) * float(min_edge_len), AREA_MIN_EPSILON)
+    if abs(signed_area(ring, where=where)) < area_epsilon:
+        raise GeometryCleanError("GEO_RING_DEGENERATE", f"{where} has near-zero area")
     return [[x, y] for x, y in ring]
 
 

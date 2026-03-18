@@ -753,8 +753,10 @@ def export_per_sheet(
             raise DxfExportError(f"placement[{pidx}] x/y must be numeric")
         if not isinstance(rot, (int, float)):
             raise DxfExportError(f"placement[{pidx}].rotation_deg must be numeric")
+        if not math.isfinite(float(rot)):
+            raise DxfExportError(f"placement[{pidx}].rotation_deg must be finite")
 
-        rot_norm = int(rot) % 360
+        rot_norm = int(round(float(rot))) % 360
         if rot_norm not in part_defs[part_id]["allowed_rotations"]:
             raise DxfExportError(f"rotation {rot_norm} not allowed for part {part_id}")
 

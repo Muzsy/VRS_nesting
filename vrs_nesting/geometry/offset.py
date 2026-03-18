@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ from shapely.ops import unary_union
 
 DEFAULT_MITRE_LIMIT = 2.0
 DEFAULT_RUST_TIMEOUT_SEC = 10.0
+RING_CLOSE_EPSILON = 1e-9
 
 PART_ENGINE_ENV = "VRS_OFFSET_PART_ENGINE"
 ALLOW_SHAPELY_FALLBACK_ENV = "VRS_OFFSET_ALLOW_SHAPELY_FALLBACK"
@@ -121,12 +123,16 @@ def _to_closed_ring(points: Any, where: str) -> list[tuple[float, float]]:
         x, y = point
         if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
             raise GeometryOffsetError("GEO_POLYGON_TYPE", f"{where}[{idx}] coordinates must be numeric")
-        ring.append((float(x), float(y)))
+        xf = float(x)
+        yf = float(y)
+        if not math.isfinite(xf) or not math.isfinite(yf):
+            raise GeometryOffsetError("GEO_POLYGON_TYPE", f"{where}[{idx}] coordinates must be finite")
+        ring.append((xf, yf))
 
     if len(ring) < 3:
         raise GeometryOffsetError("GEO_POLYGON_RANGE", f"{where} must have at least 3 points")
 
-    if ring[0] != ring[-1]:
+    if math.hypot(ring[0][0] - ring[-1][0], ring[0][1] - ring[-1][1]) > RING_CLOSE_EPSILON:
         ring.append(ring[0])
     return ring
 

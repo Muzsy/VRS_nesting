@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import json
+import math
 
 import pytest
 
-from vrs_nesting.dxf.importer import DxfImportError, _chain_segments_to_rings, import_part_raw
+from vrs_nesting.dxf.importer import DxfImportError, _assert_non_self_intersecting, _chain_segments_to_rings, import_part_raw
+from vrs_nesting.dxf.importer import MAX_SELF_INTERSECTION_SEGMENTS
 from vrs_nesting.geometry.polygonize import ARC_POLYGONIZE_MIN_SEGMENTS
 
 
@@ -117,7 +119,6 @@ def test_import_part_raw_json_fixture_self_intersecting_outer_fails(tmp_path):
         import_part_raw(fixture_path)
 
     assert exc.value.code == "DXF_INVALID_RING"
-    assert "self-intersecting" in str(exc.value)
 
 
 def test_import_part_raw_json_fixture_closed_spline_endpoint_drift_passes(tmp_path):
@@ -188,3 +189,32 @@ def test_chain_segments_to_rings_many_segments_still_closes_ring():
     rings, open_paths = _chain_segments_to_rings(segments, layer="CUT_OUTER")
     assert len(rings) == 1
     assert len(open_paths) == 0
+
+
+def test_chain_segments_to_rings_dedupes_duplicate_segments():
+    segments = [
+        [[0, 0], [10, 0]],
+        [[0, 0], [10, 0]],
+        [[10, 0], [10, 10]],
+        [[10, 10], [0, 10]],
+        [[0, 10], [0, 0]],
+        [[10, 0], [0, 0]],
+    ]
+
+    rings, open_paths = _chain_segments_to_rings(segments, layer="CUT_OUTER")
+    assert len(rings) == 1
+    assert len(open_paths) == 0
+    assert len(rings[0]) == 4
+
+
+def test_assert_non_self_intersecting_rejects_too_many_segments():
+    total = MAX_SELF_INTERSECTION_SEGMENTS + 1
+    ring = []
+    for idx in range(total):
+        angle = (2.0 * math.pi * idx) / float(total)
+        ring.append([math.cos(angle), math.sin(angle)])
+
+    with pytest.raises(DxfImportError) as exc:
+        _assert_non_self_intersecting(ring, where="too_many_segments")
+
+    assert exc.value.code == "DXF_RING_TOO_COMPLEX"

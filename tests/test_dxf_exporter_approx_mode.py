@@ -94,3 +94,41 @@ def test_export_per_sheet_approx_preserves_arc_spline_entities(tmp_path):
 
     assert "ARC" in types_a
     assert "SPLINE" in types_b
+
+
+def test_export_per_sheet_approx_tolerates_near_canonical_rotation(tmp_path):
+    input_payload = {
+        "contract_version": "v1",
+        "project_name": "rotation_noise",
+        "seed": 0,
+        "time_limit_s": 30,
+        "stocks": [{"id": "SHEET_A", "width": 100.0, "height": 100.0, "quantity": 1}],
+        "parts": [
+            {
+                "id": "P1",
+                "width": 20.0,
+                "height": 10.0,
+                "quantity": 1,
+                "allowed_rotations_deg": [90],
+                "outer_points": [[0, 0], [20, 0], [20, 10], [0, 10]],
+            }
+        ],
+    }
+    output_payload = {
+        "contract_version": "v1",
+        "status": "ok",
+        "placements": [
+            {
+                "instance_id": "P1__0001",
+                "part_id": "P1",
+                "sheet_index": 0,
+                "x": 10.0,
+                "y": 10.0,
+                "rotation_deg": 89.9999999,
+            }
+        ],
+        "unplaced": [],
+    }
+
+    summary = export_per_sheet(input_payload, output_payload, tmp_path / "out", geometry_mode="approx")
+    assert summary["exported_count"] == 1

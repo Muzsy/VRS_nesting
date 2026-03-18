@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+import math
 from typing import Any
 
 try:
@@ -302,8 +303,10 @@ def validate_multi_sheet_output(input_payload: dict[str, Any], output_payload: d
             raise ValueError("placement x/y must be number")
         if not isinstance(rot, (int, float)):
             raise ValueError("placement.rotation_deg must be number")
+        if not math.isfinite(float(rot)):
+            raise ValueError("placement.rotation_deg must be finite")
 
-        rot_norm = int(rot) % 360
+        rot_norm = int(round(float(rot))) % 360
         allowed_rotations = part_geoms[part_id]["allowed_rotations"]
         if rot_norm not in allowed_rotations:
             raise ValueError(f"rotation {rot_norm} not allowed for part {part_id}")
