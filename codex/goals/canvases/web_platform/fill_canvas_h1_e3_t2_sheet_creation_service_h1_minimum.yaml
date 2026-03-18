@@ -1,0 +1,47 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E3-T2 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglevo web_platform
+      taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e3_t2_sheet_creation_service_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md"
+
+  - name: "Sheet creation service es API endpoint kialakitasa"
+    description: >
+      Vezess be explicit service reteget es minimalis API endpointot owner-szintu
+      `sheet_definition` + `sheet_revision` letrehozasra. A service a meglevo
+      `app.sheet_definitions` es `app.sheet_revisions` tablakra epuljon,
+      kezelje az uj es meglevo definition agakat `code` alapjan, H1-minimum
+      teglalap alapu parameterekkel (`width_mm`, `height_mm`, opcionális
+      `grain_direction`), valamint frissitse a `current_revision_id`-t.
+      Keruld a project-sheet-input scope megnyitasat.
+    outputs:
+      - "api/services/sheet_creation.py"
+      - "api/routes/sheets.py"
+      - "api/main.py"
+      - "codex/reports/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet a sikeres uj-definition,
+      meglevo-definition, ervenytelen meret es hianyos request agakra.
+      Frissitsd a checklistet es a reportot evidence-alapon, DoD -> Evidence
+      matrixszal, es nevezd meg kulon, hogy a task mit szallit H1 minimum
+      sheet workflowban, illetve mi marad a H1-E3-T4 project_sheet_inputs scope-ban.
+    outputs:
+      - "scripts/smoke_h1_e3_t2_sheet_creation_service_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t2_sheet_creation_service_h1_minimum.verify.log"
