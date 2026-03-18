@@ -1,0 +1,48 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E3-T3 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz es a meglevo web_platform
+      taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e3_t3_project_requirement_management_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md"
+
+  - name: "Project requirement service es API endpoint kialakitasa"
+    description: >
+      Vezess be explicit service reteget es minimalis API endpointot projekt-
+      szintu `project_part_requirements` create-or-update workflowhoz. A service
+      a meglevo `app.projects`, `app.part_definitions`, `app.part_revisions` es
+      `app.project_part_requirements` tablakra epuljon, kezelje az uj es meglevo
+      `(project_id, part_revision_id)` agakat, validalja a `required_qty`,
+      `placement_priority`, `placement_policy`, `is_active`, `notes` mezoket,
+      es maradjon szigoruan run snapshot/sheet input scope-on kivul.
+    outputs:
+      - "api/services/project_part_requirements.py"
+      - "api/routes/project_part_requirements.py"
+      - "api/main.py"
+      - "codex/reports/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet a sikeres uj-record,
+      meglevo-record, idegen projekt, idegen part revision, ervenytelen
+      `required_qty`, `placement_priority` es `placement_policy` agakra.
+      Frissitsd a checklistet es a reportot evidence-alapon, DoD -> Evidence
+      matrixszal, es nevezd meg kulon, hogy a task mit szallit H1 minimum
+      requirement flowban, illetve mi marad a H1-E4 run orchestration scope-ban.
+    outputs:
+      - "scripts/smoke_h1_e3_t3_project_requirement_management_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e3_t3_project_requirement_management_h1_minimum.verify.log"
