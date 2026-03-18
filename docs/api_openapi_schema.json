@@ -161,6 +161,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           }
@@ -206,6 +207,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           }
@@ -261,6 +263,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           }
@@ -301,6 +304,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           }
@@ -358,6 +362,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           }
@@ -413,7 +418,31 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
             }
           }
         ],
@@ -460,6 +489,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -469,6 +499,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "File Id"
             }
           }
@@ -490,6 +521,110 @@
         }
       }
     },
+    "/v1/projects/{project_id}/parts": {
+      "post": {
+        "tags": [
+          "parts"
+        ],
+        "summary": "Create Part",
+        "operationId": "create_part_v1_projects__project_id__parts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sheets": {
+      "post": {
+        "tags": [
+          "sheets"
+        ],
+        "summary": "Create Sheet",
+        "operationId": "create_sheet_v1_sheets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SheetCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/projects/{project_id}/run-configs": {
       "post": {
         "tags": [
@@ -509,6 +644,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           }
@@ -564,6 +700,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -623,6 +760,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           }
@@ -678,6 +816,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -711,6 +850,13 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "queued",
+                    "running",
+                    "done",
+                    "failed",
+                    "cancelled"
+                  ],
                   "type": "string"
                 },
                 {
@@ -764,6 +910,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -773,6 +920,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           }
@@ -818,6 +966,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -827,6 +976,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           }
@@ -867,6 +1017,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -876,6 +1027,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           }
@@ -923,6 +1075,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -932,6 +1085,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           },
@@ -1002,6 +1156,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -1011,7 +1166,20 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
             }
           }
         ],
@@ -1058,6 +1226,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -1067,6 +1236,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           },
@@ -1076,6 +1246,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Artifact Id"
             }
           }
@@ -1123,6 +1294,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -1132,6 +1304,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           },
@@ -1141,6 +1314,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Artifact Id"
             }
           }
@@ -1186,6 +1360,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -1195,6 +1370,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           }
@@ -1242,6 +1418,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Project Id"
             }
           },
@@ -1251,6 +1428,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Run Id"
             }
           }
@@ -1324,12 +1502,15 @@
         "properties": {
           "artifact_ids": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             },
             "type": "array",
+            "maxItems": 100,
             "title": "Artifact Ids"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "BundleRequest"
       },
@@ -1365,30 +1546,157 @@
         "properties": {
           "file_id": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "title": "File Id"
           },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 260,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name"
+          },
           "original_filename": {
-            "type": "string",
-            "maxLength": 260,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 260,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Original Filename"
           },
+          "storage_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Path"
+          },
           "storage_key": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Storage Key"
           },
+          "storage_bucket": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Bucket"
+          },
+          "file_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Kind"
+          },
           "file_type": {
-            "type": "string",
-            "maxLength": 40,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "File Type"
           },
+          "byte_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Size"
+          },
           "size_bytes": {
-            "type": "integer",
-            "exclusiveMinimum": 0.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Size Bytes"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
           },
           "content_hash_sha256": {
             "anyOf": [
@@ -1403,13 +1711,10 @@
             "title": "Content Hash Sha256"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "file_id",
-          "original_filename",
-          "storage_key",
-          "file_type",
-          "size_bytes"
+          "file_id"
         ],
         "title": "FileCompleteRequest"
       },
@@ -1475,7 +1780,7 @@
           },
           "stock_file_id": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "title": "Stock File Id"
           },
           "parts_config": {
@@ -1483,16 +1788,147 @@
               "$ref": "#/components/schemas/RunConfigPartEntry"
             },
             "type": "array",
+            "maxItems": 500,
             "minItems": 1,
             "title": "Parts Config"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "stock_file_id",
           "parts_config"
         ],
         "title": "InlineRunConfig"
+      },
+      "PartCreateRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "geometry_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Geometry Revision Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "geometry_revision_id"
+        ],
+        "title": "PartCreateRequest"
+      },
+      "PartCreateResponse": {
+        "properties": {
+          "part_definition_id": {
+            "type": "string",
+            "title": "Part Definition Id"
+          },
+          "part_revision_id": {
+            "type": "string",
+            "title": "Part Revision Id"
+          },
+          "revision_no": {
+            "type": "integer",
+            "title": "Revision No"
+          },
+          "lifecycle": {
+            "type": "string",
+            "title": "Lifecycle"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "current_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Revision Id"
+          },
+          "source_geometry_revision_id": {
+            "type": "string",
+            "title": "Source Geometry Revision Id"
+          },
+          "selected_nesting_derivative_id": {
+            "type": "string",
+            "title": "Selected Nesting Derivative Id"
+          },
+          "was_existing_definition": {
+            "type": "boolean",
+            "title": "Was Existing Definition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_definition_id",
+          "part_revision_id",
+          "revision_no",
+          "lifecycle",
+          "code",
+          "name",
+          "source_geometry_revision_id",
+          "selected_nesting_derivative_id",
+          "was_existing_definition"
+        ],
+        "title": "PartCreateResponse"
       },
       "ProjectCreateRequest": {
         "properties": {
@@ -1509,6 +1945,7 @@
             "default": ""
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "name"
@@ -1527,12 +1964,22 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
           }
         },
         "type": "object",
         "required": [
           "items",
-          "total"
+          "total",
+          "page",
+          "page_size"
         ],
         "title": "ProjectFileListResponse"
       },
@@ -1546,23 +1993,34 @@
             "type": "string",
             "title": "Project Id"
           },
-          "uploaded_by": {
+          "storage_bucket": {
             "type": "string",
-            "title": "Uploaded By"
+            "title": "Storage Bucket"
           },
-          "file_type": {
+          "storage_path": {
             "type": "string",
-            "title": "File Type"
+            "title": "Storage Path"
           },
-          "original_filename": {
+          "file_name": {
             "type": "string",
-            "title": "Original Filename"
+            "title": "File Name"
           },
-          "storage_key": {
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "file_kind": {
             "type": "string",
-            "title": "Storage Key"
+            "title": "File Kind"
           },
-          "size_bytes": {
+          "byte_size": {
             "anyOf": [
               {
                 "type": "integer"
@@ -1571,9 +2029,9 @@
                 "type": "null"
               }
             ],
-            "title": "Size Bytes"
+            "title": "Byte Size"
           },
-          "validation_status": {
+          "sha256": {
             "anyOf": [
               {
                 "type": "string"
@@ -1582,9 +2040,9 @@
                 "type": "null"
               }
             ],
-            "title": "Validation Status"
+            "title": "Sha256"
           },
-          "validation_error": {
+          "uploaded_by": {
             "anyOf": [
               {
                 "type": "string"
@@ -1593,9 +2051,9 @@
                 "type": "null"
               }
             ],
-            "title": "Validation Error"
+            "title": "Uploaded By"
           },
-          "uploaded_at": {
+          "created_at": {
             "anyOf": [
               {
                 "type": "string"
@@ -1604,17 +2062,17 @@
                 "type": "null"
               }
             ],
-            "title": "Uploaded At"
+            "title": "Created At"
           }
         },
         "type": "object",
         "required": [
           "id",
           "project_id",
-          "uploaded_by",
-          "file_type",
-          "original_filename",
-          "storage_key"
+          "storage_bucket",
+          "storage_path",
+          "file_name",
+          "file_kind"
         ],
         "title": "ProjectFileResponse"
       },
@@ -1655,9 +2113,13 @@
             "type": "string",
             "title": "Id"
           },
-          "owner_id": {
+          "owner_user_id": {
             "type": "string",
-            "title": "Owner Id"
+            "title": "Owner User Id"
+          },
+          "lifecycle": {
+            "type": "string",
+            "title": "Lifecycle"
           },
           "name": {
             "type": "string",
@@ -1695,23 +2157,13 @@
               }
             ],
             "title": "Updated At"
-          },
-          "archived_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Archived At"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "owner_id",
+          "owner_user_id",
+          "lifecycle",
           "name"
         ],
         "title": "ProjectResponse"
@@ -1744,6 +2196,7 @@
             "title": "Description"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "ProjectUpdateRequest"
       },
@@ -1883,7 +2336,7 @@
           },
           "stock_file_id": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "title": "Stock File Id"
           },
           "parts_config": {
@@ -1891,10 +2344,12 @@
               "$ref": "#/components/schemas/RunConfigPartEntry"
             },
             "type": "array",
+            "maxItems": 500,
             "minItems": 1,
             "title": "Parts Config"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "stock_file_id",
@@ -1927,11 +2382,12 @@
         "properties": {
           "file_id": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "title": "File Id"
           },
           "quantity": {
             "type": "integer",
+            "maximum": 10000.0,
             "minimum": 1.0,
             "title": "Quantity",
             "default": 1
@@ -1944,6 +2400,7 @@
             "title": "Allowed Rotations Deg"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "file_id"
@@ -2044,7 +2501,8 @@
           "run_config_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
@@ -2063,6 +2521,7 @@
             ]
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "RunCreateRequest"
       },
@@ -2289,6 +2748,166 @@
         ],
         "title": "RunResponse"
       },
+      "SheetCreateRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 100000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "maximum": 100000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Height Mm"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "grain_direction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain Direction"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "width_mm",
+          "height_mm"
+        ],
+        "title": "SheetCreateRequest"
+      },
+      "SheetCreateResponse": {
+        "properties": {
+          "sheet_definition_id": {
+            "type": "string",
+            "title": "Sheet Definition Id"
+          },
+          "sheet_revision_id": {
+            "type": "string",
+            "title": "Sheet Revision Id"
+          },
+          "revision_no": {
+            "type": "integer",
+            "title": "Revision No"
+          },
+          "lifecycle": {
+            "type": "string",
+            "title": "Lifecycle"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "current_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Revision Id"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          },
+          "grain_direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain Direction"
+          },
+          "was_existing_definition": {
+            "type": "boolean",
+            "title": "Was Existing Definition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sheet_definition_id",
+          "sheet_revision_id",
+          "revision_no",
+          "lifecycle",
+          "code",
+          "name",
+          "width_mm",
+          "height_mm",
+          "was_existing_definition"
+        ],
+        "title": "SheetCreateResponse"
+      },
       "UploadUrlRequest": {
         "properties": {
           "filename": {
@@ -2315,18 +2934,19 @@
             "exclusiveMinimum": 0.0,
             "title": "Size Bytes"
           },
-          "file_type": {
+          "file_kind": {
             "type": "string",
             "maxLength": 40,
             "minLength": 1,
-            "title": "File Type"
+            "title": "File Kind",
+            "default": "source_dxf"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "filename",
-          "size_bytes",
-          "file_type"
+          "size_bytes"
         ],
         "title": "UploadUrlRequest"
       },
@@ -2340,9 +2960,13 @@
             "type": "string",
             "title": "File Id"
           },
-          "storage_key": {
+          "storage_bucket": {
             "type": "string",
-            "title": "Storage Key"
+            "title": "Storage Bucket"
+          },
+          "storage_path": {
+            "type": "string",
+            "title": "Storage Path"
           },
           "expires_at": {
             "type": "string",
@@ -2353,7 +2977,8 @@
         "required": [
           "upload_url",
           "file_id",
-          "storage_key",
+          "storage_bucket",
+          "storage_path",
           "expires_at"
         ],
         "title": "UploadUrlResponse"

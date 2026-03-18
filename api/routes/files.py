@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from api.auth import AuthenticatedUser, get_current_user
 from api.config import Settings
 from api.deps import get_settings, get_supabase_client
+from api.http_errors import raise_supabase_http_error
 from api.rate_limit import enforce_user_rate_limit
+from api.request_models import StrictRequestModel
 from api.services.dxf_geometry_import import import_source_dxf_geometry_revision_async
 from api.services.dxf_validation import validate_dxf_file_async
 from api.services.file_ingest_metadata import canonical_file_name_from_storage_path, load_file_ingest_metadata
@@ -22,7 +24,7 @@ router = APIRouter(prefix="/projects/{project_id}/files", tags=["project-files"]
 _ALLOWED_FILE_KINDS = {"source_dxf", "source_svg", "import_report", "artifact"}
 
 
-class UploadUrlRequest(BaseModel):
+class UploadUrlRequest(StrictRequestModel):
     filename: str = Field(min_length=1, max_length=260)
     content_type: str | None = Field(default="application/dxf", max_length=100)
     size_bytes: int = Field(gt=0)
@@ -37,8 +39,8 @@ class UploadUrlResponse(BaseModel):
     expires_at: str
 
 
-class FileCompleteRequest(BaseModel):
-    file_id: str = Field(min_length=1)
+class FileCompleteRequest(StrictRequestModel):
+    file_id: UUID
     file_name: str | None = Field(default=None, min_length=1, max_length=260)
     original_filename: str | None = Field(default=None, min_length=1, max_length=260)
     storage_path: str | None = Field(default=None, min_length=1)
@@ -71,6 +73,8 @@ class ProjectFileResponse(BaseModel):
 class ProjectFileListResponse(BaseModel):
     items: list[ProjectFileResponse]
     total: int
+    page: int
+    page_size: int
 
 
 def _as_file_response(row: dict[str, Any]) -> ProjectFileResponse:
@@ -112,7 +116,7 @@ def _ensure_project_access(
     *,
     supabase: SupabaseClient,
     user: AuthenticatedUser,
-    project_id: str,
+    project_id: UUID,
 ) -> None:
     params = {
         "select": "id",
@@ -128,7 +132,7 @@ def _ensure_project_access(
 
 @router.post("/upload-url", response_model=UploadUrlResponse)
 def create_upload_url(
-    project_id: str,
+    project_id: UUID,
     req: UploadUrlRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
@@ -172,7 +176,7 @@ def create_upload_url(
             expires_in=300,
         )
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"upload-url generation failed: {exc}") from exc
+        raise_supabase_http_error(operation="upload-url generation", exc=exc)
 
     return UploadUrlResponse(
         upload_url=str(signed["upload_url"]),
@@ -185,7 +189,7 @@ def create_upload_url(
 
 @router.post("", response_model=ProjectFileResponse)
 def complete_upload(
-    project_id: str,
+    project_id: UUID,
     req: FileCompleteRequest,
     background_tasks: BackgroundTasks,
     user: AuthenticatedUser = Depends(get_current_user),
@@ -221,15 +225,15 @@ def complete_upload(
             signed_url_ttl_s=settings.signed_url_ttl_s,
         )
     except (SupabaseHTTPError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"metadata extraction failed: {exc}") from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="metadata extraction failed") from exc
 
     source_hash_sha256 = str(ingest_metadata.sha256 or "").strip()
     if not source_hash_sha256:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="metadata extraction failed: missing sha256")
 
     payload = {
-        "id": req.file_id,
-        "project_id": project_id,
+        "id": str(req.file_id),
+        "project_id": str(project_id),
         "storage_bucket": storage_bucket,
         "storage_path": storage_path,
         "file_name": _sanitize_filename(canonical_file_name),
@@ -243,15 +247,15 @@ def complete_upload(
     try:
         row = supabase.insert_row(table="app.file_objects", access_token=user.access_token, payload=payload)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"file metadata insert failed: {exc}") from exc
+        raise_supabase_http_error(operation="file metadata insert", exc=exc)
 
     if normalized_kind == "source_dxf" and ingest_metadata.file_name.lower().endswith(".dxf"):
         background_tasks.add_task(
             import_source_dxf_geometry_revision_async,
             supabase=supabase,
             access_token=user.access_token,
-            project_id=project_id,
-            source_file_object_id=req.file_id,
+            project_id=str(project_id),
+            source_file_object_id=str(req.file_id),
             storage_bucket=storage_bucket,
             storage_path=storage_path,
             source_hash_sha256=source_hash_sha256,
@@ -264,7 +268,7 @@ def complete_upload(
             supabase=supabase,
             access_token=user.access_token,
             bucket=storage_bucket,
-            file_object_id=req.file_id,
+            file_object_id=str(req.file_id),
             storage_path=storage_path,
         )
 
@@ -273,30 +277,35 @@ def complete_upload(
 
 @router.get("", response_model=ProjectFileListResponse)
 def list_project_files(
-    project_id: str,
+    project_id: UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectFileListResponse:
     _ensure_project_access(supabase=supabase, user=user, project_id=project_id)
 
+    offset = (page - 1) * page_size
     params = {
         "select": "id,project_id,storage_bucket,storage_path,file_name,mime_type,file_kind,byte_size,sha256,uploaded_by,created_at",
         "project_id": f"eq.{project_id}",
         "order": "created_at.desc",
+        "limit": str(page_size),
+        "offset": str(offset),
     }
     try:
         rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"list files failed: {exc}") from exc
+        raise_supabase_http_error(operation="list files", exc=exc)
 
     items = [_as_file_response(row) for row in rows]
-    return ProjectFileListResponse(items=items, total=len(items))
+    return ProjectFileListResponse(items=items, total=len(items), page=page, page_size=page_size)
 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_project_file(
-    project_id: str,
-    file_id: str,
+    project_id: UUID,
+    file_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
     settings: Settings = Depends(get_settings),
@@ -323,7 +332,7 @@ def delete_project_file(
             filters={"id": f"eq.{file_id}", "project_id": f"eq.{project_id}"},
         )
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"delete file metadata failed: {exc}") from exc
+        raise_supabase_http_error(operation="delete file metadata", exc=exc)
 
     if storage_path:
         try:

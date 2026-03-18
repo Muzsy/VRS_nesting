@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from api.auth import AuthenticatedUser, get_current_user
 from api.deps import get_supabase_client
+from api.http_errors import raise_supabase_http_error
+from api.request_models import StrictRequestModel
 from api.services.sheet_creation import SheetCreationError, create_sheet_revision
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
@@ -14,11 +16,11 @@ from api.supabase_client import SupabaseClient, SupabaseHTTPError
 router = APIRouter(prefix="/sheets", tags=["sheets"])
 
 
-class SheetCreateRequest(BaseModel):
+class SheetCreateRequest(StrictRequestModel):
     code: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=240)
-    width_mm: float = Field(gt=0)
-    height_mm: float = Field(gt=0)
+    width_mm: float = Field(gt=0, le=100000)
+    height_mm: float = Field(gt=0, le=100000)
     description: str | None = Field(default=None, max_length=2000)
     grain_direction: str | None = Field(default=None, max_length=80)
     notes: str | None = Field(default=None, max_length=2000)
@@ -109,6 +111,6 @@ def create_sheet(
     except SheetCreationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"sheet creation failed: {exc}") from exc
+        raise_supabase_http_error(operation="sheet creation", exc=exc)
 
     return _as_create_response(result)

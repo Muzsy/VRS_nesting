@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from uuid import uuid4
 
@@ -20,6 +21,18 @@ from api.supabase_client import SupabaseClient
 
 logger = logging.getLogger("vrs_api")
 _API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def _sanitize_request_id(raw_value: str | None) -> str | None:
+    if raw_value is None:
+        return None
+    candidate = raw_value.strip()
+    if not candidate:
+        return None
+    if _REQUEST_ID_PATTERN.fullmatch(candidate) is None:
+        return None
+    return candidate
 
 
 def create_app() -> FastAPI:
@@ -41,7 +54,7 @@ def create_app() -> FastAPI:
     )
 
     @app.middleware("http")
-    async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def security_headers(request: Request, call_next):
         response = await call_next(request)
         if settings.enable_security_headers:
             response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -55,10 +68,10 @@ def create_app() -> FastAPI:
         return response
 
     @app.middleware("http")
-    async def request_logging(request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def request_logging(request: Request, call_next):
         start = time.perf_counter()
-        request_id = request.headers.get("x-request-id", "").strip() or str(uuid4())
-        correlation_id = request.headers.get("x-correlation-id", "").strip() or request_id
+        request_id = _sanitize_request_id(request.headers.get("x-request-id")) or str(uuid4())
+        correlation_id = _sanitize_request_id(request.headers.get("x-correlation-id")) or request_id
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         response.headers.setdefault("X-Request-Id", request_id)

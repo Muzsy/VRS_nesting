@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from api.auth import AuthenticatedUser, get_current_user
 from api.deps import get_supabase_client
+from api.http_errors import raise_supabase_http_error
+from api.request_models import StrictRequestModel
 from api.services.part_creation import PartCreationError, create_part_from_geometry_revision
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
@@ -14,10 +17,10 @@ from api.supabase_client import SupabaseClient, SupabaseHTTPError
 router = APIRouter(prefix="/projects/{project_id}/parts", tags=["parts"])
 
 
-class PartCreateRequest(BaseModel):
+class PartCreateRequest(StrictRequestModel):
     code: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=240)
-    geometry_revision_id: str = Field(min_length=1)
+    geometry_revision_id: UUID
     description: str | None = Field(default=None, max_length=2000)
     notes: str | None = Field(default=None, max_length=2000)
     source_label: str | None = Field(default=None, max_length=240)
@@ -79,7 +82,7 @@ def _as_create_response(result: dict[str, Any]) -> PartCreateResponse:
 
 @router.post("", response_model=PartCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_part(
-    project_id: str,
+    project_id: UUID,
     req: PartCreateRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
@@ -89,10 +92,10 @@ def create_part(
             supabase=supabase,
             access_token=user.access_token,
             owner_user_id=user.id,
-            project_id=project_id,
+            project_id=str(project_id),
             raw_code=req.code,
             raw_name=req.name,
-            geometry_revision_id=req.geometry_revision_id,
+            geometry_revision_id=str(req.geometry_revision_id),
             raw_description=req.description,
             raw_notes=req.notes,
             raw_source_label=req.source_label,
@@ -100,6 +103,6 @@ def create_part(
     except PartCreationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"part creation failed: {exc}") from exc
+        raise_supabase_http_error(operation="part creation", exc=exc)
 
     return _as_create_response(result)

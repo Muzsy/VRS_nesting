@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,6 +11,7 @@ from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
 
 bearer = HTTPBearer(auto_error=False)
+logger = logging.getLogger("vrs_api.auth")
 
 
 class AuthenticatedUser(BaseModel):
@@ -31,7 +34,8 @@ async def get_current_user(
     try:
         user_payload = supabase.get_auth_user(token)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"invalid token: {exc}") from exc
+        logger.warning("auth_invalid_token error=%s", exc)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token") from exc
 
     user_id = str(user_payload.get("id", "")).strip()
     if not user_id:

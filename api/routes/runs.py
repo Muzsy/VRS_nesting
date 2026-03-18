@@ -6,7 +6,8 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
@@ -15,7 +16,9 @@ from pydantic import BaseModel, Field, model_validator
 from api.auth import AuthenticatedUser, get_current_user
 from api.config import Settings
 from api.deps import get_settings, get_supabase_client
+from api.http_errors import raise_supabase_http_error
 from api.rate_limit import enforce_user_rate_limit
+from api.request_models import StrictRequestModel
 from api.routes.run_configs import RunConfigPartEntry
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
@@ -25,19 +28,19 @@ logger = logging.getLogger("vrs_api.runs")
 router = APIRouter(prefix="/projects/{project_id}/runs", tags=["runs"])
 
 
-class InlineRunConfig(BaseModel):
+class InlineRunConfig(StrictRequestModel):
     name: str | None = Field(default=None, max_length=120)
     schema_version: str = Field(default="dxf_v1", max_length=40)
     seed: int = Field(default=0, ge=0)
     time_limit_s: int = Field(default=60, ge=1, le=3600)
     spacing_mm: float = Field(default=2.0, ge=0.0, le=100.0)
     margin_mm: float = Field(default=5.0, ge=0.0, le=100.0)
-    stock_file_id: str = Field(min_length=1)
-    parts_config: list[RunConfigPartEntry] = Field(min_length=1)
+    stock_file_id: UUID
+    parts_config: list[RunConfigPartEntry] = Field(min_length=1, max_length=500)
 
 
-class RunCreateRequest(BaseModel):
-    run_config_id: str | None = None
+class RunCreateRequest(StrictRequestModel):
+    run_config_id: UUID | None = None
     config: InlineRunConfig | None = None
 
     @model_validator(mode="after")
@@ -111,8 +114,8 @@ class ArtifactUrlResponse(BaseModel):
     expires_at: str
 
 
-class BundleRequest(BaseModel):
-    artifact_ids: list[str] = Field(default_factory=list)
+class BundleRequest(StrictRequestModel):
+    artifact_ids: list[UUID] = Field(default_factory=list, max_length=100)
 
 
 class BundleResponse(BaseModel):
@@ -221,21 +224,23 @@ def _fetch_run_artifacts(
     *,
     supabase: SupabaseClient,
     access_token: str,
-    run_id: str,
+    run_id: UUID,
+    limit: int = 500,
 ) -> list[dict[str, Any]]:
     params = {
         "select": "id,run_id,artifact_type,filename,storage_key,size_bytes,sheet_index,created_at",
         "run_id": f"eq.{run_id}",
         "order": "created_at.asc",
+        "limit": str(limit),
     }
     return supabase.select_rows(table="run_artifacts", access_token=access_token, params=params)
 
 
-def _artifact_download_link_path(project_id: str, run_id: str, artifact_id: str) -> str:
+def _artifact_download_link_path(project_id: UUID, run_id: UUID, artifact_id: str) -> str:
     return f"/v1/projects/{project_id}/runs/{run_id}/artifacts/{artifact_id}/download"
 
 
-def _ensure_project_access(*, supabase: SupabaseClient, access_token: str, user_id: str, project_id: str) -> None:
+def _ensure_project_access(*, supabase: SupabaseClient, access_token: str, user_id: str, project_id: UUID) -> None:
     params = {
         "select": "id",
         "id": f"eq.{project_id}",
@@ -251,25 +256,30 @@ def _ensure_project_files_exist(
     *,
     supabase: SupabaseClient,
     access_token: str,
-    project_id: str,
-    file_ids: set[str],
+    project_id: UUID,
+    file_ids: set[UUID],
 ) -> None:
     if not file_ids:
         return
-    joined = ",".join(sorted(file_ids))
+    joined = ",".join(sorted(str(file_id) for file_id in file_ids))
     params = {
         "select": "id",
         "project_id": f"eq.{project_id}",
         "id": f"in.({joined})",
     }
     rows = supabase.select_rows(table="project_files", access_token=access_token, params=params)
-    found = {str(row.get("id", "")).strip() for row in rows}
+    found: set[UUID] = set()
+    for row in rows:
+        try:
+            found.add(UUID(str(row.get("id", "")).strip()))
+        except (TypeError, ValueError):
+            continue
     missing = sorted(file_ids - found)
     if missing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"unknown project files: {', '.join(missing)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"unknown project files: {', '.join(str(item) for item in missing)}")
 
 
-def _fetch_run_row(*, supabase: SupabaseClient, access_token: str, run_id: str, project_id: str) -> dict[str, Any]:
+def _fetch_run_row(*, supabase: SupabaseClient, access_token: str, run_id: UUID, project_id: UUID) -> dict[str, Any]:
     params = {
         "select": "id,project_id,run_config_id,triggered_by,status,queued_at,started_at,finished_at,duration_sec,solver_exit_code,error_message,placements_count,unplaced_count,sheet_count",
         "id": f"eq.{run_id}",
@@ -286,12 +296,12 @@ def _insert_run_and_queue(
     *,
     supabase: SupabaseClient,
     access_token: str,
-    project_id: str,
+    project_id: UUID,
     triggered_by: str,
     run_config_id: str | None,
 ) -> dict[str, Any]:
     run_payload: dict[str, Any] = {
-        "project_id": project_id,
+        "project_id": str(project_id),
         "triggered_by": triggered_by,
         "status": "queued",
         "queued_at": _now_iso(),
@@ -321,7 +331,7 @@ def _insert_run_and_queue(
                 exc,
                 rollback_exc,
             )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"queue insert failed: {exc}") from exc
+        raise_supabase_http_error(operation="queue insert", exc=exc)
 
     return run_row
 
@@ -330,12 +340,12 @@ def _insert_run_and_queue_with_quota(
     *,
     supabase: SupabaseClient,
     access_token: str,
-    project_id: str,
+    project_id: UUID,
     triggered_by: str,
     run_config_id: str | None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "p_project_id": project_id,
+        "p_project_id": str(project_id),
         "p_triggered_by": triggered_by,
     }
     if run_config_id is not None:
@@ -364,7 +374,7 @@ def _is_quota_exceeded_error(exc: SupabaseHTTPError) -> bool:
 def _resolve_run_config_id(
     *,
     req: RunCreateRequest,
-    project_id: str,
+    project_id: UUID,
     user: AuthenticatedUser,
     supabase: SupabaseClient,
 ) -> str | None:
@@ -384,7 +394,7 @@ def _resolve_run_config_id(
     if inline is None:
         return None
 
-    file_ids = {inline.stock_file_id}
+    file_ids: set[UUID] = {inline.stock_file_id}
     for entry in inline.parts_config:
         file_ids.add(entry.file_id)
     _ensure_project_files_exist(
@@ -395,7 +405,7 @@ def _resolve_run_config_id(
     )
 
     payload = {
-        "project_id": project_id,
+        "project_id": str(project_id),
         "created_by": user.id,
         "name": inline.name.strip() if inline.name else None,
         "schema_version": inline.schema_version.strip() or "dxf_v1",
@@ -403,8 +413,15 @@ def _resolve_run_config_id(
         "time_limit_s": int(inline.time_limit_s),
         "spacing_mm": float(inline.spacing_mm),
         "margin_mm": float(inline.margin_mm),
-        "stock_file_id": inline.stock_file_id,
-        "parts_config": [entry.model_dump() for entry in inline.parts_config],
+        "stock_file_id": str(inline.stock_file_id),
+        "parts_config": [
+            {
+                "file_id": str(entry.file_id),
+                "quantity": int(entry.quantity),
+                "allowed_rotations_deg": [int(v) for v in entry.allowed_rotations_deg],
+            }
+            for entry in inline.parts_config
+        ],
     }
     row = supabase.insert_row(table="run_configs", access_token=user.access_token, payload=payload)
     return str(row.get("id", "")).strip() or None
@@ -412,7 +429,7 @@ def _resolve_run_config_id(
 
 @router.post("", response_model=RunResponse)
 def create_run(
-    project_id: str,
+    project_id: UUID,
     req: RunCreateRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
@@ -454,16 +471,16 @@ def create_run(
                     "message": "Monthly run quota exceeded. Please retry next month or increase your plan quota.",
                 },
             ) from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"create run failed: {exc}") from exc
+        raise_supabase_http_error(operation="create run", exc=exc)
     return _to_run_response(run_row)
 
 
 @router.get("", response_model=RunListResponse)
 def list_runs(
-    project_id: str,
+    project_id: UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: Literal["queued", "running", "done", "failed", "cancelled"] | None = Query(default=None, alias="status"),
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> RunListResponse:
@@ -482,7 +499,7 @@ def list_runs(
     try:
         rows = supabase.select_rows(table="runs", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"list runs failed: {exc}") from exc
+        raise_supabase_http_error(operation="list runs", exc=exc)
 
     items = [_to_run_response(row) for row in rows]
     return RunListResponse(items=items, total=len(items), page=page, page_size=page_size)
@@ -490,8 +507,8 @@ def list_runs(
 
 @router.get("/{run_id}", response_model=RunResponse)
 def get_run(
-    project_id: str,
-    run_id: str,
+    project_id: UUID,
+    run_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> RunResponse:
@@ -500,14 +517,14 @@ def get_run(
     try:
         row = _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"get run failed: {exc}") from exc
+        raise_supabase_http_error(operation="get run", exc=exc)
     return _to_run_response(row)
 
 
 @router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def cancel_run(
-    project_id: str,
-    run_id: str,
+    project_id: UUID,
+    run_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> Response:
@@ -516,7 +533,7 @@ def cancel_run(
     try:
         row = _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"cancel run failed: {exc}") from exc
+        raise_supabase_http_error(operation="cancel run", exc=exc)
 
     run_status = str(row.get("status", "")).strip().lower()
     if run_status in _TERMINAL_STATES:
@@ -546,14 +563,14 @@ def cancel_run(
         if run_status == "queued":
             supabase.delete_rows(table="run_queue", access_token=user.access_token, filters={"run_id": f"eq.{run_id}"})
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"cancel run failed: {exc}") from exc
+        raise_supabase_http_error(operation="cancel run", exc=exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{run_id}/rerun", response_model=RunResponse)
 def rerun(
-    project_id: str,
-    run_id: str,
+    project_id: UUID,
+    run_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> RunResponse:
@@ -562,7 +579,7 @@ def rerun(
     try:
         source = _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"rerun failed: {exc}") from exc
+        raise_supabase_http_error(operation="rerun", exc=exc)
 
     source_cfg = source.get("run_config_id")
     if source_cfg is None:
@@ -577,14 +594,14 @@ def rerun(
             run_config_id=str(source_cfg),
         )
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"rerun failed: {exc}") from exc
+        raise_supabase_http_error(operation="rerun", exc=exc)
     return _to_run_response(new_row)
 
 
 @router.get("/{run_id}/log", response_model=RunLogResponse)
 def get_run_log(
-    project_id: str,
-    run_id: str,
+    project_id: UUID,
+    run_id: UUID,
     offset: int = Query(default=0, ge=0),
     lines: int = Query(default=100, ge=1, le=1000),
     user: AuthenticatedUser = Depends(get_current_user),
@@ -595,7 +612,7 @@ def get_run_log(
     try:
         run_row = _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"get run log failed: {exc}") from exc
+        raise_supabase_http_error(operation="get run log", exc=exc)
 
     run_status = str(run_row.get("status", "")).strip().lower()
 
@@ -610,7 +627,7 @@ def get_run_log(
     try:
         rows = supabase.select_rows(table="run_artifacts", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"get run log failed: {exc}") from exc
+        raise_supabase_http_error(operation="get run log", exc=exc)
 
     if not rows:
         return RunLogResponse(
@@ -641,7 +658,7 @@ def get_run_log(
         )
         blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"get run log failed: {exc}") from exc
+        raise_supabase_http_error(operation="get run log", exc=exc)
 
     all_lines = blob.decode("utf-8", errors="replace").splitlines()
     total = len(all_lines)
@@ -664,8 +681,9 @@ def get_run_log(
 
 @router.get("/{run_id}/artifacts", response_model=RunArtifactListResponse)
 def list_run_artifacts(
-    project_id: str,
-    run_id: str,
+    project_id: UUID,
+    run_id: UUID,
+    limit: int = Query(default=200, ge=1, le=500),
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> RunArtifactListResponse:
@@ -673,9 +691,9 @@ def list_run_artifacts(
     _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
 
     try:
-        rows = _fetch_run_artifacts(supabase=supabase, access_token=user.access_token, run_id=run_id)
+        rows = _fetch_run_artifacts(supabase=supabase, access_token=user.access_token, run_id=run_id, limit=limit)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"list artifacts failed: {exc}") from exc
+        raise_supabase_http_error(operation="list artifacts", exc=exc)
 
     items = [_to_artifact_response(row) for row in rows]
     return RunArtifactListResponse(items=items, total=len(items))
@@ -685,8 +703,8 @@ def _resolve_artifact_for_run(
     *,
     supabase: SupabaseClient,
     access_token: str,
-    run_id: str,
-    artifact_id: str,
+    run_id: UUID,
+    artifact_id: UUID,
 ) -> dict[str, Any]:
     params = {
         "select": "id,run_id,artifact_type,filename,storage_key,size_bytes,sheet_index,created_at",
@@ -702,9 +720,9 @@ def _resolve_artifact_for_run(
 
 @router.get("/{run_id}/artifacts/{artifact_id}/url", response_model=ArtifactUrlResponse)
 def get_artifact_url(
-    project_id: str,
-    run_id: str,
-    artifact_id: str,
+    project_id: UUID,
+    run_id: UUID,
+    artifact_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
     settings: Settings = Depends(get_settings),
@@ -727,7 +745,7 @@ def get_artifact_url(
             expires_in=settings.signed_url_ttl_s,
         )
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"artifact url failed: {exc}") from exc
+        raise_supabase_http_error(operation="artifact url", exc=exc)
 
     return ArtifactUrlResponse(
         artifact_id=str(artifact.get("id", "")),
@@ -739,9 +757,9 @@ def get_artifact_url(
 
 @router.get("/{run_id}/artifacts/{artifact_id}/download")
 def download_artifact_proxy(
-    project_id: str,
-    run_id: str,
-    artifact_id: str,
+    project_id: UUID,
+    run_id: UUID,
+    artifact_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
     settings: Settings = Depends(get_settings),
@@ -866,8 +884,8 @@ def _parse_solver_output(
 
 @router.get("/{run_id}/viewer-data", response_model=ViewerDataResponse)
 def get_viewer_data(
-    project_id: str,
-    run_id: str,
+    project_id: UUID,
+    run_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
     settings: Settings = Depends(get_settings),
@@ -876,9 +894,9 @@ def get_viewer_data(
     run_row = _fetch_run_row(supabase=supabase, access_token=user.access_token, run_id=run_id, project_id=project_id)
 
     try:
-        artifact_rows = _fetch_run_artifacts(supabase=supabase, access_token=user.access_token, run_id=run_id)
+        artifact_rows = _fetch_run_artifacts(supabase=supabase, access_token=user.access_token, run_id=run_id, limit=500)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"viewer-data failed: {exc}") from exc
+        raise_supabase_http_error(operation="viewer-data", exc=exc)
 
     by_sheet: dict[int, dict[str, Any]] = {}
     solver_payload: dict[str, Any] = {}
@@ -965,14 +983,14 @@ def get_viewer_data(
                 dxf_signed = get_artifact_url(
                     project_id=project_id,
                     run_id=run_id,
-                    artifact_id=str(dxf_artifact_id),
+                    artifact_id=UUID(str(dxf_artifact_id)),
                     user=user,
                     supabase=supabase,
                     settings=settings,
                 )
                 dxf_url = dxf_signed.download_url
                 dxf_url_expires_at = dxf_signed.expires_at
-            except HTTPException:
+            except (HTTPException, ValueError):
                 dxf_url = None
                 dxf_url_expires_at = None
 
@@ -983,14 +1001,14 @@ def get_viewer_data(
                 svg_signed = get_artifact_url(
                     project_id=project_id,
                     run_id=run_id,
-                    artifact_id=str(svg_artifact_id),
+                    artifact_id=UUID(str(svg_artifact_id)),
                     user=user,
                     supabase=supabase,
                     settings=settings,
                 )
                 svg_url = svg_signed.download_url
                 svg_url_expires_at = svg_signed.expires_at
-            except HTTPException:
+            except (HTTPException, ValueError):
                 svg_url = None
                 svg_url_expires_at = None
 
@@ -1028,7 +1046,7 @@ def get_viewer_data(
     sheet_count = max(reported_sheet_count, computed_sheet_count)
 
     return ViewerDataResponse(
-        run_id=run_id,
+        run_id=str(run_id),
         status=str(run_row.get("status", "")),
         sheet_count=sheet_count,
         sheets=sheets,
@@ -1039,8 +1057,8 @@ def get_viewer_data(
 
 @router.post("/{run_id}/artifacts/bundle", response_model=BundleResponse)
 def create_artifacts_bundle(
-    project_id: str,
-    run_id: str,
+    project_id: UUID,
+    run_id: UUID,
     req: BundleRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
@@ -1061,14 +1079,14 @@ def create_artifacts_bundle(
     )
 
     try:
-        artifact_rows = _fetch_run_artifacts(supabase=supabase, access_token=user.access_token, run_id=run_id)
+        artifact_rows = _fetch_run_artifacts(supabase=supabase, access_token=user.access_token, run_id=run_id, limit=500)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"bundle build failed: {exc}") from exc
+        raise_supabase_http_error(operation="bundle build", exc=exc)
 
     if not artifact_rows:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no artifacts available for bundle")
 
-    selected_ids = {item.strip() for item in req.artifact_ids if item.strip()}
+    selected_ids = {str(item) for item in req.artifact_ids}
     selected_rows = artifact_rows if not selected_ids else [row for row in artifact_rows if str(row.get("id", "")) in selected_ids]
     if not selected_rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="selected artifacts not found")
@@ -1078,7 +1096,7 @@ def create_artifacts_bundle(
 
     bundle_size = 0
     try:
-        with tempfile.TemporaryDirectory(prefix=f"vrs_bundle_{run_id[:8]}_") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix=f"vrs_bundle_{str(run_id)[:8]}_") as temp_dir:
             temp_root = Path(temp_dir)
             zip_path = temp_root / bundle_filename
 
@@ -1157,7 +1175,7 @@ def create_artifacts_bundle(
             expires_in=settings.signed_url_ttl_s,
         )
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"bundle build failed: {exc}") from exc
+        raise_supabase_http_error(operation="bundle build", exc=exc)
 
     return BundleResponse(
         artifact_id=str(inserted.get("id", "")),

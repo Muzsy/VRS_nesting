@@ -1,24 +1,27 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from api.auth import AuthenticatedUser, get_current_user
 from api.deps import get_supabase_client
+from api.http_errors import raise_supabase_http_error
+from api.request_models import StrictRequestModel
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-class ProjectCreateRequest(BaseModel):
+class ProjectCreateRequest(StrictRequestModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=2000)
 
 
-class ProjectUpdateRequest(BaseModel):
+class ProjectUpdateRequest(StrictRequestModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=2000)
 
@@ -66,7 +69,7 @@ def create_project(
     try:
         row = supabase.insert_row(table="app.projects", access_token=user.access_token, payload=payload)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"create project failed: {exc}") from exc
+        raise_supabase_http_error(operation="create project", exc=exc)
     return _to_project_response(row)
 
 
@@ -91,7 +94,7 @@ def list_projects(
     try:
         rows = supabase.select_rows(table="app.projects", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"list projects failed: {exc}") from exc
+        raise_supabase_http_error(operation="list projects", exc=exc)
 
     items = [_to_project_response(row) for row in rows]
     return ProjectListResponse(items=items, total=len(items), page=page, page_size=page_size)
@@ -99,7 +102,7 @@ def list_projects(
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 def get_project(
-    project_id: str,
+    project_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectResponse:
@@ -112,7 +115,7 @@ def get_project(
     try:
         rows = supabase.select_rows(table="app.projects", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"get project failed: {exc}") from exc
+        raise_supabase_http_error(operation="get project", exc=exc)
 
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
@@ -121,7 +124,7 @@ def get_project(
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
 def patch_project(
-    project_id: str,
+    project_id: UUID,
     req: ProjectUpdateRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
@@ -143,7 +146,7 @@ def patch_project(
             filters={"id": f"eq.{project_id}", "owner_user_id": f"eq.{user.id}"},
         )
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"patch project failed: {exc}") from exc
+        raise_supabase_http_error(operation="patch project", exc=exc)
 
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
@@ -152,7 +155,7 @@ def patch_project(
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def archive_project(
-    project_id: str,
+    project_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> Response:
@@ -165,7 +168,7 @@ def archive_project(
             filters={"id": f"eq.{project_id}", "owner_user_id": f"eq.{user.id}"},
         )
     except SupabaseHTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"archive project failed: {exc}") from exc
+        raise_supabase_http_error(operation="archive project", exc=exc)
 
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")

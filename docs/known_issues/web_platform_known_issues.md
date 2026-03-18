@@ -42,3 +42,40 @@ Megjegyzes:
   functionalis szabalyok az iranyadok.
 
 ---
+
+### KI-002 FastAPI API input validation es error hardening hianyossagok
+**Allapot:** RESOLVED (`api_input_validation_hardening_followup`, 2026-03-18)  
+**Forras:** `tmp/audit_report/fastAPI_API_layer_input_validation_audit.md`  
+**Terulet:** `api/routes/*`, `api/auth.py`, `api/main.py`
+
+Lezart pontok:
+- Supabase hibareszletek kliens fele szivargasanak megszuntetese (sanitized `detail`, szerveroldali logolas).
+- Request modellek szigoritasa (`extra="forbid"` alapmodell).
+- UUID alapu path/body input validacio bevezetese.
+- Hianyzo boundok (sheet meretek, quantity, artifact lista, parts_config lista).
+- Hianyzo pagination/limit potlasa (`project files`, `run artifacts`).
+- `status` query filter allowlistre szukitese.
+- `x-request-id` / `x-correlation-id` header sanitization.
+
+Megjegyzes:
+- A kapcsolodo OpenAPI dokumentacio frissitve: `docs/api_openapi_schema.json`.
+
+---
+
+## P3 - Alacsony prioritas
+
+### KI-003 API tabla prefix mix (`app.*` vs compatibility `public.*` view-k)
+**Allapot:** OPEN  
+**Forras:** `tmp/audit_report/fastAPI_API_layer_input_validation_audit.md` (ISSUE-12)  
+**Terulet:** `api/routes/run_configs.py`, `api/routes/runs.py`, `supabase/migrations/20260318103000_h1_e3_t3_security_and_schema_bridge_fixes.sql`
+
+A route-ok egy resze kanonikus `app.*` tablakat hasznal, mas reszek a bridge celu
+`public.*` kompatibilitasi nevteret erik el. Ez jelenleg funkcionalisan mukodik,
+de dokumentacios es karbantarthatosagi adossag.
+
+Tervezett allapot:
+- Döntes egyertelmusitese: teljes `app.*` direkt hasznalat vagy tartos compatibility
+  reteg explicit szabalyokkal.
+- Route szintu konvencio dokumentalasa es kovetkezetesitese.
+
+---
