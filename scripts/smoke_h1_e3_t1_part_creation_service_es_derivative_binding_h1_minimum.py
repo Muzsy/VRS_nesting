@@ -9,15 +9,17 @@ import sys
 from typing import Any
 from uuid import uuid4
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from api.auth import AuthenticatedUser, get_current_user
 from api.config import Settings
 from api.deps import get_settings, get_supabase_client
-from api.main import app
+from api.routes.parts import router as parts_router
 from api.supabase_client import SupabaseHTTPError
 
 
@@ -171,6 +173,56 @@ class FakeSupabaseClient:
     def delete_rows(self, *, table: str, access_token: str, filters: dict[str, str]) -> None:
         _ = (table, access_token, filters)
 
+    def execute_rpc(
+        self,
+        *,
+        function_name: str,
+        access_token: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        _ = access_token
+        if function_name != "create_part_revision_atomic":
+            raise SupabaseHTTPError(f"unsupported rpc function: {function_name}")
+
+        args = payload or {}
+        part_definition_id = str(args.get("p_part_definition_id") or "").strip()
+        if not part_definition_id:
+            raise SupabaseHTTPError("missing p_part_definition_id")
+        part_definition = self.part_definitions.get(part_definition_id)
+        if part_definition is None:
+            raise SupabaseHTTPError("part_definition not found")
+
+        revision_numbers = [
+            int(row.get("revision_no") or 0)
+            for row in self.part_revisions.values()
+            if str(row.get("part_definition_id") or "").strip() == part_definition_id
+        ]
+        next_revision_no = (max(revision_numbers) if revision_numbers else 0) + 1
+
+        now = datetime.now(timezone.utc).isoformat()
+        part_revision_id = str(uuid4())
+        part_revision = {
+            "id": part_revision_id,
+            "part_definition_id": part_definition_id,
+            "revision_no": next_revision_no,
+            "lifecycle": "draft",
+            "source_label": args.get("p_source_label"),
+            "source_checksum_sha256": args.get("p_source_checksum_sha256"),
+            "notes": args.get("p_notes"),
+            "source_geometry_revision_id": str(args.get("p_source_geometry_revision_id") or "").strip() or None,
+            "selected_nesting_derivative_id": str(args.get("p_selected_nesting_derivative_id") or "").strip() or None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.part_revisions[part_revision_id] = part_revision
+
+        part_definition["current_revision_id"] = part_revision_id
+        part_definition["updated_at"] = now
+
+        return {
+            "part_definition": dict(part_definition),
+            "part_revision": dict(part_revision),
+        }
 
 
 def _settings() -> Settings:
@@ -191,6 +243,18 @@ def _settings() -> Settings:
         allowed_origins=("http://localhost:5173",),
     )
 
+
+def _build_test_app(fake: FakeSupabaseClient) -> FastAPI:
+    app = FastAPI()
+    app.include_router(parts_router, prefix="/v1")
+    app.dependency_overrides[get_supabase_client] = lambda: fake
+    app.dependency_overrides[get_settings] = _settings
+    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        id="00000000-0000-0000-0000-000000000001",
+        email="u1@example.com",
+        access_token="token-u1",
+    )
+    return app
 
 
 def _add_geometry_revision(
@@ -219,7 +283,6 @@ def _add_geometry_revision(
     return str(row["id"])
 
 
-
 def _add_derivative(fake: FakeSupabaseClient, *, geometry_revision_id: str, derivative_kind: str) -> str:
     row = fake.insert_row(
         table="app.geometry_derivatives",
@@ -236,15 +299,13 @@ def _add_derivative(fake: FakeSupabaseClient, *, geometry_revision_id: str, deri
     return str(row["id"])
 
 
-
 def main() -> int:
     fake = FakeSupabaseClient()
-    app.dependency_overrides[get_supabase_client] = lambda: fake
-    app.dependency_overrides[get_settings] = _settings
+    test_app = _build_test_app(fake)
 
     try:
-        client = TestClient(app)
-        headers = {"Authorization": "Bearer token-u1"}
+        client = TestClient(test_app)
+        headers: dict[str, str] = {}
         user_id = "00000000-0000-0000-0000-000000000001"
 
         project_id = str(uuid4())
@@ -260,12 +321,7 @@ def main() -> int:
             "lifecycle": "draft",
         }
 
-        ok_geometry_1 = _add_geometry_revision(
-            fake,
-            project_id=project_id,
-            status="validated",
-            canonical_hash="okhash1",
-        )
+        ok_geometry_1 = _add_geometry_revision(fake, project_id=project_id, status="validated", canonical_hash="okhash1")
         ok_derivative_1 = _add_derivative(fake, geometry_revision_id=ok_geometry_1, derivative_kind="nesting_canonical")
 
         create_new_resp = client.post(
@@ -305,12 +361,7 @@ def main() -> int:
         if str(revision_row.get("source_checksum_sha256")) != "okhash1":
             raise RuntimeError("source_checksum_sha256 should come from geometry canonical hash")
 
-        ok_geometry_2 = _add_geometry_revision(
-            fake,
-            project_id=project_id,
-            status="validated",
-            canonical_hash="okhash2",
-        )
+        ok_geometry_2 = _add_geometry_revision(fake, project_id=project_id, status="validated", canonical_hash="okhash2")
         ok_derivative_2 = _add_derivative(fake, geometry_revision_id=ok_geometry_2, derivative_kind="nesting_canonical")
 
         create_existing_resp = client.post(
@@ -436,7 +487,7 @@ def main() -> int:
         print("[PASS] H1-E3-T1 part creation service es derivative binding smoke passed")
         return 0
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
 
 
 if __name__ == "__main__":
