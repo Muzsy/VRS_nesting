@@ -26,7 +26,7 @@ steps:
       Ha a file/geometry pipeline tablák meg nincsenek letéve, ne eroszakolj be
       hianyzo FK-ket; a revision tabla most minimalis, de stabil domain bazis legyen.
     outputs:
-      - "supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql"
+      - "supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql"
 
   - name: "Minimal docs szinkron a sheet-domain iranyhoz"
     description: >

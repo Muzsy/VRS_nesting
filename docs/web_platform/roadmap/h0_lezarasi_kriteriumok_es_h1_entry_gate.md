@@ -46,7 +46,7 @@ Ez a dokumentum nem feature-specifikáció, hanem döntési kapu.
 | H0-E2-T2 | PASS | `supabase/migrations/20260310223000_h0_e2_t2_profiles_projects_project_settings.sql`; `codex/reports/web_platform/h0_e2_t2_core_projekt_es_profile_tablak.md` |
 | H0-E2-T3 | PASS | `supabase/migrations/20260310230000_h0_e2_t3_technology_domain_alapok.sql`; `codex/reports/web_platform/h0_e2_t3_technology_domain_alapok.md` |
 | H0-E2-T4 | PASS | `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql`; `codex/reports/web_platform/h0_e2_t4_part_definition_revision_es_demand_alapok.md` |
-| H0-E2-T5 | PASS | `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`; `codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md` |
+| H0-E2-T5 | PASS | `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`; `codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md` |
 | H0-E3-T1 | PASS | `supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`; `codex/reports/web_platform/h0_e3_t1_file_object_modell.md` |
 | H0-E3-T2 | PASS | `supabase/migrations/20260312003000_h0_e3_t2_geometry_revision_modell.sql`; `codex/reports/web_platform/h0_e3_t2_geometry_revision_modell.md` |
 | H0-E3-T3 | PASS | `supabase/migrations/20260312005000_h0_e3_t3_validation_es_review_tablak.sql`; `codex/reports/web_platform/h0_e3_t3_validation_es_review_tablak.md` |

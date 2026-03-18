@@ -10,7 +10,7 @@ Olvasd el:
 - `docs/web_platform/roadmap/dxf_nesting_platform_h1_reszletes.md`
 - `docs/web_platform/roadmap/dxf_nesting_platform_implementacios_backlog_task_tree.md`
 - `docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md`
-- `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
+- `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
 - `supabase/migrations/20260314113000_h0_e6_t2_rls_policy_alapok.sql`
 - `api/services/part_creation.py`
 - `api/routes/parts.py`

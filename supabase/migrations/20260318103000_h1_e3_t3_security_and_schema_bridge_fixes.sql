@@ -5,11 +5,13 @@
 -- 1) app schema privileges (RLS needs base privileges to be effective)
 -- -----------------------------------------------------------------------------
 
-grant usage on schema app to authenticated, service_role;
+grant usage on schema app to authenticated, anon, service_role;
 
 grant select, insert, update, delete on all tables in schema app to authenticated;
 grant usage, select on all sequences in schema app to authenticated;
 grant execute on all functions in schema app to authenticated;
+
+grant select on all tables in schema app to anon;
 
 grant all privileges on all tables in schema app to service_role;
 grant all privileges on all sequences in schema app to service_role;
@@ -21,6 +23,9 @@ alter default privileges in schema app
   grant usage, select on sequences to authenticated;
 alter default privileges in schema app
   grant execute on functions to authenticated;
+
+alter default privileges in schema app
+  grant select on tables to anon;
 
 alter default privileges in schema app
   grant all privileges on tables to service_role;
@@ -678,3 +683,880 @@ $$;
 revoke all on function public.enqueue_run_with_quota(uuid, uuid, uuid) from public;
 grant execute on function public.enqueue_run_with_quota(uuid, uuid, uuid) to authenticated;
 grant execute on function public.enqueue_run_with_quota(uuid, uuid, uuid) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 7) Explicit bridge for legacy public.* API table names -> app.* source-of-truth
+-- -----------------------------------------------------------------------------
+
+-- Ensure app run status can represent legacy API lifecycle labels.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'app'
+      and t.typname = 'run_request_status'
+      and e.enumlabel = 'running'
+  ) then
+    alter type app.run_request_status add value 'running';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'app'
+      and t.typname = 'run_request_status'
+      and e.enumlabel = 'done'
+  ) then
+    alter type app.run_request_status add value 'done';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'app'
+      and t.typname = 'run_request_status'
+      and e.enumlabel = 'failed'
+  ) then
+    alter type app.run_request_status add value 'failed';
+  end if;
+end;
+$$;
+
+create table if not exists app.run_configs (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references app.projects(id) on delete cascade,
+  created_by uuid not null references app.profiles(id) on delete restrict,
+  name text,
+  schema_version text not null default 'dxf_v1',
+  seed integer not null default 0,
+  time_limit_s integer not null default 60,
+  spacing_mm double precision not null default 2.0,
+  margin_mm double precision not null default 5.0,
+  stock_file_id uuid not null references app.file_objects(id) on delete restrict,
+  parts_config jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  check (schema_version <> ''),
+  check (time_limit_s > 0),
+  check (spacing_mm >= 0),
+  check (margin_mm >= 0)
+);
+
+create index if not exists idx_run_configs_project_id
+  on app.run_configs(project_id, created_at desc);
+
+alter table app.run_configs enable row level security;
+
+drop policy if exists h1_e3_t3_run_configs_select_owner on app.run_configs;
+create policy h1_e3_t3_run_configs_select_owner
+on app.run_configs
+for select
+to authenticated
+using (app.is_project_owner(project_id));
+
+drop policy if exists h1_e3_t3_run_configs_insert_owner on app.run_configs;
+create policy h1_e3_t3_run_configs_insert_owner
+on app.run_configs
+for insert
+to authenticated
+with check (app.is_project_owner(project_id) and created_by = app.current_user_id());
+
+drop policy if exists h1_e3_t3_run_configs_update_owner on app.run_configs;
+create policy h1_e3_t3_run_configs_update_owner
+on app.run_configs
+for update
+to authenticated
+using (app.is_project_owner(project_id))
+with check (app.is_project_owner(project_id));
+
+drop policy if exists h1_e3_t3_run_configs_delete_owner on app.run_configs;
+create policy h1_e3_t3_run_configs_delete_owner
+on app.run_configs
+for delete
+to authenticated
+using (app.is_project_owner(project_id));
+
+create or replace function app.legacy_artifact_type_to_kind(legacy_artifact_type text)
+returns app.artifact_kind
+language sql
+immutable
+set search_path = app
+as $$
+  select case coalesce(legacy_artifact_type, '')
+    when 'sheet_dxf' then 'sheet_dxf'::app.artifact_kind
+    when 'sheet_svg' then 'sheet_svg'::app.artifact_kind
+    when 'bundle_zip' then 'bundle_zip'::app.artifact_kind
+    when 'machine_program' then 'machine_program'::app.artifact_kind
+    when 'report_json' then 'report_json'::app.artifact_kind
+    when 'run_log' then 'log'::app.artifact_kind
+    when 'solver_output' then 'solver_output'::app.artifact_kind
+    when 'solver_input' then 'solver_output'::app.artifact_kind
+    else 'log'::app.artifact_kind
+  end;
+$$;
+
+create or replace function app.artifact_kind_to_legacy_type(
+  kind app.artifact_kind,
+  metadata jsonb default '{}'::jsonb
+)
+returns text
+language sql
+stable
+set search_path = app
+as $$
+  select coalesce(
+    metadata->>'legacy_artifact_type',
+    case kind
+      when 'log' then 'run_log'
+      else kind::text
+    end
+  );
+$$;
+
+-- Create compatibility views only when legacy public table does not already exist.
+do $$
+begin
+  if to_regclass('public.projects') is null then
+    execute $ddl$
+      create view public.projects as
+      select
+        p.id,
+        p.owner_user_id as owner_id,
+        p.name,
+        p.description,
+        p.created_at,
+        p.updated_at,
+        null::timestamptz as archived_at
+      from app.projects p
+    $ddl$;
+  elsif exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'projects' and c.relkind = 'v'
+  ) then
+    execute $ddl$
+      create or replace view public.projects as
+      select
+        p.id,
+        p.owner_user_id as owner_id,
+        p.name,
+        p.description,
+        p.created_at,
+        p.updated_at,
+        null::timestamptz as archived_at
+      from app.projects p
+    $ddl$;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if to_regclass('public.project_files') is null then
+    execute $ddl$
+      create view public.project_files as
+      select
+        fo.id,
+        fo.project_id,
+        fo.uploaded_by,
+        fo.file_kind::text as file_type,
+        fo.file_name as original_filename,
+        fo.storage_path as storage_key,
+        fo.byte_size as size_bytes,
+        fo.sha256 as content_hash_sha256,
+        null::text as validation_status,
+        null::text as validation_error,
+        fo.created_at as uploaded_at
+      from app.file_objects fo
+    $ddl$;
+  elsif exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'project_files' and c.relkind = 'v'
+  ) then
+    execute $ddl$
+      create or replace view public.project_files as
+      select
+        fo.id,
+        fo.project_id,
+        fo.uploaded_by,
+        fo.file_kind::text as file_type,
+        fo.file_name as original_filename,
+        fo.storage_path as storage_key,
+        fo.byte_size as size_bytes,
+        fo.sha256 as content_hash_sha256,
+        null::text as validation_status,
+        null::text as validation_error,
+        fo.created_at as uploaded_at
+      from app.file_objects fo
+    $ddl$;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if to_regclass('public.run_configs') is null then
+    execute $ddl$
+      create view public.run_configs as
+      select
+        rc.id,
+        rc.project_id,
+        rc.created_by,
+        rc.name,
+        rc.schema_version,
+        rc.seed,
+        rc.time_limit_s,
+        rc.spacing_mm,
+        rc.margin_mm,
+        rc.stock_file_id,
+        rc.parts_config,
+        rc.created_at
+      from app.run_configs rc
+    $ddl$;
+  elsif exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_configs' and c.relkind = 'v'
+  ) then
+    execute $ddl$
+      create or replace view public.run_configs as
+      select
+        rc.id,
+        rc.project_id,
+        rc.created_by,
+        rc.name,
+        rc.schema_version,
+        rc.seed,
+        rc.time_limit_s,
+        rc.spacing_mm,
+        rc.margin_mm,
+        rc.stock_file_id,
+        rc.parts_config,
+        rc.created_at
+      from app.run_configs rc
+    $ddl$;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if to_regclass('public.runs') is null then
+    execute $ddl$
+      create view public.runs as
+      select
+        r.id,
+        r.project_id,
+        r.run_config_id,
+        r.requested_by as triggered_by,
+        r.status::text as status,
+        r.queued_at,
+        r.started_at,
+        r.finished_at,
+        r.duration_sec,
+        r.solver_exit_code,
+        r.error_message,
+        r.placements_count,
+        r.unplaced_count,
+        r.sheet_count
+      from app.nesting_runs r
+    $ddl$;
+  elsif exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'runs' and c.relkind = 'v'
+  ) then
+    execute $ddl$
+      create or replace view public.runs as
+      select
+        r.id,
+        r.project_id,
+        r.run_config_id,
+        r.requested_by as triggered_by,
+        r.status::text as status,
+        r.queued_at,
+        r.started_at,
+        r.finished_at,
+        r.duration_sec,
+        r.solver_exit_code,
+        r.error_message,
+        r.placements_count,
+        r.unplaced_count,
+        r.sheet_count
+      from app.nesting_runs r
+    $ddl$;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if to_regclass('public.run_queue') is null then
+    execute $ddl$
+      create view public.run_queue as
+      select
+        rq.run_id,
+        rq.priority,
+        rq.attempt_no as attempts,
+        3::integer as max_attempts,
+        rq.leased_by as locked_by,
+        rq.leased_at as locked_at,
+        rq.available_at as visible_after,
+        rq.created_at
+      from app.run_queue rq
+    $ddl$;
+  elsif exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_queue' and c.relkind = 'v'
+  ) then
+    execute $ddl$
+      create or replace view public.run_queue as
+      select
+        rq.run_id,
+        rq.priority,
+        rq.attempt_no as attempts,
+        3::integer as max_attempts,
+        rq.leased_by as locked_by,
+        rq.leased_at as locked_at,
+        rq.available_at as visible_after,
+        rq.created_at
+      from app.run_queue rq
+    $ddl$;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if to_regclass('public.run_artifacts') is null then
+    execute $ddl$
+      create view public.run_artifacts as
+      select
+        ra.id,
+        ra.run_id,
+        app.artifact_kind_to_legacy_type(ra.artifact_kind, ra.metadata_jsonb) as artifact_type,
+        coalesce(ra.metadata_jsonb->>'filename', regexp_replace(ra.storage_path, '^.*/', '')) as filename,
+        ra.storage_path as storage_key,
+        nullif(ra.metadata_jsonb->>'size_bytes', '')::bigint as size_bytes,
+        nullif(ra.metadata_jsonb->>'sheet_index', '')::integer as sheet_index,
+        ra.created_at
+      from app.run_artifacts ra
+    $ddl$;
+  elsif exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_artifacts' and c.relkind = 'v'
+  ) then
+    execute $ddl$
+      create or replace view public.run_artifacts as
+      select
+        ra.id,
+        ra.run_id,
+        app.artifact_kind_to_legacy_type(ra.artifact_kind, ra.metadata_jsonb) as artifact_type,
+        coalesce(ra.metadata_jsonb->>'filename', regexp_replace(ra.storage_path, '^.*/', '')) as filename,
+        ra.storage_path as storage_key,
+        nullif(ra.metadata_jsonb->>'size_bytes', '')::bigint as size_bytes,
+        nullif(ra.metadata_jsonb->>'sheet_index', '')::integer as sheet_index,
+        ra.created_at
+      from app.run_artifacts ra
+    $ddl$;
+  end if;
+end;
+$$;
+
+create or replace function public.run_configs_view_iud()
+returns trigger
+language plpgsql
+security definer
+set search_path = app
+as $$
+declare
+  v_row app.run_configs%rowtype;
+begin
+  if tg_op = 'INSERT' then
+    if not app.is_project_owner(new.project_id) then
+      raise exception 'project_forbidden' using errcode = '42501';
+    end if;
+
+    insert into app.run_configs (
+      project_id,
+      created_by,
+      name,
+      schema_version,
+      seed,
+      time_limit_s,
+      spacing_mm,
+      margin_mm,
+      stock_file_id,
+      parts_config
+    ) values (
+      new.project_id,
+      coalesce(new.created_by, app.current_user_id()),
+      new.name,
+      coalesce(new.schema_version, 'dxf_v1'),
+      coalesce(new.seed, 0),
+      coalesce(new.time_limit_s, 60),
+      coalesce(new.spacing_mm, 2.0),
+      coalesce(new.margin_mm, 5.0),
+      new.stock_file_id,
+      coalesce(new.parts_config, '[]'::jsonb)
+    ) returning * into v_row;
+
+    new.id := v_row.id;
+    new.created_by := v_row.created_by;
+    new.created_at := v_row.created_at;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    update app.run_configs
+       set name = new.name,
+           schema_version = coalesce(new.schema_version, app.run_configs.schema_version),
+           seed = coalesce(new.seed, app.run_configs.seed),
+           time_limit_s = coalesce(new.time_limit_s, app.run_configs.time_limit_s),
+           spacing_mm = coalesce(new.spacing_mm, app.run_configs.spacing_mm),
+           margin_mm = coalesce(new.margin_mm, app.run_configs.margin_mm),
+           stock_file_id = coalesce(new.stock_file_id, app.run_configs.stock_file_id),
+           parts_config = coalesce(new.parts_config, app.run_configs.parts_config)
+     where id = old.id
+     returning * into v_row;
+
+    if v_row.id is null then
+      raise exception 'run_config_not_found' using errcode = 'P0001';
+    end if;
+
+    new.id := v_row.id;
+    new.project_id := v_row.project_id;
+    new.created_by := v_row.created_by;
+    new.created_at := v_row.created_at;
+    return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    delete from app.run_configs where id = old.id;
+    return old;
+  end if;
+
+  return null;
+end;
+$$;
+
+create or replace function public.runs_view_iud()
+returns trigger
+language plpgsql
+security definer
+set search_path = app
+as $$
+declare
+  v_row app.nesting_runs%rowtype;
+begin
+  if tg_op = 'INSERT' then
+    if not app.is_project_owner(new.project_id) then
+      raise exception 'project_forbidden' using errcode = '42501';
+    end if;
+
+    insert into app.nesting_runs (
+      project_id,
+      requested_by,
+      status,
+      run_purpose,
+      request_payload_jsonb,
+      run_config_id,
+      queued_at,
+      started_at,
+      finished_at,
+      duration_sec,
+      solver_exit_code,
+      error_message,
+      placements_count,
+      unplaced_count,
+      sheet_count
+    ) values (
+      new.project_id,
+      coalesce(new.triggered_by, app.current_user_id()),
+      coalesce(new.status, 'queued')::app.run_request_status,
+      'nesting',
+      '{}'::jsonb,
+      new.run_config_id,
+      coalesce(new.queued_at, now()),
+      new.started_at,
+      new.finished_at,
+      new.duration_sec,
+      new.solver_exit_code,
+      new.error_message,
+      new.placements_count,
+      new.unplaced_count,
+      new.sheet_count
+    ) returning * into v_row;
+
+    new.id := v_row.id;
+    new.triggered_by := v_row.requested_by;
+    new.status := v_row.status::text;
+    new.queued_at := v_row.queued_at;
+    new.started_at := v_row.started_at;
+    new.finished_at := v_row.finished_at;
+    new.duration_sec := v_row.duration_sec;
+    new.solver_exit_code := v_row.solver_exit_code;
+    new.error_message := v_row.error_message;
+    new.placements_count := v_row.placements_count;
+    new.unplaced_count := v_row.unplaced_count;
+    new.sheet_count := v_row.sheet_count;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    update app.nesting_runs
+       set run_config_id = coalesce(new.run_config_id, app.nesting_runs.run_config_id),
+           status = coalesce(new.status, app.nesting_runs.status::text)::app.run_request_status,
+           queued_at = coalesce(new.queued_at, app.nesting_runs.queued_at),
+           started_at = coalesce(new.started_at, app.nesting_runs.started_at),
+           finished_at = coalesce(new.finished_at, app.nesting_runs.finished_at),
+           duration_sec = coalesce(new.duration_sec, app.nesting_runs.duration_sec),
+           solver_exit_code = coalesce(new.solver_exit_code, app.nesting_runs.solver_exit_code),
+           error_message = coalesce(new.error_message, app.nesting_runs.error_message),
+           placements_count = coalesce(new.placements_count, app.nesting_runs.placements_count),
+           unplaced_count = coalesce(new.unplaced_count, app.nesting_runs.unplaced_count),
+           sheet_count = coalesce(new.sheet_count, app.nesting_runs.sheet_count),
+           updated_at = now()
+     where id = old.id
+     returning * into v_row;
+
+    if v_row.id is null then
+      raise exception 'run_not_found' using errcode = 'P0001';
+    end if;
+
+    new.id := v_row.id;
+    new.project_id := v_row.project_id;
+    new.triggered_by := v_row.requested_by;
+    new.status := v_row.status::text;
+    new.queued_at := v_row.queued_at;
+    new.started_at := v_row.started_at;
+    new.finished_at := v_row.finished_at;
+    new.duration_sec := v_row.duration_sec;
+    new.solver_exit_code := v_row.solver_exit_code;
+    new.error_message := v_row.error_message;
+    new.placements_count := v_row.placements_count;
+    new.unplaced_count := v_row.unplaced_count;
+    new.sheet_count := v_row.sheet_count;
+    return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    delete from app.nesting_runs where id = old.id;
+    return old;
+  end if;
+
+  return null;
+end;
+$$;
+
+create or replace function public.run_queue_view_iud()
+returns trigger
+language plpgsql
+security definer
+set search_path = app
+as $$
+declare
+  v_snapshot_id uuid;
+  v_created_by uuid;
+begin
+  if tg_op = 'INSERT' then
+    if not app.can_access_run(new.run_id) then
+      raise exception 'run_forbidden' using errcode = '42501';
+    end if;
+
+    select id
+      into v_snapshot_id
+      from app.nesting_run_snapshots
+     where run_id = new.run_id
+     order by created_at desc
+     limit 1;
+
+    if v_snapshot_id is null then
+      select requested_by
+        into v_created_by
+        from app.nesting_runs
+       where id = new.run_id;
+
+      insert into app.nesting_run_snapshots (
+        run_id,
+        status,
+        snapshot_version,
+        project_manifest_jsonb,
+        technology_manifest_jsonb,
+        parts_manifest_jsonb,
+        sheets_manifest_jsonb,
+        geometry_manifest_jsonb,
+        solver_config_jsonb,
+        manufacturing_manifest_jsonb,
+        created_by
+      ) values (
+        new.run_id,
+        'building',
+        'bridge_stub_v1',
+        '{}'::jsonb,
+        '{}'::jsonb,
+        '[]'::jsonb,
+        '[]'::jsonb,
+        '[]'::jsonb,
+        '{}'::jsonb,
+        '{}'::jsonb,
+        v_created_by
+      )
+      returning id into v_snapshot_id;
+    end if;
+
+    insert into app.run_queue (
+      run_id,
+      snapshot_id,
+      queue_state,
+      attempt_no,
+      priority,
+      available_at,
+      retry_count
+    ) values (
+      new.run_id,
+      v_snapshot_id,
+      'pending',
+      coalesce(new.attempts, 0),
+      coalesce(new.priority, 100),
+      coalesce(new.visible_after, now()),
+      0
+    )
+    on conflict (run_id) do update
+      set snapshot_id = excluded.snapshot_id,
+          queue_state = 'pending',
+          attempt_no = excluded.attempt_no,
+          priority = excluded.priority,
+          available_at = excluded.available_at,
+          updated_at = now();
+
+    return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    if not app.can_access_run(old.run_id) then
+      raise exception 'run_forbidden' using errcode = '42501';
+    end if;
+    delete from app.run_queue where run_id = old.run_id;
+    return old;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    update app.run_queue
+       set attempt_no = coalesce(new.attempts, app.run_queue.attempt_no),
+           priority = coalesce(new.priority, app.run_queue.priority),
+           available_at = coalesce(new.visible_after, app.run_queue.available_at),
+           leased_by = new.locked_by,
+           leased_at = new.locked_at,
+           updated_at = now()
+     where run_id = old.run_id;
+    return new;
+  end if;
+
+  return null;
+end;
+$$;
+
+create or replace function public.run_artifacts_view_iud()
+returns trigger
+language plpgsql
+security definer
+set search_path = app
+as $$
+declare
+  v_row app.run_artifacts%rowtype;
+  v_metadata jsonb;
+begin
+  if tg_op = 'INSERT' then
+    if not app.can_access_run(new.run_id) then
+      raise exception 'run_forbidden' using errcode = '42501';
+    end if;
+
+    v_metadata := jsonb_strip_nulls(
+      jsonb_build_object(
+        'legacy_artifact_type', new.artifact_type,
+        'filename', new.filename,
+        'size_bytes', new.size_bytes,
+        'sheet_index', new.sheet_index
+      )
+    );
+
+    insert into app.run_artifacts (
+      run_id,
+      artifact_kind,
+      storage_bucket,
+      storage_path,
+      metadata_jsonb
+    ) values (
+      new.run_id,
+      app.legacy_artifact_type_to_kind(new.artifact_type),
+      'run-artifacts',
+      new.storage_key,
+      coalesce(v_metadata, '{}'::jsonb)
+    )
+    returning * into v_row;
+
+    new.id := v_row.id;
+    new.created_at := v_row.created_at;
+    return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    delete from app.run_artifacts where id = old.id;
+    return old;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    update app.run_artifacts
+       set artifact_kind = app.legacy_artifact_type_to_kind(coalesce(new.artifact_type, app.artifact_kind_to_legacy_type(app.run_artifacts.artifact_kind, app.run_artifacts.metadata_jsonb))),
+           storage_path = coalesce(new.storage_key, app.run_artifacts.storage_path),
+           metadata_jsonb = jsonb_strip_nulls(
+             coalesce(app.run_artifacts.metadata_jsonb, '{}'::jsonb)
+             || jsonb_build_object(
+               'legacy_artifact_type', coalesce(new.artifact_type, app.run_artifacts.metadata_jsonb->>'legacy_artifact_type'),
+               'filename', coalesce(new.filename, app.run_artifacts.metadata_jsonb->>'filename'),
+               'size_bytes', coalesce(new.size_bytes, nullif(app.run_artifacts.metadata_jsonb->>'size_bytes', '')::bigint),
+               'sheet_index', coalesce(new.sheet_index, nullif(app.run_artifacts.metadata_jsonb->>'sheet_index', '')::integer)
+             )
+           )
+     where id = old.id
+     returning * into v_row;
+
+    if v_row.id is null then
+      raise exception 'run_artifact_not_found' using errcode = 'P0001';
+    end if;
+
+    new.id := v_row.id;
+    new.run_id := v_row.run_id;
+    new.created_at := v_row.created_at;
+    return new;
+  end if;
+
+  return null;
+end;
+$$;
+
+-- Attach triggers only when the bridge object is a view (not an existing legacy table).
+do $$
+begin
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_configs' and c.relkind = 'v'
+  ) then
+    execute 'drop trigger if exists trg_run_configs_view_iud on public.run_configs';
+    execute 'create trigger trg_run_configs_view_iud instead of insert or update or delete on public.run_configs for each row execute function public.run_configs_view_iud()';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'runs' and c.relkind = 'v'
+  ) then
+    execute 'drop trigger if exists trg_runs_view_iud on public.runs';
+    execute 'create trigger trg_runs_view_iud instead of insert or update or delete on public.runs for each row execute function public.runs_view_iud()';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_queue' and c.relkind = 'v'
+  ) then
+    execute 'drop trigger if exists trg_run_queue_view_iud on public.run_queue';
+    execute 'create trigger trg_run_queue_view_iud instead of insert or update or delete on public.run_queue for each row execute function public.run_queue_view_iud()';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_artifacts' and c.relkind = 'v'
+  ) then
+    execute 'drop trigger if exists trg_run_artifacts_view_iud on public.run_artifacts';
+    execute 'create trigger trg_run_artifacts_view_iud instead of insert or update or delete on public.run_artifacts for each row execute function public.run_artifacts_view_iud()';
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'projects' and c.relkind = 'v'
+  ) then
+    execute 'grant select on public.projects to authenticated, service_role';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'project_files' and c.relkind = 'v'
+  ) then
+    execute 'grant select on public.project_files to authenticated, service_role';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_configs' and c.relkind = 'v'
+  ) then
+    execute 'grant select, insert, update, delete on public.run_configs to authenticated, service_role';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'runs' and c.relkind = 'v'
+  ) then
+    execute 'grant select, insert, update, delete on public.runs to authenticated, service_role';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_queue' and c.relkind = 'v'
+  ) then
+    execute 'grant select, insert, update, delete on public.run_queue to authenticated, service_role';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'run_artifacts' and c.relkind = 'v'
+  ) then
+    execute 'grant select, insert, update, delete on public.run_artifacts to authenticated, service_role';
+  end if;
+end;
+$$;
+
+grant execute on function public.run_configs_view_iud() to authenticated, service_role;
+grant execute on function public.runs_view_iud() to authenticated, service_role;
+grant execute on function public.run_queue_view_iud() to authenticated, service_role;
+grant execute on function public.run_artifacts_view_iud() to authenticated, service_role;
+grant execute on function app.legacy_artifact_type_to_kind(text) to authenticated, service_role;
+grant execute on function app.artifact_kind_to_legacy_type(app.artifact_kind, jsonb) to authenticated, service_role;

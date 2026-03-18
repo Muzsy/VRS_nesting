@@ -12,7 +12,7 @@ Olvasd el:
 - supabase/migrations/20260310223000_h0_e2_t2_profiles_projects_project_settings.sql
 - supabase/migrations/20260310230000_h0_e2_t3_technology_domain_alapok.sql
 - supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql
-- supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql
+- supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql
 
 Majd hajtsd vegre a YAML `steps` lepeseit sorrendben.
 

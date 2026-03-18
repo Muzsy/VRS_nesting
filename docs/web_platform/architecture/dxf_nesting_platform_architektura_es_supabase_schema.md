@@ -907,7 +907,7 @@ create index if not exists idx_project_part_requirements_priority
 ## 8.7 Sheet Domain
 
 A H0-E2-T5 ota a sheet domain aktualis source of truth migracioja:
-`supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`.
+`supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`.
 Ez a bazis expliciten kuloniti a definition / revision / project-input retegeket.
 
 ```sql

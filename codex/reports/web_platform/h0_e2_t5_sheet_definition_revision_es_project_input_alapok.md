@@ -24,7 +24,7 @@ PASS
 ## 3) Valtozasok osszefoglalasa
 
 ### 3.1 Erintett fajlok
-- `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
+- `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
 - `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md`
 - `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md`
 - `codex/codex_checklist/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md`
@@ -110,12 +110,12 @@ PASS
 
 | DoD pont | Statusz | Bizonyitek (path + line) | Magyarazat | Kapcsolodo ellenorzes |
 | --- | --- | --- | --- | --- |
-| Letrejon a `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql` fajl. | PASS | `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:1` | A T5 migraciofajl letrejott. | `./scripts/verify.sh --report ...` |
-| A migracio letrehozza az `app.sheet_definitions`, `app.sheet_revisions`, `app.project_sheet_inputs` tablakat. | PASS | `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:4`; `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:18`; `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:54` | Mindharom core sheet-domain tabla explicit letrejon. | `./scripts/verify.sh --report ...` |
-| A project input tabla a `sheet_revisions` vilagra ul, nem kozvetlenul a definitionre. | PASS | `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:57` | A project input FK a `sheet_revision_id` mezon keresztul kotodik. | `./scripts/verify.sh --report ...` |
-| A `current_revision_id` integritas a part-domainhez hasonloan helyesen van kezelve. | PASS | `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:40`; `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:48` | Kompozit unique + kompozit FK biztositja, hogy csak sajat definition revision valaszthato. | `./scripts/verify.sh --report ...` |
-| A migracio nem hoz letre remnant/inventory/file/geometry/run/export tablakat. | PASS | `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:101` | Explicit scope note rogziti a kizart domaineket. | `./scripts/verify.sh --report ...` |
-| A task nem ad hozza RLS policyt. | PASS | `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:102` | Explicit note + nincs RLS SQL. | `./scripts/verify.sh --report ...` |
+| Letrejon a `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql` fajl. | PASS | `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:1` | A T5 migraciofajl letrejott. | `./scripts/verify.sh --report ...` |
+| A migracio letrehozza az `app.sheet_definitions`, `app.sheet_revisions`, `app.project_sheet_inputs` tablakat. | PASS | `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:4`; `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:18`; `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:54` | Mindharom core sheet-domain tabla explicit letrejon. | `./scripts/verify.sh --report ...` |
+| A project input tabla a `sheet_revisions` vilagra ul, nem kozvetlenul a definitionre. | PASS | `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:57` | A project input FK a `sheet_revision_id` mezon keresztul kotodik. | `./scripts/verify.sh --report ...` |
+| A `current_revision_id` integritas a part-domainhez hasonloan helyesen van kezelve. | PASS | `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:40`; `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:48` | Kompozit unique + kompozit FK biztositja, hogy csak sajat definition revision valaszthato. | `./scripts/verify.sh --report ...` |
+| A migracio nem hoz letre remnant/inventory/file/geometry/run/export tablakat. | PASS | `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:101` | Explicit scope note rogziti a kizart domaineket. | `./scripts/verify.sh --report ...` |
+| A task nem ad hozza RLS policyt. | PASS | `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql:102` | Explicit note + nincs RLS SQL. | `./scripts/verify.sh --report ...` |
 | A `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md` es a `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md` minimalisan szinkronba kerul a konkret migracios irannyal. | PASS | `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md:826`; `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md:541` | A sheet-domain blokk `app.*` schema es revision-based project input iranyra lett szinkronizalva. | `./scripts/verify.sh --report ...` |
 | A report DoD -> Evidence Matrix konkret fajl- es line-hivatkozasokkal kitoltott. | PASS | `codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md:109` | A matrix kitoltve, path+line referenciakkal. | `./scripts/verify.sh --report ...` |
 | `./scripts/verify.sh --report codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md` PASS. | PASS | `codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.verify.log:1` | A gate sikeresen lefutott. | `./scripts/verify.sh --report ...` |
@@ -154,7 +154,7 @@ PASS
 ?? codex/prompts/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok/
 ?? codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md
 ?? codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.verify.log
-?? supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql
+?? supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql
 ```
 
 <!-- AUTO_VERIFY_END -->

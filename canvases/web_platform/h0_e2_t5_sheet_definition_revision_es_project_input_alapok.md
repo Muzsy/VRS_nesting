@@ -73,7 +73,7 @@ Ez szandekosan meg mindig H0-bazis:
 - `codex/prompts/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok/run.md`
 - `codex/codex_checklist/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md`
 - `codex/reports/web_platform/h0_e2_t5_sheet_definition_revision_es_project_input_alapok.md`
-- `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
+- `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
 - `docs/web_platform/architecture/dxf_nesting_platform_architektura_es_supabase_schema.md`
 - `docs/web_platform/roadmap/dxf_nesting_platform_h0_reszletes.md`
 
@@ -129,7 +129,7 @@ A konkret oszlopok kod kozben finomithatok, de az irany ez legyen:
 - A task egyben docs-tisztitas is legyen a sheet-domain `public.*` maradvanyok ellen.
 
 ### DoD
-- [ ] Letrejon a `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
+- [ ] Letrejon a `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
       fajl.
 - [ ] A migracio letrehozza az `app.sheet_definitions`, `app.sheet_revisions`,
       `app.project_sheet_inputs` tablakat.

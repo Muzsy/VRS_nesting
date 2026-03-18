@@ -248,7 +248,7 @@ Nem relevans.
 - `supabase/migrations/20260310223000_h0_e2_t2_profiles_projects_project_settings.sql`
 - `supabase/migrations/20260310230000_h0_e2_t3_technology_domain_alapok.sql`
 - `supabase/migrations/20260310233000_h0_e2_t4_part_definition_revision_es_demand_alapok.sql`
-- `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
+- `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
 - `supabase/migrations/20260312001000_h0_e3_t1_file_object_modell.sql`
 - `supabase/migrations/20260312003000_h0_e3_t2_geometry_revision_modell.sql`
 - `supabase/migrations/20260312005000_h0_e3_t3_validation_es_review_tablak.sql`

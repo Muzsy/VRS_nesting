@@ -1,7 +1,7 @@
 # Codex checklist - h0_e2_t5_sheet_definition_revision_es_project_input_alapok
 
 - [x] Canvas + goal YAML + run prompt artefaktok elerhetoek
-- [x] Letrejott a bazis migracio: `supabase/migrations/20260310240000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
+- [x] Letrejott a bazis migracio: `supabase/migrations/20260311000000_h0_e2_t5_sheet_definition_revision_es_project_input_alapok.sql`
 - [x] A migracio letrehozza az `app.sheet_definitions`, `app.sheet_revisions`, `app.project_sheet_inputs` tablakat
 - [x] A project input tabla a `sheet_revisions` vilagra ul, nem kozvetlenul a definitionre
 - [x] A `current_revision_id` integritas kompozit FK-val vedett
