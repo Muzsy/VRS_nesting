@@ -65,17 +65,19 @@ Megjegyzes:
 ## P3 - Alacsony prioritas
 
 ### KI-003 API tabla prefix mix (`app.*` vs compatibility `public.*` view-k)
-**Allapot:** OPEN  
+**Allapot:** RESOLVED (`h1_e3_t4_multi_tenant_isolation_hardening`, 2026-03-18)  
 **Forras:** `tmp/audit_report/fastAPI_API_layer_input_validation_audit.md` (ISSUE-12)  
 **Terulet:** `api/routes/run_configs.py`, `api/routes/runs.py`, `supabase/migrations/20260318103000_h1_e3_t3_security_and_schema_bridge_fixes.sql`
 
-A route-ok egy resze kanonikus `app.*` tablakat hasznal, mas reszek a bridge celu
-`public.*` kompatibilitasi nevteret erik el. Ez jelenleg funkcionalisan mukodik,
-de dokumentacios es karbantarthatosagi adossag.
+Lezart allapot:
+- A `run_configs` es `runs` route-ok teljesen `app.*` tablakat hasznalnak
+  (`app.projects`, `app.file_objects`, `app.run_configs`, `app.nesting_runs`,
+  `app.run_queue`, `app.run_artifacts`).
+- A bridge `public.*` retegre epulo API oldali dependencia megszunt ezen a
+  teruleten.
 
-Tervezett allapot:
-- Döntes egyertelmusitese: teljes `app.*` direkt hasznalat vagy tartos compatibility
-  reteg explicit szabalyokkal.
-- Route szintu konvencio dokumentalasa es kovetkezetesitese.
+Megjegyzes:
+- A compatibility view-k tovabbra is jelen lehetnek backward compatibility miatt,
+  de az API route implementacio ezen a modulon mar nem ezekre tamaszkodik.
 
 ---

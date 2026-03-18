@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -21,9 +20,6 @@ from api.rate_limit import enforce_user_rate_limit
 from api.request_models import StrictRequestModel
 from api.routes.run_configs import RunConfigPartEntry
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
-
-
-logger = logging.getLogger("vrs_api.runs")
 
 router = APIRouter(prefix="/projects/{project_id}/runs", tags=["runs"])
 
@@ -191,11 +187,14 @@ def _parse_metrics(row: dict[str, Any]) -> RunMetrics | None:
 
 def _to_run_response(row: dict[str, Any]) -> RunResponse:
     run_config_id_raw = row.get("run_config_id")
+    triggered_by_raw = row.get("triggered_by")
+    if triggered_by_raw is None:
+        triggered_by_raw = row.get("requested_by")
     return RunResponse(
         id=str(row.get("id", "")),
         project_id=str(row.get("project_id", "")),
         run_config_id=str(run_config_id_raw) if run_config_id_raw is not None else None,
-        triggered_by=str(row.get("triggered_by", "")),
+        triggered_by=str(triggered_by_raw or ""),
         status=str(row.get("status", "queued")),
         queued_at=row.get("queued_at"),
         started_at=row.get("started_at"),
@@ -205,6 +204,65 @@ def _to_run_response(row: dict[str, Any]) -> RunResponse:
         error_message=row.get("error_message"),
         metrics=_parse_metrics(row),
     )
+
+
+def _legacy_artifact_type_from_row(row: dict[str, Any]) -> str:
+    metadata = row.get("metadata_jsonb")
+    if isinstance(metadata, dict):
+        legacy_raw = metadata.get("legacy_artifact_type")
+        if isinstance(legacy_raw, str) and legacy_raw.strip():
+            return legacy_raw.strip()
+
+    raw_kind = str(row.get("artifact_kind") or row.get("artifact_type") or "").strip()
+    if raw_kind == "log":
+        return "run_log"
+    return raw_kind
+
+
+def _artifact_filename_from_row(row: dict[str, Any]) -> str:
+    metadata = row.get("metadata_jsonb")
+    if isinstance(metadata, dict):
+        filename_raw = metadata.get("filename")
+        if isinstance(filename_raw, str) and filename_raw.strip():
+            return filename_raw.strip()
+    filename_raw = row.get("filename")
+    if isinstance(filename_raw, str) and filename_raw.strip():
+        return filename_raw.strip()
+    storage_path = str(row.get("storage_path") or row.get("storage_key") or "").strip()
+    if not storage_path:
+        return ""
+    return storage_path.split("/")[-1]
+
+
+def _artifact_int_meta(row: dict[str, Any], key: str) -> int | None:
+    metadata = row.get("metadata_jsonb")
+    if isinstance(metadata, dict):
+        raw = metadata.get(key)
+        if raw is not None:
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return None
+    raw = row.get(key)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_artifact_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(row.get("id", "")),
+        "run_id": str(row.get("run_id", "")),
+        "artifact_type": _legacy_artifact_type_from_row(row),
+        "filename": _artifact_filename_from_row(row),
+        "storage_key": str(row.get("storage_path") or row.get("storage_key") or "").strip(),
+        "size_bytes": _artifact_int_meta(row, "size_bytes"),
+        "sheet_index": _artifact_int_meta(row, "sheet_index"),
+        "created_at": row.get("created_at"),
+    }
 
 
 def _to_artifact_response(row: dict[str, Any]) -> RunArtifactResponse:
@@ -228,12 +286,13 @@ def _fetch_run_artifacts(
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     params = {
-        "select": "id,run_id,artifact_type,filename,storage_key,size_bytes,sheet_index,created_at",
+        "select": "id,run_id,artifact_kind,storage_path,metadata_jsonb,created_at",
         "run_id": f"eq.{run_id}",
         "order": "created_at.asc",
         "limit": str(limit),
     }
-    return supabase.select_rows(table="run_artifacts", access_token=access_token, params=params)
+    rows = supabase.select_rows(table="app.run_artifacts", access_token=access_token, params=params)
+    return [_normalize_artifact_row(row) for row in rows]
 
 
 def _artifact_download_link_path(project_id: UUID, run_id: UUID, artifact_id: str) -> str:
@@ -244,10 +303,10 @@ def _ensure_project_access(*, supabase: SupabaseClient, access_token: str, user_
     params = {
         "select": "id",
         "id": f"eq.{project_id}",
-        "owner_id": f"eq.{user_id}",
+        "owner_user_id": f"eq.{user_id}",
         "limit": "1",
     }
-    rows = supabase.select_rows(table="projects", access_token=access_token, params=params)
+    rows = supabase.select_rows(table="app.projects", access_token=access_token, params=params)
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
@@ -267,7 +326,7 @@ def _ensure_project_files_exist(
         "project_id": f"eq.{project_id}",
         "id": f"in.({joined})",
     }
-    rows = supabase.select_rows(table="project_files", access_token=access_token, params=params)
+    rows = supabase.select_rows(table="app.file_objects", access_token=access_token, params=params)
     found: set[UUID] = set()
     for row in rows:
         try:
@@ -281,59 +340,15 @@ def _ensure_project_files_exist(
 
 def _fetch_run_row(*, supabase: SupabaseClient, access_token: str, run_id: UUID, project_id: UUID) -> dict[str, Any]:
     params = {
-        "select": "id,project_id,run_config_id,triggered_by,status,queued_at,started_at,finished_at,duration_sec,solver_exit_code,error_message,placements_count,unplaced_count,sheet_count",
+        "select": "id,project_id,run_config_id,triggered_by:requested_by,status,queued_at,started_at,finished_at,duration_sec,solver_exit_code,error_message,placements_count,unplaced_count,sheet_count",
         "id": f"eq.{run_id}",
         "project_id": f"eq.{project_id}",
         "limit": "1",
     }
-    rows = supabase.select_rows(table="runs", access_token=access_token, params=params)
+    rows = supabase.select_rows(table="app.nesting_runs", access_token=access_token, params=params)
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     return rows[0]
-
-
-def _insert_run_and_queue(
-    *,
-    supabase: SupabaseClient,
-    access_token: str,
-    project_id: UUID,
-    triggered_by: str,
-    run_config_id: str | None,
-) -> dict[str, Any]:
-    run_payload: dict[str, Any] = {
-        "project_id": str(project_id),
-        "triggered_by": triggered_by,
-        "status": "queued",
-        "queued_at": _now_iso(),
-    }
-    if run_config_id is not None:
-        run_payload["run_config_id"] = run_config_id
-
-    run_row = supabase.insert_row(table="runs", access_token=access_token, payload=run_payload)
-    run_id = str(run_row.get("id", "")).strip()
-    if not run_id:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="run insert returned empty id")
-
-    try:
-        supabase.insert_row(
-            table="run_queue",
-            access_token=access_token,
-            payload={"run_id": run_id, "priority": 0, "attempts": 0, "max_attempts": 3},
-        )
-    except SupabaseHTTPError as exc:
-        try:
-            supabase.delete_rows(table="runs", access_token=access_token, filters={"id": f"eq.{run_id}"})
-        except SupabaseHTTPError as rollback_exc:
-            logger.error(
-                "orphan_run_created run_id=%s: queue insert failed and rollback delete also failed; "
-                "run row may be orphaned. queue_error=%s rollback_error=%s",
-                run_id,
-                exc,
-                rollback_exc,
-            )
-        raise_supabase_http_error(operation="queue insert", exc=exc)
-
-    return run_row
 
 
 def _insert_run_and_queue_with_quota(
@@ -385,7 +400,7 @@ def _resolve_run_config_id(
             "project_id": f"eq.{project_id}",
             "limit": "1",
         }
-        rows = supabase.select_rows(table="run_configs", access_token=user.access_token, params=params)
+        rows = supabase.select_rows(table="app.run_configs", access_token=user.access_token, params=params)
         if not rows:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run-config not found")
         return str(rows[0].get("id", "")).strip()
@@ -423,7 +438,7 @@ def _resolve_run_config_id(
             for entry in inline.parts_config
         ],
     }
-    row = supabase.insert_row(table="run_configs", access_token=user.access_token, payload=payload)
+    row = supabase.insert_row(table="app.run_configs", access_token=user.access_token, payload=payload)
     return str(row.get("id", "")).strip() or None
 
 
@@ -440,13 +455,13 @@ def create_run(
         supabase=supabase,
         access_token=user.access_token,
         user_id=user.id,
-        table="runs",
+        table="app.nesting_runs",
         timestamp_field="queued_at",
         limit=settings.rate_limit_runs_per_window,
         window_seconds=settings.rate_limit_window_s,
         route_key="POST /v1/projects/{project_id}/runs",
         filters={
-            "triggered_by": f"eq.{user.id}",
+            "requested_by": f"eq.{user.id}",
             "project_id": f"eq.{project_id}",
         },
     )
@@ -487,7 +502,7 @@ def list_runs(
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
 
     params = {
-        "select": "id,project_id,run_config_id,triggered_by,status,queued_at,started_at,finished_at,duration_sec,solver_exit_code,error_message,placements_count,unplaced_count,sheet_count",
+        "select": "id,project_id,run_config_id,triggered_by:requested_by,status,queued_at,started_at,finished_at,duration_sec,solver_exit_code,error_message,placements_count,unplaced_count,sheet_count",
         "project_id": f"eq.{project_id}",
         "order": "queued_at.desc",
         "limit": str(page_size),
@@ -497,7 +512,7 @@ def list_runs(
         params["status"] = f"eq.{status_filter}"
 
     try:
-        rows = supabase.select_rows(table="runs", access_token=user.access_token, params=params)
+        rows = supabase.select_rows(table="app.nesting_runs", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="list runs", exc=exc)
 
@@ -555,13 +570,13 @@ def cancel_run(
 
     try:
         supabase.update_rows(
-            table="runs",
+            table="app.nesting_runs",
             access_token=user.access_token,
             payload=payload,
             filters={"id": f"eq.{run_id}", "project_id": f"eq.{project_id}"},
         )
         if run_status == "queued":
-            supabase.delete_rows(table="run_queue", access_token=user.access_token, filters={"run_id": f"eq.{run_id}"})
+            supabase.delete_rows(table="app.run_queue", access_token=user.access_token, filters={"run_id": f"eq.{run_id}"})
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="cancel run", exc=exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -586,7 +601,7 @@ def rerun(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="source run has no run_config_id")
 
     try:
-        new_row = _insert_run_and_queue(
+        new_row = _insert_run_and_queue_with_quota(
             supabase=supabase,
             access_token=user.access_token,
             project_id=project_id,
@@ -594,6 +609,14 @@ def rerun(
             run_config_id=str(source_cfg),
         )
     except SupabaseHTTPError as exc:
+        if _is_quota_exceeded_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "code": "monthly_run_quota_exceeded",
+                    "message": "Monthly run quota exceeded. Please retry next month or increase your plan quota.",
+                },
+            ) from exc
         raise_supabase_http_error(operation="rerun", exc=exc)
     return _to_run_response(new_row)
 
@@ -617,15 +640,15 @@ def get_run_log(
     run_status = str(run_row.get("status", "")).strip().lower()
 
     params = {
-        "select": "id,storage_key,created_at",
+        "select": "id,storage_path,created_at",
         "run_id": f"eq.{run_id}",
-        "artifact_type": "eq.run_log",
+        "artifact_kind": "eq.log",
         "order": "created_at.desc",
         "limit": "1",
     }
 
     try:
-        rows = supabase.select_rows(table="run_artifacts", access_token=user.access_token, params=params)
+        rows = supabase.select_rows(table="app.run_artifacts", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="get run log", exc=exc)
 
@@ -638,7 +661,7 @@ def get_run_log(
             stop_polling=run_status in _TERMINAL_STATES,
         )
 
-    storage_key = str(rows[0].get("storage_key", "")).strip()
+    storage_key = str(rows[0].get("storage_path", "")).strip()
     if not storage_key:
         return RunLogResponse(
             lines=[],
@@ -707,15 +730,15 @@ def _resolve_artifact_for_run(
     artifact_id: UUID,
 ) -> dict[str, Any]:
     params = {
-        "select": "id,run_id,artifact_type,filename,storage_key,size_bytes,sheet_index,created_at",
+        "select": "id,run_id,artifact_kind,storage_path,metadata_jsonb,created_at",
         "id": f"eq.{artifact_id}",
         "run_id": f"eq.{run_id}",
         "limit": "1",
     }
-    rows = supabase.select_rows(table="run_artifacts", access_token=access_token, params=params)
+    rows = supabase.select_rows(table="app.run_artifacts", access_token=access_token, params=params)
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="artifact not found")
-    return rows[0]
+    return _normalize_artifact_row(rows[0])
 
 
 @router.get("/{run_id}/artifacts/{artifact_id}/url", response_model=ArtifactUrlResponse)
@@ -1070,12 +1093,12 @@ def create_artifacts_bundle(
         supabase=supabase,
         access_token=user.access_token,
         user_id=user.id,
-        table="run_artifacts",
+        table="app.run_artifacts",
         timestamp_field="created_at",
         limit=settings.rate_limit_bundles_per_window,
         window_seconds=settings.rate_limit_window_s,
         route_key="POST /v1/projects/{project_id}/runs/{run_id}/artifacts/bundle",
-        filters={"artifact_type": "eq.bundle_zip"},
+        filters={"artifact_kind": "eq.bundle_zip", "run_id": f"eq.{run_id}"},
     )
 
     try:
@@ -1142,30 +1165,33 @@ def create_artifacts_bundle(
             )
 
         existing = supabase.select_rows(
-            table="run_artifacts",
+            table="app.run_artifacts",
             access_token=user.access_token,
             params={
                 "select": "id",
                 "run_id": f"eq.{run_id}",
-                "artifact_type": "eq.bundle_zip",
+                "artifact_kind": "eq.bundle_zip",
             },
         )
         for row in existing:
             supabase.delete_rows(
-                table="run_artifacts",
+                table="app.run_artifacts",
                 access_token=user.access_token,
                 filters={"id": f"eq.{row.get('id')}", "run_id": f"eq.{run_id}"},
             )
         inserted = supabase.insert_row(
-            table="run_artifacts",
+            table="app.run_artifacts",
             access_token=user.access_token,
             payload={
-                "run_id": run_id,
-                "artifact_type": "bundle_zip",
-                "filename": bundle_filename,
-                "storage_key": bundle_storage_key,
-                "size_bytes": bundle_size,
-                "sheet_index": None,
+                "run_id": str(run_id),
+                "artifact_kind": "bundle_zip",
+                "storage_bucket": settings.storage_bucket,
+                "storage_path": bundle_storage_key,
+                "metadata_jsonb": {
+                    "legacy_artifact_type": "bundle_zip",
+                    "filename": bundle_filename,
+                    "size_bytes": bundle_size,
+                },
             },
         )
         signed_download = supabase.create_signed_download_url(

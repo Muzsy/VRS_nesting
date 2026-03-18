@@ -95,10 +95,10 @@ def _ensure_project_access(*, supabase: SupabaseClient, access_token: str, user_
     params = {
         "select": "id",
         "id": f"eq.{project_id}",
-        "owner_id": f"eq.{user_id}",
+        "owner_user_id": f"eq.{user_id}",
         "limit": "1",
     }
-    rows = supabase.select_rows(table="projects", access_token=access_token, params=params)
+    rows = supabase.select_rows(table="app.projects", access_token=access_token, params=params)
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
@@ -118,7 +118,7 @@ def _ensure_project_files_exist(
         "project_id": f"eq.{project_id}",
         "id": f"in.({joined})",
     }
-    rows = supabase.select_rows(table="project_files", access_token=access_token, params=params)
+    rows = supabase.select_rows(table="app.file_objects", access_token=access_token, params=params)
     found: set[UUID] = set()
     for row in rows:
         try:
@@ -178,7 +178,7 @@ def create_run_config(
     }
 
     try:
-        row = supabase.insert_row(table="run_configs", access_token=user.access_token, payload=payload)
+        row = supabase.insert_row(table="app.run_configs", access_token=user.access_token, payload=payload)
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="create run-config", exc=exc)
     return _to_response(row)
@@ -200,7 +200,7 @@ def list_run_configs(
         "limit": str(limit),
     }
     try:
-        rows = supabase.select_rows(table="run_configs", access_token=user.access_token, params=params)
+        rows = supabase.select_rows(table="app.run_configs", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="list run-configs", exc=exc)
 
