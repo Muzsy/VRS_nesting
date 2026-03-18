@@ -1,14 +1,24 @@
 -- Phase 4 P4.7 cleanup orchestration helpers
--- - lock table + acquire/release functions
--- - lifecycle candidate listing (7d/30d/24h rules)
--- - candidate row cleanup function
+-- DEPRECATED LEGACY NOTE:
+--   This file is kept for backward compatibility, but it is aligned to app.*
+--   tables/functions. Canonical rollout is via Supabase migrations.
 
-create table if not exists public.cleanup_job_locks (
+create table if not exists app.cleanup_job_locks (
   lock_name text primary key,
   locked_until timestamptz not null default now(),
   owner text not null default 'edge-cleanup',
   updated_at timestamptz not null default now()
 );
+
+alter table app.cleanup_job_locks enable row level security;
+
+drop policy if exists phase4_cleanup_job_locks_service_role_all on app.cleanup_job_locks;
+create policy phase4_cleanup_job_locks_service_role_all
+on app.cleanup_job_locks
+for all
+to service_role
+using (true)
+with check (true);
 
 create or replace function public.try_acquire_cleanup_lock(
   p_lock_name text,
@@ -18,19 +28,19 @@ create or replace function public.try_acquire_cleanup_lock(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = app
 as $$
 declare
   v_deadline timestamptz := now() + make_interval(secs => greatest(1, p_ttl_seconds));
   v_acquired boolean := false;
 begin
-  insert into public.cleanup_job_locks (lock_name, locked_until, owner, updated_at)
+  insert into app.cleanup_job_locks (lock_name, locked_until, owner, updated_at)
   values (p_lock_name, v_deadline, coalesce(nullif(p_owner, ''), 'edge-cleanup'), now())
   on conflict (lock_name) do update
     set locked_until = excluded.locked_until,
         owner = excluded.owner,
         updated_at = now()
-  where public.cleanup_job_locks.locked_until <= now()
+  where app.cleanup_job_locks.locked_until <= now()
   returning true into v_acquired;
 
   return coalesce(v_acquired, false);
@@ -41,9 +51,9 @@ create or replace function public.release_cleanup_lock(p_lock_name text)
 returns void
 language sql
 security definer
-set search_path = public
+set search_path = app
 as $$
-  update public.cleanup_job_locks
+  update app.cleanup_job_locks
      set locked_until = now(),
          updated_at = now()
    where lock_name = p_lock_name;
@@ -57,38 +67,38 @@ returns table (
 )
 language sql
 security definer
-set search_path = public
+set search_path = app
 as $$
 with failed_or_cancelled as (
   select
     'run_artifact'::text as candidate_type,
     ra.id as row_id,
-    ra.storage_key,
+    ra.storage_path as storage_key,
     ra.created_at as ts
-  from public.run_artifacts ra
-  join public.runs r on r.id = ra.run_id
-  where r.status in ('failed', 'cancelled')
+  from app.run_artifacts ra
+  join app.nesting_runs r on r.id = ra.run_id
+  where r.status::text in ('failed', 'cancelled')
     and ra.created_at <= now() - interval '7 days'
 ),
 archived_project_files as (
   select
     'project_file'::text as candidate_type,
-    pf.id as row_id,
-    pf.storage_key,
-    coalesce(p.archived_at, pf.uploaded_at) as ts
-  from public.project_files pf
-  join public.projects p on p.id = pf.project_id
-  where p.archived_at is not null
-    and p.archived_at <= now() - interval '30 days'
+    fo.id as row_id,
+    fo.storage_path as storage_key,
+    coalesce(p.updated_at, p.created_at, fo.created_at) as ts
+  from app.file_objects fo
+  join app.projects p on p.id = fo.project_id
+  where p.lifecycle = 'archived'
+    and coalesce(p.updated_at, p.created_at, fo.created_at) <= now() - interval '30 days'
 ),
 bundle_zip_files as (
   select
     'run_artifact'::text as candidate_type,
     ra.id as row_id,
-    ra.storage_key,
+    ra.storage_path as storage_key,
     ra.created_at as ts
-  from public.run_artifacts ra
-  where ra.artifact_type = 'bundle_zip'
+  from app.run_artifacts ra
+  where ra.artifact_kind = 'bundle_zip'
     and ra.created_at <= now() - interval '24 hours'
 ),
 unioned as (
@@ -111,19 +121,19 @@ create or replace function public.delete_cleanup_candidate(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = app
 as $$
 declare
   v_deleted integer := 0;
 begin
   if p_candidate_type = 'run_artifact' then
-    delete from public.run_artifacts where id = p_row_id;
+    delete from app.run_artifacts where id = p_row_id;
     get diagnostics v_deleted = row_count;
     return v_deleted > 0;
   end if;
 
   if p_candidate_type = 'project_file' then
-    delete from public.project_files where id = p_row_id;
+    delete from app.file_objects where id = p_row_id;
     get diagnostics v_deleted = row_count;
     return v_deleted > 0;
   end if;

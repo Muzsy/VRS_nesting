@@ -1,6 +1,15 @@
 -- Phase 4 P4.7 Cron -> Edge cleanup template
 -- Fill placeholders before execution.
 
+do $$
+begin
+  if '<PROJECT_REF>' = '<PROJECT_REF>'
+     or '<EDGE_FUNCTION_BEARER_TOKEN>' = '<EDGE_FUNCTION_BEARER_TOKEN>' then
+    raise exception 'phase4_cleanup_cron_template.sql placeholders are not replaced';
+  end if;
+end;
+$$;
+
 -- Example unschedule (idempotent):
 -- select cron.unschedule('vrs_cleanup_every_15m');
 
