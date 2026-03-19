@@ -27,6 +27,7 @@ from worker.engine_adapter_input import (
     solver_runtime_params,
 )
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
+from worker.raw_output_artifacts import persist_raw_output_artifacts
 
 
 class WorkerError(RuntimeError):
@@ -116,6 +117,7 @@ class WorkerSettings:
     stale_temp_cleanup_max_age_s: float
     run_root: Path
     temp_root: Path
+    run_artifacts_bucket: str
     sparrow_bin: str
     once: bool
 
@@ -179,6 +181,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         stale_temp_cleanup_max_age_s=stale_temp_cleanup_max_age_s,
         run_root=run_root,
         temp_root=temp_root,
+        run_artifacts_bucket=_resolve_env("RUN_ARTIFACTS_BUCKET", "run-artifacts"),
         sparrow_bin=_resolve_env("SPARROW_BIN", ""),
         once=once,
     )
@@ -480,6 +483,39 @@ set request_payload_jsonb = coalesce(request_payload_jsonb, '{{}}'::jsonb)
     || jsonb_build_object('input_snapshot_hash', {_sql_literal(snapshot_hash)}),
     updated_at = now()
 where id = {_sql_literal(run_id)};
+"""
+        self._management_query(sql)
+
+    def register_run_artifact_raw(
+        self,
+        *,
+        run_id: str,
+        artifact_kind: str,
+        storage_bucket: str,
+        storage_path: str,
+        metadata_json: dict[str, Any],
+    ) -> None:
+        metadata_literal = _sql_literal(json.dumps(metadata_json, ensure_ascii=True, sort_keys=True))
+        sql = f"""
+insert into app.run_artifacts(
+  run_id,
+  artifact_kind,
+  storage_bucket,
+  storage_path,
+  metadata_jsonb
+)
+values (
+  {_sql_literal(run_id)},
+  {_sql_literal(artifact_kind)}::app.artifact_kind,
+  {_sql_literal(storage_bucket)},
+  {_sql_literal(storage_path)},
+  jsonb_strip_nulls({metadata_literal}::jsonb)
+)
+on conflict (run_id, storage_path)
+do update
+set artifact_kind = excluded.artifact_kind,
+    storage_bucket = excluded.storage_bucket,
+    metadata_jsonb = excluded.metadata_jsonb;
 """
         self._management_query(sql)
 
@@ -1113,6 +1149,12 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
 
     try:
         snapshot_row = client.fetch_run_snapshot(run_id)
+        project_manifest = snapshot_row.get("project_manifest_jsonb")
+        if not isinstance(project_manifest, dict):
+            raise WorkerError(f"run {run_id}: snapshot missing project_manifest_jsonb")
+        project_id = str(project_manifest.get("project_id") or "").strip()
+        if not project_id:
+            raise WorkerError(f"run {run_id}: snapshot missing project_id")
         try:
             solver_input_payload = build_solver_input_from_snapshot(snapshot_row)
         except EngineAdapterInputError as exc:
@@ -1154,8 +1196,6 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         )
 
         discovered_run_dir: Path | None = invocation.run_dir
-        last_log_size = -1
-        next_log_sync_at = 0.0
         next_heartbeat_at = 0.0
         cancel_requested = False
         timeout_hit = False
@@ -1218,22 +1258,6 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
                 if discovered_run_dir is None:
                     discovered_run_dir = _discover_cli_run_dir(run_root)
 
-                if discovered_run_dir is not None and now >= next_log_sync_at:
-                    next_log_sync_at = now + settings.run_log_sync_interval_s
-                    run_log_path = discovered_run_dir / "run.log"
-                    if run_log_path.is_file():
-                        current_size = run_log_path.stat().st_size
-                        if current_size != last_log_size:
-                            try:
-                                last_log_size = _sync_run_log_artifact(
-                                    client=client,
-                                    settings=settings,
-                                    run_id=run_id,
-                                    run_log_path=run_log_path,
-                                )
-                            except WorkerError:
-                                pass
-
                 time.sleep(1.0)
 
             try:
@@ -1263,13 +1287,27 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
                 run_dir = stdout_run_dir
 
         if run_dir is not None:
-            run_log_path = run_dir / "run.log"
-            if run_log_path.is_file():
-                _sync_run_log_artifact(
-                    client=client,
-                    settings=settings,
+            try:
+                persisted = persist_raw_output_artifacts(
+                    run_dir=run_dir,
+                    project_id=project_id,
                     run_id=run_id,
-                    run_log_path=run_log_path,
+                    storage_bucket=settings.run_artifacts_bucket,
+                    upload_object=client.upload_object,
+                    register_artifact=client.register_run_artifact_raw,
+                )
+                logger.info(
+                    "event=raw_artifacts_persisted run_id=%s project_id=%s count=%s",
+                    run_id,
+                    project_id,
+                    len(persisted),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "event=raw_artifacts_persist_failed run_id=%s project_id=%s error=%s",
+                    run_id,
+                    project_id,
+                    exc,
                 )
 
         if cancel_requested:
@@ -1285,8 +1323,6 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             raise WorkerError(f"run {run_id}: cannot locate run_dir")
 
         _validate_solver_output_contract(run_dir)
-        _ensure_sheet_svgs(run_dir)
-        _upload_run_artifacts(client=client, settings=settings, run_id=run_id, run_dir=run_dir)
 
         placements_count, unplaced_count, sheet_count = _read_run_metrics(run_dir)
         client.complete_run_done_and_dequeue(

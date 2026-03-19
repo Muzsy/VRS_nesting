@@ -64,6 +64,17 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def _write_run_log(path: Path, *, cmd: list[str], started: str, ended: str, duration_sec: float, return_code: int) -> None:
+    lines = [
+        f"started_at_utc={started}",
+        f"ended_at_utc={ended}",
+        f"duration_sec={duration_sec}",
+        f"return_code={return_code}",
+        "cmd=" + " ".join(cmd),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
@@ -121,6 +132,7 @@ def _run_solver_with_paths(
     output_path = run_dir / "solver_output.json"
     stdout_log = run_dir / "solver_stdout.log"
     stderr_log = run_dir / "solver_stderr.log"
+    run_log = run_dir / "run.log"
     meta_path = run_dir / "runner_meta.json"
 
     cmd = [
@@ -188,18 +200,21 @@ def _run_solver_with_paths(
     }
 
     if timed_out:
+        _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
         _write_json(meta_path, meta)
         raise VrsSolverTimeoutError(
             f"Solver process timed out after {effective_timeout:.3f}s (time_limit_s={time_limit_s}). run_dir={run_dir}"
         )
 
     if return_code != 0:
+        _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
         _write_json(meta_path, meta)
         raise VrsSolverNonZeroExitError(
             f"Solver process failed (exit={return_code}). run_dir={run_dir}"
         )
 
     if not output_path.is_file():
+        _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
         _write_json(meta_path, meta)
         raise VrsSolverOutputNotFoundError(f"Missing solver output: {output_path}")
 
@@ -216,6 +231,7 @@ def _run_solver_with_paths(
     if isinstance(unplaced, list):
         meta["unplaced_count"] = len(unplaced)
 
+    _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
     _write_json(meta_path, meta)
     return run_dir, meta
 
