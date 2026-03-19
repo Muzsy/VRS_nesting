@@ -1,0 +1,49 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E4-T3 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz, a H1-E4-T2 queued run
+      flow-hoz, valamint a meglevo H1 taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e4_t3_queue_lease_mechanika_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md"
+
+  - name: "Explicit queue lease helper es worker realignment"
+    description: >
+      Vezess be explicit worker-side queue lease helper modult, amely a H0
+      canonical `app.run_queue` mezokre epitve atomikusan claimeli a kovetkezo
+      futtathato sort, kiosztja a `lease_token`-t, tolti a canonical lease
+      mezoket (`leased_by`, `leased_at`, `heartbeat_at`, `lease_expires_at`),
+      kezeli a tokenhez kotott heartbeatet, valamint minimalis expired-lease
+      reclaim szemantikat ad. A `worker/main.py` claim/heartbeat logikaja erre
+      a helperre legyen realignalva; ne inline SQL stringek maradjanak a
+      canonical truth. A task ne menjen at solver start / result / artifact
+      scope-ba.
+    outputs:
+      - "worker/queue_lease.py"
+      - "worker/main.py"
+      - "codex/reports/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet a sikeres claim, dupla-claim
+      vedelem, tokenhez kotott heartbeat, lost-lease / wrong-token helyzet,
+      es expired-lease reclaim agakra. Frissitsd a checklistet es a reportot
+      evidence-alapon, DoD -> Evidence matrixszal, es dokumentald kulon, hogy a
+      task mit szallit le H1 minimum lease scope-ban, illetve mi marad a
+      H1-E5 solver-integracios taskokba.
+    outputs:
+      - "scripts/smoke_h1_e4_t3_queue_lease_mechanika_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e4_t3_queue_lease_mechanika_h1_minimum.verify.log"

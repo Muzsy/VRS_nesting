@@ -20,6 +20,8 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from xml.sax.saxutils import escape
 
+from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
+
 
 class WorkerError(RuntimeError):
     pass
@@ -34,6 +36,10 @@ class WorkerCancelledError(WorkerError):
 
 
 class WorkerTimeoutError(WorkerError):
+    pass
+
+
+class WorkerLeaseLostError(WorkerError):
     pass
 
 
@@ -100,6 +106,7 @@ class WorkerSettings:
     run_timeout_extra_s: int
     run_log_sync_interval_s: float
     queue_heartbeat_s: float
+    queue_lease_ttl_s: int
     stale_temp_cleanup_max_age_s: float
     run_root: Path
     temp_root: Path
@@ -132,11 +139,16 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
     timeout_extra_s = int(_resolve_env("WORKER_TIMEOUT_EXTRA_S", "120"))
     log_sync_interval_s = float(_resolve_env("WORKER_RUN_LOG_SYNC_INTERVAL_S", "2"))
     queue_heartbeat_s = float(_resolve_env("WORKER_QUEUE_HEARTBEAT_S", "60"))
+    queue_lease_ttl_s = int(_resolve_env("WORKER_QUEUE_LEASE_TTL_S", "600"))
     stale_temp_cleanup_max_age_s = float(_resolve_env("WORKER_STALE_TEMP_MAX_AGE_S", "3600"))
     if log_sync_interval_s <= 0:
         raise WorkerSettingsError("WORKER_RUN_LOG_SYNC_INTERVAL_S must be > 0")
     if queue_heartbeat_s <= 0:
         raise WorkerSettingsError("WORKER_QUEUE_HEARTBEAT_S must be > 0")
+    if queue_lease_ttl_s <= 0:
+        raise WorkerSettingsError("WORKER_QUEUE_LEASE_TTL_S must be > 0")
+    if queue_heartbeat_s >= float(queue_lease_ttl_s):
+        raise WorkerSettingsError("WORKER_QUEUE_HEARTBEAT_S must be < WORKER_QUEUE_LEASE_TTL_S")
     if stale_temp_cleanup_max_age_s <= 0:
         raise WorkerSettingsError("WORKER_STALE_TEMP_MAX_AGE_S must be > 0")
 
@@ -157,6 +169,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         run_timeout_extra_s=timeout_extra_s,
         run_log_sync_interval_s=log_sync_interval_s,
         queue_heartbeat_s=queue_heartbeat_s,
+        queue_lease_ttl_s=queue_lease_ttl_s,
         stale_temp_cleanup_max_age_s=stale_temp_cleanup_max_age_s,
         run_root=run_root,
         temp_root=temp_root,
@@ -211,52 +224,25 @@ class WorkerSupabaseClient:
         return out
 
     def claim_next_queue_item(self, worker_id: str) -> dict[str, Any] | None:
-        sql = f"""
-with candidate as (
-  select q.run_id
-  from app.run_queue q
-  join app.nesting_runs r on r.id = q.run_id
-  where q.available_at <= now()
-    and (
-      q.queue_state = 'pending'
-      or (q.queue_state = 'leased' and q.leased_at < now() - interval '10 minutes')
-    )
-    and r.status::text in ('queued','running')
-  order by q.priority desc, q.created_at asc
-  for update skip locked
-  limit 1
-),
-claimed as (
-  update app.run_queue q
-  set leased_by = {_sql_literal(worker_id)},
-      leased_at = now(),
-      attempt_no = q.attempt_no + 1,
-      queue_state = 'leased',
-      updated_at = now()
-  from candidate c
-  where q.run_id = c.run_id
-  returning q.run_id, q.attempt_no
-)
-select
-  c.run_id as id,
-  c.run_id,
-  c.attempt_no as attempts,
-  3::integer as max_attempts
-from claimed c;
-"""
-        rows = self._management_query(sql)
-        return rows[0] if rows else None
+        claim = claim_next_queue_lease(
+            query=self._management_query,
+            worker_id=worker_id,
+            lease_ttl_seconds=self._settings.queue_lease_ttl_s,
+            max_attempts=3,
+        )
+        if claim is None:
+            return None
+        return claim.as_worker_item()
 
-    def heartbeat_queue_item(self, *, queue_id: str, worker_id: str) -> None:
-        sql = f"""
-update app.run_queue
-set leased_at = now(),
-    updated_at = now()
-where run_id = {_sql_literal(queue_id)}
-  and leased_by = {_sql_literal(worker_id)}
-  and queue_state = 'leased';
-"""
-        self._management_query(sql)
+    def heartbeat_queue_item(self, *, queue_id: str, worker_id: str, lease_token: str) -> bool:
+        heartbeat = heartbeat_queue_lease(
+            query=self._management_query,
+            run_id=queue_id,
+            worker_id=worker_id,
+            lease_token=lease_token,
+            lease_ttl_seconds=self._settings.queue_lease_ttl_s,
+        )
+        return heartbeat is not None
 
     def fetch_backlog_metrics(self) -> tuple[int, float]:
         sql = """
@@ -268,7 +254,17 @@ join app.nesting_runs r on r.id = q.run_id
 where q.available_at <= now()
   and (
     q.queue_state = 'pending'
-    or (q.queue_state = 'leased' and q.leased_at < now() - interval '10 minutes')
+    or (
+      q.queue_state = 'leased'
+      and (
+        (q.lease_expires_at is not null and q.lease_expires_at <= now())
+        or (
+          q.lease_expires_at is null
+          and q.leased_at is not null
+          and q.leased_at < now() - interval '{int(self._settings.queue_lease_ttl_s)} seconds'
+        )
+      )
+    )
   )
   and r.status::text in ('queued','running');
 """
@@ -340,6 +336,13 @@ set status = 'running'::app.run_request_status,
     error_message = null,
     updated_at = now()
 where id = {_sql_literal(run_id)};
+
+update app.run_queue
+set attempt_status = 'running'::app.run_attempt_status,
+    started_at = coalesce(started_at, now()),
+    updated_at = now()
+where run_id = {_sql_literal(run_id)}
+  and queue_state = 'leased';
 """
         self._management_query(sql)
 
@@ -406,7 +409,11 @@ with updated as (
 )
 update app.run_queue q
 set leased_by = null,
+    lease_token = null,
     leased_at = null,
+    lease_expires_at = null,
+    heartbeat_at = null,
+    attempt_status = 'failed'::app.run_attempt_status,
     queue_state = 'pending',
     available_at = now() + interval '{int(retry_delay_s)} seconds',
     updated_at = now()
@@ -997,10 +1004,13 @@ def _upload_run_artifacts(
 def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, item: dict[str, Any]) -> None:
     queue_id = str(item.get("id", "")).strip()
     run_id = str(item.get("run_id", "")).strip()
+    lease_token = str(item.get("lease_token", "")).strip()
     attempts = int(item.get("attempts") or 0)
     max_attempts = int(item.get("max_attempts") or 3)
     if not queue_id or not run_id:
         raise WorkerError("queue claim returned missing id/run_id")
+    if not lease_token:
+        raise WorkerError("queue claim returned missing lease_token")
 
     client.mark_run_running(run_id)
 
@@ -1090,6 +1100,7 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         next_heartbeat_at = 0.0
         cancel_requested = False
         timeout_hit = False
+        lease_lost = False
         deadline = time.monotonic() + timeout_s
 
         try:
@@ -1117,7 +1128,25 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
                 if now >= next_heartbeat_at:
                     next_heartbeat_at = now + settings.queue_heartbeat_s
                     try:
-                        client.heartbeat_queue_item(queue_id=queue_id, worker_id=settings.worker_id)
+                        heartbeat_ok = client.heartbeat_queue_item(
+                            queue_id=queue_id,
+                            worker_id=settings.worker_id,
+                            lease_token=lease_token,
+                        )
+                        if not heartbeat_ok:
+                            lease_lost = True
+                            logger.warning(
+                                "event=queue_lease_lost worker_id=%s run_id=%s queue_id=%s",
+                                settings.worker_id,
+                                run_id,
+                                queue_id,
+                            )
+                            proc.terminate()
+                            try:
+                                proc.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                proc.kill()
+                            break
                     except WorkerError as exc:
                         logger.warning(
                             "event=queue_heartbeat_failed worker_id=%s run_id=%s queue_id=%s error=%s",
@@ -1179,6 +1208,8 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             raise WorkerCancelledError(f"run {run_id}: cancelled by user")
         if timeout_hit:
             raise WorkerTimeoutError(f"run {run_id}: timeout exceeded ({timeout_s}s)")
+        if lease_lost:
+            raise WorkerLeaseLostError(f"run {run_id}: queue lease lost during processing")
         if proc.returncode != 0:
             stderr_text = (stderr or "").strip()
             raise WorkerError(f"run {run_id}: dxf-run failed (exit={proc.returncode}): {stderr_text[:2000]}")
@@ -1208,6 +1239,8 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
                 inner_exc,
                 exc,
             )
+        raise
+    except WorkerLeaseLostError:
         raise
     except Exception as exc:
         try:
