@@ -239,3 +239,9 @@ def build_solver_input_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]
 def solver_input_sha256(payload: dict[str, Any]) -> str:
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def solver_runtime_params(payload: dict[str, Any]) -> tuple[int, int]:
+    seed = _parse_nonnegative_int(payload.get("seed"), field="solver_input.seed")
+    time_limit_s = _parse_positive_int(payload.get("time_limit_s"), field="solver_input.time_limit_s")
+    return seed, time_limit_s

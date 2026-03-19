@@ -288,6 +288,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=_default_seed(), help="Solver seed")
     parser.add_argument("--time-limit", type=int, default=_default_time_limit(), help="Time limit in seconds")
     parser.add_argument("--run-root", default="runs", help="Root directory for run artifacts")
+    parser.add_argument("--run-dir", default=None, help="Existing run directory to use instead of allocating a new one")
     parser.add_argument("--solver-bin", default=None, help="Explicit solver binary path")
     return parser
 
@@ -297,13 +298,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        run_dir, _meta = run_solver(
-            args.input,
-            seed=args.seed,
-            time_limit_s=args.time_limit,
-            run_root=args.run_root,
-            solver_bin=args.solver_bin,
-        )
+        if args.run_dir:
+            run_dir, _meta = run_solver_in_dir(
+                args.input,
+                run_dir=args.run_dir,
+                seed=args.seed,
+                time_limit_s=args.time_limit,
+                solver_bin=args.solver_bin,
+            )
+        else:
+            run_dir, _meta = run_solver(
+                args.input,
+                seed=args.seed,
+                time_limit_s=args.time_limit,
+                run_root=args.run_root,
+                solver_bin=args.solver_bin,
+            )
     except VrsSolverRunnerError as exc:
         _eprint(f"ERROR: {exc}")
         return 2

@@ -1,0 +1,50 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E5-T2 task canvas/YAML/checklist/report alapjait,
+      a web_platform H1 source-of-truth doksikhoz, a solver IO contracthoz,
+      valamint a meglevo H1 worker-task mintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e5_t2_solver_process_futtatas_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md"
+
+  - name: "Canonical solver process futtatasi ut kialakitasa"
+    description: >
+      Allitsd at a worker tenyleges solver futtatasi agat a H1-E5-T1 snapshotból
+      kepzett solver-input vilagra. A canonical ut ne a legacy
+      `python -m vrs_nesting.cli dxf-run ...` folyamat legyen, hanem explicit
+      runner-bridge vagy helper a worker es a `vrs_nesting.runner.vrs_solver_runner`
+      kozt. A run lifecycle H1 minimum szinten kezelje a success/failure/cancel/
+      lease-lost fo agakat, de ne nyisson raw output storage vagy result
+      normalizer scope-ot.
+    outputs:
+      - "worker/main.py"
+      - "worker/engine_adapter_input.py"
+      - "worker/queue_lease.py"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "codex/reports/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely fake/mock runnerrel
+      bizonyitja a snapshot-input alapu solver process utat, a success/failure/
+      timeout/cancel/lease-lost fo agak kezeleset, es azt, hogy a canonical futasi
+      ut mar nem a legacy `dxf-run` commandra epul. Frissitsd a checklistet es a
+      reportot evidence-alapon, DoD -> Evidence matrixszal, es nevezd meg kulon,
+      hogy a task mit szallit le es mit hagy szandekosan a H1-E5-T3 / H1-E6
+      blokkra.
+    outputs:
+      - "scripts/smoke_h1_e5_t2_solver_process_futtatas_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e5_t2_solver_process_futtatas_h1_minimum.verify.log"

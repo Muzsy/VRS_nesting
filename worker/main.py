@@ -20,7 +20,12 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from xml.sax.saxutils import escape
 
-from worker.engine_adapter_input import EngineAdapterInputError, build_solver_input_from_snapshot, solver_input_sha256
+from worker.engine_adapter_input import (
+    EngineAdapterInputError,
+    build_solver_input_from_snapshot,
+    solver_input_sha256,
+    solver_runtime_params,
+)
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 
 
@@ -941,6 +946,17 @@ def _ensure_sheet_svgs(run_dir: Path) -> list[Path]:
 
 
 def _read_run_metrics(run_dir: Path) -> tuple[int, int, int]:
+    solver_output_json = run_dir / "solver_output.json"
+    if solver_output_json.is_file():
+        payload = _read_json_object(solver_output_json)
+        placements_raw = payload.get("placements")
+        unplaced_raw = payload.get("unplaced")
+        placements = [item for item in placements_raw if isinstance(item, dict)] if isinstance(placements_raw, list) else []
+        unplaced = [item for item in unplaced_raw if isinstance(item, dict)] if isinstance(unplaced_raw, list) else []
+        sheet_indexes = [int(item["sheet_index"]) for item in placements if isinstance(item.get("sheet_index"), int)]
+        sheet_count = (max(sheet_indexes) + 1) if sheet_indexes else 0
+        return len(placements), len(unplaced), sheet_count
+
     report_json = run_dir / "report.json"
     if not report_json.is_file():
         return 0, 0, 0
@@ -963,7 +979,7 @@ def _read_run_metrics(run_dir: Path) -> tuple[int, int, int]:
 def _find_run_dir_from_stdout(stdout: str) -> Path:
     lines = [line.strip() for line in stdout.splitlines() if line.strip()]
     if not lines:
-        raise WorkerError("dxf-run returned empty stdout; run_dir path missing")
+        raise WorkerError("runner returned empty stdout; run_dir path missing")
     return Path(lines[-1]).resolve()
 
 
@@ -975,6 +991,53 @@ def _discover_cli_run_dir(run_root: Path) -> Path | None:
         return None
     dirs.sort(key=lambda path: path.name)
     return dirs[-1]
+
+
+@dataclass(frozen=True)
+class SolverRunnerInvocation:
+    cmd: list[str]
+    run_dir: Path
+    timeout_s: int
+
+
+def _build_solver_runner_invocation(
+    *,
+    settings: WorkerSettings,
+    run_id: str,
+    run_root: Path,
+    solver_input_path: Path,
+    solver_input_payload: dict[str, Any],
+) -> SolverRunnerInvocation:
+    seed, time_limit_s = solver_runtime_params(solver_input_payload)
+    run_dir = (run_root / run_id).resolve()
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "python3",
+        "-m",
+        "vrs_nesting.runner.vrs_solver_runner",
+        "--input",
+        str(solver_input_path),
+        "--seed",
+        str(seed),
+        "--time-limit",
+        str(time_limit_s),
+        "--run-dir",
+        str(run_dir),
+    ]
+    timeout_s = max(int(time_limit_s) + int(settings.run_timeout_extra_s), 30)
+    return SolverRunnerInvocation(cmd=cmd, run_dir=run_dir, timeout_s=timeout_s)
+
+
+def _validate_solver_output_contract(run_dir: Path) -> None:
+    output_path = run_dir / "solver_output.json"
+    payload = _read_json_object(output_path)
+    if payload.get("contract_version") != "v1":
+        raise WorkerError(f"invalid solver output contract_version in {output_path}")
+    placements = payload.get("placements")
+    unplaced = payload.get("unplaced")
+    if not isinstance(placements, list) or not isinstance(unplaced, list):
+        raise WorkerError(f"invalid solver output structure in {output_path}")
 
 
 def _sync_run_log_artifact(
@@ -1071,60 +1134,17 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         )
         client.set_run_input_snapshot_hash(run_id=run_id, snapshot_hash=solver_input_hash)
 
-        context = client.fetch_run_context(run_id)
-        stock_file_id = str(context.get("stock_file_id") or "").strip()
-        if not stock_file_id:
-            raise WorkerError(f"run {run_id}: missing stock_file_id in run_config")
-
-        stock_file = client.fetch_project_file(stock_file_id)
-        parts_cfg = _parse_parts_config(context.get("parts_config"))
-
-        file_ids = {stock_file_id}
-        for entry in parts_cfg:
-            file_id = str(entry.get("file_id") or entry.get("project_file_id") or entry.get("id") or "").strip()
-            if file_id:
-                file_ids.add(file_id)
-
-        local_paths_by_file_id: dict[str, Path] = {}
-        for file_id in sorted(file_ids):
-            row = client.fetch_project_file(file_id)
-            storage_key = str(row.get("storage_key", "")).strip()
-            storage_bucket = str(row.get("storage_bucket", "")).strip() or settings.storage_bucket
-            if not storage_key:
-                raise WorkerError(f"run {run_id}: missing storage_key for project_file {file_id}")
-            filename = Path(str(row.get("original_filename") or file_id)).name
-            destination = input_dir / f"{file_id}_{filename}"
-            blob = client.download_object(bucket=storage_bucket, object_key=storage_key)
-            destination.write_bytes(blob)
-            local_paths_by_file_id[file_id] = destination
-            if file_id == stock_file_id:
-                stock_file = row
-
-        project_payload = _build_dxf_project_payload(
+        solver_input_runtime_path = input_dir / "solver_input.json"
+        solver_input_runtime_path.write_bytes(solver_input_blob)
+        invocation = _build_solver_runner_invocation(
+            settings=settings,
             run_id=run_id,
-            context=context,
-            stock_file=stock_file,
-            part_entries=parts_cfg,
-            local_paths_by_file_id=local_paths_by_file_id,
+            run_root=run_root,
+            solver_input_path=solver_input_runtime_path,
+            solver_input_payload=solver_input_payload,
         )
-
-        project_json_path = input_dir / "project_dxf_v1.json"
-        project_json_path.write_text(json.dumps(project_payload, ensure_ascii=True, indent=2), encoding="utf-8")
-
-        cmd = [
-            "python3",
-            "-m",
-            "vrs_nesting.cli",
-            "dxf-run",
-            str(project_json_path),
-            "--run-root",
-            str(run_root),
-        ]
-        if settings.sparrow_bin:
-            cmd.extend(["--sparrow-bin", settings.sparrow_bin])
-
-        timeout_s = int(context.get("time_limit_s") or 60) + settings.run_timeout_extra_s
-        timeout_s = max(timeout_s, 30)
+        cmd = invocation.cmd
+        timeout_s = invocation.timeout_s
 
         proc = subprocess.Popen(
             cmd,
@@ -1133,7 +1153,7 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             text=True,
         )
 
-        discovered_run_dir: Path | None = None
+        discovered_run_dir: Path | None = invocation.run_dir
         last_log_size = -1
         next_log_sync_at = 0.0
         next_heartbeat_at = 0.0
@@ -1231,7 +1251,16 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
 
         run_dir: Path | None = discovered_run_dir
         if proc.returncode == 0:
-            run_dir = _find_run_dir_from_stdout(stdout)
+            stdout_run_dir = _find_run_dir_from_stdout(stdout)
+            if run_dir is None:
+                run_dir = stdout_run_dir
+            elif run_dir != stdout_run_dir:
+                logger.warning(
+                    "event=runner_run_dir_mismatch expected=%s reported=%s",
+                    run_dir,
+                    stdout_run_dir,
+                )
+                run_dir = stdout_run_dir
 
         if run_dir is not None:
             run_log_path = run_dir / "run.log"
@@ -1251,10 +1280,11 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             raise WorkerLeaseLostError(f"run {run_id}: queue lease lost during processing")
         if proc.returncode != 0:
             stderr_text = (stderr or "").strip()
-            raise WorkerError(f"run {run_id}: dxf-run failed (exit={proc.returncode}): {stderr_text[:2000]}")
+            raise WorkerError(f"run {run_id}: solver runner failed (exit={proc.returncode}): {stderr_text[:2000]}")
         if run_dir is None:
             raise WorkerError(f"run {run_id}: cannot locate run_dir")
 
+        _validate_solver_output_contract(run_dir)
         _ensure_sheet_svgs(run_dir)
         _upload_run_artifacts(client=client, settings=settings, run_id=run_id, run_dir=run_dir)
 
