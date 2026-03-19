@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from api.supabase_client import SupabaseClient, SupabaseHTTPError
+from api.supabase_client import SupabaseClient
 
 
 @dataclass
@@ -82,33 +82,7 @@ def _create_sheet_definition(
     return supabase.insert_row(table="app.sheet_definitions", access_token=access_token, payload=payload)
 
 
-def _next_revision_no(
-    *,
-    supabase: SupabaseClient,
-    access_token: str,
-    sheet_definition_id: str,
-) -> int:
-    params = {
-        "select": "revision_no",
-        "sheet_definition_id": f"eq.{sheet_definition_id}",
-        "order": "revision_no.desc",
-        "limit": "1",
-    }
-    rows = supabase.select_rows(table="app.sheet_revisions", access_token=access_token, params=params)
-    if not rows:
-        return 1
-
-    raw = rows[0].get("revision_no")
-    try:
-        latest = int(raw)
-    except (TypeError, ValueError):
-        latest = 0
-    if latest < 0:
-        latest = 0
-    return latest + 1
-
-
-def _insert_sheet_revision_with_retry(
+def _create_sheet_revision_atomic(
     *,
     supabase: SupabaseClient,
     access_token: str,
@@ -118,38 +92,32 @@ def _insert_sheet_revision_with_retry(
     grain_direction: str | None,
     source_label: str | None,
     notes: str | None,
-    max_attempts: int = 3,
-) -> dict[str, Any]:
-    for attempt in range(max_attempts):
-        revision_no = _next_revision_no(
-            supabase=supabase,
-            access_token=access_token,
-            sheet_definition_id=sheet_definition_id,
-        )
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Insert a sheet_revision and update sheet_definition.current_revision_id atomically.
 
-        payload: dict[str, Any] = {
-            "sheet_definition_id": sheet_definition_id,
-            "revision_no": revision_no,
-            "lifecycle": "draft",
-            "width_mm": width_mm,
-            "height_mm": height_mm,
-        }
-        if grain_direction is not None:
-            payload["grain_direction"] = grain_direction
-        if source_label is not None:
-            payload["source_label"] = source_label
-        if notes is not None:
-            payload["notes"] = notes
-
-        try:
-            return supabase.insert_row(table="app.sheet_revisions", access_token=access_token, payload=payload)
-        except SupabaseHTTPError as exc:
-            is_duplicate = "sheet_revisions_sheet_definition_id_revision_no_key" in str(exc) or "duplicate key" in str(exc)
-            if not is_duplicate:
-                raise
-            if attempt == max_attempts - 1:
-                raise
-    raise RuntimeError("sheet revision insert retry exhausted")
+    Returns (sheet_definition, sheet_revision) as returned by the DB function.
+    The PostgreSQL function holds a SELECT FOR UPDATE lock on the definition row,
+    so revision_no is assigned safely without application-level retries.
+    """
+    rpc_result = supabase.execute_rpc(
+        function_name="create_sheet_revision_atomic",
+        access_token=access_token,
+        payload={
+            "p_sheet_definition_id": sheet_definition_id,
+            "p_width_mm": width_mm,
+            "p_height_mm": height_mm,
+            "p_grain_direction": grain_direction,
+            "p_source_label": source_label,
+            "p_notes": notes,
+        },
+    )
+    if not isinstance(rpc_result, dict):
+        raise SheetCreationError(status_code=500, detail="create_sheet_revision_atomic returned unexpected payload")
+    sheet_definition = rpc_result.get("sheet_definition")
+    sheet_revision = rpc_result.get("sheet_revision")
+    if not isinstance(sheet_definition, dict) or not isinstance(sheet_revision, dict):
+        raise SheetCreationError(status_code=500, detail="create_sheet_revision_atomic returned incomplete payload")
+    return sheet_definition, sheet_revision
 
 
 def create_sheet_revision(
@@ -197,7 +165,7 @@ def create_sheet_revision(
     if not sheet_definition_id:
         raise SheetCreationError(status_code=500, detail="sheet_definition insert returned empty id")
 
-    sheet_revision = _insert_sheet_revision_with_retry(
+    sheet_definition, sheet_revision = _create_sheet_revision_atomic(
         supabase=supabase,
         access_token=access_token,
         sheet_definition_id=sheet_definition_id,
@@ -207,21 +175,6 @@ def create_sheet_revision(
         source_label=source_label,
         notes=notes,
     )
-
-    sheet_revision_id = str(sheet_revision.get("id") or "").strip()
-    if not sheet_revision_id:
-        raise SheetCreationError(status_code=500, detail="sheet_revision insert returned empty id")
-
-    updated_definitions = supabase.update_rows(
-        table="app.sheet_definitions",
-        access_token=access_token,
-        payload={"current_revision_id": sheet_revision_id},
-        filters={"id": f"eq.{sheet_definition_id}"},
-    )
-    if updated_definitions:
-        sheet_definition = updated_definitions[0]
-    else:
-        sheet_definition["current_revision_id"] = sheet_revision_id
 
     return {
         "sheet_definition": sheet_definition,

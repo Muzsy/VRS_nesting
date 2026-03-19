@@ -142,6 +142,58 @@ class FakeSupabaseClient:
             updated.append(dict(current))
         return updated
 
+    def execute_rpc(
+        self,
+        *,
+        function_name: str,
+        access_token: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        _ = access_token
+        if function_name != "create_sheet_revision_atomic":
+            raise RuntimeError(f"unsupported RPC: {function_name}")
+        if payload is None:
+            raise RuntimeError("create_sheet_revision_atomic requires payload")
+
+        def_id = str(payload.get("p_sheet_definition_id") or "")
+        definition = self.sheet_definitions.get(def_id)
+        if definition is None:
+            raise SupabaseHTTPError("sheet_definition_not_found")
+
+        # Compute next revision_no
+        max_rev = 0
+        for rev in self.sheet_revisions.values():
+            if str(rev.get("sheet_definition_id")) == def_id:
+                rev_no = int(rev.get("revision_no") or 0)
+                if rev_no > max_rev:
+                    max_rev = rev_no
+        next_rev_no = max_rev + 1
+
+        now = datetime.now(timezone.utc).isoformat()
+        revision_id = str(uuid4())
+        revision = {
+            "id": revision_id,
+            "sheet_definition_id": def_id,
+            "revision_no": next_rev_no,
+            "lifecycle": "draft",
+            "width_mm": payload.get("p_width_mm"),
+            "height_mm": payload.get("p_height_mm"),
+            "grain_direction": payload.get("p_grain_direction"),
+            "source_label": payload.get("p_source_label"),
+            "notes": payload.get("p_notes"),
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.sheet_revisions[revision_id] = revision
+
+        definition["current_revision_id"] = revision_id
+        definition["updated_at"] = now
+
+        return {
+            "sheet_definition": dict(definition),
+            "sheet_revision": dict(revision),
+        }
+
     def delete_rows(self, *, table: str, access_token: str, filters: dict[str, str]) -> None:
         _ = (table, access_token, filters)
 
