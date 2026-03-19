@@ -1,0 +1,48 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E4-T2 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz, a H1-E4-T1 builderhez
+      es a meglevo H1 taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e4_t2_run_create_api_service_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md"
+
+  - name: "Run create service es route create ag realignment"
+    description: >
+      Vezess be explicit run creation service-t, amely a H1-E4-T1 snapshot
+      builderrel dolgozik, majd a H0 canonical tablavilagban letrehozza a
+      `app.nesting_runs`, `app.nesting_run_snapshots` es `app.run_queue`
+      rekordokat. A create flow queued run-t adjon vissza, kezelje explicit
+      modon az idempotencia / snapshot-dedup helyzetet, es ne a legacy
+      `enqueue_run_with_quota` helper legyen a canonical megoldas. Ha a letezo
+      `api/routes/runs.py` create endpoint marad, csak a create agat igazitsd a
+      H1 minimum truth-hoz; a list/log/artifact reszeket ne terjeszd ujra.
+    outputs:
+      - "api/services/run_creation.py"
+      - "api/routes/runs.py"
+      - "codex/reports/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet a sikeres queued run create,
+      snapshot payload tarolas, idempotencia / dedup branch, idegen projekt,
+      es builder-hiba agakra. Frissitsd a checklistet es a reportot
+      evidence-alapon, DoD -> Evidence matrixszal, es dokumentald kulon, hogy a
+      task mit szallit le H1 minimum run create scope-ban, illetve mi marad a
+      H1-E4-T3 es H1-E5 taskokba.
+    outputs:
+      - "scripts/smoke_h1_e4_t2_run_create_api_service_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e4_t2_run_create_api_service_h1_minimum.verify.log"

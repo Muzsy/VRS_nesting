@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from api.auth import AuthenticatedUser, get_current_user
 from api.config import Settings
@@ -18,32 +18,15 @@ from api.deps import get_settings, get_supabase_client
 from api.http_errors import raise_supabase_http_error
 from api.rate_limit import enforce_user_rate_limit
 from api.request_models import StrictRequestModel
-from api.routes.run_configs import RunConfigPartEntry
+from api.services.run_creation import RunCreationError, create_queued_run_from_project_snapshot
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
 router = APIRouter(prefix="/projects/{project_id}/runs", tags=["runs"])
 
 
-class InlineRunConfig(StrictRequestModel):
-    name: str | None = Field(default=None, max_length=120)
-    schema_version: str = Field(default="dxf_v1", max_length=40)
-    seed: int = Field(default=0, ge=0)
-    time_limit_s: int = Field(default=60, ge=1, le=3600)
-    spacing_mm: float = Field(default=2.0, ge=0.0, le=100.0)
-    margin_mm: float = Field(default=5.0, ge=0.0, le=100.0)
-    stock_file_id: UUID
-    parts_config: list[RunConfigPartEntry] = Field(min_length=1, max_length=500)
-
-
 class RunCreateRequest(StrictRequestModel):
-    run_config_id: UUID | None = None
-    config: InlineRunConfig | None = None
-
-    @model_validator(mode="after")
-    def _validate_source(self) -> "RunCreateRequest":
-        if not self.run_config_id and self.config is None:
-            raise ValueError("either run_config_id or config is required")
-        return self
+    idempotency_key: str | None = Field(default=None, max_length=160)
+    run_purpose: str = Field(default="nesting", min_length=1, max_length=120)
 
 
 class RunMetrics(BaseModel):
@@ -311,33 +294,6 @@ def _ensure_project_access(*, supabase: SupabaseClient, access_token: str, user_
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
 
-def _ensure_project_files_exist(
-    *,
-    supabase: SupabaseClient,
-    access_token: str,
-    project_id: UUID,
-    file_ids: set[UUID],
-) -> None:
-    if not file_ids:
-        return
-    joined = ",".join(sorted(str(file_id) for file_id in file_ids))
-    params = {
-        "select": "id",
-        "project_id": f"eq.{project_id}",
-        "id": f"in.({joined})",
-    }
-    rows = supabase.select_rows(table="app.file_objects", access_token=access_token, params=params)
-    found: set[UUID] = set()
-    for row in rows:
-        try:
-            found.add(UUID(str(row.get("id", "")).strip()))
-        except (TypeError, ValueError):
-            continue
-    missing = sorted(file_ids - found)
-    if missing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"unknown project files: {', '.join(str(item) for item in missing)}")
-
-
 def _fetch_run_row(*, supabase: SupabaseClient, access_token: str, run_id: UUID, project_id: UUID) -> dict[str, Any]:
     params = {
         "select": "id,project_id,run_config_id,triggered_by:requested_by,status,queued_at,started_at,finished_at,duration_sec,solver_exit_code,error_message,placements_count,unplaced_count,sheet_count",
@@ -349,97 +305,6 @@ def _fetch_run_row(*, supabase: SupabaseClient, access_token: str, run_id: UUID,
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     return rows[0]
-
-
-def _insert_run_and_queue_with_quota(
-    *,
-    supabase: SupabaseClient,
-    access_token: str,
-    project_id: UUID,
-    triggered_by: str,
-    run_config_id: str | None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "p_project_id": str(project_id),
-        "p_triggered_by": triggered_by,
-    }
-    if run_config_id is not None:
-        payload["p_run_config_id"] = run_config_id
-
-    rpc_result = supabase.execute_rpc(
-        function_name="enqueue_run_with_quota",
-        access_token=access_token,
-        payload=payload,
-    )
-    if isinstance(rpc_result, dict):
-        return rpc_result
-    if isinstance(rpc_result, list) and rpc_result and isinstance(rpc_result[0], dict):
-        return rpc_result[0]
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="enqueue_run_with_quota returned unexpected payload",
-    )
-
-
-def _is_quota_exceeded_error(exc: SupabaseHTTPError) -> bool:
-    normalized = str(exc).lower()
-    return "quota_exceeded" in normalized
-
-
-def _resolve_run_config_id(
-    *,
-    req: RunCreateRequest,
-    project_id: UUID,
-    user: AuthenticatedUser,
-    supabase: SupabaseClient,
-) -> str | None:
-    if req.run_config_id:
-        params = {
-            "select": "id",
-            "id": f"eq.{req.run_config_id}",
-            "project_id": f"eq.{project_id}",
-            "limit": "1",
-        }
-        rows = supabase.select_rows(table="app.run_configs", access_token=user.access_token, params=params)
-        if not rows:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run-config not found")
-        return str(rows[0].get("id", "")).strip()
-
-    inline = req.config
-    if inline is None:
-        return None
-
-    file_ids: set[UUID] = {inline.stock_file_id}
-    for entry in inline.parts_config:
-        file_ids.add(entry.file_id)
-    _ensure_project_files_exist(
-        supabase=supabase,
-        access_token=user.access_token,
-        project_id=project_id,
-        file_ids=file_ids,
-    )
-
-    payload = {
-        "project_id": str(project_id),
-        "created_by": user.id,
-        "name": inline.name.strip() if inline.name else None,
-        "schema_version": inline.schema_version.strip() or "dxf_v1",
-        "seed": int(inline.seed),
-        "time_limit_s": int(inline.time_limit_s),
-        "spacing_mm": float(inline.spacing_mm),
-        "margin_mm": float(inline.margin_mm),
-        "stock_file_id": str(inline.stock_file_id),
-        "parts_config": [
-            {
-                "file_id": str(entry.file_id),
-                "quantity": int(entry.quantity),
-                "allowed_rotations_deg": [int(v) for v in entry.allowed_rotations_deg],
-            }
-            for entry in inline.parts_config
-        ],
-    }
-    row = supabase.insert_row(table="app.run_configs", access_token=user.access_token, payload=payload)
-    return str(row.get("id", "")).strip() or None
 
 
 @router.post("", response_model=RunResponse)
@@ -467,26 +332,21 @@ def create_run(
     )
 
     try:
-        run_config_id = _resolve_run_config_id(req=req, project_id=project_id, user=user, supabase=supabase)
-        run_row = _insert_run_and_queue_with_quota(
+        result = create_queued_run_from_project_snapshot(
             supabase=supabase,
             access_token=user.access_token,
-            project_id=project_id,
-            triggered_by=user.id,
-            run_config_id=run_config_id,
+            owner_user_id=user.id,
+            project_id=str(project_id),
+            run_purpose=req.run_purpose,
+            idempotency_key=req.idempotency_key,
         )
-    except HTTPException:
-        raise
+    except RunCreationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except SupabaseHTTPError as exc:
-        if _is_quota_exceeded_error(exc):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "code": "monthly_run_quota_exceeded",
-                    "message": "Monthly run quota exceeded. Please retry next month or increase your plan quota.",
-                },
-            ) from exc
         raise_supabase_http_error(operation="create run", exc=exc)
+    run_row = result.get("run")
+    if not isinstance(run_row, dict):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="run creation returned invalid payload")
     return _to_run_response(run_row)
 
 
