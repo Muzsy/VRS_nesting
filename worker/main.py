@@ -20,6 +20,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from xml.sax.saxutils import escape
 
+from worker.engine_adapter_input import EngineAdapterInputError, build_solver_input_from_snapshot, solver_input_sha256
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 
 
@@ -295,6 +296,33 @@ limit 1;
         if not rows:
             raise WorkerError(f"run not found: {run_id}")
         return rows[0]
+
+    def fetch_run_snapshot(self, run_id: str) -> dict[str, Any]:
+        sql = f"""
+select
+  s.run_id,
+  s.status as snapshot_status,
+  s.snapshot_version,
+  s.snapshot_hash_sha256,
+  s.project_manifest_jsonb,
+  s.technology_manifest_jsonb,
+  s.parts_manifest_jsonb,
+  s.sheets_manifest_jsonb,
+  s.geometry_manifest_jsonb,
+  s.solver_config_jsonb,
+  s.manufacturing_manifest_jsonb
+from app.nesting_run_snapshots s
+where s.run_id = {_sql_literal(run_id)}
+limit 1;
+"""
+        rows = self._management_query(sql)
+        if not rows:
+            raise WorkerError(f"run snapshot not found: {run_id}")
+        snapshot = rows[0]
+        snapshot_status = str(snapshot.get("snapshot_status") or "").strip().lower()
+        if snapshot_status != "ready":
+            raise WorkerError(f"run snapshot is not ready: {run_id}")
+        return snapshot
 
     def fetch_project_file(self, file_id: str) -> dict[str, Any]:
         sql = f"""
@@ -1021,6 +1049,28 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
     input_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        snapshot_row = client.fetch_run_snapshot(run_id)
+        try:
+            solver_input_payload = build_solver_input_from_snapshot(snapshot_row)
+        except EngineAdapterInputError as exc:
+            raise WorkerError(f"run {run_id}: snapshot->solver_input mapping failed: {exc}") from exc
+
+        solver_input_hash = solver_input_sha256(solver_input_payload)
+        solver_input_blob = (json.dumps(solver_input_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+        solver_input_snapshot_path = input_dir / "solver_input_snapshot_v1.json"
+        solver_input_snapshot_path.write_text(
+            json.dumps(solver_input_payload, ensure_ascii=True, indent=2),
+            encoding="utf-8",
+        )
+        client.upload_object(
+            bucket=settings.storage_bucket,
+            object_key=f"runs/{run_id}/inputs/solver_input_snapshot.json",
+            payload=solver_input_blob,
+        )
+        client.set_run_input_snapshot_hash(run_id=run_id, snapshot_hash=solver_input_hash)
+
         context = client.fetch_run_context(run_id)
         stock_file_id = str(context.get("stock_file_id") or "").strip()
         if not stock_file_id:
@@ -1058,19 +1108,8 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             local_paths_by_file_id=local_paths_by_file_id,
         )
 
-        snapshot_text = json.dumps(project_payload, ensure_ascii=True, sort_keys=True)
-        snapshot_hash = hashlib.sha256(snapshot_text.encode("utf-8")).hexdigest()
-        snapshot_blob = (snapshot_text + "\n").encode("utf-8")
-
         project_json_path = input_dir / "project_dxf_v1.json"
         project_json_path.write_text(json.dumps(project_payload, ensure_ascii=True, indent=2), encoding="utf-8")
-
-        client.upload_object(
-            bucket=settings.storage_bucket,
-            object_key=f"runs/{run_id}/inputs/project_snapshot.json",
-            payload=snapshot_blob,
-        )
-        client.set_run_input_snapshot_hash(run_id=run_id, snapshot_hash=snapshot_hash)
 
         cmd = [
             "python3",

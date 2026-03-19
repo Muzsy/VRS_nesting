@@ -1,0 +1,52 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E5-T1 task canvas/YAML/checklist/report alapjait,
+      a web_platform H1 source-of-truth doksikhoz, a solver IO contracthoz,
+      valamint a meglevo H1 web_platform taskmintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e5_t1_engine_adapter_input_mapping_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md"
+
+  - name: "Engine adapter input helper es minimalis snapshot igazitas"
+    description: >
+      Vezess be explicit engine adapter input helper/modult, amely a canonical
+      H1 run snapshotbol determinisztikusan eloallit egy `solver_input.json`
+      v1-kompatibilis payloadot. A helper ne a legacy `run_config` /
+      `parts_config` / `stock_file_id` vilagbol dolgozzon. Ha a jelenlegi
+      snapshot nem tartalmaz eleg immutable geometry adatot a mappinghez,
+      minimalisan igazitsd a H1-E4 snapshot builder / run creation flow-t ugy,
+      hogy a worker mar snapshotbol tudja eloallitani a solver inputot, elo
+      projekt/domain tablak ad hoc olvasasa nelkul. A process startot ne tedd
+      meg ebben a taskban.
+    outputs:
+      - "worker/engine_adapter_input.py"
+      - "worker/main.py"
+      - "api/services/run_snapshot_builder.py"
+      - "api/services/run_creation.py"
+      - "codex/reports/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet a sikeres snapshot->solver_input
+      mappingre, a determinisztikus hashre, az unsupported rotation policy
+      hibara, es a hianyzo geometry/bbox hibas agakra. Frissitsd a checklistet
+      es a reportot evidence-alapon, DoD -> Evidence matrixszal, es dokumentald
+      kulon, hogy a task H1 minimum szinten pontosan milyen rotation-semantikat
+      valosit meg, illetve ha a snapshot builder minimalis bovitesere volt
+      szukseg, azt nevezd meg expliciten.
+    outputs:
+      - "scripts/smoke_h1_e5_t1_engine_adapter_input_mapping_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e5_t1_engine_adapter_input_mapping_h1_minimum.verify.log"

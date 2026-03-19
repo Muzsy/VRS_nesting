@@ -76,6 +76,59 @@ def _parse_nonnegative_float(raw: Any, *, field: str) -> float:
     return value
 
 
+def _parse_finite_float(raw: Any, *, field: str) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}") from exc
+    if not math.isfinite(value):
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}")
+    return value
+
+
+def _parse_point_like(raw: Any, *, field: str) -> list[float]:
+    if isinstance(raw, list) and len(raw) == 2:
+        x_raw, y_raw = raw
+    elif isinstance(raw, dict):
+        x_raw = raw.get("x")
+        y_raw = raw.get("y")
+    else:
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}")
+    try:
+        x = float(x_raw)
+        y = float(y_raw)
+    except (TypeError, ValueError) as exc:
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}") from exc
+    if not math.isfinite(x) or not math.isfinite(y):
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}")
+    return [x, y]
+
+
+def _parse_ring_payload(raw: Any, *, field: str) -> list[list[float]]:
+    if not isinstance(raw, list) or len(raw) < 3:
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}")
+    return [_parse_point_like(point_raw, field=f"{field}[{idx}]") for idx, point_raw in enumerate(raw)]
+
+
+def _parse_hole_rings_payload(raw: Any, *, field: str) -> list[list[list[float]]]:
+    if not isinstance(raw, list):
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}")
+    return [_parse_ring_payload(ring_raw, field=f"{field}[{idx}]") for idx, ring_raw in enumerate(raw)]
+
+
+def _parse_bbox_payload(raw: Any, *, field: str) -> dict[str, float]:
+    if not isinstance(raw, dict):
+        raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}")
+    return {
+        "min_x": _parse_finite_float(raw.get("min_x"), field=f"{field}.min_x"),
+        "min_y": _parse_finite_float(raw.get("min_y"), field=f"{field}.min_y"),
+        "max_x": _parse_finite_float(raw.get("max_x"), field=f"{field}.max_x"),
+        "max_y": _parse_finite_float(raw.get("max_y"), field=f"{field}.max_y"),
+        "width": _parse_positive_float(raw.get("width"), field=f"{field}.width"),
+        "height": _parse_positive_float(raw.get("height"), field=f"{field}.height"),
+    }
+
+
 def _normalize_bool(raw: Any) -> bool:
     if isinstance(raw, bool):
         return raw
@@ -223,7 +276,7 @@ def _load_sheet_revision(*, supabase: SupabaseClient, access_token: str, sheet_r
 
 def _load_geometry_derivative(*, supabase: SupabaseClient, access_token: str, derivative_id: str) -> dict[str, Any]:
     params = {
-        "select": "id,geometry_revision_id,derivative_kind,derivative_hash_sha256,source_geometry_hash_sha256",
+        "select": "id,geometry_revision_id,derivative_kind,derivative_jsonb,derivative_hash_sha256,source_geometry_hash_sha256",
         "id": f"eq.{derivative_id}",
         "limit": "1",
     }
@@ -231,6 +284,35 @@ def _load_geometry_derivative(*, supabase: SupabaseClient, access_token: str, de
     if not rows:
         raise RunSnapshotBuilderError(status_code=400, detail="part revision selected derivative not found")
     return rows[0]
+
+
+def _extract_nesting_geometry_payload(derivative: dict[str, Any], *, part_revision_id: str) -> tuple[list[list[float]], list[list[list[float]]], dict[str, float]]:
+    derivative_json = derivative.get("derivative_jsonb")
+    if not isinstance(derivative_json, dict):
+        raise RunSnapshotBuilderError(
+            status_code=400,
+            detail=f"nesting derivative payload missing for part revision: {part_revision_id}",
+        )
+    polygon = derivative_json.get("polygon")
+    if not isinstance(polygon, dict):
+        raise RunSnapshotBuilderError(
+            status_code=400,
+            detail=f"nesting derivative polygon missing for part revision: {part_revision_id}",
+        )
+
+    outer_ring = _parse_ring_payload(
+        polygon.get("outer_ring"),
+        field=f"derivative_jsonb.polygon.outer_ring[{part_revision_id}]",
+    )
+    hole_rings = _parse_hole_rings_payload(
+        polygon.get("hole_rings", []),
+        field=f"derivative_jsonb.polygon.hole_rings[{part_revision_id}]",
+    )
+    bbox = _parse_bbox_payload(
+        derivative_json.get("bbox"),
+        field=f"derivative_jsonb.bbox[{part_revision_id}]",
+    )
+    return outer_ring, hole_rings, bbox
 
 
 def _build_parts_and_geometry_manifest(
@@ -291,6 +373,7 @@ def _build_parts_and_geometry_manifest(
         )
         if derivative_geometry_id != source_geometry_revision_id:
             raise RunSnapshotBuilderError(status_code=400, detail=f"derivative geometry mismatch for part revision: {part_revision_id}")
+        outer_ring, hole_rings, bbox = _extract_nesting_geometry_payload(derivative, part_revision_id=part_revision_id)
 
         revision_no = _parse_positive_int(part_revision.get("revision_no"), field="revision_no")
         part_code = _sanitize_required(str(part_definition.get("code") or ""), field="part_code")
@@ -318,6 +401,11 @@ def _build_parts_and_geometry_manifest(
             "derivative_kind": derivative_kind,
             "derivative_hash_sha256": _sanitize_optional(str(derivative.get("derivative_hash_sha256") or "")),
             "source_geometry_hash_sha256": _sanitize_optional(str(derivative.get("source_geometry_hash_sha256") or "")),
+            "polygon": {
+                "outer_ring": outer_ring,
+                "hole_rings": hole_rings,
+            },
+            "bbox": bbox,
         }
 
     parts_manifest.sort(
@@ -493,6 +581,8 @@ def build_run_snapshot_payload(
 
     solver_config_jsonb = {
         "units": default_units,
+        "seed": 0,
+        "time_limit_s": 60,
         "rotation_step_deg": technology_rotation_step,
         "allow_free_rotation": bool(technology_manifest_jsonb["allow_free_rotation"]),
         "kerf_mm": technology_kerf_mm,
