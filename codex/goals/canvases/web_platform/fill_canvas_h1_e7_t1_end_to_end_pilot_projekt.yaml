@@ -1,0 +1,77 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E7-T1 task canvas/YAML/checklist/report alapjait,
+      a web_platform H1 roadmaphoz, a meglevo H1 ingest/run/result/artifact
+      lancra es a repo Codex szabvanyaira igazodva.
+    outputs:
+      - "canvases/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e7_t1_end_to_end_pilot_projekt.yaml"
+      - "codex/prompts/web_platform/h1_e7_t1_end_to_end_pilot_projekt/run.md"
+      - "codex/codex_checklist/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+      - "codex/reports/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+
+  - name: "Dedikalt H1 pilot smoke/harness es runbook letrehozasa"
+    description: >
+      Keszits dedikalt, reprodukalhato H1 end-to-end pilot scriptet es egy
+      hozza tartozo futtatasi/ertekelési runbookot. A pilot vezesse vegig a
+      H1 minimum lanchosszt egy egyszeru mintaprojekten: file ingest/geometry,
+      derivative, part/sheet/project input, run create/snapshot, worker,
+      projection, majd minimum artifactok (`solver_output`, `sheet_svg`,
+      `sheet_dxf`). A script legyen futtathato valos Supabase vagy frontend
+      nelkul is, a meglavo H1 service/helper boundaryk ujrafelhasznalasaval.
+      A runbook nevezze meg a fixture-t, a futtatas lepeseit, az elvart
+      outputokat, a PASS/FAIL kriteriumokat es a H1-E7-T2-re hagyott korlatokat.
+    outputs:
+      - "scripts/smoke_h1_e7_t1_end_to_end_pilot_projekt.py"
+      - "docs/qa/h1_end_to_end_pilot_runbook.md"
+      - "codex/reports/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+
+  - name: "Pilot-specifikus minimalis kodigazitasok, ha kozvetlenul szuksegesek"
+    description: >
+      Ha a pilot smoke valodi, kozvetlen H1 handshake hibat talal, vegezz csak
+      annyi minimalis, pilot-futtathatosagot helyreallito kodigazitast, amennyi
+      a lanchossz vegigfuttatasahoz elengedhetetlen. Ez nem altalanos stabilizacios
+      task: ne nyisson nagy refaktort, ne nyisson H2/H3 scope-ot, es ne vallalja
+      elore a H1-E7-T2 audit/javitas feladatait. Ha nincs ilyen blokkolo hiba,
+      ne modositd a core kodot feleslegesen.
+    outputs:
+      - "api/routes/files.py"
+      - "api/services/file_ingest_metadata.py"
+      - "api/services/dxf_geometry_import.py"
+      - "api/services/geometry_validation_report.py"
+      - "api/services/geometry_derivative_generator.py"
+      - "api/services/part_creation.py"
+      - "api/services/sheet_creation.py"
+      - "api/services/project_part_requirements.py"
+      - "api/services/project_sheet_inputs.py"
+      - "api/services/run_snapshot_builder.py"
+      - "api/services/run_creation.py"
+      - "worker/main.py"
+      - "worker/result_normalizer.py"
+      - "worker/sheet_svg_artifacts.py"
+      - "worker/sheet_dxf_artifacts.py"
+      - "codex/reports/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A report a
+      report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon nevezd meg:
+      - a pilot fixture rovid leirasat;
+      - mely H1 boundaryk lettek tenylegesen vegigvezetve;
+      - a key output evidence-eket (projection + artifactok + run status);
+      - mi maradt szandekosan H1-E7-T2 scope-ban;
+      - hogy tortent-e vagy nem tortent core kodigazitas.
+    outputs:
+      - "codex/codex_checklist/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+      - "codex/reports/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md
+    outputs:
+      - "codex/reports/web_platform/h1_e7_t1_end_to_end_pilot_projekt.md"
+      - "codex/reports/web_platform/h1_e7_t1_end_to_end_pilot_projekt.verify.log"
