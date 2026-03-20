@@ -1,0 +1,53 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E6-T2 task canvas/YAML/checklist/report alapjait,
+      a web_platform H1 roadmaphoz, a H0 artifact/projection szabalyokhoz,
+      a viewer SVG artifact szerepehez es a meglevo worker-task mintakhoz
+      igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e6_t2_sheet_svg_generator_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md"
+
+  - name: "Sheet SVG generator boundary es worker-integracio kialakitasa"
+    description: >
+      Vezess be explicit worker-oldali sheet SVG generator helper/service
+      boundaryt, amely a H1-E6-T1 projection truth + snapshot geometry/viewer
+      derivative adatok alapjan per hasznalt sheet deterministic SVG
+      dokumentumokat general. Az artifactokat a canonical `run-artifacts`
+      bucketbe toltsd fel es `sheet_svg` artifactkent regisztrald route-kompatibilis
+      `filename` + `sheet_index` metadata mellett. A worker success pathban a
+      sheet SVG generator a projection write utan, de a run `done` zarasa elott
+      fusson. A scope maradjon viewer basic render: ne nyisson DXF/export vagy
+      frontend-redesign munkat.
+    outputs:
+      - "worker/main.py"
+      - "worker/sheet_svg_artifacts.py"
+      - "codex/reports/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet fake snapshot + fake projection +
+      fake storage/DB gateway boundaryval, amely bizonyitja a per-sheet SVG
+      rendereles helyesseget, a `viewer_outline` alapú geometriafelhasznalast,
+      a route-kompatibilis artifact metadata/filename logikat, a determinisztikus
+      rerunt, valamint a hianyzo viewer_outline / ervenytelen sheet- vagy
+      placement-kapcsolat hibagakat. Frissitsd a checklistet es a reportot
+      evidence-alapon, DoD -> Evidence matrixszal, es dokumentald kulon, hogy a
+      task pontosan mit szallit le basic viewer render szinten, illetve mit hagy
+      szandekosan a H1-E6-T3 / kesobbi frontend finomitasokra.
+    outputs:
+      - "scripts/smoke_h1_e6_t2_sheet_svg_generator_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t2_sheet_svg_generator_h1_minimum.verify.log"

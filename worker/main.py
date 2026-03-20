@@ -30,6 +30,7 @@ from worker.engine_adapter_input import (
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 from worker.raw_output_artifacts import persist_raw_output_artifacts
 from worker.result_normalizer import normalize_solver_output_projection
+from worker.sheet_svg_artifacts import persist_sheet_svg_artifacts
 
 
 class WorkerError(RuntimeError):
@@ -347,6 +348,36 @@ limit 1;
         if snapshot_status != "ready":
             raise WorkerError(f"run snapshot is not ready: {run_id}")
         return snapshot
+
+    def fetch_viewer_outline_derivatives(self, *, geometry_revision_ids: list[str]) -> dict[str, dict[str, Any]]:
+        cleaned_ids: set[str] = set()
+        for idx, raw in enumerate(geometry_revision_ids):
+            value = str(raw or "").strip()
+            if not value:
+                raise WorkerError(f"invalid geometry_revision_ids[{idx}]")
+            cleaned_ids.add(value)
+        if not cleaned_ids:
+            return {}
+
+        in_list = ", ".join(_sql_literal(value) for value in sorted(cleaned_ids))
+        sql = f"""
+select
+  gd.geometry_revision_id::text as geometry_revision_id,
+  gd.derivative_jsonb
+from app.geometry_derivatives gd
+where gd.derivative_kind = 'viewer_outline'::app.geometry_derivative_kind
+  and gd.geometry_revision_id in ({in_list})
+order by gd.geometry_revision_id asc;
+"""
+        rows = self._management_query(sql)
+        out: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            geometry_revision_id = str(row.get("geometry_revision_id") or "").strip()
+            derivative_json = row.get("derivative_jsonb")
+            if not geometry_revision_id or not isinstance(derivative_json, dict):
+                continue
+            out[geometry_revision_id] = derivative_json
+        return out
 
     def fetch_project_file(self, file_id: str) -> dict[str, Any]:
         sql = f"""
@@ -1176,6 +1207,25 @@ def _discover_cli_run_dir(run_root: Path) -> Path | None:
     return dirs[-1]
 
 
+def _snapshot_source_geometry_revision_ids(snapshot_row: dict[str, Any]) -> list[str]:
+    parts_manifest_raw = snapshot_row.get("parts_manifest_jsonb")
+    if not isinstance(parts_manifest_raw, list):
+        raise WorkerError("snapshot missing parts_manifest_jsonb")
+
+    source_ids: set[str] = set()
+    for idx, part in enumerate(parts_manifest_raw):
+        if not isinstance(part, dict):
+            continue
+        source_geometry_revision_id = str(part.get("source_geometry_revision_id") or "").strip()
+        if not source_geometry_revision_id:
+            raise WorkerError(f"snapshot missing source_geometry_revision_id at parts_manifest_jsonb[{idx}]")
+        source_ids.add(source_geometry_revision_id)
+
+    if not source_ids:
+        raise WorkerError("snapshot has no source_geometry_revision_id entries")
+    return sorted(source_ids)
+
+
 @dataclass(frozen=True)
 class SolverRunnerInvocation:
     cmd: list[str]
@@ -1469,6 +1519,27 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             placements=projection.placements,
             unplaced=projection.unplaced,
             metrics=projection.metrics,
+        )
+        source_geometry_revision_ids = _snapshot_source_geometry_revision_ids(snapshot_row)
+        viewer_outline_by_geometry_revision = client.fetch_viewer_outline_derivatives(
+            geometry_revision_ids=source_geometry_revision_ids
+        )
+        persisted_sheet_svgs = persist_sheet_svg_artifacts(
+            project_id=project_id,
+            run_id=run_id,
+            storage_bucket=settings.run_artifacts_bucket,
+            snapshot_row=snapshot_row,
+            projection_sheets=projection.sheets,
+            projection_placements=projection.placements,
+            viewer_outline_by_geometry_revision=viewer_outline_by_geometry_revision,
+            upload_object=client.upload_object,
+            register_artifact=client.register_run_artifact_raw,
+        )
+        logger.info(
+            "event=sheet_svg_artifacts_persisted run_id=%s project_id=%s count=%s",
+            run_id,
+            project_id,
+            len(persisted_sheet_svgs),
         )
         client.complete_run_done_and_dequeue(
             run_id=run_id,
