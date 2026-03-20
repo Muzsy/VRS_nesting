@@ -804,10 +804,10 @@ def get_viewer_data(
                 effective_sheet,
                 {"dxf_artifact_id": None, "svg_artifact_id": None, "dxf_filename": None, "svg_filename": None},
             )
-            if filename.endswith(".dxf"):
+            if artifact_type == "sheet_dxf" or (artifact_type == "" and filename.startswith("out/sheet_") and filename.endswith(".dxf")):
                 slot["dxf_artifact_id"] = artifact_id
                 slot["dxf_filename"] = filename
-            if filename.endswith(".svg"):
+            if artifact_type == "sheet_svg" or (artifact_type == "" and filename.startswith("out/sheet_") and filename.endswith(".svg")):
                 slot["svg_artifact_id"] = artifact_id
                 slot["svg_filename"] = filename
 

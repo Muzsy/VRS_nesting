@@ -309,11 +309,115 @@ def _assert_invalid_placement_mapping_error() -> None:
     raise RuntimeError("invalid placement mapping case did not raise SheetSvgArtifactsError")
 
 
+def _assert_empty_sheet_svg_case() -> None:
+    placements = [item for item in _projection_placements() if int(item.get("sheet_index") or 0) == 0]
+    gateway = FakeArtifactGateway()
+    records = persist_sheet_svg_artifacts(
+        project_id="project-1",
+        run_id="run-empty-sheet",
+        storage_bucket="run-artifacts",
+        snapshot_row=_snapshot(),
+        projection_sheets=_projection_sheets(),
+        projection_placements=placements,
+        viewer_outline_by_geometry_revision=_viewer_outline_by_geometry(),
+        upload_object=gateway.upload_object,
+        register_artifact=gateway.register_artifact,
+    )
+    _assert_true(len(records) == 2, "all projection sheets must produce an SVG, including empty sheets")
+
+    uploaded_payloads = list(gateway.uploaded.values())
+    _assert_true(len(uploaded_payloads) == 2, "expected two uploaded SVG payloads")
+    second_svg = uploaded_payloads[1].decode("utf-8")
+    _assert_true('data-instance-id=' not in second_svg, "empty sheet SVG should not contain placement paths")
+
+
+def _assert_non_orthogonal_rotation_case() -> None:
+    placements = _projection_placements()
+    placements[0]["transform_jsonb"]["rotation_deg"] = 37.5
+
+    gateway = FakeArtifactGateway()
+    persist_sheet_svg_artifacts(
+        project_id="project-1",
+        run_id="run-rotation",
+        storage_bucket="run-artifacts",
+        snapshot_row=_snapshot(),
+        projection_sheets=_projection_sheets(),
+        projection_placements=placements,
+        viewer_outline_by_geometry_revision=_viewer_outline_by_geometry(),
+        upload_object=gateway.upload_object,
+        register_artifact=gateway.register_artifact,
+    )
+    svg_payload = next(iter(gateway.uploaded.values())).decode("utf-8")
+    _assert_true('data-placement-rotation-deg="37.500000"' in svg_payload, "non-orthogonal rotation is not preserved")
+
+
+def _assert_attribute_escaping_case() -> None:
+    snapshot = _snapshot()
+    snapshot["parts_manifest_jsonb"][0]["part_revision_id"] = 'part-rev-escaped"evil<1>'
+    placements = _projection_placements()
+    placements[0]["part_revision_id"] = 'part-rev-escaped"evil<1>'
+    placements[0]["transform_jsonb"]["instance_id"] = 'inst-"bad"<x>'
+    placements = [placements[0]]
+
+    gateway = FakeArtifactGateway()
+    persist_sheet_svg_artifacts(
+        project_id="project-1",
+        run_id="run-escaped",
+        storage_bucket="run-artifacts",
+        snapshot_row=snapshot,
+        projection_sheets=[_projection_sheets()[0]],
+        projection_placements=placements,
+        viewer_outline_by_geometry_revision=_viewer_outline_by_geometry(),
+        upload_object=gateway.upload_object,
+        register_artifact=gateway.register_artifact,
+    )
+    svg_payload = next(iter(gateway.uploaded.values())).decode("utf-8")
+    _assert_true('data-part-revision-id="part-rev-escaped&quot;evil&lt;1&gt;"' in svg_payload, "part id is not XML-escaped")
+    _assert_true('data-instance-id="inst-&quot;bad&quot;&lt;x&gt;"' in svg_payload, "instance id is not XML-escaped")
+
+
+def _assert_duplicate_part_revision_error() -> None:
+    snapshot = _snapshot()
+    snapshot["parts_manifest_jsonb"].append(
+        {
+            "project_part_requirement_id": "req-dup",
+            "part_revision_id": "part-rev-a",
+            "part_definition_id": "part-def-a",
+            "part_code": "PART-A-DUP",
+            "required_qty": 1,
+            "placement_priority": 99,
+            "source_geometry_revision_id": "geo-rev-b",
+            "selected_nesting_derivative_id": "deriv-b",
+        }
+    )
+
+    try:
+        persist_sheet_svg_artifacts(
+            project_id="project-1",
+            run_id="run-dup",
+            storage_bucket="run-artifacts",
+            snapshot_row=snapshot,
+            projection_sheets=_projection_sheets(),
+            projection_placements=_projection_placements(),
+            viewer_outline_by_geometry_revision=_viewer_outline_by_geometry(),
+            upload_object=FakeArtifactGateway().upload_object,
+            register_artifact=FakeArtifactGateway().register_artifact,
+        )
+    except SheetSvgArtifactsError as exc:
+        _assert_true("duplicate part_revision_id in snapshot" in str(exc), "expected duplicate part_revision_id error")
+        return
+    raise RuntimeError("duplicate part_revision_id case did not raise SheetSvgArtifactsError")
+
+
 def main() -> int:
     _assert_success_and_deterministic_rerun()
     _assert_missing_viewer_outline_error()
     _assert_invalid_sheet_relation_error()
     _assert_invalid_placement_mapping_error()
+    _assert_empty_sheet_svg_case()
+    _assert_non_orthogonal_rotation_case()
+    _assert_attribute_escaping_case()
+    _assert_duplicate_part_revision_error()
     print("PASS: H1-E6-T2 sheet SVG generator smoke")
     return 0
 

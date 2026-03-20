@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import os
@@ -19,7 +18,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import UUID
-from xml.sax.saxutils import escape
 
 from worker.engine_adapter_input import (
     EngineAdapterInputError,
@@ -1022,172 +1020,6 @@ def _build_dxf_project_payload(
         "stocks_dxf": stocks_dxf,
         "parts_dxf": parts_dxf,
     }
-
-
-def _read_json_object(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    if not isinstance(payload, dict):
-        return {}
-    return payload
-
-
-def _expand_sheet_sizes(solver_input_payload: dict[str, Any]) -> dict[int, tuple[float, float]]:
-    out: dict[int, tuple[float, float]] = {}
-    stocks = solver_input_payload.get("stocks")
-    if not isinstance(stocks, list):
-        return out
-
-    index = 0
-    for stock in stocks:
-        if not isinstance(stock, dict):
-            continue
-        width = float(stock.get("width") or 0.0)
-        height = float(stock.get("height") or 0.0)
-        qty = int(stock.get("quantity") or 0)
-        if width <= 0 or height <= 0 or qty <= 0:
-            continue
-        for _ in range(qty):
-            out[index] = (width, height)
-            index += 1
-    return out
-
-
-def _part_sizes(solver_input_payload: dict[str, Any]) -> dict[str, tuple[float, float]]:
-    out: dict[str, tuple[float, float]] = {}
-    parts = solver_input_payload.get("parts")
-    if not isinstance(parts, list):
-        return out
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        part_id = str(part.get("id", "")).strip()
-        if not part_id:
-            continue
-        width = float(part.get("width") or 0.0)
-        height = float(part.get("height") or 0.0)
-        if width <= 0 or height <= 0:
-            continue
-        out[part_id] = (width, height)
-    return out
-
-
-def _fallback_color(part_id: str) -> str:
-    digest = hashlib.sha1(part_id.encode("utf-8")).hexdigest()
-    return "#" + digest[:6]
-
-
-def _build_fallback_svg(
-    *,
-    width: float,
-    height: float,
-    placements: list[dict[str, Any]],
-    part_sizes: dict[str, tuple[float, float]],
-) -> str:
-    safe_width = max(width, 1.0)
-    safe_height = max(height, 1.0)
-
-    lines: list[str] = []
-    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
-    lines.append(
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{safe_width:.3f}mm" height="{safe_height:.3f}mm" '
-        f'viewBox="0 0 {safe_width:.3f} {safe_height:.3f}">'
-    )
-    lines.append(
-        f'  <rect x="0" y="0" width="{safe_width:.3f}" height="{safe_height:.3f}" '
-        'fill="#ffffff" stroke="#111827" stroke-width="1" />'
-    )
-
-    for placement in placements:
-        part_id = str(placement.get("part_id", "")).strip()
-        if not part_id:
-            continue
-        x = float(placement.get("x") or 0.0)
-        y = float(placement.get("y") or 0.0)
-        rotation = float(placement.get("rotation_deg") or 0.0)
-        part_w, part_h = part_sizes.get(part_id, (10.0, 10.0))
-        color = _fallback_color(part_id)
-        transform = ""
-        if rotation:
-            transform = f' transform="rotate({rotation:.3f} {x:.3f} {y:.3f})"'
-        label = escape(part_id)
-        lines.append(
-            f'  <rect x="{x:.3f}" y="{y:.3f}" width="{part_w:.3f}" height="{part_h:.3f}" '
-            f'fill="{color}" fill-opacity="0.35" stroke="#0f172a" stroke-width="0.4"{transform} />'
-        )
-        lines.append(
-            f'  <title>{label}</title>'
-        )
-
-    lines.append("</svg>")
-    return "\n".join(lines) + "\n"
-
-
-def _ensure_sheet_svgs(run_dir: Path) -> list[Path]:
-    out_dir = run_dir / "out"
-    if not out_dir.is_dir():
-        return []
-
-    solver_input_payload = _read_json_object(run_dir / "solver_input.json")
-    solver_output_payload = _read_json_object(run_dir / "solver_output.json")
-
-    sheet_sizes = _expand_sheet_sizes(solver_input_payload)
-    part_dims = _part_sizes(solver_input_payload)
-
-    grouped_placements: dict[int, list[dict[str, Any]]] = {}
-    placements = solver_output_payload.get("placements")
-    if isinstance(placements, list):
-        for item in placements:
-            if not isinstance(item, dict):
-                continue
-            sheet_index = item.get("sheet_index")
-            if not isinstance(sheet_index, int):
-                continue
-            grouped_placements.setdefault(sheet_index, []).append(item)
-
-    target_sheet_indexes: set[int] = set(grouped_placements.keys())
-    for dxf_path in out_dir.glob("sheet_*.dxf"):
-        if not dxf_path.is_file():
-            continue
-        token = dxf_path.stem.split("_", 1)[1] if "_" in dxf_path.stem else ""
-        if token.isdigit():
-            target_sheet_indexes.add(int(token) - 1)
-
-    generated: list[Path] = []
-    for sheet_index in sorted(target_sheet_indexes):
-        svg_path = out_dir / f"sheet_{sheet_index + 1:03d}.svg"
-        if svg_path.is_file() and svg_path.stat().st_size > 0:
-            continue
-
-        placements_for_sheet = grouped_placements.get(sheet_index, [])
-        width, height = sheet_sizes.get(sheet_index, (1000.0, 1000.0))
-        if sheet_index not in sheet_sizes and placements_for_sheet:
-            max_x = 0.0
-            max_y = 0.0
-            for placement in placements_for_sheet:
-                part_id = str(placement.get("part_id", "")).strip()
-                part_w, part_h = part_dims.get(part_id, (10.0, 10.0))
-                px = float(placement.get("x") or 0.0)
-                py = float(placement.get("y") or 0.0)
-                max_x = max(max_x, px + part_w)
-                max_y = max(max_y, py + part_h)
-            width = max(max_x + 10.0, width)
-            height = max(max_y + 10.0, height)
-
-        svg_payload = _build_fallback_svg(
-            width=width,
-            height=height,
-            placements=placements_for_sheet,
-            part_sizes=part_dims,
-        )
-        svg_path.write_text(svg_payload, encoding="utf-8")
-        generated.append(svg_path)
-
-    return generated
 
 
 def _find_run_dir_from_stdout(stdout: str) -> Path:

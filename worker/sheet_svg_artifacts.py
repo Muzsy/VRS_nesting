@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 from typing import Any, Callable
+from xml.sax.saxutils import escape
 
 
 class SheetSvgArtifactsError(RuntimeError):
@@ -22,6 +23,7 @@ class PersistedSheetSvgArtifact:
 
 UploadFn = Callable[..., None]
 RegisterFn = Callable[..., None]
+_POINT_CLOSE_EPS = 1e-9
 
 
 def _require_dict(raw: Any, *, field: str) -> dict[str, Any]:
@@ -89,7 +91,7 @@ def _parse_ring(raw: Any, *, field: str) -> list[tuple[float, float]]:
     if len(points) < 3:
         raise SheetSvgArtifactsError(f"invalid {field}")
     ring = [_parse_point(point_raw, field=f"{field}[{idx}]") for idx, point_raw in enumerate(points)]
-    if ring[0] == ring[-1] and len(ring) > 3:
+    if len(ring) > 3 and _points_close(ring[0], ring[-1]):
         ring = ring[:-1]
     if len(ring) < 3:
         raise SheetSvgArtifactsError(f"invalid {field}")
@@ -103,6 +105,14 @@ def _parse_hole_rings(raw: Any, *, field: str) -> list[list[tuple[float, float]]
 
 def _format_num(value: float) -> str:
     return f"{float(value):.6f}"
+
+
+def _points_close(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return abs(a[0] - b[0]) <= _POINT_CLOSE_EPS and abs(a[1] - b[1]) <= _POINT_CLOSE_EPS
+
+
+def _escape_xml_attr(value: str) -> str:
+    return escape(value, {'"': "&quot;", "'": "&apos;"})
 
 
 def _path_d_from_rings(outer_ring: list[tuple[float, float]], hole_rings: list[list[tuple[float, float]]]) -> str:
@@ -169,6 +179,8 @@ def _part_source_geometry_index(snapshot_row: dict[str, Any]) -> dict[str, str]:
             item.get("source_geometry_revision_id"),
             field=f"parts_manifest_jsonb[{idx}].source_geometry_revision_id",
         )
+        if part_revision_id in out:
+            raise SheetSvgArtifactsError(f"duplicate part_revision_id in snapshot: {part_revision_id}")
         out[part_revision_id] = source_geometry_revision_id
     return out
 
@@ -275,8 +287,10 @@ def _render_sheet_svg(
         ]
         path_d = _path_d_from_rings(transformed_outer, transformed_holes)
         fill = _color_for_part(part_revision_id)
+        part_revision_id_attr = _escape_xml_attr(part_revision_id)
+        instance_id_attr = _escape_xml_attr(instance_id)
         lines.append(
-            f'  <path d="{path_d}" fill="{fill}" fill-opacity="0.40" stroke="#0f172a" stroke-width="0.35" fill-rule="evenodd" data-part-revision-id="{part_revision_id}" data-instance-id="{instance_id}" data-placement-rotation-deg="{_format_num(rotation_deg)}" />'
+            f'  <path d="{path_d}" fill="{fill}" fill-opacity="0.40" stroke="#0f172a" stroke-width="0.35" fill-rule="evenodd" data-part-revision-id="{part_revision_id_attr}" data-instance-id="{instance_id_attr}" data-placement-rotation-deg="{_format_num(rotation_deg)}" />'
         )
 
     lines.append("</svg>")
