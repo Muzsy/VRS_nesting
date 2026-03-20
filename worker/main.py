@@ -28,6 +28,7 @@ from worker.engine_adapter_input import (
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 from worker.raw_output_artifacts import persist_raw_output_artifacts
 from worker.result_normalizer import normalize_solver_output_projection
+from worker.sheet_dxf_artifacts import persist_sheet_dxf_artifacts
 from worker.sheet_svg_artifacts import persist_sheet_svg_artifacts
 
 
@@ -364,6 +365,36 @@ select
   gd.derivative_jsonb
 from app.geometry_derivatives gd
 where gd.derivative_kind = 'viewer_outline'::app.geometry_derivative_kind
+  and gd.geometry_revision_id in ({in_list})
+order by gd.geometry_revision_id asc;
+"""
+        rows = self._management_query(sql)
+        out: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            geometry_revision_id = str(row.get("geometry_revision_id") or "").strip()
+            derivative_json = row.get("derivative_jsonb")
+            if not geometry_revision_id or not isinstance(derivative_json, dict):
+                continue
+            out[geometry_revision_id] = derivative_json
+        return out
+
+    def fetch_nesting_canonical_derivatives(self, *, geometry_revision_ids: list[str]) -> dict[str, dict[str, Any]]:
+        cleaned_ids: set[str] = set()
+        for idx, raw in enumerate(geometry_revision_ids):
+            value = str(raw or "").strip()
+            if not value:
+                raise WorkerError(f"invalid geometry_revision_ids[{idx}]")
+            cleaned_ids.add(value)
+        if not cleaned_ids:
+            return {}
+
+        in_list = ", ".join(_sql_literal(value) for value in sorted(cleaned_ids))
+        sql = f"""
+select
+  gd.geometry_revision_id::text as geometry_revision_id,
+  gd.derivative_jsonb
+from app.geometry_derivatives gd
+where gd.derivative_kind = 'nesting_canonical'::app.geometry_derivative_kind
   and gd.geometry_revision_id in ({in_list})
 order by gd.geometry_revision_id asc;
 """
@@ -1372,6 +1403,26 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             run_id,
             project_id,
             len(persisted_sheet_svgs),
+        )
+        nesting_canonical_by_geometry_revision = client.fetch_nesting_canonical_derivatives(
+            geometry_revision_ids=source_geometry_revision_ids
+        )
+        persisted_sheet_dxf = persist_sheet_dxf_artifacts(
+            project_id=project_id,
+            run_id=run_id,
+            storage_bucket=settings.run_artifacts_bucket,
+            snapshot_row=snapshot_row,
+            projection_sheets=projection.sheets,
+            projection_placements=projection.placements,
+            nesting_canonical_by_geometry_revision=nesting_canonical_by_geometry_revision,
+            upload_object=client.upload_object,
+            register_artifact=client.register_run_artifact_raw,
+        )
+        logger.info(
+            "event=sheet_dxf_artifacts_persisted run_id=%s project_id=%s count=%s",
+            run_id,
+            project_id,
+            len(persisted_sheet_dxf),
         )
         client.complete_run_done_and_dequeue(
             run_id=run_id,

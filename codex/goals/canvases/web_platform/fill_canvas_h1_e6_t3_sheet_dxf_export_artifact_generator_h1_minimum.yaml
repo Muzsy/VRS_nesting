@@ -1,0 +1,55 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E6-T3 task canvas/YAML/checklist/report alapjait,
+      a web_platform H1 roadmaphoz, a H0 artifact/projection szabalyokhoz,
+      a sheet DXF export minimum szerepehez es a meglevo worker-task mintakhoz
+      igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md"
+
+  - name: "Sheet DXF generator boundary es worker-integracio kialakitasa"
+    description: >
+      Vezess be explicit worker-oldali sheet DXF generator helper/service
+      boundaryt, amely a H1-E6-T1 projection truth + snapshot geometry/
+      `nesting_canonical` derivative adatok alapjan per hasznalt sheet
+      deterministic, basic-importra alkalmas DXF dokumentumokat general.
+      Az artifactokat a canonical `run-artifacts` bucketbe toltsd fel es
+      `sheet_dxf` artifactkent regisztrald route-kompatibilis `filename` +
+      `sheet_index` metadata mellett. A worker success pathban a sheet DXF
+      generator a sheet SVG generator utan, de a run `done` zarasa elott
+      fusson. A scope maradjon basic export: ne nyisson bundle/manufacturing
+      vagy frontend-redesign munkat.
+    outputs:
+      - "worker/main.py"
+      - "worker/sheet_dxf_artifacts.py"
+      - "codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet fake snapshot + fake projection +
+      fake storage/DB gateway boundaryval, amely bizonyitja a per-sheet DXF
+      export helyesseget, a `nesting_canonical` alapu geometriafelhasznalast,
+      a route-kompatibilis artifact metadata/filename logikat, a determinisztikus
+      rerunt, valamint a hianyzo `nesting_canonical` / ervenytelen sheet- vagy
+      placement-kapcsolat hibagakat. A smoke alap szinten validalja vagy
+      visszaolvassa a generalt DXF-et. Frissitsd a checklistet es a reportot
+      evidence-alapon, DoD -> Evidence matrixszal, es dokumentald kulon, hogy a
+      task pontosan mit szallit le basic export szinten, illetve mit hagy
+      szandekosan a bundle/manufacturing/H2 blokkokra.
+    outputs:
+      - "scripts/smoke_h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.verify.log"
