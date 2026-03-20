@@ -90,31 +90,29 @@ PASS
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-03-20T22:18:47+01:00 → 2026-03-20T22:22:18+01:00 (211s)
+- futás: 2026-03-20T22:44:43+01:00 → 2026-03-20T22:48:15+01:00 (212s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.verify.log`
-- git: `main@343fd79`
-- módosított fájlok (git status): 9
+- git: `main@6b4dd37`
+- módosított fájlok (git status): 4
 
 **git diff --stat**
 
 ```text
- worker/main.py | 51 +++++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 51 insertions(+)
+ ...eet_dxf_export_artifact_generator_h1_minimum.md |  26 +++--
+ ...export_artifact_generator_h1_minimum.verify.log |  82 +++++++--------
+ ...eet_dxf_export_artifact_generator_h1_minimum.py | 114 +++++++++++++++++++++
+ worker/sheet_dxf_artifacts.py                      |  70 ++++++++++++-
+ 4 files changed, 232 insertions(+), 60 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
- M worker/main.py
-?? canvases/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md
-?? codex/codex_checklist/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md
-?? codex/goals/canvases/web_platform/fill_canvas_h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.yaml
-?? codex/prompts/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum/
-?? codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md
-?? codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.verify.log
-?? scripts/smoke_h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.py
-?? worker/sheet_dxf_artifacts.py
+ M codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.md
+ M codex/reports/web_platform/h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.verify.log
+ M scripts/smoke_h1_e6_t3_sheet_dxf_export_artifact_generator_h1_minimum.py
+ M worker/sheet_dxf_artifacts.py
 ```
 
 <!-- AUTO_VERIFY_END -->

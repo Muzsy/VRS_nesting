@@ -107,7 +107,11 @@ def _parse_hole_rings(raw: Any, *, field: str) -> list[list[tuple[float, float]]
 
 
 def _format_num(value: float) -> str:
-    return f"{float(value):.6f}"
+    rounded = round(float(value), 6)
+    if abs(rounded) < 1e-9:
+        rounded = 0.0
+    text = f"{rounded:.6f}".rstrip("0").rstrip(".")
+    return text or "0"
 
 
 def _transform_point(x: float, y: float, *, tx: float, ty: float, rotation_deg: float) -> tuple[float, float]:
@@ -216,18 +220,30 @@ def _append_pair(pairs: list[tuple[str, str]], code: int | str, value: int | flo
 def _append_lwpolyline(
     pairs: list[tuple[str, str]],
     *,
+    handle: str,
+    owner_handle: str,
     layer: str,
     ring: list[tuple[float, float]],
 ) -> None:
     if len(ring) < 3:
         raise SheetDxfArtifactsError("invalid lwpolyline ring")
     _append_pair(pairs, 0, "LWPOLYLINE")
+    _append_pair(pairs, 5, handle)
+    _append_pair(pairs, 330, owner_handle)
+    _append_pair(pairs, 100, "AcDbEntity")
     _append_pair(pairs, 8, layer)
+    _append_pair(pairs, 100, "AcDbPolyline")
     _append_pair(pairs, 90, len(ring))
     _append_pair(pairs, 70, 1)
     for x, y in ring:
         _append_pair(pairs, 10, _format_num(x))
         _append_pair(pairs, 20, _format_num(y))
+
+
+def _next_handle(counter: list[int]) -> str:
+    value = counter[0]
+    counter[0] += 1
+    return format(value, "X")
 
 
 def _pairs_to_dxf_text(pairs: list[tuple[str, str]]) -> str:
@@ -257,22 +273,47 @@ def _render_sheet_dxf(
     )
 
     pairs: list[tuple[str, str]] = []
+    handle_counter = [0x10]
+    root_owner_handle = "0"
 
     _append_pair(pairs, 0, "SECTION")
     _append_pair(pairs, 2, "HEADER")
+    _append_pair(pairs, 9, "$ACADVER")
+    _append_pair(pairs, 1, "AC1015")
     _append_pair(pairs, 9, "$INSUNITS")
     _append_pair(pairs, 70, 4)
     _append_pair(pairs, 9, "$MEASUREMENT")
     _append_pair(pairs, 70, 1)
+    _append_pair(pairs, 9, "$EXTMIN")
+    _append_pair(pairs, 10, _format_num(0.0))
+    _append_pair(pairs, 20, _format_num(0.0))
+    _append_pair(pairs, 9, "$EXTMAX")
+    _append_pair(pairs, 10, _format_num(width_mm))
+    _append_pair(pairs, 20, _format_num(height_mm))
+    _append_pair(pairs, 9, "$LIMMIN")
+    _append_pair(pairs, 10, _format_num(0.0))
+    _append_pair(pairs, 20, _format_num(0.0))
+    _append_pair(pairs, 9, "$LIMMAX")
+    _append_pair(pairs, 10, _format_num(width_mm))
+    _append_pair(pairs, 20, _format_num(height_mm))
     _append_pair(pairs, 0, "ENDSEC")
 
     _append_pair(pairs, 0, "SECTION")
     _append_pair(pairs, 2, "TABLES")
+    layer_table_handle = _next_handle(handle_counter)
     _append_pair(pairs, 0, "TABLE")
+    _append_pair(pairs, 5, layer_table_handle)
+    _append_pair(pairs, 330, root_owner_handle)
+    _append_pair(pairs, 100, "AcDbSymbolTable")
     _append_pair(pairs, 2, "LAYER")
     _append_pair(pairs, 70, 3)
     for layer_name, color in (("SHEET_FRAME", 7), ("PART_OUTER", 3), ("PART_HOLE", 1)):
+        layer_handle = _next_handle(handle_counter)
         _append_pair(pairs, 0, "LAYER")
+        _append_pair(pairs, 5, layer_handle)
+        _append_pair(pairs, 330, layer_table_handle)
+        _append_pair(pairs, 100, "AcDbSymbolTableRecord")
+        _append_pair(pairs, 100, "AcDbLayerTableRecord")
         _append_pair(pairs, 2, layer_name)
         _append_pair(pairs, 70, 0)
         _append_pair(pairs, 62, color)
@@ -284,7 +325,13 @@ def _render_sheet_dxf(
     _append_pair(pairs, 2, "ENTITIES")
 
     frame_ring = [(0.0, 0.0), (width_mm, 0.0), (width_mm, height_mm), (0.0, height_mm)]
-    _append_lwpolyline(pairs, layer="SHEET_FRAME", ring=frame_ring)
+    _append_lwpolyline(
+        pairs,
+        handle=_next_handle(handle_counter),
+        owner_handle=root_owner_handle,
+        layer="SHEET_FRAME",
+        ring=frame_ring,
+    )
 
     for item in ordered:
         part_revision_id = _require_str(item.get("part_revision_id"), field="projection_placements[].part_revision_id")
@@ -309,10 +356,22 @@ def _render_sheet_dxf(
         )
 
         transformed_outer = _transform_ring(geometry["outer_ring"], tx=tx, ty=ty, rotation_deg=rotation_deg)
-        _append_lwpolyline(pairs, layer="PART_OUTER", ring=transformed_outer)
+        _append_lwpolyline(
+            pairs,
+            handle=_next_handle(handle_counter),
+            owner_handle=root_owner_handle,
+            layer="PART_OUTER",
+            ring=transformed_outer,
+        )
         for hole_ring in geometry["hole_rings"]:
             transformed_hole = _transform_ring(hole_ring, tx=tx, ty=ty, rotation_deg=rotation_deg)
-            _append_lwpolyline(pairs, layer="PART_HOLE", ring=transformed_hole)
+            _append_lwpolyline(
+                pairs,
+                handle=_next_handle(handle_counter),
+                owner_handle=root_owner_handle,
+                layer="PART_HOLE",
+                ring=transformed_hole,
+            )
 
     _append_pair(pairs, 0, "ENDSEC")
     _append_pair(pairs, 0, "EOF")
@@ -364,7 +423,8 @@ def persist_sheet_dxf_artifacts(
             geometry_by_part=geometry_by_part,
         ).encode("utf-8")
         content_sha256 = hashlib.sha256(payload).hexdigest()
-        storage_hash = hashlib.sha256(f"{filename}\n{content_sha256}".encode("utf-8")).hexdigest()
+        storage_hash_input = "\n".join([project_id, run_id, filename, content_sha256])
+        storage_hash = hashlib.sha256(storage_hash_input.encode("utf-8")).hexdigest()
         storage_path = _canonical_storage_path(project_id=project_id, run_id=run_id, content_hash=storage_hash)
         metadata = {
             "legacy_artifact_type": "sheet_dxf",

@@ -230,6 +230,10 @@ def _contains_point(polylines: list[dict[str, Any]], *, layer: str, x: float, y:
     return False
 
 
+def _count_layer(polylines: list[dict[str, Any]], *, layer: str) -> int:
+    return sum(1 for polyline in polylines if str(polyline.get("layer") or "") == layer)
+
+
 def _assert_success_and_deterministic_rerun() -> None:
     snapshot = _snapshot()
     projection_sheets = _projection_sheets()
@@ -292,6 +296,9 @@ def _assert_success_and_deterministic_rerun() -> None:
         _assert_true("0\nSECTION\n2\nHEADER\n" in payload, "DXF HEADER section is missing")
         _assert_true("0\nSECTION\n2\nENTITIES\n" in payload, "DXF ENTITIES section is missing")
         _assert_true("0\nLWPOLYLINE\n" in payload, "DXF polyline entity is missing")
+        _assert_true("9\n$ACADVER\n1\nAC1015\n" in payload, "DXF ACADVER header is missing")
+        _assert_true("\n0\nLAYER\n5\n" in payload, "DXF LAYER handles are missing")
+        _assert_true("\n330\n" in payload, "DXF owner handle references are missing")
 
         polylines = _extract_lwpolylines(_parse_dxf_pairs(payload))
         if idx == 0:
@@ -328,6 +335,110 @@ def _assert_empty_sheet_case() -> None:
     polylines = _extract_lwpolylines(_parse_dxf_pairs(payload.decode("utf-8")))
     _assert_true(len(polylines) == 1, "empty sheet should contain frame-only polyline")
     _assert_true(str(polylines[0].get("layer") or "") == "SHEET_FRAME", "empty sheet frame layer mismatch")
+
+
+def _assert_single_sheet_case() -> None:
+    sheets = [_projection_sheets()[0]]
+    placements = [item for item in _projection_placements() if int(item.get("sheet_index") or 0) == 0]
+
+    gateway = FakeArtifactGateway()
+    records = persist_sheet_dxf_artifacts(
+        project_id="project-1",
+        run_id="run-single-sheet",
+        storage_bucket="run-artifacts",
+        snapshot_row=_snapshot(),
+        projection_sheets=sheets,
+        projection_placements=placements,
+        nesting_canonical_by_geometry_revision=_nesting_canonical_by_geometry(),
+        upload_object=gateway.upload_object,
+        register_artifact=gateway.register_artifact,
+    )
+    _assert_true(len(records) == 1, f"single-sheet run should create 1 artifact, got {len(records)}")
+    metadata = gateway.registered[0]["metadata_json"]
+    _assert_true(int(metadata.get("sheet_index")) == 0, "single-sheet metadata sheet_index mismatch")
+
+
+def _assert_part_without_holes_case() -> None:
+    sheets = [_projection_sheets()[0]]
+    placements = [
+        {
+            "sheet_index": 0,
+            "placement_index": 0,
+            "part_revision_id": "part-rev-b",
+            "quantity": 1,
+            "transform_jsonb": {
+                "instance_id": "inst-b-only",
+                "part_id": "part-rev-b",
+                "sheet_index": 0,
+                "x": 10.0,
+                "y": 10.0,
+                "rotation_deg": 0.0,
+            },
+            "bbox_jsonb": {},
+            "metadata_jsonb": {},
+        }
+    ]
+
+    gateway = FakeArtifactGateway()
+    persist_sheet_dxf_artifacts(
+        project_id="project-1",
+        run_id="run-no-hole",
+        storage_bucket="run-artifacts",
+        snapshot_row=_snapshot(),
+        projection_sheets=sheets,
+        projection_placements=placements,
+        nesting_canonical_by_geometry_revision=_nesting_canonical_by_geometry(),
+        upload_object=gateway.upload_object,
+        register_artifact=gateway.register_artifact,
+    )
+
+    payload = next(iter(gateway.uploaded.values())).decode("utf-8")
+    polylines = _extract_lwpolylines(_parse_dxf_pairs(payload))
+    _assert_true(_count_layer(polylines, layer="PART_HOLE") == 0, "part without holes produced PART_HOLE entities")
+    _assert_true(_count_layer(polylines, layer="PART_OUTER") == 1, "part without holes should produce one PART_OUTER polyline")
+
+
+def _assert_large_placement_case() -> None:
+    sheets = [_projection_sheets()[0]]
+    placements: list[dict[str, Any]] = []
+    for idx in range(80):
+        placements.append(
+            {
+                "sheet_index": 0,
+                "placement_index": idx,
+                "part_revision_id": "part-rev-b",
+                "quantity": 1,
+                "transform_jsonb": {
+                    "instance_id": f"inst-b-{idx:03d}",
+                    "part_id": "part-rev-b",
+                    "sheet_index": 0,
+                    "x": float(idx % 10) * 8.0,
+                    "y": float(idx // 10) * 6.0,
+                    "rotation_deg": 0.0,
+                },
+                "bbox_jsonb": {},
+                "metadata_jsonb": {},
+            }
+        )
+
+    gateway = FakeArtifactGateway()
+    records = persist_sheet_dxf_artifacts(
+        project_id="project-1",
+        run_id="run-many-placements",
+        storage_bucket="run-artifacts",
+        snapshot_row=_snapshot(),
+        projection_sheets=sheets,
+        projection_placements=placements,
+        nesting_canonical_by_geometry_revision=_nesting_canonical_by_geometry(),
+        upload_object=gateway.upload_object,
+        register_artifact=gateway.register_artifact,
+    )
+    _assert_true(len(records) == 1, "large-placement single-sheet case should produce one artifact")
+
+    payload = next(iter(gateway.uploaded.values())).decode("utf-8")
+    polylines = _extract_lwpolylines(_parse_dxf_pairs(payload))
+    _assert_true(len(polylines) == 81, f"expected frame + 80 part polylines, got {len(polylines)}")
+    _assert_true(_count_layer(polylines, layer="PART_OUTER") == 80, "large-placement PART_OUTER count mismatch")
 
 
 def _assert_missing_nesting_canonical_error() -> None:
@@ -432,6 +543,9 @@ def _assert_duplicate_part_revision_error() -> None:
 def main() -> int:
     _assert_success_and_deterministic_rerun()
     _assert_empty_sheet_case()
+    _assert_single_sheet_case()
+    _assert_part_without_holes_case()
+    _assert_large_placement_case()
     _assert_missing_nesting_canonical_error()
     _assert_invalid_sheet_relation_error()
     _assert_invalid_placement_mapping_error()
