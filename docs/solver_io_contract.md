@@ -63,6 +63,13 @@ Placement item fields:
 - `y` (number)
 - `rotation_deg` (number)
 
+`sheet_index` semantics (explicit contract):
+- The solver must treat `stocks` as an ordered sequence and expand each stock item by its `quantity`.
+- Expansion order is stable: for each `stocks[i]`, emit `quantity` virtual sheets before moving to `stocks[i+1]`.
+- `sheet_index` points to this expanded sequence with 0-based indexing.
+- Example: `stocks=[{id:A,quantity:2},{id:B,quantity:1}]` => valid sheet slots are
+  `0:A#0`, `1:A#1`, `2:B#0`.
+
 Unplaced item fields:
 - `instance_id` (string)
 - `part_id` (string)

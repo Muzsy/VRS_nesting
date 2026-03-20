@@ -84,7 +84,7 @@ PASS_WITH_NOTES
 | `./scripts/verify.sh --report codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md` PASS. | PASS | `codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.verify.log` | Standard repo gate wrapperrel futtatva. | verify.sh |
 
 ## 6) Advisory notes
-- A `worker/main.py` legacy `_read_run_metrics` helper megmaradt a fajlban, de a canonical done-zaras mar nem erre epul.
+- A legacy `_read_run_metrics` helper torlesre kerult, a canonical done-zaras kizarolag normalizer summary-ra epul.
 - A `replace_run_projection` SQL boundary run-idempotens replace, de tranzakcio explicit SQL function nelkul, egyetlen multi-CTE statementben valosul meg.
 - `remnant_value` H1 minimumon tovabbra is `null`, mert nincs megbizhato gazdasagi input.
 
@@ -93,31 +93,29 @@ PASS_WITH_NOTES
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-03-20T20:56:46+01:00 → 2026-03-20T21:00:18+01:00 (212s)
+- futás: 2026-03-20T21:12:46+01:00 → 2026-03-20T21:16:18+01:00 (212s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.verify.log`
-- git: `main@73212cd`
-- módosított fájlok (git status): 9
+- git: `main@0886544`
+- módosított fájlok (git status): 4
 
 **git diff --stat**
 
 ```text
- worker/main.py | 188 +++++++++++++++++++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 183 insertions(+), 5 deletions(-)
+ ...1_e6_t1_result_normalizer_h1_minimum.verify.log |  72 ++++-----
+ docs/solver_io_contract.md                         |   7 +
+ .../smoke_h1_e6_t1_result_normalizer_h1_minimum.py | 163 +++++++++++++++++++--
+ worker/main.py                                     |  71 +++------
+ 4 files changed, 214 insertions(+), 99 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
+ M codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.verify.log
+ M docs/solver_io_contract.md
+ M scripts/smoke_h1_e6_t1_result_normalizer_h1_minimum.py
  M worker/main.py
-?? canvases/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md
-?? codex/codex_checklist/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md
-?? codex/goals/canvases/web_platform/fill_canvas_h1_e6_t1_result_normalizer_h1_minimum.yaml
-?? codex/prompts/web_platform/h1_e6_t1_result_normalizer_h1_minimum/
-?? codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md
-?? codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.verify.log
-?? scripts/smoke_h1_e6_t1_result_normalizer_h1_minimum.py
-?? worker/result_normalizer.py
 ```
 
 <!-- AUTO_VERIFY_END -->

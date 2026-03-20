@@ -18,6 +18,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from uuid import UUID
 from xml.sax.saxutils import escape
 
 from worker.engine_adapter_input import (
@@ -98,6 +99,14 @@ def _resolve_env(key: str, default: str = "") -> str:
 
 def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _sql_uuid_literal(value: str, *, field: str) -> str:
+    try:
+        normalized = str(UUID(str(value).strip()))
+    except Exception as exc:  # noqa: BLE001
+        raise WorkerError(f"invalid {field}") from exc
+    return _sql_literal(normalized)
 
 
 def _sql_float_literal(value: float | None) -> str:
@@ -501,7 +510,7 @@ where id = {_sql_literal(run_id)};
         storage_bucket: str,
         storage_path: str,
         metadata_json: dict[str, Any],
-    ) -> None:
+) -> None:
         metadata_literal = _sql_literal(json.dumps(metadata_json, ensure_ascii=True, sort_keys=True))
         sql = f"""
 insert into app.run_artifacts(
@@ -512,7 +521,7 @@ insert into app.run_artifacts(
   metadata_jsonb
 )
 values (
-  {_sql_literal(run_id)},
+  {_sql_uuid_literal(run_id, field="run_id")}::uuid,
   {_sql_literal(artifact_kind)}::app.artifact_kind,
   {_sql_literal(storage_bucket)},
   {_sql_literal(storage_path)},
@@ -545,20 +554,21 @@ set artifact_kind = excluded.artifact_kind,
         used_sheet_count = int(metrics.get("used_sheet_count") or 0)
         utilization_ratio = metrics.get("utilization_ratio")
         remnant_value = metrics.get("remnant_value")
+        run_id_sql = _sql_uuid_literal(run_id, field="run_id")
 
         sql = f"""
 with
 deleted_placements as (
   delete from app.run_layout_placements
-  where run_id = {_sql_literal(run_id)}::uuid
+  where run_id = {run_id_sql}::uuid
 ),
 deleted_sheets as (
   delete from app.run_layout_sheets
-  where run_id = {_sql_literal(run_id)}::uuid
+  where run_id = {run_id_sql}::uuid
 ),
 deleted_unplaced as (
   delete from app.run_layout_unplaced
-  where run_id = {_sql_literal(run_id)}::uuid
+  where run_id = {run_id_sql}::uuid
 ),
 sheet_rows as (
   select *
@@ -583,7 +593,7 @@ inserted_sheets as (
     metadata_jsonb
   )
   select
-    {_sql_literal(run_id)}::uuid,
+    {run_id_sql}::uuid,
     s.sheet_index,
     s.sheet_revision_id,
     s.width_mm,
@@ -619,7 +629,7 @@ inserted_placements as (
     metadata_jsonb
   )
   select
-    {_sql_literal(run_id)}::uuid,
+    {run_id_sql}::uuid,
     s.id,
     p.placement_index,
     p.part_revision_id,
@@ -650,7 +660,7 @@ inserted_unplaced as (
     metadata_jsonb
   )
   select
-    {_sql_literal(run_id)}::uuid,
+    {run_id_sql}::uuid,
     u.part_revision_id,
     u.remaining_qty,
     u.reason,
@@ -667,7 +677,7 @@ insert into app.run_metrics(
   metrics_jsonb
 )
 values (
-  {_sql_literal(run_id)}::uuid,
+  {run_id_sql}::uuid,
   {placed_count},
   {unplaced_count},
   {used_sheet_count},
@@ -1149,37 +1159,6 @@ def _ensure_sheet_svgs(run_dir: Path) -> list[Path]:
     return generated
 
 
-def _read_run_metrics(run_dir: Path) -> tuple[int, int, int]:
-    solver_output_json = run_dir / "solver_output.json"
-    if solver_output_json.is_file():
-        payload = _read_json_object(solver_output_json)
-        placements_raw = payload.get("placements")
-        unplaced_raw = payload.get("unplaced")
-        placements = [item for item in placements_raw if isinstance(item, dict)] if isinstance(placements_raw, list) else []
-        unplaced = [item for item in unplaced_raw if isinstance(item, dict)] if isinstance(unplaced_raw, list) else []
-        sheet_indexes = [int(item["sheet_index"]) for item in placements if isinstance(item.get("sheet_index"), int)]
-        sheet_count = (max(sheet_indexes) + 1) if sheet_indexes else 0
-        return len(placements), len(unplaced), sheet_count
-
-    report_json = run_dir / "report.json"
-    if not report_json.is_file():
-        return 0, 0, 0
-    try:
-        payload = json.loads(report_json.read_text(encoding="utf-8"))
-    except Exception:
-        return 0, 0, 0
-    if not isinstance(payload, dict):
-        return 0, 0, 0
-
-    metrics = payload.get("metrics", {})
-    placements_count = int(metrics.get("placements_count") or 0) if isinstance(metrics, dict) else 0
-    unplaced_count = int(metrics.get("unplaced_count") or 0) if isinstance(metrics, dict) else 0
-
-    out_dir = run_dir / "out"
-    sheet_count = len(list(out_dir.glob("sheet_*.dxf"))) if out_dir.is_dir() else 0
-    return placements_count, unplaced_count, sheet_count
-
-
 def _find_run_dir_from_stdout(stdout: str) -> Path:
     lines = [line.strip() for line in stdout.splitlines() if line.strip()]
     if not lines:
@@ -1231,17 +1210,6 @@ def _build_solver_runner_invocation(
     ]
     timeout_s = max(int(time_limit_s) + int(settings.run_timeout_extra_s), 30)
     return SolverRunnerInvocation(cmd=cmd, run_dir=run_dir, timeout_s=timeout_s)
-
-
-def _validate_solver_output_contract(run_dir: Path) -> None:
-    output_path = run_dir / "solver_output.json"
-    payload = _read_json_object(output_path)
-    if payload.get("contract_version") != "v1":
-        raise WorkerError(f"invalid solver output contract_version in {output_path}")
-    placements = payload.get("placements")
-    unplaced = payload.get("unplaced")
-    if not isinstance(placements, list) or not isinstance(unplaced, list):
-        raise WorkerError(f"invalid solver output structure in {output_path}")
 
 
 def _sync_run_log_artifact(
@@ -1490,7 +1458,6 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         if run_dir is None:
             raise WorkerError(f"run {run_id}: cannot locate run_dir")
 
-        _validate_solver_output_contract(run_dir)
         projection = normalize_solver_output_projection(
             run_id=run_id,
             snapshot_row=snapshot_row,
