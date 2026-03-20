@@ -371,6 +371,12 @@ H0 zaro gate source-of-truth:
 **Függőség:** H1-E7-T1.  
 **DoD:** H2 ráépíthető.
 
+Aktualis statusz (2026-03-20):
+- H1 closure audit lefutott, celzott route stabilizacios javitassal.
+- H2 entry gate eredmeny: `PASS WITH ADVISORIES`.
+- Kapcsolodo gate dokumentum:
+  `docs/web_platform/roadmap/h1_lezarasi_kriteriumok_es_h2_entry_gate.md`
+
 ---
 
 # 5. H2 — Manufacturing backlog

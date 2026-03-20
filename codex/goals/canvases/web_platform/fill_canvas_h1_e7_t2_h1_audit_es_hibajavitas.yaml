@@ -1,0 +1,88 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E7-T2 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e7_t2_h1_audit_es_hibajavitas.yaml"
+      - "codex/prompts/web_platform/h1_e7_t2_h1_audit_es_hibajavitas/run.md"
+      - "codex/codex_checklist/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.md"
+
+  - name: "Dedikalt H1 lezarasi / H2 entry gate dokumentum letrehozasa"
+    description: >
+      Hozd letre a `docs/web_platform/roadmap/h1_lezarasi_kriteriumok_es_h2_entry_gate.md`
+      dokumentumot, amely evidence-alapon rogzitese:
+      1) a H1 lezarasi kriteriumokat,
+      2) a H1 completion matrixot taskonkent,
+      3) a H1-E7-T1 pilot fo tanulsagait,
+      4) a blokkolo vs advisory eltereseket,
+      5) a vegso H2 entry gate iteletet,
+      6) mit jelent ez a gyakorlatban a H2 indulasa szempontjabol.
+      A dokumentum legyen audit- es dontesi anyag, ne csak rovid osszefoglalo.
+    outputs:
+      - "docs/web_platform/roadmap/h1_lezarasi_kriteriumok_es_h2_entry_gate.md"
+
+  - name: "H1 pilot audit + celzott stabilizacios hibajavitas"
+    description: >
+      Vizsgald at a H1 pipeline tenyleges allapotat a pilot es a repo aktualis
+      implementacioja alapjan. Ellenorizd kulonosen:
+      1) DXF upload -> geometry -> derivative lanc,
+      2) part/sheet/project input osszeallitas,
+      3) snapshot build es run create,
+      4) worker lease/futtatas/raw artifact persistence,
+      5) result normalizer + projection write,
+      6) sheet SVG/DXF artifact generalas,
+      7) route oldali H1 minimum lekerdezhetoseg.
+      A pilotbol vagy auditbol kozvetlenul kovetkezo blokkolo H1 hibakat
+      celzottan javitsd, minimal diffel, uj feature-scope nyitasa nelkul.
+      Ha marad advisory vagy ismert korlat, azt dokumentald tisztan.
+    outputs:
+      - "api/main.py"
+      - "api/routes/files.py"
+      - "api/routes/parts.py"
+      - "api/routes/sheets.py"
+      - "api/routes/project_part_requirements.py"
+      - "api/routes/project_sheet_inputs.py"
+      - "api/routes/runs.py"
+      - "api/services/file_ingest_metadata.py"
+      - "api/services/dxf_geometry_import.py"
+      - "api/services/geometry_validation_report.py"
+      - "api/services/geometry_derivative_generator.py"
+      - "api/services/part_creation.py"
+      - "api/services/sheet_creation.py"
+      - "api/services/project_part_requirements.py"
+      - "api/services/project_sheet_inputs.py"
+      - "api/services/run_snapshot_builder.py"
+      - "api/services/run_creation.py"
+      - "worker/main.py"
+      - "worker/queue_lease.py"
+      - "worker/engine_adapter_input.py"
+      - "worker/raw_output_artifacts.py"
+      - "worker/result_normalizer.py"
+      - "worker/sheet_svg_artifacts.py"
+      - "worker/sheet_dxf_artifacts.py"
+      - "docs/known_issues/web_platform_known_issues.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h1_reszletes.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_implementacios_backlog_task_tree.md"
+
+  - name: "Regresszios smoke/harness es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus regresszios smoke/harness scriptet, amely a H1
+      kritikus vegigfutasi lanc legfontosabb invariansait bizonyitja, es frissitsd
+      a checklistet valamint a reportot evidence-alapon. A report kulon nevezze
+      meg a H1 completion matrix roviditett eredmenyet, a konkret javitasokat,
+      a maradt advisory pontokat, es a H2 entry gate vegso iteletet.
+    outputs:
+      - "scripts/smoke_h1_e7_t2_h1_audit_es_hibajavitas.py"
+      - "codex/codex_checklist/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.md
+    outputs:
+      - "codex/reports/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h1_e7_t2_h1_audit_es_hibajavitas.verify.log"

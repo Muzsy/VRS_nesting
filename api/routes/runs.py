@@ -282,6 +282,14 @@ def _artifact_download_link_path(project_id: UUID, run_id: UUID, artifact_id: st
     return f"/v1/projects/{project_id}/runs/{run_id}/artifacts/{artifact_id}/download"
 
 
+def _artifact_legacy_type(row: dict[str, Any]) -> str:
+    metadata = row.get("metadata_jsonb")
+    if not isinstance(metadata, dict):
+        return ""
+    value = metadata.get("legacy_artifact_type")
+    return str(value or "").strip()
+
+
 def _ensure_project_access(*, supabase: SupabaseClient, access_token: str, user_id: str, project_id: UUID) -> None:
     params = {
         "select": "id",
@@ -489,6 +497,7 @@ def get_run_log(
     lines: int = Query(default=100, ge=1, le=1000),
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
 ) -> RunLogResponse:
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
 
@@ -500,11 +509,11 @@ def get_run_log(
     run_status = str(run_row.get("status", "")).strip().lower()
 
     params = {
-        "select": "id,storage_path,created_at",
+        "select": "id,storage_path,metadata_jsonb,created_at",
         "run_id": f"eq.{run_id}",
         "artifact_kind": "eq.log",
         "order": "created_at.desc",
-        "limit": "1",
+        "limit": "20",
     }
 
     try:
@@ -521,7 +530,13 @@ def get_run_log(
             stop_polling=run_status in _TERMINAL_STATES,
         )
 
-    storage_key = str(rows[0].get("storage_path", "")).strip()
+    selected_row = rows[0]
+    for row in rows:
+        if _artifact_legacy_type(row) == "run_log":
+            selected_row = row
+            break
+
+    storage_key = str(selected_row.get("storage_path", "")).strip()
     if not storage_key:
         return RunLogResponse(
             lines=[],
@@ -531,7 +546,6 @@ def get_run_log(
             stop_polling=run_status in _TERMINAL_STATES,
         )
 
-    settings = get_settings()
     try:
         signed = supabase.create_signed_download_url(
             access_token=user.access_token,
@@ -620,7 +634,6 @@ def get_artifact_url(
             run_id=run_id,
             artifact_id=artifact_id,
         )
-        settings = get_settings()
         signed = supabase.create_signed_download_url(
             access_token=user.access_token,
             bucket=settings.storage_bucket,

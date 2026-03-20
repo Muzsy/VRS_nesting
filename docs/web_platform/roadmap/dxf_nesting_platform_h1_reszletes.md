@@ -17,6 +17,18 @@ A H1 feladata az, hogy a platform:
 
 A H1 tehát az a szakasz, ahol a rendszer **már nem csak jól megtervezett**, hanem **végig működő platformcsatornává** válik.
 
+## H1 aktualis lezarasi allapot (2026-03-20)
+
+- A H1 lezarasi kriteriumok es a H2 entry gate dontesi anyaga:
+  `docs/web_platform/roadmap/h1_lezarasi_kriteriumok_es_h2_entry_gate.md`
+- H1-E7-T1 pilot smoke: PASS (reprodukalhato minimum end-to-end evidencia).
+- H1-E7-T2 audit/stabilizacio: celzott route fix + regresszios smoke elkeszult.
+- H2 inditasi minosites: `PASS WITH ADVISORIES`.
+
+Megjegyzes:
+- A nyitott advisory pontok forrasa es statusza a
+  `docs/known_issues/web_platform_known_issues.md` dokumentumban van vezetve.
+
 ---
 
 ## H1 fő célképe
