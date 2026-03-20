@@ -273,7 +273,7 @@ def main() -> int:
             raise RuntimeError("status mismatch in geometry revision")
         if ok_revision.get("revision_no") != 1:
             raise RuntimeError("revision_no mismatch in geometry revision")
-        if ok_revision.get("canonical_format_version") != "part_raw.v1":
+        if ok_revision.get("canonical_format_version") != "normalized_geometry.v1":
             raise RuntimeError("canonical_format_version mismatch in geometry revision")
         if ok_revision.get("source_hash_sha256") != ok_file_row.get("sha256"):
             raise RuntimeError("source_hash_sha256 mismatch in geometry revision")
@@ -283,10 +283,10 @@ def main() -> int:
         canonical_geometry = ok_revision.get("canonical_geometry_jsonb")
         if not isinstance(canonical_geometry, dict):
             raise RuntimeError("canonical_geometry_jsonb is missing or not object")
-        if not canonical_geometry.get("outer_points_mm"):
-            raise RuntimeError("canonical_geometry_jsonb.outer_points_mm missing")
-        if "holes_points_mm" not in canonical_geometry:
-            raise RuntimeError("canonical_geometry_jsonb.holes_points_mm missing")
+        if not canonical_geometry.get("outer_ring"):
+            raise RuntimeError("canonical_geometry_jsonb.outer_ring missing")
+        if "hole_rings" not in canonical_geometry:
+            raise RuntimeError("canonical_geometry_jsonb.hole_rings missing")
         source_lineage = canonical_geometry.get("source_lineage")
         if not isinstance(source_lineage, dict):
             raise RuntimeError("canonical_geometry_jsonb.source_lineage missing")

@@ -65,22 +65,17 @@ Megjegyzes:
 ## P3 - Alacsony prioritas
 
 ### KI-004 Legacy H1-E2-T1 smoke script contract drift (`part_raw.v1` vs `normalized_geometry.v1`)
-**Allapot:** OPEN  
-**Forras:** H1-E7-T2 audit futas, 2026-03-20  
+**Allapot:** RESOLVED (smoke script igazitva, 2026-03-20)
+**Forras:** H1-E7-T2 audit futas, 2026-03-20
 **Terulet:** `scripts/smoke_h1_e2_t1_dxf_parser_integracio.py`, `api/services/dxf_geometry_import.py`
 
 A legacy H1-E2-T1 smoke script a geometry revision `canonical_format_version`
-mezore a regi `part_raw.v1` erteket varja, mikozben a jelenlegi canonical
+mezore a regi `part_raw.v1` erteket varta, mikozben a jelenlegi canonical
 pipeline valos formata `normalized_geometry.v1`.
 
-Kovetkezmeny:
-- A script futasa reprodukalhatoan `canonical_format_version mismatch` hibaval all meg.
-- A hiba nem blokkolja a H1 minimum pipeline-t (pilot smoke + H1-E7-T2 regression smoke PASS),
-  de dokumentacios/teszt adossag, mert egy regi task-smoke mar nem reprezentalja a valos contractot.
-
-Tervezett kezeles:
-- H2 elott a legacy smoke scriptet a jelenlegi canonical contracthoz kell igazitani,
-  vagy explicit deprecate allapotba kell helyezni egyertelmu utmutatassal.
+Megoldas:
+- A smoke script frissitve a jelenlegi `normalized_geometry.v1` contractra:
+  `canonical_format_version`, `outer_ring`, `hole_rings` ellenorzesek igazitva.
 
 ### KI-003 API tabla prefix mix (`app.*` vs compatibility `public.*` view-k)
 **Allapot:** RESOLVED (`h1_e3_t4_multi_tenant_isolation_hardening`, 2026-03-18)  
