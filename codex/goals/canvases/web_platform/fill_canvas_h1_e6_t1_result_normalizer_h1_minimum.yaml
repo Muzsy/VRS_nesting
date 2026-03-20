@@ -1,0 +1,52 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H1-E6-T1 task canvas/YAML/checklist/report alapjait,
+      a web_platform H0/H1 source-of-truth doksikhoz, a H0 projection
+      tablavilaghoz, a solver IO contracthoz es a meglevo H1 worker-task
+      mintakhoz igazitva.
+    outputs:
+      - "canvases/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h1_e6_t1_result_normalizer_h1_minimum.yaml"
+      - "codex/codex_checklist/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md"
+
+  - name: "Result normalizer boundary es worker-integracio kialakitasa"
+    description: >
+      Vezess be explicit worker-oldali result normalizer helper/service boundaryt,
+      amely a raw `solver_output.json` v1 payloadot a run snapshot manifest
+      truth-tal egyutt dolgozza fel, es feltolti a `app.run_layout_sheets`,
+      `app.run_layout_placements`, `app.run_layout_unplaced`, `app.run_metrics`
+      tablakat. A write viselkedes legyen run-szintu idempotens replace, a
+      mapping part/sheet oldalon a snapshotbol jojjon, a bbox/transform es
+      metrics legyen determinisztikus, es a worker `done` zarasa mar a
+      normalizer summary alapjan tortenjen. A scope maradjon projection truth:
+      ne nyisson viewer SVG/DXF, export vagy nagy runs API redesign munkat.
+    outputs:
+      - "worker/main.py"
+      - "worker/result_normalizer.py"
+      - "codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet fake snapshot + fake DB gateway
+      boundaryval, amely bizonyitja a part/sheet snapshot mappinget, a
+      `run_layout_*` es `run_metrics` projectionek helyesseget, az unplaced
+      agregacio `remaining_qty` szemantikajat, az idempotens rerun viselkedest,
+      valamint az ismeretlen part_id / ervenytelen sheet_index hibagat. Frissitsd
+      a checklistet es a reportot evidence-alapon, DoD -> Evidence matrixszal,
+      es dokumentald kulon, hogy a task pontosan mit szallit le projection
+      truth szinten, illetve mit hagy szandekosan a H1-E6-T2/T3 blokkra.
+    outputs:
+      - "scripts/smoke_h1_e6_t1_result_normalizer_h1_minimum.py"
+      - "codex/codex_checklist/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md
+    outputs:
+      - "codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.md"
+      - "codex/reports/web_platform/h1_e6_t1_result_normalizer_h1_minimum.verify.log"

@@ -28,6 +28,7 @@ from worker.engine_adapter_input import (
 )
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 from worker.raw_output_artifacts import persist_raw_output_artifacts
+from worker.result_normalizer import normalize_solver_output_projection
 
 
 class WorkerError(RuntimeError):
@@ -97,6 +98,12 @@ def _resolve_env(key: str, default: str = "") -> str:
 
 def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _sql_float_literal(value: float | None) -> str:
+    if value is None:
+        return "null"
+    return f"{float(value):.5f}"
 
 
 @dataclass(frozen=True)
@@ -516,6 +523,167 @@ do update
 set artifact_kind = excluded.artifact_kind,
     storage_bucket = excluded.storage_bucket,
     metadata_jsonb = excluded.metadata_jsonb;
+"""
+        self._management_query(sql)
+
+    def replace_run_projection(
+        self,
+        *,
+        run_id: str,
+        sheets: list[dict[str, Any]],
+        placements: list[dict[str, Any]],
+        unplaced: list[dict[str, Any]],
+        metrics: dict[str, Any],
+    ) -> None:
+        sheets_json = _sql_literal(json.dumps(sheets, ensure_ascii=True, sort_keys=True))
+        placements_json = _sql_literal(json.dumps(placements, ensure_ascii=True, sort_keys=True))
+        unplaced_json = _sql_literal(json.dumps(unplaced, ensure_ascii=True, sort_keys=True))
+        metrics_json = _sql_literal(json.dumps(metrics.get("metrics_jsonb") or {}, ensure_ascii=True, sort_keys=True))
+
+        placed_count = int(metrics.get("placed_count") or 0)
+        unplaced_count = int(metrics.get("unplaced_count") or 0)
+        used_sheet_count = int(metrics.get("used_sheet_count") or 0)
+        utilization_ratio = metrics.get("utilization_ratio")
+        remnant_value = metrics.get("remnant_value")
+
+        sql = f"""
+with
+deleted_placements as (
+  delete from app.run_layout_placements
+  where run_id = {_sql_literal(run_id)}::uuid
+),
+deleted_sheets as (
+  delete from app.run_layout_sheets
+  where run_id = {_sql_literal(run_id)}::uuid
+),
+deleted_unplaced as (
+  delete from app.run_layout_unplaced
+  where run_id = {_sql_literal(run_id)}::uuid
+),
+sheet_rows as (
+  select *
+  from jsonb_to_recordset({sheets_json}::jsonb)
+    as s(
+      sheet_index integer,
+      sheet_revision_id uuid,
+      width_mm numeric,
+      height_mm numeric,
+      utilization_ratio numeric,
+      metadata_jsonb jsonb
+    )
+),
+inserted_sheets as (
+  insert into app.run_layout_sheets(
+    run_id,
+    sheet_index,
+    sheet_revision_id,
+    width_mm,
+    height_mm,
+    utilization_ratio,
+    metadata_jsonb
+  )
+  select
+    {_sql_literal(run_id)}::uuid,
+    s.sheet_index,
+    s.sheet_revision_id,
+    s.width_mm,
+    s.height_mm,
+    s.utilization_ratio,
+    coalesce(s.metadata_jsonb, '{{}}'::jsonb)
+  from sheet_rows s
+  order by s.sheet_index
+  returning id, sheet_index
+),
+placement_rows as (
+  select *
+  from jsonb_to_recordset({placements_json}::jsonb)
+    as p(
+      sheet_index integer,
+      placement_index integer,
+      part_revision_id uuid,
+      quantity integer,
+      transform_jsonb jsonb,
+      bbox_jsonb jsonb,
+      metadata_jsonb jsonb
+    )
+),
+inserted_placements as (
+  insert into app.run_layout_placements(
+    run_id,
+    sheet_id,
+    placement_index,
+    part_revision_id,
+    quantity,
+    transform_jsonb,
+    bbox_jsonb,
+    metadata_jsonb
+  )
+  select
+    {_sql_literal(run_id)}::uuid,
+    s.id,
+    p.placement_index,
+    p.part_revision_id,
+    coalesce(p.quantity, 1),
+    coalesce(p.transform_jsonb, '{{}}'::jsonb),
+    coalesce(p.bbox_jsonb, '{{}}'::jsonb),
+    coalesce(p.metadata_jsonb, '{{}}'::jsonb)
+  from placement_rows p
+  join inserted_sheets s
+    on s.sheet_index = p.sheet_index
+),
+unplaced_rows as (
+  select *
+  from jsonb_to_recordset({unplaced_json}::jsonb)
+    as u(
+      part_revision_id uuid,
+      remaining_qty integer,
+      reason text,
+      metadata_jsonb jsonb
+    )
+),
+inserted_unplaced as (
+  insert into app.run_layout_unplaced(
+    run_id,
+    part_revision_id,
+    remaining_qty,
+    reason,
+    metadata_jsonb
+  )
+  select
+    {_sql_literal(run_id)}::uuid,
+    u.part_revision_id,
+    u.remaining_qty,
+    u.reason,
+    coalesce(u.metadata_jsonb, '{{}}'::jsonb)
+  from unplaced_rows u
+)
+insert into app.run_metrics(
+  run_id,
+  placed_count,
+  unplaced_count,
+  used_sheet_count,
+  utilization_ratio,
+  remnant_value,
+  metrics_jsonb
+)
+values (
+  {_sql_literal(run_id)}::uuid,
+  {placed_count},
+  {unplaced_count},
+  {used_sheet_count},
+  {_sql_float_literal(utilization_ratio if isinstance(utilization_ratio, (int, float)) else None)},
+  {_sql_float_literal(remnant_value if isinstance(remnant_value, (int, float)) else None)},
+  jsonb_strip_nulls({metrics_json}::jsonb)
+)
+on conflict (run_id)
+do update
+set placed_count = excluded.placed_count,
+    unplaced_count = excluded.unplaced_count,
+    used_sheet_count = excluded.used_sheet_count,
+    utilization_ratio = excluded.utilization_ratio,
+    remnant_value = excluded.remnant_value,
+    metrics_jsonb = excluded.metrics_jsonb,
+    created_at = now();
 """
         self._management_query(sql)
 
@@ -1323,14 +1491,24 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             raise WorkerError(f"run {run_id}: cannot locate run_dir")
 
         _validate_solver_output_contract(run_dir)
-
-        placements_count, unplaced_count, sheet_count = _read_run_metrics(run_dir)
+        projection = normalize_solver_output_projection(
+            run_id=run_id,
+            snapshot_row=snapshot_row,
+            run_dir=run_dir,
+        )
+        client.replace_run_projection(
+            run_id=run_id,
+            sheets=projection.sheets,
+            placements=projection.placements,
+            unplaced=projection.unplaced,
+            metrics=projection.metrics,
+        )
         client.complete_run_done_and_dequeue(
             run_id=run_id,
             solver_exit_code=0,
-            placements_count=placements_count,
-            unplaced_count=unplaced_count,
-            sheet_count=sheet_count,
+            placements_count=projection.summary.placed_count,
+            unplaced_count=projection.summary.unplaced_count,
+            sheet_count=projection.summary.used_sheet_count,
         )
 
     except WorkerCancelledError as exc:

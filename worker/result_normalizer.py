@@ -1,0 +1,488 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import math
+from pathlib import Path
+from typing import Any
+
+
+class ResultNormalizerError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class ProjectionSummary:
+    placed_count: int
+    unplaced_count: int
+    used_sheet_count: int
+
+
+@dataclass(frozen=True)
+class NormalizedProjection:
+    sheets: list[dict[str, Any]]
+    placements: list[dict[str, Any]]
+    unplaced: list[dict[str, Any]]
+    metrics: dict[str, Any]
+    summary: ProjectionSummary
+
+
+def _require_dict(raw: Any, *, field: str) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ResultNormalizerError(f"invalid {field}")
+    return raw
+
+
+def _require_list(raw: Any, *, field: str) -> list[Any]:
+    if not isinstance(raw, list):
+        raise ResultNormalizerError(f"invalid {field}")
+    return raw
+
+
+def _require_str(raw: Any, *, field: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        raise ResultNormalizerError(f"invalid {field}")
+    return value
+
+
+def _parse_nonnegative_int(raw: Any, *, field: str) -> int:
+    if isinstance(raw, bool):
+        raise ResultNormalizerError(f"invalid {field}")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ResultNormalizerError(f"invalid {field}") from exc
+    if value < 0:
+        raise ResultNormalizerError(f"invalid {field}")
+    return value
+
+
+def _parse_positive_int(raw: Any, *, field: str) -> int:
+    value = _parse_nonnegative_int(raw, field=field)
+    if value <= 0:
+        raise ResultNormalizerError(f"invalid {field}")
+    return value
+
+
+def _parse_finite_float(raw: Any, *, field: str) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ResultNormalizerError(f"invalid {field}") from exc
+    if not math.isfinite(value):
+        raise ResultNormalizerError(f"invalid {field}")
+    return value
+
+
+def _parse_positive_float(raw: Any, *, field: str) -> float:
+    value = _parse_finite_float(raw, field=field)
+    if value <= 0.0:
+        raise ResultNormalizerError(f"invalid {field}")
+    return value
+
+
+def _parse_point(raw: Any, *, field: str) -> tuple[float, float]:
+    if isinstance(raw, list) and len(raw) == 2:
+        x_raw, y_raw = raw
+    elif isinstance(raw, dict):
+        x_raw = raw.get("x")
+        y_raw = raw.get("y")
+    else:
+        raise ResultNormalizerError(f"invalid {field}")
+    return (_parse_finite_float(x_raw, field=f"{field}.x"), _parse_finite_float(y_raw, field=f"{field}.y"))
+
+
+def _parse_ring(raw: Any, *, field: str) -> list[tuple[float, float]]:
+    points = _require_list(raw, field=field)
+    if len(points) < 3:
+        raise ResultNormalizerError(f"invalid {field}")
+    return [_parse_point(point_raw, field=f"{field}[{idx}]") for idx, point_raw in enumerate(points)]
+
+
+def _parse_hole_rings(raw: Any, *, field: str) -> list[list[tuple[float, float]]]:
+    rings = _require_list(raw, field=field)
+    return [_parse_ring(ring_raw, field=f"{field}[{idx}]") for idx, ring_raw in enumerate(rings)]
+
+
+def _round6(value: float) -> float:
+    return round(float(value), 6)
+
+
+def _round5(value: float) -> float:
+    return round(float(value), 5)
+
+
+def _ring_signed_area(ring: list[tuple[float, float]]) -> float:
+    area2 = 0.0
+    for idx in range(len(ring)):
+        x1, y1 = ring[idx]
+        x2, y2 = ring[(idx + 1) % len(ring)]
+        area2 += x1 * y2 - x2 * y1
+    return area2 / 2.0
+
+
+def _polygon_area_mm2(outer_ring: list[tuple[float, float]], hole_rings: list[list[tuple[float, float]]]) -> float:
+    outer = abs(_ring_signed_area(outer_ring))
+    holes = sum(abs(_ring_signed_area(ring)) for ring in hole_rings)
+    area = outer - holes
+    if area <= 0.0:
+        raise ResultNormalizerError("invalid geometry polygon area")
+    return area
+
+
+def _transform_bbox(*, bbox: dict[str, float], x: float, y: float, rotation_deg: float) -> dict[str, float]:
+    min_x = _parse_finite_float(bbox.get("min_x"), field="bbox.min_x")
+    min_y = _parse_finite_float(bbox.get("min_y"), field="bbox.min_y")
+    max_x = _parse_finite_float(bbox.get("max_x"), field="bbox.max_x")
+    max_y = _parse_finite_float(bbox.get("max_y"), field="bbox.max_y")
+    if max_x <= min_x or max_y <= min_y:
+        raise ResultNormalizerError("invalid geometry bbox")
+
+    theta = math.radians(rotation_deg)
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+
+    corners = ((min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y))
+    transformed: list[tuple[float, float]] = []
+    for local_x, local_y in corners:
+        rotated_x = local_x * cos_t - local_y * sin_t
+        rotated_y = local_x * sin_t + local_y * cos_t
+        transformed.append((rotated_x + x, rotated_y + y))
+
+    xs = [point[0] for point in transformed]
+    ys = [point[1] for point in transformed]
+    out_min_x = min(xs)
+    out_max_x = max(xs)
+    out_min_y = min(ys)
+    out_max_y = max(ys)
+
+    return {
+        "min_x": _round6(out_min_x),
+        "min_y": _round6(out_min_y),
+        "max_x": _round6(out_max_x),
+        "max_y": _round6(out_max_y),
+        "width": _round6(out_max_x - out_min_x),
+        "height": _round6(out_max_y - out_min_y),
+    }
+
+
+def _canonical_json(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _build_part_index(snapshot_row: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    geometry_manifest = _require_list(snapshot_row.get("geometry_manifest_jsonb"), field="geometry_manifest_jsonb")
+    geometry_by_derivative: dict[str, dict[str, Any]] = {}
+    for idx, geometry_raw in enumerate(geometry_manifest):
+        geometry = _require_dict(geometry_raw, field=f"geometry_manifest_jsonb[{idx}]")
+        derivative_id = _require_str(
+            geometry.get("selected_nesting_derivative_id"),
+            field=f"geometry_manifest_jsonb[{idx}].selected_nesting_derivative_id",
+        )
+        polygon = _require_dict(geometry.get("polygon"), field=f"geometry_manifest_jsonb[{idx}].polygon")
+        bbox = _require_dict(geometry.get("bbox"), field=f"geometry_manifest_jsonb[{idx}].bbox")
+
+        outer_ring = _parse_ring(polygon.get("outer_ring"), field=f"geometry_manifest_jsonb[{idx}].polygon.outer_ring")
+        hole_rings = _parse_hole_rings(
+            polygon.get("hole_rings", []),
+            field=f"geometry_manifest_jsonb[{idx}].polygon.hole_rings",
+        )
+        area_mm2 = _polygon_area_mm2(outer_ring, hole_rings)
+        geometry_by_derivative[derivative_id] = {
+            "bbox": {
+                "min_x": _parse_finite_float(bbox.get("min_x"), field=f"geometry_manifest_jsonb[{idx}].bbox.min_x"),
+                "min_y": _parse_finite_float(bbox.get("min_y"), field=f"geometry_manifest_jsonb[{idx}].bbox.min_y"),
+                "max_x": _parse_finite_float(bbox.get("max_x"), field=f"geometry_manifest_jsonb[{idx}].bbox.max_x"),
+                "max_y": _parse_finite_float(bbox.get("max_y"), field=f"geometry_manifest_jsonb[{idx}].bbox.max_y"),
+                "width": _parse_positive_float(bbox.get("width"), field=f"geometry_manifest_jsonb[{idx}].bbox.width"),
+                "height": _parse_positive_float(bbox.get("height"), field=f"geometry_manifest_jsonb[{idx}].bbox.height"),
+            },
+            "area_mm2": area_mm2,
+        }
+
+    parts_manifest_raw = _require_list(snapshot_row.get("parts_manifest_jsonb"), field="parts_manifest_jsonb")
+    parts_manifest = [item for item in parts_manifest_raw if isinstance(item, dict)]
+    parts_manifest.sort(
+        key=lambda item: (
+            int(item.get("placement_priority") or 0),
+            str(item.get("part_code") or ""),
+            str(item.get("part_revision_id") or ""),
+            str(item.get("project_part_requirement_id") or ""),
+        )
+    )
+
+    part_index: dict[str, dict[str, Any]] = {}
+    for idx, part in enumerate(parts_manifest):
+        part_revision_id = _require_str(part.get("part_revision_id"), field=f"parts_manifest_jsonb[{idx}].part_revision_id")
+        derivative_id = _require_str(
+            part.get("selected_nesting_derivative_id"),
+            field=f"parts_manifest_jsonb[{idx}].selected_nesting_derivative_id",
+        )
+        if part_revision_id in part_index:
+            raise ResultNormalizerError(f"duplicate part_revision_id in snapshot: {part_revision_id}")
+        geometry = geometry_by_derivative.get(derivative_id)
+        if geometry is None:
+            raise ResultNormalizerError(f"missing geometry for derivative: {derivative_id}")
+        part_index[part_revision_id] = {
+            "part_revision_id": part_revision_id,
+            "part_definition_id": _require_str(part.get("part_definition_id"), field=f"parts_manifest_jsonb[{idx}].part_definition_id"),
+            "part_code": _require_str(part.get("part_code"), field=f"parts_manifest_jsonb[{idx}].part_code"),
+            "source_geometry_revision_id": _require_str(
+                part.get("source_geometry_revision_id"),
+                field=f"parts_manifest_jsonb[{idx}].source_geometry_revision_id",
+            ),
+            "selected_nesting_derivative_id": derivative_id,
+            "bbox": geometry["bbox"],
+            "area_mm2": geometry["area_mm2"],
+        }
+
+    return part_index
+
+
+def _build_sheet_instances(snapshot_row: dict[str, Any]) -> list[dict[str, Any]]:
+    sheets_manifest_raw = _require_list(snapshot_row.get("sheets_manifest_jsonb"), field="sheets_manifest_jsonb")
+    sheets_manifest = [item for item in sheets_manifest_raw if isinstance(item, dict)]
+    sheets_manifest.sort(
+        key=lambda item: (
+            0 if bool(item.get("is_default")) else 1,
+            int(item.get("placement_priority") or 0),
+            str(item.get("sheet_code") or ""),
+            str(item.get("sheet_revision_id") or ""),
+            str(item.get("project_sheet_input_id") or ""),
+        )
+    )
+
+    expanded: list[dict[str, Any]] = []
+    for idx, sheet in enumerate(sheets_manifest):
+        required_qty = _parse_positive_int(sheet.get("required_qty"), field=f"sheets_manifest_jsonb[{idx}].required_qty")
+        sheet_revision_id = _require_str(sheet.get("sheet_revision_id"), field=f"sheets_manifest_jsonb[{idx}].sheet_revision_id")
+        width_mm = _parse_positive_float(sheet.get("width_mm"), field=f"sheets_manifest_jsonb[{idx}].width_mm")
+        height_mm = _parse_positive_float(sheet.get("height_mm"), field=f"sheets_manifest_jsonb[{idx}].height_mm")
+        for copy_index in range(required_qty):
+            expanded.append(
+                {
+                    "sheet_index": len(expanded),
+                    "sheet_revision_id": sheet_revision_id,
+                    "width_mm": width_mm,
+                    "height_mm": height_mm,
+                    "sheet_code": str(sheet.get("sheet_code") or ""),
+                    "project_sheet_input_id": str(sheet.get("project_sheet_input_id") or ""),
+                    "copy_index": copy_index,
+                }
+            )
+    if not expanded:
+        raise ResultNormalizerError("empty sheets manifest")
+    return expanded
+
+
+def normalize_solver_output_projection(*, run_id: str, snapshot_row: dict[str, Any], run_dir: Path) -> NormalizedProjection:
+    run_id_clean = _require_str(run_id, field="run_id")
+    output_path = run_dir / "solver_output.json"
+    try:
+        output_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise ResultNormalizerError(f"invalid solver output json: {output_path}") from exc
+    output = _require_dict(output_payload, field="solver_output")
+    if output.get("contract_version") != "v1":
+        raise ResultNormalizerError("invalid solver output contract_version")
+
+    placements_raw = _require_list(output.get("placements"), field="solver_output.placements")
+    unplaced_raw = _require_list(output.get("unplaced"), field="solver_output.unplaced")
+
+    part_index = _build_part_index(snapshot_row)
+    sheet_instances = _build_sheet_instances(snapshot_row)
+
+    placement_rows: list[dict[str, Any]] = []
+    sheet_used: set[int] = set()
+    per_sheet_counter: dict[int, int] = {}
+    per_sheet_placed_area: dict[int, float] = {}
+
+    for idx, placement_raw in enumerate(placements_raw):
+        placement = _require_dict(placement_raw, field=f"solver_output.placements[{idx}]")
+        part_id = _require_str(placement.get("part_id"), field=f"solver_output.placements[{idx}].part_id")
+        part = part_index.get(part_id)
+        if part is None:
+            raise ResultNormalizerError(f"unknown part_id in solver output: {part_id}")
+
+        sheet_index = _parse_nonnegative_int(placement.get("sheet_index"), field=f"solver_output.placements[{idx}].sheet_index")
+        if sheet_index >= len(sheet_instances):
+            raise ResultNormalizerError(f"invalid sheet_index in solver output: {sheet_index}")
+        sheet_used.add(sheet_index)
+
+        instance_id = _require_str(placement.get("instance_id"), field=f"solver_output.placements[{idx}].instance_id")
+        x = _parse_finite_float(placement.get("x"), field=f"solver_output.placements[{idx}].x")
+        y = _parse_finite_float(placement.get("y"), field=f"solver_output.placements[{idx}].y")
+        rotation_deg = _parse_finite_float(placement.get("rotation_deg"), field=f"solver_output.placements[{idx}].rotation_deg")
+
+        placement_index = per_sheet_counter.get(sheet_index, 0)
+        per_sheet_counter[sheet_index] = placement_index + 1
+        per_sheet_placed_area[sheet_index] = per_sheet_placed_area.get(sheet_index, 0.0) + float(part["area_mm2"])
+
+        transform_jsonb = {
+            "x": _round6(x),
+            "y": _round6(y),
+            "rotation_deg": _round6(rotation_deg),
+            "sheet_index": int(sheet_index),
+            "instance_id": instance_id,
+        }
+        bbox_jsonb = _transform_bbox(bbox=part["bbox"], x=x, y=y, rotation_deg=rotation_deg)
+        metadata_jsonb = {
+            "normalizer_scope": "h1_e6_t1",
+            "part_code": part["part_code"],
+            "part_definition_id": part["part_definition_id"],
+            "source_geometry_revision_id": part["source_geometry_revision_id"],
+            "selected_nesting_derivative_id": part["selected_nesting_derivative_id"],
+        }
+
+        placement_rows.append(
+            {
+                "sheet_index": int(sheet_index),
+                "placement_index": int(placement_index),
+                "part_revision_id": part_id,
+                "quantity": 1,
+                "transform_jsonb": transform_jsonb,
+                "bbox_jsonb": bbox_jsonb,
+                "metadata_jsonb": metadata_jsonb,
+            }
+        )
+
+    placement_rows.sort(key=lambda item: (int(item["sheet_index"]), int(item["placement_index"])))
+
+    sheet_rows: list[dict[str, Any]] = []
+    total_sheet_area = 0.0
+    total_placed_area = 0.0
+    per_sheet_metrics: list[dict[str, Any]] = []
+    for sheet_index in sorted(sheet_used):
+        sheet = sheet_instances[sheet_index]
+        width_mm = float(sheet["width_mm"])
+        height_mm = float(sheet["height_mm"])
+        sheet_area = width_mm * height_mm
+        placed_area = float(per_sheet_placed_area.get(sheet_index, 0.0))
+        sheet_utilization = (placed_area / sheet_area) if sheet_area > 0.0 else None
+
+        total_sheet_area += sheet_area
+        total_placed_area += placed_area
+
+        sheet_row = {
+            "sheet_index": int(sheet_index),
+            "sheet_revision_id": str(sheet["sheet_revision_id"]),
+            "width_mm": _round6(width_mm),
+            "height_mm": _round6(height_mm),
+            "utilization_ratio": _round5(sheet_utilization) if sheet_utilization is not None else None,
+            "metadata_jsonb": {
+                "normalizer_scope": "h1_e6_t1",
+                "sheet_code": str(sheet["sheet_code"]),
+                "project_sheet_input_id": str(sheet["project_sheet_input_id"]),
+                "copy_index": int(sheet["copy_index"]),
+                "placements_count": int(per_sheet_counter.get(sheet_index, 0)),
+                "placed_area_mm2": _round6(placed_area),
+                "sheet_area_mm2": _round6(sheet_area),
+            },
+        }
+        sheet_rows.append(sheet_row)
+
+        per_sheet_metrics.append(
+            {
+                "sheet_index": int(sheet_index),
+                "placements_count": int(per_sheet_counter.get(sheet_index, 0)),
+                "placed_area_mm2": _round6(placed_area),
+                "sheet_area_mm2": _round6(sheet_area),
+                "utilization_ratio": _round5(sheet_utilization) if sheet_utilization is not None else None,
+            }
+        )
+
+    unplaced_bucket: dict[tuple[str, str], dict[str, Any]] = {}
+    for idx, unplaced_item_raw in enumerate(unplaced_raw):
+        unplaced_item = _require_dict(unplaced_item_raw, field=f"solver_output.unplaced[{idx}]")
+        part_id = _require_str(unplaced_item.get("part_id"), field=f"solver_output.unplaced[{idx}].part_id")
+        part = part_index.get(part_id)
+        if part is None:
+            raise ResultNormalizerError(f"unknown part_id in solver output unplaced: {part_id}")
+        instance_id = _require_str(unplaced_item.get("instance_id"), field=f"solver_output.unplaced[{idx}].instance_id")
+        reason_raw = str(unplaced_item.get("reason") or "").strip()
+        reason_key = reason_raw or ""
+
+        key = (part_id, reason_key)
+        if key not in unplaced_bucket:
+            unplaced_bucket[key] = {
+                "part_revision_id": part_id,
+                "reason": reason_raw or None,
+                "remaining_qty": 0,
+                "instance_ids": [],
+                "part_code": part["part_code"],
+            }
+        unplaced_bucket[key]["remaining_qty"] = int(unplaced_bucket[key]["remaining_qty"]) + 1
+        unplaced_bucket[key]["instance_ids"].append(instance_id)
+
+    unplaced_rows: list[dict[str, Any]] = []
+    for key in sorted(unplaced_bucket.keys(), key=lambda item: (item[0], item[1])):
+        bucket = unplaced_bucket[key]
+        unplaced_rows.append(
+            {
+                "part_revision_id": str(bucket["part_revision_id"]),
+                "remaining_qty": int(bucket["remaining_qty"]),
+                "reason": bucket["reason"],
+                "metadata_jsonb": {
+                    "normalizer_scope": "h1_e6_t1",
+                    "part_code": str(bucket["part_code"]),
+                    "instance_ids": sorted(str(value) for value in bucket["instance_ids"]),
+                },
+            }
+        )
+
+    placed_count = len(placement_rows)
+    unplaced_count = sum(int(row["remaining_qty"]) for row in unplaced_rows)
+    used_sheet_count = len(sheet_rows)
+    run_utilization = (total_placed_area / total_sheet_area) if total_sheet_area > 0.0 else None
+
+    raw_metrics = output.get("metrics")
+    metrics_jsonb: dict[str, Any] = {
+        "normalizer_scope": "h1_e6_t1",
+        "run_id": run_id_clean,
+        "solver_status": str(output.get("status") or "").strip() or None,
+        "per_sheet": per_sheet_metrics,
+        "totals": {
+            "placed_area_mm2": _round6(total_placed_area),
+            "sheet_area_mm2": _round6(total_sheet_area),
+        },
+    }
+    if isinstance(raw_metrics, dict):
+        metrics_jsonb["raw_solver_metrics"] = raw_metrics
+
+    metrics_row = {
+        "placed_count": int(placed_count),
+        "unplaced_count": int(unplaced_count),
+        "used_sheet_count": int(used_sheet_count),
+        "utilization_ratio": _round5(run_utilization) if run_utilization is not None else None,
+        "remnant_value": None,
+        "metrics_jsonb": metrics_jsonb,
+    }
+
+    return NormalizedProjection(
+        sheets=sheet_rows,
+        placements=placement_rows,
+        unplaced=unplaced_rows,
+        metrics=metrics_row,
+        summary=ProjectionSummary(
+            placed_count=int(placed_count),
+            unplaced_count=int(unplaced_count),
+            used_sheet_count=int(used_sheet_count),
+        ),
+    )
+
+
+def normalized_projection_json(payload: NormalizedProjection) -> str:
+    return _canonical_json(
+        {
+            "sheets": payload.sheets,
+            "placements": payload.placements,
+            "unplaced": payload.unplaced,
+            "metrics": payload.metrics,
+            "summary": {
+                "placed_count": payload.summary.placed_count,
+                "unplaced_count": payload.summary.unplaced_count,
+                "used_sheet_count": payload.summary.used_sheet_count,
+            },
+        }
+    )
