@@ -1,0 +1,30 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E1-T1 retroaktiv scope-rendezo artefaktlancat:
+      canvas, goal YAML, runner prompt, checklist, report.
+    outputs:
+      - "canvases/web_platform/h2_e1_t1_manufacturing_profile_crud.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e1_t1_manufacturing_profile_crud.yaml"
+      - "codex/prompts/web_platform/h2_e1_t1_manufacturing_profile_crud/run.md"
+      - "codex/codex_checklist/web_platform/h2_e1_t1_manufacturing_profile_crud.md"
+      - "codex/reports/web_platform/h2_e1_t1_manufacturing_profile_crud.md"
+
+  - name: "Retroaktiv scope-rendezes dokumentalasa"
+    description: >
+      Dokumentald evidence-alapon, hogy a manufacturing profile domain schema/policy
+      alap mar a 20260321233000 migrationban leszallitva lett, es javitsd a
+      H2-E1-T2 reportot ugy, hogy a scope-szeparacio tiszta legyen:
+      T1 = domain alap, T2 = project selection API.
+    outputs:
+      - "codex/reports/web_platform/h2_e1_t1_manufacturing_profile_crud.md"
+      - "codex/reports/web_platform/h2_e1_t2_project_manufacturing_selection.md"
+      - "codex/codex_checklist/web_platform/h2_e1_t1_manufacturing_profile_crud.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e1_t1_manufacturing_profile_crud.md
+    outputs:
+      - "codex/reports/web_platform/h2_e1_t1_manufacturing_profile_crud.md"
+      - "codex/reports/web_platform/h2_e1_t1_manufacturing_profile_crud.verify.log"

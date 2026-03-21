@@ -1,4 +1,4 @@
-PASS
+PASS_WITH_NOTES
 
 ## 1) Meta
 - Task slug: `h2_e1_t2_project_manufacturing_selection`
@@ -6,7 +6,7 @@ PASS
 - Kapcsolodo goal YAML: `codex/goals/canvases/web_platform/fill_canvas_h2_e1_t2_project_manufacturing_selection.yaml`
 - Futas datuma: `2026-03-21`
 - Branch / commit: `main @ 93c5431 (dirty working tree)`
-- Fokusz terulet: `Mixed (DB schema + API service/route + smoke)`
+- Fokusz terulet: `Mixed (selection API + smoke + scope correction reference)`
 
 ## 2) Scope
 
@@ -42,6 +42,7 @@ PASS
 
 ### 3.2 Mi valtozott es miert
 - A migration letrehozza (vagy hardeneli) a project-level manufacturing selection truth-ot, valamint a minimalis manufacturing profile/version tablakat, hogy a selection API valos adatmodellre tudjon epulni.
+- Scope-korrekcio: a domain schema/policy alap retroaktiv H2-E1-T1 artifactlancban is dokumentalva lett (`h2_e1_t1_manufacturing_profile_crud`), igy a task-tree szerinti T1/T2 hatar auditálhato.
 - A service explicit project-owner es version-owner validaciot vegez, create-or-replace modon upsertel, es `thickness_mm` alapon ellenorzi a technology/manufacturing alapkonzisztenciat.
 - Az uj route minimalis, auditálhato GET/PUT/DELETE contractot ad a projekthez rendelt aktiv manufacturing profile version kezelesere.
 - A dedikalt smoke script lefedi a fo sikeres es hibas agakat.
@@ -63,7 +64,7 @@ PASS
 | Egy projektnek legfeljebb egy aktiv manufacturing selectionje van. | PASS | `supabase/migrations/20260321233000_h2_e1_t2_project_manufacturing_selection.sql:117`; `api/services/project_manufacturing_selection.py:273` | A `project_id` primary key + service create-or-replace upsert logika egy projektre egy rekordot tart fenn. | `python3 scripts/smoke_h2_e1_t2_project_manufacturing_selection.py` |
 | A selection project owner scope-ban hozhato letre, modositato es torolheto. | PASS | `api/services/project_manufacturing_selection.py:58`; `api/routes/project_manufacturing_selection.py:99`; `supabase/migrations/20260321233000_h2_e1_t2_project_manufacturing_selection.sql:228` | Service es route owner-checket futtat, DB policy csak projekt tulajdonosnak enged irast/torlest. | Smoke + verify |
 | A selection csak a userhez tartozo ervenyes manufacturing profile versionra mutathat. | PASS | `api/services/project_manufacturing_selection.py:78`; `api/services/project_manufacturing_selection.py:100`; `supabase/migrations/20260321233000_h2_e1_t2_project_manufacturing_selection.sql:145` | Owner-scope es inaktiv version validacio service oldalon, DB-ben `owns_manufacturing_profile_version` policy check. | Smoke (foreign + inactive) |
-| A task nem nyitja ujra a manufacturing profile CRUD scope-ot. | PASS | `api/routes/project_manufacturing_selection.py:99`; `api/routes/project_manufacturing_selection.py:141` | Kizarolag selection endpointek kerultek be (PUT/GET/DELETE), profile CRUD route nem keszult. | Diff review |
+| A task nem nyitja ujra a manufacturing profile CRUD scope-ot. | PASS_WITH_NOTES | `api/routes/project_manufacturing_selection.py:99`; `api/routes/project_manufacturing_selection.py:141`; `codex/reports/web_platform/h2_e1_t1_manufacturing_profile_crud.md:1` | T2-ben dedikalt profile CRUD route nem keszult, de a migration domain-alap resze retroaktiv T1-kent dokumentalt a tiszta task-szeparaciohoz. | Diff review + T1 scope report |
 | A task nem nyul a snapshot / plan / preview / postprocess reteghez. | PASS | `api/main.py:16`; `api/services/project_manufacturing_selection.py:232` | A diff csak selection migration/service/route/smoke artefaktokat erint, snapshot/plan modulokhoz nincs kodvaltozas. | Diff review |
 | Keszul minimalis GET / PUT / DELETE backend contract. | PASS | `api/routes/project_manufacturing_selection.py:99`; `api/routes/project_manufacturing_selection.py:121`; `api/routes/project_manufacturing_selection.py:141`; `api/main.py:107` | A harom endpoint implementalva van es a router be van kotve az appba. | Smoke |
 | A technology/manufacturing alapkonzisztencia ellenorzes csak valos schema mezokre tamaszkodik. | PASS | `api/services/project_manufacturing_selection.py:154`; `supabase/migrations/20260310230000_h0_e2_t3_technology_domain_alapok.sql:41` | Az ellenorzes csak `thickness_mm` osszevetest vegez, katalogus-logika vagy kitalalt join nelkul. | Smoke mismatch ag |
@@ -75,6 +76,7 @@ PASS
 - A migration ugy keszult, hogy T1 altal mar letrehozott tablakat `if not exists`/`add column if not exists` mintaval hardenel, ne duplikaljon.
 - A technology/manufacturing konzisztencia jelenleg a biztosan letezo `thickness_mm` mezo osszevetesere korlatozodik.
 - Machine/material katalogus-osszevetes nem kerult be, mert a repo jelenlegi schema-ja ehhez nem ad megbizhato katalogus-truthot.
+- A T1/T2 scope drift retroaktiv rendezese kulon H2-E1-T1 artefaktlancban lett dokumentalva.
 
 ## 7) Follow-ups (opcionalis)
 - H2-E4 scope-ban snapshot manufacturing selection bekotes (expliciten nem ennek a tasknak a resze).
