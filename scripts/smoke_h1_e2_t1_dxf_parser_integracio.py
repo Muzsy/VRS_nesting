@@ -30,6 +30,8 @@ class FakeSupabaseClient:
         self.projects: dict[str, dict[str, Any]] = {}
         self.file_objects: dict[str, dict[str, Any]] = {}
         self.geometry_revisions: dict[str, dict[str, Any]] = {}
+        self.geometry_validation_reports: dict[str, dict[str, Any]] = {}
+        self.geometry_derivatives: dict[str, dict[str, Any]] = {}
         self.storage: dict[tuple[str, str], bytes] = {}
 
     def get_auth_user(self, access_token: str) -> dict[str, Any]:
@@ -44,6 +46,10 @@ class FakeSupabaseClient:
             return list(self.file_objects.values())
         if table == "app.geometry_revisions":
             return list(self.geometry_revisions.values())
+        if table == "app.geometry_validation_reports":
+            return list(self.geometry_validation_reports.values())
+        if table == "app.geometry_derivatives":
+            return list(self.geometry_derivatives.values())
         return []
 
     @staticmethod
@@ -113,7 +119,55 @@ class FakeSupabaseClient:
             self.geometry_revisions[str(row["id"])] = row
             return dict(row)
 
+        if table == "app.geometry_validation_reports":
+            row.setdefault("id", str(uuid4()))
+            row.setdefault("created_at", now)
+            self.geometry_validation_reports[str(row["id"])] = row
+            return dict(row)
+
+        if table == "app.geometry_derivatives":
+            for existing in self.geometry_derivatives.values():
+                if (
+                    str(existing.get("geometry_revision_id")) == str(row.get("geometry_revision_id"))
+                    and str(existing.get("derivative_kind")) == str(row.get("derivative_kind"))
+                ):
+                    raise SupabaseHTTPError("duplicate key value violates unique constraint geometry_derivatives_geometry_revision_kind")
+            row.setdefault("id", str(uuid4()))
+            row.setdefault("created_at", now)
+            self.geometry_derivatives[str(row["id"])] = row
+            return dict(row)
+
         raise RuntimeError(f"unsupported table insert: {table}")
+
+    def update_rows(
+        self,
+        *,
+        table: str,
+        access_token: str,
+        payload: dict[str, Any],
+        filters: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        _ = access_token
+        if table == "app.geometry_revisions":
+            storage = self.geometry_revisions
+        elif table == "app.geometry_derivatives":
+            storage = self.geometry_derivatives
+        else:
+            return []
+
+        rows = list(storage.values())
+        for key, raw_filter in filters.items():
+            rows = [row for row in rows if self._matches(row, key, raw_filter)]
+
+        updated: list[dict[str, Any]] = []
+        now = datetime.now(timezone.utc).isoformat()
+        for row in rows:
+            current = storage[str(row["id"])]
+            current.update(payload)
+            if table == "app.geometry_revisions":
+                current["updated_at"] = now
+            updated.append(dict(current))
+        return updated
 
     def delete_rows(self, *, table: str, access_token: str, filters: dict[str, str]) -> None:
         _ = (table, access_token, filters)
@@ -269,7 +323,7 @@ def main() -> int:
             raise RuntimeError("source_file_object_id mismatch in geometry revision")
         if ok_revision.get("geometry_role") != "part":
             raise RuntimeError("geometry_role mismatch in geometry revision")
-        if ok_revision.get("status") != "parsed":
+        if ok_revision.get("status") != "validated":
             raise RuntimeError("status mismatch in geometry revision")
         if ok_revision.get("revision_no") != 1:
             raise RuntimeError("revision_no mismatch in geometry revision")

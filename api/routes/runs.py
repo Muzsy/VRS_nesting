@@ -241,6 +241,7 @@ def _normalize_artifact_row(row: dict[str, Any]) -> dict[str, Any]:
         "run_id": str(row.get("run_id", "")),
         "artifact_type": _legacy_artifact_type_from_row(row),
         "filename": _artifact_filename_from_row(row),
+        "storage_bucket": str(row.get("storage_bucket") or "").strip(),
         "storage_key": str(row.get("storage_path") or row.get("storage_key") or "").strip(),
         "size_bytes": _artifact_int_meta(row, "size_bytes"),
         "sheet_index": _artifact_int_meta(row, "sheet_index"),
@@ -269,7 +270,7 @@ def _fetch_run_artifacts(
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     params = {
-        "select": "id,run_id,artifact_kind,storage_path,metadata_jsonb,created_at",
+        "select": "id,run_id,artifact_kind,storage_bucket,storage_path,metadata_jsonb,created_at",
         "run_id": f"eq.{run_id}",
         "order": "created_at.asc",
         "limit": str(limit),
@@ -509,7 +510,7 @@ def get_run_log(
     run_status = str(run_row.get("status", "")).strip().lower()
 
     params = {
-        "select": "id,storage_path,metadata_jsonb,created_at",
+        "select": "id,storage_bucket,storage_path,metadata_jsonb,created_at",
         "run_id": f"eq.{run_id}",
         "artifact_kind": "eq.log",
         "order": "created_at.desc",
@@ -537,6 +538,7 @@ def get_run_log(
             break
 
     storage_key = str(selected_row.get("storage_path", "")).strip()
+    storage_bucket = str(selected_row.get("storage_bucket") or "").strip() or settings.storage_bucket
     if not storage_key:
         return RunLogResponse(
             lines=[],
@@ -549,7 +551,7 @@ def get_run_log(
     try:
         signed = supabase.create_signed_download_url(
             access_token=user.access_token,
-            bucket=settings.storage_bucket,
+            bucket=storage_bucket,
             object_key=storage_key,
             expires_in=settings.signed_url_ttl_s,
         )
@@ -604,7 +606,7 @@ def _resolve_artifact_for_run(
     artifact_id: UUID,
 ) -> dict[str, Any]:
     params = {
-        "select": "id,run_id,artifact_kind,storage_path,metadata_jsonb,created_at",
+        "select": "id,run_id,artifact_kind,storage_bucket,storage_path,metadata_jsonb,created_at",
         "id": f"eq.{artifact_id}",
         "run_id": f"eq.{run_id}",
         "limit": "1",
@@ -634,9 +636,10 @@ def get_artifact_url(
             run_id=run_id,
             artifact_id=artifact_id,
         )
+        storage_bucket = str(artifact.get("storage_bucket") or "").strip() or settings.storage_bucket
         signed = supabase.create_signed_download_url(
             access_token=user.access_token,
-            bucket=settings.storage_bucket,
+            bucket=storage_bucket,
             object_key=str(artifact.get("storage_key", "")),
             expires_in=settings.signed_url_ttl_s,
         )
@@ -826,9 +829,10 @@ def get_viewer_data(
 
         if artifact_type == "solver_output" or filename.endswith("solver_output.json"):
             try:
+                artifact_bucket = str(row.get("storage_bucket") or "").strip() or settings.storage_bucket
                 signed = supabase.create_signed_download_url(
                     access_token=user.access_token,
-                    bucket=settings.storage_bucket,
+                    bucket=artifact_bucket,
                     object_key=storage_key,
                     expires_in=settings.signed_url_ttl_s,
                 )
@@ -840,9 +844,10 @@ def get_viewer_data(
                 solver_payload = {}
         if artifact_type == "solver_input" or filename.endswith("solver_input.json"):
             try:
+                artifact_bucket = str(row.get("storage_bucket") or "").strip() or settings.storage_bucket
                 signed = supabase.create_signed_download_url(
                     access_token=user.access_token,
-                    bucket=settings.storage_bucket,
+                    bucket=artifact_bucket,
                     object_key=storage_key,
                     expires_in=settings.signed_url_ttl_s,
                 )
@@ -989,6 +994,7 @@ def create_artifacts_bundle(
 
     bundle_filename = f"bundle_{run_id}.zip"
     bundle_storage_key = f"runs/{run_id}/artifacts/{bundle_filename}"
+    bundle_storage_bucket = str(selected_rows[0].get("storage_bucket") or "").strip() or settings.storage_bucket
 
     bundle_size = 0
     try:
@@ -1012,7 +1018,7 @@ def create_artifacts_bundle(
 
                     signed = supabase.create_signed_download_url(
                         access_token=user.access_token,
-                        bucket=settings.storage_bucket,
+                        bucket=str(row.get("storage_bucket") or "").strip() or settings.storage_bucket,
                         object_key=storage_key,
                         expires_in=settings.signed_url_ttl_s,
                     )
@@ -1027,7 +1033,7 @@ def create_artifacts_bundle(
             bundle_size = zip_path.stat().st_size
             upload_signed = supabase.create_signed_upload_url(
                 access_token=user.access_token,
-                bucket=settings.storage_bucket,
+                bucket=bundle_storage_bucket,
                 object_key=bundle_storage_key,
                 expires_in=settings.signed_url_ttl_s,
             )
@@ -1058,7 +1064,7 @@ def create_artifacts_bundle(
             payload={
                 "run_id": str(run_id),
                 "artifact_kind": "bundle_zip",
-                "storage_bucket": settings.storage_bucket,
+                "storage_bucket": bundle_storage_bucket,
                 "storage_path": bundle_storage_key,
                 "metadata_jsonb": {
                     "legacy_artifact_type": "bundle_zip",
@@ -1069,7 +1075,7 @@ def create_artifacts_bundle(
         )
         signed_download = supabase.create_signed_download_url(
             access_token=user.access_token,
-            bucket=settings.storage_bucket,
+            bucket=bundle_storage_bucket,
             object_key=bundle_storage_key,
             expires_in=settings.signed_url_ttl_s,
         )

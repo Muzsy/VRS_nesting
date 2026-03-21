@@ -193,6 +193,20 @@ def _seed_happy_path(fake: FakeSupabaseClient) -> dict[str, str]:
             "id": derivative_id,
             "geometry_revision_id": source_geometry_revision_id,
             "derivative_kind": "nesting_canonical",
+            "derivative_jsonb": {
+                "polygon": {
+                    "outer_ring": [[0.0, 0.0], [120.0, 0.0], [120.0, 80.0], [0.0, 80.0]],
+                    "hole_rings": [],
+                },
+                "bbox": {
+                    "min_x": 0.0,
+                    "min_y": 0.0,
+                    "max_x": 120.0,
+                    "max_y": 80.0,
+                    "width": 120.0,
+                    "height": 80.0,
+                },
+            },
             "derivative_hash_sha256": "derivhash",
             "source_geometry_hash_sha256": "geohash",
         }

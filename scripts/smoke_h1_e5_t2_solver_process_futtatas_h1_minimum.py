@@ -24,10 +24,12 @@ def _base_snapshot() -> dict[str, Any]:
             {
                 "project_part_requirement_id": "req-1",
                 "part_revision_id": "part-rev-1",
+                "part_definition_id": "part-def-1",
                 "part_code": "PART-001",
                 "required_qty": 2,
                 "placement_priority": 10,
                 "selected_nesting_derivative_id": "deriv-1",
+                "source_geometry_revision_id": "geo-rev-1",
             }
         ],
         "sheets_manifest_jsonb": [
@@ -76,6 +78,8 @@ class FakeClient:
         self.marked_running = 0
         self.uploaded_inputs: list[str] = []
         self.snapshot_hashes: list[str] = []
+        self.registered_artifacts: list[dict[str, Any]] = []
+        self.replaced_projection: list[dict[str, Any]] = []
         self.done_calls: list[dict[str, Any]] = []
         self.failed_calls: list[dict[str, Any]] = []
         self.cancelled_calls: list[dict[str, Any]] = []
@@ -94,6 +98,36 @@ class FakeClient:
 
     def set_run_input_snapshot_hash(self, *, run_id: str, snapshot_hash: str) -> None:
         self.snapshot_hashes.append(snapshot_hash)
+
+    def register_run_artifact_raw(self, **kwargs: Any) -> None:
+        self.registered_artifacts.append(dict(kwargs))
+
+    def replace_run_projection(
+        self,
+        *,
+        run_id: str,
+        sheets: list[dict[str, Any]],
+        placements: list[dict[str, Any]],
+        unplaced: list[dict[str, Any]],
+        metrics: dict[str, Any],
+    ) -> None:
+        self.replaced_projection.append(
+            {
+                "run_id": run_id,
+                "sheets": list(sheets),
+                "placements": list(placements),
+                "unplaced": list(unplaced),
+                "metrics": dict(metrics),
+            }
+        )
+
+    def fetch_viewer_outline_derivatives(self, *, geometry_revision_ids: list[str]) -> dict[str, dict[str, Any]]:
+        _ = geometry_revision_ids
+        return {}
+
+    def fetch_nesting_canonical_derivatives(self, *, geometry_revision_ids: list[str]) -> dict[str, dict[str, Any]]:
+        _ = geometry_revision_ids
+        return {}
 
     def fetch_run_status(self, run_id: str) -> str:
         return self._run_status
@@ -261,6 +295,7 @@ def _settings(temp_root: Path) -> worker_main.WorkerSettings:
         stale_temp_cleanup_max_age_s=60.0,
         run_root=temp_root / "runs-root",
         temp_root=temp_root,
+        run_artifacts_bucket="run-artifacts",
         sparrow_bin="",
         once=True,
     )
@@ -298,7 +333,8 @@ def _run_case(*, scenario: str, expected_exception: type[BaseException] | None, 
             patch.object(worker_main.subprocess, "Popen", side_effect=popen_factory),
             patch.object(worker_main.time, "sleep", return_value=None),
             patch.object(worker_main, "_upload_run_artifacts", return_value=None),
-            patch.object(worker_main, "_ensure_sheet_svgs", return_value=[]),
+            patch.object(worker_main, "persist_sheet_svg_artifacts", return_value=[]),
+            patch.object(worker_main, "persist_sheet_dxf_artifacts", return_value=[]),
             patch.object(worker_main, "_sync_run_log_artifact", return_value=0),
             monotonic_patch,
         ):
