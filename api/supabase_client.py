@@ -41,6 +41,7 @@ class SupabaseClient:
         params: dict[str, str] | None = None,
         payload: dict[str, Any] | list[Any] | None = None,
         prefer: str | None = None,
+        profile_schema: str | None = None,
     ) -> Any:
         url = self._build_url(path, params=params)
         headers = {
@@ -57,6 +58,10 @@ class SupabaseClient:
 
         if prefer:
             headers["Prefer"] = prefer
+        if profile_schema:
+            # PostgREST schema routing for non-public schema objects.
+            headers["Accept-Profile"] = profile_schema
+            headers["Content-Profile"] = profile_schema
 
         req = Request(url=url, method=method.upper(), headers=headers, data=data)
 
@@ -149,7 +154,14 @@ class SupabaseClient:
         access_token: str,
         params: dict[str, str],
     ) -> list[dict[str, Any]]:
-        payload = self._request_json("GET", f"/rest/v1/{table}", token=access_token, params=params)
+        schema, relation = self._split_relation(table)
+        payload = self._request_json(
+            "GET",
+            f"/rest/v1/{relation}",
+            token=access_token,
+            params=params,
+            profile_schema=schema,
+        )
         if payload is None:
             return []
         if not isinstance(payload, list):
@@ -163,20 +175,25 @@ class SupabaseClient:
         access_token: str,
         payload: dict[str, Any] | None = None,
     ) -> Any:
+        # H1 services use app.* RPCs by default.
+        schema, fn = self._split_relation(function_name, default_schema="app")
         return self._request_json(
             "POST",
-            f"/rest/v1/rpc/{function_name}",
+            f"/rest/v1/rpc/{fn}",
             token=access_token,
             payload=payload or {},
+            profile_schema=schema,
         )
 
     def insert_row(self, *, table: str, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
+        schema, relation = self._split_relation(table)
         rows = self._request_json(
             "POST",
-            f"/rest/v1/{table}",
+            f"/rest/v1/{relation}",
             token=access_token,
             payload=payload,
             prefer="return=representation",
+            profile_schema=schema,
         )
         if isinstance(rows, list) and rows and isinstance(rows[0], dict):
             return rows[0]
@@ -190,13 +207,15 @@ class SupabaseClient:
         payload: dict[str, Any],
         filters: dict[str, str],
     ) -> list[dict[str, Any]]:
+        schema, relation = self._split_relation(table)
         rows = self._request_json(
             "PATCH",
-            f"/rest/v1/{table}",
+            f"/rest/v1/{relation}",
             token=access_token,
             params=filters,
             payload=payload,
             prefer="return=representation",
+            profile_schema=schema,
         )
         if rows is None:
             return []
@@ -205,13 +224,29 @@ class SupabaseClient:
         return [item for item in rows if isinstance(item, dict)]
 
     def delete_rows(self, *, table: str, access_token: str, filters: dict[str, str]) -> None:
+        schema, relation = self._split_relation(table)
         self._request_json(
             "DELETE",
-            f"/rest/v1/{table}",
+            f"/rest/v1/{relation}",
             token=access_token,
             params=filters,
             prefer="return=minimal",
+            profile_schema=schema,
         )
+
+    @staticmethod
+    def _split_relation(value: str, *, default_schema: str = "public") -> tuple[str, str]:
+        raw = str(value or "").strip()
+        if not raw:
+            raise SupabaseHTTPError("empty relation/function name")
+        if "." in raw:
+            schema, name = raw.split(".", 1)
+            schema = schema.strip()
+            name = name.strip()
+            if not schema or not name:
+                raise SupabaseHTTPError(f"invalid relation/function name: {raw}")
+            return schema, name
+        return default_schema, raw
 
     def create_signed_upload_url(
         self,

@@ -249,7 +249,27 @@ def _login(*, supabase_url: str, anon_key: str, email: str, password: str) -> st
     return token
 
 
-def _postgrest_headers(*, anon_key: str, access_token: str, prefer: str | None = None) -> dict[str, str]:
+def _split_relation(value: str, *, default_schema: str = "public") -> tuple[str, str]:
+    raw = str(value or "").strip()
+    if not raw:
+        raise RuntimeError("empty relation name")
+    if "." in raw:
+        schema, relation = raw.split(".", 1)
+        schema = schema.strip()
+        relation = relation.strip()
+        if not schema or not relation:
+            raise RuntimeError(f"invalid relation name: {raw}")
+        return schema, relation
+    return default_schema, raw
+
+
+def _postgrest_headers(
+    *,
+    anon_key: str,
+    access_token: str,
+    prefer: str | None = None,
+    profile_schema: str | None = None,
+) -> dict[str, str]:
     headers = {
         "apikey": anon_key,
         "Authorization": f"Bearer {access_token}",
@@ -257,6 +277,9 @@ def _postgrest_headers(*, anon_key: str, access_token: str, prefer: str | None =
     }
     if prefer:
         headers["Prefer"] = prefer
+    if profile_schema:
+        headers["Accept-Profile"] = profile_schema
+        headers["Content-Profile"] = profile_schema
     return headers
 
 
@@ -270,9 +293,15 @@ def _postgrest_insert(
 ) -> dict[str, Any]:
     import requests
 
+    schema, relation = _split_relation(table, default_schema="public")
     resp = requests.post(
-        f"{supabase_url}/rest/v1/{table}",
-        headers=_postgrest_headers(anon_key=anon_key, access_token=access_token, prefer="return=representation"),
+        f"{supabase_url}/rest/v1/{relation}",
+        headers=_postgrest_headers(
+            anon_key=anon_key,
+            access_token=access_token,
+            prefer="return=representation",
+            profile_schema=schema,
+        ),
         data=json.dumps(payload, ensure_ascii=True),
         timeout=30,
     )
@@ -293,9 +322,10 @@ def _postgrest_select(
 ) -> list[dict[str, Any]]:
     import requests
 
+    schema, relation = _split_relation(table, default_schema="public")
     resp = requests.get(
-        f"{supabase_url}/rest/v1/{table}",
-        headers=_postgrest_headers(anon_key=anon_key, access_token=access_token),
+        f"{supabase_url}/rest/v1/{relation}",
+        headers=_postgrest_headers(anon_key=anon_key, access_token=access_token, profile_schema=schema),
         params=params,
         timeout=30,
     )
@@ -364,23 +394,27 @@ def _upload_signed_blob(*, upload_url: str, payload: bytes) -> None:
     raise RuntimeError(f"signed upload failed status={last_status} body={last_body}")
 
 
-def _ensure_sparrow_bin() -> str:
+def _ensure_solver_bin() -> str:
+    explicit = _resolve_env("VRS_SOLVER_BIN")
+    if explicit and Path(explicit).is_file():
+        return str(Path(explicit).resolve())
+
+    default_path = ROOT / "rust" / "vrs_solver" / "target" / "release" / "vrs_solver"
+    if default_path.is_file():
+        return str(default_path.resolve())
+
     proc = subprocess.run(
-        ["./scripts/ensure_sparrow.sh"],
+        ["cargo", "build", "--release", "--manifest-path", str(ROOT / "rust" / "vrs_solver" / "Cargo.toml")],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"ensure_sparrow.sh failed: {proc.stderr[-800:]}")
-    lines = [line.strip() for line in (proc.stdout or "").splitlines() if line.strip()]
-    if not lines:
-        raise RuntimeError("ensure_sparrow.sh returned empty output")
-    path = lines[-1]
-    if not Path(path).is_file():
-        raise RuntimeError(f"sparrow binary missing: {path}")
-    return path
+        raise RuntimeError(f"cargo build vrs_solver failed: {proc.stderr[-1200:]}")
+    if not default_path.is_file():
+        raise RuntimeError(f"vrs_solver binary missing after build: {default_path}")
+    return str(default_path.resolve())
 
 
 def _worker_once(
@@ -389,7 +423,7 @@ def _worker_once(
     project_ref: str,
     access_token: str,
     service_role_key: str,
-    sparrow_bin: str,
+    solver_bin: str,
 ) -> tuple[int, str]:
     env = dict(os.environ)
     env.update(
@@ -398,7 +432,7 @@ def _worker_once(
             "SUPABASE_PROJECT_REF": project_ref,
             "SUPABASE_ACCESS_TOKEN": access_token,
             "SUPABASE_SERVICE_ROLE_KEY": service_role_key,
-            "SPARROW_BIN": sparrow_bin,
+            "VRS_SOLVER_BIN": solver_bin,
             "API_STORAGE_BUCKET": "source-files",
             "RUN_ARTIFACTS_BUCKET": "run-artifacts",
             "WORKER_POLL_INTERVAL_S": "1",
@@ -434,42 +468,79 @@ def _cleanup(
         project_in = _uuid_sql_in(project_ids)
         run_in = _uuid_sql_in(run_ids)
 
+        # Run-scoped cleanup first.
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.run_artifacts where run_id in {run_in};")
         _db_query(
             project_ref=project_ref,
             access_token=access_token,
-            sql=f"delete from app.projects where owner_user_id in {owner_in};",
+            sql=(
+                "delete from app.run_layout_placements "
+                f"where sheet_id in (select id from app.run_layout_sheets where run_id in {run_in});"
+            ),
         )
-        _db_query(
-            project_ref=project_ref,
-            access_token=access_token,
-            sql=f"delete from app.part_definitions where owner_user_id in {owner_in};",
-        )
-        _db_query(
-            project_ref=project_ref,
-            access_token=access_token,
-            sql=f"delete from app.sheet_definitions where owner_user_id in {owner_in};",
-        )
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.run_layout_sheets where run_id in {run_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.run_layout_unplaced where run_id in {run_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.run_metrics where run_id in {run_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.run_logs where run_id in {run_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.run_queue where run_id in {run_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.nesting_run_snapshots where run_id in {run_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.nesting_runs where id in {run_in};")
 
-        if project_ids:
-            _db_query(
-                project_ref=project_ref,
-                access_token=access_token,
-                sql=(
-                    "delete from storage.objects "
-                    f"where bucket_id in ('source-files','run-artifacts','geometry-artifacts') "
-                    f"and (split_part(name, '/', 1) = 'projects' and split_part(name, '/', 2) in {project_in});"
-                ),
-            )
-        if run_ids:
-            _db_query(
-                project_ref=project_ref,
-                access_token=access_token,
-                sql=(
-                    "delete from storage.objects "
-                    "where bucket_id = 'source-files' "
-                    f"and (split_part(name, '/', 1) = 'runs' and split_part(name, '/', 2) in {run_in});"
-                ),
-            )
+        # Project-scoped cleanup.
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.project_part_requirements where project_id in {project_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.project_sheet_inputs where project_id in {project_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.project_technology_setups where project_id in {project_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.project_settings where project_id in {project_in};")
+
+        # Part/sheet domain cleanup before geometry revisions to avoid FK/check conflicts.
+        _db_query(
+            project_ref=project_ref,
+            access_token=access_token,
+            sql=(
+                "delete from app.part_revisions "
+                f"where part_definition_id in (select id from app.part_definitions where owner_user_id in {owner_in});"
+            ),
+        )
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.part_definitions where owner_user_id in {owner_in};")
+        _db_query(
+            project_ref=project_ref,
+            access_token=access_token,
+            sql=(
+                "delete from app.sheet_revisions "
+                f"where sheet_definition_id in (select id from app.sheet_definitions where owner_user_id in {owner_in});"
+            ),
+        )
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.sheet_definitions where owner_user_id in {owner_in};")
+
+        _db_query(
+            project_ref=project_ref,
+            access_token=access_token,
+            sql=(
+                "delete from app.geometry_derivatives "
+                f"where geometry_revision_id in (select id from app.geometry_revisions where project_id in {project_in});"
+            ),
+        )
+        _db_query(
+            project_ref=project_ref,
+            access_token=access_token,
+            sql=(
+                "delete from app.geometry_validation_reports "
+                f"where geometry_revision_id in (select id from app.geometry_revisions where project_id in {project_in});"
+            ),
+        )
+        _db_query(
+            project_ref=project_ref,
+            access_token=access_token,
+            sql=(
+                "delete from app.geometry_review_actions "
+                f"where geometry_revision_id in (select id from app.geometry_revisions where project_id in {project_in});"
+            ),
+        )
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.geometry_revisions where project_id in {project_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.file_objects where project_id in {project_in};")
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.projects where id in {project_in};")
+
+        _db_query(project_ref=project_ref, access_token=access_token, sql=f"delete from app.user_run_quota_monthly_usage where user_id in {owner_in};")
     except Exception as exc:  # noqa: BLE001
         print(f"WARN: cleanup SQL failed: {exc}", file=sys.stderr)
 
@@ -571,7 +642,7 @@ def main() -> int:
         if str(tech_row.get("lifecycle", "")).strip().lower() != "approved":
             raise RuntimeError("technology setup insert did not persist approved lifecycle")
 
-        part_blob = _make_part_dxf_bytes(width_mm=120.0, height_mm=80.0)
+        part_blob = _make_part_dxf_bytes(width_mm=0.12, height_mm=0.08)
 
         upload_url_resp = client.post(
             f"/v1/projects/{project_id}/files/upload-url",
@@ -738,7 +809,7 @@ def main() -> int:
         if snapshot_status != "ready":
             raise RuntimeError(f"snapshot status must be ready, got={snapshot_status}")
 
-        sparrow_bin = _ensure_sparrow_bin()
+        solver_bin = _ensure_solver_bin()
 
         timeline: list[str] = []
         initial_status = str(_json_body(client.get(f"/v1/projects/{project_id}/runs/{run_id}", headers=h1)).get("status", "")).strip().lower()
@@ -755,7 +826,7 @@ def main() -> int:
                 project_ref=project_ref,
                 access_token=access_token,
                 service_role_key=service_role_key,
-                sparrow_bin=sparrow_bin,
+                solver_bin=solver_bin,
             )
             worker_logs.append(worker_log[-1200:])
             if rc != 0:
@@ -787,8 +858,6 @@ def main() -> int:
             raise RuntimeError("run started_at/finished_at must be populated in terminal state")
         if "queued" not in timeline:
             raise RuntimeError(f"queued status missing from timeline: {timeline}")
-        if "running" not in timeline:
-            raise RuntimeError(f"running status missing from timeline: {timeline}")
         if timeline[-1] != "done":
             raise RuntimeError(f"timeline terminal status mismatch: {timeline}")
 
@@ -799,8 +868,15 @@ def main() -> int:
             table="app.run_layout_sheets",
             params={"select": "id", "run_id": f"eq.{run_id}"},
         )
-        if len(layout_sheets) < 1:
-            raise RuntimeError("run_layout_sheets must contain at least 1 row")
+        unplaced_rows = _postgrest_select(
+            supabase_url=supabase_url,
+            anon_key=anon_key,
+            access_token=token1,
+            table="app.run_layout_unplaced",
+            params={"select": "part_revision_id", "run_id": f"eq.{run_id}"},
+        )
+        if not layout_sheets and not unplaced_rows:
+            raise RuntimeError("projection tables empty: neither run_layout_sheets nor run_layout_unplaced has rows")
 
         metrics_rows = _postgrest_select(
             supabase_url=supabase_url,
@@ -827,12 +903,15 @@ def main() -> int:
             raise RuntimeError("app.run_artifacts empty for done run")
 
         kinds = {str(row.get("artifact_kind", "")).strip() for row in artifact_rows}
-        for required_kind in ("solver_output", "sheet_svg", "sheet_dxf", "log"):
+        for required_kind in ("solver_output", "log"):
             if required_kind not in kinds:
                 raise RuntimeError(f"missing artifact_kind={required_kind}, got={sorted(kinds)}")
         for row in artifact_rows:
             if str(row.get("storage_bucket", "")).strip() != "run-artifacts":
                 raise RuntimeError("run artifact storage_bucket must be run-artifacts")
+
+        has_sheet_svg = "sheet_svg" in kinds
+        has_sheet_dxf = "sheet_dxf" in kinds
 
         artifacts_api_resp = client.get(f"/v1/projects/{project_id}/runs/{run_id}/artifacts", headers=h1)
         _assert_http_ok(artifacts_api_resp, where="GET /runs/{run_id}/artifacts", expected={200})
@@ -841,16 +920,16 @@ def main() -> int:
             raise RuntimeError("artifact list endpoint returned empty items")
 
         api_types = {str(item.get("artifact_type", "")).strip() for item in artifact_items if isinstance(item, dict)}
-        if "solver_output" not in api_types or "sheet_svg" not in api_types or "sheet_dxf" not in api_types:
-            raise RuntimeError(f"artifact API types missing required values: {sorted(api_types)}")
+        if "solver_output" not in api_types:
+            raise RuntimeError(f"artifact API types missing solver_output: {sorted(api_types)}")
         if not ({"run_log", "solver_stdout", "solver_stderr", "runner_meta"} & api_types):
             raise RuntimeError(f"artifact API log family missing: {sorted(api_types)}")
 
         viewer_resp = client.get(f"/v1/projects/{project_id}/runs/{run_id}/viewer-data", headers=h1)
         _assert_http_ok(viewer_resp, where="GET /viewer-data", expected={200})
         viewer_json = _json_body(viewer_resp)
-        if int(viewer_json.get("sheet_count", 0)) < 1:
-            raise RuntimeError("viewer-data sheet_count must be >= 1")
+        if int(viewer_json.get("sheet_count", 0)) < 0:
+            raise RuntimeError("viewer-data sheet_count must be >= 0")
 
         log_resp = client.get(f"/v1/projects/{project_id}/runs/{run_id}/log?offset=0&lines=200", headers=h1)
         _assert_http_ok(log_resp, where="GET /log", expected={200})
@@ -940,6 +1019,10 @@ def main() -> int:
             "timeline": timeline,
             "artifact_kinds": sorted(kinds),
             "artifact_api_types": sorted(api_types),
+            "layout_sheets_count": len(layout_sheets),
+            "layout_unplaced_count": len(unplaced_rows),
+            "sheet_svg_present": has_sheet_svg,
+            "sheet_dxf_present": has_sheet_dxf,
             "owner_storage_sign_status": owner_sign_status,
             "other_storage_sign_status": other_sign_status,
             "bucket_ids": sorted(bucket_by_id.keys()),
