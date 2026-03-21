@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from api.services.geometry_contour_classification import classify_manufacturing_derivative_contours
 from api.services.geometry_derivative_generator import generate_h1_minimum_geometry_derivatives
 from api.services.file_ingest_metadata import download_storage_object_blob
 from api.services.geometry_validation_report import create_geometry_validation_report
@@ -223,11 +224,30 @@ def import_source_dxf_geometry_revision(
     if isinstance(validated_geometry_revision, dict):
         current_geometry_revision = validated_geometry_revision
 
-    generate_h1_minimum_geometry_derivatives(
+    derivative_result = generate_h1_minimum_geometry_derivatives(
         supabase=supabase,
         access_token=access_token,
         geometry_revision=current_geometry_revision,
     )
+
+    # H2-E2-T2: classify contours for manufacturing_canonical derivative
+    generated = derivative_result.get("generated")
+    if isinstance(generated, dict):
+        mfg_derivative = generated.get("manufacturing_canonical")
+        if isinstance(mfg_derivative, dict) and mfg_derivative.get("id"):
+            try:
+                classify_manufacturing_derivative_contours(
+                    supabase=supabase,
+                    access_token=access_token,
+                    geometry_derivative=mfg_derivative,
+                )
+            except Exception:
+                logger.warning(
+                    "contour_classification_failed geometry_revision_id=%s",
+                    str(current_geometry_revision.get("id") or ""),
+                    exc_info=True,
+                )
+
     return current_geometry_revision
 
 

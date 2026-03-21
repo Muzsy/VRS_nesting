@@ -1,0 +1,59 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E2-T2 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de a scope maradjon szuk: csak contour
+      classification truth + service + pipeline bekotes.
+    outputs:
+      - "canvases/web_platform/h2_e2_t2_contour_classification_service.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e2_t2_contour_classification_service.yaml"
+      - "codex/prompts/web_platform/h2_e2_t2_contour_classification_service/run.md"
+      - "codex/codex_checklist/web_platform/h2_e2_t2_contour_classification_service.md"
+      - "codex/reports/web_platform/h2_e2_t2_contour_classification_service.md"
+
+  - name: "Schema + contour classification service bevezetese"
+    description: >
+      Keszits uj migraciot az `app.geometry_contour_classes` tablahoz a H2 docs
+      szerinti minimalis mezokkel. Keszits uj service-t, amely a
+      `manufacturing_canonical` derivative `contours` payloadjabol contouronkenti
+      classification truth-ot allit elo es idempotens modon tarolja azt.
+      A kezdeti `contour_kind` vilag maradjon `outer` / `inner`, a
+      `feature_class` kezdetben legyen minimalis es stabil. Ne vezess be cut rule,
+      matching vagy manufacturing plan logikat.
+    outputs:
+      - "supabase/migrations/20260322004000_h2_e2_t2_contour_classification_service.sql"
+      - "api/services/geometry_contour_classification.py"
+
+  - name: "DXF import pipeline classification bekotese"
+    description: >
+      Frissitsd az `api/services/dxf_geometry_import.py` pipeline-t ugy, hogy a
+      validated geometry es a manufacturing derivative generalasa utan a contour
+      classification service is lefusson. A pipeline csak manufacturing derivative-re
+      epithet, rejected geometry eseten ne gyartson classification truth-ot.
+    outputs:
+      - "api/services/dxf_geometry_import.py"
+
+  - name: "Task-specifikus smoke + checklist + report frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) manufacturing derivative contourjaihoz letrejonnek a contour class rekordok;
+      2) outer/hole -> outer/inner mapping helyes;
+      3) feature_class es metric mezo(k) kitoltodnek;
+      4) ujrafuttatas idempotens;
+      5) nem manufacturing derivative-re nincs classification;
+      6) rejected geometry eseten nincs classification truth.
+      Tolt sd ki a checklistet es a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h2_e2_t2_contour_classification_service.py"
+      - "codex/codex_checklist/web_platform/h2_e2_t2_contour_classification_service.md"
+      - "codex/reports/web_platform/h2_e2_t2_contour_classification_service.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e2_t2_contour_classification_service.md
+    outputs:
+      - "codex/reports/web_platform/h2_e2_t2_contour_classification_service.md"
+      - "codex/reports/web_platform/h2_e2_t2_contour_classification_service.verify.log"
