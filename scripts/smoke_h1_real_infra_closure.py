@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import secrets
@@ -200,6 +201,7 @@ def _assert_required_migrations_applied(*, project_ref: str, access_token: str) 
     required_versions = [
         "20260318103000",  # h1_e3_t3 security/schema bridge
         "20260321120000",  # h1_e7 closure lifecycle + storage policy extension
+        "20260321133000",  # h1_e7 run snapshot/queue owner insert RLS fix
     ]
     missing: list[str] = []
     for version in required_versions:
@@ -219,6 +221,62 @@ def _assert_required_migrations_applied(*, project_ref: str, access_token: str) 
         raise RuntimeError(
             "target Supabase project is behind required migrations for H1 real-closure smoke. "
             f"missing_versions={missing}"
+        )
+
+
+def _assert_postgrest_app_schema_exposed(*, supabase_url: str, anon_key: str, service_role_key: str) -> None:
+    import requests
+
+    resp = requests.get(
+        f"{supabase_url}/rest/v1/projects",
+        headers={
+            "apikey": anon_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Accept-Profile": "app",
+            "Content-Profile": "app",
+        },
+        params={"select": "id", "limit": "1"},
+        timeout=30,
+    )
+    if int(resp.status_code) == 200:
+        return
+    body = resp.text[:1200]
+    raise RuntimeError(
+        "postgrest app schema preflight failed; expected app schema exposure for API app.* tables. "
+        f"status={resp.status_code} body={body}"
+    )
+
+
+def _assert_auth_sync_wiring(*, project_ref: str, access_token: str) -> None:
+    diag = _auth_sync_diag(project_ref=project_ref, access_token=access_token)
+    trigger_rows_raw = diag.get("auth_users_triggers")
+    trigger_rows = trigger_rows_raw if isinstance(trigger_rows_raw, list) else []
+    profile_tables_raw = diag.get("profile_tables_present")
+    profile_tables = set(profile_tables_raw if isinstance(profile_tables_raw, list) else [])
+
+    if "app.profiles" not in profile_tables:
+        raise RuntimeError(
+            "auth sync preflight failed: app.profiles table missing. "
+            f"diag={json.dumps(diag, ensure_ascii=False, sort_keys=True)}"
+        )
+
+    has_app_sync = any(
+        str(row.get("fn_schema", "")).strip() == "app"
+        and str(row.get("fn_name", "")).strip() == "handle_auth_user_profile_sync"
+        for row in trigger_rows
+        if isinstance(row, dict)
+    )
+    has_legacy_public_sync = any(
+        str(row.get("fn_schema", "")).strip() == "public"
+        and str(row.get("fn_name", "")).strip() == "handle_auth_user_profile_sync"
+        for row in trigger_rows
+        if isinstance(row, dict)
+    )
+
+    if not has_app_sync or has_legacy_public_sync:
+        raise RuntimeError(
+            "auth sync preflight failed: invalid auth.users trigger wiring. "
+            f"diag={json.dumps(diag, ensure_ascii=False, sort_keys=True)}"
         )
 
 
@@ -548,7 +606,26 @@ def _cleanup(
         _delete_admin_user(supabase_url=supabase_url, service_role_key=service_role_key, user_id=user_id)
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="H1 real infra closure smoke")
+    parser.add_argument(
+        "--mode",
+        choices=["infra-closure", "artifact-chain"],
+        default="infra-closure",
+        help="infra-closure: auth/RLS/storage/worker closure proof. artifact-chain: strict sheet export chain proof.",
+    )
+    parser.add_argument("--project-name", default="H1 Real Infra Closure")
+    parser.add_argument("--part-width-mm", type=float, default=0.12)
+    parser.add_argument("--part-height-mm", type=float, default=0.08)
+    parser.add_argument("--part-required-qty", type=int, default=2)
+    parser.add_argument("--sheet-width-mm", type=float, default=500.0)
+    parser.add_argument("--sheet-height-mm", type=float, default=300.0)
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = _parse_args()
+
     try:
         import requests  # noqa: F401
         from fastapi.testclient import TestClient
@@ -566,6 +643,8 @@ def main() -> int:
     service_role_key = _get_service_role_key(project_ref=project_ref, access_token=access_token)
 
     _assert_required_migrations_applied(project_ref=project_ref, access_token=access_token)
+    _assert_postgrest_app_schema_exposed(supabase_url=supabase_url, anon_key=anon_key, service_role_key=service_role_key)
+    _assert_auth_sync_wiring(project_ref=project_ref, access_token=access_token)
 
     created_auth_user_ids: list[str] = []
     created_owner_user_ids: list[str] = []
@@ -610,7 +689,11 @@ def main() -> int:
         h1 = {"Authorization": f"Bearer {token1}"}
         h2 = {"Authorization": f"Bearer {token2}"}
 
-        create_project_resp = client.post("/v1/projects", headers=h1, json={"name": "H1 Real Infra Closure", "description": "closure smoke"})
+        create_project_resp = client.post(
+            "/v1/projects",
+            headers=h1,
+            json={"name": args.project_name, "description": f"closure smoke mode={args.mode}"},
+        )
         _assert_http_ok(create_project_resp, where="POST /v1/projects", expected={200})
         project_id = str(_json_body(create_project_resp).get("id", "")).strip()
         if not project_id:
@@ -642,7 +725,7 @@ def main() -> int:
         if str(tech_row.get("lifecycle", "")).strip().lower() != "approved":
             raise RuntimeError("technology setup insert did not persist approved lifecycle")
 
-        part_blob = _make_part_dxf_bytes(width_mm=0.12, height_mm=0.08)
+        part_blob = _make_part_dxf_bytes(width_mm=float(args.part_width_mm), height_mm=float(args.part_height_mm))
 
         upload_url_resp = client.post(
             f"/v1/projects/{project_id}/files/upload-url",
@@ -743,8 +826,8 @@ def main() -> int:
             json={
                 "code": "H1-REAL-SHEET-001",
                 "name": "H1 Real Sheet 001",
-                "width_mm": 500.0,
-                "height_mm": 300.0,
+                "width_mm": float(args.sheet_width_mm),
+                "height_mm": float(args.sheet_height_mm),
             },
         )
         _assert_http_ok(sheet_resp, where="POST /sheets", expected={201})
@@ -757,7 +840,7 @@ def main() -> int:
             headers=h1,
             json={
                 "part_revision_id": part_revision_id,
-                "required_qty": 2,
+                "required_qty": int(args.part_required_qty),
                 "placement_priority": 10,
                 "placement_policy": "normal",
                 "is_active": True,
@@ -937,6 +1020,25 @@ def main() -> int:
         if int(log_json.get("total_lines", 0)) <= 0:
             raise RuntimeError("run log endpoint returned no lines")
 
+        placement_count_rows = _db_query(
+            project_ref=project_ref,
+            access_token=access_token,
+            sql=(
+                "select count(*)::int as cnt "
+                "from app.run_layout_placements rp "
+                "join app.run_layout_sheets rs on rs.id = rp.sheet_id "
+                f"where rs.run_id = {_sql_quote(run_id)};"
+            ),
+        )
+        layout_placements_count = int(placement_count_rows[0].get("cnt", 0) if placement_count_rows else 0)
+        artifact_chain_pass = bool(layout_placements_count > 0 and has_sheet_svg and has_sheet_dxf and len(layout_sheets) > 0)
+        if args.mode == "artifact-chain" and not artifact_chain_pass:
+            raise RuntimeError(
+                "artifact-chain mode requires placement + sheet_svg + sheet_dxf evidence. "
+                f"layout_placements_count={layout_placements_count} sheet_svg_present={has_sheet_svg} "
+                f"sheet_dxf_present={has_sheet_dxf} layout_sheets_count={len(layout_sheets)}"
+            )
+
         artifact_id = ""
         artifact_storage_key = ""
         for row in artifact_rows:
@@ -1014,21 +1116,32 @@ def main() -> int:
                 raise RuntimeError(f"storage policy expression missing bucket reference: {bucket_id}")
 
         summary = {
+            "mode": args.mode,
             "project_id": project_id,
             "run_id": run_id,
             "timeline": timeline,
+            "infra_closure_pass": True,
+            "artifact_chain_pass": artifact_chain_pass,
             "artifact_kinds": sorted(kinds),
             "artifact_api_types": sorted(api_types),
             "layout_sheets_count": len(layout_sheets),
+            "layout_placements_count": layout_placements_count,
             "layout_unplaced_count": len(unplaced_rows),
             "sheet_svg_present": has_sheet_svg,
             "sheet_dxf_present": has_sheet_dxf,
+            "run_row_placements_count": int(run_details.get("placements_count") or 0),
+            "cleanup_scope": "project/domain tables + auth users (storage object cleanup not guaranteed)",
             "owner_storage_sign_status": owner_sign_status,
             "other_storage_sign_status": other_sign_status,
             "bucket_ids": sorted(bucket_by_id.keys()),
         }
         print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-        print("PASS: H1 real infra closure smoke")
+        if args.mode == "artifact-chain":
+            print("PASS: H1 artifact-chain smoke")
+        else:
+            print("PASS: H1 infra-closure smoke")
+            if not artifact_chain_pass:
+                print("ADVISORY: artifact-chain not proven in this run (sheet_svg/sheet_dxf may be absent).")
         return 0
     finally:
         _cleanup(
