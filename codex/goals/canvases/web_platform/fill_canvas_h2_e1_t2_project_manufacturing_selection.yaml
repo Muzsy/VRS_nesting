@@ -1,0 +1,80 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E1-T2 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H1 taskmintakhoz, de maradjon szuk, kizarolag
+      project manufacturing selection scope-ban.
+    outputs:
+      - "canvases/web_platform/h2_e1_t2_project_manufacturing_selection.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e1_t2_project_manufacturing_selection.yaml"
+      - "codex/prompts/web_platform/h2_e1_t2_project_manufacturing_selection/run.md"
+      - "codex/codex_checklist/web_platform/h2_e1_t2_project_manufacturing_selection.md"
+      - "codex/reports/web_platform/h2_e1_t2_project_manufacturing_selection.md"
+
+  - name: "Project manufacturing selection schema es service bekotese"
+    description: >
+      Keszits minimalis, repo-hu selection truth-ot a projekthez kotott
+      manufacturing profile version rogzitesehez.
+      Ha a H2-E1-T1 implementacio mar letrehozta az
+      `app.project_manufacturing_selection` tablat es a hozza tartozo policyket,
+      ne duplikald; csak a minimalisan szukseges hardeninget vegezd el.
+      Ha nem letezik, ez a task hozza letre a minimalis tablát es annak
+      RLS/policy alapjait.
+      A selection viselkedese legyen projekt-szintu create-or-replace.
+      A validacio ellenorizze:
+      1) a projekt tulajdonjogat,
+      2) a manufacturing profile version owner-scope-jat,
+      3) ahol a valos schema engedi, az aktivitas/allapot ellenorzest,
+      4) ahol a valos schema engedi, a minimalis technology/manufacturing
+         konzisztenciat.
+      Ne nyiss ujra manufacturing profile CRUD vagy snapshot scope-ot.
+    outputs:
+      - "supabase/migrations/20260321233000_h2_e1_t2_project_manufacturing_selection.sql"
+      - "api/services/project_manufacturing_selection.py"
+
+  - name: "Project manufacturing selection API route-ok bevezetese"
+    description: >
+      Keszits minimalis projekt-szintu backend contractot a selection
+      olvasasara, beallitasara es torlesere.
+      Minimum:
+      - GET `/projects/{project_id}/manufacturing-selection`
+      - PUT `/projects/{project_id}/manufacturing-selection`
+      - DELETE `/projects/{project_id}/manufacturing-selection`
+      A route a meglevo auth / project-owner mintakhoz igazodjon.
+      A response legyen tiszta es auditalhato, de ne kezdjen snapshot vagy
+      resolver scope-ot vallalni.
+    outputs:
+      - "api/routes/project_manufacturing_selection.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) uj project selection letrehozas,
+      2) meglevo selection feluliras,
+      3) GET visszaolvasas,
+      4) DELETE torles,
+      5) idegen projekt tiltasa,
+      6) idegen / nem lathato version tiltasa,
+      7) inaktiv version tiltasa, ha a valos schema ezt tamogatja,
+      8) technology/manufacturing mismatch tiltasa ott, ahol a valos schema
+         alapjan ez tenylegesen ellenorizheto.
+      Frissitsd a checklistet es a reportot evidence-alapon. A report kulon
+      nevezze meg, hogy ez a task csak a projekt-szintu selection truth-ot
+      szallitja le, es a snapshot/manufacturing plan/postprocess retegek
+      tovabbra sem ennek a tasknak a scope-jai.
+    outputs:
+      - "scripts/smoke_h2_e1_t2_project_manufacturing_selection.py"
+      - "codex/codex_checklist/web_platform/h2_e1_t2_project_manufacturing_selection.md"
+      - "codex/reports/web_platform/h2_e1_t2_project_manufacturing_selection.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e1_t2_project_manufacturing_selection.md
+    outputs:
+      - "codex/reports/web_platform/h2_e1_t2_project_manufacturing_selection.md"
+      - "codex/reports/web_platform/h2_e1_t2_project_manufacturing_selection.verify.log"
+  
+
