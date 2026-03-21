@@ -91,6 +91,28 @@ def _load_nesting_derivative(
     return rows[0]
 
 
+def _load_manufacturing_derivative(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    geometry_revision_id: str,
+) -> dict[str, Any] | None:
+    """Load the manufacturing_canonical derivative for the given geometry revision.
+
+    Returns None if no manufacturing derivative exists yet (optional binding).
+    """
+    params = {
+        "select": "id,geometry_revision_id,derivative_kind",
+        "geometry_revision_id": f"eq.{geometry_revision_id}",
+        "derivative_kind": "eq.manufacturing_canonical",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.geometry_derivatives", access_token=access_token, params=params)
+    if not rows:
+        return None
+    return rows[0]
+
+
 def _load_existing_part_definition(
     *,
     supabase: SupabaseClient,
@@ -136,6 +158,7 @@ def _create_part_revision_atomic(
     part_definition_id: str,
     source_geometry_revision_id: str,
     selected_nesting_derivative_id: str,
+    selected_manufacturing_derivative_id: str | None,
     source_label: str | None,
     source_checksum_sha256: str | None,
     notes: str | None,
@@ -153,6 +176,7 @@ def _create_part_revision_atomic(
             "p_part_definition_id": part_definition_id,
             "p_source_geometry_revision_id": source_geometry_revision_id,
             "p_selected_nesting_derivative_id": selected_nesting_derivative_id,
+            "p_selected_manufacturing_derivative_id": selected_manufacturing_derivative_id,
             "p_source_label": source_label,
             "p_source_checksum_sha256": source_checksum_sha256,
             "p_notes": notes,
@@ -207,6 +231,12 @@ def create_part_from_geometry_revision(
         geometry_revision_id=geometry_id,
     )
 
+    manufacturing_derivative = _load_manufacturing_derivative(
+        supabase=supabase,
+        access_token=access_token,
+        geometry_revision_id=geometry_id,
+    )
+
     part_definition = _load_existing_part_definition(
         supabase=supabase,
         access_token=access_token,
@@ -234,21 +264,29 @@ def create_part_from_geometry_revision(
     if not derivative_id:
         raise PartCreationError(status_code=500, detail="derivative lookup returned empty id")
 
+    manufacturing_derivative_id: str | None = None
+    if manufacturing_derivative is not None:
+        manufacturing_derivative_id = str(manufacturing_derivative.get("id") or "").strip() or None
+
     part_definition, part_revision = _create_part_revision_atomic(
         supabase=supabase,
         access_token=access_token,
         part_definition_id=part_definition_id,
         source_geometry_revision_id=geometry_id,
         selected_nesting_derivative_id=derivative_id,
+        selected_manufacturing_derivative_id=manufacturing_derivative_id,
         source_label=source_label,
         source_checksum_sha256=source_checksum_sha256,
         notes=notes,
     )
 
-    return {
+    result: dict[str, Any] = {
         "part_definition": part_definition,
         "part_revision": part_revision,
         "source_geometry_revision": geometry_revision,
         "selected_nesting_derivative": derivative,
         "was_existing_definition": was_existing_definition,
     }
+    if manufacturing_derivative is not None:
+        result["selected_manufacturing_derivative"] = manufacturing_derivative
+    return result

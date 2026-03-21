@@ -12,6 +12,7 @@ logger = logging.getLogger("vrs_api.geometry_derivative_generator")
 _PRODUCER_VERSION = "geometry_derivative_generator.v1"
 _NESTING_FORMAT_VERSION = "nesting_canonical.v1"
 _VIEWER_FORMAT_VERSION = "viewer_outline.v1"
+_MANUFACTURING_FORMAT_VERSION = "manufacturing_canonical.v1"
 
 
 def _canonical_hash_sha256(payload: dict[str, Any]) -> str:
@@ -123,6 +124,56 @@ def _build_viewer_outline_payload(
             "default_stroke_px": 1.5,
             "fill_rule": "evenodd",
         },
+        "source_geometry_ref": {
+            "geometry_revision_id": str(geometry_revision.get("id") or ""),
+            "canonical_hash_sha256": str(geometry_revision.get("canonical_hash_sha256") or ""),
+            "canonical_format_version": str(geometry_revision.get("canonical_format_version") or ""),
+        },
+    }
+
+
+def _build_manufacturing_canonical_payload(
+    *,
+    geometry_revision: dict[str, Any],
+    outer_ring: list[list[float]],
+    hole_rings: list[list[list[float]]],
+    bbox: dict[str, float],
+) -> dict[str, Any]:
+    """Build a manufacturing-oriented contour derivative.
+
+    This is structurally distinct from the nesting_canonical payload:
+    - Top-level key is ``contours`` (not ``polygon``).
+    - Each contour is typed as ``outer`` or ``hole`` with an explicit index.
+    - Contour winding is documented (outer=CCW, hole=CW by convention).
+    - No placement_hints (manufacturing consumers derive their own).
+    """
+    contours: list[dict[str, Any]] = [
+        {
+            "contour_index": 0,
+            "contour_role": "outer",
+            "winding": "ccw",
+            "points": outer_ring,
+        },
+    ]
+    for hole_idx, hole_ring in enumerate(hole_rings):
+        contours.append({
+            "contour_index": hole_idx + 1,
+            "contour_role": "hole",
+            "winding": "cw",
+            "points": hole_ring,
+        })
+
+    return {
+        "derivative_kind": "manufacturing_canonical",
+        "format_version": _MANUFACTURING_FORMAT_VERSION,
+        "units": "mm",
+        "contours": contours,
+        "contour_summary": {
+            "outer_count": 1,
+            "hole_count": len(hole_rings),
+            "total_count": 1 + len(hole_rings),
+        },
+        "bbox": bbox,
         "source_geometry_ref": {
             "geometry_revision_id": str(geometry_revision.get("id") or ""),
             "canonical_hash_sha256": str(geometry_revision.get("canonical_hash_sha256") or ""),
@@ -250,6 +301,12 @@ def generate_h1_minimum_geometry_derivatives(
         hole_rings=hole_rings,
         bbox=bbox,
     )
+    manufacturing_payload = _build_manufacturing_canonical_payload(
+        geometry_revision=geometry_revision,
+        outer_ring=outer_ring,
+        hole_rings=hole_rings,
+        bbox=bbox,
+    )
 
     derivatives: dict[str, dict[str, Any]] = {}
     derivatives["nesting_canonical"] = _upsert_derivative(
@@ -270,6 +327,16 @@ def generate_h1_minimum_geometry_derivatives(
         producer_version=_PRODUCER_VERSION,
         format_version=_VIEWER_FORMAT_VERSION,
         derivative_jsonb=viewer_payload,
+        source_geometry_hash_sha256=source_geometry_hash_sha256,
+    )
+    derivatives["manufacturing_canonical"] = _upsert_derivative(
+        supabase=supabase,
+        access_token=access_token,
+        geometry_revision_id=geometry_revision_id,
+        derivative_kind="manufacturing_canonical",
+        producer_version=_PRODUCER_VERSION,
+        format_version=_MANUFACTURING_FORMAT_VERSION,
+        derivative_jsonb=manufacturing_payload,
         source_geometry_hash_sha256=source_geometry_hash_sha256,
     )
 

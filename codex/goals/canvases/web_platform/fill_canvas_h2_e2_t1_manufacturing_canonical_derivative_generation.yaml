@@ -1,0 +1,81 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E2-T1 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H1/H2 mintakhoz, de a scope maradjon szuk, kizárólag
+      manufacturing_canonical derivative + part binding nyitotask szinten.
+    outputs:
+      - "canvases/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e2_t1_manufacturing_canonical_derivative_generation.yaml"
+      - "codex/prompts/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation/run.md"
+      - "codex/codex_checklist/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.md"
+      - "codex/reports/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.md"
+
+  - name: "Schema + atomic binding minimum bovitese"
+    description: >
+      Keszits uj migraciot, amely a `part_revisions` tablaban minimalisan, de
+      explicit modon lehetove teszi a manufacturing derivative bindinget.
+      A valtozas maradjon ugyanazon a H1 mintan, mint a
+      `selected_nesting_derivative_id` binding:
+      1) uj `selected_manufacturing_derivative_id` oszlop,
+      2) FK a `app.geometry_derivatives(id)` rekordra,
+      3) same-geometry kompozit FK a
+         `(selected_manufacturing_derivative_id, source_geometry_revision_id)`
+         -> `app.geometry_derivatives(id, geometry_revision_id)` mintara,
+      4) szukseges check/index kiegeszites,
+      5) az aktiv `app.create_part_revision_atomic(...)` fuggveny frissitese
+         ugy, hogy opcionális manufacturing derivative id-t is tudjon fogadni
+         es menteni.
+      Ne vezess be manufacturing profile, cut rule vagy egyeb H2 domain tablakat.
+    outputs:
+      - "supabase/migrations/20260322001000_h2_e2_t1_manufacturing_canonical_derivative_generation.sql"
+
+  - name: "Manufacturing derivative generator es import pipeline bovitese"
+    description: >
+      Bovitsd a meglevo `api/services/geometry_derivative_generator.py` service-t
+      ugy, hogy a validalt geometry truth-bol a H1 ket derivative-e mellett a
+      `manufacturing_canonical` is generalodjon.
+      A payload legyen determinisztikus, kulon a `nesting_canonical`-tol, es
+      maradjon geometry-derivative truth, ne plan vagy export artifact.
+      Kotesd be az `api/services/dxf_geometry_import.py` pipeline-ba ugy, hogy
+      valid geometry eseten a manufacturing derivative is automatikusan
+      elkeszuljon.
+    outputs:
+      - "api/services/geometry_derivative_generator.py"
+      - "api/services/dxf_geometry_import.py"
+
+  - name: "Part creation service manufacturing binding frissitese"
+    description: >
+      Frissitsd az `api/services/part_creation.py` service-t ugy, hogy a
+      part creation flow a meglevo `nesting_canonical` derivative mellett a
+      `manufacturing_canonical` derivativet is be tudja tolteni es az uj
+      atomic function parameterevel rogzitse.
+      A flow ne lazitsa a same-geometry integriast, es ne nyisson uj route vagy
+      manufacturing selection/profile scope-ot.
+    outputs:
+      - "api/services/part_creation.py"
+
+  - name: "Task-specifikus smoke + checklist + report frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) valid geometry eseten harom derivative (`nesting_canonical`,
+         `viewer_outline`, `manufacturing_canonical`) jon letre;
+      2) a manufacturing payload kulon marad a nesting payloadtol;
+      3) ujrageneralas nem hoz letre duplikalt manufacturing rekordot;
+      4) part creation utan a revision manufacturing derivative-re is kotheto;
+      5) rejected geometry eseten manufacturing derivative nem jon letre.
+      Tolt sd ki a checklistet es a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h2_e2_t1_manufacturing_canonical_derivative_generation.py"
+      - "codex/codex_checklist/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.md"
+      - "codex/reports/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.md
+    outputs:
+      - "codex/reports/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.md"
+      - "codex/reports/web_platform/h2_e2_t1_manufacturing_canonical_derivative_generation.verify.log"
