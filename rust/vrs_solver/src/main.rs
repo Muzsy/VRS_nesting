@@ -51,9 +51,13 @@ struct Point {
 
 #[derive(Debug, Clone)]
 struct SheetShape {
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
     width: f64,
     height: f64,
-    outer_poly: SPolygon,
+    _outer_poly: SPolygon,
     hole_polys: Vec<SPolygon>,
 }
 
@@ -229,9 +233,13 @@ fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
     }
 
     Ok(SheetShape {
+        min_x,
+        min_y,
+        max_x,
+        max_y,
         width: bbox_w,
         height: bbox_h,
-        outer_poly,
+        _outer_poly: outer_poly,
         hole_polys,
     })
 }
@@ -330,13 +338,16 @@ fn rect_edges(rect: Rect) -> [(Point, Point); 4] {
 }
 
 fn rect_inside_sheet_shape(rect: Rect, sheet: &SheetShape) -> bool {
-    let corners = rect_corners(rect);
-    for c in corners {
-        if !sheet.outer_poly.collides_with(&to_jag_point(c)) {
-            return false;
-        }
+    // Axis-aligned in-bounds guard for the current v1 rectangular stock contract.
+    if rect.x1 < sheet.min_x - EPS
+        || rect.y1 < sheet.min_y - EPS
+        || rect.x2 > sheet.max_x + EPS
+        || rect.y2 > sheet.max_y + EPS
+    {
+        return false;
     }
 
+    let corners = rect_corners(rect);
     let rect_edges_arr = rect_edges(rect);
     for hole in &sheet.hole_polys {
         for c in corners {

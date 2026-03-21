@@ -10,6 +10,9 @@ This document defines the execution and evidence model for H1 real-infra closure
 - `scripts/smoke_h1_real_artifact_chain_closure.py`
   - Strict artifact-chain entrypoint.
   - Runs the real-infra smoke in `artifact-chain` mode using a deterministic placeable solver fixture.
+- `scripts/smoke_h1_real_solver_artifact_chain_closure.py`
+  - Strict real-solver artifact-chain entrypoint.
+  - Uses the real `vrs_solver` binary (no fixture solver override) and requires placement + `sheet_svg` + `sheet_dxf`.
 
 ## Pass Semantics
 
@@ -37,4 +40,5 @@ Storage object cleanup is **not guaranteed** by this smoke and must not be repor
 ```bash
 python3 scripts/smoke_h1_real_infra_closure.py
 python3 scripts/smoke_h1_real_artifact_chain_closure.py
+python3 scripts/smoke_h1_real_solver_artifact_chain_closure.py
 ```
