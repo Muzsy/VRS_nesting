@@ -9,7 +9,7 @@ from typing import Any
 from api.supabase_client import SupabaseClient
 
 
-SNAPSHOT_VERSION = "h2_e4_t1_snapshot_v1"
+SNAPSHOT_VERSION = "h2_e5_t2_snapshot_v1"
 
 
 @dataclass
@@ -522,13 +522,30 @@ def _load_manufacturing_profile_version_for_snapshot(
     manufacturing_profile_version_id: str,
 ) -> dict[str, Any]:
     params = {
-        "select": "id,manufacturing_profile_id,version_no,lifecycle,is_active,machine_code,material_code,thickness_mm,kerf_mm,config_jsonb",
+        "select": "id,manufacturing_profile_id,version_no,lifecycle,is_active,machine_code,material_code,thickness_mm,kerf_mm,config_jsonb,active_postprocessor_profile_version_id",
         "id": f"eq.{manufacturing_profile_version_id}",
         "limit": "1",
     }
     rows = supabase.select_rows(table="app.manufacturing_profile_versions", access_token=access_token, params=params)
     if not rows:
         raise RunSnapshotBuilderError(status_code=400, detail="manufacturing profile version not found for snapshot")
+    return rows[0]
+
+
+def _load_postprocessor_profile_version_for_snapshot(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    postprocessor_profile_version_id: str,
+) -> dict[str, Any] | None:
+    params = {
+        "select": "id,postprocessor_profile_id,owner_user_id,version_no,lifecycle,is_active,adapter_key,output_format,schema_version,config_jsonb",
+        "id": f"eq.{postprocessor_profile_version_id}",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.postprocessor_profile_versions", access_token=access_token, params=params)
+    if not rows:
+        return None
     return rows[0]
 
 
@@ -546,7 +563,7 @@ def _build_manufacturing_manifest(
 
     if selection is None:
         manifest = {
-            "mode": "h2_e4_t1_snapshot_selection",
+            "mode": "h2_e5_t2_snapshot_selection",
             "project_id": project_id,
             "selection_present": False,
             "postprocess_selection_present": False,
@@ -591,8 +608,34 @@ def _build_manufacturing_manifest(
         str(version.get("manufacturing_profile_id") or "")
     )
 
+    # --- postprocessor selection resolution ---
+    postprocess_selection_present = False
+    postprocessor_snapshot: dict[str, Any] | None = None
+    active_pp_version_id = _sanitize_optional(str(version.get("active_postprocessor_profile_version_id") or ""))
+
+    if active_pp_version_id:
+        pp_version = _load_postprocessor_profile_version_for_snapshot(
+            supabase=supabase,
+            access_token=access_token,
+            postprocessor_profile_version_id=active_pp_version_id,
+        )
+        if pp_version is not None:
+            pp_is_active = _normalize_bool(pp_version.get("is_active"))
+            if pp_is_active:
+                postprocess_selection_present = True
+                postprocessor_snapshot = {
+                    "active_postprocessor_profile_version_id": active_pp_version_id,
+                    "postprocessor_profile_id": _sanitize_optional(str(pp_version.get("postprocessor_profile_id") or "")),
+                    "version_no": int(pp_version["version_no"]) if pp_version.get("version_no") is not None else None,
+                    "lifecycle": str(pp_version.get("lifecycle") or "").strip().lower() or None,
+                    "is_active": pp_is_active,
+                    "adapter_key": _sanitize_optional(str(pp_version.get("adapter_key") or "")),
+                    "output_format": _sanitize_optional(str(pp_version.get("output_format") or "")),
+                    "schema_version": _sanitize_optional(str(pp_version.get("schema_version") or "")),
+                }
+
     manifest: dict[str, Any] = {
-        "mode": "h2_e4_t1_snapshot_selection",
+        "mode": "h2_e5_t2_snapshot_selection",
         "project_id": project_id,
         "selection_present": True,
         "selected_at": selected_at,
@@ -609,8 +652,10 @@ def _build_manufacturing_manifest(
             "kerf_mm": kerf_mm,
             "config_jsonb": config_jsonb,
         },
-        "postprocess_selection_present": False,
+        "postprocess_selection_present": postprocess_selection_present,
     }
+    if postprocessor_snapshot is not None:
+        manifest["postprocessor_profile_version"] = postprocessor_snapshot
     return manifest, True
 
 
@@ -712,7 +757,7 @@ def build_run_snapshot_payload(
         access_token=access_token,
         project_id=project_id_clean,
     )
-    includes_postprocess = False
+    includes_postprocess = bool(manufacturing_manifest_jsonb.get("postprocess_selection_present"))
 
     hash_payload = {
         "snapshot_version": SNAPSHOT_VERSION,

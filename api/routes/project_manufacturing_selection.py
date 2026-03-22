@@ -35,6 +35,7 @@ class ProjectManufacturingSelectionResponse(BaseModel):
     version_no: int | None = None
     profile_name: str | None = None
     was_existing_selection: bool | None = None
+    active_postprocessor_profile_version_id: str | None = None
 
 
 def _as_selection_response(result: dict[str, Any], *, include_existing_flag: bool) -> ProjectManufacturingSelectionResponse:
@@ -79,6 +80,15 @@ def _as_selection_response(result: dict[str, Any], *, include_existing_flag: boo
     if include_existing_flag:
         was_existing_selection = bool(result.get("was_existing_selection"))
 
+    active_postprocessor_id: str | None = None
+    raw_pp_id = result.get("active_postprocessor_profile_version_id")
+    if raw_pp_id is not None:
+        active_postprocessor_id = str(raw_pp_id).strip() or None
+    elif isinstance(version, dict):
+        raw_pp_id2 = version.get("active_postprocessor_profile_version_id")
+        if raw_pp_id2 is not None:
+            active_postprocessor_id = str(raw_pp_id2).strip() or None
+
     return ProjectManufacturingSelectionResponse(
         project_id=project_id,
         active_manufacturing_profile_version_id=version_id,
@@ -93,6 +103,7 @@ def _as_selection_response(result: dict[str, Any], *, include_existing_flag: boo
         version_no=version_no,
         profile_name=(str(profile.get("profile_name") or "").strip() if isinstance(profile, dict) else None) or None,
         was_existing_selection=was_existing_selection,
+        active_postprocessor_profile_version_id=active_postprocessor_id,
     )
 
 

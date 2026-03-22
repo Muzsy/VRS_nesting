@@ -84,7 +84,7 @@ def _load_manufacturing_profile_version(
     require_active: bool,
 ) -> dict[str, Any]:
     params = {
-        "select": "id,manufacturing_profile_id,owner_user_id,version_no,lifecycle,is_active,machine_code,material_code,thickness_mm,kerf_mm",
+        "select": "id,manufacturing_profile_id,owner_user_id,version_no,lifecycle,is_active,machine_code,material_code,thickness_mm,kerf_mm,active_postprocessor_profile_version_id",
         "id": f"eq.{manufacturing_profile_version_id}",
         "limit": "1",
     }
@@ -169,6 +169,23 @@ def _validate_technology_manufacturing_consistency(
             status_code=400,
             detail="manufacturing profile version thickness does not match approved project technology setup",
         )
+
+
+def _load_postprocessor_profile_version_meta(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    postprocessor_version_id: str,
+) -> dict[str, Any] | None:
+    params = {
+        "select": "id,postprocessor_profile_id,owner_user_id,version_no,lifecycle,is_active,adapter_key,output_format,schema_version",
+        "id": f"eq.{postprocessor_version_id}",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.postprocessor_profile_versions", access_token=access_token, params=params)
+    if not rows:
+        return None
+    return rows[0]
 
 
 def _load_existing_project_selection(
@@ -365,11 +382,22 @@ def get_project_manufacturing_selection(
         owner_user_id=owner_user_id,
     )
 
+    postprocessor_version_id = str(version.get("active_postprocessor_profile_version_id") or "").strip() or None
+    postprocessor_version_meta: dict[str, Any] | None = None
+    if postprocessor_version_id:
+        postprocessor_version_meta = _load_postprocessor_profile_version_meta(
+            supabase=supabase,
+            access_token=access_token,
+            postprocessor_version_id=postprocessor_version_id,
+        )
+
     return {
         "project": project,
         "selection": selection,
         "manufacturing_profile_version": version,
         "manufacturing_profile": profile,
+        "active_postprocessor_profile_version_id": postprocessor_version_id,
+        "postprocessor_version_meta": postprocessor_version_meta,
     }
 
 

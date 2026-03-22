@@ -15,6 +15,7 @@ from api.routes.cut_rule_sets import router as cut_rule_sets_router
 from api.routes.projects import router as projects_router
 from api.routes.files import router as files_router
 from api.routes.parts import router as parts_router
+from api.routes.postprocessor_profiles import router as postprocessor_profiles_router
 from api.routes.project_manufacturing_selection import router as project_manufacturing_selection_router
 from api.routes.project_part_requirements import router as project_part_requirements_router
 from api.routes.project_sheet_inputs import router as project_sheet_inputs_router
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router, prefix="/v1")
     app.include_router(files_router, prefix="/v1")
     app.include_router(parts_router, prefix="/v1")
+    app.include_router(postprocessor_profiles_router, prefix="/v1")
     app.include_router(project_manufacturing_selection_router, prefix="/v1")
     app.include_router(project_part_requirements_router, prefix="/v1")
     app.include_router(project_sheet_inputs_router, prefix="/v1")
