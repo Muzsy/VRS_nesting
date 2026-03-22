@@ -1,0 +1,55 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E3-T3 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de a scope maradjon szuk, kizárólag
+      contour class -> cut contour rule matching engine szinten.
+    outputs:
+      - "canvases/web_platform/h2_e3_t3_rule_matching_logic.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e3_t3_rule_matching_logic.yaml"
+      - "codex/prompts/web_platform/h2_e3_t3_rule_matching_logic/run.md"
+      - "codex/codex_checklist/web_platform/h2_e3_t3_rule_matching_logic.md"
+      - "codex/reports/web_platform/h2_e3_t3_rule_matching_logic.md"
+
+  - name: "Rule matching service bevezetese"
+    description: >
+      Keszits dedikalt matching service-t, amely explicit `cut_rule_set_id`
+      inputtal a `geometry_contour_classes` rekordokhoz kivalasztja a megfelelo
+      `cut_contour_rules` szabalyokat. A matching engine csak a mar meglevo truth
+      retegeket olvassa, es legalabb az alabbi szabalyokat alkalmazza:
+      1) `contour_kind` egyezes kotelezo,
+      2) `feature_class` specifikus egyezes elonyben,
+      3) `feature_class=default` fallback,
+      4) `enabled=true` szures,
+      5) `perimeter_mm` alapu min/max tartomanyszures,
+      6) stabil, determinisztikus tie-break.
+      A task ne vezessen be uj migraciot, ne irjon vissza truth tablaba, es ne
+      kezdjen resolver vagy plan builder scope-ot vallalni.
+    outputs:
+      - "api/services/cut_rule_matching.py"
+
+  - name: "Task-specifikus smoke + checklist + report frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) outer contour outer rule-t kap,
+      2) inner contour inner rule-t kap,
+      3) specifikus feature_class elonyt kap a default szaballyal szemben,
+      4) disabled rule nem valaszthato,
+      5) hossztartomanyon kivuli contour unmatched marad,
+      6) tobb jelolt eseten a tie-break determinisztikus,
+      7) a service nem modosit persisted truth tablakat.
+      Tolt sd ki a checklistet es a reportot evidence-alapon. A report kulon
+      nevezze meg, hogy ez a task matching engine, nem resolver es nem plan builder.
+    outputs:
+      - "scripts/smoke_h2_e3_t3_rule_matching_logic.py"
+      - "codex/codex_checklist/web_platform/h2_e3_t3_rule_matching_logic.md"
+      - "codex/reports/web_platform/h2_e3_t3_rule_matching_logic.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e3_t3_rule_matching_logic.md
+    outputs:
+      - "codex/reports/web_platform/h2_e3_t3_rule_matching_logic.md"
+      - "codex/reports/web_platform/h2_e3_t3_rule_matching_logic.verify.log"
