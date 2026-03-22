@@ -9,7 +9,7 @@ from typing import Any
 from api.supabase_client import SupabaseClient
 
 
-SNAPSHOT_VERSION = "h1_e4_t1_snapshot_v1"
+SNAPSHOT_VERSION = "h2_e4_t1_snapshot_v1"
 
 
 @dataclass
@@ -498,6 +498,122 @@ def _build_sheets_manifest(
     return sheets_manifest
 
 
+def _load_project_manufacturing_selection(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    project_id: str,
+) -> dict[str, Any] | None:
+    params = {
+        "select": "project_id,active_manufacturing_profile_version_id,selected_at,selected_by",
+        "project_id": f"eq.{project_id}",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.project_manufacturing_selection", access_token=access_token, params=params)
+    if not rows:
+        return None
+    return rows[0]
+
+
+def _load_manufacturing_profile_version_for_snapshot(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    manufacturing_profile_version_id: str,
+) -> dict[str, Any]:
+    params = {
+        "select": "id,manufacturing_profile_id,version_no,lifecycle,is_active,machine_code,material_code,thickness_mm,kerf_mm,config_jsonb",
+        "id": f"eq.{manufacturing_profile_version_id}",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.manufacturing_profile_versions", access_token=access_token, params=params)
+    if not rows:
+        raise RunSnapshotBuilderError(status_code=400, detail="manufacturing profile version not found for snapshot")
+    return rows[0]
+
+
+def _build_manufacturing_manifest(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    project_id: str,
+) -> tuple[dict[str, Any], bool]:
+    selection = _load_project_manufacturing_selection(
+        supabase=supabase,
+        access_token=access_token,
+        project_id=project_id,
+    )
+
+    if selection is None:
+        manifest = {
+            "mode": "h2_e4_t1_snapshot_selection",
+            "project_id": project_id,
+            "selection_present": False,
+            "postprocess_selection_present": False,
+        }
+        return manifest, False
+
+    active_version_id = _sanitize_required(
+        str(selection.get("active_manufacturing_profile_version_id") or ""),
+        field="active_manufacturing_profile_version_id",
+    )
+    selected_at = str(selection.get("selected_at") or "")
+    selected_by = str(selection.get("selected_by") or "")
+
+    version = _load_manufacturing_profile_version_for_snapshot(
+        supabase=supabase,
+        access_token=access_token,
+        manufacturing_profile_version_id=active_version_id,
+    )
+
+    version_no_raw = version.get("version_no")
+    version_no = int(version_no_raw) if version_no_raw is not None else None
+    lifecycle = str(version.get("lifecycle") or "").strip().lower() or None
+    is_active = _normalize_bool(version.get("is_active"))
+    machine_code = _sanitize_optional(str(version.get("machine_code") or ""))
+    material_code = _sanitize_optional(str(version.get("material_code") or ""))
+
+    thickness_raw = version.get("thickness_mm")
+    thickness_mm: float | None = None
+    if thickness_raw is not None:
+        thickness_mm = float(thickness_raw)
+
+    kerf_raw = version.get("kerf_mm")
+    kerf_mm: float | None = None
+    if kerf_raw is not None:
+        kerf_mm = float(kerf_raw)
+
+    config_jsonb = version.get("config_jsonb")
+    if not isinstance(config_jsonb, dict):
+        config_jsonb = {}
+
+    manufacturing_profile_id = _sanitize_optional(
+        str(version.get("manufacturing_profile_id") or "")
+    )
+
+    manifest: dict[str, Any] = {
+        "mode": "h2_e4_t1_snapshot_selection",
+        "project_id": project_id,
+        "selection_present": True,
+        "selected_at": selected_at,
+        "selected_by": selected_by,
+        "active_manufacturing_profile_version_id": active_version_id,
+        "manufacturing_profile_version": {
+            "manufacturing_profile_id": manufacturing_profile_id,
+            "version_no": version_no,
+            "lifecycle": lifecycle,
+            "is_active": is_active,
+            "machine_code": machine_code,
+            "material_code": material_code,
+            "thickness_mm": thickness_mm,
+            "kerf_mm": kerf_mm,
+            "config_jsonb": config_jsonb,
+        },
+        "postprocess_selection_present": False,
+    }
+    return manifest, True
+
+
 def _canonical_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -591,9 +707,12 @@ def build_run_snapshot_payload(
         "snapshot_mode": "h1_minimum_builder",
     }
 
-    manufacturing_manifest_jsonb = {
-        "mode": "not_in_scope_h1_e4_t1",
-    }
+    manufacturing_manifest_jsonb, includes_manufacturing = _build_manufacturing_manifest(
+        supabase=supabase,
+        access_token=access_token,
+        project_id=project_id_clean,
+    )
+    includes_postprocess = False
 
     hash_payload = {
         "snapshot_version": SNAPSHOT_VERSION,
@@ -616,5 +735,7 @@ def build_run_snapshot_payload(
         "geometry_manifest_jsonb": geometry_manifest,
         "solver_config_jsonb": solver_config_jsonb,
         "manufacturing_manifest_jsonb": manufacturing_manifest_jsonb,
+        "includes_manufacturing": includes_manufacturing,
+        "includes_postprocess": includes_postprocess,
         "snapshot_hash_sha256": snapshot_hash_sha256,
     }

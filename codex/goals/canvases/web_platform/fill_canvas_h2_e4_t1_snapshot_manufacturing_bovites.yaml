@@ -1,0 +1,65 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E4-T1 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de a scope maradjon szuk, kizarolag a
+      run snapshot manufacturing selection bovites szintjen.
+    outputs:
+      - "canvases/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e4_t1_snapshot_manufacturing_bovites.yaml"
+      - "codex/prompts/web_platform/h2_e4_t1_snapshot_manufacturing_bovites/run.md"
+      - "codex/codex_checklist/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.md"
+      - "codex/reports/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.md"
+
+  - name: "Snapshot schema manufacturing meta bovitese"
+    description: >
+      Keszits uj migraciot, amely a `app.nesting_run_snapshots` tablaban bevezeti
+      a H2 minimum snapshot manufacturing meta mezoit:
+      - `includes_manufacturing boolean not null default false`
+      - `includes_postprocess boolean not null default false`
+      A migration ne vezessen be manufacturing plan vagy postprocessor domain
+      tablakat, es ne nyisson uj, persisted matching/review reteget.
+    outputs:
+      - "supabase/migrations/20260322020000_h2_e4_t1_snapshot_manufacturing_bovites.sql"
+
+  - name: "Run snapshot builder H2 manufacturing selection snapshot bekotese"
+    description: >
+      Frissitsd az `api/services/run_snapshot_builder.py` service-t ugy, hogy a
+      projekt manufacturing selection truthjat a snapshot epitesekor beolvassa,
+      es a H1 placeholder manufacturing manifest helyett valos, determinisztikus
+      manufacturing manifestet allitson elo.
+      Elvart viselkedes:
+      1) selection jelenlete eseten `includes_manufacturing=true`,
+      2) selection hianya eseten `includes_manufacturing=false`, de a builder
+         tovabbra is sikeresen fut,
+      3) `includes_postprocess=false` marad a jelenlegi repoallapotban,
+      4) a manufacturing selection valtozasa snapshot hash valtozast okoz,
+      5) a task nem kezd resolver, rule matching vagy plan builder scope-ot vallalni.
+    outputs:
+      - "api/services/run_snapshot_builder.py"
+      - "api/services/run_creation.py"
+
+  - name: "Task-specifikus smoke + checklist + report frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) selection nelkul a snapshot felepul es `includes_manufacturing=false`,
+      2) selectionnel a manufacturing manifest snapshotolja az aktiv profile versiont,
+      3) `includes_postprocess=false` marad,
+      4) selection valtozas a `snapshot_hash_sha256` valtozasat okozza,
+      5) a task nem hoz letre manufacturing plan vagy egyeb persisted H2-E4-T2
+         reteget.
+      Frissitsd a checklistet es a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h2_e4_t1_snapshot_manufacturing_bovites.py"
+      - "codex/codex_checklist/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.md"
+      - "codex/reports/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.md
+    outputs:
+      - "codex/reports/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.md"
+      - "codex/reports/web_platform/h2_e4_t1_snapshot_manufacturing_bovites.verify.log"

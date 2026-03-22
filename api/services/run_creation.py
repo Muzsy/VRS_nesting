@@ -83,7 +83,7 @@ def _fetch_snapshot_for_run(
     run_id: str,
 ) -> dict[str, Any] | None:
     params = {
-        "select": "id,run_id,status,snapshot_hash_sha256,snapshot_version,project_manifest_jsonb,technology_manifest_jsonb,parts_manifest_jsonb,sheets_manifest_jsonb,geometry_manifest_jsonb,solver_config_jsonb,manufacturing_manifest_jsonb",
+        "select": "id,run_id,status,snapshot_hash_sha256,snapshot_version,project_manifest_jsonb,technology_manifest_jsonb,parts_manifest_jsonb,sheets_manifest_jsonb,geometry_manifest_jsonb,solver_config_jsonb,manufacturing_manifest_jsonb,includes_manufacturing,includes_postprocess",
         "run_id": f"eq.{run_id}",
         "limit": "1",
     }
@@ -164,7 +164,7 @@ def _insert_snapshot(
     owner_user_id: str,
     snapshot_payload: dict[str, Any],
 ) -> dict[str, Any]:
-    payload = {
+    payload: dict[str, Any] = {
         "run_id": run_id,
         "status": "ready",
         "snapshot_version": snapshot_payload["snapshot_version"],
@@ -176,6 +176,8 @@ def _insert_snapshot(
         "geometry_manifest_jsonb": snapshot_payload["geometry_manifest_jsonb"],
         "solver_config_jsonb": snapshot_payload["solver_config_jsonb"],
         "manufacturing_manifest_jsonb": snapshot_payload["manufacturing_manifest_jsonb"],
+        "includes_manufacturing": bool(snapshot_payload.get("includes_manufacturing", False)),
+        "includes_postprocess": bool(snapshot_payload.get("includes_postprocess", False)),
         "created_by": owner_user_id,
     }
     return supabase.insert_row(table="app.nesting_run_snapshots", access_token=access_token, payload=payload)
