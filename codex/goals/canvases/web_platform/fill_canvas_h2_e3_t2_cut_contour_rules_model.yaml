@@ -1,0 +1,68 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E3-T2 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de a scope maradjon szuk: csak
+      `cut_contour_rules` truth + owner-scoped CRUD + smoke.
+    outputs:
+      - "canvases/web_platform/h2_e3_t2_cut_contour_rules_model.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e3_t2_cut_contour_rules_model.yaml"
+      - "codex/prompts/web_platform/h2_e3_t2_cut_contour_rules_model/run.md"
+      - "codex/codex_checklist/web_platform/h2_e3_t2_cut_contour_rules_model.md"
+      - "codex/reports/web_platform/h2_e3_t2_cut_contour_rules_model.md"
+
+  - name: "Cut contour rules schema es service bevezetese"
+    description: >
+      Keszits uj migraciot, amely bevezeti az `app.cut_contour_rules` tablat a
+      H2 docs minimum mezoivel, de a jelenlegi repo truth-hoz igazitva.
+      A tabla a meglevo `app.cut_rule_sets` truth-ra epuljon `cut_rule_set_id`
+      FK-val. Validald a kritikus mezo-invariansokat:
+      - `contour_kind` kezdetben csak `outer|inner`,
+      - `lead_in_type` / `lead_out_type` csak szuk, dokumentalt ertekeket fogadjon,
+      - a hosszak/radiusok pozitivak legyenek,
+      - `min_contour_length_mm <= max_contour_length_mm`, ha mindketto jelen van.
+      Keszits explicit service retegű validaciot es CRUD logikat.
+    outputs:
+      - "supabase/migrations/20260322013000_h2_e3_t2_cut_contour_rules_model.sql"
+      - "api/services/cut_contour_rules.py"
+
+  - name: "Cut contour rules API route-ok bevezetese"
+    description: >
+      Keszits minimalis owner-scoped backend contractot a contour rule-okhoz,
+      a rule set ala szervezve:
+      POST /cut-rule-sets/{cut_rule_set_id}/rules,
+      GET /cut-rule-sets/{cut_rule_set_id}/rules,
+      GET /cut-rule-sets/{cut_rule_set_id}/rules/{rule_id},
+      PATCH /cut-rule-sets/{cut_rule_set_id}/rules/{rule_id},
+      DELETE /cut-rule-sets/{cut_rule_set_id}/rules/{rule_id}.
+      A route ne vallaljon rule matching, `geometry_contour_classes` update,
+      manufacturing profile binding vagy snapshot scope-ot.
+    outputs:
+      - "api/routes/cut_contour_rules.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) owner-scope create sajat rule set alatt,
+      2) `outer` es `inner` kulon szabalyok tarolhatok,
+      3) listazas rule setre szukul,
+      4) GET/PATCH/DELETE mukodik,
+      5) idegen owner rule setjere nem hozhato letre szabaly,
+      6) invalid `contour_kind`, invalid lead type, negativ numeric,
+         hibas min/max tartomany elutasitasra kerul.
+      Frissitsd a checklistet es a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h2_e3_t2_cut_contour_rules_model.py"
+      - "codex/codex_checklist/web_platform/h2_e3_t2_cut_contour_rules_model.md"
+      - "codex/reports/web_platform/h2_e3_t2_cut_contour_rules_model.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e3_t2_cut_contour_rules_model.md
+    outputs:
+      - "codex/reports/web_platform/h2_e3_t2_cut_contour_rules_model.md"
+      - "codex/reports/web_platform/h2_e3_t2_cut_contour_rules_model.verify.log"
