@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.deps import get_settings
 from api.deps import get_supabase_client
+from api.routes.cut_rule_sets import router as cut_rule_sets_router
 from api.routes.projects import router as projects_router
 from api.routes.files import router as files_router
 from api.routes.parts import router as parts_router
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
             "storage": "ok" if storage_ok else "error",
         }
 
+    app.include_router(cut_rule_sets_router, prefix="/v1")
     app.include_router(projects_router, prefix="/v1")
     app.include_router(files_router, prefix="/v1")
     app.include_router(parts_router, prefix="/v1")

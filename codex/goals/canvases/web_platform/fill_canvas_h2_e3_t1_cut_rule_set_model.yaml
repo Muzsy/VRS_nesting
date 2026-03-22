@@ -1,0 +1,61 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E3-T1 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de a scope maradjon szuk: csak cut_rule_sets
+      truth + owner-scoped CRUD + smoke.
+    outputs:
+      - "canvases/web_platform/h2_e3_t1_cut_rule_set_model.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e3_t1_cut_rule_set_model.yaml"
+      - "codex/prompts/web_platform/h2_e3_t1_cut_rule_set_model/run.md"
+      - "codex/codex_checklist/web_platform/h2_e3_t1_cut_rule_set_model.md"
+      - "codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.md"
+
+  - name: "Cut rule set schema es service bevezetese"
+    description: >
+      Keszits uj migraciot, amely bevezeti az `app.cut_rule_sets` tablat a
+      jelenlegi repo truth-hoz igazodva.
+      Ne hasznalj nem letezo `machine_catalog` / `material_catalog` FK-kat;
+      a tabla `machine_code`, `material_code`, `thickness_mm` mezokkel dolgozzon.
+      Biztosits owner-scope-ot, verziozhatosagot (`owner_user_id + name + version_no`)
+      es egyszeru `is_active` allapotkezeleset. Keszits explicit service retegű
+      validaciot es CRUD logikat.
+    outputs:
+      - "supabase/migrations/20260322010000_h2_e3_t1_cut_rule_set_model.sql"
+      - "api/services/cut_rule_sets.py"
+
+  - name: "Cut rule set API route-ok bevezetese"
+    description: >
+      Keszits minimalis owner-scoped backend contractot a rule setekhez:
+      POST /cut-rule-sets, GET /cut-rule-sets, GET /cut-rule-sets/{id},
+      PATCH /cut-rule-sets/{id}, DELETE /cut-rule-sets/{id}.
+      A route ne vallaljon contour rule, matching vagy manufacturing profile
+      bekotest; csak a cut rule set domain minimalis CRUD-jat adja.
+    outputs:
+      - "api/routes/cut_rule_sets.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) owner-scope create,
+      2) ugyanazon name alatt uj verzio letrehozhato,
+      3) listazas owner scope-ra szukul,
+      4) GET/PATCH/DELETE mukodik,
+      5) idegen owner rekordja nem erheto el,
+      6) a meta mezok (`machine_code`, `material_code`, `thickness_mm`) stabilan tarolodnak.
+      Frissitsd a checklistet es a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h2_e3_t1_cut_rule_set_model.py"
+      - "codex/codex_checklist/web_platform/h2_e3_t1_cut_rule_set_model.md"
+      - "codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.md
+    outputs:
+      - "codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.md"
+      - "codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.verify.log"
