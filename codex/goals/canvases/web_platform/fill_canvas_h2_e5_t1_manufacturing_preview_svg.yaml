@@ -1,0 +1,61 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E5-T1 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2 mintakhoz, de a scope maradjon szuk,
+      kizarolag manufacturing preview SVG artifact szinten.
+    outputs:
+      - "canvases/web_platform/h2_e5_t1_manufacturing_preview_svg.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e5_t1_manufacturing_preview_svg.yaml"
+      - "codex/prompts/web_platform/h2_e5_t1_manufacturing_preview_svg/run.md"
+      - "codex/codex_checklist/web_platform/h2_e5_t1_manufacturing_preview_svg.md"
+      - "codex/reports/web_platform/h2_e5_t1_manufacturing_preview_svg.md"
+
+  - name: "Artifact kind bridge es preview generator service"
+    description: >
+      Keszits uj migraciot, amely bevezeti a `manufacturing_preview_svg`
+      artifact kindot, es frissiti a legacy <-> enum bridge fuggvenyeket is,
+      hogy a generic artifact lista es signed URL flow ezt a tipust is
+      konzisztensen kezelje. Keszits dedikalt
+      `api/services/manufacturing_preview_generator.py` service-t, amely
+      owner-scoped runra a persisted `run_manufacturing_plans` +
+      `run_manufacturing_contours` truthbol, a kapcsolodo
+      `manufacturing_canonical` derivative contour geometriakbol, valamint a
+      sheet meretekbol per-sheet preview SVG artifactokat general es
+      `app.run_artifacts` ala regisztral `manufacturing_preview_svg` tipussal.
+      A render tartalmazzon contour pathokat, entry markert, lead-in/lead-out
+      jelolest es alap cut-order review infot, de ne vezessen be postprocess,
+      export vagy worker-auto scope-ot.
+    outputs:
+      - "supabase/migrations/20260322033000_h2_e5_t1_manufacturing_preview_svg.sql"
+      - "api/services/manufacturing_preview_generator.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) valid persisted manufacturing planbol per-sheet preview artifact
+      letrejon;
+      2) a preview SVG gyartasi meta-informaciot hordoz (entry/lead/cut-order);
+      3) a render a `manufacturing_canonical` contour geometriara ul;
+      4) outer/inner contour megkulonboztetes jelen van;
+      5) ujrageneralas nem hagy duplikalt artifactot ugyanarra a logical targetre;
+      6) a generator nem ir vissza korabbi truth tablaba;
+      7) a task nem hoz letre export/postprocess artifactot;
+      8) hiba jon, ha hianyzik a `manufacturing_canonical` derivative vagy
+      ervenytelen a contour-hivatkozas. Frissitsd a checklistet es a reportot
+      evidence-alapon. A report kulon nevezze meg, hogy ez a task review preview
+      artifactot szallit, nem machine-neutral exportot, nem postprocessor
+      adaptert es nem frontend-redesignt.
+    outputs:
+      - "scripts/smoke_h2_e5_t1_manufacturing_preview_svg.py"
+      - "codex/codex_checklist/web_platform/h2_e5_t1_manufacturing_preview_svg.md"
+      - "codex/reports/web_platform/h2_e5_t1_manufacturing_preview_svg.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e5_t1_manufacturing_preview_svg.md
+    outputs:
+      - "codex/reports/web_platform/h2_e5_t1_manufacturing_preview_svg.md"
+      - "codex/reports/web_platform/h2_e5_t1_manufacturing_preview_svg.verify.log"
