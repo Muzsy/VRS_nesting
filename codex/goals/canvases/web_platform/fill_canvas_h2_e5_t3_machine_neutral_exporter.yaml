@@ -1,0 +1,64 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E5-T3 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2 mintakhoz, de a scope maradjon szuk,
+      kizarolag a machine-neutral exporterre es a `manufacturing_plan_json`
+      export artifactra.
+    outputs:
+      - "canvases/web_platform/h2_e5_t3_machine_neutral_exporter.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e5_t3_machine_neutral_exporter.yaml"
+      - "codex/prompts/web_platform/h2_e5_t3_machine_neutral_exporter/run.md"
+      - "codex/codex_checklist/web_platform/h2_e5_t3_machine_neutral_exporter.md"
+      - "codex/reports/web_platform/h2_e5_t3_machine_neutral_exporter.md"
+
+  - name: "Artifact kind bridge es machine-neutral exporter service"
+    description: >
+      Keszits uj migraciot, amely bevezeti a `manufacturing_plan_json`
+      artifact kindot, es frissiti a legacy <-> enum bridge fuggvenyeket is,
+      hogy a generic artifact lista es signed URL flow ezt a tipust is
+      konzisztensen kezelje. Keszits dedikalt
+      `api/services/machine_neutral_exporter.py` service-t, amely owner-scoped
+      runra a persisted `run_manufacturing_plans` +
+      `run_manufacturing_contours` truthbol, a snapshotolt
+      manufacturing/postprocess selectionbol, valamint opcionálisan a
+      `run_manufacturing_metrics` truth-bol deterministic, canonical JSON
+      export payloadot general, es azt `app.run_artifacts` ala regisztralja
+      `manufacturing_plan_json` tipussal. A service ne olvasson live
+      `project_manufacturing_selection` allapotot, ne hasznaljon raw solver
+      outputot, es ne vezessen be machine-specific adapter vagy worker-auto
+      scope-ot.
+    outputs:
+      - "supabase/migrations/20260322043000_h2_e5_t3_machine_neutral_exporter.sql"
+      - "api/services/machine_neutral_exporter.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) valid persisted manufacturing planbol `manufacturing_plan_json`
+      artifact letrejon;
+      2) ugyanarra a truthra a payload deterministic;
+      3) aktiv postprocessor selection eseten a metadata bekerul, de nincs
+      machine-ready emit;
+      4) postprocessor ref nelkul is generalhato gepfuggetlen export;
+      5) ujrageneralas nem hagy duplikalt artifactot ugyanarra a logical targetre;
+      6) a service nem ir vissza korabbi truth tablaba;
+      7) nincs `machine_ready_bundle`, `machine_log`, G-code vagy adapter-run
+      side effect;
+      8) hiba jon, ha a runhoz nincs manufacturing plan vagy ownership sertes van.
+      Frissitsd a checklistet es reportot evidence-alapon. A report kulon nevezze
+      meg, hogy ez a task gepfuggetlen export artifactot szallit, nem
+      machine-specific adaptert, nem worker auto-integraciot es nem uj export UI-t.
+    outputs:
+      - "scripts/smoke_h2_e5_t3_machine_neutral_exporter.py"
+      - "codex/codex_checklist/web_platform/h2_e5_t3_machine_neutral_exporter.md"
+      - "codex/reports/web_platform/h2_e5_t3_machine_neutral_exporter.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e5_t3_machine_neutral_exporter.md
+    outputs:
+      - "codex/reports/web_platform/h2_e5_t3_machine_neutral_exporter.md"
+      - "codex/reports/web_platform/h2_e5_t3_machine_neutral_exporter.verify.log"
