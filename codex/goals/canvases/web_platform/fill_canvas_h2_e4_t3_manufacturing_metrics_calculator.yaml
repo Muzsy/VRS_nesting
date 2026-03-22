@@ -1,0 +1,55 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E4-T3 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de a scope maradjon szuk, kizarolag
+      manufacturing metrics calculator szinten.
+    outputs:
+      - "canvases/web_platform/h2_e4_t3_manufacturing_metrics_calculator.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e4_t3_manufacturing_metrics_calculator.yaml"
+      - "codex/prompts/web_platform/h2_e4_t3_manufacturing_metrics_calculator/run.md"
+      - "codex/codex_checklist/web_platform/h2_e4_t3_manufacturing_metrics_calculator.md"
+      - "codex/reports/web_platform/h2_e4_t3_manufacturing_metrics_calculator.md"
+
+  - name: "Manufacturing metrics schema es calculator service"
+    description: >
+      Keszits uj migraciot a `app.run_manufacturing_metrics` tablahoz, kulon a
+      H1 `app.run_metrics` tablátol. A tabla legalabb a H2 docs minimum mezoi
+      alapjan tartalmazza: `run_id`, `pierce_count`, `outer_contour_count`,
+      `inner_contour_count`, `estimated_cut_length_mm`,
+      `estimated_rapid_length_mm`, `estimated_process_time_s`, `metrics_jsonb`.
+      Keszits dedikalt `api/services/manufacturing_metrics_calculator.py`
+      service-t, amely owner-scoped runra, persisted manufacturing plan truthra,
+      contour class perimeter truthra es matched rule `pierce_count` truthra
+      epul. A timing modell legyen egyszeru, dokumentalt, gepfuggetlen proxy;
+      ne vezess be machine/material resolver logikat.
+    outputs:
+      - "supabase/migrations/20260322030000_h2_e4_t3_manufacturing_metrics_calculator.sql"
+      - "api/services/manufacturing_metrics_calculator.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) valid persisted manufacturing planbol metrics rekord letrejon;
+      2) a `pierce_count` matched rule truthbol szamolodik;
+      3) a cut length a contour class perimeter truthbol szamolodik;
+      4) a rapid length determinisztikus proxy;
+      5) ujrageneralas nem hoz letre duplikalt metrics rekordot;
+      6) a calculator nem ir vissza korabbi truth tablaba;
+      7) a task nem hoz letre preview/export artifactot.
+      Frissitsd a checklistet es a reportot evidence-alapon. A report kulon
+      nevezze meg, hogy ez a task gepfuggetlen proxy metrics reteget szallit,
+      nem vegleges CAM-idomodellt vagy costing logikat.
+    outputs:
+      - "scripts/smoke_h2_e4_t3_manufacturing_metrics_calculator.py"
+      - "codex/codex_checklist/web_platform/h2_e4_t3_manufacturing_metrics_calculator.md"
+      - "codex/reports/web_platform/h2_e4_t3_manufacturing_metrics_calculator.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e4_t3_manufacturing_metrics_calculator.md
+    outputs:
+      - "codex/reports/web_platform/h2_e4_t3_manufacturing_metrics_calculator.md"
+      - "codex/reports/web_platform/h2_e4_t3_manufacturing_metrics_calculator.verify.log"
