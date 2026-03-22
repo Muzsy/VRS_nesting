@@ -1,0 +1,68 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E4-T2 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de a scope maradjon szuk, kizarolag a
+      manufacturing plan persisted truth reteg es a builder service szintjen.
+    outputs:
+      - "canvases/web_platform/h2_e4_t2_manufacturing_plan_builder.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e4_t2_manufacturing_plan_builder.yaml"
+      - "codex/prompts/web_platform/h2_e4_t2_manufacturing_plan_builder/run.md"
+      - "codex/codex_checklist/web_platform/h2_e4_t2_manufacturing_plan_builder.md"
+      - "codex/reports/web_platform/h2_e4_t2_manufacturing_plan_builder.md"
+
+  - name: "Manufacturing plan schema bevezetese"
+    description: >
+      Keszits uj migraciot, amely bevezeti a persisted manufacturing plan tablakat:
+      `app.run_manufacturing_plans` es `app.run_manufacturing_contours`.
+      A schema a H2 docs proposalhoz igazodjon, de repo-hu audit FK-lancot adjon:
+      `manufacturing_profile_version_id`, `cut_rule_set_id`, opcionális
+      `geometry_derivative_id`, `contour_class_id`, `matched_rule_id`.
+      A migration ne hozzon letre preview/export/postprocessor tablakat es ne
+      modositson korabbi truth tablakat.
+    outputs:
+      - "supabase/migrations/20260322023000_h2_e4_t2_manufacturing_plan_builder.sql"
+
+  - name: "Manufacturing plan builder service implementalasa"
+    description: >
+      Keszits dedikalt `api/services/manufacturing_plan_builder.py` service-t,
+      amely egy explicit `run_id` es explicit `cut_rule_set_id` alapjan:
+      1) owner-scope-ban betolti a runot, a snapshotot es a projection tablakat,
+      2) a snapshot `manufacturing_manifest_jsonb` alapjan validalja a
+         manufacturing selection jelenletet,
+      3) placementenkent a `selected_manufacturing_derivative_id`-re epul,
+      4) a meglvo `cut_rule_matching.py` service-szel rule-t rendel a contourokhoz,
+      5) per-sheet `run_manufacturing_plans` es per-contour
+         `run_manufacturing_contours` rekordokat hoz letre,
+      6) determinisztikus `cut_order_index` es alap entry/lead meta infot general,
+      7) persisted szinten idempotens marad.
+      A service ne legyen resolver, ne irjon `run_artifacts`-ba, es ne nyisson
+      preview/postprocessor/export scope-ot.
+    outputs:
+      - "api/services/manufacturing_plan_builder.py"
+
+  - name: "Task-specifikus smoke + checklist + report frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) valid projection + snapshot + derivative + contour class + explicit
+         rule set eseten a plan letrejon,
+      2) contour rekordok matched rule hivatkozast kapnak,
+      3) a builder nem ir vissza korabbi truth tablaba,
+      4) idempotens rebuild nem hagy duplikalt plan rekordokat,
+      5) a builder explicit `cut_rule_set_id` nelkul hibazik,
+      6) a task nem hoz letre preview/export artifactot.
+      Frissitsd a checklistet es a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h2_e4_t2_manufacturing_plan_builder.py"
+      - "codex/codex_checklist/web_platform/h2_e4_t2_manufacturing_plan_builder.md"
+      - "codex/reports/web_platform/h2_e4_t2_manufacturing_plan_builder.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e4_t2_manufacturing_plan_builder.md
+    outputs:
+      - "codex/reports/web_platform/h2_e4_t2_manufacturing_plan_builder.md"
+      - "codex/reports/web_platform/h2_e4_t2_manufacturing_plan_builder.verify.log"
