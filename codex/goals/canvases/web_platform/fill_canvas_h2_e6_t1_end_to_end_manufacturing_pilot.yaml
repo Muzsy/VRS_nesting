@@ -1,0 +1,62 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E6-T1 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2 mintakhoz, de a scope maradjon szuk,
+      kizarolag a H2 mainline end-to-end manufacturing pilot bizonyitasara.
+      A H2-E5-T4 machine-specific adapter opcionális ag, ne keruljon be a
+      PASS feltetelei koze.
+    outputs:
+      - "canvases/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e6_t1_end_to_end_manufacturing_pilot.yaml"
+      - "codex/prompts/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot/run.md"
+      - "codex/codex_checklist/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md"
+      - "codex/reports/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md"
+
+  - name: "Dedikalt H2 pilot harness es runbook"
+    description: >
+      Keszits dedikalt, reprodukalhato H2 pilot harness/smoke scriptet,
+      amely egy kozos seeded scenario alapjan bizonyitja a H2 mainline
+      manufacturing chain-t: manufacturing/postprocess snapshot ->
+      manufacturing plan builder -> manufacturing metrics ->
+      manufacturing preview SVG -> machine-neutral export artifact.
+      A pilot legalabb 1 runon, 1 sheeten es legalabb 1 outer + 1 inner
+      contour jellegu manufacturing inputon mutassa meg a persisted truth
+      es az artifact reteg helyes kezfogasat. Keszits ehhez dedikalt
+      runbookot is. Ha a pilot futtathatosagahoz minimalis, kozvetlen
+      service-korrekcio kell, az kizarolag a felsorolt output-fajlokon
+      belul maradjon, uj schema vagy machine-specific scope nelkul.
+    outputs:
+      - "scripts/smoke_h2_e6_t1_end_to_end_manufacturing_pilot.py"
+      - "docs/qa/h2_end_to_end_manufacturing_pilot_runbook.md"
+      - "api/services/run_snapshot_builder.py"
+      - "api/services/manufacturing_plan_builder.py"
+      - "api/services/manufacturing_metrics_calculator.py"
+      - "api/services/manufacturing_preview_generator.py"
+      - "api/services/machine_neutral_exporter.py"
+      - "codex/reports/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md"
+
+  - name: "Checklist es report evidence-alapu frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A report a
+      report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon nevezd meg:
+      - a pilot fixture rovid leirasat;
+      - mely H2 boundaryk lettek tenylegesen vegigvezetve;
+      - a kulcs persisted truth es artifact output evidence-eket;
+      - hogy a H2-E5-T4 optionalis adapter miert nincs a PASS feltetelei kozott;
+      - milyen minimalis core korrekcio tortent, ha tortent;
+      - mi maradt szandekosan H2-E6-T2 audit scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md"
+      - "codex/reports/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest wrapperrel, es frissitsd automatikusan a
+      reportot valamint a verify logot. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md
+    outputs:
+      - "codex/reports/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.md"
+      - "codex/reports/web_platform/h2_e6_t1_end_to_end_manufacturing_pilot.verify.log"
