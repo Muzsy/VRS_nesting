@@ -1,0 +1,60 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E5-T4 optionalis machine-specific adapter task teljes
+      artefaktlancanak alapjat: canvas, goal YAML, runner prompt, checklist es
+      report. A tartalom a meglevo H2-E5 mintakhoz igazodjon, de a scope maradjon
+      szuk: a mar letezo `manufacturing_plan_json` artifact + snapshotolt
+      postprocessor selection + version-level `config_jsonb` konkret, egycelu
+      adapter-oldali alkalmazasa. A canvasban explicit STOP szabaly legyen arra,
+      hogy konkret target adapter-csalad nelkul tilos a taskot vegrehajtani.
+    outputs:
+      - "canvases/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e5_t4_elso_machine_specific_adapter.yaml"
+      - "codex/prompts/web_platform/h2_e5_t4_elso_machine_specific_adapter/run.md"
+      - "codex/codex_checklist/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
+      - "codex/reports/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
+
+  - name: "Artifact kind bridge es konkret adapter service"
+    description: >
+      Vezess be machine-ready artifact kindot a meglvo `run_artifacts` worldbe,
+      frissitsd a legacy <-> enum bridge-eket, es keszits dedikalt
+      `api/services/machine_specific_adapter.py` service-t. A service pontosan egy
+      konkret celadaptert tamogasson, a source-of-truth-ja a H2-E5-T3 altal
+      eloallitott `manufacturing_plan_json` artifact legyen, es a snapshotolt
+      postprocessor selection + `postprocessor_profile_versions.config_jsonb`
+      alapjan allitson elo machine-ready kimenetet. A service ne olvasson live
+      `project_manufacturing_selection` allapotot, ne irjon vissza manufacturing
+      truth tablaba, es ne tervezzen uj lead-in/out geometriat.
+    outputs:
+      - "supabase/migrations/20260324000000_h2_e5_t4_elso_machine_specific_adapter.sql"
+      - "api/services/machine_specific_adapter.py"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) a konkret target adapterhez machine-ready artifact letrejon;
+      2) ugyanarra a `manufacturing_plan_json` + `config_jsonb` truthra a kimenet
+      deterministic;
+      3) unsupported lead/arc/command eseten csak a config szerinti fallback vagy
+      hiba lep eletbe;
+      4) nincs write manufacturing truth tablaba;
+      5) ownership boundary ervenyesul;
+      6) hiba jon, ha a target adapter metadata vagy kotelezo `config_jsonb`
+      blokkok hianyoznak;
+      7) nincs masodik, implicit generic adapter. Frissitsd a checklistet es
+      reportot evidence-alapon. A report kulon nevezze meg, hogy a task a
+      reszletes lead-in/out rendszer nelkul, kizarolag adapter-side mappinggel
+      dolgozik.
+    outputs:
+      - "scripts/smoke_h2_e5_t4_elso_machine_specific_adapter.py"
+      - "codex/codex_checklist/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
+      - "codex/reports/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e5_t4_elso_machine_specific_adapter.md
+    outputs:
+      - "codex/reports/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
+      - "codex/reports/web_platform/h2_e5_t4_elso_machine_specific_adapter.verify.log"
