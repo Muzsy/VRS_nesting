@@ -1,0 +1,91 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H2-E6-T2 task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report.
+    outputs:
+      - "canvases/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e6_t2_h2_audit_es_hibajavitas.yaml"
+      - "codex/prompts/web_platform/h2_e6_t2_h2_audit_es_hibajavitas/run.md"
+      - "codex/codex_checklist/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.md"
+
+  - name: "Dedikalt H2 lezarasi / H3 entry gate dokumentum letrehozasa"
+    description: >
+      Hozd letre a `docs/web_platform/roadmap/h2_lezarasi_kriteriumok_es_h3_entry_gate.md`
+      dokumentumot, amely evidence-alapon rogziti:
+      1) a H2 lezarasi kriteriumokat,
+      2) a H2 completion matrixot taskonkent,
+      3) a blokkolo vs advisory eltereseket,
+      4) a vegso H3 entry gate iteletet,
+      5) mit jelent ez a gyakorlatban a H3 indulasa szempontjabol,
+      6) hogy a H2-E5-T4 optionalis ag nem resze a kotelezo H2 mainline PASS-nak.
+      A dokumentum legyen oszinte auditanyag: ne csak osszefoglalo, hanem kapu-
+      es dontesi dokumentum.
+    outputs:
+      - "docs/web_platform/roadmap/h2_lezarasi_kriteriumok_es_h3_entry_gate.md"
+
+  - name: "H2 source-of-truth es task tree audit + minimal docs tisztitas + targeted stabilizacio"
+    description: >
+      Vizsgald at a H2 source-of-truth es roadmap dokumentumokat a tenyleges
+      task- es kodallapottal osszevetve. Ellenorizd kulonosen:
+      1) manufacturing vs nesting truth szetvalasztast,
+      2) contour classification vs rule matching vs plan builder boundary-t,
+      3) snapshot manufacturing/postprocess manifest konzisztenciat,
+      4) plan/metrics truth es preview/export artifact szeparaciot,
+      5) optionalis machine-specific adapter-ag helyes kezeleset,
+      6) a H2 task tree es a tenylegesen vegrehajtott taskok osszhangjat.
+      Ha maradt pilotbol vagy auditbol kijovo kozvetlen blokkolo hiba,
+      azt minimalisan javitsd. A cel nem docs-refaktor es nem uj H3 feature,
+      hanem a H2 lezarasi allapot konzisztens kimondasa.
+      Keszits dedikalt regresszios smoke/harness scriptet is a H2 mainline
+      manufacturing lancra.
+    outputs:
+      - "docs/known_issues/web_platform_known_issues.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h2_reszletes.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_implementacios_backlog_task_tree.md"
+      - "api/routes/project_manufacturing_selection.py"
+      - "api/routes/cut_rule_sets.py"
+      - "api/routes/cut_contour_rules.py"
+      - "api/routes/postprocessor_profiles.py"
+      - "api/routes/runs.py"
+      - "api/services/project_manufacturing_selection.py"
+      - "api/services/geometry_derivative_generator.py"
+      - "api/services/geometry_contour_classification.py"
+      - "api/services/cut_rule_sets.py"
+      - "api/services/cut_contour_rules.py"
+      - "api/services/cut_rule_matching.py"
+      - "api/services/run_snapshot_builder.py"
+      - "api/services/manufacturing_plan_builder.py"
+      - "api/services/manufacturing_metrics_calculator.py"
+      - "api/services/manufacturing_preview_generator.py"
+      - "api/services/postprocessor_profiles.py"
+      - "api/services/machine_neutral_exporter.py"
+      - "scripts/smoke_h2_e6_t1_end_to_end_manufacturing_pilot.py"
+      - "scripts/smoke_h2_e6_t2_h2_audit_es_hibajavitas.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot.
+      A report a report_standard szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon sorold fel:
+      - a H2 completion matrix roviditett eredmenyet;
+      - a H2-E6-T1 pilot fo tanulsagait;
+      - a blokkolo vs advisory eltereseket;
+      - a H3 entry gate vegso iteletet;
+      - a javitott docs-konzisztencia pontokat;
+      - hogy a task szandekosan NEM hozott letre uj H3 feature-t;
+      - hogy a task szandekosan NEM tette kotelezove az optionalis H2-E5-T4 agat;
+      - hogy a task szandekosan NEM hozott letre uj domain migraciot, ha erre nem volt kritikus ok.
+    outputs:
+      - "codex/codex_checklist/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.md
+    outputs:
+      - "codex/reports/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h2_e6_t2_h2_audit_es_hibajavitas.verify.log"

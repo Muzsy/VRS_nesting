@@ -494,10 +494,16 @@ Aktualis statusz (2026-03-20):
 **DoD:** H2 lánc végigfut.
 
 ### H2-E6-T2 — H2 audit és hibajavítás
-**Cél:** manufacturing réteg stabilizálása.  
-**Output:** H2 audit report.  
-**Függőség:** H2-E6-T1.  
+**Cél:** manufacturing réteg stabilizálása.
+**Output:** H2 audit report.
+**Függőség:** H2-E6-T1.
 **DoD:** H3 ráépíthető.
+
+Aktualis statusz (2026-03-24):
+- H2 closure audit lefutott, evidence-alapu completion matrixszal.
+- H3 entry gate eredmeny: `PASS WITH ADVISORIES`.
+- Kapcsolodo gate dokumentum:
+  `docs/web_platform/roadmap/h2_lezarasi_kriteriumok_es_h3_entry_gate.md`
 
 ---
 

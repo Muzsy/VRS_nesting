@@ -62,6 +62,31 @@ Megjegyzes:
 
 ---
 
+## P2 - Advisory (H2 closure audit, 2026-03-24)
+
+### KI-005 Manufacturing metrics timing proxy szintetikus default ertekek
+**Allapot:** OPEN (advisory, nem blokkolo)
+**Forras:** H2-E6-T2 audit, 2026-03-24
+**Terulet:** `api/services/manufacturing_metrics_calculator.py`
+
+A `manufacturing_metrics_calculator` szintetikus default idozitesi ertekekkel
+dolgozik (cut=50mm/s, rapid=200mm/s, pierce=0.5s). Ezek dokumentalt,
+reprodukalhato proxy ertekek, nem valos gepkalibracio.
+
+Ez H2 scope-ban helyes es vart viselkedes. Valos gep/anyag-specifikus
+kalibracios modellt a H3 vagy kesobbi scope-ban erdemes bevezetni.
+
+### KI-006 H2-E5-T4 optionalis machine-specific adapter nem implementalt
+**Allapot:** OPEN (szandekos, nem blokkolo)
+**Forras:** H2-E6-T2 audit, 2026-03-24
+**Terulet:** H2 task tree (optionalis ag)
+
+A `H2-E5-T4` elso machine-specific adapter a task tree-ben explicit optionalis
+agkent szerepel. A H2 mainline closure PASS feltetelei kozott nem szerepel.
+A machine-neutral export (H2-E5-T3) stabil es igazolt.
+
+---
+
 ## P3 - Alacsony prioritas
 
 ### KI-004 Legacy H1-E2-T1 smoke script contract drift (`part_raw.v1` vs `normalized_geometry.v1`)

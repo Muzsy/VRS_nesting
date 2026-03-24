@@ -990,3 +990,14 @@ A H1 végére a platform képes egy DXF-ből nesting eredményt csinálni.
 A H2 végére a platform képes ebből **gyártási tervet** is csinálni.
 
 A H2 lényege, hogy a rendszerben külön réteggé váljon a manufacturing világ: külön geometriával, külön szabályrendszerrel, külön snapshotolt kiválasztással, külön tervszinttel és külön postprocess előkészítéssel. Ettől lesz a platform valóban ipari irányba bővíthető, anélkül hogy a solver vagy a frontend köré káoszosan ráépülne a teljes CAM-logika.
+
+---
+
+## H2 lezarasi allapot (2026-03-24)
+
+A H2 mainline closure audit (H2-E6-T2) eredmenye: **PASS WITH ADVISORIES**.
+
+- 14 kotelezo H2 mainline task: 12 PASS + 2 PASS_WITH_NOTES, 0 FAIL.
+- End-to-end manufacturing pilot (H2-E6-T1): 60/60 teszt PASS.
+- H2-E5-T4 machine-specific adapter: optionalis, nem PASS feltetel.
+- Reszletes gate dokumentum: `docs/web_platform/roadmap/h2_lezarasi_kriteriumok_es_h3_entry_gate.md`.
