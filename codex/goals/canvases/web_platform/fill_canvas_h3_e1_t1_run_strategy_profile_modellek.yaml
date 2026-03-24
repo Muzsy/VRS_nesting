@@ -1,0 +1,58 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E1-T1 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2/H3 mintakhoz, de a scope maradjon szuk,
+      kizarolag a run strategy profile domain owner-scoped, verziozott
+      bevezetésére.
+    outputs:
+      - "canvases/web_platform/h3_e1_t1_run_strategy_profile_modellek.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e1_t1_run_strategy_profile_modellek.yaml"
+      - "codex/prompts/web_platform/h3_e1_t1_run_strategy_profile_modellek/run.md"
+      - "codex/codex_checklist/web_platform/h3_e1_t1_run_strategy_profile_modellek.md"
+      - "codex/reports/web_platform/h3_e1_t1_run_strategy_profile_modellek.md"
+
+  - name: "Run strategy domain schema + CRUD route/service + router regisztralas"
+    description: >
+      Keszits uj migraciot, amely bevezeti az owner-scoped
+      `app.run_strategy_profiles` es `app.run_strategy_profile_versions`
+      truth reteget, a H2 profile/version mintakhoz igazodva.
+      A migration tartalmazza a minimalis, repo-hu mezoket, az indexeket,
+      a composite owner-konzisztenciat es a szukseges owner-scoped policykat.
+      Keszits dedikalt `api/services/run_strategy_profiles.py` service-t es
+      `api/routes/run_strategy_profiles.py` route-ot owner-scoped profile es
+      nested version CRUD-dal. Regisztrald az uj route-ot az `api/main.py`-ban.
+      A megoldas ne talalja ki a scoring domain vagy a project-level selection
+      persistence schemajat, es ne tervezze ujra a `run_configs` vilagot.
+    outputs:
+      - "supabase/migrations/20260324100000_h3_e1_t1_run_strategy_profile_modellek.sql"
+      - "api/services/run_strategy_profiles.py"
+      - "api/routes/run_strategy_profiles.py"
+      - "api/main.py"
+
+  - name: "Smoke + checklist/report frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja legalabb:
+      1) strategy profile owner-scoped CRUD mukodik;
+      2) nested version CRUD mukodik es a version_no novekszik;
+      3) idegen owner profile/version elutasitodik;
+      4) a strategy domain nem csuszik at scoring vagy project-level selection
+      scope-ba;
+      5) nincs snapshot-builder vagy run-creation side effect.
+      Frissitsd a checklistet es a reportot evidence-alapon. A reportban kulon
+      nevezd meg, hogyan lett feloldva a backlog rovid DoD-je es a H3-E1-T3
+      project-selection scope kozti hatar: T1-ben a strategy domain mar
+      valasztasi jelolt, de a persisted project selection meg nem jon letre.
+    outputs:
+      - "scripts/smoke_h3_e1_t1_run_strategy_profile_modellek.py"
+      - "codex/codex_checklist/web_platform/h3_e1_t1_run_strategy_profile_modellek.md"
+      - "codex/reports/web_platform/h3_e1_t1_run_strategy_profile_modellek.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e1_t1_run_strategy_profile_modellek.md
+    outputs:
+      - "codex/reports/web_platform/h3_e1_t1_run_strategy_profile_modellek.md"
+      - "codex/reports/web_platform/h3_e1_t1_run_strategy_profile_modellek.verify.log"
