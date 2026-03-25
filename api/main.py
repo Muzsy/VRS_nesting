@@ -23,6 +23,7 @@ from api.routes.sheets import router as sheets_router
 from api.routes.run_configs import router as run_configs_router
 from api.routes.run_strategy_profiles import router as run_strategy_profiles_router
 from api.routes.runs import router as runs_router
+from api.routes.scoring_profiles import router as scoring_profiles_router
 from api.supabase_client import SupabaseClient
 
 
@@ -118,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(run_configs_router, prefix="/v1")
     app.include_router(run_strategy_profiles_router, prefix="/v1")
     app.include_router(runs_router, prefix="/v1")
+    app.include_router(scoring_profiles_router, prefix="/v1")
 
     return app
 

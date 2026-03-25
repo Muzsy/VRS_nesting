@@ -1,0 +1,62 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E1-T2 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2/H3 mintakhoz, de a scope maradjon szuk,
+      kizarolag a scoring profile domain truth-retegre, route-ra es smoke-ra.
+    outputs:
+      - "canvases/web_platform/h3_e1_t2_scoring_profile_modellek.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e1_t2_scoring_profile_modellek.yaml"
+      - "codex/prompts/web_platform/h3_e1_t2_scoring_profile_modellek/run.md"
+      - "codex/codex_checklist/web_platform/h3_e1_t2_scoring_profile_modellek.md"
+      - "codex/reports/web_platform/h3_e1_t2_scoring_profile_modellek.md"
+
+  - name: "Scoring profile schema, service es route"
+    description: >
+      Keszits uj migraciot, amely bevezeti az `app.scoring_profiles` es
+      `app.scoring_profile_versions` tablakat owner-scoped, verziozott H3
+      truth-retegkent. A version tabla minimum mezoi legyenek:
+      `weights_jsonb`, `tie_breaker_jsonb`, `threshold_jsonb`, `is_active`,
+      valamint a `(scoring_profile_id, version_no)` egyediseg. Keszits
+      dedikalt `api/services/scoring_profiles.py` service-t owner-scoped
+      profile es version CRUD/list/get/update/delete muveletekkel, valamint
+      `api/routes/scoring_profiles.py` route-ot, es kotsd be az `api/main.py`-
+      ba. Validald a profile-owner es version-owner konzisztenciat, de ne
+      vezess be project-level selectiont, evaluation engine-t, rankinget vagy
+      batch scope-ot.
+    outputs:
+      - "supabase/migrations/20260324110000_h3_e1_t2_scoring_profile_modellek.sql"
+      - "api/services/scoring_profiles.py"
+      - "api/routes/scoring_profiles.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja:
+      1) owner-scoped scoring profile letrehozhato;
+      2) scoring profile version letrehozhato es `version_no` konzisztens;
+      3) a `weights_jsonb`, `tie_breaker_jsonb`, `threshold_jsonb` persisted
+      modon visszaolvashato;
+      4) idegen owner nem fer hozza mas scoring profile-jahoz;
+      5) version profile-owner mismatch hibat ad;
+      6) a task nem hoz letre `project_scoring_selection` truthot;
+      7) a task nem hoz letre `run_evaluations`, ranking vagy comparison
+      reteget;
+      8) a task nem ir vissza H2 manufacturing truth tablaba. Frissitsd a
+      checklistet es a reportot evidence-alapon. A report kulon nevezze meg,
+      hogy ez a task csak a verziozott scoring truthot szallitja, nem az
+      evaluation engine-t, nem project-level selectiont es nem batch
+      orchestrationt.
+    outputs:
+      - "scripts/smoke_h3_e1_t2_scoring_profile_modellek.py"
+      - "codex/codex_checklist/web_platform/h3_e1_t2_scoring_profile_modellek.md"
+      - "codex/reports/web_platform/h3_e1_t2_scoring_profile_modellek.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e1_t2_scoring_profile_modellek.md
+    outputs:
+      - "codex/reports/web_platform/h3_e1_t2_scoring_profile_modellek.md"
+      - "codex/reports/web_platform/h3_e1_t2_scoring_profile_modellek.verify.log"
