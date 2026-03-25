@@ -1,13 +1,15 @@
 steps:
   - name: "Task artefaktok letrehozasa"
     description: >
-      Hozd letre a H2-E5-T4 optionalis machine-specific adapter task teljes
-      artefaktlancanak alapjat: canvas, goal YAML, runner prompt, checklist es
-      report. A tartalom a meglevo H2-E5 mintakhoz igazodjon, de a scope maradjon
-      szuk: a mar letezo `manufacturing_plan_json` artifact + snapshotolt
-      postprocessor selection + version-level `config_jsonb` konkret, egycelu
-      adapter-oldali alkalmazasa. A canvasban explicit STOP szabaly legyen arra,
-      hogy konkret target adapter-csalad nelkul tilos a taskot vegrehajtani.
+      Hozd letre a H2-E5-T4 task dokumentacios alapjat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom igazodjon a meglevo
+      web_platform H2 mintakhoz, de pontositsa a jelenlegi placeholder taskot:
+      legyen explicit target fagyasztas (`hypertherm_edge_connect`,
+      `hypertherm_edge_connect`, `basic_plasma_eia_rs274d`), legyen kimondva,
+      hogy a task optionalis H2 ag, es legyen rogzitve, hogy a meglevo
+      `machine_program` artifact kindot hasznaljuk, nem uj enum/migration
+      bevezetese a cel. A canvas kulon mondja ki azt is, hogy owner-scoped
+      postprocessor profile domain miatt nincs globalis SQL seed migration.
     outputs:
       - "canvases/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
       - "codex/goals/canvases/web_platform/fill_canvas_h2_e5_t4_elso_machine_specific_adapter.yaml"
@@ -15,37 +17,50 @@ steps:
       - "codex/codex_checklist/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
       - "codex/reports/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
 
-  - name: "Artifact kind bridge es konkret adapter service"
+  - name: "Machine-specific adapter service implementalasa"
     description: >
-      Vezess be machine-ready artifact kindot a meglvo `run_artifacts` worldbe,
-      frissitsd a legacy <-> enum bridge-eket, es keszits dedikalt
-      `api/services/machine_specific_adapter.py` service-t. A service pontosan egy
-      konkret celadaptert tamogasson, a source-of-truth-ja a H2-E5-T3 altal
-      eloallitott `manufacturing_plan_json` artifact legyen, es a snapshotolt
-      postprocessor selection + `postprocessor_profile_versions.config_jsonb`
-      alapjan allitson elo machine-ready kimenetet. A service ne olvasson live
-      `project_manufacturing_selection` allapotot, ne irjon vissza manufacturing
-      truth tablaba, es ne tervezzen uj lead-in/out geometriat.
+      Keszits dedikalt `api/services/machine_specific_adapter.py` service-t.
+      A service primer bemenete a runhoz tartozo persisted
+      `manufacturing_plan_json` artifact legyen, amelyet a `run_artifacts`
+      retegbol owner-scoped modon kell betolteni. Innen indulva ellenorizd a
+      snapshotolt postprocessor selectiont es a kapcsolt
+      `postprocessor_profile_versions.config_jsonb`-t. A service csak a
+      befagyasztott targetet tamogassa:
+      - adapter_key = `hypertherm_edge_connect`
+      - output_format = `basic_plasma_eia_rs274d`
+      A geometriai pontok feloldasa kizárólag a `manufacturing_plan_json`
+      payloadban szereplo `plan_id` + `contour_index` alapjan tortenhet
+      `run_manufacturing_contours.geometry_derivative_id` es
+      `geometry_derivatives.derivative_jsonb` (`manufacturing_canonical`)
+      vilagbol. A service per-sheet `machine_program` artifactokat generaljon,
+      deterministic filename/content/storage policy-val, es idempotensen cserelje
+      ugyanennek a target legacy type-nak a korabbi artifactjait.
+      Ne irjon vissza manufacturing truth tablaba, ne vezessen be uj artifact
+      kindot, ne hozzon letre `machine_ready_bundle`-t, es ne tervezzen uj
+      lead-in/out geometriat.
     outputs:
-      - "supabase/migrations/20260324000000_h2_e5_t4_elso_machine_specific_adapter.sql"
       - "api/services/machine_specific_adapter.py"
 
   - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
     description: >
-      Keszits task-specifikus smoke scriptet, amely bizonyitja:
-      1) a konkret target adapterhez machine-ready artifact letrejon;
-      2) ugyanarra a `manufacturing_plan_json` + `config_jsonb` truthra a kimenet
-      deterministic;
-      3) unsupported lead/arc/command eseten csak a config szerinti fallback vagy
-      hiba lep eletbe;
-      4) nincs write manufacturing truth tablaba;
+      Keszits `scripts/smoke_h2_e5_t4_elso_machine_specific_adapter.py`
+      smoke scriptet. A smoke bizonyitsa legalabb:
+      1) valid `manufacturing_plan_json` + valid target config -> per-sheet
+         `machine_program` artifactok letrejonnek;
+      2) `artifact_kind='machine_program'` es
+         `legacy_artifact_type='hypertherm_edge_connect_basic_plasma_eia'`;
+      3) ugyanarra a truthra a content hash, filename es storage path deterministic;
+      4) unsupported lead / arc eseten csak config szerinti fallback vagy
+         determinisztikus hiba lep eletbe;
       5) ownership boundary ervenyesul;
-      6) hiba jon, ha a target adapter metadata vagy kotelezo `config_jsonb`
-      blokkok hianyoznak;
-      7) nincs masodik, implicit generic adapter. Frissitsd a checklistet es
-      reportot evidence-alapon. A report kulon nevezze meg, hogy a task a
-      reszletes lead-in/out rendszer nelkul, kizarolag adapter-side mappinggel
-      dolgozik.
+      6) hiba jon, ha a `manufacturing_plan_json` artifact, a target adapter
+         metadata vagy a kotelezo `config_jsonb` blokkok hianyoznak;
+      7) nincs write manufacturing truth vagy postprocessor truth tablaba;
+      8) nincs masodik implicit generic adapter, bundle zip vagy egyeb
+         machine-specific mellekhatas.
+      Frissitsd a checklistet es reportot evidence-alapon. A report kulon mondja
+      ki, hogy ez a task nem vezet be globalis SQL seedet, nem ad uj artifact
+      kindot, es a lead-in/out csak mapping/fallback scope-ban marad.
     outputs:
       - "scripts/smoke_h2_e5_t4_elso_machine_specific_adapter.py"
       - "codex/codex_checklist/web_platform/h2_e5_t4_elso_machine_specific_adapter.md"
