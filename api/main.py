@@ -21,6 +21,7 @@ from api.routes.project_strategy_scoring_selection import scoring_router as proj
 from api.routes.project_strategy_scoring_selection import strategy_router as project_run_strategy_selection_router
 from api.routes.project_part_requirements import router as project_part_requirements_router
 from api.routes.run_batches import router as run_batches_router
+from api.routes.run_best_by_objective import router as run_best_by_objective_router
 from api.routes.run_evaluations import router as run_evaluations_router
 from api.routes.run_rankings import router as run_rankings_router
 from api.routes.project_sheet_inputs import router as project_sheet_inputs_router
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(project_scoring_selection_router, prefix="/v1")
     app.include_router(project_part_requirements_router, prefix="/v1")
     app.include_router(run_batches_router, prefix="/v1")
+    app.include_router(run_best_by_objective_router, prefix="/v1")
     app.include_router(run_evaluations_router, prefix="/v1")
     app.include_router(run_rankings_router, prefix="/v1")
     app.include_router(project_sheet_inputs_router, prefix="/v1")

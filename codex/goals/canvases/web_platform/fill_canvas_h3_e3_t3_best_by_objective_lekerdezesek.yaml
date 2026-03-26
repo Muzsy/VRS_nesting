@@ -1,0 +1,70 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E3-T3 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H3 mintakhoz, de a scope maradjon szuk, kizarolag a
+      best-by-objective read-side query/projection retegre.
+    outputs:
+      - "canvases/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e3_t3_best_by_objective_lekerdezesek.yaml"
+      - "codex/prompts/web_platform/h3_e3_t3_best_by_objective_lekerdezesek/run.md"
+      - "codex/codex_checklist/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md"
+      - "codex/reports/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md"
+
+  - name: "Objective query service bevezetese"
+    description: >
+      Keszits dedikalt `api/services/run_best_by_objective.py` service-t, amely
+      a mar persisted batch/ranking/evaluation/metrics truthokbol read-side
+      best-by-objective projectiont ad. A service olvashatja az
+      `app.run_batches`, `app.run_batch_items`, `app.run_ranking_results`,
+      `app.run_evaluations`, `app.run_metrics`, `app.run_manufacturing_metrics`
+      truthokat; a `priority-best` objectivehoz read-side modon olvashatja az
+      `app.nesting_run_snapshots` es `app.run_layout_unplaced` adatokat is.
+      A service ne hozzon letre uj persisted comparison tablakat, ne irjon
+      `run_evaluations`-t vagy `run_ranking_results`-t, es ne csusszon at
+      business metrics / selected-run scope-ba. A `cost-best` objective legyen
+      explicit query contract, de unsupported/allapotolt valasszal; ne talaljon
+      ki pseudo-koltseg formulat a H3-E5 truth hianyaban.
+    outputs:
+      - "api/services/run_best_by_objective.py"
+      - "codex/reports/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md"
+
+  - name: "Objective endpoint es app-bekotes"
+    description: >
+      Keszits dedikalt `api/routes/run_best_by_objective.py` route-ot legalabb
+      a `GET /projects/{project_id}/run-batches/{batch_id}/best-by-objective`
+      kontraktussal; opcionálisan egy objective-szintu GET endpoint is johet.
+      A route maradjon read-only objective-query domain: ne adjon full
+      comparison summaryt, ne triggereljen rankinget/evaluationt, es ne
+      allitson selected/preferred run allapotot. Kotsd be a route-ot az
+      `api/main.py`-ba.
+    outputs:
+      - "api/routes/run_best_by_objective.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja legalabb:
+      1) `material-best` a vart run-t adja vissza a run_metrics alapjan;
+      2) `time-best` a vart run-t adja vissza a manufacturing timing alapjan;
+      3) `priority-best` kiszamithato snapshot + run_layout_unplaced truthbol;
+      4) `cost-best` explicit unsupported/allapotolt valaszt ad, es nem gyart
+      pseudo-koltseget; 5) ranking hianyaban nincs csendes fallback ranking;
+      6) idegen owner batch tiltott; 7) a route read-only, nincs evaluation /
+      ranking / selected-run / business-metrics write; 8) ugyanarra az inputra
+      a projection deterministic. Frissitsd a checklistet es a reportot
+      evidence-alapon. A report kulon nevezze meg, hogy ez a task nem vezet be
+      uj comparison truth tablat.
+    outputs:
+      - "scripts/smoke_h3_e3_t3_best_by_objective_lekerdezesek.py"
+      - "codex/codex_checklist/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md"
+      - "codex/reports/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md
+    outputs:
+      - "codex/reports/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.md"
+      - "codex/reports/web_platform/h3_e3_t3_best_by_objective_lekerdezesek.verify.log"
