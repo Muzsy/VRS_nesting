@@ -1,0 +1,68 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E1-T3 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2/H3 mintakhoz, de a scope maradjon szuk,
+      kizarolag a projekt-szintu strategy/scoring selection truth-retegre.
+    outputs:
+      - "canvases/web_platform/h3_e1_t3_project_level_selectionok.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e1_t3_project_level_selectionok.yaml"
+      - "codex/prompts/web_platform/h3_e1_t3_project_level_selectionok/run.md"
+      - "codex/codex_checklist/web_platform/h3_e1_t3_project_level_selectionok.md"
+      - "codex/reports/web_platform/h3_e1_t3_project_level_selectionok.md"
+
+  - name: "Project-level strategy es scoring selection schema + service"
+    description: >
+      Keszits uj migraciot, amely bevezeti az `app.project_run_strategy_selection`
+      es `app.project_scoring_selection` persisted truth tablakat, szorosan a
+      H3 detailed doc SQL-vazlatahoz es a H2-E1-T2 selection mintahoz igazodva.
+      A viselkedes projekt-szintu create-or-replace legyen. Keszits dedikalt
+      `api/services/project_strategy_scoring_selection.py` service-t, amely
+      validalja: 1) a projekt owner-scope-jat, 2) a kivalasztott
+      strategy/scoring profile version owner-scope-jat, 3) ahol a valos
+      strategy/scoring schema ezt tamogatja, az aktivitast/lifecycle-t.
+      A megoldas ne nyisson ujra profile CRUD scope-ot, es ne modositson
+      snapshot/run/batch/evaluation retegeket.
+    outputs:
+      - "supabase/migrations/20260324120000_h3_e1_t3_project_level_selectionok.sql"
+      - "api/services/project_strategy_scoring_selection.py"
+
+  - name: "Project-level selection API route-ok bevezetese"
+    description: >
+      Keszits minimalis backend contractot a ket selection truth olvasasara,
+      beallitasara es torlesere. Minimum:
+      - GET/PUT/DELETE `/projects/{project_id}/run-strategy-selection`
+      - GET/PUT/DELETE `/projects/{project_id}/scoring-selection`
+      A route maradjon tisztan project-level selection scope-ban, ne vallaljon
+      snapshot, batch, evaluation vagy ranking felelosseget. Regisztrald az uj
+      route-ot az `api/main.py`-ban.
+    outputs:
+      - "api/routes/project_strategy_scoring_selection.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja legalabb:
+      1) strategy selection letrehozas/feluliras/GET/DELETE,
+      2) scoring selection letrehozas/feluliras/GET/DELETE,
+      3) idegen projekt tiltasa,
+      4) idegen strategy/scoring version tiltasa,
+      5) inaktiv version tiltasa, ha a valos schema ezt tamogatja,
+      6) nincs snapshot/batch/evaluation/ranking side effect.
+      Frissitsd a checklistet es a reportot evidence-alapon. A report kulon
+      nevezze meg, hogy ez a task csak a project-level binding truth-ot
+      szallitja le, es a runtime alkalmazas tovabbra is kesobbi H3 taskok
+      scope-ja marad.
+    outputs:
+      - "scripts/smoke_h3_e1_t3_project_level_selectionok.py"
+      - "codex/codex_checklist/web_platform/h3_e1_t3_project_level_selectionok.md"
+      - "codex/reports/web_platform/h3_e1_t3_project_level_selectionok.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e1_t3_project_level_selectionok.md
+    outputs:
+      - "codex/reports/web_platform/h3_e1_t3_project_level_selectionok.md"
+      - "codex/reports/web_platform/h3_e1_t3_project_level_selectionok.verify.log"

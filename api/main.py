@@ -17,6 +17,8 @@ from api.routes.files import router as files_router
 from api.routes.parts import router as parts_router
 from api.routes.postprocessor_profiles import router as postprocessor_profiles_router
 from api.routes.project_manufacturing_selection import router as project_manufacturing_selection_router
+from api.routes.project_strategy_scoring_selection import scoring_router as project_scoring_selection_router
+from api.routes.project_strategy_scoring_selection import strategy_router as project_run_strategy_selection_router
 from api.routes.project_part_requirements import router as project_part_requirements_router
 from api.routes.project_sheet_inputs import router as project_sheet_inputs_router
 from api.routes.sheets import router as sheets_router
@@ -113,6 +115,8 @@ def create_app() -> FastAPI:
     app.include_router(parts_router, prefix="/v1")
     app.include_router(postprocessor_profiles_router, prefix="/v1")
     app.include_router(project_manufacturing_selection_router, prefix="/v1")
+    app.include_router(project_run_strategy_selection_router, prefix="/v1")
+    app.include_router(project_scoring_selection_router, prefix="/v1")
     app.include_router(project_part_requirements_router, prefix="/v1")
     app.include_router(project_sheet_inputs_router, prefix="/v1")
     app.include_router(sheets_router, prefix="/v1")
