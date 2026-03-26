@@ -1,0 +1,71 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E3-T2 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H3 mintakhoz, de a scope maradjon szuk,
+      kizarolag a ranking engine truth-retegere.
+    outputs:
+      - "canvases/web_platform/h3_e3_t2_ranking_engine.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e3_t2_ranking_engine.yaml"
+      - "codex/prompts/web_platform/h3_e3_t2_ranking_engine/run.md"
+      - "codex/codex_checklist/web_platform/h3_e3_t2_ranking_engine.md"
+      - "codex/reports/web_platform/h3_e3_t2_ranking_engine.md"
+
+  - name: "Ranking truth es service bevezetese"
+    description: >
+      Keszits uj migraciot az `app.run_ranking_results` tablahoz, owner/project
+      scope-hoz illo RLS policykkal, a H3 detailed doc es a meglevo
+      `run_batches` / `run_evaluations` truth reteghez igazodva.
+      Keszits dedikalt `api/services/run_rankings.py` service-t, amely batch
+      szinten betolti a batch-item candidate-eket es a kapcsolodo persisted
+      evaluation rekordokat, validalja a scoring context konzisztenciajat,
+      majd deterministic sorrendet kepez es canonical replace szemantikaval
+      feltolti a `run_ranking_results` truthot. A service ne szamoljon uj
+      score-t, ne irjon `run_evaluations`-t, es ne csusszon at comparison vagy
+      selected-run scope-ba.
+    outputs:
+      - "supabase/migrations/20260324150000_h3_e3_t2_ranking_engine.sql"
+      - "api/services/run_rankings.py"
+      - "codex/reports/web_platform/h3_e3_t2_ranking_engine.md"
+
+  - name: "Ranking endpoint es app-bekotes"
+    description: >
+      Keszits dedikalt `api/routes/run_rankings.py` route-ot legalabb a
+      `POST /projects/{project_id}/run-batches/{batch_id}/ranking` es
+      `GET /projects/{project_id}/run-batches/{batch_id}/ranking`
+      kontraktussal; opcionálisan `DELETE` is johet, ha a canonical replace
+      modellhez ertelmes. Kotsd be a route-ot az `api/main.py`-ba.
+      A route maradjon tisztan ranking-domain, ne adjon comparison summaryt,
+      objective-specifikus toplistakat vagy selected-run muveleteket.
+    outputs:
+      - "api/routes/run_rankings.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja legalabb:
+      1) tobb evaluated batch-itembol ranking keletkezik;
+      2) a `rank_no` egyedi es stabil;
+      3) ujrarankolas replace-eli a korabbi ranking halmazt;
+      4) azonos `total_score` eseten deterministic tie-break ervenyesul;
+      5) hianyzo evaluation eseten a ranking fail-fast hibazik;
+      6) batch-item scoring version es evaluation scoring version mismatch
+      eseten a ranking hibazik;
+      7) idegen owner batch tiltott;
+      8) nincs `run_evaluations` write, comparison projection vagy selected-run
+      side effect. Frissitsd a checklistet es a reportot evidence-alapon.
+      A report kulon nevezze meg, hogy a ranking a persisted
+      `run_evaluations` truthra epul, nem szamol uj score-t.
+    outputs:
+      - "scripts/smoke_h3_e3_t2_ranking_engine.py"
+      - "codex/codex_checklist/web_platform/h3_e3_t2_ranking_engine.md"
+      - "codex/reports/web_platform/h3_e3_t2_ranking_engine.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e3_t2_ranking_engine.md
+    outputs:
+      - "codex/reports/web_platform/h3_e3_t2_ranking_engine.md"
+      - "codex/reports/web_platform/h3_e3_t2_ranking_engine.verify.log"
