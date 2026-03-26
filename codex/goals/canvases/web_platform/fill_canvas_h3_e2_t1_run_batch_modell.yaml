@@ -1,0 +1,58 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E2-T1 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2/H3 mintakhoz, de a scope maradjon szuk,
+      kizarolag a run batch truth-retegre es a batch item managementre.
+    outputs:
+      - "canvases/web_platform/h3_e2_t1_run_batch_modell.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e2_t1_run_batch_modell.yaml"
+      - "codex/prompts/web_platform/h3_e2_t1_run_batch_modell/run.md"
+      - "codex/codex_checklist/web_platform/h3_e2_t1_run_batch_modell.md"
+      - "codex/reports/web_platform/h3_e2_t1_run_batch_modell.md"
+
+  - name: "Run batch schema, service es route"
+    description: >
+      Keszits uj migraciot, amely bevezeti az `app.run_batches` es
+      `app.run_batch_items` persisted truth tablakat. A batch egy projekt alatti
+      csoportosito entitas legyen, a batch item pedig mar meglevo run-okat
+      kapcsoljon batch-hez, opcionális `candidate_label`,
+      `strategy_profile_version_id` es `scoring_profile_version_id` metadata-val.
+      Keszits dedikalt `api/services/run_batches.py` service-t es
+      `api/routes/run_batches.py` route-ot owner/project-scope validacioval a
+      batch create/list/get/delete, valamint item attach/list/remove muveletekhez.
+      A task ne hozzon letre uj run-okat, ne modositson snapshot/runtime flow-t,
+      es ne vezessen be evaluation/ranking scope-ot.
+    outputs:
+      - "supabase/migrations/20260324130000_h3_e2_t1_run_batch_modell.sql"
+      - "api/services/run_batches.py"
+      - "api/routes/run_batches.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja legalabb:
+      1) batch letrehozhato;
+      2) batch listazhato es lekérdezheto;
+      3) meglevo run batch-be teheto;
+      4) ugyanaz a run ugyanabba a batch-be nem teheto be ketszer;
+      5) idegen projekt runja tiltott;
+      6) idegen owner strategy/scoring version tiltott;
+      7) batch item torolheto;
+      8) nincs orchestrator, evaluation vagy ranking side effect.
+      Frissitsd a checklistet es a reportot evidence-alapon. A report kulon
+      nevezze meg, hogy ez a task csak a batch truthot es az item managementet
+      szallitja le, uj queued run letrehozas nelkul.
+    outputs:
+      - "scripts/smoke_h3_e2_t1_run_batch_modell.py"
+      - "codex/codex_checklist/web_platform/h3_e2_t1_run_batch_modell.md"
+      - "codex/reports/web_platform/h3_e2_t1_run_batch_modell.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e2_t1_run_batch_modell.md
+    outputs:
+      - "codex/reports/web_platform/h3_e2_t1_run_batch_modell.md"
+      - "codex/reports/web_platform/h3_e2_t1_run_batch_modell.verify.log"

@@ -1,0 +1,67 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E2-T2 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H1/H2/H3 mintakhoz, de a scope maradjon szuk,
+      kizarolag a batch run orchestratorra.
+    outputs:
+      - "canvases/web_platform/h3_e2_t2_batch_run_orchestrator.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e2_t2_batch_run_orchestrator.yaml"
+      - "codex/prompts/web_platform/h3_e2_t2_batch_run_orchestrator/run.md"
+      - "codex/codex_checklist/web_platform/h3_e2_t2_batch_run_orchestrator.md"
+      - "codex/reports/web_platform/h3_e2_t2_batch_run_orchestrator.md"
+
+  - name: "Batch orchestrator service bevezetese"
+    description: >
+      Keszits dedikalt `api/services/run_batch_orchestrator.py` service-t,
+      amely egy projektre, explicit candidate lista alapjan tobb queued run-t
+      hoz letre a canonical H1-E4-T2 run create szolgaltatas ujrahasznalataval,
+      es azokat azonnal batch-itemekhez koti a H3-E2-T1 truth retegen.
+      Az orchestrator validalja a projekt owner-scope-jat, a strategy/scoring
+      version owner-scope-jat, es dokumentalt fail-fast (vagy ha tenyleg indokolt,
+      explicit partial-success) szemantikaval dolgozik. A task ne vezessen be
+      evaluation/ranking/comparison scope-ot.
+    outputs:
+      - "api/services/run_batch_orchestrator.py"
+      - "api/services/run_batches.py"
+      - "codex/reports/web_platform/h3_e2_t2_batch_run_orchestrator.md"
+
+  - name: "Orchestrator endpoint es route-bekotes"
+    description: >
+      Egeszitsd ki a H3-E2-T1 batch route-jat orchestrator endpointtel,
+      peldaul `POST /projects/{project_id}/run-batches/orchestrate`, amely
+      explicit candidate listabol batch-et es queued run-okat hoz letre.
+      Hasznald a meglevo `api/routes/run_batches.py` route-ot, es szukseg
+      szerint frissitsd az `api/main.py`-t. A route maradjon tisztan batch
+      orchestrator scope-ban, ne vallaljon evaluation/ranking vagy review
+      workflow felelosseget.
+    outputs:
+      - "api/routes/run_batches.py"
+      - "api/main.py"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja legalabb:
+      1) uj batch tobb candidate-del letrehozhato;
+      2) minden candidate-hez queued run keletkezik a canonical H1 run create
+      flow-val;
+      3) a keletkezo runok batch-itemekhez kapcsolodnak;
+      4) a `candidate_label` es strategy/scoring kontextus tarolodik;
+      5) idegen owner strategy/scoring versionnel az orchestrator elutasitodik;
+      6) fail-fast (vagy explicit modon valasztott) hiba-szemantika ervenyesul;
+      7) nincs evaluation/ranking side effect. Frissitsd a checklistet es a
+      reportot evidence-alapon. A report kulon nevezze meg, hogy az orchestrator
+      a H1-E4-T2 canonical run create-ot reuse-olja, es nem keruli meg azt.
+    outputs:
+      - "scripts/smoke_h3_e2_t2_batch_run_orchestrator.py"
+      - "codex/codex_checklist/web_platform/h3_e2_t2_batch_run_orchestrator.md"
+      - "codex/reports/web_platform/h3_e2_t2_batch_run_orchestrator.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e2_t2_batch_run_orchestrator.md
+    outputs:
+      - "codex/reports/web_platform/h3_e2_t2_batch_run_orchestrator.md"
+      - "codex/reports/web_platform/h3_e2_t2_batch_run_orchestrator.verify.log"
