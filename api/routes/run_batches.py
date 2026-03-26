@@ -10,6 +10,10 @@ from api.auth import AuthenticatedUser, get_current_user
 from api.deps import get_supabase_client
 from api.http_errors import raise_supabase_http_error
 from api.request_models import StrictRequestModel
+from api.services.run_batch_orchestrator import (
+    RunBatchOrchestratorError,
+    orchestrate_run_batch_candidates,
+)
 from api.services.run_batches import (
     RunBatchError,
     attach_run_batch_item,
@@ -66,6 +70,43 @@ class RunBatchItemListResponse(BaseModel):
     total: int
 
 
+class RunBatchOrchestrateCandidateRequest(StrictRequestModel):
+    candidate_label: str = Field(min_length=1, max_length=120)
+    strategy_profile_version_id: UUID
+    scoring_profile_version_id: UUID
+    run_purpose: str = Field(default="nesting", min_length=1, max_length=120)
+    idempotency_key: str | None = Field(default=None, max_length=160)
+
+
+class RunBatchOrchestrateRequest(StrictRequestModel):
+    batch_id: UUID | None = None
+    batch_kind: str = Field(default="comparison", min_length=1, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+    candidates: list[RunBatchOrchestrateCandidateRequest] = Field(min_length=1, max_length=100)
+
+
+class RunBatchOrchestratedCandidateResponse(BaseModel):
+    candidate_index: int
+    candidate_label: str
+    strategy_profile_version_id: str
+    scoring_profile_version_id: str
+    run_purpose: str
+    idempotency_key: str | None = None
+    run_id: str
+    run_status: str
+    was_deduplicated: bool
+    dedup_reason: str | None = None
+    batch_item: RunBatchItemResponse
+
+
+class RunBatchOrchestrateResponse(BaseModel):
+    batch: RunBatchResponse
+    batch_was_created: bool
+    failure_semantics: str
+    items: list[RunBatchOrchestratedCandidateResponse]
+    total_candidates: int
+
+
 def _as_run_batch_response(row: dict[str, Any]) -> RunBatchResponse:
     batch_id = str(row.get("id") or "").strip()
     project_id = str(row.get("project_id") or "").strip()
@@ -100,6 +141,34 @@ def _as_run_batch_item_response(row: dict[str, Any]) -> RunBatchItemResponse:
         strategy_profile_version_id=str(row.get("strategy_profile_version_id") or "").strip() or None,
         scoring_profile_version_id=str(row.get("scoring_profile_version_id") or "").strip() or None,
         created_at=str(row.get("created_at") or "").strip() or None,
+    )
+
+
+def _as_orchestrated_candidate_response(row: dict[str, Any]) -> RunBatchOrchestratedCandidateResponse:
+    run_id = str(row.get("run_id") or "").strip()
+    candidate_label = str(row.get("candidate_label") or "").strip()
+    strategy_profile_version_id = str(row.get("strategy_profile_version_id") or "").strip()
+    scoring_profile_version_id = str(row.get("scoring_profile_version_id") or "").strip()
+    run_purpose = str(row.get("run_purpose") or "").strip()
+    if not run_id or not candidate_label or not strategy_profile_version_id or not scoring_profile_version_id or not run_purpose:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="orchestrated candidate returned invalid payload")
+
+    item_row = row.get("item")
+    if not isinstance(item_row, dict):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="orchestrated candidate missing batch item payload")
+
+    return RunBatchOrchestratedCandidateResponse(
+        candidate_index=int(row.get("candidate_index") or 0),
+        candidate_label=candidate_label,
+        strategy_profile_version_id=strategy_profile_version_id,
+        scoring_profile_version_id=scoring_profile_version_id,
+        run_purpose=run_purpose,
+        idempotency_key=str(row.get("idempotency_key") or "").strip() or None,
+        run_id=run_id,
+        run_status=str(row.get("run_status") or "").strip() or "queued",
+        was_deduplicated=bool(row.get("was_deduplicated")),
+        dedup_reason=str(row.get("dedup_reason") or "").strip() or None,
+        batch_item=_as_run_batch_item_response(item_row),
     )
 
 
@@ -153,6 +222,55 @@ def get_run_batches(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="list run batches returned invalid payload")
     items = [_as_run_batch_response(row) for row in rows if isinstance(row, dict)]
     return RunBatchListResponse(items=items, total=len(items))
+
+
+@router.post("/orchestrate", response_model=RunBatchOrchestrateResponse)
+def post_run_batch_orchestrate(
+    project_id: UUID,
+    req: RunBatchOrchestrateRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    supabase: SupabaseClient = Depends(get_supabase_client),
+) -> RunBatchOrchestrateResponse:
+    candidate_payload = [
+        {
+            "candidate_label": candidate.candidate_label,
+            "strategy_profile_version_id": str(candidate.strategy_profile_version_id),
+            "scoring_profile_version_id": str(candidate.scoring_profile_version_id),
+            "run_purpose": candidate.run_purpose,
+            "idempotency_key": candidate.idempotency_key,
+        }
+        for candidate in req.candidates
+    ]
+    try:
+        result = orchestrate_run_batch_candidates(
+            supabase=supabase,
+            access_token=user.access_token,
+            owner_user_id=user.id,
+            project_id=str(project_id),
+            batch_id=str(req.batch_id) if req.batch_id is not None else None,
+            batch_kind=req.batch_kind,
+            notes=req.notes,
+            candidates=candidate_payload,
+        )
+    except RunBatchOrchestratorError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except SupabaseHTTPError as exc:
+        raise_supabase_http_error(operation="orchestrate run batch", exc=exc)
+
+    batch_row = result.get("batch")
+    if not isinstance(batch_row, dict):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="orchestrate run batch returned invalid batch payload")
+    item_rows = result.get("items")
+    if not isinstance(item_rows, list):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="orchestrate run batch returned invalid items payload")
+    items = [_as_orchestrated_candidate_response(row) for row in item_rows if isinstance(row, dict)]
+    return RunBatchOrchestrateResponse(
+        batch=_as_run_batch_response(batch_row),
+        batch_was_created=bool(result.get("batch_was_created")),
+        failure_semantics=str(result.get("failure_semantics") or "").strip() or "fail_fast_with_best_effort_rollback",
+        items=items,
+        total_candidates=int(result.get("total_candidates") or len(items)),
+    )
 
 
 @router.get("/{batch_id}", response_model=RunBatchResponse)

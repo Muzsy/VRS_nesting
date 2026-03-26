@@ -170,6 +170,54 @@ def _load_scoring_version_for_owner(
     return row
 
 
+def validate_run_batch_item_versions(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    owner_user_id: str,
+    strategy_profile_version_id: str | None,
+    scoring_profile_version_id: str | None,
+) -> dict[str, Any]:
+    strategy_profile_version_id_clean: str | None = None
+    if strategy_profile_version_id is not None:
+        strategy_profile_version_id_clean = _sanitize_required(
+            strategy_profile_version_id,
+            field="strategy_profile_version_id",
+        )
+
+    scoring_profile_version_id_clean: str | None = None
+    if scoring_profile_version_id is not None:
+        scoring_profile_version_id_clean = _sanitize_required(
+            scoring_profile_version_id,
+            field="scoring_profile_version_id",
+        )
+
+    strategy_version: dict[str, Any] | None = None
+    if strategy_profile_version_id_clean is not None:
+        strategy_version = _load_strategy_version_for_owner(
+            supabase=supabase,
+            access_token=access_token,
+            owner_user_id=owner_user_id,
+            version_id=strategy_profile_version_id_clean,
+        )
+
+    scoring_version: dict[str, Any] | None = None
+    if scoring_profile_version_id_clean is not None:
+        scoring_version = _load_scoring_version_for_owner(
+            supabase=supabase,
+            access_token=access_token,
+            owner_user_id=owner_user_id,
+            version_id=scoring_profile_version_id_clean,
+        )
+
+    return {
+        "strategy_profile_version_id": strategy_profile_version_id_clean,
+        "scoring_profile_version_id": scoring_profile_version_id_clean,
+        "strategy_profile_version": strategy_version,
+        "scoring_profile_version": scoring_version,
+    }
+
+
 def _load_batch_item(
     *,
     supabase: SupabaseClient,
@@ -339,20 +387,6 @@ def attach_run_batch_item(
     run_id_clean = _sanitize_required(run_id, field="run_id")
     candidate_label_clean = _sanitize_optional_text(candidate_label, field="candidate_label", max_len=120)
 
-    strategy_profile_version_id_clean: str | None = None
-    if strategy_profile_version_id is not None:
-        strategy_profile_version_id_clean = _sanitize_required(
-            strategy_profile_version_id,
-            field="strategy_profile_version_id",
-        )
-
-    scoring_profile_version_id_clean: str | None = None
-    if scoring_profile_version_id is not None:
-        scoring_profile_version_id_clean = _sanitize_required(
-            scoring_profile_version_id,
-            field="scoring_profile_version_id",
-        )
-
     project = _load_project_for_owner(
         supabase=supabase,
         access_token=access_token,
@@ -372,23 +406,17 @@ def attach_run_batch_item(
         project_id=project_id_clean,
     )
 
-    strategy_version: dict[str, Any] | None = None
-    if strategy_profile_version_id_clean is not None:
-        strategy_version = _load_strategy_version_for_owner(
-            supabase=supabase,
-            access_token=access_token,
-            owner_user_id=owner_user_id,
-            version_id=strategy_profile_version_id_clean,
-        )
-
-    scoring_version: dict[str, Any] | None = None
-    if scoring_profile_version_id_clean is not None:
-        scoring_version = _load_scoring_version_for_owner(
-            supabase=supabase,
-            access_token=access_token,
-            owner_user_id=owner_user_id,
-            version_id=scoring_profile_version_id_clean,
-        )
+    version_context = validate_run_batch_item_versions(
+        supabase=supabase,
+        access_token=access_token,
+        owner_user_id=owner_user_id,
+        strategy_profile_version_id=strategy_profile_version_id,
+        scoring_profile_version_id=scoring_profile_version_id,
+    )
+    strategy_profile_version_id_clean = version_context["strategy_profile_version_id"]
+    scoring_profile_version_id_clean = version_context["scoring_profile_version_id"]
+    strategy_version = version_context["strategy_profile_version"]
+    scoring_version = version_context["scoring_profile_version"]
 
     existing = _load_batch_item(
         supabase=supabase,
