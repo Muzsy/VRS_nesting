@@ -1,0 +1,90 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-E3-T1 task teljes artefaktlancanak alapjat: canvas,
+      goal YAML, runner prompt, checklist es report. A tartalom igazodjon a
+      meglevo web_platform H2/H3 mintakhoz, de a scope maradjon szuk,
+      kizarolag a run evaluation engine truth-retegre, service-re, route-ra es
+      smoke-ra.
+    outputs:
+      - "canvases/web_platform/h3_e3_t1_run_evaluation_engine.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_e3_t1_run_evaluation_engine.yaml"
+      - "codex/prompts/web_platform/h3_e3_t1_run_evaluation_engine/run.md"
+      - "codex/codex_checklist/web_platform/h3_e3_t1_run_evaluation_engine.md"
+      - "codex/reports/web_platform/h3_e3_t1_run_evaluation_engine.md"
+
+  - name: "Run evaluation truth, service es route bevezetese"
+    description: >
+      Keszits uj migraciot, amely bevezeti az `app.run_evaluations` tablát a H3
+      detailed doc minimalis szerzodese szerint. A tabla legalabb a
+      `run_id`, `scoring_profile_version_id`, `total_score`, `evaluation_jsonb`
+      es `created_at` mezoket tartalmazza, owner-scoped RLS-sel a
+      `app.nesting_runs.owner_user_id` truthra epitve. Keszits dedikalt
+      `api/services/run_evaluations.py` service-t es `api/routes/run_evaluations.py`
+      route-ot. A service explicit `scoring_profile_version_id` alapjan tudjon
+      evaluationt kepzeni, es optionalisan fallbackolhasson a projekt aktiv
+      scoring selectionjere, ha az mar letezik es nincs explicit version a
+      kerelben. A task csak a meglevo H1 `app.run_metrics` es H2
+      `app.run_manufacturing_metrics` persisted truthot olvassa, es kizarolag
+      `app.run_evaluations`-be ir. Ne vezessen be rankinget, batch-bejarast,
+      comparison projectiont vagy mas H3-E4/H3-E5 input kitalalasat.
+    outputs:
+      - "supabase/migrations/20260324140000_h3_e3_t1_run_evaluation_engine.sql"
+      - "api/services/run_evaluations.py"
+      - "api/routes/run_evaluations.py"
+      - "api/main.py"
+
+  - name: "Scoring formula, threshold es unsupported komponensek formalizalasa"
+    description: >
+      A run evaluation engine dokumentalt, bounded H3 minimum formulat
+      implementaljon. Minimum tamogatott komponensek: `utilization_weight`,
+      `unplaced_penalty`, `sheet_count_penalty`, valamint threshold-fuggően
+      `remnant_value_weight` es `process_time_penalty`. A formula a meglevo
+      H1/H2 jelekre epuljon: `utilization_ratio`, `placed_count`,
+      `unplaced_count`, `used_sheet_count`, `remnant_value`,
+      `estimated_process_time_s`. A jelenleg nem letezo jelre mutato weights,
+      peldaul `priority_fulfilment_weight` es `inventory_consumption_penalty`,
+      ne okozzanak csendes adatvesztést es ne vezessenek kitalalt score-hoz:
+      `evaluation_jsonb` alatt dokumentalt `unsupported` / `not_applied`
+      komponenskent jelenjenek meg zero contributionnel. A `threshold_jsonb`
+      ismert kulcsaira (`min_utilization`, `max_unplaced_ratio`,
+      `max_used_sheet_count`, `max_estimated_process_time_s`,
+      `min_remnant_value`) boolean threshold eredmeny, a `tie_breaker_jsonb`
+      ismert kulcsaira pedig tie-breaker input snapshot keletkezzen, de
+      `run_ranking_results` ne jon letre.
+    outputs:
+      - "api/services/run_evaluations.py"
+      - "codex/reports/web_platform/h3_e3_t1_run_evaluation_engine.md"
+
+  - name: "Task-specifikus smoke + dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely bizonyitja legalabb:
+      1) explicit scoring profile versionnel evaluation sikeresen letrehozhato;
+      2) ugyanazon run ujraertekelese replace-eli az elozo persisted evaluation
+      sort;
+      3) azonos inputra determinisztikus `total_score` es komponensbontas jon
+      letre;
+      4) `run_metrics` hianyaban az evaluation hibat ad;
+      5) `run_manufacturing_metrics` hianyaban a H1-komponensek mukodnek, de a
+      `process_time_penalty` komponens `not_applied` / `missing_metric`;
+      6) idegen owner scoring profile version elutasitodik;
+      7) project-level scoring selection fallback, ha a task implementacioja ezt
+      tamogatja, tenylegesen mukodik;
+      8) `priority_fulfilment_weight` es `inventory_consumption_penalty`
+      zero contributionnel, dokumentalt unsupported allapotban jelenik meg;
+      9) nincs `run_ranking_results`, batch vagy selection write side effect.
+      Frissitsd a checklistet es a reportot evidence-alapon. A report kulon
+      nevezze meg, hogy a task csak a H3 evaluation truthot szallitja, es nem
+      ranking/comparison/business-metrics/review workflow.
+    outputs:
+      - "scripts/smoke_h3_e3_t1_run_evaluation_engine.py"
+      - "codex/codex_checklist/web_platform/h3_e3_t1_run_evaluation_engine.md"
+      - "codex/reports/web_platform/h3_e3_t1_run_evaluation_engine.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_e3_t1_run_evaluation_engine.md
+    outputs:
+      - "codex/reports/web_platform/h3_e3_t1_run_evaluation_engine.md"
+      - "codex/reports/web_platform/h3_e3_t1_run_evaluation_engine.verify.log"
