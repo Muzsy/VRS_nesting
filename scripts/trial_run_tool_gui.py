@@ -46,6 +46,15 @@ class GuiFormValues:
     auto_start_platform: bool
     supabase_url: str
     supabase_anon_key: str
+    technology_display_name: str
+    technology_machine_code: str
+    technology_material_code: str
+    technology_thickness_mm: str
+    technology_kerf_mm: str
+    technology_spacing_mm: str
+    technology_margin_mm: str
+    technology_rotation_step_deg: str
+    technology_allow_free_rotation: bool
 
 
 def collect_dxf_files(dxf_dir: Path) -> list[Path]:
@@ -87,6 +96,32 @@ def _parse_positive_float(raw: str, *, field: str) -> float:
     return value
 
 
+def _parse_non_negative_float(raw: str, *, field: str) -> float:
+    text = raw.strip()
+    if not text:
+        raise TrialRunToolError(f"{field} is required")
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise TrialRunToolError(f"{field} must be a number: {raw}") from exc
+    if value < 0:
+        raise TrialRunToolError(f"{field} must be >= 0")
+    return value
+
+
+def _parse_rotation_step(raw: str) -> int:
+    text = raw.strip()
+    if not text:
+        raise TrialRunToolError("technology_rotation_step_deg is required")
+    try:
+        value = int(text)
+    except ValueError as exc:
+        raise TrialRunToolError(f"technology_rotation_step_deg must be an integer: {raw}") from exc
+    if value <= 0 or value > 360:
+        raise TrialRunToolError("technology_rotation_step_deg must be in range 1..360")
+    return value
+
+
 def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str]) -> tuple[TrialRunConfig, list[Path]]:
     """Validate GUI form values and build TrialRunConfig for core runner."""
 
@@ -117,6 +152,39 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
     output_base_dir = Path(values.output_base_dir.strip() or "tmp/runs")
     supabase_url = values.supabase_url.strip() or None
     supabase_anon_key = values.supabase_anon_key.strip() or None
+    if mode == "new" and (not supabase_url or not supabase_anon_key):
+        raise TrialRunToolError(
+            "new project mode requires SUPABASE_URL and SUPABASE_ANON_KEY to seed approved technology setup"
+        )
+
+    tech_display_name = values.technology_display_name.strip() or "Trial Default Setup"
+    tech_machine_code = values.technology_machine_code.strip() or "TRIAL-MACHINE"
+    tech_material_code = values.technology_material_code.strip() or "TRIAL-MATERIAL"
+    tech_thickness_mm = _parse_positive_float(
+        values.technology_thickness_mm.strip() or "3.0",
+        field="technology_thickness_mm",
+    )
+    tech_kerf_mm = _parse_non_negative_float(
+        values.technology_kerf_mm.strip() or "0.2",
+        field="technology_kerf_mm",
+    )
+    tech_spacing_mm = _parse_non_negative_float(
+        values.technology_spacing_mm.strip() or "0.0",
+        field="technology_spacing_mm",
+    )
+    tech_margin_mm = _parse_non_negative_float(
+        values.technology_margin_mm.strip() or "0.0",
+        field="technology_margin_mm",
+    )
+    tech_rotation_step_deg = _parse_rotation_step(values.technology_rotation_step_deg.strip() or "90")
+
+    if mode == "new":
+        if not tech_display_name:
+            raise TrialRunToolError("technology_display_name is required in new mode")
+        if not tech_machine_code:
+            raise TrialRunToolError("technology_machine_code is required in new mode")
+        if not tech_material_code:
+            raise TrialRunToolError("technology_material_code is required in new mode")
 
     config = TrialRunConfig(
         dxf_dir=dxf_dir,
@@ -134,6 +202,15 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
         auto_start_platform=bool(values.auto_start_platform),
         supabase_url=supabase_url,
         supabase_anon_key=supabase_anon_key,
+        technology_display_name=tech_display_name,
+        technology_machine_code=tech_machine_code,
+        technology_material_code=tech_material_code,
+        technology_thickness_mm=tech_thickness_mm,
+        technology_kerf_mm=tech_kerf_mm,
+        technology_spacing_mm=tech_spacing_mm,
+        technology_margin_mm=tech_margin_mm,
+        technology_rotation_step_deg=tech_rotation_step_deg,
+        technology_allow_free_rotation=bool(values.technology_allow_free_rotation),
     )
     return config, dxf_files
 
@@ -171,12 +248,30 @@ class TrialRunToolGuiApp:
         self._auto_start_var = tk.BooleanVar(value=False)
         self._supabase_url_var = tk.StringVar(value=args.supabase_url)
         self._supabase_anon_key_var = tk.StringVar(value=args.supabase_anon_key)
+        self._technology_display_name_var = tk.StringVar(value=args.technology_display_name)
+        self._technology_machine_code_var = tk.StringVar(value=args.technology_machine_code)
+        self._technology_material_code_var = tk.StringVar(value=args.technology_material_code)
+        self._technology_thickness_mm_var = tk.StringVar(value=str(args.technology_thickness_mm))
+        self._technology_kerf_mm_var = tk.StringVar(value=str(args.technology_kerf_mm))
+        self._technology_spacing_mm_var = tk.StringVar(value=str(args.technology_spacing_mm))
+        self._technology_margin_mm_var = tk.StringVar(value=str(args.technology_margin_mm))
+        self._technology_rotation_step_deg_var = tk.StringVar(value=str(args.technology_rotation_step_deg))
+        self._technology_allow_free_rotation_var = tk.BooleanVar(value=bool(args.technology_allow_free_rotation))
         self._status_var = tk.StringVar(value="Idle")
         self._last_run_dir_var = tk.StringVar(value="")
 
         self._project_id_entry: Any | None = None
         self._project_name_entry: Any | None = None
         self._project_description_entry: Any | None = None
+        self._technology_display_name_entry: Any | None = None
+        self._technology_machine_code_entry: Any | None = None
+        self._technology_material_code_entry: Any | None = None
+        self._technology_thickness_mm_entry: Any | None = None
+        self._technology_kerf_mm_entry: Any | None = None
+        self._technology_spacing_mm_entry: Any | None = None
+        self._technology_margin_mm_entry: Any | None = None
+        self._technology_rotation_step_deg_entry: Any | None = None
+        self._technology_allow_free_rotation_check: Any | None = None
         self._start_btn: Any | None = None
         self._log_text: Any | None = None
         self._qty_frame: Any | None = None
@@ -197,7 +292,7 @@ class TrialRunToolGuiApp:
         main = ttk.Frame(self._root, padding=12)
         main.grid(row=0, column=0, sticky="nsew")
         main.columnconfigure(1, weight=1)
-        main.rowconfigure(11, weight=1)
+        main.rowconfigure(20, weight=1)
 
         row = 0
         ttk.Label(main, text="DXF directory").grid(row=row, column=0, sticky="w", pady=2)
@@ -254,10 +349,50 @@ class TrialRunToolGuiApp:
         )
 
         row += 1
-        ttk.Label(main, text="SUPABASE_URL (optional)").grid(row=row, column=0, sticky="w", pady=2)
+        ttk.Label(main, text="SUPABASE_URL (required in new mode)").grid(row=row, column=0, sticky="w", pady=2)
         ttk.Entry(main, textvariable=self._supabase_url_var).grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=2)
         ttk.Label(main, text="SUPABASE_ANON_KEY").grid(row=row, column=2, sticky="w", pady=2)
         ttk.Entry(main, textvariable=self._supabase_anon_key_var, show="*").grid(row=row, column=3, sticky="ew", pady=2)
+
+        row += 1
+        ttk.Label(main, text="Tech setup display name (new mode)").grid(row=row, column=0, sticky="w", pady=2)
+        self._technology_display_name_entry = ttk.Entry(main, textvariable=self._technology_display_name_var)
+        self._technology_display_name_entry.grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=2)
+        ttk.Label(main, text="Machine code").grid(row=row, column=2, sticky="w", pady=2)
+        self._technology_machine_code_entry = ttk.Entry(main, textvariable=self._technology_machine_code_var)
+        self._technology_machine_code_entry.grid(row=row, column=3, sticky="ew", pady=2)
+
+        row += 1
+        ttk.Label(main, text="Material code").grid(row=row, column=0, sticky="w", pady=2)
+        self._technology_material_code_entry = ttk.Entry(main, textvariable=self._technology_material_code_var)
+        self._technology_material_code_entry.grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=2)
+        ttk.Label(main, text="Thickness mm").grid(row=row, column=2, sticky="w", pady=2)
+        self._technology_thickness_mm_entry = ttk.Entry(main, textvariable=self._technology_thickness_mm_var)
+        self._technology_thickness_mm_entry.grid(row=row, column=3, sticky="ew", pady=2)
+
+        row += 1
+        ttk.Label(main, text="Kerf mm").grid(row=row, column=0, sticky="w", pady=2)
+        self._technology_kerf_mm_entry = ttk.Entry(main, textvariable=self._technology_kerf_mm_var)
+        self._technology_kerf_mm_entry.grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=2)
+        ttk.Label(main, text="Spacing mm").grid(row=row, column=2, sticky="w", pady=2)
+        self._technology_spacing_mm_entry = ttk.Entry(main, textvariable=self._technology_spacing_mm_var)
+        self._technology_spacing_mm_entry.grid(row=row, column=3, sticky="ew", pady=2)
+
+        row += 1
+        ttk.Label(main, text="Margin mm").grid(row=row, column=0, sticky="w", pady=2)
+        self._technology_margin_mm_entry = ttk.Entry(main, textvariable=self._technology_margin_mm_var)
+        self._technology_margin_mm_entry.grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=2)
+        ttk.Label(main, text="Rotation step deg").grid(row=row, column=2, sticky="w", pady=2)
+        self._technology_rotation_step_deg_entry = ttk.Entry(main, textvariable=self._technology_rotation_step_deg_var)
+        self._technology_rotation_step_deg_entry.grid(row=row, column=3, sticky="ew", pady=2)
+
+        row += 1
+        self._technology_allow_free_rotation_check = ttk.Checkbutton(
+            main,
+            text="Allow free rotation (new mode)",
+            variable=self._technology_allow_free_rotation_var,
+        )
+        self._technology_allow_free_rotation_check.grid(row=row, column=0, columnspan=2, sticky="w", pady=2)
 
         row += 1
         qty_group = ttk.LabelFrame(main, text="Detected DXF files and per-file qty")
@@ -290,6 +425,7 @@ class TrialRunToolGuiApp:
         ttk.Label(main, text="Log / status").grid(row=row, column=0, sticky="w")
 
         row += 1
+        main.rowconfigure(row, weight=1)
         log_frame = ttk.Frame(main)
         log_frame.grid(row=row, column=0, columnspan=4, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
@@ -303,12 +439,27 @@ class TrialRunToolGuiApp:
     def _set_mode_widgets(self) -> None:
         mode = self._mode_var.get().strip().lower()
         is_existing = mode == "existing"
+        tech_state = "disabled" if is_existing else "normal"
         if self._project_id_entry is not None:
             self._project_id_entry.configure(state="normal" if is_existing else "disabled")
         if self._project_name_entry is not None:
             self._project_name_entry.configure(state="disabled" if is_existing else "normal")
         if self._project_description_entry is not None:
             self._project_description_entry.configure(state="disabled" if is_existing else "normal")
+        for entry in (
+            self._technology_display_name_entry,
+            self._technology_machine_code_entry,
+            self._technology_material_code_entry,
+            self._technology_thickness_mm_entry,
+            self._technology_kerf_mm_entry,
+            self._technology_spacing_mm_entry,
+            self._technology_margin_mm_entry,
+            self._technology_rotation_step_deg_entry,
+        ):
+            if entry is not None:
+                entry.configure(state=tech_state)
+        if self._technology_allow_free_rotation_check is not None:
+            self._technology_allow_free_rotation_check.configure(state=tech_state)
 
     def _append_log(self, message: str) -> None:
         if self._log_text is None:
@@ -381,6 +532,15 @@ class TrialRunToolGuiApp:
             auto_start_platform=bool(self._auto_start_var.get()),
             supabase_url=self._supabase_url_var.get(),
             supabase_anon_key=self._supabase_anon_key_var.get(),
+            technology_display_name=self._technology_display_name_var.get(),
+            technology_machine_code=self._technology_machine_code_var.get(),
+            technology_material_code=self._technology_material_code_var.get(),
+            technology_thickness_mm=self._technology_thickness_mm_var.get(),
+            technology_kerf_mm=self._technology_kerf_mm_var.get(),
+            technology_spacing_mm=self._technology_spacing_mm_var.get(),
+            technology_margin_mm=self._technology_margin_mm_var.get(),
+            technology_rotation_step_deg=self._technology_rotation_step_deg_var.get(),
+            technology_allow_free_rotation=bool(self._technology_allow_free_rotation_var.get()),
         )
 
     def _set_running(self, running: bool) -> None:
@@ -486,6 +646,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--supabase-anon-key",
         default=os.getenv("SUPABASE_ANON_KEY", ""),
         help="Optional default SUPABASE_ANON_KEY",
+    )
+    parser.add_argument("--technology-display-name", default="Trial Default Setup", help="Default setup display_name")
+    parser.add_argument("--technology-machine-code", default="TRIAL-MACHINE", help="Default setup machine_code")
+    parser.add_argument("--technology-material-code", default="TRIAL-MATERIAL", help="Default setup material_code")
+    parser.add_argument("--technology-thickness-mm", type=float, default=3.0, help="Default setup thickness_mm")
+    parser.add_argument("--technology-kerf-mm", type=float, default=0.2, help="Default setup kerf_mm")
+    parser.add_argument("--technology-spacing-mm", type=float, default=0.0, help="Default setup spacing_mm")
+    parser.add_argument("--technology-margin-mm", type=float, default=0.0, help="Default setup margin_mm")
+    parser.add_argument("--technology-rotation-step-deg", type=int, default=90, help="Default setup rotation_step_deg")
+    parser.add_argument(
+        "--technology-allow-free-rotation",
+        action="store_true",
+        help="Default setup allow_free_rotation",
     )
     return parser
 

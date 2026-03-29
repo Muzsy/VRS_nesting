@@ -57,6 +57,15 @@ def main() -> int:
             auto_start_platform=False,
             supabase_url="https://example.supabase.co",
             supabase_anon_key="anon-key",
+            technology_display_name="Setup ignored existing mode",
+            technology_machine_code="MACH-X",
+            technology_material_code="MAT-X",
+            technology_thickness_mm="3.0",
+            technology_kerf_mm="0.2",
+            technology_spacing_mm="0.0",
+            technology_margin_mm="0.0",
+            technology_rotation_step_deg="90",
+            technology_allow_free_rotation=False,
         )
         qty_inputs = {
             "part_a.dxf": "3",
@@ -79,6 +88,12 @@ def main() -> int:
             raise RuntimeError(f"unexpected per_file_qty: {config.per_file_qty}")
         if str(config.output_base_dir) != str(out_dir):
             raise RuntimeError("output_base_dir mismatch")
+        if config.technology_display_name != "Setup ignored existing mode":
+            raise RuntimeError("technology_display_name should pass through")
+        if config.technology_machine_code != "MACH-X":
+            raise RuntimeError("technology_machine_code should pass through")
+        if config.technology_material_code != "MAT-X":
+            raise RuntimeError("technology_material_code should pass through")
 
         _expect_error(
             lambda: build_config_from_form(
@@ -97,6 +112,15 @@ def main() -> int:
                     auto_start_platform=False,
                     supabase_url="",
                     supabase_anon_key="",
+                    technology_display_name="Trial Setup",
+                    technology_machine_code="MACHINE",
+                    technology_material_code="MATERIAL",
+                    technology_thickness_mm="3.0",
+                    technology_kerf_mm="0.2",
+                    technology_spacing_mm="0.0",
+                    technology_margin_mm="0.0",
+                    technology_rotation_step_deg="90",
+                    technology_allow_free_rotation=False,
                 ),
                 {},
             ),
@@ -120,6 +144,15 @@ def main() -> int:
                     auto_start_platform=False,
                     supabase_url="",
                     supabase_anon_key="",
+                    technology_display_name="Trial Setup",
+                    technology_machine_code="MACHINE",
+                    technology_material_code="MATERIAL",
+                    technology_thickness_mm="3.0",
+                    technology_kerf_mm="0.2",
+                    technology_spacing_mm="0.0",
+                    technology_margin_mm="0.0",
+                    technology_rotation_step_deg="90",
+                    technology_allow_free_rotation=False,
                 ),
                 {},
             ),
@@ -143,10 +176,51 @@ def main() -> int:
                     auto_start_platform=False,
                     supabase_url="",
                     supabase_anon_key="",
+                    technology_display_name="Trial Setup",
+                    technology_machine_code="MACHINE",
+                    technology_material_code="MATERIAL",
+                    technology_thickness_mm="3.0",
+                    technology_kerf_mm="0.2",
+                    technology_spacing_mm="0.0",
+                    technology_margin_mm="0.0",
+                    technology_rotation_step_deg="90",
+                    technology_allow_free_rotation=False,
                 ),
                 {"part_a.dxf": "x"},
             ),
             expected_substring="qty for part_a.dxf must be an integer",
+        )
+
+        _expect_error(
+            lambda: build_config_from_form(
+                GuiFormValues(
+                    dxf_dir=str(dxf_dir),
+                    bearer_token="token",
+                    api_base_url="http://localhost:8000/v1",
+                    sheet_width="2000",
+                    sheet_height="1000",
+                    output_base_dir=str(out_dir),
+                    mode="new",
+                    project_id="",
+                    project_name="my project",
+                    project_description="desc",
+                    default_qty="1",
+                    auto_start_platform=False,
+                    supabase_url="",
+                    supabase_anon_key="",
+                    technology_display_name="Trial Setup",
+                    technology_machine_code="MACHINE",
+                    technology_material_code="MATERIAL",
+                    technology_thickness_mm="3.0",
+                    technology_kerf_mm="0.2",
+                    technology_spacing_mm="0.0",
+                    technology_margin_mm="0.0",
+                    technology_rotation_step_deg="90",
+                    technology_allow_free_rotation=False,
+                ),
+                {},
+            ),
+            expected_substring="requires SUPABASE_URL and SUPABASE_ANON_KEY",
         )
 
     print("PASS smoke_trial_run_tool_tkinter_gui")

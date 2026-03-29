@@ -1,0 +1,62 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a task teljes artefaktlancat kulon `trial_run_tool_fix/`
+      konyvtarstruktura alatt: canvas, goal YAML, runner prompt, checklist es
+      report. A tartalom maradjon celzott hibajavitas: uj projekt modban hianyzo
+      approved project technology setup seedeles a trial run toolban.
+    outputs:
+      - "canvases/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+      - "codex/goals/canvases/trial_run_tool_fix/fill_canvas_trial_run_tool_new_project_technology_setup_fix.yaml"
+      - "codex/prompts/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix/run.md"
+      - "codex/codex_checklist/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+      - "codex/reports/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+
+  - name: "Core orchestrator technology setup seedelessel bovitese"
+    description: >
+      Bovitd a `scripts/trial_run_tool_core.py` uj projekt workflow-jat ugy,
+      hogy a projekt letrehozas utan approved, default project technology setupot
+      seedeljen a backend schema altal elvart mezoivel, meg a `POST /runs`
+      elott. Hasznald a local-only toolhoz mar jelen levo Supabase runtime
+      boundary-t; ne hozz letre uj product API route-ot. A seedeles sikeret vagy
+      hibajat mentsd evidenciakent a run directoryba, plaintext token nelkul.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "codex/reports/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+
+  - name: "CLI es GUI parameterfelulet technology setup tamogatassal"
+    description: >
+      Frissitsd a `scripts/run_trial_run_tool.py` CLI shellt es a
+      `scripts/trial_run_tool_gui.py` Tkinter shellt ugy, hogy uj projekt modban
+      a technology setuphoz szukseges minimum mezokeszlet expliciten kezelheto
+      legyen vagy dokumentalt default test setup opcio legyen elerheto. A GUI
+      validacio blokkolja a futast, ha uj projekt modban nem lehetne approved
+      technology setupot seedelni. A GUI tovabbra is vekony shell maradjon; a
+      logika a core modulban legyen.
+    outputs:
+      - "scripts/run_trial_run_tool.py"
+      - "scripts/trial_run_tool_gui.py"
+      - "codex/reports/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+
+  - name: "Smoke-ok eroszitese es evidence contract frissitese"
+    description: >
+      Frissitsd a core es a GUI smoke-okat ugy, hogy uj projekt modban a missing
+      approved technology setup mar ne maradhasson rejtve. A core smoke
+      bizonyitsa a seedeles sorrendjet es az evidence fajl letrejottet; a GUI
+      smoke bizonyitsa a technology setup parameterek validaciojat es a core
+      fele adott helyes configot. A summary/evidence contract bovuljon a
+      technology setup bizonyitekaival.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "scripts/smoke_trial_run_tool_cli_core.py"
+      - "scripts/smoke_trial_run_tool_tkinter_gui.py"
+      - "codex/codex_checklist/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+      - "codex/reports/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md
+    outputs:
+      - "codex/reports/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.md"
+      - "codex/reports/trial_run_tool_fix/trial_run_tool_new_project_technology_setup_fix.verify.log"

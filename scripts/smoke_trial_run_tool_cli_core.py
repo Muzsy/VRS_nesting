@@ -47,7 +47,9 @@ class _FakeTransport(HttpTransport):
     def __init__(self) -> None:
         self._upload_index = 0
         self._run_poll_count = 0
+        self._run_create_attempts = 0
         self._uploads: dict[str, dict[str, Any]] = {}
+        self._technology_setups: list[dict[str, Any]] = []
         self._download_blobs: dict[str, bytes] = {
             "a_sheet_svg": b"<svg>sheet</svg>",
             "a_sheet_dxf": b"0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n",
@@ -94,6 +96,39 @@ class _FakeTransport(HttpTransport):
                     }
                 ],
             )
+
+        if host == "example.supabase.co" and path == "/rest/v1/project_technology_setups" and method == "POST":
+            payload = req.json_body or {}
+            tech_id = f"pts_{len(self._technology_setups) + 1}"
+            row = {
+                "id": tech_id,
+                "project_id": payload.get("project_id", ""),
+                "display_name": payload.get("display_name", ""),
+                "lifecycle": payload.get("lifecycle", "approved"),
+                "is_default": bool(payload.get("is_default", False)),
+                "machine_code": payload.get("machine_code", ""),
+                "material_code": payload.get("material_code", ""),
+                "thickness_mm": payload.get("thickness_mm", 0),
+                "kerf_mm": payload.get("kerf_mm", 0),
+                "spacing_mm": payload.get("spacing_mm", 0),
+                "margin_mm": payload.get("margin_mm", 0),
+                "rotation_step_deg": payload.get("rotation_step_deg", 90),
+                "allow_free_rotation": bool(payload.get("allow_free_rotation", False)),
+                "created_at": "2026-03-29T12:01:00Z",
+            }
+            self._technology_setups.append(row)
+            return _FakeResponse(status_code=201, payload=[row])
+
+        if host == "example.supabase.co" and path == "/rest/v1/project_technology_setups" and method == "GET":
+            params = req.params or {}
+            project_token = str(params.get("project_id", ""))
+            lifecycle_token = str(params.get("lifecycle", ""))
+            project_id = project_token[3:] if project_token.startswith("eq.") else project_token
+            lifecycle = lifecycle_token[3:] if lifecycle_token.startswith("eq.") else lifecycle_token
+            rows = [row for row in self._technology_setups if row.get("project_id") == project_id]
+            if lifecycle:
+                rows = [row for row in rows if str(row.get("lifecycle", "")) == lifecycle]
+            return _FakeResponse(status_code=200, payload=rows)
 
         if host == "localhost:8000" and path == "/v1/projects" and method == "POST":
             return _FakeResponse(
@@ -200,6 +235,14 @@ class _FakeTransport(HttpTransport):
             )
 
         if host == "localhost:8000" and path == "/v1/projects/project_1/runs" and method == "POST":
+            self._run_create_attempts += 1
+            approved_setups = [
+                row
+                for row in self._technology_setups
+                if row.get("project_id") == "project_1" and str(row.get("lifecycle", "")) == "approved"
+            ]
+            if not approved_setups:
+                return _FakeResponse(status_code=400, payload={"detail": "missing approved project technology setup"})
             return _FakeResponse(status_code=200, payload={"id": "run_1", "status": "queued", "project_id": "project_1"})
 
         if host == "localhost:8000" and path == "/v1/projects/project_1/runs/run_1" and method == "GET":
@@ -277,7 +320,8 @@ def main() -> int:
             geometry_poll_timeout_s=2.0,
         )
 
-        result = run_trial(cfg, transport=_FakeTransport())
+        success_transport = _FakeTransport()
+        result = run_trial(cfg, transport=success_transport)
         if not result.success:
             raise RuntimeError(f"trial run smoke failed: {result.error_message}")
 
@@ -286,6 +330,8 @@ def main() -> int:
             "inputs_redacted.json",
             "api_health.json",
             "created_project.json",
+            "technology_setup_input.json",
+            "project_technology_setup.json",
             "uploaded_files.json",
             "geometry_revisions.json",
             "created_parts.json",
@@ -312,6 +358,8 @@ def main() -> int:
         summary_text = (result.run_dir / "summary.md").read_text(encoding="utf-8")
         if "SUCCESS" not in summary_text:
             raise RuntimeError("summary.md missing SUCCESS marker")
+        if "Project Technology Setup" not in summary_text or "seeded: True" not in summary_text:
+            raise RuntimeError("summary.md missing technology setup section/details")
 
         downloads = json.loads((result.run_dir / "downloaded_artifact_urls.json").read_text(encoding="utf-8"))
         if not isinstance(downloads, dict):
@@ -319,6 +367,49 @@ def main() -> int:
         download_items = downloads.get("items")
         if not isinstance(download_items, list) or len(download_items) < 4:
             raise RuntimeError("downloaded_artifact_urls.json does not contain expected downloads")
+        if success_transport._run_create_attempts != 1:
+            raise RuntimeError("expected exactly one run-create attempt in success scenario")
+
+        seeded = json.loads((result.run_dir / "project_technology_setup.json").read_text(encoding="utf-8"))
+        if seeded.get("seeded") is not True:
+            raise RuntimeError("project_technology_setup.json should mark seeded=true")
+        if not seeded.get("technology_setup_id"):
+            raise RuntimeError("project_technology_setup.json missing technology_setup_id")
+
+        fail_cfg = TrialRunConfig(
+            dxf_dir=dxf_dir,
+            bearer_token="trial-secret-token-12345",
+            token_source="argv",
+            api_base_url="http://localhost:8000/v1",
+            sheet_width=2000.0,
+            sheet_height=1000.0,
+            default_qty=2,
+            per_file_qty={"part_b.dxf": 3},
+            output_base_dir=out_dir,
+            supabase_url=None,
+            supabase_anon_key=None,
+            poll_interval_s=0.01,
+            run_poll_timeout_s=2.0,
+            geometry_poll_timeout_s=2.0,
+        )
+        fail_transport = _FakeTransport()
+        fail_result = run_trial(fail_cfg, transport=fail_transport)
+        if fail_result.success:
+            raise RuntimeError("missing supabase scenario should fail in new project mode")
+        if not fail_result.error_message or "step=technology-setup" not in fail_result.error_message:
+            raise RuntimeError(f"unexpected failure step: {fail_result.error_message}")
+        if "SUPABASE_URL" not in fail_result.error_message:
+            raise RuntimeError("failure should mention missing SUPABASE_URL/SUPABASE_ANON_KEY")
+        if fail_transport._run_create_attempts != 0:
+            raise RuntimeError("run-create must not be attempted when technology setup seed is blocked")
+
+        fail_created_run = json.loads((fail_result.run_dir / "created_run.json").read_text(encoding="utf-8"))
+        if fail_created_run.get("status") != "pending":
+            raise RuntimeError("created_run.json should remain pending when setup seed fails early")
+
+        fail_setup = json.loads((fail_result.run_dir / "project_technology_setup.json").read_text(encoding="utf-8"))
+        if fail_setup.get("status") != "error":
+            raise RuntimeError("project_technology_setup.json should capture error status on seed failure")
 
         print("PASS smoke_trial_run_tool_cli_core")
         print(f"run_dir={result.run_dir}")

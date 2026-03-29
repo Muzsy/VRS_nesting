@@ -47,6 +47,56 @@ def _build_parser() -> argparse.ArgumentParser:
         "--supabase-anon-key",
         help="Supabase anon key for geometry polling (fallback from SUPABASE_ANON_KEY)",
     )
+    parser.add_argument(
+        "--technology-display-name",
+        default="Trial Default Setup",
+        help="Project technology setup display_name for new project mode",
+    )
+    parser.add_argument(
+        "--technology-machine-code",
+        default="TRIAL-MACHINE",
+        help="Project technology setup machine_code for new project mode",
+    )
+    parser.add_argument(
+        "--technology-material-code",
+        default="TRIAL-MATERIAL",
+        help="Project technology setup material_code for new project mode",
+    )
+    parser.add_argument(
+        "--technology-thickness-mm",
+        type=float,
+        default=3.0,
+        help="Project technology setup thickness_mm for new project mode",
+    )
+    parser.add_argument(
+        "--technology-kerf-mm",
+        type=float,
+        default=0.2,
+        help="Project technology setup kerf_mm for new project mode",
+    )
+    parser.add_argument(
+        "--technology-spacing-mm",
+        type=float,
+        default=0.0,
+        help="Project technology setup spacing_mm for new project mode",
+    )
+    parser.add_argument(
+        "--technology-margin-mm",
+        type=float,
+        default=0.0,
+        help="Project technology setup margin_mm for new project mode",
+    )
+    parser.add_argument(
+        "--technology-rotation-step-deg",
+        type=int,
+        default=90,
+        help="Project technology setup rotation_step_deg for new project mode",
+    )
+    parser.add_argument(
+        "--technology-allow-free-rotation",
+        action="store_true",
+        help="Project technology setup allow_free_rotation for new project mode",
+    )
     parser.add_argument("--auto-start-platform", action="store_true", help="Try scripts/run_web_platform.sh start if /health fails")
     parser.add_argument("--non-interactive", action="store_true", help="Do not prompt for missing required inputs")
     return parser
@@ -129,6 +179,15 @@ def main(argv: list[str] | None = None) -> int:
                 if args.supabase_anon_key
                 else os.getenv("SUPABASE_ANON_KEY", "").strip() or None
             ),
+            technology_display_name=str(args.technology_display_name),
+            technology_machine_code=str(args.technology_machine_code),
+            technology_material_code=str(args.technology_material_code),
+            technology_thickness_mm=float(args.technology_thickness_mm),
+            technology_kerf_mm=float(args.technology_kerf_mm),
+            technology_spacing_mm=float(args.technology_spacing_mm),
+            technology_margin_mm=float(args.technology_margin_mm),
+            technology_rotation_step_deg=int(args.technology_rotation_step_deg),
+            technology_allow_free_rotation=bool(args.technology_allow_free_rotation),
         )
 
         result = run_trial(config)

@@ -50,6 +50,15 @@ class TrialRunConfig:
     request_timeout_s: float = 30.0
     supabase_url: str | None = None
     supabase_anon_key: str | None = None
+    technology_display_name: str = "Trial Default Setup"
+    technology_machine_code: str = "TRIAL-MACHINE"
+    technology_material_code: str = "TRIAL-MATERIAL"
+    technology_thickness_mm: float = 3.0
+    technology_kerf_mm: float = 0.2
+    technology_spacing_mm: float = 0.0
+    technology_margin_mm: float = 0.0
+    technology_rotation_step_deg: int = 90
+    technology_allow_free_rotation: bool = False
 
 
 @dataclass(frozen=True)
@@ -316,6 +325,134 @@ def _postgrest_headers(*, bearer_token: str, anon_key: str) -> dict[str, str]:
     }
 
 
+def _require_supabase_runtime(config: TrialRunConfig, *, where: str) -> tuple[str, str]:
+    supabase_url = (config.supabase_url or "").strip()
+    supabase_anon_key = (config.supabase_anon_key or "").strip()
+    if not supabase_url or not supabase_anon_key:
+        raise TrialRunToolError(
+            f"{where} requires SUPABASE_URL and SUPABASE_ANON_KEY (CLI args or env)."
+        )
+    return supabase_url, supabase_anon_key
+
+
+def _validated_technology_setup_input(config: TrialRunConfig) -> dict[str, Any]:
+    display_name = str(config.technology_display_name).strip()
+    machine_code = str(config.technology_machine_code).strip()
+    material_code = str(config.technology_material_code).strip()
+    thickness_mm = float(config.technology_thickness_mm)
+    kerf_mm = float(config.technology_kerf_mm)
+    spacing_mm = float(config.technology_spacing_mm)
+    margin_mm = float(config.technology_margin_mm)
+    rotation_step_deg = int(config.technology_rotation_step_deg)
+    allow_free_rotation = bool(config.technology_allow_free_rotation)
+
+    if not display_name:
+        raise TrialRunToolError("technology display_name must not be empty")
+    if not machine_code:
+        raise TrialRunToolError("technology machine_code must not be empty")
+    if not material_code:
+        raise TrialRunToolError("technology material_code must not be empty")
+    if thickness_mm <= 0:
+        raise TrialRunToolError("technology thickness_mm must be > 0")
+    if kerf_mm < 0:
+        raise TrialRunToolError("technology kerf_mm must be >= 0")
+    if spacing_mm < 0:
+        raise TrialRunToolError("technology spacing_mm must be >= 0")
+    if margin_mm < 0:
+        raise TrialRunToolError("technology margin_mm must be >= 0")
+    if rotation_step_deg <= 0 or rotation_step_deg > 360:
+        raise TrialRunToolError("technology rotation_step_deg must be in range 1..360")
+
+    return {
+        "display_name": display_name,
+        "machine_code": machine_code,
+        "material_code": material_code,
+        "thickness_mm": thickness_mm,
+        "kerf_mm": kerf_mm,
+        "spacing_mm": spacing_mm,
+        "margin_mm": margin_mm,
+        "rotation_step_deg": rotation_step_deg,
+        "allow_free_rotation": allow_free_rotation,
+    }
+
+
+def _seed_project_technology_setup(
+    *,
+    transport: HttpTransport,
+    config: TrialRunConfig,
+    project_id: str,
+    setup_input: dict[str, Any],
+    timeout: float,
+) -> dict[str, Any]:
+    supabase_url, supabase_anon_key = _require_supabase_runtime(
+        config,
+        where="new project technology setup seed",
+    )
+    url = f"{supabase_url.rstrip('/')}/rest/v1/project_technology_setups"
+    headers = _postgrest_headers(bearer_token=config.bearer_token, anon_key=supabase_anon_key)
+    headers["Prefer"] = "return=representation"
+
+    payload = {
+        "project_id": project_id,
+        "display_name": setup_input["display_name"],
+        "lifecycle": "approved",
+        "is_default": True,
+        "machine_code": setup_input["machine_code"],
+        "material_code": setup_input["material_code"],
+        "thickness_mm": setup_input["thickness_mm"],
+        "kerf_mm": setup_input["kerf_mm"],
+        "spacing_mm": setup_input["spacing_mm"],
+        "margin_mm": setup_input["margin_mm"],
+        "rotation_step_deg": setup_input["rotation_step_deg"],
+        "allow_free_rotation": setup_input["allow_free_rotation"],
+    }
+    response = _request_json(
+        transport=transport,
+        method="POST",
+        url=url,
+        where=f"postgrest insert project_technology_setups project_id={project_id}",
+        expected={200, 201},
+        headers=headers,
+        json_body=payload,
+        timeout=timeout,
+    )
+    if not isinstance(response, list) or not response or not isinstance(response[0], dict):
+        raise TrialRunToolError("technology setup insert returned unexpected payload")
+    return response[0]
+
+
+def _query_approved_project_technology_setups(
+    *,
+    transport: HttpTransport,
+    config: TrialRunConfig,
+    project_id: str,
+    timeout: float,
+) -> list[dict[str, Any]]:
+    supabase_url, supabase_anon_key = _require_supabase_runtime(
+        config,
+        where="project technology setup lookup",
+    )
+    url = f"{supabase_url.rstrip('/')}/rest/v1/project_technology_setups"
+    response = _request_json(
+        transport=transport,
+        method="GET",
+        url=url,
+        where=f"postgrest select project_technology_setups project_id={project_id}",
+        expected={200},
+        headers=_postgrest_headers(bearer_token=config.bearer_token, anon_key=supabase_anon_key),
+        params={
+            "select": "id,project_id,display_name,lifecycle,is_default,machine_code,material_code,thickness_mm,kerf_mm,spacing_mm,margin_mm,rotation_step_deg,allow_free_rotation,created_at",
+            "project_id": f"eq.{project_id}",
+            "lifecycle": "eq.approved",
+            "order": "is_default.desc,created_at.asc,id.asc",
+        },
+        timeout=timeout,
+    )
+    if not isinstance(response, list):
+        raise TrialRunToolError("technology setup lookup returned unexpected payload")
+    return [item for item in response if isinstance(item, dict)]
+
+
 def _query_geometry_revision(
     *,
     transport: HttpTransport,
@@ -360,12 +497,10 @@ def _poll_geometry_revision(
     file_id: str,
     file_name: str,
 ) -> dict[str, Any]:
-    supabase_url = (config.supabase_url or "").strip()
-    supabase_anon_key = (config.supabase_anon_key or "").strip()
-    if not supabase_url or not supabase_anon_key:
-        raise TrialRunToolError(
-            "geometry polling requires SUPABASE_URL and SUPABASE_ANON_KEY (CLI args or env)."
-        )
+    supabase_url, supabase_anon_key = _require_supabase_runtime(
+        config,
+        where="geometry polling",
+    )
 
     deadline = time.monotonic() + config.geometry_poll_timeout_s
     last_row: dict[str, Any] | None = None
@@ -489,6 +624,8 @@ def _initialize_run_placeholders(recorder: _RunRecorder) -> None:
         "inputs_redacted.json": {"status": "pending"},
         "api_health.json": {"status": "pending"},
         "created_project.json": {"status": "pending"},
+        "technology_setup_input.json": {"status": "pending"},
+        "project_technology_setup.json": {"status": "pending"},
         "uploaded_files.json": {"status": "pending", "items": []},
         "geometry_revisions.json": {"status": "pending", "items": []},
         "created_parts.json": {"status": "pending", "items": []},
@@ -526,6 +663,7 @@ def _build_summary_markdown(
     uploaded_count: int,
     part_count: int,
     downloaded_count: int,
+    technology_setup: dict[str, Any] | None,
     token_meta: dict[str, Any],
     warnings: list[str],
     error_message: str | None,
@@ -545,6 +683,20 @@ def _build_summary_markdown(
     lines.append(f"- uploaded_files: {uploaded_count}")
     lines.append(f"- created_parts: {part_count}")
     lines.append(f"- downloaded_artifacts: {downloaded_count}")
+    lines.append("")
+    lines.append("## Project Technology Setup")
+    lines.append("")
+    tech = technology_setup or {}
+    lines.append(f"- mode: {tech.get('mode', '')}")
+    lines.append(f"- seeded: {tech.get('seeded', False)}")
+    lines.append(f"- technology_setup_id: {tech.get('technology_setup_id', '')}")
+    lines.append(f"- display_name: {tech.get('display_name', '')}")
+    lines.append(f"- machine_code: {tech.get('machine_code', '')}")
+    lines.append(f"- material_code: {tech.get('material_code', '')}")
+    lines.append(f"- thickness_mm: {tech.get('thickness_mm', '')}")
+    blocker = str(tech.get("blocker", "")).strip()
+    if blocker:
+        lines.append(f"- blocker: {blocker}")
     lines.append("")
     lines.append("## Token")
     lines.append("")
@@ -620,6 +772,15 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         request_timeout_s=float(config.request_timeout_s),
         supabase_url=(config.supabase_url.strip() if config.supabase_url else None),
         supabase_anon_key=(config.supabase_anon_key.strip() if config.supabase_anon_key else None),
+        technology_display_name=str(config.technology_display_name),
+        technology_machine_code=str(config.technology_machine_code),
+        technology_material_code=str(config.technology_material_code),
+        technology_thickness_mm=float(config.technology_thickness_mm),
+        technology_kerf_mm=float(config.technology_kerf_mm),
+        technology_spacing_mm=float(config.technology_spacing_mm),
+        technology_margin_mm=float(config.technology_margin_mm),
+        technology_rotation_step_deg=int(config.technology_rotation_step_deg),
+        technology_allow_free_rotation=bool(config.technology_allow_free_rotation),
     )
 
     if normalized_config.default_qty <= 0:
@@ -628,6 +789,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         raise TrialRunToolError("sheet_width and sheet_height must be > 0")
     if not normalized_config.bearer_token:
         raise TrialRunToolError("bearer token is required")
+    technology_setup_input = _validated_technology_setup_input(normalized_config)
 
     run_dir = _prepare_run_dir(normalized_config)
     recorder = _RunRecorder(run_dir=run_dir)
@@ -642,6 +804,10 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     final_run_status: str | None = None
     error_message: str | None = None
     warnings: list[str] = []
+    technology_setup_summary: dict[str, Any] = {
+        "mode": "pending",
+        "seeded": False,
+    }
 
     uploaded_items: list[dict[str, Any]] = []
     geometry_items: list[dict[str, Any]] = []
@@ -675,8 +841,19 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
             "auto_start_platform": normalized_config.auto_start_platform,
             "supabase_url_present": bool(normalized_config.supabase_url),
             "supabase_anon_key_present": bool(normalized_config.supabase_anon_key),
+            "technology_setup_mode": "seed_new_project" if not normalized_config.existing_project_id else "existing_project_skip_seed",
+            "technology_setup": technology_setup_input,
             "token": token_meta,
             "dxf_files": [path.name for path in dxf_files],
+        },
+    )
+    recorder.write_json(
+        "technology_setup_input.json",
+        {
+            "status": "ok",
+            "mode": "new_project" if not normalized_config.existing_project_id else "existing_project",
+            "seed_enabled": not bool(normalized_config.existing_project_id),
+            "technology_setup": technology_setup_input,
         },
     )
 
@@ -728,6 +905,90 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
                 {"status": "ok", "mode": "created", "project": payload},
             )
         recorder.log(f"project_id={project_id}")
+
+        step = "technology-setup"
+        if normalized_config.existing_project_id:
+            technology_setup_summary = {
+                "mode": "existing_project",
+                "seeded": False,
+                "assumption": "tool does not seed new technology setup in existing project mode",
+            }
+            if normalized_config.supabase_url and normalized_config.supabase_anon_key:
+                setups = _query_approved_project_technology_setups(
+                    transport=http,
+                    config=normalized_config,
+                    project_id=project_id,
+                    timeout=normalized_config.request_timeout_s,
+                )
+                technology_setup_summary["approved_setup_count"] = len(setups)
+                if setups:
+                    selected = setups[0]
+                    technology_setup_summary.update(
+                        {
+                            "technology_setup_id": selected.get("id"),
+                            "display_name": selected.get("display_name"),
+                            "machine_code": selected.get("machine_code"),
+                            "material_code": selected.get("material_code"),
+                            "thickness_mm": selected.get("thickness_mm"),
+                        }
+                    )
+                else:
+                    warning = "existing project has no approved project technology setup according to optional lookup"
+                    warnings.append(warning)
+                    technology_setup_summary["lookup_warning"] = warning
+            recorder.write_json(
+                "project_technology_setup.json",
+                {
+                    "status": "ok",
+                    **technology_setup_summary,
+                },
+            )
+            recorder.log("technology setup seed skipped in existing project mode")
+        else:
+            try:
+                seeded_setup = _seed_project_technology_setup(
+                    transport=http,
+                    config=normalized_config,
+                    project_id=project_id,
+                    setup_input=technology_setup_input,
+                    timeout=normalized_config.request_timeout_s,
+                )
+            except Exception as exc:  # noqa: BLE001
+                technology_setup_summary = {
+                    "mode": "new_project",
+                    "seeded": False,
+                    "blocker": str(exc),
+                }
+                recorder.write_json(
+                    "project_technology_setup.json",
+                    {
+                        "status": "error",
+                        **technology_setup_summary,
+                    },
+                )
+                raise
+
+            technology_setup_summary = {
+                "mode": "new_project",
+                "seeded": True,
+                "technology_setup_id": seeded_setup.get("id"),
+                "display_name": seeded_setup.get("display_name"),
+                "machine_code": seeded_setup.get("machine_code"),
+                "material_code": seeded_setup.get("material_code"),
+                "thickness_mm": seeded_setup.get("thickness_mm"),
+            }
+            recorder.write_json(
+                "project_technology_setup.json",
+                {
+                    "status": "ok",
+                    "seed_response": seeded_setup,
+                    **technology_setup_summary,
+                },
+            )
+            recorder.log(
+                "technology setup seeded "
+                f"technology_setup_id={seeded_setup.get('id')} lifecycle={seeded_setup.get('lifecycle')}"
+            )
 
         step = "files-upload"
         for index, dxf_path in enumerate(dxf_files, start=1):
@@ -1098,6 +1359,8 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     except Exception as exc:  # noqa: BLE001
         success = False
         error_message = f"step={step}: {exc}"
+        if step == "technology-setup" and not technology_setup_summary.get("blocker"):
+            technology_setup_summary["blocker"] = str(exc)
         recorder.log(f"ERROR {error_message}")
 
         recorder.write_json(
@@ -1121,6 +1384,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         uploaded_count=len(uploaded_items),
         part_count=len(created_parts),
         downloaded_count=len(downloaded_items),
+        technology_setup=technology_setup_summary,
         token_meta=token_meta,
         warnings=warnings,
         error_message=error_message,
