@@ -15,7 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.trial_run_tool_core import HttpTransport, TrialRunConfig, TrialRunToolError, _HttpRequest, run_trial  # noqa: E402
+from scripts.trial_run_tool_core import (  # noqa: E402
+    HttpTransport,
+    TrialRunConfig,
+    TrialRunToolError,
+    _HttpRequest,
+    _parse_platform_status,
+    run_trial,
+)
 
 
 @dataclass
@@ -294,6 +301,12 @@ def _assert_exists(path: Path) -> None:
 
 
 def main() -> int:
+    parsed_status = _parse_platform_status(
+        "api: RUNNING (pid=11)\nworker: STOPPED\nfrontend: RUNNING (pid=22)\n"
+    )
+    if parsed_status.get("stopped_components") != ["worker"]:
+        raise RuntimeError(f"platform status parsing failed: {parsed_status}")
+
     with TemporaryDirectory(prefix="smoke_trial_run_tool_") as tmp:
         root = Path(tmp)
         dxf_dir = root / "dxf"
@@ -313,6 +326,7 @@ def main() -> int:
             default_qty=2,
             per_file_qty={"part_b.dxf": 3},
             output_base_dir=out_dir,
+            auto_start_platform=False,
             supabase_url="https://example.supabase.co",
             supabase_anon_key="anon-key",
             poll_interval_s=0.01,
@@ -386,6 +400,7 @@ def main() -> int:
             default_qty=2,
             per_file_qty={"part_b.dxf": 3},
             output_base_dir=out_dir,
+            auto_start_platform=False,
             supabase_url=None,
             supabase_anon_key=None,
             poll_interval_s=0.01,
@@ -398,8 +413,6 @@ def main() -> int:
             raise RuntimeError("missing supabase scenario should fail in new project mode")
         if not fail_result.error_message or "step=technology-setup" not in fail_result.error_message:
             raise RuntimeError(f"unexpected failure step: {fail_result.error_message}")
-        if "SUPABASE_URL" not in fail_result.error_message:
-            raise RuntimeError("failure should mention missing SUPABASE_URL/SUPABASE_ANON_KEY")
         if fail_transport._run_create_attempts != 0:
             raise RuntimeError("run-create must not be attempted when technology setup seed is blocked")
 

@@ -121,7 +121,7 @@ class TrialRunConfig:
     default_qty: int = 1
     per_file_qty: dict[str, int] | None = None
     output_base_dir: Path = Path("tmp/runs")
-    auto_start_platform: bool = False
+    auto_start_platform: bool = True
     health_timeout_s: float = 30.0
     poll_interval_s: float = 1.0
     run_poll_timeout_s: float = 300.0
@@ -614,13 +614,10 @@ def _poll_geometry_revision(
     )
 
 
-def _start_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder) -> dict[str, Any]:
-    if not config.auto_start_platform:
-        return {"attempted": False, "started": False}
-
+def _run_platform_command(*, command: str, recorder: _RunRecorder) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
-    cmd = [str(root / "scripts" / "run_web_platform.sh"), "start"]
-    recorder.log(f"platform start attempt command={' '.join(cmd)}")
+    cmd = [str(root / "scripts" / "run_web_platform.sh"), command]
+    recorder.log(f"platform command attempt command={' '.join(cmd)}")
     proc = subprocess.run(
         cmd,
         cwd=root,
@@ -630,14 +627,70 @@ def _start_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder)
     )
     stdout_tail = (proc.stdout or "")[-1000:]
     stderr_tail = (proc.stderr or "")[-1000:]
-    started = proc.returncode == 0
-    recorder.log(f"platform start returncode={proc.returncode}")
+    succeeded = proc.returncode == 0
+    recorder.log(f"platform command={command} returncode={proc.returncode}")
     return {
-        "attempted": True,
-        "started": started,
+        "command": command,
+        "success": succeeded,
         "returncode": int(proc.returncode),
         "stdout_tail": stdout_tail,
         "stderr_tail": stderr_tail,
+    }
+
+
+def _parse_platform_status(stdout_text: str) -> dict[str, Any]:
+    services = {"api": "UNKNOWN", "worker": "UNKNOWN", "frontend": "UNKNOWN"}
+    for raw in stdout_text.splitlines():
+        if ":" not in raw:
+            continue
+        name, value = raw.split(":", 1)
+        key = name.strip().lower()
+        if key not in services:
+            continue
+        state = value.strip().upper()
+        if state.startswith("RUNNING"):
+            services[key] = "RUNNING"
+        elif state.startswith("STOPPED"):
+            services[key] = "STOPPED"
+        else:
+            services[key] = "UNKNOWN"
+
+    stopped = [name for name, status in services.items() if status == "STOPPED"]
+    return {
+        "services": services,
+        "stopped_components": stopped,
+        "has_stopped_components": bool(stopped),
+    }
+
+
+def _platform_status_snapshot(recorder: _RunRecorder) -> dict[str, Any]:
+    result = _run_platform_command(command="status", recorder=recorder)
+    parsed = _parse_platform_status(result.get("stdout_tail", ""))
+    return {
+        **result,
+        **parsed,
+    }
+
+
+def _start_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder) -> dict[str, Any]:
+    if not config.auto_start_platform:
+        return {"attempted": False, "started": False}
+    result = _run_platform_command(command="start", recorder=recorder)
+    return {
+        "attempted": True,
+        "started": bool(result.get("success", False)),
+        **result,
+    }
+
+
+def _restart_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder) -> dict[str, Any]:
+    if not config.auto_start_platform:
+        return {"attempted": False, "restarted": False}
+    result = _run_platform_command(command="restart", recorder=recorder)
+    return {
+        "attempted": True,
+        "restarted": bool(result.get("success", False)),
+        **result,
     }
 
 
@@ -655,6 +708,8 @@ def _ensure_api_health(
         "initial_ok": False,
         "response": None,
         "platform_start": {"attempted": False, "started": False},
+        "platform_restart": {"attempted": False, "restarted": False},
+        "platform_status": None,
     }
 
     try:
@@ -668,7 +723,27 @@ def _ensure_api_health(
         )
         health_record["initial_ok"] = True
         health_record["response"] = payload
-        recorder.log("api health check passed without auto-start")
+        recorder.log("api health check passed")
+        if config.auto_start_platform:
+            status_snapshot = _platform_status_snapshot(recorder)
+            health_record["platform_status"] = status_snapshot
+            stopped_components = status_snapshot.get("stopped_components", [])
+            if isinstance(stopped_components, list) and stopped_components:
+                recorder.log(f"platform components stopped={','.join(stopped_components)}; restarting platform")
+                restart_result = _restart_platform_if_requested(config, recorder)
+                health_record["platform_restart"] = restart_result
+                if not restart_result.get("restarted"):
+                    raise TrialRunToolError("platform restart failed while recovering stopped components")
+                payload = _request_json(
+                    transport=transport,
+                    method="GET",
+                    url=health_url,
+                    where="GET /health post-restart",
+                    expected={200},
+                    timeout=config.request_timeout_s,
+                )
+                health_record["response"] = payload
+                health_record["ready_after_restart"] = True
         return health_record
     except Exception as exc:  # noqa: BLE001
         health_record["initial_error"] = str(exc)

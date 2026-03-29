@@ -96,7 +96,19 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Project technology setup allow_free_rotation for new project mode",
     )
-    parser.add_argument("--auto-start-platform", action="store_true", help="Try scripts/run_web_platform.sh start if /health fails")
+    parser.add_argument(
+        "--auto-start-platform",
+        dest="auto_start_platform",
+        action="store_true",
+        default=True,
+        help="Auto-heal platform (start/restart when components are not running)",
+    )
+    parser.add_argument(
+        "--no-auto-start-platform",
+        dest="auto_start_platform",
+        action="store_false",
+        help="Disable automatic platform start/restart",
+    )
     parser.add_argument("--non-interactive", action="store_true", help="Do not prompt for missing required inputs")
     return parser
 
