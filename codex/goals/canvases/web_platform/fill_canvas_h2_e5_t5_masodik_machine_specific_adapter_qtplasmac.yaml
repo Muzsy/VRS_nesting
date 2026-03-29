@@ -1,0 +1,106 @@
+schema_version: "1"
+task_slug: "web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac"
+title: "H2-E5-T5 masodik machine-specific adapter (QtPlasmaC, optionalis)"
+objective: >
+  A mar meglevo Hypertherm-only machine-specific adaptert minimalisan,
+  regresszio nelkul bovitsd ki ugy, hogy a `linuxcnc_qtplasmac` /
+  `basic_manual_material_rs274ngc` target is tamogatott legyen a persisted
+  `manufacturing_plan_json` artifactrol indulva, a szukitett `config_jsonb`
+  boundary megtartasa mellett.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/roadmap/dxf_nesting_platform_implementacios_backlog_task_tree.md"
+  - "docs/web_platform/roadmap/dxf_nesting_platform_h2_reszletes.md"
+  - "docs/web_platform/roadmap/h2_lezarasi_kriteriumok_es_h3_entry_gate.md"
+  - "docs/web_platform/architecture/h0_modulhatarok_es_boundary_szerzodes.md"
+  - "docs/web_platform/architecture/h0_snapshot_first_futasi_es_adatkontraktus.md"
+  - "api/services/machine_specific_adapter.py"
+  - "scripts/smoke_h2_e5_t4_elso_machine_specific_adapter.py"
+  - "api/services/postprocessor_profiles.py"
+  - "api/services/run_snapshot_builder.py"
+  - "api/services/machine_neutral_exporter.py"
+  - "api/services/manufacturing_plan_builder.py"
+  - "api/services/geometry_derivative_generator.py"
+  - "api/routes/runs.py"
+  - "api/supabase_client.py"
+  - "worker/sheet_dxf_artifacts.py"
+  - "canvases/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md"
+
+steps:
+  - name: "Roadmap es task boundary rogzitese"
+    description: >
+      Rogzitsd a roadmapban, hogy a H2 optionalis postprocess ag a mar
+      meglevo H2-E5-T4 Hypertherm adapter utan tovabb bovul egy masodik,
+      konkret celgép-csaladdal: `linuxcnc_qtplasmac` /
+      `basic_manual_material_rs274ngc`. Frissitsd a H2 reszletes doksit is,
+      hogy egyertelmu legyen: a T5 ugyanugy optionalis, nem H2 blocker,
+      es nem vezet be sem teljes plugin-frameworkot, sem uj lead-in/out
+      rendszert, sem auto material-change workflowt.
+    outputs:
+      - "docs/web_platform/roadmap/dxf_nesting_platform_implementacios_backlog_task_tree.md"
+      - "docs/web_platform/roadmap/dxf_nesting_platform_h2_reszletes.md"
+      - "canvases/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.yaml"
+      - "codex/prompts/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac/run.md"
+      - "codex/codex_checklist/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md"
+      - "codex/reports/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md"
+
+  - name: "Machine-specific adapter service minimalis ket-targetes bovitese"
+    description: >
+      Refaktoralj minimalisan az `api/services/machine_specific_adapter.py`
+      modulban ugy, hogy a jelenlegi Hypertherm target regresszio nelkul
+      megmaradjon, es mellette a snapshotolt `adapter_key` + `output_format`
+      alapjan a `linuxcnc_qtplasmac` / `basic_manual_material_rs274ngc`
+      target is tamogatott legyen. A primer bemenet tovabbra is a runhoz tartozo
+      persisted `manufacturing_plan_json` artifact legyen. A geometriai pontok
+      feloldasa kizarolag a `plan_id` + `contour_index` alapjan,
+      `run_manufacturing_contours.geometry_derivative_id` es
+      `geometry_derivatives.derivative_jsonb` (`manufacturing_canonical`) vilagbol
+      tortenhet. A QtPlasmaC emitter per-sheet `machine_program` artifactokat
+      generaljon `.ngc` kiterjesztessel, deterministic filename/content/storage
+      policy-val, es idempotensen cserelje ugyanennek a target legacy type-nak a
+      korabbi artifactjait.
+      Ne vezess be altalanos plugin-frameworkot, ne irj vissza manufacturing truth
+      vagy postprocessor truth tablaba, es ne implementalj `M190`/`M66`
+      auto material-change workflowt.
+    outputs:
+      - "api/services/machine_specific_adapter.py"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits `scripts/smoke_h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.py`
+      smoke scriptet. A smoke bizonyitsa legalabb:
+      1) valid QtPlasmaC `manufacturing_plan_json` + valid target config ->
+         per-sheet `machine_program` artifactok letrejonnek;
+      2) `artifact_kind='machine_program'` es
+         `legacy_artifact_type='linuxcnc_qtplasmac_basic_manual_material'`;
+      3) ugyanarra a truthra a content hash, filename (`.ngc`) es storage path deterministic;
+      4) a Hypertherm target tovabbra is mukodik regresszio nelkul;
+      5) unsupported adapter/output_format eseten determinisztikus hiba jon;
+      6) ownership boundary ervenyesul;
+      7) hiba jon, ha a `manufacturing_plan_json` artifact, a target adapter
+         metadata vagy a kotelezo `config_jsonb` blokkok hianyoznak;
+      8) nincs write manufacturing truth vagy postprocessor truth tablaba;
+      9) nincs `M190`/`M66` auto material-change mellekhatas, implicit generic emitter
+         vagy bundle zip.
+      Frissitsd a checklistet es reportot evidence-alapon. A report kulon mondja
+      ki, hogy ez a task a Hypertherm adaptert nem regresszalhatja, nem vezet be
+      uj artifact kindot, nincs globalis SQL seed, es a reszletes lead-in/out
+      rendszer tovabbra is out-of-scope.
+    outputs:
+      - "scripts/smoke_h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.py"
+      - "codex/codex_checklist/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md"
+      - "codex/reports/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md
+    outputs:
+      - "codex/reports/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.md"
+      - "codex/reports/web_platform/h2_e5_t5_masodik_machine_specific_adapter_qtplasmac.verify.log"

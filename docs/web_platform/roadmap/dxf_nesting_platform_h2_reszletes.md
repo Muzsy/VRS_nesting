@@ -1000,4 +1000,5 @@ A H2 mainline closure audit (H2-E6-T2) eredmenye: **PASS WITH ADVISORIES**.
 - 14 kotelezo H2 mainline task: 12 PASS + 2 PASS_WITH_NOTES, 0 FAIL.
 - End-to-end manufacturing pilot (H2-E6-T1): 60/60 teszt PASS.
 - H2-E5-T4 machine-specific adapter: optionalis, nem PASS feltetel.
+- H2-E5-T5 masodik machine-specific adapter (QtPlasmaC): optionalis ag, `linuxcnc_qtplasmac` / `basic_manual_material_rs274ngc` target. Nem H2 blocker.
 - Reszletes gate dokumentum: `docs/web_platform/roadmap/h2_lezarasi_kriteriumok_es_h3_entry_gate.md`.

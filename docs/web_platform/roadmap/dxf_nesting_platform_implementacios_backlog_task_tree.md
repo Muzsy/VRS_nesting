@@ -478,10 +478,16 @@ Aktualis statusz (2026-03-20):
 **DoD:** machine-neutral artifact előállítható.
 
 ### H2-E5-T4 — Első machine-specific adapter (opcionális)
-**Cél:** 1 célgép-család prototípus export.  
-**Output:** machine-ready artifact.  
-**Függőség:** H2-E5-T3.  
+**Cél:** 1 célgép-család prototípus export.
+**Output:** machine-ready artifact.
+**Függőség:** H2-E5-T3.
 **DoD:** adapter-interfész validált.
+
+### H2-E5-T5 — Második machine-specific adapter: QtPlasmaC (opcionális)
+**Cél:** a meglévő Hypertherm-only adapter minimális, regressziómentes bővítése a `linuxcnc_qtplasmac` / `basic_manual_material_rs274ngc` target támogatásával.
+**Output:** bővített `api/services/machine_specific_adapter.py`, task-specifikus smoke.
+**Függőség:** H2-E5-T4.
+**DoD:** két-targetes dispatch működik; Hypertherm regressziómentes; per-sheet `.ngc` `machine_program` artifactok; nincs `M190`/`M66` auto material-change.
 
 ---
 

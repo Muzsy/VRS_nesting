@@ -1,12 +1,22 @@
-"""H2-E5-T4 — Machine-specific adapter service.
+"""Machine-specific adapter service (H2-E5-T4 + H2-E5-T5).
 
 Generates per-sheet machine program artifacts from the persisted
-``manufacturing_plan_json`` export artifact for the frozen target:
+``manufacturing_plan_json`` export artifact.
 
-* adapter_key = ``hypertherm_edge_connect``
-* output_format = ``basic_plasma_eia_rs274d``
-* artifact_kind = ``machine_program``
-* legacy_artifact_type = ``hypertherm_edge_connect_basic_plasma_eia``
+Supported targets (dispatched by snapshotted ``adapter_key`` + ``output_format``):
+
+1. **Hypertherm Edge Connect** (H2-E5-T4)
+   * adapter_key = ``hypertherm_edge_connect``
+   * output_format = ``basic_plasma_eia_rs274d``
+   * legacy_artifact_type = ``hypertherm_edge_connect_basic_plasma_eia``
+   * file extension: ``.txt``
+
+2. **LinuxCNC / QtPlasmaC** (H2-E5-T5)
+   * adapter_key = ``linuxcnc_qtplasmac``
+   * output_format = ``basic_manual_material_rs274ngc``
+   * legacy_artifact_type = ``linuxcnc_qtplasmac_basic_manual_material``
+   * file extension: ``.ngc``
+   * Basic manual-material workflow only — no ``M190``/``M66`` auto material-change.
 
 **Non-negotiable scope boundaries**
 
@@ -28,6 +38,7 @@ Generates per-sheet machine program artifacts from the persisted
   ``coordinate_mapping``, ``command_map``, ``lead_output``,
   ``artifact_packaging``, ``capabilities``, ``fallbacks``, ``export_guards``,
   and optionally ``process_mapping``.
+* No general plugin-framework or dynamic adapter registry.
 """
 
 from __future__ import annotations
@@ -47,7 +58,7 @@ RegisterFn = Callable[..., None]
 logger = logging.getLogger("vrs_api.machine_specific_adapter")
 
 # ---------------------------------------------------------------------------
-# Frozen target constants
+# Frozen target constants — Hypertherm Edge Connect (H2-E5-T4)
 # ---------------------------------------------------------------------------
 
 TARGET_ADAPTER_KEY = "hypertherm_edge_connect"
@@ -56,6 +67,34 @@ TARGET_LEGACY_ARTIFACT_TYPE = "hypertherm_edge_connect_basic_plasma_eia"
 _ARTIFACT_KIND = "machine_program"
 _STORAGE_BUCKET = "run-artifacts"
 _ADAPTER_VERSION = "h2_e5_t4_v1"
+
+# ---------------------------------------------------------------------------
+# Frozen target constants — LinuxCNC / QtPlasmaC (H2-E5-T5)
+# ---------------------------------------------------------------------------
+
+QTPLASMAC_ADAPTER_KEY = "linuxcnc_qtplasmac"
+QTPLASMAC_OUTPUT_FORMAT = "basic_manual_material_rs274ngc"
+QTPLASMAC_LEGACY_ARTIFACT_TYPE = "linuxcnc_qtplasmac_basic_manual_material"
+_QTPLASMAC_ADAPTER_VERSION = "h2_e5_t5_v1"
+
+# ---------------------------------------------------------------------------
+# Supported target registry (dispatch lookup)
+# ---------------------------------------------------------------------------
+
+_SUPPORTED_TARGETS: dict[tuple[str, str], dict[str, str]] = {
+    (TARGET_ADAPTER_KEY, TARGET_OUTPUT_FORMAT): {
+        "legacy_artifact_type": TARGET_LEGACY_ARTIFACT_TYPE,
+        "adapter_version": _ADAPTER_VERSION,
+        "file_extension": ".txt",
+        "storage_subfolder": TARGET_ADAPTER_KEY,
+    },
+    (QTPLASMAC_ADAPTER_KEY, QTPLASMAC_OUTPUT_FORMAT): {
+        "legacy_artifact_type": QTPLASMAC_LEGACY_ARTIFACT_TYPE,
+        "adapter_version": _QTPLASMAC_ADAPTER_VERSION,
+        "file_extension": ".ngc",
+        "storage_subfolder": QTPLASMAC_ADAPTER_KEY,
+    },
+}
 
 # config_jsonb allowed top-level blocks
 _ALLOWED_CONFIG_BLOCKS = frozenset({
@@ -104,6 +143,9 @@ def generate_machine_programs_for_run(
 ) -> dict[str, Any]:
     """Generate per-sheet machine program artifacts for a run.
 
+    Dispatches to the correct emitter based on the snapshotted
+    ``adapter_key`` + ``output_format``.
+
     Returns a summary dict with the created artifact details.
     """
     run_id = _require(run_id, "run_id")
@@ -130,17 +172,21 @@ def generate_machine_programs_for_run(
         export_artifact=export_artifact,
     )
 
-    # 3) Load snapshot and validate postprocessor selection
+    # 3) Load snapshot and validate postprocessor selection — dispatch target
     snapshot = _load_snapshot(
         supabase=supabase,
         access_token=access_token,
         run_id=run_id,
     )
-    config_jsonb = _resolve_and_validate_postprocessor_config(
+    resolved = _resolve_and_validate_postprocessor_config(
         supabase=supabase,
         access_token=access_token,
         snapshot=snapshot,
     )
+    config_jsonb = resolved["config_jsonb"]
+    target_info = resolved["target_info"]
+    adapter_key = resolved["adapter_key"]
+    output_format = resolved["output_format"]
 
     # 4) Load geometry derivatives for contour point resolution
     geometry_cache = _build_geometry_cache(
@@ -160,6 +206,11 @@ def generate_machine_programs_for_run(
     # Deterministic sheet ordering
     sorted_sheets = sorted(sheets, key=lambda s: int(s.get("sheet_index") or 0))
 
+    file_ext = target_info["file_extension"]
+    legacy_artifact_type = target_info["legacy_artifact_type"]
+    adapter_version = target_info["adapter_version"]
+    storage_subfolder = target_info["storage_subfolder"]
+
     programs: list[dict[str, Any]] = []
     for sheet_export in sorted_sheets:
         sheet_index = int(sheet_export.get("sheet_index") or 0)
@@ -168,33 +219,43 @@ def generate_machine_programs_for_run(
         if not isinstance(contours, list):
             contours = []
 
-        program_text = _emit_sheet_program(
-            config=config_jsonb,
-            sheet_index=sheet_index,
-            contours=contours,
-            geometry_cache=geometry_cache,
-            plan_id=plan_id,
-        )
+        # Dispatch to the correct emitter
+        if adapter_key == QTPLASMAC_ADAPTER_KEY:
+            program_text = _emit_sheet_program_qtplasmac(
+                config=config_jsonb,
+                sheet_index=sheet_index,
+                contours=contours,
+                geometry_cache=geometry_cache,
+                plan_id=plan_id,
+            )
+        else:
+            program_text = _emit_sheet_program(
+                config=config_jsonb,
+                sheet_index=sheet_index,
+                contours=contours,
+                geometry_cache=geometry_cache,
+                plan_id=plan_id,
+            )
 
         program_bytes = program_text.encode("ascii", errors="replace")
         content_sha256 = hashlib.sha256(program_bytes).hexdigest()
         size_bytes = len(program_bytes)
 
-        filename = f"{run_id}_sheet_{sheet_index}.txt"
+        filename = f"{run_id}_sheet_{sheet_index}{file_ext}"
         storage_path = (
             f"projects/{project_id}/runs/{run_id}/"
-            f"machine_program/{TARGET_ADAPTER_KEY}/{content_sha256}.txt"
+            f"machine_program/{storage_subfolder}/{content_sha256}{file_ext}"
         )
 
         metadata: dict[str, Any] = {
-            "legacy_artifact_type": TARGET_LEGACY_ARTIFACT_TYPE,
-            "adapter_key": TARGET_ADAPTER_KEY,
-            "output_format": TARGET_OUTPUT_FORMAT,
+            "legacy_artifact_type": legacy_artifact_type,
+            "adapter_key": adapter_key,
+            "output_format": output_format,
             "filename": filename,
             "sheet_index": sheet_index,
             "size_bytes": size_bytes,
             "content_sha256": content_sha256,
-            "adapter_version": _ADAPTER_VERSION,
+            "adapter_version": adapter_version,
         }
 
         programs.append({
@@ -212,6 +273,7 @@ def generate_machine_programs_for_run(
         supabase=supabase,
         access_token=access_token,
         run_id=run_id,
+        legacy_artifact_type=legacy_artifact_type,
     )
 
     # 7) Upload and register each program
@@ -232,8 +294,8 @@ def generate_machine_programs_for_run(
     return {
         "run_id": run_id,
         "project_id": project_id,
-        "adapter_key": TARGET_ADAPTER_KEY,
-        "output_format": TARGET_OUTPUT_FORMAT,
+        "adapter_key": adapter_key,
+        "output_format": output_format,
         "programs_created": len(programs),
         "sheets": [
             {
@@ -249,7 +311,7 @@ def generate_machine_programs_for_run(
 
 
 # ---------------------------------------------------------------------------
-# Program emitter (EIA/RS-274D basic plasma)
+# Program emitter — Hypertherm Edge Connect (EIA/RS-274D basic plasma)
 # ---------------------------------------------------------------------------
 
 
@@ -371,6 +433,161 @@ def _emit_sheet_program(
                 )
 
         # Process off
+        if process_off:
+            lines.append(str(process_off))
+
+    # Export guards
+    if guards.get("require_process_off_at_end", False):
+        if not lines or lines[-1] != str(process_off):
+            if process_off:
+                lines.append(str(process_off))
+
+    # Program end codes
+    for code in (cmd.get("program_end") or []):
+        lines.append(str(code))
+
+    if guards.get("require_program_end", False):
+        program_end_codes = cmd.get("program_end") or []
+        if program_end_codes and (not lines or lines[-1] != str(program_end_codes[-1])):
+            for code in program_end_codes:
+                lines.append(str(code))
+
+    # Guard: forbid empty output
+    if guards.get("forbid_empty_output", False) and not lines:
+        raise MachineSpecificAdapterError(
+            status_code=400,
+            detail=f"empty output for sheet {sheet_index}",
+        )
+
+    return line_ending.join(lines) + line_ending
+
+
+# ---------------------------------------------------------------------------
+# Program emitter — LinuxCNC / QtPlasmaC (RS-274NGC, basic manual-material)
+# ---------------------------------------------------------------------------
+
+
+def _emit_sheet_program_qtplasmac(
+    *,
+    config: dict[str, Any],
+    sheet_index: int,
+    contours: list[dict[str, Any]],
+    geometry_cache: dict[str, dict[str, Any]],
+    plan_id: str,
+) -> str:
+    """Emit a single-sheet RS-274NGC program for QtPlasmaC.
+
+    Basic manual-material workflow only.  No M190/M66 auto material-change.
+    No multi-tool, scribe, spot, or router workflows.
+    """
+    cmd = config.get("command_map", {})
+    motion = config.get("motion_output", {})
+    fmt = config.get("program_format", {})
+    caps = config.get("capabilities", {})
+    fallbacks = config.get("fallbacks", {})
+    lead_cfg = config.get("lead_output", {})
+    guards = config.get("export_guards", {})
+
+    decimal_places = int(fmt.get("decimal_places", 4))
+    line_ending = "\n" if fmt.get("line_ending", "lf") == "lf" else "\r\n"
+    comment_style = fmt.get("comment_style", "semicolon")
+
+    lines: list[str] = []
+
+    # Comment header
+    if caps.get("supports_comments", True):
+        lines.append(_format_comment(
+            f"SHEET {sheet_index} PLAN {plan_id}", style=comment_style,
+        ))
+        lines.append(_format_comment(
+            "QtPlasmaC basic manual-material", style=comment_style,
+        ))
+
+    # Program start codes
+    for code in (cmd.get("program_start") or []):
+        lines.append(str(code))
+
+    # Emit contours in deterministic order
+    sorted_contours = sorted(
+        contours,
+        key=lambda c: (
+            int(c.get("cut_order_index") if c.get("cut_order_index") is not None else 0),
+            int(c.get("contour_index") if c.get("contour_index") is not None else 0),
+        ),
+    )
+
+    process_on = cmd.get("process_on", "M03 $0 S1")
+    process_off = cmd.get("process_off", "M05 $0")
+    rapid_code = cmd.get("rapid", "G00")
+    linear_code = cmd.get("linear", "G01")
+    arc_cw_code = cmd.get("arc_cw", "G02")
+    arc_ccw_code = cmd.get("arc_ccw", "G03")
+    supports_arcs = caps.get("supports_arcs", False)
+    unsupported_lead_policy = lead_cfg.get("unsupported_lead", "error")
+    supported_lead_shapes = set(lead_cfg.get("supported_shapes") or [])
+    distance_mode = motion.get("distance_mode", "absolute")
+
+    for contour in sorted_contours:
+        contour_index = contour.get("contour_index")
+        derivative_id, points = _resolve_contour_points(
+            contour=contour,
+            plan_id=plan_id,
+            geometry_cache=geometry_cache,
+        )
+        if not points:
+            continue
+
+        # Lead-in handling
+        lead_in = contour.get("lead_in_jsonb") or {}
+        lead_in_type = str(lead_in.get("type") or "none")
+        if lead_in_type != "none" and lead_in_type not in supported_lead_shapes:
+            if unsupported_lead_policy == "error":
+                raise MachineSpecificAdapterError(
+                    status_code=400,
+                    detail=f"unsupported lead-in type '{lead_in_type}' for contour {contour_index}",
+                )
+
+        # Rapid to entry point
+        entry = points[0]
+        lines.append(_motion_line(
+            rapid_code, entry, decimal_places=decimal_places,
+            distance_mode=distance_mode, prev_point=None,
+        ))
+
+        # Process on (torch on)
+        if process_on:
+            lines.append(str(process_on))
+
+        # Cut path
+        prev = entry
+        for pt in points[1:]:
+            lines.append(_motion_line(
+                linear_code, pt, decimal_places=decimal_places,
+                distance_mode=distance_mode, prev_point=prev,
+            ))
+            prev = pt
+
+        # Close contour back to start if needed
+        if len(points) > 2:
+            start = points[0]
+            dist = math.hypot(prev[0] - start[0], prev[1] - start[1])
+            if dist > 1e-6:
+                lines.append(_motion_line(
+                    linear_code, start, decimal_places=decimal_places,
+                    distance_mode=distance_mode, prev_point=prev,
+                ))
+
+        # Lead-out handling
+        lead_out = contour.get("lead_out_jsonb") or {}
+        lead_out_type = str(lead_out.get("type") or "none")
+        if lead_out_type != "none" and lead_out_type not in supported_lead_shapes:
+            if unsupported_lead_policy == "error":
+                raise MachineSpecificAdapterError(
+                    status_code=400,
+                    detail=f"unsupported lead-out type '{lead_out_type}' for contour {contour_index}",
+                )
+
+        # Process off (torch off)
         if process_off:
             lines.append(str(process_off))
 
@@ -673,7 +890,11 @@ def _resolve_and_validate_postprocessor_config(
     access_token: str,
     snapshot: dict[str, Any],
 ) -> dict[str, Any]:
-    """Resolve postprocessor config from snapshot and validate against target."""
+    """Resolve postprocessor config from snapshot and dispatch to target.
+
+    Returns a dict with keys: ``config_jsonb``, ``target_info``,
+    ``adapter_key``, ``output_format``.
+    """
     mfg_manifest = snapshot.get("manufacturing_manifest_jsonb")
     if not isinstance(mfg_manifest, dict):
         raise MachineSpecificAdapterError(
@@ -694,21 +915,33 @@ def _resolve_and_validate_postprocessor_config(
             detail="snapshot missing postprocessor_profile_version",
         )
 
-    # Validate adapter_key and output_format exact match
+    # Resolve adapter_key and output_format from snapshot
     snapshot_adapter_key = str(pp_version.get("adapter_key") or "").strip()
     snapshot_output_format = str(pp_version.get("output_format") or "").strip()
 
-    if snapshot_adapter_key != TARGET_ADAPTER_KEY:
+    if not snapshot_adapter_key:
         raise MachineSpecificAdapterError(
             status_code=400,
-            detail=f"adapter_key mismatch: snapshot has '{snapshot_adapter_key}', "
-                   f"target requires '{TARGET_ADAPTER_KEY}'",
+            detail="snapshot postprocessor selection missing adapter_key",
         )
-    if snapshot_output_format != TARGET_OUTPUT_FORMAT:
+    if not snapshot_output_format:
         raise MachineSpecificAdapterError(
             status_code=400,
-            detail=f"output_format mismatch: snapshot has '{snapshot_output_format}', "
-                   f"target requires '{TARGET_OUTPUT_FORMAT}'",
+            detail="snapshot postprocessor selection missing output_format",
+        )
+
+    # Dispatch: look up in supported targets
+    target_key = (snapshot_adapter_key, snapshot_output_format)
+    target_info = _SUPPORTED_TARGETS.get(target_key)
+    if target_info is None:
+        supported = ", ".join(
+            f"{k[0]}/{k[1]}" for k in sorted(_SUPPORTED_TARGETS.keys())
+        )
+        raise MachineSpecificAdapterError(
+            status_code=400,
+            detail=f"unsupported adapter_key/output_format: "
+                   f"'{snapshot_adapter_key}/{snapshot_output_format}'. "
+                   f"Supported: {supported}",
         )
 
     # Load the actual config_jsonb from the postprocessor profile version
@@ -730,7 +963,12 @@ def _resolve_and_validate_postprocessor_config(
     # Validate required config blocks
     _validate_config_boundary(config_jsonb)
 
-    return config_jsonb
+    return {
+        "config_jsonb": config_jsonb,
+        "target_info": target_info,
+        "adapter_key": snapshot_adapter_key,
+        "output_format": snapshot_output_format,
+    }
 
 
 def _load_postprocessor_config(
@@ -818,8 +1056,9 @@ def _delete_existing_target_artifacts(
     supabase: SupabaseClient,
     access_token: str,
     run_id: str,
+    legacy_artifact_type: str,
 ) -> None:
-    """Idempotent: delete existing machine_program artifacts for this target legacy type."""
+    """Idempotent: delete existing machine_program artifacts for a specific target legacy type."""
     existing = supabase.select_rows(
         table="app.run_artifacts",
         access_token=access_token,
@@ -831,7 +1070,7 @@ def _delete_existing_target_artifacts(
     )
     for row in existing:
         meta = row.get("metadata_jsonb")
-        if isinstance(meta, dict) and meta.get("legacy_artifact_type") == TARGET_LEGACY_ARTIFACT_TYPE:
+        if isinstance(meta, dict) and meta.get("legacy_artifact_type") == legacy_artifact_type:
             artifact_id = str(row.get("id") or "").strip()
             if artifact_id:
                 supabase.delete_rows(

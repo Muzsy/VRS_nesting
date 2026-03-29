@@ -270,7 +270,8 @@ class WorkerSupabaseClient:
         return heartbeat is not None
 
     def fetch_backlog_metrics(self) -> tuple[int, float]:
-        sql = """
+        lease_ttl_s = int(self._settings.queue_lease_ttl_s)
+        sql = f"""
 select
   count(*)::int as pending_count,
   coalesce(extract(epoch from (now() - min(q.created_at))), 0)::double precision as oldest_age_s
@@ -286,7 +287,7 @@ where q.available_at <= now()
         or (
           q.lease_expires_at is null
           and q.leased_at is not null
-          and q.leased_at < now() - interval '{int(self._settings.queue_lease_ttl_s)} seconds'
+          and q.leased_at < now() - make_interval(secs => {lease_ttl_s})
         )
       )
     )

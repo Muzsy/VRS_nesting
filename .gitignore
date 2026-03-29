@@ -11,5 +11,6 @@ rust/vrs_solver/target/
 .env
 .env.*
 rust/nesting_engine/target/
+samples/mysample_dxf/
 
 

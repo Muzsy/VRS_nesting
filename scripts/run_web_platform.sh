@@ -175,6 +175,7 @@ stop_service() {
 cleanup_orphans() {
   # Best-effort cleanup for previously detached processes started by older script versions.
   pkill -f "uvicorn api.main:app --host ${API_HOST} --port ${API_PORT}" >/dev/null 2>&1 || true
+  pkill -f "python3 -m worker.main" >/dev/null 2>&1 || true
   pkill -f "python3 worker/main.py" >/dev/null 2>&1 || true
   pkill -f "vite --host ${FRONTEND_HOST} --port ${FRONTEND_PORT}" >/dev/null 2>&1 || true
 }
@@ -231,7 +232,7 @@ start_all() {
   fi
 
   start_service "api" "$ROOT_DIR" "$api_cmd"
-  start_service "worker" "$ROOT_DIR" "python3 worker/main.py"
+  start_service "worker" "$ROOT_DIR" "python3 -m worker.main"
   start_service "frontend" "${ROOT_DIR}/frontend" "npm run dev -- --host ${FRONTEND_HOST} --port ${FRONTEND_PORT} --strictPort"
 
   wait_http_ready "http://${API_HOST}:${API_PORT}/health" "api" "$START_TIMEOUT_S"
