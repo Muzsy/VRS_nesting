@@ -132,16 +132,6 @@ def _path_d_from_rings(outer_ring: list[tuple[float, float]], hole_rings: list[l
     return " ".join(segments)
 
 
-def _transform_point(x: float, y: float, *, tx: float, ty: float, rotation_deg: float) -> tuple[float, float]:
-    return placement_transform_point(
-        local_x=x,
-        local_y=y,
-        tx=tx,
-        ty=ty,
-        rotation_deg=rotation_deg,
-    )
-
-
 def _transform_ring(
     ring: list[tuple[float, float]],
     *,

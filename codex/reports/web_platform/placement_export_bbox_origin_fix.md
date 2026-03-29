@@ -84,36 +84,27 @@ PASS
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-03-29T11:27:01+02:00 → 2026-03-29T11:30:32+02:00 (211s)
+- futás: 2026-03-29T21:24:53+02:00 → 2026-03-29T21:28:27+02:00 (214s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/placement_export_bbox_origin_fix.verify.log`
-- git: `main@6f15fe4`
-- módosított fájlok (git status): 11
+- git: `main@2a06531`
+- módosított fájlok (git status): 3
 
 **git diff --stat**
 
 ```text
- worker/main.py                |   6 ++-
- worker/result_normalizer.py   | 110 +++++++++++++++++++++++++++++++++++++++---
- worker/sheet_dxf_artifacts.py |  93 +++++++++++++++++++++++++++++++----
- worker/sheet_svg_artifacts.py |  87 +++++++++++++++++++++++++++++----
- 4 files changed, 269 insertions(+), 27 deletions(-)
+ .../placement_export_bbox_origin_fix.verify.log    | 84 +++++++++++-----------
+ worker/sheet_dxf_artifacts.py                      | 10 ---
+ worker/sheet_svg_artifacts.py                      | 10 ---
+ 3 files changed, 42 insertions(+), 62 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
- M worker/main.py
- M worker/result_normalizer.py
+ M codex/reports/web_platform/placement_export_bbox_origin_fix.verify.log
  M worker/sheet_dxf_artifacts.py
  M worker/sheet_svg_artifacts.py
-?? canvases/web_platform/placement_export_bbox_origin_fix.md
-?? codex/codex_checklist/web_platform/placement_export_bbox_origin_fix.md
-?? codex/goals/canvases/web_platform/fill_canvas_placement_export_bbox_origin_fix.yaml
-?? codex/prompts/web_platform/placement_export_bbox_origin_fix/
-?? codex/reports/web_platform/placement_export_bbox_origin_fix.md
-?? codex/reports/web_platform/placement_export_bbox_origin_fix.verify.log
-?? scripts/smoke_placement_export_bbox_origin_fix.py
 ```
 
 <!-- AUTO_VERIFY_END -->
