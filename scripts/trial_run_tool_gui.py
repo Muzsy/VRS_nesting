@@ -9,6 +9,7 @@ import queue
 import subprocess
 import sys
 import threading
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +24,7 @@ from scripts.trial_run_tool_core import TrialRunConfig, TrialRunResult, TrialRun
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
-except Exception:  # noqa: BLE001
+except ImportError:
     tk = None  # type: ignore[assignment]
     filedialog = None  # type: ignore[assignment]
     messagebox = None  # type: ignore[assignment]
@@ -33,7 +34,6 @@ except Exception:  # noqa: BLE001
 @dataclass(frozen=True)
 class GuiFormValues:
     dxf_dir: str
-    bearer_token: str
     api_base_url: str
     sheet_width: str
     sheet_height: str
@@ -44,8 +44,6 @@ class GuiFormValues:
     project_description: str
     default_qty: str
     auto_start_platform: bool
-    supabase_url: str
-    supabase_anon_key: str
     technology_display_name: str
     technology_machine_code: str
     technology_material_code: str
@@ -128,10 +126,6 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
     dxf_dir = Path(values.dxf_dir.strip()).expanduser()
     dxf_files = collect_dxf_files(dxf_dir)
 
-    token = values.bearer_token.strip()
-    if not token:
-        raise TrialRunToolError("bearer token is required")
-
     mode = values.mode.strip().lower()
     if mode not in {"new", "existing"}:
         raise TrialRunToolError("mode must be one of: new, existing")
@@ -150,12 +144,6 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
 
     api_base_url = values.api_base_url.strip() or "http://127.0.0.1:8000/v1"
     output_base_dir = Path(values.output_base_dir.strip() or "tmp/runs")
-    supabase_url = values.supabase_url.strip() or None
-    supabase_anon_key = values.supabase_anon_key.strip() or None
-    if mode == "new" and (not supabase_url or not supabase_anon_key):
-        raise TrialRunToolError(
-            "new project mode requires SUPABASE_URL and SUPABASE_ANON_KEY to seed approved technology setup"
-        )
 
     tech_display_name = values.technology_display_name.strip() or "Trial Default Setup"
     tech_machine_code = values.technology_machine_code.strip() or "TRIAL-MACHINE"
@@ -178,18 +166,8 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
     )
     tech_rotation_step_deg = _parse_rotation_step(values.technology_rotation_step_deg.strip() or "90")
 
-    if mode == "new":
-        if not tech_display_name:
-            raise TrialRunToolError("technology_display_name is required in new mode")
-        if not tech_machine_code:
-            raise TrialRunToolError("technology_machine_code is required in new mode")
-        if not tech_material_code:
-            raise TrialRunToolError("technology_material_code is required in new mode")
-
     config = TrialRunConfig(
         dxf_dir=dxf_dir,
-        bearer_token=token,
-        token_source="gui",
         api_base_url=api_base_url,
         sheet_width=_parse_positive_float(values.sheet_width, field="sheet_width"),
         sheet_height=_parse_positive_float(values.sheet_height, field="sheet_height"),
@@ -200,8 +178,6 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
         per_file_qty=per_file_qty,
         output_base_dir=output_base_dir,
         auto_start_platform=bool(values.auto_start_platform),
-        supabase_url=supabase_url,
-        supabase_anon_key=supabase_anon_key,
         technology_display_name=tech_display_name,
         technology_machine_code=tech_machine_code,
         technology_material_code=tech_material_code,
@@ -235,7 +211,6 @@ class TrialRunToolGuiApp:
         self._qty_vars: dict[str, Any] = {}
 
         self._dxf_dir_var = tk.StringVar(value=args.dxf_dir)
-        self._token_var = tk.StringVar(value="")
         self._api_base_var = tk.StringVar(value=args.api_base_url)
         self._sheet_width_var = tk.StringVar(value=str(args.sheet_width))
         self._sheet_height_var = tk.StringVar(value=str(args.sheet_height))
@@ -246,8 +221,6 @@ class TrialRunToolGuiApp:
         self._project_description_var = tk.StringVar(value="")
         self._default_qty_var = tk.StringVar(value="1")
         self._auto_start_var = tk.BooleanVar(value=False)
-        self._supabase_url_var = tk.StringVar(value=args.supabase_url)
-        self._supabase_anon_key_var = tk.StringVar(value=args.supabase_anon_key)
         self._technology_display_name_var = tk.StringVar(value=args.technology_display_name)
         self._technology_machine_code_var = tk.StringVar(value=args.technology_machine_code)
         self._technology_material_code_var = tk.StringVar(value=args.technology_material_code)
@@ -279,7 +252,7 @@ class TrialRunToolGuiApp:
         self._build_ui()
         self._set_mode_widgets()
         self._refresh_dxf_rows()
-        self._root.after(120, self._drain_events)
+        self._root.after(250, self._drain_events)
 
     def _build_ui(self) -> None:
         self._root.title("Trial Run Tool - Tkinter shell")
@@ -299,10 +272,6 @@ class TrialRunToolGuiApp:
         ttk.Entry(main, textvariable=self._dxf_dir_var).grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=2)
         ttk.Button(main, text="Browse", command=self._browse_dxf_dir).grid(row=row, column=2, sticky="ew", pady=2)
         ttk.Button(main, text="Refresh DXF list", command=self._refresh_dxf_rows).grid(row=row, column=3, sticky="ew", pady=2)
-
-        row += 1
-        ttk.Label(main, text="Bearer token").grid(row=row, column=0, sticky="w", pady=2)
-        ttk.Entry(main, textvariable=self._token_var, show="*").grid(row=row, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=2)
 
         row += 1
         ttk.Label(main, text="API base URL").grid(row=row, column=0, sticky="w", pady=2)
@@ -347,12 +316,6 @@ class TrialRunToolGuiApp:
         ttk.Checkbutton(main, text="Auto-start platform if /health fails", variable=self._auto_start_var).grid(
             row=row, column=3, sticky="w", pady=2
         )
-
-        row += 1
-        ttk.Label(main, text="SUPABASE_URL (required in new mode)").grid(row=row, column=0, sticky="w", pady=2)
-        ttk.Entry(main, textvariable=self._supabase_url_var).grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=2)
-        ttk.Label(main, text="SUPABASE_ANON_KEY").grid(row=row, column=2, sticky="w", pady=2)
-        ttk.Entry(main, textvariable=self._supabase_anon_key_var, show="*").grid(row=row, column=3, sticky="ew", pady=2)
 
         row += 1
         ttk.Label(main, text="Tech setup display name (new mode)").grid(row=row, column=0, sticky="w", pady=2)
@@ -498,7 +461,7 @@ class TrialRunToolGuiApp:
 
         try:
             files = collect_dxf_files(Path(self._dxf_dir_var.get().strip()))
-        except TrialRunToolError as exc:
+        except (TrialRunToolError, ValueError, OSError) as exc:
             ttk.Label(self._qty_frame, text=str(exc)).grid(row=0, column=0, sticky="w")
             self._append_log(f"DXF scan warning: {exc}")
             return
@@ -519,7 +482,6 @@ class TrialRunToolGuiApp:
     def _collect_form(self) -> GuiFormValues:
         return GuiFormValues(
             dxf_dir=self._dxf_dir_var.get(),
-            bearer_token=self._token_var.get(),
             api_base_url=self._api_base_var.get(),
             sheet_width=self._sheet_width_var.get(),
             sheet_height=self._sheet_height_var.get(),
@@ -530,8 +492,6 @@ class TrialRunToolGuiApp:
             project_description=self._project_description_var.get(),
             default_qty=self._default_qty_var.get(),
             auto_start_platform=bool(self._auto_start_var.get()),
-            supabase_url=self._supabase_url_var.get(),
-            supabase_anon_key=self._supabase_anon_key_var.get(),
             technology_display_name=self._technology_display_name_var.get(),
             technology_machine_code=self._technology_machine_code_var.get(),
             technology_material_code=self._technology_material_code_var.get(),
@@ -575,7 +535,7 @@ class TrialRunToolGuiApp:
             result = run_trial(config)
             self._event_queue.put(("result", result))
         except Exception as exc:  # noqa: BLE001
-            self._event_queue.put(("error", str(exc)))
+            self._event_queue.put(("error", f"{exc}\n{traceback.format_exc()}"))
 
     def _drain_events(self) -> None:
         while True:
@@ -600,7 +560,7 @@ class TrialRunToolGuiApp:
                 self._handle_result(payload)
                 continue
 
-        self._root.after(120, self._drain_events)
+        self._root.after(250, self._drain_events)
 
     def _handle_result(self, result: TrialRunResult) -> None:
         self._set_running(False)
@@ -641,12 +601,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sheet-height", type=float, default=1500.0, help="Default sheet height")
     parser.add_argument("--output-base-dir", default="tmp/runs", help="Default run output directory")
     parser.add_argument("--project-mode", choices=["new", "existing"], default="new", help="Default project mode")
-    parser.add_argument("--supabase-url", default=os.getenv("SUPABASE_URL", ""), help="Optional default SUPABASE_URL")
-    parser.add_argument(
-        "--supabase-anon-key",
-        default=os.getenv("SUPABASE_ANON_KEY", ""),
-        help="Optional default SUPABASE_ANON_KEY",
-    )
     parser.add_argument("--technology-display-name", default="Trial Default Setup", help="Default setup display_name")
     parser.add_argument("--technology-machine-code", default="TRIAL-MACHINE", help="Default setup machine_code")
     parser.add_argument("--technology-material-code", default="TRIAL-MATERIAL", help="Default setup material_code")

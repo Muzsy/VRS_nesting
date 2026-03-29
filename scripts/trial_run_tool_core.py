@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 import json
+import os
 import re
 import subprocess
 import time
@@ -24,6 +25,84 @@ _JSON_INDENT = 2
 _JSON_SORT_KEYS = True
 
 
+def _parse_dotenv(path: Path) -> dict[str, str]:
+    """Parse a .env file into a dict without python-dotenv dependency."""
+    if not path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            values[key] = value
+    return values
+
+
+def _resolve_env(key: str, default: str = "") -> str:
+    """Resolve env var: process env -> .env.local -> .env -> default."""
+    process_value = os.environ.get(key)
+    if process_value is not None and process_value.strip():
+        return process_value.strip()
+    root = Path(__file__).resolve().parents[1]
+    for candidate in (root / ".env.local", root / ".env"):
+        value = _parse_dotenv(candidate).get(key, "").strip()
+        if value:
+            return value
+    return default
+
+
+def _supabase_email_login(supabase_url: str, anon_key: str, email: str, password: str) -> str:
+    """Authenticate via Supabase Auth and return an access token."""
+    import requests as _requests
+
+    resp = _requests.post(
+        f"{supabase_url.rstrip('/')}/auth/v1/token?grant_type=password",
+        headers={"apikey": anon_key, "Content-Type": "application/json"},
+        json={"email": email, "password": password},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise TrialRunToolError(
+            f"supabase email login failed: status={resp.status_code} body={resp.text[:300]}"
+        )
+    token = str(resp.json().get("access_token", "")).strip()
+    if not token:
+        raise TrialRunToolError("supabase email login returned empty access_token")
+    return token
+
+
+def _resolve_bearer_token(
+    *,
+    config_token: str,
+    config_source: str,
+    supabase_url: str | None,
+    supabase_anon_key: str | None,
+) -> tuple[str, str]:
+    """Resolve bearer token: explicit > email+password login > env fallback."""
+    token = config_token.strip()
+    if token:
+        return token, config_source or "explicit"
+
+    email = _resolve_env("TRIAL_RUN_TOOL_EMAIL")
+    password = _resolve_env("TRIAL_RUN_TOOL_PASSWORD")
+    if supabase_url and supabase_anon_key and email and password:
+        return _supabase_email_login(supabase_url, supabase_anon_key, email, password), "email_login"
+
+    for env_key in ("TRIAL_RUN_TOOL_TOKEN", "API_BEARER_TOKEN"):
+        value = _resolve_env(env_key)
+        if value:
+            return value, "env"
+
+    raise TrialRunToolError(
+        "no bearer token available: set TRIAL_RUN_TOOL_EMAIL + TRIAL_RUN_TOOL_PASSWORD in .env.local, "
+        "or provide an explicit token"
+    )
+
+
 class TrialRunToolError(RuntimeError):
     """Raised when an orchestrator step fails."""
 
@@ -31,8 +110,8 @@ class TrialRunToolError(RuntimeError):
 @dataclass(frozen=True)
 class TrialRunConfig:
     dxf_dir: Path
-    bearer_token: str
-    token_source: str
+    bearer_token: str = ""
+    token_source: str = ""
     api_base_url: str = "http://127.0.0.1:8000/v1"
     sheet_width: float = 3000.0
     sheet_height: float = 1500.0
@@ -268,7 +347,7 @@ def _request_upload_blob(
     payload: bytes,
     timeout: float,
 ) -> dict[str, Any]:
-    last_error = ""
+    errors: list[str] = []
     for method in ("PUT", "POST"):
         response = transport.request(
             _HttpRequest(
@@ -282,8 +361,8 @@ def _request_upload_blob(
         status_code = int(getattr(response, "status_code", 0))
         if status_code in {200, 201}:
             return {"method": method, "status_code": status_code}
-        last_error = f"method={method} status={status_code} body={_response_excerpt(response)}"
-    raise TrialRunToolError(f"signed upload failed: {last_error}")
+        errors.append(f"method={method} status={status_code} body={_response_excerpt(response)}")
+    raise TrialRunToolError(f"signed upload failed: {'; '.join(errors)}")
 
 
 def _safe_filename(name: str, fallback: str) -> str:
@@ -751,10 +830,20 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     under one run directory and never in repository-tracked locations.
     """
 
+    supabase_url = (config.supabase_url.strip() if config.supabase_url else None) or _resolve_env("SUPABASE_URL") or None
+    supabase_anon_key = (config.supabase_anon_key.strip() if config.supabase_anon_key else None) or _resolve_env("SUPABASE_ANON_KEY") or None
+
+    bearer_token, token_source = _resolve_bearer_token(
+        config_token=config.bearer_token,
+        config_source=config.token_source,
+        supabase_url=supabase_url,
+        supabase_anon_key=supabase_anon_key,
+    )
+
     normalized_config = TrialRunConfig(
         dxf_dir=config.dxf_dir.resolve(),
-        bearer_token=config.bearer_token.strip(),
-        token_source=config.token_source,
+        bearer_token=bearer_token,
+        token_source=token_source,
         api_base_url=_normalize_api_base_url(config.api_base_url),
         sheet_width=float(config.sheet_width),
         sheet_height=float(config.sheet_height),
@@ -770,8 +859,8 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         run_poll_timeout_s=float(config.run_poll_timeout_s),
         geometry_poll_timeout_s=float(config.geometry_poll_timeout_s),
         request_timeout_s=float(config.request_timeout_s),
-        supabase_url=(config.supabase_url.strip() if config.supabase_url else None),
-        supabase_anon_key=(config.supabase_anon_key.strip() if config.supabase_anon_key else None),
+        supabase_url=supabase_url,
+        supabase_anon_key=supabase_anon_key,
         technology_display_name=str(config.technology_display_name),
         technology_machine_code=str(config.technology_machine_code),
         technology_material_code=str(config.technology_material_code),
@@ -787,9 +876,12 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         raise TrialRunToolError("default_qty must be > 0")
     if normalized_config.sheet_width <= 0 or normalized_config.sheet_height <= 0:
         raise TrialRunToolError("sheet_width and sheet_height must be > 0")
-    if not normalized_config.bearer_token:
-        raise TrialRunToolError("bearer token is required")
-    technology_setup_input = _validated_technology_setup_input(normalized_config)
+
+    if not normalized_config.existing_project_id:
+        _require_supabase_runtime(normalized_config, where="new project mode (pre-flight)")
+        technology_setup_input = _validated_technology_setup_input(normalized_config)
+    else:
+        technology_setup_input = {"note": "skipped in existing project mode"}
 
     run_dir = _prepare_run_dir(normalized_config)
     recorder = _RunRecorder(run_dir=run_dir)

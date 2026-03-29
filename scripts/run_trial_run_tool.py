@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import os
 import sys
 from pathlib import Path
@@ -127,21 +126,16 @@ def _prompt_float_if_missing(value: float | None, *, label: str, non_interactive
 
 
 def _resolve_token(args: argparse.Namespace) -> tuple[str, str]:
+    """Resolve bearer token: --token > env > empty (core auto-logins from .env.local)."""
     if args.token and str(args.token).strip():
         return str(args.token).strip(), "argv"
 
-    for env_key in ("TRIAL_RUN_TOOL_TOKEN", "SUPABASE_ACCESS_TOKEN", "API_BEARER_TOKEN"):
+    for env_key in ("TRIAL_RUN_TOOL_TOKEN", "API_BEARER_TOKEN"):
         value = os.getenv(env_key, "").strip()
         if value:
             return value, "env"
 
-    if args.non_interactive:
-        raise TrialRunToolError("missing bearer token (use --token or env TRIAL_RUN_TOOL_TOKEN)")
-
-    prompted = getpass.getpass("Bearer token: ").strip()
-    if not prompted:
-        raise TrialRunToolError("missing bearer token")
-    return prompted, "prompt"
+    return "", "auto"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -173,12 +167,8 @@ def main(argv: list[str] | None = None) -> int:
             run_poll_timeout_s=float(args.run_poll_timeout_s),
             geometry_poll_timeout_s=float(args.geometry_poll_timeout_s),
             request_timeout_s=float(args.request_timeout_s),
-            supabase_url=(str(args.supabase_url).strip() if args.supabase_url else os.getenv("SUPABASE_URL", "").strip() or None),
-            supabase_anon_key=(
-                str(args.supabase_anon_key).strip()
-                if args.supabase_anon_key
-                else os.getenv("SUPABASE_ANON_KEY", "").strip() or None
-            ),
+            supabase_url=(str(args.supabase_url).strip() or None) if args.supabase_url else None,
+            supabase_anon_key=(str(args.supabase_anon_key).strip() or None) if args.supabase_anon_key else None,
             technology_display_name=str(args.technology_display_name),
             technology_machine_code=str(args.technology_machine_code),
             technology_material_code=str(args.technology_material_code),
