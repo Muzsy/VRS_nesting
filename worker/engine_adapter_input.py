@@ -379,3 +379,9 @@ def solver_runtime_params(payload: dict[str, Any]) -> tuple[int, int]:
     seed = _parse_nonnegative_int(payload.get("seed"), field="solver_input.seed")
     time_limit_s = _parse_positive_int(payload.get("time_limit_s"), field="solver_input.time_limit_s")
     return seed, time_limit_s
+
+
+def nesting_engine_runtime_params(payload: dict[str, Any]) -> tuple[int, int]:
+    seed = _parse_nonnegative_int(payload.get("seed"), field="nesting_engine_input.seed")
+    time_limit_s = _parse_positive_int(payload.get("time_limit_sec"), field="nesting_engine_input.time_limit_sec")
+    return seed, time_limit_s

@@ -1,0 +1,66 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a worker runtime
+      es normalizer relevans fajljait, valamint a nesting_engine runner boundary-t.
+      Frissitsd a canvas-t ugy, hogy pontosan rogzitse: T3 utan mar van v2 input
+      builder, de a worker runtime, a raw artifact persist es a result normalizer
+      meg mindig v1-fix. A task ebben a korben worker runtime bridge, nem viewer
+      rollout es nem benchmark UX task.
+    outputs:
+      - "canvases/web_platform/h3_quality_t4_worker_dual_engine_runtime_bridge.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t4_worker_dual_engine_runtime_bridge.yaml"
+      - "codex/prompts/web_platform/h3_quality_t4_worker_dual_engine_runtime_bridge/run.md"
+
+  - name: "Worker backend selector es runner dispatch bevezetese"
+    description: >
+      Frissitsd a worker runtime-ot ugy, hogy explicit backend selector alapjan tudjon
+      valtani a `sparrow_v1` es a `nesting_engine_v2` utak kozott. A default maradjon
+      `sparrow_v1`. A `_process_queue_item(...)` a backend alapjan valassza ki a
+      snapshot->input buildert, a hash helpert es a runner invocation-t. A v2 ag a
+      `vrs_nesting.runner.nesting_engine_runner` boundary-t hasznalja. Az `engine_meta.json`
+      tobbé ne fix `sparrow_v1` legyen, hanem a valos backend truthot irja.
+    outputs:
+      - "worker/main.py"
+      - "worker/engine_adapter_input.py"
+
+  - name: "V2 raw output es projection bridge kiepitese"
+    description: >
+      Bovitsd a raw output artifact policy-t es a result normalizer-t ugy, hogy a
+      `nesting_engine_runner` altal eloallitott `nesting_output.json` se vesszen el,
+      es a worker a v2 outputbol is tudjon projection/sheet artifact lancot epiteni.
+      A v1 ag maradjon erintetlen. A v2 normalizer legyen explicit, determinisztikus,
+      es downstream-kompatibilis a `replace_run_projection(...)` / sheet SVG / sheet DXF
+      hivashelyekkel.
+    outputs:
+      - "worker/raw_output_artifacts.py"
+      - "worker/result_normalizer.py"
+
+  - name: "Task-specifikus smoke a v1 es v2 worker utakra"
+    description: >
+      Keszits dedikalt smoke-ot fake worker/subprocess mintaval. Bizonyitsd, hogy a
+      default v1 backend tovabbra is a legacy runner utat hasznalja, a v2 backend pedig
+      a `nesting_engine_runner` agra valt, helyes engine meta truthot ir, es fake
+      `nesting_output.json` mellett `done` allapotig eljut. Invalid backend ertekre
+      kontrollalt hibaval alljon meg. A smoke ne hasznaljon valodi Supabase-ot es ne
+      kerjen valodi solver binary-t.
+    outputs:
+      - "scripts/smoke_h3_quality_t4_worker_dual_engine_runtime_bridge.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A reportben kulon nevezd
+      meg: milyen env/backend selector lett bevezetve, hogyan ter el a v1 es v2 runner
+      invocation, hogyan lett megoldva a v2 raw output persist, es miert worker runtime
+      bridge ez a task, nem teljes viewer/result UI rollout.
+    outputs:
+      - "codex/codex_checklist/web_platform/h3_quality_t4_worker_dual_engine_runtime_bridge.md"
+      - "codex/reports/web_platform/h3_quality_t4_worker_dual_engine_runtime_bridge.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t4_worker_dual_engine_runtime_bridge.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t4_worker_dual_engine_runtime_bridge.md"
+      - "codex/reports/web_platform/h3_quality_t4_worker_dual_engine_runtime_bridge.verify.log"

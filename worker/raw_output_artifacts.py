@@ -31,6 +31,7 @@ _RAW_ARTIFACT_SPECS: tuple[RawArtifactSpec, ...] = (
     RawArtifactSpec(filename="solver_stdout.log", artifact_kind="log", legacy_artifact_type="solver_stdout"),
     RawArtifactSpec(filename="solver_stderr.log", artifact_kind="log", legacy_artifact_type="solver_stderr"),
     RawArtifactSpec(filename="solver_output.json", artifact_kind="solver_output", legacy_artifact_type="solver_output"),
+    RawArtifactSpec(filename="nesting_output.json", artifact_kind="solver_output", legacy_artifact_type="nesting_output"),
     RawArtifactSpec(filename="runner_meta.json", artifact_kind="log", legacy_artifact_type="runner_meta"),
     RawArtifactSpec(filename="run.log", artifact_kind="log", legacy_artifact_type="run_log"),
 )

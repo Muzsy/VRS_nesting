@@ -335,7 +335,7 @@ def _build_sheet_instances(snapshot_row: dict[str, Any]) -> list[dict[str, Any]]
     return expanded
 
 
-def normalize_solver_output_projection(*, run_id: str, snapshot_row: dict[str, Any], run_dir: Path) -> NormalizedProjection:
+def _normalize_solver_output_projection_v1(*, run_id: str, snapshot_row: dict[str, Any], run_dir: Path) -> NormalizedProjection:
     run_id_clean = _require_str(run_id, field="run_id")
     output_path = run_dir / "solver_output.json"
     try:
@@ -531,6 +531,232 @@ def normalize_solver_output_projection(*, run_id: str, snapshot_row: dict[str, A
             used_sheet_count=int(used_sheet_count),
         ),
     )
+
+
+def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[str, Any], run_dir: Path) -> NormalizedProjection:
+    run_id_clean = _require_str(run_id, field="run_id")
+    output_path = run_dir / "nesting_output.json"
+    try:
+        output_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise ResultNormalizerError(f"invalid nesting_engine output json: {output_path}") from exc
+    output = _require_dict(output_payload, field="nesting_output")
+    if output.get("version") != "nesting_engine_v2":
+        raise ResultNormalizerError("invalid nesting_engine output version")
+
+    placements_raw = _require_list(output.get("placements"), field="nesting_output.placements")
+    unplaced_raw = _require_list(output.get("unplaced"), field="nesting_output.unplaced")
+
+    part_index = _build_part_index(snapshot_row)
+    sheet_instances = _build_sheet_instances(snapshot_row)
+
+    placement_rows: list[dict[str, Any]] = []
+    sheet_used: set[int] = set()
+    per_sheet_counter: dict[int, int] = {}
+    per_sheet_placed_area: dict[int, float] = {}
+
+    for idx, placement_raw in enumerate(placements_raw):
+        placement = _require_dict(placement_raw, field=f"nesting_output.placements[{idx}]")
+        part_id = _require_str(placement.get("part_id"), field=f"nesting_output.placements[{idx}].part_id")
+        part = part_index.get(part_id)
+        if part is None:
+            raise ResultNormalizerError(f"unknown part_id in nesting_output: {part_id}")
+
+        instance = _parse_nonnegative_int(placement.get("instance"), field=f"nesting_output.placements[{idx}].instance")
+        sheet_index = _parse_nonnegative_int(placement.get("sheet"), field=f"nesting_output.placements[{idx}].sheet")
+        if sheet_index >= len(sheet_instances):
+            raise ResultNormalizerError(f"invalid sheet in nesting_output: {sheet_index}")
+        sheet_used.add(sheet_index)
+
+        x = _parse_finite_float(placement.get("x_mm"), field=f"nesting_output.placements[{idx}].x_mm")
+        y = _parse_finite_float(placement.get("y_mm"), field=f"nesting_output.placements[{idx}].y_mm")
+        rotation_deg = _parse_finite_float(
+            placement.get("rotation_deg"),
+            field=f"nesting_output.placements[{idx}].rotation_deg",
+        )
+
+        placement_index = per_sheet_counter.get(sheet_index, 0)
+        per_sheet_counter[sheet_index] = placement_index + 1
+        per_sheet_placed_area[sheet_index] = per_sheet_placed_area.get(sheet_index, 0.0) + float(part["area_mm2"])
+        instance_id = f"{part_id}:{instance}"
+
+        transform_jsonb = {
+            "x": _round6(x),
+            "y": _round6(y),
+            "rotation_deg": _round6(rotation_deg),
+            "sheet_index": int(sheet_index),
+            "instance_id": instance_id,
+        }
+        bbox_jsonb = _transform_bbox(bbox=part["bbox"], x=x, y=y, rotation_deg=rotation_deg)
+        metadata_jsonb = {
+            "normalizer_scope": "h3_quality_t4_v2_bridge",
+            "engine_backend": "nesting_engine_v2",
+            "part_code": part["part_code"],
+            "part_definition_id": part["part_definition_id"],
+            "source_geometry_revision_id": part["source_geometry_revision_id"],
+            "selected_nesting_derivative_id": part["selected_nesting_derivative_id"],
+            "instance": int(instance),
+        }
+
+        placement_rows.append(
+            {
+                "sheet_index": int(sheet_index),
+                "placement_index": int(placement_index),
+                "part_revision_id": part_id,
+                "quantity": 1,
+                "transform_jsonb": transform_jsonb,
+                "bbox_jsonb": bbox_jsonb,
+                "metadata_jsonb": metadata_jsonb,
+            }
+        )
+
+    placement_rows.sort(key=lambda item: (int(item["sheet_index"]), int(item["placement_index"])))
+
+    sheet_rows: list[dict[str, Any]] = []
+    total_sheet_area = 0.0
+    total_placed_area = 0.0
+    per_sheet_metrics: list[dict[str, Any]] = []
+    for sheet_index in sorted(sheet_used):
+        sheet = sheet_instances[sheet_index]
+        width_mm = float(sheet["width_mm"])
+        height_mm = float(sheet["height_mm"])
+        sheet_area = width_mm * height_mm
+        placed_area = float(per_sheet_placed_area.get(sheet_index, 0.0))
+        sheet_utilization = (placed_area / sheet_area) if sheet_area > 0.0 else None
+
+        total_sheet_area += sheet_area
+        total_placed_area += placed_area
+
+        sheet_row = {
+            "sheet_index": int(sheet_index),
+            "sheet_revision_id": str(sheet["sheet_revision_id"]),
+            "width_mm": _round6(width_mm),
+            "height_mm": _round6(height_mm),
+            "utilization_ratio": _round5(sheet_utilization) if sheet_utilization is not None else None,
+            "metadata_jsonb": {
+                "normalizer_scope": "h3_quality_t4_v2_bridge",
+                "engine_backend": "nesting_engine_v2",
+                "sheet_code": str(sheet["sheet_code"]),
+                "project_sheet_input_id": str(sheet["project_sheet_input_id"]),
+                "copy_index": int(sheet["copy_index"]),
+                "placements_count": int(per_sheet_counter.get(sheet_index, 0)),
+                "placed_area_mm2": _round6(placed_area),
+                "sheet_area_mm2": _round6(sheet_area),
+            },
+        }
+        sheet_rows.append(sheet_row)
+
+        per_sheet_metrics.append(
+            {
+                "sheet_index": int(sheet_index),
+                "placements_count": int(per_sheet_counter.get(sheet_index, 0)),
+                "placed_area_mm2": _round6(placed_area),
+                "sheet_area_mm2": _round6(sheet_area),
+                "utilization_ratio": _round5(sheet_utilization) if sheet_utilization is not None else None,
+            }
+        )
+
+    unplaced_bucket: dict[tuple[str, str], dict[str, Any]] = {}
+    for idx, unplaced_item_raw in enumerate(unplaced_raw):
+        unplaced_item = _require_dict(unplaced_item_raw, field=f"nesting_output.unplaced[{idx}]")
+        part_id = _require_str(unplaced_item.get("part_id"), field=f"nesting_output.unplaced[{idx}].part_id")
+        part = part_index.get(part_id)
+        if part is None:
+            raise ResultNormalizerError(f"unknown part_id in nesting_output unplaced: {part_id}")
+        instance = _parse_nonnegative_int(unplaced_item.get("instance"), field=f"nesting_output.unplaced[{idx}].instance")
+        reason_raw = str(unplaced_item.get("reason") or "").strip()
+        reason_key = reason_raw or ""
+        key = (part_id, reason_key)
+        if key not in unplaced_bucket:
+            unplaced_bucket[key] = {
+                "part_revision_id": part_id,
+                "reason": reason_raw or None,
+                "remaining_qty": 0,
+                "instance_ids": [],
+                "part_code": part["part_code"],
+            }
+        unplaced_bucket[key]["remaining_qty"] = int(unplaced_bucket[key]["remaining_qty"]) + 1
+        unplaced_bucket[key]["instance_ids"].append(f"{part_id}:{instance}")
+
+    unplaced_rows: list[dict[str, Any]] = []
+    for key in sorted(unplaced_bucket.keys(), key=lambda item: (item[0], item[1])):
+        bucket = unplaced_bucket[key]
+        unplaced_rows.append(
+            {
+                "part_revision_id": str(bucket["part_revision_id"]),
+                "remaining_qty": int(bucket["remaining_qty"]),
+                "reason": bucket["reason"],
+                "metadata_jsonb": {
+                    "normalizer_scope": "h3_quality_t4_v2_bridge",
+                    "engine_backend": "nesting_engine_v2",
+                    "part_code": str(bucket["part_code"]),
+                    "instance_ids": sorted(str(value) for value in bucket["instance_ids"]),
+                },
+            }
+        )
+
+    placed_count = len(placement_rows)
+    unplaced_count = sum(int(row["remaining_qty"]) for row in unplaced_rows)
+    used_sheet_count = len(sheet_rows)
+    computed_run_utilization = (total_placed_area / total_sheet_area) if total_sheet_area > 0.0 else None
+
+    objective = output.get("objective")
+    objective_dict = objective if isinstance(objective, dict) else {}
+    objective_util_pct = objective_dict.get("utilization_pct")
+    objective_util_ratio: float | None = None
+    if isinstance(objective_util_pct, (int, float)):
+        objective_util_ratio = _round5(float(objective_util_pct) / 100.0)
+
+    remnant_value = objective_dict.get("remnant_value_ppm")
+    remnant_value_float: float | None = None
+    if isinstance(remnant_value, (int, float)):
+        remnant_value_float = float(remnant_value)
+
+    metrics_jsonb: dict[str, Any] = {
+        "normalizer_scope": "h3_quality_t4_v2_bridge",
+        "engine_backend": "nesting_engine_v2",
+        "run_id": run_id_clean,
+        "placement_origin_ref": "bbox_min_corner",
+        "sheet_bounds_epsilon_mm": _OUT_OF_SHEET_EPS_MM,
+        "solver_status": str(output.get("status") or "").strip() or None,
+        "per_sheet": per_sheet_metrics,
+        "totals": {
+            "placed_area_mm2": _round6(total_placed_area),
+            "sheet_area_mm2": _round6(total_sheet_area),
+        },
+        "objective": objective_dict,
+        "meta": output.get("meta") if isinstance(output.get("meta"), dict) else {},
+        "sheets_used_reported": _parse_nonnegative_int(output.get("sheets_used", 0), field="nesting_output.sheets_used"),
+    }
+
+    metrics_row = {
+        "placed_count": int(placed_count),
+        "unplaced_count": int(unplaced_count),
+        "used_sheet_count": int(used_sheet_count),
+        "utilization_ratio": objective_util_ratio if objective_util_ratio is not None else (_round5(computed_run_utilization) if computed_run_utilization is not None else None),
+        "remnant_value": remnant_value_float,
+        "metrics_jsonb": metrics_jsonb,
+    }
+
+    return NormalizedProjection(
+        sheets=sheet_rows,
+        placements=placement_rows,
+        unplaced=unplaced_rows,
+        metrics=metrics_row,
+        summary=ProjectionSummary(
+            placed_count=int(placed_count),
+            unplaced_count=int(unplaced_count),
+            used_sheet_count=int(used_sheet_count),
+        ),
+    )
+
+
+def normalize_solver_output_projection(*, run_id: str, snapshot_row: dict[str, Any], run_dir: Path) -> NormalizedProjection:
+    if (run_dir / "solver_output.json").is_file():
+        return _normalize_solver_output_projection_v1(run_id=run_id, snapshot_row=snapshot_row, run_dir=run_dir)
+    if (run_dir / "nesting_output.json").is_file():
+        return _normalize_solver_output_projection_v2(run_id=run_id, snapshot_row=snapshot_row, run_dir=run_dir)
+    raise ResultNormalizerError("missing solver output json: expected solver_output.json or nesting_output.json")
 
 
 def normalized_projection_json(payload: NormalizedProjection) -> str:

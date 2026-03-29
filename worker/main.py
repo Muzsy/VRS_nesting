@@ -21,7 +21,10 @@ from uuid import UUID
 
 from worker.engine_adapter_input import (
     EngineAdapterInputError,
+    build_nesting_engine_input_from_snapshot,
     build_solver_input_from_snapshot,
+    nesting_engine_input_sha256,
+    nesting_engine_runtime_params,
     solver_input_sha256,
     solver_runtime_params,
 )
@@ -53,6 +56,10 @@ class WorkerLeaseLostError(WorkerError):
 
 
 logger = logging.getLogger("vrs_worker")
+
+ENGINE_BACKEND_SPARROW_V1 = "sparrow_v1"
+ENGINE_BACKEND_NESTING_V2 = "nesting_engine_v2"
+_SUPPORTED_WORKER_ENGINE_BACKENDS = (ENGINE_BACKEND_SPARROW_V1, ENGINE_BACKEND_NESTING_V2)
 
 
 def _configure_logging() -> None:
@@ -97,6 +104,16 @@ def _resolve_env(key: str, default: str = "") -> str:
     return default
 
 
+def _resolve_worker_engine_backend(raw: str) -> str:
+    cleaned = str(raw or "").strip().lower() or ENGINE_BACKEND_SPARROW_V1
+    if cleaned not in _SUPPORTED_WORKER_ENGINE_BACKENDS:
+        raise WorkerSettingsError(
+            "WORKER_ENGINE_BACKEND must be one of: "
+            + ", ".join(_SUPPORTED_WORKER_ENGINE_BACKENDS)
+        )
+    return cleaned
+
+
 def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
@@ -136,6 +153,7 @@ class WorkerSettings:
     run_artifacts_bucket: str
     sparrow_bin: str
     once: bool
+    engine_backend: str = ENGINE_BACKEND_SPARROW_V1
 
 
 def load_settings(*, once: bool, poll_interval_s: float | None = None) -> WorkerSettings:
@@ -179,6 +197,9 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
     worker_id = _resolve_env("WORKER_ID", f"worker-{os.getpid()}")
     run_root = Path(_resolve_env("WORKER_RUN_ROOT", "runs")).resolve()
     temp_root = Path(_resolve_env("WORKER_TEMP_ROOT", "/tmp/vrs_worker")).resolve()
+    engine_backend = _resolve_worker_engine_backend(
+        _resolve_env("WORKER_ENGINE_BACKEND", ENGINE_BACKEND_SPARROW_V1)
+    )
 
     return WorkerSettings(
         supabase_url=supabase_url.rstrip("/"),
@@ -200,6 +221,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         run_artifacts_bucket=_resolve_env("RUN_ARTIFACTS_BUCKET", "run-artifacts"),
         sparrow_bin=_resolve_env("SPARROW_BIN", ""),
         once=once,
+        engine_backend=engine_backend,
     )
 
 
@@ -967,7 +989,7 @@ def _artifact_type_for_path(relative_path: Path) -> tuple[str, int | None]:
 
     if name == "report.json":
         return "report_json", None
-    if name == "solver_output.json":
+    if name in {"solver_output.json", "nesting_output.json"}:
         return "solver_output", None
     if name == "solver_input.json":
         return "solver_input", None
@@ -1093,37 +1115,69 @@ def _snapshot_source_geometry_revision_ids(snapshot_row: dict[str, Any]) -> list
 @dataclass(frozen=True)
 class SolverRunnerInvocation:
     cmd: list[str]
-    run_dir: Path
+    run_dir: Path | None
     timeout_s: int
+    solver_runner_module: str
 
 
 def _build_solver_runner_invocation(
     *,
     settings: WorkerSettings,
+    engine_backend: str,
     run_id: str,
     run_root: Path,
     solver_input_path: Path,
     solver_input_payload: dict[str, Any],
 ) -> SolverRunnerInvocation:
-    seed, time_limit_s = solver_runtime_params(solver_input_payload)
-    run_dir = (run_root / run_id).resolve()
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if engine_backend == ENGINE_BACKEND_SPARROW_V1:
+        seed, time_limit_s = solver_runtime_params(solver_input_payload)
+        run_dir = (run_root / run_id).resolve()
+        run_dir.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            "python3",
+            "-m",
+            "vrs_nesting.runner.vrs_solver_runner",
+            "--input",
+            str(solver_input_path),
+            "--seed",
+            str(seed),
+            "--time-limit",
+            str(time_limit_s),
+            "--run-dir",
+            str(run_dir),
+        ]
+        timeout_s = max(int(time_limit_s) + int(settings.run_timeout_extra_s), 30)
+        return SolverRunnerInvocation(
+            cmd=cmd,
+            run_dir=run_dir,
+            timeout_s=timeout_s,
+            solver_runner_module="vrs_nesting.runner.vrs_solver_runner",
+        )
 
-    cmd = [
-        "python3",
-        "-m",
-        "vrs_nesting.runner.vrs_solver_runner",
-        "--input",
-        str(solver_input_path),
-        "--seed",
-        str(seed),
-        "--time-limit",
-        str(time_limit_s),
-        "--run-dir",
-        str(run_dir),
-    ]
-    timeout_s = max(int(time_limit_s) + int(settings.run_timeout_extra_s), 30)
-    return SolverRunnerInvocation(cmd=cmd, run_dir=run_dir, timeout_s=timeout_s)
+    if engine_backend == ENGINE_BACKEND_NESTING_V2:
+        seed, time_limit_s = nesting_engine_runtime_params(solver_input_payload)
+        cmd = [
+            "python3",
+            "-m",
+            "vrs_nesting.runner.nesting_engine_runner",
+            "--input",
+            str(solver_input_path),
+            "--seed",
+            str(seed),
+            "--time-limit",
+            str(time_limit_s),
+            "--run-root",
+            str(run_root.resolve()),
+        ]
+        timeout_s = max(int(time_limit_s) + int(settings.run_timeout_extra_s), 30)
+        return SolverRunnerInvocation(
+            cmd=cmd,
+            run_dir=None,
+            timeout_s=timeout_s,
+            solver_runner_module="vrs_nesting.runner.nesting_engine_runner",
+        )
+
+    raise WorkerError(f"unsupported worker engine backend: {engine_backend}")
 
 
 def _sync_run_log_artifact(
@@ -1205,16 +1259,25 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         project_id = str(project_manifest.get("project_id") or "").strip()
         if not project_id:
             raise WorkerError(f"run {run_id}: snapshot missing project_id")
+        engine_backend = settings.engine_backend
         try:
-            solver_input_payload = build_solver_input_from_snapshot(snapshot_row)
+            if engine_backend == ENGINE_BACKEND_SPARROW_V1:
+                solver_input_payload = build_solver_input_from_snapshot(snapshot_row)
+                solver_input_hash = solver_input_sha256(solver_input_payload)
+                engine_contract_version = str(solver_input_payload.get("contract_version", "v1"))
+            elif engine_backend == ENGINE_BACKEND_NESTING_V2:
+                solver_input_payload = build_nesting_engine_input_from_snapshot(snapshot_row)
+                solver_input_hash = nesting_engine_input_sha256(solver_input_payload)
+                engine_contract_version = str(solver_input_payload.get("version", ENGINE_BACKEND_NESTING_V2))
+            else:
+                raise WorkerError(f"unsupported worker engine backend: {engine_backend}")
         except EngineAdapterInputError as exc:
             raise WorkerError(f"run {run_id}: snapshot->solver_input mapping failed: {exc}") from exc
 
-        solver_input_hash = solver_input_sha256(solver_input_payload)
         solver_input_blob = (json.dumps(solver_input_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
             "utf-8"
         )
-        solver_input_snapshot_path = input_dir / "solver_input_snapshot_v1.json"
+        solver_input_snapshot_path = input_dir / "solver_input_snapshot.json"
         solver_input_snapshot_path.write_text(
             json.dumps(solver_input_payload, ensure_ascii=True, indent=2),
             encoding="utf-8",
@@ -1247,11 +1310,19 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         # Persist engine backend / contract / profile metadata as an explicit
         # artifact so that run evidence is self-describing without requiring
         # stderr log parsing.
+        invocation = _build_solver_runner_invocation(
+            settings=settings,
+            engine_backend=engine_backend,
+            run_id=run_id,
+            run_root=run_root,
+            solver_input_path=input_dir / "solver_input.json",
+            solver_input_payload=solver_input_payload,
+        )
         engine_meta: dict[str, Any] = {
-            "engine_backend": "sparrow_v1",
-            "engine_contract_version": str(solver_input_payload.get("contract_version", "v1")),
+            "engine_backend": engine_backend,
+            "engine_contract_version": engine_contract_version,
             "engine_profile": "default",
-            "solver_runner_module": "vrs_nesting.runner.vrs_solver_runner",
+            "solver_runner_module": invocation.solver_runner_module,
             "solver_input_hash": solver_input_hash,
         }
         engine_meta_blob = (
@@ -1283,13 +1354,6 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
 
         solver_input_runtime_path = input_dir / "solver_input.json"
         solver_input_runtime_path.write_bytes(solver_input_blob)
-        invocation = _build_solver_runner_invocation(
-            settings=settings,
-            run_id=run_id,
-            run_root=run_root,
-            solver_input_path=solver_input_runtime_path,
-            solver_input_payload=solver_input_payload,
-        )
         cmd = invocation.cmd
         timeout_s = invocation.timeout_s
 
