@@ -1,0 +1,59 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a trial-run CLI core task teljes artefaktlancat: canvas, goal
+      YAML, runner prompt, checklist es report. A tartalom maradjon szuk es
+      teszt-tool fokuszu: local-only, product UI-tol fuggetlen probafuttato
+      motor + CLI.
+    outputs:
+      - "canvases/trial_run_tool/trial_run_tool_cli_core.md"
+      - "codex/goals/canvases/trial_run_tool/fill_canvas_trial_run_tool_cli_core.yaml"
+      - "codex/prompts/trial_run_tool/trial_run_tool_cli_core/run.md"
+      - "codex/codex_checklist/trial_run_tool/trial_run_tool_cli_core.md"
+      - "codex/reports/trial_run_tool/trial_run_tool_cli_core.md"
+
+  - name: "Core orchestrator es CLI bellepesi pont kialakitasa"
+    description: >
+      Valositsd meg a local trial-run tool GUI-fuggetlen magjat es a raepulo CLI
+      bellepesi pontot. A teljes futasi logika a `scripts/trial_run_tool_core.py`
+      modulba keruljon; a `scripts/run_trial_run_tool.py` csak parameterkezeles,
+      runtime inditas es vegso osszegzes legyen. A tool a meglevo web_platform
+      API route-okat es a meglevo `scripts/run_web_platform.sh` scriptet hasznalja,
+      uj product route vagy frontend kotodes nelkul.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "scripts/run_trial_run_tool.py"
+      - "codex/reports/trial_run_tool/trial_run_tool_cli_core.md"
+
+  - name: "Run directory contract, redakcio es diagnosztika formalizalasa"
+    description: >
+      Egeszitsd ki a core toolt ugy, hogy minden futas kulon `tmp/runs/...`
+      evidenciakonyvtarat hozzon letre, a token ne keruljon plaintext formaban
+      mentve a summary-ba vagy input snapshotba, es reszleges hibanal is maradjon
+      audit trail. A summary legyen emberileg olvashato, a JSON response-ok pedig
+      teljesek. Ne vezesd be a rejtett SQL lease reset vagy egyeb kozvetlen DB
+      mutato logikat.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "scripts/run_trial_run_tool.py"
+      - "codex/reports/trial_run_tool/trial_run_tool_cli_core.md"
+
+  - name: "Headless smoke a tool magjara"
+    description: >
+      Keszits headless, offline-barati smoke-ot a tool magjara. Fake HTTP/session
+      layerrel vagy monkeypatch-cselt request transporttal bizonyitsd, hogy a
+      core modul helyesen kezeli a parametereket, letrehozza a run directory
+      contractot, menti a JSON evidence-eket, redakalja a tokent, es summary-t
+      general. A smoke ne igenyeljen elo API-t, worker-t vagy Supabase-t.
+    outputs:
+      - "scripts/smoke_trial_run_tool_cli_core.py"
+      - "codex/codex_checklist/trial_run_tool/trial_run_tool_cli_core.md"
+      - "codex/reports/trial_run_tool/trial_run_tool_cli_core.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/trial_run_tool/trial_run_tool_cli_core.md
+    outputs:
+      - "codex/reports/trial_run_tool/trial_run_tool_cli_core.md"
+      - "codex/reports/trial_run_tool/trial_run_tool_cli_core.verify.log"
