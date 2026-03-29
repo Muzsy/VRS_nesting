@@ -7,6 +7,8 @@ import math
 from typing import Any, Callable
 from xml.sax.saxutils import escape
 
+from worker.result_normalizer import placement_transform_point
+
 
 class SheetSvgArtifactsError(RuntimeError):
     pass
@@ -131,14 +133,50 @@ def _path_d_from_rings(outer_ring: list[tuple[float, float]], hole_rings: list[l
 
 
 def _transform_point(x: float, y: float, *, tx: float, ty: float, rotation_deg: float) -> tuple[float, float]:
-    theta = math.radians(rotation_deg)
-    cos_t = math.cos(theta)
-    sin_t = math.sin(theta)
-    return (x * cos_t - y * sin_t + tx, x * sin_t + y * cos_t + ty)
+    return placement_transform_point(
+        local_x=x,
+        local_y=y,
+        tx=tx,
+        ty=ty,
+        rotation_deg=rotation_deg,
+    )
 
 
-def _transform_ring(ring: list[tuple[float, float]], *, tx: float, ty: float, rotation_deg: float) -> list[tuple[float, float]]:
-    return [_transform_point(x, y, tx=tx, ty=ty, rotation_deg=rotation_deg) for x, y in ring]
+def _transform_ring(
+    ring: list[tuple[float, float]],
+    *,
+    tx: float,
+    ty: float,
+    rotation_deg: float,
+    base_x: float,
+    base_y: float,
+) -> list[tuple[float, float]]:
+    return [
+        placement_transform_point(
+            local_x=x,
+            local_y=y,
+            tx=tx,
+            ty=ty,
+            rotation_deg=rotation_deg,
+            base_x=base_x,
+            base_y=base_y,
+        )
+        for x, y in ring
+    ]
+
+
+def _bbox_min_from_rings(
+    outer_ring: list[tuple[float, float]],
+    hole_rings: list[list[tuple[float, float]]],
+) -> tuple[float, float]:
+    points = [*outer_ring]
+    for ring in hole_rings:
+        points.extend(ring)
+    if not points:
+        raise SheetSvgArtifactsError("invalid geometry rings")
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return (min(xs), min(ys))
 
 
 def _color_for_part(part_revision_id: str) -> str:
@@ -227,9 +265,23 @@ def _viewer_outline_by_part(
             outline.get("hole_outlines", []),
             field=f"viewer_outline[{source_geometry_revision_id}].outline.hole_outlines",
         )
+        bbox_raw = derivative.get("bbox")
+        if isinstance(bbox_raw, dict):
+            base_x = _parse_finite_float(
+                bbox_raw.get("min_x"),
+                field=f"viewer_outline[{source_geometry_revision_id}].bbox.min_x",
+            )
+            base_y = _parse_finite_float(
+                bbox_raw.get("min_y"),
+                field=f"viewer_outline[{source_geometry_revision_id}].bbox.min_y",
+            )
+        else:
+            base_x, base_y = _bbox_min_from_rings(outer_ring, hole_rings)
         out[part_revision_id] = {
             "outer_ring": outer_ring,
             "hole_rings": hole_rings,
+            "base_x": base_x,
+            "base_y": base_y,
         }
     return out
 
@@ -280,10 +332,27 @@ def _render_sheet_svg(
             field="projection_placements[].transform_jsonb.rotation_deg",
         )
         instance_id = _require_str(transform.get("instance_id"), field="projection_placements[].transform_jsonb.instance_id")
+        base_x = _parse_finite_float(outline.get("base_x"), field="outline_by_part[].base_x")
+        base_y = _parse_finite_float(outline.get("base_y"), field="outline_by_part[].base_y")
 
-        transformed_outer = _transform_ring(outline["outer_ring"], tx=tx, ty=ty, rotation_deg=rotation_deg)
+        transformed_outer = _transform_ring(
+            outline["outer_ring"],
+            tx=tx,
+            ty=ty,
+            rotation_deg=rotation_deg,
+            base_x=base_x,
+            base_y=base_y,
+        )
         transformed_holes = [
-            _transform_ring(ring, tx=tx, ty=ty, rotation_deg=rotation_deg) for ring in outline["hole_rings"]
+            _transform_ring(
+                ring,
+                tx=tx,
+                ty=ty,
+                rotation_deg=rotation_deg,
+                base_x=base_x,
+                base_y=base_y,
+            )
+            for ring in outline["hole_rings"]
         ]
         path_d = _path_d_from_rings(transformed_outer, transformed_holes)
         fill = _color_for_part(part_revision_id)

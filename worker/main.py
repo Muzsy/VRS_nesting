@@ -27,7 +27,7 @@ from worker.engine_adapter_input import (
 )
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 from worker.raw_output_artifacts import persist_raw_output_artifacts
-from worker.result_normalizer import normalize_solver_output_projection
+from worker.result_normalizer import assert_projection_within_sheet_bounds, normalize_solver_output_projection
 from worker.sheet_dxf_artifacts import persist_sheet_dxf_artifacts
 from worker.sheet_svg_artifacts import persist_sheet_svg_artifacts
 
@@ -1376,6 +1376,10 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             run_id=run_id,
             snapshot_row=snapshot_row,
             run_dir=run_dir,
+        )
+        assert_projection_within_sheet_bounds(
+            sheets=projection.sheets,
+            placements=projection.placements,
         )
         client.replace_run_projection(
             run_id=run_id,

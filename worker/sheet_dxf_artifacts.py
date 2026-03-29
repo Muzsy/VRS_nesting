@@ -6,6 +6,8 @@ import json
 import math
 from typing import Any, Callable
 
+from worker.result_normalizer import placement_transform_point
+
 
 class SheetDxfArtifactsError(RuntimeError):
     pass
@@ -115,14 +117,50 @@ def _format_num(value: float) -> str:
 
 
 def _transform_point(x: float, y: float, *, tx: float, ty: float, rotation_deg: float) -> tuple[float, float]:
-    theta = math.radians(rotation_deg)
-    cos_t = math.cos(theta)
-    sin_t = math.sin(theta)
-    return (x * cos_t - y * sin_t + tx, x * sin_t + y * cos_t + ty)
+    return placement_transform_point(
+        local_x=x,
+        local_y=y,
+        tx=tx,
+        ty=ty,
+        rotation_deg=rotation_deg,
+    )
 
 
-def _transform_ring(ring: list[tuple[float, float]], *, tx: float, ty: float, rotation_deg: float) -> list[tuple[float, float]]:
-    return [_transform_point(x, y, tx=tx, ty=ty, rotation_deg=rotation_deg) for x, y in ring]
+def _transform_ring(
+    ring: list[tuple[float, float]],
+    *,
+    tx: float,
+    ty: float,
+    rotation_deg: float,
+    base_x: float,
+    base_y: float,
+) -> list[tuple[float, float]]:
+    return [
+        placement_transform_point(
+            local_x=x,
+            local_y=y,
+            tx=tx,
+            ty=ty,
+            rotation_deg=rotation_deg,
+            base_x=base_x,
+            base_y=base_y,
+        )
+        for x, y in ring
+    ]
+
+
+def _bbox_min_from_rings(
+    outer_ring: list[tuple[float, float]],
+    hole_rings: list[list[tuple[float, float]]],
+) -> tuple[float, float]:
+    points = [*outer_ring]
+    for ring in hole_rings:
+        points.extend(ring)
+    if not points:
+        raise SheetDxfArtifactsError("invalid geometry rings")
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return (min(xs), min(ys))
 
 
 def _sheet_filename(sheet_index: int) -> str:
@@ -193,6 +231,13 @@ def _nesting_canonical_by_part(
         derivative_kind = str(derivative.get("derivative_kind") or "").strip().lower()
         if derivative_kind and derivative_kind != "nesting_canonical":
             raise SheetDxfArtifactsError(f"invalid derivative kind for geometry_revision_id: {source_geometry_revision_id}")
+        placement_hints = derivative.get("placement_hints")
+        if isinstance(placement_hints, dict):
+            origin_ref = str(placement_hints.get("origin_ref") or "").strip().lower()
+            if origin_ref and origin_ref != "bbox_min_corner":
+                raise SheetDxfArtifactsError(
+                    f"invalid nesting_canonical placement_hints.origin_ref for geometry_revision_id: {source_geometry_revision_id}"
+                )
 
         polygon = _require_dict(
             derivative.get("polygon"),
@@ -206,9 +251,23 @@ def _nesting_canonical_by_part(
             polygon.get("hole_rings", []),
             field=f"nesting_canonical[{source_geometry_revision_id}].polygon.hole_rings",
         )
+        bbox_raw = derivative.get("bbox")
+        if isinstance(bbox_raw, dict):
+            base_x = _parse_finite_float(
+                bbox_raw.get("min_x"),
+                field=f"nesting_canonical[{source_geometry_revision_id}].bbox.min_x",
+            )
+            base_y = _parse_finite_float(
+                bbox_raw.get("min_y"),
+                field=f"nesting_canonical[{source_geometry_revision_id}].bbox.min_y",
+            )
+        else:
+            base_x, base_y = _bbox_min_from_rings(outer_ring, hole_rings)
         out[part_revision_id] = {
             "outer_ring": outer_ring,
             "hole_rings": hole_rings,
+            "base_x": base_x,
+            "base_y": base_y,
         }
     return out
 
@@ -354,8 +413,17 @@ def _render_sheet_dxf(
             transform.get("rotation_deg"),
             field="projection_placements[].transform_jsonb.rotation_deg",
         )
+        base_x = _parse_finite_float(geometry.get("base_x"), field="geometry_by_part[].base_x")
+        base_y = _parse_finite_float(geometry.get("base_y"), field="geometry_by_part[].base_y")
 
-        transformed_outer = _transform_ring(geometry["outer_ring"], tx=tx, ty=ty, rotation_deg=rotation_deg)
+        transformed_outer = _transform_ring(
+            geometry["outer_ring"],
+            tx=tx,
+            ty=ty,
+            rotation_deg=rotation_deg,
+            base_x=base_x,
+            base_y=base_y,
+        )
         _append_lwpolyline(
             pairs,
             handle=_next_handle(handle_counter),
@@ -364,7 +432,14 @@ def _render_sheet_dxf(
             ring=transformed_outer,
         )
         for hole_ring in geometry["hole_rings"]:
-            transformed_hole = _transform_ring(hole_ring, tx=tx, ty=ty, rotation_deg=rotation_deg)
+            transformed_hole = _transform_ring(
+                hole_ring,
+                tx=tx,
+                ty=ty,
+                rotation_deg=rotation_deg,
+                base_x=base_x,
+                base_y=base_y,
+            )
             _append_lwpolyline(
                 pairs,
                 handle=_next_handle(handle_counter),

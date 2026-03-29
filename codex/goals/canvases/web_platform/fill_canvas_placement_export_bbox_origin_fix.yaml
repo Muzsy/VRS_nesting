@@ -1,0 +1,72 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a task teljes artefaktlancanak alapjat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom a meglevo web_platform
+      H1/H3 mintakhoz igazodjon, de a scope maradjon szuk: placement-reference
+      bugfix a worker projection + SVG + DXF retegekben.
+    outputs:
+      - "canvases/web_platform/placement_export_bbox_origin_fix.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_placement_export_bbox_origin_fix.yaml"
+      - "codex/prompts/web_platform/placement_export_bbox_origin_fix/run.md"
+      - "codex/codex_checklist/web_platform/placement_export_bbox_origin_fix.md"
+      - "codex/reports/web_platform/placement_export_bbox_origin_fix.md"
+
+  - name: "Placement referencia truth harmonizalasa"
+    description: >
+      Javitsd a worker projection es export referencia-szemantikajat ugy, hogy a
+      solver altal adott `x,y` placement minden erintett retegben a bbox-min
+      corner referencia szerint legyen ertelmezve. A fix jo iranya egy kozos,
+      determinisztikus placement-transform helper vagy azzal ekvivalens, szigoruan
+      azonos szemantika a `worker/result_normalizer.py`, a
+      `worker/sheet_svg_artifacts.py` es a `worker/sheet_dxf_artifacts.py`
+      modulokban. A `bbox_jsonb` a normalizalt lokalis bbox-bol szamolodjon,
+      ne a nyers negativ lokalis minimumokat transzformalva. A task ne vezessen
+      be solver-redesignt vagy viewer API redesign-t.
+    outputs:
+      - "worker/main.py"
+      - "worker/result_normalizer.py"
+      - "worker/sheet_svg_artifacts.py"
+      - "worker/sheet_dxf_artifacts.py"
+      - "codex/reports/web_platform/placement_export_bbox_origin_fix.md"
+
+  - name: "Out-of-sheet guard es rotation regresszio formalizalasa"
+    description: >
+      Egeszitsd ki a worker oldali logikat determinisztikus guarddal ugy, hogy
+      a canonical projection hibat jelezzen, ha a projectalt bbox a sheet
+      hataran kivulre kerul egy dokumentalt kicsi epsilonon tul. Ugyanebben a
+      taskban formalizald a rotation szemantikat is: a worker ne dobja el a
+      `rotation_deg` erteket, es nem nulla rotation eseten a normalizer/SVG/DXF
+      retegek kovetkezetesen alkalmazzak azt. A reportban nevesitsd, hogy a
+      shape-aware rotation valasztas tovabbra is out-of-scope, mert a jelenlegi
+      `rust/vrs_solver` bbox-alapu kontroll solver.
+    outputs:
+      - "worker/main.py"
+      - "worker/result_normalizer.py"
+      - "worker/sheet_svg_artifacts.py"
+      - "worker/sheet_dxf_artifacts.py"
+      - "codex/reports/web_platform/placement_export_bbox_origin_fix.md"
+
+  - name: "Task-specifikus smoke es dokumentacios artefaktok frissitese"
+    description: >
+      Keszits task-specifikus smoke scriptet, amely fake snapshot + fake geometry
+      payloadokkal bizonyitja legalabb: 1) negativ lokalis bbox-os geometria
+      eseten a normalizer helyes global bbox-ot szamol; 2) az SVG es a DXF export
+      ugyanarra a sheet-beli helyzetre rajzol; 3) `rotation_deg=180.0` eseten a
+      worker reteg kovetkezetesen alkalmazza a rotaciot; 4) a guard hibazik,
+      ha a projectalt bbox kilog a sheetbol; 5) a smoke nem igenyel valos solver
+      binaryt vagy Supabase kapcsolatot. Frissitsd a checklistet es a reportot
+      evidence-alapon, es a report kulon nevezze meg a valodi bugfixet vs.
+      solver-korlatot.
+    outputs:
+      - "scripts/smoke_placement_export_bbox_origin_fix.py"
+      - "codex/codex_checklist/web_platform/placement_export_bbox_origin_fix.md"
+      - "codex/reports/web_platform/placement_export_bbox_origin_fix.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/placement_export_bbox_origin_fix.md
+    outputs:
+      - "codex/reports/web_platform/placement_export_bbox_origin_fix.md"
+      - "codex/reports/web_platform/placement_export_bbox_origin_fix.verify.log"

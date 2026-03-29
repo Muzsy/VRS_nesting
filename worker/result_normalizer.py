@@ -11,6 +11,9 @@ class ResultNormalizerError(RuntimeError):
     pass
 
 
+_OUT_OF_SHEET_EPS_MM = 1e-6
+
+
 @dataclass(frozen=True)
 class ProjectionSummary:
     placed_count: int
@@ -131,24 +134,53 @@ def _polygon_area_mm2(outer_ring: list[tuple[float, float]], hole_rings: list[li
     return area
 
 
-def _transform_bbox(*, bbox: dict[str, float], x: float, y: float, rotation_deg: float) -> dict[str, float]:
+def placement_transform_point(
+    *,
+    local_x: float,
+    local_y: float,
+    tx: float,
+    ty: float,
+    rotation_deg: float,
+    base_x: float = 0.0,
+    base_y: float = 0.0,
+) -> tuple[float, float]:
+    theta = math.radians(rotation_deg)
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+    norm_x = local_x - base_x
+    norm_y = local_y - base_y
+    return (norm_x * cos_t - norm_y * sin_t + tx, norm_x * sin_t + norm_y * cos_t + ty)
+
+
+def _bbox_origin_and_size(*, bbox: dict[str, float]) -> tuple[float, float, float, float]:
     min_x = _parse_finite_float(bbox.get("min_x"), field="bbox.min_x")
     min_y = _parse_finite_float(bbox.get("min_y"), field="bbox.min_y")
     max_x = _parse_finite_float(bbox.get("max_x"), field="bbox.max_x")
     max_y = _parse_finite_float(bbox.get("max_y"), field="bbox.max_y")
     if max_x <= min_x or max_y <= min_y:
         raise ResultNormalizerError("invalid geometry bbox")
+    width = _parse_positive_float(bbox.get("width"), field="bbox.width")
+    height = _parse_positive_float(bbox.get("height"), field="bbox.height")
+    return (min_x, min_y, width, height)
 
-    theta = math.radians(rotation_deg)
-    cos_t = math.cos(theta)
-    sin_t = math.sin(theta)
 
-    corners = ((min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y))
+def _transform_bbox(*, bbox: dict[str, float], x: float, y: float, rotation_deg: float) -> dict[str, float]:
+    _, _, width, height = _bbox_origin_and_size(bbox=bbox)
+    # Projection truth uses bbox-min origin reference: R(local - bbox_min) + translation.
+    corners = ((0.0, 0.0), (width, 0.0), (width, height), (0.0, height))
     transformed: list[tuple[float, float]] = []
     for local_x, local_y in corners:
-        rotated_x = local_x * cos_t - local_y * sin_t
-        rotated_y = local_x * sin_t + local_y * cos_t
-        transformed.append((rotated_x + x, rotated_y + y))
+        transformed.append(
+            placement_transform_point(
+                local_x=local_x,
+                local_y=local_y,
+                tx=x,
+                ty=y,
+                rotation_deg=rotation_deg,
+                base_x=0.0,
+                base_y=0.0,
+            )
+        )
 
     xs = [point[0] for point in transformed]
     ys = [point[1] for point in transformed]
@@ -165,6 +197,33 @@ def _transform_bbox(*, bbox: dict[str, float], x: float, y: float, rotation_deg:
         "width": _round6(out_max_x - out_min_x),
         "height": _round6(out_max_y - out_min_y),
     }
+
+
+def _assert_bbox_within_sheet(
+    *,
+    bbox: dict[str, float],
+    sheet_width_mm: float,
+    sheet_height_mm: float,
+    sheet_index: int,
+    instance_id: str,
+) -> None:
+    min_x = _parse_finite_float(bbox.get("min_x"), field="bbox_jsonb.min_x")
+    min_y = _parse_finite_float(bbox.get("min_y"), field="bbox_jsonb.min_y")
+    max_x = _parse_finite_float(bbox.get("max_x"), field="bbox_jsonb.max_x")
+    max_y = _parse_finite_float(bbox.get("max_y"), field="bbox_jsonb.max_y")
+    if (
+        min_x < -_OUT_OF_SHEET_EPS_MM
+        or min_y < -_OUT_OF_SHEET_EPS_MM
+        or max_x > sheet_width_mm + _OUT_OF_SHEET_EPS_MM
+        or max_y > sheet_height_mm + _OUT_OF_SHEET_EPS_MM
+    ):
+        raise ResultNormalizerError(
+            "projected bbox out of sheet bounds: "
+            f"sheet_index={sheet_index} instance_id={instance_id} "
+            f"bbox=({min_x:.6f},{min_y:.6f},{max_x:.6f},{max_y:.6f}) "
+            f"sheet=({sheet_width_mm:.6f},{sheet_height_mm:.6f}) "
+            f"epsilon_mm={_OUT_OF_SHEET_EPS_MM:.6f}"
+        )
 
 
 def _canonical_json(payload: dict[str, Any]) -> str:
@@ -440,6 +499,8 @@ def normalize_solver_output_projection(*, run_id: str, snapshot_row: dict[str, A
     metrics_jsonb: dict[str, Any] = {
         "normalizer_scope": "h1_e6_t1",
         "run_id": run_id_clean,
+        "placement_origin_ref": "bbox_min_corner",
+        "sheet_bounds_epsilon_mm": _OUT_OF_SHEET_EPS_MM,
         "solver_status": str(output.get("status") or "").strip() or None,
         "per_sheet": per_sheet_metrics,
         "totals": {
@@ -486,3 +547,36 @@ def normalized_projection_json(payload: NormalizedProjection) -> str:
             },
         }
     )
+
+
+def assert_projection_within_sheet_bounds(
+    *,
+    sheets: list[dict[str, Any]],
+    placements: list[dict[str, Any]],
+) -> None:
+    sheet_bounds: dict[int, tuple[float, float]] = {}
+    for idx, sheet in enumerate(sheets):
+        if not isinstance(sheet, dict):
+            raise ResultNormalizerError(f"invalid sheets[{idx}]")
+        sheet_index = _parse_nonnegative_int(sheet.get("sheet_index"), field=f"sheets[{idx}].sheet_index")
+        width_mm = _parse_positive_float(sheet.get("width_mm"), field=f"sheets[{idx}].width_mm")
+        height_mm = _parse_positive_float(sheet.get("height_mm"), field=f"sheets[{idx}].height_mm")
+        sheet_bounds[sheet_index] = (width_mm, height_mm)
+
+    for idx, placement in enumerate(placements):
+        if not isinstance(placement, dict):
+            raise ResultNormalizerError(f"invalid placements[{idx}]")
+        sheet_index = _parse_nonnegative_int(placement.get("sheet_index"), field=f"placements[{idx}].sheet_index")
+        bounds = sheet_bounds.get(sheet_index)
+        if bounds is None:
+            raise ResultNormalizerError(f"invalid placement sheet relation: {sheet_index}")
+        transform = _require_dict(placement.get("transform_jsonb"), field=f"placements[{idx}].transform_jsonb")
+        instance_id = _require_str(transform.get("instance_id"), field=f"placements[{idx}].transform_jsonb.instance_id")
+        bbox = _require_dict(placement.get("bbox_jsonb"), field=f"placements[{idx}].bbox_jsonb")
+        _assert_bbox_within_sheet(
+            bbox=bbox,
+            sheet_width_mm=bounds[0],
+            sheet_height_mm=bounds[1],
+            sheet_index=sheet_index,
+            instance_id=instance_id,
+        )
