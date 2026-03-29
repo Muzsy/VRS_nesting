@@ -1,0 +1,43 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a Tkinter GUI task teljes artefaktlancat: canvas, goal YAML,
+      runner prompt, checklist es report. A tartalom maradjon vekony shell
+      jellegu: a GUI a mar meglevo CLI core fole epuljon, ne hozzon letre uj
+      product boundary-t.
+    outputs:
+      - "canvases/trial_run_tool/trial_run_tool_tkinter_gui.md"
+      - "codex/goals/canvases/trial_run_tool/fill_canvas_trial_run_tool_tkinter_gui.yaml"
+      - "codex/prompts/trial_run_tool/trial_run_tool_tkinter_gui/run.md"
+      - "codex/codex_checklist/trial_run_tool/trial_run_tool_tkinter_gui.md"
+      - "codex/reports/trial_run_tool/trial_run_tool_tkinter_gui.md"
+
+  - name: "Vekony Tkinter GUI shell kialakitasa"
+    description: >
+      Valositsd meg az egyszeru helyi GUI shellt `tkinter` alapon a mar meglevo
+      core runner fole. A GUI tudja bekerni a DXF directoryt, a tokennel kapott
+      runtime parametereket, az uj/meglevo projekt uzemmodot, a tablmeretet es a
+      DXF-enkenti mennyisegeket, majd hatterszalon inditsa el a core futtatast.
+      Ne masold le az API logikat a GUI fajlba.
+    outputs:
+      - "scripts/trial_run_tool_gui.py"
+      - "codex/reports/trial_run_tool/trial_run_tool_tkinter_gui.md"
+
+  - name: "Headless-barati GUI smoke es validacios helper ellenorzes"
+    description: >
+      Keszits smoke-ot a GUI nem-ablakos helper logikajara ugy, hogy a repo gate
+      display nelkul is futtathato maradjon. A smoke bizonyitsa legalabb a
+      konfiguracio-epitest, a validaciot es a core runner fele atadott parameter
+      struktura helyesseget. A smoke ne nyisson valodi GUI ablakot.
+    outputs:
+      - "scripts/smoke_trial_run_tool_tkinter_gui.py"
+      - "codex/codex_checklist/trial_run_tool/trial_run_tool_tkinter_gui.md"
+      - "codex/reports/trial_run_tool/trial_run_tool_tkinter_gui.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/trial_run_tool/trial_run_tool_tkinter_gui.md
+    outputs:
+      - "codex/reports/trial_run_tool/trial_run_tool_tkinter_gui.md"
+      - "codex/reports/trial_run_tool/trial_run_tool_tkinter_gui.verify.log"
