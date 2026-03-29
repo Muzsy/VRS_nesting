@@ -1,0 +1,46 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a v2 IO contractot,
+      valamint a jelenlegi worker adapter es runner boundary relevans fajljait.
+      Frissitsd a canvas-t ugy, hogy pontosan rogzitse: most meg csak v1 builder
+      letezik, a worker meg fixen a v1 backendre van kotve, es a v2 adapter ebben
+      a taskban meg csak snapshot->input boundary lesz, nem backend switch.
+    outputs:
+      - "canvases/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.yaml"
+      - "codex/prompts/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter/run.md"
+      - "codex/codex_checklist/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md"
+      - "codex/reports/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md"
+
+  - name: "Snapshot -> nesting_engine_v2 input builder bevezetese"
+    description: >
+      Bovitd a `worker/engine_adapter_input.py` modult explicit v2 builderrel a
+      `docs/nesting_engine/io_contract_v2.md` alapjan. A builder a snapshotbol
+      determinisztikusan kepezze a `version/seed/time_limit_sec/sheet/parts`
+      mezoket, a v2 rotation policy mar ne legyen a v1 0/90/180/270 korlathoz
+      kotve, es a multi-sheet / nem reprezentalhato eseteket fail-fast hibaval
+      allitsa meg. A meglevo v1 builder ut maradjon valtozatlanul hasznalhato.
+    outputs:
+      - "worker/engine_adapter_input.py"
+      - "codex/reports/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md"
+
+  - name: "Task-specifikus smoke es evidence frissites"
+    description: >
+      Keszits dedikalt smoke scriptet, amely bizonyitja a sikeres snapshot->v2
+      mappinget, a 45 fokos rotaciohalmaz helyes kepzeset, a determinisztikus
+      canonical hash stabilitasat, valamint a fo hibas agak fail-fast viselkedeset
+      (`allow_free_rotation=true`, multi-sheet, hianyzo geometry, ures parts).
+      Frissitsd a checklistet es a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.py"
+      - "codex/codex_checklist/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md"
+      - "codex/reports/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.md"
+      - "codex/reports/web_platform/h3_quality_t3_snapshot_to_nesting_engine_v2_adapter.verify.log"
