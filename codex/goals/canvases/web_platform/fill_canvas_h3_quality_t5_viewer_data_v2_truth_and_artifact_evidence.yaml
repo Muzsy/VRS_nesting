@@ -1,0 +1,54 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, az API runs route
+      viewer-data reszeit, a T1 viewer-fallback smoke-ot, a T4 worker dual-engine
+      bridge nyomait, valamint a nesting_engine_v2 IO contractot. Frissitsd a
+      canvas-t ugy, hogy pontosan rogzitse: T4 utan mar van v2 worker truth, de a
+      viewer-data endpoint parse/response retege tovabbra is v1-centrikus. A task
+      ebben a korben API truth + parsing bridge, nem frontend rollout.
+    outputs:
+      - "canvases/web_platform/h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.yaml"
+      - "codex/prompts/web_platform/h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence/run.md"
+
+  - name: "Viewer-data raw artifact selection es v1-v2 parse bridge"
+    description: >
+      Frissitsd az `api/routes/runs.py` viewer-data helperjeit es response modeljeit
+      ugy, hogy a route determinisztikusan tudja kivalasztani a helyes input/output
+      truthot, es a v1 `solver_output.json` mellett a v2 `nesting_output.json`-t is
+      parse-olja. A solver input parse legyen v1+v2 kompatibilis (v1 `stocks[]`, v2
+      `sheet.width_mm/height_mm`; v1 width/height, v2 `outer_points_mm` bbox), a
+      response pedig additive optional engine/artifact evidence mezokkel bovuljon.
+      A meglévo v1 viselkedes ne torjon el.
+    outputs:
+      - "api/routes/runs.py"
+
+  - name: "Task-specifikus viewer-data smoke"
+    description: >
+      Keszits dedikalt fake-Supabase smoke-ot, ami bizonyitja a legacy v1 run,
+      a v2 truth run es a snapshot fallback esetet is. A smoke ellenorizze az
+      optional engine/artifact evidence mezoket, a sheet mereteket, a placement
+      parse-t, es azt, hogy az endpoint ismetelt hivasokra is determinisztikus
+      marad. Ne hasznalj valodi Supabase-ot es ne kerj valodi solver binary-t.
+    outputs:
+      - "scripts/smoke_h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A reportben kulon
+      nevezd meg: hogyan tortenik a v1/v2 input-output truth kivalasztas,
+      milyen optional response evidence mezok lettek bevezetve, hogyan maradt
+      backward kompatibilis a viewer-data schema, es miert API truth/parsing
+      bridge ez a task, nem frontend rollout.
+    outputs:
+      - "codex/codex_checklist/web_platform/h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.md"
+      - "codex/reports/web_platform/h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.md"
+      - "codex/reports/web_platform/h3_quality_t5_viewer_data_v2_truth_and_artifact_evidence.verify.log"

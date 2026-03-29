@@ -146,6 +146,12 @@ class ViewerDataResponse(BaseModel):
     sheets: list[ViewerSheetResponse]
     placements: list[ViewerPlacementResponse]
     unplaced: list[ViewerUnplacedResponse]
+    engine_backend: str | None = None
+    engine_contract_version: str | None = None
+    engine_profile: str | None = None
+    input_artifact_source: str | None = None
+    output_artifact_filename: str | None = None
+    output_artifact_kind: str | None = None
 
 
 _TERMINAL_STATES = {"done", "failed", "cancelled"}
@@ -685,8 +691,14 @@ def _parse_solver_input_part_sizes(payload: dict[str, Any]) -> dict[str, tuple[f
         part_id = str(item.get("id", "")).strip()
         if not part_id:
             continue
-        width = float(item.get("width") or 0.0)
-        height = float(item.get("height") or 0.0)
+        width = float(item.get("width") or item.get("width_mm") or 0.0)
+        height = float(item.get("height") or item.get("height_mm") or 0.0)
+        if width <= 0 or height <= 0:
+            inferred = _sheet_size_from_outer_points(item.get("outer_points_mm"))
+            if inferred is None:
+                inferred = _sheet_size_from_outer_points(item.get("outer_points"))
+            if inferred is not None:
+                width, height = inferred
         if width <= 0 or height <= 0:
             continue
         out[part_id] = (width, height)
@@ -715,31 +727,224 @@ def _sheet_size_from_outer_points(points: Any) -> tuple[float, float] | None:
     return width, height
 
 
-def _parse_solver_input_sheet_sizes(payload: dict[str, Any]) -> dict[int, tuple[float, float]]:
+def _coerce_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _coerce_nonnegative_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _coerce_int(value: Any, *, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(value: Any, *, default: float = 0.0) -> float:
+    if isinstance(value, bool):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _artifact_basename(filename: str) -> str:
+    value = str(filename or "").strip()
+    if not value:
+        return ""
+    return value.split("/")[-1]
+
+
+def _stable_sorted_artifacts(artifact_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    indexed = list(enumerate(artifact_rows))
+    indexed.sort(
+        key=lambda item: (
+            str(item[1].get("created_at") or ""),
+            _artifact_basename(str(item[1].get("filename") or "")).lower(),
+            str(item[1].get("artifact_type") or "").strip().lower(),
+            str(item[1].get("id") or "").strip(),
+            item[0],
+        )
+    )
+    return [row for _, row in indexed]
+
+
+def _ordered_solver_input_artifacts(artifact_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[tuple[tuple[int, int, str, str], dict[str, Any]]] = []
+    for row in _stable_sorted_artifacts(artifact_rows):
+        artifact_type = str(row.get("artifact_type") or "").strip().lower()
+        basename = _artifact_basename(str(row.get("filename") or "")).lower()
+        if artifact_type != "solver_input" and basename != "solver_input.json":
+            continue
+        score = (
+            0 if basename == "solver_input.json" else 1,
+            0 if artifact_type == "solver_input" else 1,
+            basename,
+            str(row.get("id") or ""),
+        )
+        candidates.append((score, row))
+    candidates.sort(key=lambda item: item[0])
+    return [row for _, row in candidates]
+
+
+def _ordered_engine_meta_artifacts(artifact_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[tuple[tuple[int, int, str, str], dict[str, Any]]] = []
+    for row in _stable_sorted_artifacts(artifact_rows):
+        artifact_type = str(row.get("artifact_type") or "").strip().lower()
+        basename = _artifact_basename(str(row.get("filename") or "")).lower()
+        if artifact_type != "engine_meta" and basename != "engine_meta.json":
+            continue
+        score = (
+            0 if basename == "engine_meta.json" else 1,
+            0 if artifact_type == "engine_meta" else 1,
+            basename,
+            str(row.get("id") or ""),
+        )
+        candidates.append((score, row))
+    candidates.sort(key=lambda item: item[0])
+    return [row for _, row in candidates]
+
+
+def _output_kind_from_row(row: dict[str, Any]) -> str | None:
+    artifact_type = str(row.get("artifact_type") or "").strip().lower()
+    basename = _artifact_basename(str(row.get("filename") or "")).lower()
+    if artifact_type == "nesting_output" or basename == "nesting_output.json":
+        return "nesting_output"
+    if artifact_type == "solver_output" or basename == "solver_output.json":
+        return "solver_output"
+    return None
+
+
+def _ordered_solver_output_artifacts(
+    artifact_rows: list[dict[str, Any]],
+    *,
+    engine_backend: str | None,
+) -> list[tuple[str, dict[str, Any]]]:
+    normalized_backend = str(engine_backend or "").strip().lower()
+    preferred_kind: str | None = None
+    if normalized_backend == "nesting_engine_v2":
+        preferred_kind = "nesting_output"
+    elif normalized_backend == "sparrow_v1":
+        preferred_kind = "solver_output"
+
+    candidates: list[tuple[tuple[int, int, int, str, str], str, dict[str, Any]]] = []
+    for row in _stable_sorted_artifacts(artifact_rows):
+        kind = _output_kind_from_row(row)
+        if kind is None:
+            continue
+        basename = _artifact_basename(str(row.get("filename") or "")).lower()
+        artifact_type = str(row.get("artifact_type") or "").strip().lower()
+        if preferred_kind is not None:
+            preferred_rank = 0 if kind == preferred_kind else 1
+        else:
+            preferred_rank = 0 if kind == "solver_output" else 1
+        score = (
+            preferred_rank,
+            0 if basename == f"{kind}.json" else 1,
+            0 if artifact_type == kind else 1,
+            basename,
+            str(row.get("id") or ""),
+        )
+        candidates.append((score, kind, row))
+    candidates.sort(key=lambda item: item[0])
+    return [(kind, row) for _, kind, row in candidates]
+
+
+def _download_artifact_json(
+    *,
+    row: dict[str, Any],
+    supabase: SupabaseClient,
+    access_token: str,
+    settings: Settings,
+) -> dict[str, Any] | None:
+    storage_key = str(row.get("storage_key") or "").strip()
+    if not storage_key:
+        return None
+    try:
+        artifact_bucket = str(row.get("storage_bucket") or "").strip() or settings.storage_bucket
+        signed = supabase.create_signed_download_url(
+            access_token=access_token,
+            bucket=artifact_bucket,
+            object_key=storage_key,
+            expires_in=settings.signed_url_ttl_s,
+        )
+        blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
+        parsed = json.loads(blob.decode("utf-8"))
+    except (SupabaseHTTPError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def _parse_solver_input_sheet_sizes(
+    payload: dict[str, Any],
+    *,
+    sheet_count_hint: int = 0,
+) -> dict[int, tuple[float, float]]:
     out: dict[int, tuple[float, float]] = {}
     stocks = payload.get("stocks")
-    if not isinstance(stocks, list):
+    if isinstance(stocks, list):
+        sheet_index = 0
+        for item in stocks:
+            if not isinstance(item, dict):
+                continue
+            qty = _coerce_positive_int(item.get("quantity")) or 0
+            if qty <= 0:
+                continue
+
+            width = _coerce_float(item.get("width"), default=0.0)
+            height = _coerce_float(item.get("height"), default=0.0)
+            if width <= 0 or height <= 0:
+                inferred = _sheet_size_from_outer_points(item.get("outer_points"))
+                if inferred is None:
+                    continue
+                width, height = inferred
+
+            for _ in range(qty):
+                out[sheet_index] = (width, height)
+                sheet_index += 1
+        if out:
+            return out
+
+    sheet = payload.get("sheet")
+    if not isinstance(sheet, dict):
+        return out
+    width = _coerce_float(sheet.get("width_mm"), default=0.0)
+    height = _coerce_float(sheet.get("height_mm"), default=0.0)
+    if width <= 0 or height <= 0:
         return out
 
-    sheet_index = 0
-    for item in stocks:
-        if not isinstance(item, dict):
-            continue
-        qty = int(item.get("quantity") or 0)
-        if qty <= 0:
-            continue
-
-        width = float(item.get("width") or 0.0)
-        height = float(item.get("height") or 0.0)
-        if width <= 0 or height <= 0:
-            inferred = _sheet_size_from_outer_points(item.get("outer_points"))
-            if inferred is None:
-                continue
-            width, height = inferred
-
-        for _ in range(qty):
-            out[sheet_index] = (width, height)
-            sheet_index += 1
+    quantity = (
+        _coerce_positive_int(sheet.get("quantity"))
+        or _coerce_positive_int(sheet.get("required_qty"))
+        or _coerce_positive_int(sheet.get("count"))
+        or 1
+    )
+    target_count = max(quantity, max(int(sheet_count_hint), 0), 1)
+    for idx in range(target_count):
+        out[idx] = (width, height)
     return out
 
 
@@ -747,21 +952,34 @@ def _parse_solver_output(
     payload: dict[str, Any],
     *,
     part_sizes: dict[str, tuple[float, float]],
-) -> tuple[list[ViewerPlacementResponse], list[ViewerUnplacedResponse]]:
+) -> tuple[list[ViewerPlacementResponse], list[ViewerUnplacedResponse], int]:
     placements: list[ViewerPlacementResponse] = []
+    max_sheet_index = -1
     for item in payload.get("placements", []) if isinstance(payload.get("placements"), list) else []:
         if not isinstance(item, dict):
             continue
-        part_id = str(item.get("part_id", ""))
+        part_id = str(item.get("part_id", "")).strip()
         part_width, part_height = part_sizes.get(part_id, (10.0, 10.0))
+        instance_id = str(item.get("instance_id", "")).strip()
+        if not instance_id:
+            instance_raw = item.get("instance")
+            if instance_raw is not None:
+                if part_id:
+                    instance_id = f"{part_id}:{_coerce_int(instance_raw, default=0)}"
+                else:
+                    instance_id = str(_coerce_int(instance_raw, default=0))
+        sheet_index = _coerce_nonnegative_int(item.get("sheet_index"))
+        if sheet_index is None:
+            sheet_index = _coerce_int(item.get("sheet"), default=0)
+        max_sheet_index = max(max_sheet_index, int(sheet_index))
         placements.append(
             ViewerPlacementResponse(
-                instance_id=str(item.get("instance_id", "")),
+                instance_id=instance_id,
                 part_id=part_id,
-                sheet_index=int(item.get("sheet_index", 0)),
-                x=float(item.get("x", 0.0)),
-                y=float(item.get("y", 0.0)),
-                rotation_deg=float(item.get("rotation_deg", 0.0)),
+                sheet_index=int(sheet_index),
+                x=_coerce_float(item.get("x_mm"), default=_coerce_float(item.get("x"), default=0.0)),
+                y=_coerce_float(item.get("y_mm"), default=_coerce_float(item.get("y"), default=0.0)),
+                rotation_deg=_coerce_float(item.get("rotation_deg"), default=0.0),
                 width_mm=part_width,
                 height_mm=part_height,
             )
@@ -771,14 +989,30 @@ def _parse_solver_output(
     for item in payload.get("unplaced", []) if isinstance(payload.get("unplaced"), list) else []:
         if not isinstance(item, dict):
             continue
+        part_id = str(item.get("part_id", "")).strip()
+        instance_id = str(item.get("instance_id", "")).strip()
+        if not instance_id:
+            instance_raw = item.get("instance")
+            if instance_raw is not None:
+                if part_id:
+                    instance_id = f"{part_id}:{_coerce_int(instance_raw, default=0)}"
+                else:
+                    instance_id = str(_coerce_int(instance_raw, default=0))
         unplaced.append(
             ViewerUnplacedResponse(
-                instance_id=str(item.get("instance_id", "")),
-                part_id=str(item.get("part_id", "")),
+                instance_id=instance_id,
+                part_id=part_id,
                 reason=str(item.get("reason", "")) or None,
             )
         )
-    return placements, unplaced
+    objective = payload.get("objective")
+    objective_sheets_used = _coerce_int(objective.get("sheets_used"), default=0) if isinstance(objective, dict) else 0
+    sheets_used = max(
+        _coerce_int(payload.get("sheets_used"), default=0),
+        objective_sheets_used,
+        max_sheet_index + 1 if max_sheet_index >= 0 else 0,
+    )
+    return placements, unplaced, sheets_used
 
 
 @router.get("/{run_id}/viewer-data", response_model=ViewerDataResponse)
@@ -800,11 +1034,14 @@ def get_viewer_data(
     by_sheet: dict[int, dict[str, Any]] = {}
     solver_payload: dict[str, Any] = {}
     solver_input_payload: dict[str, Any] = {}
+    engine_meta_payload: dict[str, Any] = {}
+    input_artifact_source = "unknown"
+    output_artifact_filename: str | None = None
+    output_artifact_kind: str | None = None
 
     for row in artifact_rows:
         artifact_id = str(row.get("id", ""))
         filename = str(row.get("filename", ""))
-        storage_key = str(row.get("storage_key", ""))
         sheet_index = row.get("sheet_index")
         artifact_type = str(row.get("artifact_type", ""))
 
@@ -827,36 +1064,34 @@ def get_viewer_data(
                 slot["svg_artifact_id"] = artifact_id
                 slot["svg_filename"] = filename
 
-        if artifact_type == "solver_output" or filename.endswith("solver_output.json"):
-            try:
-                artifact_bucket = str(row.get("storage_bucket") or "").strip() or settings.storage_bucket
-                signed = supabase.create_signed_download_url(
-                    access_token=user.access_token,
-                    bucket=artifact_bucket,
-                    object_key=storage_key,
-                    expires_in=settings.signed_url_ttl_s,
-                )
-                blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
-                parsed = json.loads(blob.decode("utf-8"))
-                if isinstance(parsed, dict):
-                    solver_payload = parsed
-            except (SupabaseHTTPError, json.JSONDecodeError):
-                solver_payload = {}
-        if artifact_type == "solver_input" or filename.endswith("solver_input.json"):
-            try:
-                artifact_bucket = str(row.get("storage_bucket") or "").strip() or settings.storage_bucket
-                signed = supabase.create_signed_download_url(
-                    access_token=user.access_token,
-                    bucket=artifact_bucket,
-                    object_key=storage_key,
-                    expires_in=settings.signed_url_ttl_s,
-                )
-                blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
-                parsed = json.loads(blob.decode("utf-8"))
-                if isinstance(parsed, dict):
-                    solver_input_payload = parsed
-            except (SupabaseHTTPError, json.JSONDecodeError):
-                solver_input_payload = {}
+    for row in _ordered_engine_meta_artifacts(artifact_rows):
+        parsed = _download_artifact_json(row=row, supabase=supabase, access_token=user.access_token, settings=settings)
+        if parsed is not None:
+            engine_meta_payload = parsed
+            break
+
+    engine_backend = str(engine_meta_payload.get("engine_backend") or "").strip() or None
+    for row in _ordered_solver_output_artifacts(artifact_rows, engine_backend=engine_backend):
+        output_kind, output_row = row
+        parsed = _download_artifact_json(
+            row=output_row,
+            supabase=supabase,
+            access_token=user.access_token,
+            settings=settings,
+        )
+        if parsed is None:
+            continue
+        solver_payload = parsed
+        output_artifact_kind = output_kind
+        output_artifact_filename = _artifact_basename(str(output_row.get("filename") or "")) or None
+        break
+
+    for row in _ordered_solver_input_artifacts(artifact_rows):
+        parsed = _download_artifact_json(row=row, supabase=supabase, access_token=user.access_token, settings=settings)
+        if parsed is not None:
+            solver_input_payload = parsed
+            input_artifact_source = "artifact"
+            break
 
     # Deterministic fallback: if no solver_input artifact was found in the
     # run_artifacts table, attempt to read from the well-known snapshot storage
@@ -875,19 +1110,28 @@ def get_viewer_data(
             parsed = json.loads(blob.decode("utf-8"))
             if isinstance(parsed, dict):
                 solver_input_payload = parsed
+                input_artifact_source = "snapshot_fallback"
         except (SupabaseHTTPError, json.JSONDecodeError, Exception):  # noqa: BLE001
             solver_input_payload = {}
 
     part_sizes = _parse_solver_input_part_sizes(solver_input_payload)
-    sheet_sizes = _parse_solver_input_sheet_sizes(solver_input_payload)
-    placements, unplaced = _parse_solver_output(solver_payload, part_sizes=part_sizes)
+    placements, unplaced, parsed_sheets_used = _parse_solver_output(solver_payload, part_sizes=part_sizes)
+    sheet_sizes = _parse_solver_input_sheet_sizes(
+        solver_input_payload,
+        sheet_count_hint=max(parsed_sheets_used, 0),
+    )
     placements_per_sheet: dict[int, int] = {}
     area_per_sheet: dict[int, float] = {}
     for item in placements:
         placements_per_sheet[item.sheet_index] = placements_per_sheet.get(item.sheet_index, 0) + 1
         area_per_sheet[item.sheet_index] = area_per_sheet.get(item.sheet_index, 0.0) + (item.width_mm * item.height_mm)
 
-    sheet_indices = sorted(set(by_sheet.keys()) | set(placements_per_sheet.keys()) | set(sheet_sizes.keys()))
+    sheet_indices = sorted(
+        set(by_sheet.keys())
+        | set(placements_per_sheet.keys())
+        | set(sheet_sizes.keys())
+        | set(range(max(parsed_sheets_used, 0)))
+    )
     sheets: list[ViewerSheetResponse] = []
     for idx in sheet_indices:
         slot = by_sheet.get(idx, {})
@@ -973,6 +1217,12 @@ def get_viewer_data(
         sheets=sheets,
         placements=placements,
         unplaced=unplaced,
+        engine_backend=str(engine_meta_payload.get("engine_backend") or "").strip() or None,
+        engine_contract_version=str(engine_meta_payload.get("engine_contract_version") or "").strip() or None,
+        engine_profile=str(engine_meta_payload.get("engine_profile") or "").strip() or None,
+        input_artifact_source=input_artifact_source,
+        output_artifact_filename=output_artifact_filename,
+        output_artifact_kind=output_artifact_kind,
     )
 
 
