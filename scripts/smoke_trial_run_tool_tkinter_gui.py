@@ -52,7 +52,6 @@ def main() -> int:
 
             form_existing = GuiFormValues(
                 dxf_dir=str(dxf_dir),
-                bearer_token="gui-secret-token",
                 api_base_url="http://localhost:8000/v1",
                 sheet_width="2000",
                 sheet_height="1000",
@@ -63,8 +62,6 @@ def main() -> int:
                 project_description="ignored in existing mode",
                 default_qty="2",
                 auto_start_platform=False,
-                supabase_url="https://example.supabase.co",
-                supabase_anon_key="anon-key",
                 technology_display_name="Setup ignored existing mode",
                 technology_machine_code="MACH-X",
                 technology_material_code="MAT-X",
@@ -84,8 +81,8 @@ def main() -> int:
             if [path.name for path in files] != detected_names:
                 raise RuntimeError("build_config_from_form returned unexpected file list")
 
-            if config.token_source != "gui":
-                raise RuntimeError("token_source should be gui")
+            if config.bearer_token:
+                raise RuntimeError("bearer_token should stay empty in GUI env-auth mode")
             if config.existing_project_id != "project_42":
                 raise RuntimeError("existing_project_id mismatch")
             if config.project_name is not None:
@@ -103,11 +100,46 @@ def main() -> int:
             if config.technology_material_code != "MAT-X":
                 raise RuntimeError("technology_material_code should pass through")
 
+            with patch(
+                "scripts.trial_run_tool_gui._resolve_env",
+                side_effect=lambda key: (
+                    "https://example.supabase.co"
+                    if key == "SUPABASE_URL"
+                    else ("anon-key" if key == "SUPABASE_ANON_KEY" else "")
+                ),
+            ):
+                new_config, _ = build_config_from_form(
+                    GuiFormValues(
+                        dxf_dir=str(dxf_dir),
+                        api_base_url="http://localhost:8000/v1",
+                        sheet_width="2000",
+                        sheet_height="1000",
+                        output_base_dir=str(out_dir),
+                        mode="new",
+                        project_id="",
+                        project_name="my project",
+                        project_description="desc",
+                        default_qty="1",
+                        auto_start_platform=False,
+                        technology_display_name="Trial Setup",
+                        technology_machine_code="MACHINE",
+                        technology_material_code="MATERIAL",
+                        technology_thickness_mm="3.0",
+                        technology_kerf_mm="0.2",
+                        technology_spacing_mm="0.0",
+                        technology_margin_mm="0.0",
+                        technology_rotation_step_deg="90",
+                        technology_allow_free_rotation=False,
+                    ),
+                    {},
+                )
+            if new_config.project_name != "my project":
+                raise RuntimeError("project_name should pass through in new mode")
+
             _expect_error(
                 lambda: build_config_from_form(
                     GuiFormValues(
                         dxf_dir=str(dxf_dir),
-                        bearer_token="token",
                         api_base_url="http://localhost:8000/v1",
                         sheet_width="2000",
                         sheet_height="1000",
@@ -118,8 +150,6 @@ def main() -> int:
                         project_description="",
                         default_qty="1",
                         auto_start_platform=False,
-                        supabase_url="",
-                        supabase_anon_key="",
                         technology_display_name="Trial Setup",
                         technology_machine_code="MACHINE",
                         technology_material_code="MATERIAL",
@@ -139,7 +169,6 @@ def main() -> int:
                 lambda: build_config_from_form(
                     GuiFormValues(
                         dxf_dir=str(dxf_dir),
-                        bearer_token="token",
                         api_base_url="http://localhost:8000/v1",
                         sheet_width="2000",
                         sheet_height="1000",
@@ -150,8 +179,6 @@ def main() -> int:
                         project_description="desc",
                         default_qty="0",
                         auto_start_platform=False,
-                        supabase_url="",
-                        supabase_anon_key="",
                         technology_display_name="Trial Setup",
                         technology_machine_code="MACHINE",
                         technology_material_code="MATERIAL",
@@ -171,7 +198,6 @@ def main() -> int:
                 lambda: build_config_from_form(
                     GuiFormValues(
                         dxf_dir=str(dxf_dir),
-                        bearer_token="token",
                         api_base_url="http://localhost:8000/v1",
                         sheet_width="2000",
                         sheet_height="1000",
@@ -182,8 +208,6 @@ def main() -> int:
                         project_description="desc",
                         default_qty="1",
                         auto_start_platform=False,
-                        supabase_url="",
-                        supabase_anon_key="",
                         technology_display_name="Trial Setup",
                         technology_machine_code="MACHINE",
                         technology_material_code="MATERIAL",
@@ -204,7 +228,6 @@ def main() -> int:
                     lambda: build_config_from_form(
                         GuiFormValues(
                             dxf_dir=str(dxf_dir),
-                            bearer_token="token",
                             api_base_url="http://localhost:8000/v1",
                             sheet_width="2000",
                             sheet_height="1000",
@@ -215,8 +238,6 @@ def main() -> int:
                             project_description="desc",
                             default_qty="1",
                             auto_start_platform=False,
-                            supabase_url="",
-                            supabase_anon_key="",
                             technology_display_name="Trial Setup",
                             technology_machine_code="MACHINE",
                             technology_material_code="MATERIAL",
