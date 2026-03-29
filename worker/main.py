@@ -1226,6 +1226,61 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         )
         client.set_run_input_snapshot_hash(run_id=run_id, snapshot_hash=solver_input_hash)
 
+        # --- Canonical solver input artifact registration ---
+        # The solver_input_snapshot is the canonical source of truth for the
+        # solver input.  Register it as a formal "solver_input" run artifact so
+        # that the viewer-data endpoint (and any other consumer) can discover it
+        # through the standard run_artifacts table instead of relying on
+        # side-channel storage paths.
+        solver_input_storage_key = f"runs/{run_id}/inputs/solver_input_snapshot.json"
+        client.insert_run_artifact(
+            run_id=run_id,
+            storage_bucket=settings.storage_bucket,
+            artifact_type="solver_input",
+            filename="solver_input.json",
+            storage_key=solver_input_storage_key,
+            size_bytes=len(solver_input_blob),
+            sheet_index=None,
+        )
+
+        # --- Engine meta artifact ---
+        # Persist engine backend / contract / profile metadata as an explicit
+        # artifact so that run evidence is self-describing without requiring
+        # stderr log parsing.
+        engine_meta: dict[str, Any] = {
+            "engine_backend": "sparrow_v1",
+            "engine_contract_version": str(solver_input_payload.get("contract_version", "v1")),
+            "engine_profile": "default",
+            "solver_runner_module": "vrs_nesting.runner.vrs_solver_runner",
+            "solver_input_hash": solver_input_hash,
+        }
+        engine_meta_blob = (
+            json.dumps(engine_meta, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+        ).encode("utf-8")
+        engine_meta_storage_key = f"runs/{run_id}/artifacts/engine_meta.json"
+        client.upload_object(
+            bucket=settings.storage_bucket,
+            object_key=engine_meta_storage_key,
+            payload=engine_meta_blob,
+        )
+        client.register_run_artifact_raw(
+            run_id=run_id,
+            artifact_kind="log",
+            storage_bucket=settings.storage_bucket,
+            storage_path=engine_meta_storage_key,
+            metadata_json={
+                "legacy_artifact_type": "engine_meta",
+                "filename": "engine_meta.json",
+                "size_bytes": len(engine_meta_blob),
+            },
+        )
+        logger.info(
+            "event=engine_meta_persisted run_id=%s backend=%s contract=%s",
+            run_id,
+            engine_meta["engine_backend"],
+            engine_meta["engine_contract_version"],
+        )
+
         solver_input_runtime_path = input_dir / "solver_input.json"
         solver_input_runtime_path.write_bytes(solver_input_blob)
         invocation = _build_solver_runner_invocation(

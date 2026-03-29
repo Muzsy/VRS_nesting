@@ -64,6 +64,8 @@ class _FakeTransport(HttpTransport):
             "a_run_log": b"run line 1\nrun line 2\n",
             "a_runner_meta": b'{"worker": "fake"}\n',
             "a_solver_stderr": b"stderr line\n",
+            "a_solver_input": b'{"contract_version": "v1", "stocks": [], "parts": []}\n',
+            "a_engine_meta": b'{"engine_backend": "sparrow_v1", "engine_contract_version": "v1", "engine_profile": "default", "solver_runner_module": "vrs_nesting.runner.vrs_solver_runner"}\n',
         }
 
     def request(self, req: _HttpRequest) -> _FakeResponse:
@@ -268,6 +270,8 @@ class _FakeTransport(HttpTransport):
                         {"id": "a_run_log", "artifact_type": "run_log", "filename": "run.log"},
                         {"id": "a_runner_meta", "artifact_type": "runner_meta", "filename": "runner_meta.json"},
                         {"id": "a_solver_stderr", "artifact_type": "solver_stderr", "filename": "solver_stderr.log"},
+                        {"id": "a_solver_input", "artifact_type": "solver_input", "filename": "solver_input.json"},
+                        {"id": "a_engine_meta", "artifact_type": "engine_meta", "filename": "engine_meta.json"},
                     ]
                 },
             )
@@ -361,6 +365,8 @@ def main() -> int:
             "summary.md",
             "sheet_001.svg",
             "sheet_001.dxf",
+            "solver_input.json",
+            "engine_meta.json",
         ]
         for rel in expected_files:
             _assert_exists(result.run_dir / rel)
@@ -374,6 +380,21 @@ def main() -> int:
             raise RuntimeError("summary.md missing SUCCESS marker")
         if "Project Technology Setup" not in summary_text or "seeded: True" not in summary_text:
             raise RuntimeError("summary.md missing technology setup section/details")
+        if "Engine & Artifact Evidence" not in summary_text:
+            raise RuntimeError("summary.md missing Engine & Artifact Evidence section")
+        for quality_field in (
+            "engine_backend: sparrow_v1",
+            "engine_contract_version: v1",
+            "solver_input_present: True",
+            "solver_output_present: True",
+            "run_log_present: True",
+            "runner_meta_present: True",
+            "solver_stderr_present: True",
+            "engine_meta_present: True",
+            "artifact_completeness:",
+        ):
+            if quality_field not in summary_text:
+                raise RuntimeError(f"summary.md missing quality-debug field: {quality_field}")
 
         downloads = json.loads((result.run_dir / "downloaded_artifact_urls.json").read_text(encoding="utf-8"))
         if not isinstance(downloads, dict):

@@ -858,6 +858,26 @@ def get_viewer_data(
             except (SupabaseHTTPError, json.JSONDecodeError):
                 solver_input_payload = {}
 
+    # Deterministic fallback: if no solver_input artifact was found in the
+    # run_artifacts table, attempt to read from the well-known snapshot storage
+    # path that the worker uploads for every run.  This covers older runs
+    # created before the worker registered solver_input as a formal artifact.
+    if not solver_input_payload:
+        _snapshot_key = f"runs/{run_id}/inputs/solver_input_snapshot.json"
+        try:
+            signed = supabase.create_signed_download_url(
+                access_token=user.access_token,
+                bucket=settings.storage_bucket,
+                object_key=_snapshot_key,
+                expires_in=settings.signed_url_ttl_s,
+            )
+            blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
+            parsed = json.loads(blob.decode("utf-8"))
+            if isinstance(parsed, dict):
+                solver_input_payload = parsed
+        except (SupabaseHTTPError, json.JSONDecodeError, Exception):  # noqa: BLE001
+            solver_input_payload = {}
+
     part_sizes = _parse_solver_input_part_sizes(solver_input_payload)
     sheet_sizes = _parse_solver_input_sheet_sizes(solver_input_payload)
     placements, unplaced = _parse_solver_output(solver_payload, part_sizes=part_sizes)

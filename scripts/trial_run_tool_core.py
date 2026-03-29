@@ -821,6 +821,7 @@ def _build_summary_markdown(
     token_meta: dict[str, Any],
     warnings: list[str],
     error_message: str | None,
+    artifact_evidence: dict[str, Any] | None = None,
 ) -> str:
     lines: list[str] = []
     lines.append("# Trial run summary")
@@ -852,6 +853,26 @@ def _build_summary_markdown(
     if blocker:
         lines.append(f"- blocker: {blocker}")
     lines.append("")
+
+    # --- Engine & Artifact Evidence section ---
+    ev = artifact_evidence or {}
+    lines.append("## Engine & Artifact Evidence")
+    lines.append("")
+    lines.append(f"- engine_backend: {ev.get('engine_backend', 'unknown')}")
+    lines.append(f"- engine_contract_version: {ev.get('engine_contract_version', 'unknown')}")
+    lines.append(f"- engine_profile: {ev.get('engine_profile', 'unknown')}")
+    lines.append(f"- solver_input_present: {ev.get('solver_input_present', False)}")
+    lines.append(f"- solver_output_present: {ev.get('solver_output_present', False)}")
+    lines.append(f"- run_log_present: {ev.get('run_log_present', False)}")
+    lines.append(f"- runner_meta_present: {ev.get('runner_meta_present', False)}")
+    lines.append(f"- solver_stderr_present: {ev.get('solver_stderr_present', False)}")
+    lines.append(f"- engine_meta_present: {ev.get('engine_meta_present', False)}")
+    lines.append(f"- artifact_completeness: {ev.get('artifact_completeness', '0/0')}")
+    missing = ev.get("missing_artifacts", [])
+    if missing:
+        lines.append(f"- missing_artifacts: {', '.join(missing)}")
+    lines.append("")
+
     lines.append("## Token")
     lines.append("")
     lines.append(f"- source: {token_meta.get('source', '')}")
@@ -982,6 +1003,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     part_requirements: list[dict[str, Any]] = []
     downloaded_items: list[dict[str, Any]] = []
     download_errors: list[dict[str, Any]] = []
+    artifact_items: list[dict[str, Any]] = []
 
     auth_headers = {
         "Authorization": f"Bearer {normalized_config.bearer_token}",
@@ -1441,10 +1463,12 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
             "sheet_svg",
             "sheet_dxf",
             "solver_output",
+            "solver_input",
             "run_log",
             "solver_stdout",
             "solver_stderr",
             "runner_meta",
+            "engine_meta",
         }
         used_names: set[str] = set()
         for item in artifact_items:
@@ -1542,6 +1566,36 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     else:
         error_message = None
 
+    # --- Build artifact evidence for quality-debug summary ---
+    _found_types = {str(item.get("artifact_type", "")).strip() for item in artifact_items if isinstance(item, dict)}
+    _quality_evidence_types = {"solver_input", "solver_output", "run_log", "runner_meta", "solver_stderr", "engine_meta"}
+    _present_types = _found_types & _quality_evidence_types
+    _missing_types = _quality_evidence_types - _found_types
+    _completeness = f"{len(_present_types)}/{len(_quality_evidence_types)}"
+
+    # Try to parse engine meta from downloaded file
+    _engine_meta_parsed: dict[str, Any] = {}
+    _engine_meta_path = run_dir / "engine_meta.json"
+    if _engine_meta_path.is_file():
+        try:
+            _engine_meta_parsed = json.loads(_engine_meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    artifact_evidence: dict[str, Any] = {
+        "engine_backend": _engine_meta_parsed.get("engine_backend", "unknown"),
+        "engine_contract_version": _engine_meta_parsed.get("engine_contract_version", "unknown"),
+        "engine_profile": _engine_meta_parsed.get("engine_profile", "unknown"),
+        "solver_input_present": "solver_input" in _found_types,
+        "solver_output_present": "solver_output" in _found_types,
+        "run_log_present": "run_log" in _found_types,
+        "runner_meta_present": "runner_meta" in _found_types,
+        "solver_stderr_present": "solver_stderr" in _found_types,
+        "engine_meta_present": "engine_meta" in _found_types,
+        "artifact_completeness": _completeness,
+        "missing_artifacts": sorted(_missing_types) if _missing_types else [],
+    }
+
     summary = _build_summary_markdown(
         success=success,
         run_dir=run_dir,
@@ -1555,6 +1609,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         token_meta=token_meta,
         warnings=warnings,
         error_message=error_message,
+        artifact_evidence=artifact_evidence,
     )
     recorder.write_text("summary.md", summary)
 

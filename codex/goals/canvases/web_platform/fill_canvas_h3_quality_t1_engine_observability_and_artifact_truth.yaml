@@ -1,0 +1,62 @@
+steps:
+  - name: "Felderítés és task artefaktok rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, valamint a
+      releváns worker/viewer/trial tool fájlokat. Frissítsd a canvas-t úgy,
+      hogy világosan rögzítse a jelenlegi artifact truth problémát, a scope-ot,
+      a kizárásokat és a célzott fájlokat. Ne csússz át engine_v2 adapter vagy
+      dual-engine taskba.
+    outputs:
+      - "canvases/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t1_engine_observability_and_artifact_truth.yaml"
+      - "codex/prompts/web_platform/h3_quality_t1_engine_observability_and_artifact_truth/run.md"
+      - "codex/codex_checklist/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+      - "codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+
+  - name: "Worker artifact truth és engine meta rendberakása"
+    description: >
+      A `worker/main.py` fájlban rendezd a solver input artifact truthot úgy,
+      hogy egyértelmű legyen, melyik input artifact a canonical source of truth,
+      és a run mellé egyértelműen visszaolvasható engine meta kerüljön.
+      A task maradjon v1 világban: ne vezess be nesting_engine_v2 adaptert és
+      ne módosítsd a solver backend választást.
+    outputs:
+      - "worker/main.py"
+      - "codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+
+  - name: "Viewer input fallback és sheet metric robusztusítása"
+    description: >
+      Az `api/routes/runs.py` viewer-data logikáját úgy frissítsd, hogy a
+      canonical solver input artifactot olvassa elsőként, de determinisztikus
+      fallbackot adjon snapshot jellegű input esetén is. A task ne csússzon át
+      result_normalizer_v2 vagy frontend layout módosításba.
+    outputs:
+      - "api/routes/runs.py"
+
+  - name: "Trial tool quality-debug summary bővítése"
+    description: >
+      A `scripts/trial_run_tool_core.py` summary / evidence kimenetét bővítsd
+      minimum backend, contract version, input/output artifact jelenlét,
+      run.log/runner_meta/stderr jelenlét és artifact completeness mezőkkel.
+      Ez még ne legyen A/B diff task és ne vezessen be dual-engine futtatást.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+
+  - name: "Task-specifikus smoke és dokumentációs artefaktok frissítése"
+    description: >
+      Készíts dedikált smoke scriptet, amely bizonyítja a canonical input
+      artifact truthot, a viewer fallback viselkedést és a trial tool quality
+      summary minimum mezőit. Frissítsd a checklistet és a reportot evidence
+      alapon.
+    outputs:
+      - "scripts/smoke_h3_quality_t1_engine_observability_and_artifact_truth.py"
+      - "codex/codex_checklist/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+      - "codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+      - "codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.verify.log"
