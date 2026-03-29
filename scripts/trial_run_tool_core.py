@@ -792,6 +792,7 @@ def _initialize_run_placeholders(recorder: _RunRecorder) -> None:
         "run_artifacts.json": {"status": "pending", "items": []},
         "viewer_data.json": {"status": "pending"},
         "downloaded_artifact_urls.json": {"status": "pending", "items": [], "errors": []},
+        "quality_summary.json": {"status": "pending"},
     }
     for name, payload in placeholders.items():
         recorder.write_json(name, payload)
@@ -919,6 +920,210 @@ def parse_qty_overrides(raw_items: list[str]) -> dict[str, int]:
     return out
 
 
+def _as_float(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return int(value)
+
+
+def _round_float(value: float | None, digits: int = 6) -> float | None:
+    if value is None:
+        return None
+    return round(float(value), digits)
+
+
+def _rotation_label(deg: float) -> str:
+    normalized = deg % 360.0
+    nearest = round(normalized)
+    if abs(normalized - nearest) < 1e-6:
+        return str(int(nearest))
+    return f"{normalized:.3f}".rstrip("0").rstrip(".")
+
+
+def _build_quality_summary_json(
+    *,
+    success: bool,
+    project_id: str | None,
+    run_id: str | None,
+    final_run_status: str | None,
+    final_run_payload: dict[str, Any] | None,
+    viewer_payload: dict[str, Any] | None,
+    artifact_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    viewer = viewer_payload if isinstance(viewer_payload, dict) else {}
+    final_run = final_run_payload if isinstance(final_run_payload, dict) else {}
+
+    placements_raw = viewer.get("placements")
+    placements = placements_raw if isinstance(placements_raw, list) else []
+    unplaced_raw = viewer.get("unplaced")
+    unplaced = unplaced_raw if isinstance(unplaced_raw, list) else []
+    sheets_raw = viewer.get("sheets")
+    sheets = sheets_raw if isinstance(sheets_raw, list) else []
+
+    placements_count = len([item for item in placements if isinstance(item, dict)])
+    unplaced_count = len([item for item in unplaced if isinstance(item, dict)])
+
+    rotation_histogram: dict[str, int] = {}
+    unique_rotations_values: set[float] = set()
+    nonzero_rotation_count = 0
+    placement_sheet_indices: set[int] = set()
+    row_bands: set[float] = set()
+    x_mins: list[float] = []
+    y_mins: list[float] = []
+    x_maxs: list[float] = []
+    y_maxs: list[float] = []
+
+    for item in placements:
+        if not isinstance(item, dict):
+            continue
+        rotation_raw = _as_float(item.get("rotation_deg"))
+        if rotation_raw is not None:
+            label = _rotation_label(rotation_raw)
+            rotation_histogram[label] = rotation_histogram.get(label, 0) + 1
+            unique_rotations_values.add(float(label))
+            if abs(rotation_raw % 360.0) > 1e-6:
+                nonzero_rotation_count += 1
+
+        sheet_index = _as_int(item.get("sheet_index"))
+        if sheet_index is not None:
+            placement_sheet_indices.add(sheet_index)
+
+        x = _as_float(item.get("x"))
+        y = _as_float(item.get("y"))
+        width = _as_float(item.get("width_mm"))
+        height = _as_float(item.get("height_mm"))
+        if x is not None and y is not None and width is not None and height is not None and width >= 0 and height >= 0:
+            x_mins.append(x)
+            y_mins.append(y)
+            x_maxs.append(x + width)
+            y_maxs.append(y + height)
+            row_bands.add(round(y, 3))
+
+    unique_rotations_deg: list[float | int] = []
+    for value in sorted(unique_rotations_values):
+        nearest = round(value)
+        if abs(value - nearest) < 1e-6:
+            unique_rotations_deg.append(int(nearest))
+        else:
+            unique_rotations_deg.append(round(value, 3))
+    ordered_hist = {key: rotation_histogram[key] for key in sorted(rotation_histogram, key=lambda item: float(item))}
+
+    sheet_width_mm: float | None = None
+    sheet_height_mm: float | None = None
+    sheet_util_values: list[float] = []
+    populated_sheet_indices: set[int] = set()
+
+    for sheet in sheets:
+        if not isinstance(sheet, dict):
+            continue
+        if sheet_width_mm is None and sheet_height_mm is None:
+            candidate_w = _as_float(sheet.get("width_mm"))
+            candidate_h = _as_float(sheet.get("height_mm"))
+            if candidate_w is not None and candidate_h is not None and candidate_w > 0 and candidate_h > 0:
+                sheet_width_mm = candidate_w
+                sheet_height_mm = candidate_h
+
+        util = _as_float(sheet.get("utilization_pct"))
+        if util is not None:
+            sheet_util_values.append(util)
+
+        idx = _as_int(sheet.get("sheet_index"))
+        placements_on_sheet = _as_int(sheet.get("placements_count"))
+        if idx is not None and placements_on_sheet is not None and placements_on_sheet > 0:
+            populated_sheet_indices.add(idx)
+
+    if placement_sheet_indices:
+        sheets_used = len(placement_sheet_indices)
+    elif populated_sheet_indices:
+        sheets_used = len(populated_sheet_indices)
+    else:
+        fallback_sheet_count = _as_int(viewer.get("sheet_count"))
+        sheets_used = fallback_sheet_count or 0
+
+    solver_utilization_pct: float | None = None
+    run_metrics = final_run.get("metrics")
+    if isinstance(run_metrics, dict):
+        util_ratio = _as_float(run_metrics.get("utilization_ratio"))
+        if util_ratio is not None:
+            solver_utilization_pct = util_ratio * 100.0
+    if solver_utilization_pct is None and sheet_util_values:
+        solver_utilization_pct = sum(sheet_util_values) / float(len(sheet_util_values))
+
+    occupied_extent_mm: dict[str, float] | None = None
+    coverage_ratio_x: float | None = None
+    coverage_ratio_y: float | None = None
+    if x_mins and y_mins and x_maxs and y_maxs:
+        min_x = min(x_mins)
+        min_y = min(y_mins)
+        max_x = max(x_maxs)
+        max_y = max(y_maxs)
+        occupied_extent_mm = {
+            "min_x": round(min_x, 3),
+            "min_y": round(min_y, 3),
+            "max_x": round(max_x, 3),
+            "max_y": round(max_y, 3),
+            "width": round(max_x - min_x, 3),
+            "height": round(max_y - min_y, 3),
+        }
+        if sheet_width_mm and sheet_width_mm > 0:
+            coverage_ratio_x = (max_x - min_x) / sheet_width_mm
+        if sheet_height_mm and sheet_height_mm > 0:
+            coverage_ratio_y = (max_y - min_y) / sheet_height_mm
+
+    signals: list[str] = []
+    if placements_count > 0 and nonzero_rotation_count == 0:
+        signals.append("all_zero_rotation")
+    if placements_count > 0 and len(unique_rotations_deg) == 1:
+        signals.append("single_rotation_family")
+    if sheets_used == 1 and placements_count > 0:
+        signals.append("single_sheet")
+    if len(row_bands) >= 2:
+        signals.append("multi_row_layout_signal")
+    if coverage_ratio_x is not None and coverage_ratio_y is not None:
+        signals.append("coverage_ratio_known")
+
+    artifact_presence = {
+        "solver_input_present": bool(artifact_evidence.get("solver_input_present", False)),
+        "solver_output_present": bool(artifact_evidence.get("solver_output_present", False)),
+        "run_log_present": bool(artifact_evidence.get("run_log_present", False)),
+        "runner_meta_present": bool(artifact_evidence.get("runner_meta_present", False)),
+        "solver_stderr_present": bool(artifact_evidence.get("solver_stderr_present", False)),
+        "engine_meta_present": bool(artifact_evidence.get("engine_meta_present", False)),
+    }
+
+    return {
+        "status": "ok" if success else "error",
+        "generated_at_utc": _now_iso(),
+        "run_id": run_id or "",
+        "project_id": project_id or "",
+        "engine_backend": str(artifact_evidence.get("engine_backend", "unknown")),
+        "engine_contract_version": str(artifact_evidence.get("engine_contract_version", "unknown")),
+        "engine_profile": str(artifact_evidence.get("engine_profile", "unknown")),
+        "final_run_status": final_run_status or "",
+        "placements_count": placements_count,
+        "unplaced_count": unplaced_count,
+        "sheets_used": sheets_used,
+        "solver_utilization_pct": _round_float(solver_utilization_pct, 6),
+        "sheet_width_mm": _round_float(sheet_width_mm, 3),
+        "sheet_height_mm": _round_float(sheet_height_mm, 3),
+        "unique_rotations_deg": unique_rotations_deg,
+        "nonzero_rotation_count": nonzero_rotation_count,
+        "rotation_histogram": ordered_hist,
+        "occupied_extent_mm": occupied_extent_mm,
+        "coverage_ratio_x": _round_float(coverage_ratio_x, 6),
+        "coverage_ratio_y": _round_float(coverage_ratio_y, 6),
+        "artifact_completeness": str(artifact_evidence.get("artifact_completeness", "0/0")),
+        "artifact_presence": artifact_presence,
+        "signals": signals,
+    }
+
+
 def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None) -> TrialRunResult:
     """Execute the end-to-end trial-run tool chain.
 
@@ -990,6 +1195,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     project_id: str | None = None
     run_id: str | None = None
     final_run_status: str | None = None
+    final_run_payload: dict[str, Any] | None = None
     error_message: str | None = None
     warnings: list[str] = []
     technology_setup_summary: dict[str, Any] = {
@@ -1004,6 +1210,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     downloaded_items: list[dict[str, Any]] = []
     download_errors: list[dict[str, Any]] = []
     artifact_items: list[dict[str, Any]] = []
+    viewer_payload: dict[str, Any] = {}
 
     auth_headers = {
         "Authorization": f"Bearer {normalized_config.bearer_token}",
@@ -1396,7 +1603,6 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         step = "run-poll"
         poll_deadline = time.monotonic() + normalized_config.run_poll_timeout_s
         poll_history: list[dict[str, Any]] = []
-        final_run_payload: dict[str, Any] | None = None
         terminal = {"done", "failed", "cancelled"}
         while time.monotonic() <= poll_deadline:
             run_details = _request_json(
@@ -1447,7 +1653,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         recorder.write_json("run_artifacts.json", {"status": "ok", "items": artifact_items})
 
         step = "viewer-data"
-        viewer_payload = _request_json(
+        viewer_payload_raw = _request_json(
             transport=http,
             method="GET",
             url=f"{normalized_config.api_base_url}/projects/{project_id}/runs/{run_id}/viewer-data",
@@ -1456,6 +1662,10 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
             headers=auth_headers,
             timeout=normalized_config.request_timeout_s,
         )
+        if isinstance(viewer_payload_raw, dict):
+            viewer_payload = viewer_payload_raw
+        else:
+            viewer_payload = {}
         recorder.write_json("viewer_data.json", {"status": "ok", "viewer_data": viewer_payload})
 
         step = "artifact-download"
@@ -1612,6 +1822,16 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         artifact_evidence=artifact_evidence,
     )
     recorder.write_text("summary.md", summary)
+    quality_summary = _build_quality_summary_json(
+        success=success,
+        project_id=project_id,
+        run_id=run_id,
+        final_run_status=final_run_status,
+        final_run_payload=final_run_payload,
+        viewer_payload=viewer_payload,
+        artifact_evidence=artifact_evidence,
+    )
+    recorder.write_json("quality_summary.json", quality_summary)
 
     return TrialRunResult(
         success=success,

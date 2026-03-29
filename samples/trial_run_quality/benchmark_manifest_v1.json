@@ -1,0 +1,50 @@
+{
+  "version": "trial_run_quality_benchmark_manifest_v1",
+  "fixtures_version": "h3_quality_benchmark_fixture_pack_v1",
+  "fixtures_root": "samples/trial_run_quality/fixtures",
+  "cases": [
+    {
+      "case_id": "triangles_rotation_pair",
+      "fixture_kind": "triangles_rotation_pair",
+      "sheet_width_mm": 1200.0,
+      "sheet_height_mm": 800.0,
+      "default_qty": 2,
+      "qty_overrides": {
+        "triangle_b.dxf": 3
+      },
+      "notes": "Two non-axis-aligned triangle parts to surface rotation and multi-row placement evidence.",
+      "expected_signals": [
+        "expects_nonzero_rotation_signal",
+        "expects_multiple_distinct_y_rows"
+      ]
+    },
+    {
+      "case_id": "circles_dense_pack",
+      "fixture_kind": "circles_dense_pack",
+      "sheet_width_mm": 1000.0,
+      "sheet_height_mm": 700.0,
+      "default_qty": 10,
+      "qty_overrides": {},
+      "notes": "Dense repetition case with one circular part family for repetition and coverage-oriented evidence.",
+      "expected_signals": [
+        "expects_dense_repetition_case",
+        "expects_single_rotation_family"
+      ]
+    },
+    {
+      "case_id": "lshape_rect_mix",
+      "fixture_kind": "lshape_rect_mix",
+      "sheet_width_mm": 1300.0,
+      "sheet_height_mm": 900.0,
+      "default_qty": 2,
+      "qty_overrides": {
+        "rect_long.dxf": 4
+      },
+      "notes": "Mixed concave and rectangular geometry to observe row diversity and extent coverage signals.",
+      "expected_signals": [
+        "expects_multiple_distinct_y_rows",
+        "expects_nonzero_rotation_signal"
+      ]
+    }
+  ]
+}

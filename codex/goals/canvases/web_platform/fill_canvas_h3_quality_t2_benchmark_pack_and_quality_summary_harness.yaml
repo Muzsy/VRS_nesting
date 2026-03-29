@@ -1,0 +1,58 @@
+steps:
+  - name: "Felderítés és task artefaktok rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, valamint a
+      releváns trial tool / smoke / benchmark mintákat. Frissítsd a canvas-t úgy,
+      hogy pontosan rögzítse a jelenlegi hiányt: nincs repo-local benchmark pack,
+      nincs gépileg olvasható quality summary, és nincs manifest-alapú benchmark
+      orchestration. Maradj a quality harness scope-on belül.
+    outputs:
+      - "canvases/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t2_benchmark_pack_and_quality_summary_harness.yaml"
+      - "codex/prompts/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness/run.md"
+      - "codex/codex_checklist/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md"
+      - "codex/reports/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md"
+
+  - name: "Deterministikus benchmark fixture generator és manifest létrehozása"
+    description: >
+      Készíts dedikált fixture generátort és repo-local benchmark manifestet a
+      trial tool quality lane-hez. A generator `ezdxf`-fel hozzon létre egyszerű,
+      importer-kompatibilis `CUT_OUTER` benchmark DXF-eket legalább három case-re,
+      a manifest pedig rögzítse a case-ek sheet méreteit, mennyiségeit és az
+      evidence-first expected signalokat. Ne vezess be új import policy-t.
+    outputs:
+      - "scripts/gen_h3_quality_benchmark_fixtures.py"
+      - "samples/trial_run_quality/benchmark_manifest_v1.json"
+      - "docs/nesting_quality/h3_quality_benchmark_harness.md"
+
+  - name: "Quality summary JSON és benchmark runner bevezetése"
+    description: >
+      A `scripts/trial_run_tool_core.py` futás végére vezess be stabil,
+      gépileg olvasható `quality_summary.json` kimenetet a canvasban rögzített
+      minimum KPI mezőkkel. Készíts külön benchmark runner scriptet, amely a
+      manifestből feloldja a case-eket, opcionálisan legenerálja a fixture-öket,
+      majd `run_trial` alapokon futtatja a benchmarkot. A runner tudjon
+      `--plan-only` módot live platform nélkül.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "scripts/run_h3_quality_benchmark.py"
+      - "codex/reports/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md"
+
+  - name: "Task-specifikus smoke és dokumentációs artefaktok frissítése"
+    description: >
+      Készíts dedikált smoke scriptet, amely live platform nélkül bizonyítja a
+      fixture generator determinizmusát, a manifest schema helyességét, a
+      quality_summary KPI mezőit és a benchmark runner `--plan-only` feloldását.
+      Frissítsd a checklistet és a reportot evidence-alapon.
+    outputs:
+      - "scripts/smoke_h3_quality_t2_benchmark_pack_and_quality_summary_harness.py"
+      - "codex/codex_checklist/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md"
+      - "codex/reports/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.md"
+      - "codex/reports/web_platform/h3_quality_t2_benchmark_pack_and_quality_summary_harness.verify.log"
