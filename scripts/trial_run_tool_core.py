@@ -149,6 +149,8 @@ class TrialRunConfig:
     technology_allow_free_rotation: bool = False
     engine_backend: str = "auto"
     quality_profile: str = DEFAULT_QUALITY_PROFILE
+    time_limit_s: int | None = None
+    sa_eval_budget_sec: int | None = None
 
 
 @dataclass(frozen=True)
@@ -766,8 +768,15 @@ def _ensure_api_health(
             status_snapshot = _platform_status_snapshot(recorder)
             health_record["platform_status"] = status_snapshot
             stopped_components = status_snapshot.get("stopped_components", [])
-            if isinstance(stopped_components, list) and stopped_components:
-                recorder.log(f"platform components stopped={','.join(stopped_components)}; restarting platform")
+            needs_restart = isinstance(stopped_components, list) and bool(stopped_components)
+            worker_overrides = _worker_env_overrides(config)
+            backend_override = _engine_backend_env_overrides(config)
+            if not needs_restart and backend_override:
+                needs_restart = True
+                recorder.log(f"platform running but engine backend override requested ({', '.join(f'{k}={v}' for k, v in backend_override.items())}); restarting platform")
+            if needs_restart:
+                if not worker_overrides:
+                    recorder.log(f"platform components stopped={','.join(stopped_components)}; restarting platform")
                 restart_result = _restart_platform_if_requested(config, recorder)
                 health_record["platform_restart"] = restart_result
                 if not restart_result.get("restarted"):
@@ -1308,6 +1317,8 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         technology_allow_free_rotation=bool(config.technology_allow_free_rotation),
         engine_backend=str(config.engine_backend).strip() or "auto",
         quality_profile=resolved_quality_profile,
+        time_limit_s=config.time_limit_s,
+        sa_eval_budget_sec=config.sa_eval_budget_sec,
     )
 
     if normalized_config.engine_backend not in VALID_ENGINE_BACKENDS:
@@ -1379,6 +1390,8 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
             "auto_start_platform": normalized_config.auto_start_platform,
             "engine_backend": normalized_config.engine_backend,
             "quality_profile": normalized_config.quality_profile,
+            "time_limit_s": normalized_config.time_limit_s,
+            "sa_eval_budget_sec": normalized_config.sa_eval_budget_sec,
             "supabase_url_present": bool(normalized_config.supabase_url),
             "supabase_anon_key_present": bool(normalized_config.supabase_anon_key),
             "technology_setup_mode": "seed_new_project" if not normalized_config.existing_project_id else "existing_project_skip_seed",
@@ -1733,7 +1746,11 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
             where="POST /runs",
             expected={200},
             headers=auth_headers,
-            json_body={"run_purpose": "nesting"},
+            json_body={
+                "run_purpose": "nesting",
+                **({"time_limit_s": normalized_config.time_limit_s} if normalized_config.time_limit_s is not None else {}),
+                **({"sa_eval_budget_sec": normalized_config.sa_eval_budget_sec} if normalized_config.sa_eval_budget_sec is not None else {}),
+            },
             timeout=normalized_config.request_timeout_s,
         )
         if not isinstance(run_payload, dict):
@@ -1745,7 +1762,10 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         recorder.log(f"created run run_id={run_id}")
 
         step = "run-poll"
-        poll_deadline = time.monotonic() + normalized_config.run_poll_timeout_s
+        effective_time_limit = float(normalized_config.time_limit_s) if normalized_config.time_limit_s is not None else 60.0
+        effective_poll_timeout = effective_time_limit + 120.0
+        recorder.log(f"poll timeout={effective_poll_timeout:.0f}s (time_limit={effective_time_limit:.0f}s + 120s buffer)")
+        poll_deadline = time.monotonic() + effective_poll_timeout
         poll_history: list[dict[str, Any]] = []
         terminal = {"done", "failed", "cancelled"}
         while time.monotonic() <= poll_deadline:

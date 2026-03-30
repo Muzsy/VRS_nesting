@@ -230,6 +230,8 @@ def create_queued_run_from_project_snapshot(
     project_id: str,
     run_purpose: str | None = None,
     idempotency_key: str | None = None,
+    time_limit_s: int | None = None,
+    sa_eval_budget_sec: int | None = None,
 ) -> dict[str, Any]:
     project_row = _load_project_for_owner(
         supabase=supabase,
@@ -247,6 +249,8 @@ def create_queued_run_from_project_snapshot(
             access_token=access_token,
             owner_user_id=owner_user_id,
             project_id=project_id,
+            time_limit_s=time_limit_s,
+            sa_eval_budget_sec=sa_eval_budget_sec,
         )
     except RunSnapshotBuilderError as exc:
         raise RunCreationError(status_code=exc.status_code, detail=exc.detail) from exc

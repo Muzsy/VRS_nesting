@@ -1186,6 +1186,12 @@ def _resolve_engine_profile_resolution(
             runtime_policy = dict(registry_policy)
             runtime_policy_source = "registry_fallback_invalid_snapshot_policy"
 
+    # Apply per-run sa_eval_budget_sec override from snapshot (set via API request)
+    # regardless of profile resolution source.
+    snapshot_sa_override = solver_config.get("sa_eval_budget_sec")
+    if isinstance(snapshot_sa_override, int) and snapshot_sa_override > 0:
+        runtime_policy["sa_eval_budget_sec"] = snapshot_sa_override
+
     if engine_backend == ENGINE_BACKEND_NESTING_V2:
         nesting_engine_cli_args = build_nesting_engine_cli_args_from_runtime_policy(runtime_policy)
         effective_profile = requested_profile

@@ -681,6 +681,8 @@ def build_run_snapshot_payload(
     owner_user_id: str,
     project_id: str,
     quality_profile: str | None = None,
+    time_limit_s: int | None = None,
+    sa_eval_budget_sec: int | None = None,
 ) -> dict[str, Any]:
     project_id_clean = _sanitize_required(project_id, field="project_id")
 
@@ -733,6 +735,8 @@ def build_run_snapshot_payload(
     if "compaction" not in nesting_runtime_policy:
         # Keep snapshot runtime policy explicit for compaction mode even on legacy profiles.
         nesting_runtime_policy["compaction"] = "off"
+    if sa_eval_budget_sec is not None and sa_eval_budget_sec > 0:
+        nesting_runtime_policy["sa_eval_budget_sec"] = sa_eval_budget_sec
 
     project_manifest_jsonb = {
         "project_id": _sanitize_required(str(project.get("id") or ""), field="project.id"),
@@ -757,10 +761,12 @@ def build_run_snapshot_payload(
         "preset_id": _sanitize_optional(str(technology_setup.get("preset_id") or "")),
     }
 
+    effective_time_limit_s = time_limit_s if (time_limit_s is not None and time_limit_s > 0) else 60
+
     solver_config_jsonb = {
         "units": default_units,
         "seed": 0,
-        "time_limit_s": 60,
+        "time_limit_s": effective_time_limit_s,
         "rotation_step_deg": technology_rotation_step,
         "allow_free_rotation": bool(technology_manifest_jsonb["allow_free_rotation"]),
         "kerf_mm": technology_kerf_mm,
@@ -770,6 +776,7 @@ def build_run_snapshot_payload(
         "engine_backend_hint": "nesting_engine_v2",
         "nesting_engine_runtime_policy": nesting_runtime_policy,
         "snapshot_mode": "h1_minimum_builder",
+        **({"sa_eval_budget_sec": sa_eval_budget_sec} if sa_eval_budget_sec is not None and sa_eval_budget_sec > 0 else {}),
     }
 
     manufacturing_manifest_jsonb, includes_manufacturing = _build_manufacturing_manifest(

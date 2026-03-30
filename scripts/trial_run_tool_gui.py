@@ -64,6 +64,8 @@ class GuiFormValues:
     technology_allow_free_rotation: bool
     engine_backend: str
     quality_profile: str = DEFAULT_QUALITY_PROFILE
+    time_limit_s: str = ""
+    sa_eval_budget_sec: str = ""
 
 
 def collect_dxf_files(dxf_dir: Path) -> list[Path]:
@@ -188,6 +190,16 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
     if quality_profile not in VALID_QUALITY_PROFILES:
         raise TrialRunToolError(f"quality_profile must be one of {VALID_QUALITY_PROFILES}, got: {quality_profile}")
 
+    time_limit_s: int | None = None
+    time_limit_raw = values.time_limit_s.strip()
+    if time_limit_raw:
+        time_limit_s = _parse_positive_int(time_limit_raw, field="time_limit_s")
+
+    sa_eval_budget_sec: int | None = None
+    sa_eval_budget_raw = values.sa_eval_budget_sec.strip()
+    if sa_eval_budget_raw:
+        sa_eval_budget_sec = _parse_positive_int(sa_eval_budget_raw, field="sa_eval_budget_sec")
+
     config = TrialRunConfig(
         dxf_dir=dxf_dir,
         api_base_url=api_base_url,
@@ -211,6 +223,8 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
         technology_allow_free_rotation=bool(values.technology_allow_free_rotation),
         engine_backend=engine_backend,
         quality_profile=quality_profile,
+        time_limit_s=time_limit_s,
+        sa_eval_budget_sec=sa_eval_budget_sec,
     )
     return config, dxf_files
 
@@ -256,6 +270,8 @@ class TrialRunToolGuiApp:
         self._technology_allow_free_rotation_var = tk.BooleanVar(value=bool(args.technology_allow_free_rotation))
         self._engine_backend_var = tk.StringVar(value=args.engine_backend)
         self._quality_profile_var = tk.StringVar(value=args.quality_profile)
+        self._time_limit_s_var = tk.StringVar(value=str(args.time_limit_s) if args.time_limit_s else "")
+        self._sa_eval_budget_sec_var = tk.StringVar(value=str(args.sa_eval_budget_sec) if args.sa_eval_budget_sec else "")
         self._status_var = tk.StringVar(value="Idle")
         self._last_run_dir_var = tk.StringVar(value="")
 
@@ -392,6 +408,12 @@ class TrialRunToolGuiApp:
             width=20,
         )
         self._engine_backend_combo.grid(row=row, column=3, sticky="w", pady=2)
+
+        row += 1
+        ttk.Label(main, text="Time limit (sec)").grid(row=row, column=0, sticky="w", pady=2)
+        ttk.Entry(main, textvariable=self._time_limit_s_var, width=10).grid(row=row, column=1, sticky="w", padx=(8, 8), pady=2)
+        ttk.Label(main, text="SA eval budget (sec)").grid(row=row, column=2, sticky="w", pady=2)
+        ttk.Entry(main, textvariable=self._sa_eval_budget_sec_var, width=10).grid(row=row, column=3, sticky="w", pady=2)
 
         row += 1
         ttk.Label(main, text="Quality profile").grid(row=row, column=2, sticky="w", pady=2)
@@ -550,6 +572,8 @@ class TrialRunToolGuiApp:
             technology_allow_free_rotation=bool(self._technology_allow_free_rotation_var.get()),
             engine_backend=self._engine_backend_var.get(),
             quality_profile=self._quality_profile_var.get(),
+            time_limit_s=self._time_limit_s_var.get(),
+            sa_eval_budget_sec=self._sa_eval_budget_sec_var.get(),
         )
 
     def _set_running(self, running: bool) -> None:
@@ -687,6 +711,18 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=list(VALID_QUALITY_PROFILES),
         default=DEFAULT_QUALITY_PROFILE,
         help="Quality profile selector for nesting runtime policy",
+    )
+    parser.add_argument(
+        "--time-limit-s",
+        type=int,
+        default=None,
+        help="Nesting solver time limit in seconds (default: 60, empty = server default)",
+    )
+    parser.add_argument(
+        "--sa-eval-budget-sec",
+        type=int,
+        default=None,
+        help="SA search evaluation budget in seconds (overrides quality profile default, empty = profile default)",
     )
     return parser
 

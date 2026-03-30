@@ -129,6 +129,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_QUALITY_PROFILE,
         help="Quality profile for nesting engine runtime policy",
     )
+    parser.add_argument(
+        "--time-limit-s",
+        type=int,
+        default=None,
+        help="Nesting solver time limit in seconds (default: 60)",
+    )
+    parser.add_argument(
+        "--sa-eval-budget-sec",
+        type=int,
+        default=None,
+        help="SA search evaluation budget in seconds (overrides quality profile default)",
+    )
     parser.add_argument("--non-interactive", action="store_true", help="Do not prompt for missing required inputs")
     return parser
 
@@ -212,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
             technology_allow_free_rotation=bool(args.technology_allow_free_rotation),
             engine_backend=str(args.engine_backend),
             quality_profile=str(args.quality_profile),
+            time_limit_s=args.time_limit_s,
+            sa_eval_budget_sec=args.sa_eval_budget_sec,
         )
 
         result = run_trial(config)

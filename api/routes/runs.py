@@ -27,6 +27,8 @@ router = APIRouter(prefix="/projects/{project_id}/runs", tags=["runs"])
 class RunCreateRequest(StrictRequestModel):
     idempotency_key: str | None = Field(default=None, max_length=160)
     run_purpose: str = Field(default="nesting", min_length=1, max_length=120)
+    time_limit_s: int | None = Field(default=None, ge=1, le=3600)
+    sa_eval_budget_sec: int | None = Field(default=None, ge=1, le=3600)
 
 
 class RunMetrics(BaseModel):
@@ -354,6 +356,8 @@ def create_run(
             project_id=str(project_id),
             run_purpose=req.run_purpose,
             idempotency_key=req.idempotency_key,
+            time_limit_s=req.time_limit_s,
+            sa_eval_budget_sec=req.sa_eval_budget_sec,
         )
     except RunCreationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
