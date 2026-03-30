@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.trial_run_tool_core import TrialRunConfig, TrialRunToolError, parse_qty_overrides, run_trial
+from scripts.trial_run_tool_core import TrialRunConfig, TrialRunToolError, VALID_ENGINE_BACKENDS, parse_qty_overrides, run_trial
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -109,6 +109,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Disable automatic platform start/restart",
     )
+    parser.add_argument(
+        "--engine-backend",
+        choices=list(VALID_ENGINE_BACKENDS),
+        default="auto",
+        help="Engine backend for nesting worker (auto | sparrow_v1 | nesting_engine_v2)",
+    )
     parser.add_argument("--non-interactive", action="store_true", help="Do not prompt for missing required inputs")
     return parser
 
@@ -190,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
             technology_margin_mm=float(args.technology_margin_mm),
             technology_rotation_step_deg=int(args.technology_rotation_step_deg),
             technology_allow_free_rotation=bool(args.technology_allow_free_rotation),
+            engine_backend=str(args.engine_backend),
         )
 
         result = run_trial(config)

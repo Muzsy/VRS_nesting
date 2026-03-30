@@ -23,6 +23,7 @@ from scripts.trial_run_tool_core import (
     TrialRunConfig,
     TrialRunResult,
     TrialRunToolError,
+    VALID_ENGINE_BACKENDS,
     _resolve_env,
     run_trial,
 )
@@ -59,6 +60,7 @@ class GuiFormValues:
     technology_margin_mm: str
     technology_rotation_step_deg: str
     technology_allow_free_rotation: bool
+    engine_backend: str
 
 
 def collect_dxf_files(dxf_dir: Path) -> list[Path]:
@@ -176,6 +178,10 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
     )
     tech_rotation_step_deg = _parse_rotation_step(values.technology_rotation_step_deg.strip() or "90")
 
+    engine_backend = values.engine_backend.strip() or "auto"
+    if engine_backend not in VALID_ENGINE_BACKENDS:
+        raise TrialRunToolError(f"engine_backend must be one of {VALID_ENGINE_BACKENDS}, got: {engine_backend}")
+
     config = TrialRunConfig(
         dxf_dir=dxf_dir,
         api_base_url=api_base_url,
@@ -197,6 +203,7 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
         technology_margin_mm=tech_margin_mm,
         technology_rotation_step_deg=tech_rotation_step_deg,
         technology_allow_free_rotation=bool(values.technology_allow_free_rotation),
+        engine_backend=engine_backend,
     )
     return config, dxf_files
 
@@ -240,6 +247,7 @@ class TrialRunToolGuiApp:
         self._technology_margin_mm_var = tk.StringVar(value=str(args.technology_margin_mm))
         self._technology_rotation_step_deg_var = tk.StringVar(value=str(args.technology_rotation_step_deg))
         self._technology_allow_free_rotation_var = tk.BooleanVar(value=bool(args.technology_allow_free_rotation))
+        self._engine_backend_var = tk.StringVar(value=args.engine_backend)
         self._status_var = tk.StringVar(value="Idle")
         self._last_run_dir_var = tk.StringVar(value="")
 
@@ -366,6 +374,15 @@ class TrialRunToolGuiApp:
             variable=self._technology_allow_free_rotation_var,
         )
         self._technology_allow_free_rotation_check.grid(row=row, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Label(main, text="Engine backend").grid(row=row, column=2, sticky="w", pady=2)
+        self._engine_backend_combo = ttk.Combobox(
+            main,
+            textvariable=self._engine_backend_var,
+            values=list(VALID_ENGINE_BACKENDS),
+            state="readonly",
+            width=20,
+        )
+        self._engine_backend_combo.grid(row=row, column=3, sticky="w", pady=2)
 
         row += 1
         qty_group = ttk.LabelFrame(main, text="Detected DXF files and per-file qty")
@@ -511,6 +528,7 @@ class TrialRunToolGuiApp:
             technology_margin_mm=self._technology_margin_mm_var.get(),
             technology_rotation_step_deg=self._technology_rotation_step_deg_var.get(),
             technology_allow_free_rotation=bool(self._technology_allow_free_rotation_var.get()),
+            engine_backend=self._engine_backend_var.get(),
         )
 
     def _set_running(self, running: bool) -> None:
@@ -636,6 +654,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--technology-allow-free-rotation",
         action="store_true",
         help="Default setup allow_free_rotation",
+    )
+    parser.add_argument(
+        "--engine-backend",
+        choices=list(VALID_ENGINE_BACKENDS),
+        default="auto",
+        help="Engine backend selector (auto | sparrow_v1 | nesting_engine_v2)",
     )
     return parser
 

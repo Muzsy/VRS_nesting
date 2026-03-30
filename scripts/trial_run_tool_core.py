@@ -24,6 +24,8 @@ from uuid import uuid4
 _JSON_INDENT = 2
 _JSON_SORT_KEYS = True
 
+VALID_ENGINE_BACKENDS = ("auto", "sparrow_v1", "nesting_engine_v2")
+
 
 def _parse_dotenv(path: Path) -> dict[str, str]:
     """Parse a .env file into a dict without python-dotenv dependency."""
@@ -138,6 +140,7 @@ class TrialRunConfig:
     technology_margin_mm: float = 0.0
     technology_rotation_step_deg: int = 90
     technology_allow_free_rotation: bool = False
+    engine_backend: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -614,16 +617,29 @@ def _poll_geometry_revision(
     )
 
 
-def _run_platform_command(*, command: str, recorder: _RunRecorder) -> dict[str, Any]:
+def _engine_backend_env_overrides(config: TrialRunConfig) -> dict[str, str] | None:
+    """Return env overrides for WORKER_ENGINE_BACKEND when a specific backend is requested."""
+    backend = config.engine_backend
+    if backend == "auto":
+        return None
+    return {"WORKER_ENGINE_BACKEND": backend}
+
+
+def _run_platform_command(*, command: str, recorder: _RunRecorder, env_overrides: dict[str, str] | None = None) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     cmd = [str(root / "scripts" / "run_web_platform.sh"), command]
     recorder.log(f"platform command attempt command={' '.join(cmd)}")
+    run_env: dict[str, str] | None = None
+    if env_overrides:
+        run_env = {**os.environ, **env_overrides}
+        recorder.log(f"platform env overrides: {', '.join(f'{k}={v}' for k, v in env_overrides.items())}")
     proc = subprocess.run(
         cmd,
         cwd=root,
         capture_output=True,
         text=True,
         check=False,
+        env=run_env,
     )
     stdout_tail = (proc.stdout or "")[-1000:]
     stderr_tail = (proc.stderr or "")[-1000:]
@@ -675,7 +691,7 @@ def _platform_status_snapshot(recorder: _RunRecorder) -> dict[str, Any]:
 def _start_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder) -> dict[str, Any]:
     if not config.auto_start_platform:
         return {"attempted": False, "started": False}
-    result = _run_platform_command(command="start", recorder=recorder)
+    result = _run_platform_command(command="start", recorder=recorder, env_overrides=_engine_backend_env_overrides(config))
     return {
         "attempted": True,
         "started": bool(result.get("success", False)),
@@ -686,7 +702,7 @@ def _start_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder)
 def _restart_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder) -> dict[str, Any]:
     if not config.auto_start_platform:
         return {"attempted": False, "restarted": False}
-    result = _run_platform_command(command="restart", recorder=recorder)
+    result = _run_platform_command(command="restart", recorder=recorder, env_overrides=_engine_backend_env_overrides(config))
     return {
         "attempted": True,
         "restarted": bool(result.get("success", False)),
@@ -823,6 +839,7 @@ def _build_summary_markdown(
     warnings: list[str],
     error_message: str | None,
     artifact_evidence: dict[str, Any] | None = None,
+    requested_engine_backend: str = "auto",
 ) -> str:
     lines: list[str] = []
     lines.append("# Trial run summary")
@@ -859,6 +876,7 @@ def _build_summary_markdown(
     ev = artifact_evidence or {}
     lines.append("## Engine & Artifact Evidence")
     lines.append("")
+    lines.append(f"- requested_engine_backend: {requested_engine_backend}")
     lines.append(f"- engine_backend: {ev.get('engine_backend', 'unknown')}")
     lines.append(f"- engine_contract_version: {ev.get('engine_contract_version', 'unknown')}")
     lines.append(f"- engine_profile: {ev.get('engine_profile', 'unknown')}")
@@ -955,6 +973,7 @@ def _build_quality_summary_json(
     final_run_payload: dict[str, Any] | None,
     viewer_payload: dict[str, Any] | None,
     artifact_evidence: dict[str, Any],
+    requested_engine_backend: str = "auto",
 ) -> dict[str, Any]:
     viewer = viewer_payload if isinstance(viewer_payload, dict) else {}
     final_run = final_run_payload if isinstance(final_run_payload, dict) else {}
@@ -1097,12 +1116,23 @@ def _build_quality_summary_json(
         "engine_meta_present": bool(artifact_evidence.get("engine_meta_present", False)),
     }
 
+    effective_engine_backend = str(artifact_evidence.get("engine_backend", "unknown"))
+    if requested_engine_backend == "auto":
+        engine_backend_match = None
+    elif effective_engine_backend == "unknown":
+        engine_backend_match = None
+    else:
+        engine_backend_match = effective_engine_backend == requested_engine_backend
+
     return {
         "status": "ok" if success else "error",
         "generated_at_utc": _now_iso(),
         "run_id": run_id or "",
         "project_id": project_id or "",
-        "engine_backend": str(artifact_evidence.get("engine_backend", "unknown")),
+        "requested_engine_backend": requested_engine_backend,
+        "effective_engine_backend": effective_engine_backend,
+        "engine_backend_match": engine_backend_match,
+        "engine_backend": effective_engine_backend,
         "engine_contract_version": str(artifact_evidence.get("engine_contract_version", "unknown")),
         "engine_profile": str(artifact_evidence.get("engine_profile", "unknown")),
         "final_run_status": final_run_status or "",
@@ -1171,7 +1201,13 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         technology_margin_mm=float(config.technology_margin_mm),
         technology_rotation_step_deg=int(config.technology_rotation_step_deg),
         technology_allow_free_rotation=bool(config.technology_allow_free_rotation),
+        engine_backend=str(config.engine_backend).strip() or "auto",
     )
+
+    if normalized_config.engine_backend not in VALID_ENGINE_BACKENDS:
+        raise TrialRunToolError(
+            f"engine_backend must be one of {VALID_ENGINE_BACKENDS}, got: {normalized_config.engine_backend}"
+        )
 
     if normalized_config.default_qty <= 0:
         raise TrialRunToolError("default_qty must be > 0")
@@ -1235,6 +1271,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
             "per_file_qty": normalized_config.per_file_qty,
             "output_base_dir": str(normalized_config.output_base_dir),
             "auto_start_platform": normalized_config.auto_start_platform,
+            "engine_backend": normalized_config.engine_backend,
             "supabase_url_present": bool(normalized_config.supabase_url),
             "supabase_anon_key_present": bool(normalized_config.supabase_anon_key),
             "technology_setup_mode": "seed_new_project" if not normalized_config.existing_project_id else "existing_project_skip_seed",
@@ -1820,6 +1857,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         warnings=warnings,
         error_message=error_message,
         artifact_evidence=artifact_evidence,
+        requested_engine_backend=normalized_config.engine_backend,
     )
     recorder.write_text("summary.md", summary)
     quality_summary = _build_quality_summary_json(
@@ -1830,6 +1868,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         final_run_payload=final_run_payload,
         viewer_payload=viewer_payload,
         artifact_evidence=artifact_evidence,
+        requested_engine_backend=normalized_config.engine_backend,
     )
     recorder.write_json("quality_summary.json", quality_summary)
 
@@ -1855,6 +1894,8 @@ __all__ = [
     "TrialRunConfig",
     "TrialRunResult",
     "TrialRunToolError",
+    "VALID_ENGINE_BACKENDS",
+    "_engine_backend_env_overrides",
     "parse_qty_overrides",
     "run_trial",
 ]

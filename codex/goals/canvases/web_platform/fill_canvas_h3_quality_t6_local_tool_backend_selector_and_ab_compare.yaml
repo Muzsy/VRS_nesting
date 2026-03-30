@@ -1,0 +1,69 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a trial-run tool
+      core/CLI/GUI fajlokat, a benchmark runner jelenlegi logikajat, valamint a T2,
+      T4 es T5 quality lane artefaktjait. Frissitsd a canvas-t ugy, hogy pontosan
+      rogzitse: a backend runtime es viewer truth mar adott, de a local tool meg
+      mindig nem tud explicit backend-matrix laborkent mukodni. A task local tooling
+      scope marad, nem DB/API schema vagy migration feladat.
+    outputs:
+      - "canvases/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t6_local_tool_backend_selector_and_ab_compare.yaml"
+      - "codex/prompts/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare/run.md"
+
+  - name: "Trial-run core plus CLI es GUI backend selector"
+    description: >
+      Bovitsd a `scripts/trial_run_tool_core.py`, `scripts/run_trial_run_tool.py`
+      es `scripts/trial_run_tool_gui.py` fajlokat ugy, hogy a tool explicit
+      `auto | sparrow_v1 | nesting_engine_v2` backend selectort kapjon. A core
+      tudjon subprocess env override-ot atadni a `scripts/run_web_platform.sh`
+      start/restart hivasoknak, amikor konkret backend lett kerve. A summary es
+      `quality_summary.json` kulon jelezze a `requested_engine_backend`, az
+      effektive evidence-bol olvasott `effective_engine_backend` es az ezek kozti
+      egyezest. A local tool behavior maradjon visszafele kompatibilis, `auto`
+      defaulttal.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "scripts/run_trial_run_tool.py"
+      - "scripts/trial_run_tool_gui.py"
+
+  - name: "Benchmark runner backend matrix es compare summary"
+    description: >
+      Frissitsd a `scripts/run_h3_quality_benchmark.py` es a kapcsolodo benchmark
+      dokumentaciot ugy, hogy a harness tudjon egy vagy tobb backenddel futni,
+      valamint convenience compare modot is adjon. A `--plan-only` mod backend
+      matrixot bontson ki, es az output gepileg olvashato compare delta blokkot
+      adjon minden olyan case-re, ahol ket backendes eredmeny rendelkezik quality
+      summary-val. Ne allits optimalitast, csak evidence-first kulonbsegeket.
+    outputs:
+      - "scripts/run_h3_quality_benchmark.py"
+      - "docs/nesting_quality/h3_quality_benchmark_harness.md"
+
+  - name: "Task-specifikus local tooling smoke"
+    description: >
+      Keszits dedikalt smoke scriptet, amely valodi Supabase, valodi solver es
+      valodi worker processz nelkul bizonyitja a backend selector es compare matrix
+      viselkedest. A smoke ellenorizze a CLI es GUI config normalizalast, a
+      subprocess env override-ot, a `--plan-only --compare-backends` matrixot, es
+      a fake run eredmenyekbol kepzett compare delta blokkot is.
+    outputs:
+      - "scripts/smoke_h3_quality_t6_local_tool_backend_selector_and_ab_compare.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A reportben kulon
+      nevezd meg: hogyan kerul at a kert backend a local tool vilagban, hogyan lesz
+      szetvalasztva a requested vs effective backend truth, hogyan mukodik a backend
+      matrix a benchmark runnerben, es miert marad a task local tooling scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare.md"
+      - "codex/reports/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare.md"
+      - "codex/reports/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare.verify.log"

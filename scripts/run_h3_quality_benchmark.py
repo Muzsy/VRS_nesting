@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.gen_h3_quality_benchmark_fixtures import generate_benchmark_fixtures
-from scripts.trial_run_tool_core import TrialRunConfig, TrialRunToolError, run_trial
+from scripts.trial_run_tool_core import TrialRunConfig, TrialRunToolError, VALID_ENGINE_BACKENDS, run_trial
 
 
 def _now_iso() -> str:
@@ -158,7 +159,125 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_false",
         help="Disable auto-start for platform services",
     )
+    parser.add_argument(
+        "--engine-backend",
+        action="append",
+        default=[],
+        help="Engine backend to run (repeatable; default: auto)",
+    )
+    parser.add_argument(
+        "--compare-backends",
+        action="store_true",
+        help="Convenience: run each case with sparrow_v1 + nesting_engine_v2 and produce compare delta",
+    )
     return parser.parse_args(argv)
+
+
+def _safe_float(value: Any) -> float | None:
+    """Extract a float from a value, or return None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _build_compare_delta(case_id: str, case_entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Build evidence-first compare delta block for a case with 2+ backend runs."""
+    summaries: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for entry in case_entries:
+        qs = entry.get("quality_summary")
+        if isinstance(qs, dict) and qs.get("status") == "ok":
+            summaries.append((entry, qs))
+
+    if len(summaries) < 2:
+        incomplete_entries = [
+            entry.get("engine_backend", "auto")
+            for entry in case_entries
+            if not isinstance(entry.get("quality_summary"), dict) or entry.get("quality_summary", {}).get("status") != "ok"
+        ]
+        return {
+            "case_id": case_id,
+            "requested_backends": [entry.get("engine_backend", "auto") for entry in case_entries],
+            "effective_backends": [],
+            "sheet_count_delta": None,
+            "utilization_pct_delta": None,
+            "runtime_sec_delta": None,
+            "nonzero_rotation_delta": None,
+            "winner_by_sheet_count": None,
+            "winner_by_utilization": None,
+            "incomplete_reason": f"not enough valid quality summaries (have {len(summaries)}, need 2)",
+            "notes": f"incomplete backends: {incomplete_entries}",
+        }
+
+    e1, qs1 = summaries[0]
+    e2, qs2 = summaries[1]
+
+    sheets1 = _safe_float(qs1.get("sheets_used"))
+    sheets2 = _safe_float(qs2.get("sheets_used"))
+    util1 = _safe_float(qs1.get("solver_utilization_pct"))
+    util2 = _safe_float(qs2.get("solver_utilization_pct"))
+    runtime1 = _safe_float(e1.get("runtime_sec"))
+    runtime2 = _safe_float(e2.get("runtime_sec"))
+    nonzero1 = _safe_float(qs1.get("nonzero_rotation_count"))
+    nonzero2 = _safe_float(qs2.get("nonzero_rotation_count"))
+
+    sheet_count_delta = (sheets2 - sheets1) if sheets1 is not None and sheets2 is not None else None
+    utilization_pct_delta = round(util2 - util1, 6) if util1 is not None and util2 is not None else None
+    runtime_sec_delta = round(runtime2 - runtime1, 3) if runtime1 is not None and runtime2 is not None else None
+    nonzero_rotation_delta = int(nonzero2 - nonzero1) if nonzero1 is not None and nonzero2 is not None else None
+
+    winner_by_sheet: str | None = None
+    if sheets1 is not None and sheets2 is not None:
+        if sheets1 < sheets2:
+            winner_by_sheet = e1.get("engine_backend", "auto")
+        elif sheets2 < sheets1:
+            winner_by_sheet = e2.get("engine_backend", "auto")
+        else:
+            winner_by_sheet = "tie"
+
+    winner_by_util: str | None = None
+    if util1 is not None and util2 is not None:
+        if util1 > util2:
+            winner_by_util = e1.get("engine_backend", "auto")
+        elif util2 > util1:
+            winner_by_util = e2.get("engine_backend", "auto")
+        else:
+            winner_by_util = "tie"
+
+    return {
+        "case_id": case_id,
+        "requested_backends": [e1.get("engine_backend", "auto"), e2.get("engine_backend", "auto")],
+        "effective_backends": [
+            qs1.get("effective_engine_backend", qs1.get("engine_backend", "unknown")),
+            qs2.get("effective_engine_backend", qs2.get("engine_backend", "unknown")),
+        ],
+        "sheet_count_delta": sheet_count_delta,
+        "utilization_pct_delta": utilization_pct_delta,
+        "runtime_sec_delta": runtime_sec_delta,
+        "nonzero_rotation_delta": nonzero_rotation_delta,
+        "winner_by_sheet_count": winner_by_sheet,
+        "winner_by_utilization": winner_by_util,
+        "incomplete_reason": None,
+        "notes": None,
+    }
+
+
+def _build_compare_results(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group entries by case_id and build compare deltas where 2+ backends exist."""
+    from collections import OrderedDict
+
+    by_case: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+    for entry in entries:
+        cid = str(entry.get("case_id", ""))
+        by_case.setdefault(cid, []).append(entry)
+
+    results: list[dict[str, Any]] = []
+    for cid, group in by_case.items():
+        if len(group) < 2:
+            continue
+        delta = _build_compare_delta(cid, group)
+        if delta is not None:
+            results.append(delta)
+    return results
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -183,6 +302,18 @@ def main(argv: list[str] | None = None) -> int:
         cases = all_cases
     if not cases:
         raise TrialRunToolError("no benchmark cases selected")
+
+    # --- Resolve backend matrix ---
+    explicit_backends = [str(item).strip() for item in args.engine_backend if str(item).strip()]
+    if args.compare_backends:
+        backends = ["sparrow_v1", "nesting_engine_v2"]
+    elif explicit_backends:
+        for backend in explicit_backends:
+            if backend not in VALID_ENGINE_BACKENDS:
+                raise TrialRunToolError(f"invalid engine backend: {backend} (valid: {', '.join(VALID_ENGINE_BACKENDS)})")
+        backends = explicit_backends
+    else:
+        backends = ["auto"]
 
     manifest_fixture_root = Path(str(manifest["fixtures_root"]))
     fixtures_root = Path(str(args.fixtures_root)) if args.fixtures_root else manifest_fixture_root
@@ -219,93 +350,108 @@ def main(argv: list[str] | None = None) -> int:
         if not dxf_files:
             raise TrialRunToolError(f"fixture has no DXF parts for case_id={case_id}: {dxf_dir}")
 
-        base_entry: dict[str, Any] = {
-            "case_id": case_id,
-            "fixture_kind": case["fixture_kind"],
-            "run_dir": None,
-            "success": None,
-            "final_run_status": None,
-            "quality_summary_path": None,
-            "quality_summary": None,
-            "notes": {
-                "manifest_notes": case["notes"],
-                "expected_signals": case["expected_signals"],
-                "dxf_dir": str(dxf_dir),
-                "dxf_files": dxf_files,
-            },
-        }
+        for backend in backends:
+            base_entry: dict[str, Any] = {
+                "case_id": case_id,
+                "engine_backend": backend,
+                "fixture_kind": case["fixture_kind"],
+                "run_dir": None,
+                "success": None,
+                "final_run_status": None,
+                "quality_summary_path": None,
+                "quality_summary": None,
+                "runtime_sec": None,
+                "notes": {
+                    "manifest_notes": case["notes"],
+                    "expected_signals": case["expected_signals"],
+                    "dxf_dir": str(dxf_dir),
+                    "dxf_files": dxf_files,
+                },
+            }
 
-        if args.plan_only:
-            base_entry["notes"]["plan_only"] = True
+            if args.plan_only:
+                base_entry["notes"]["plan_only"] = True
+                entries.append(base_entry)
+                continue
+
+            config = TrialRunConfig(
+                dxf_dir=dxf_dir,
+                bearer_token=str(args.token).strip(),
+                token_source=("argv" if str(args.token).strip() else "auto"),
+                api_base_url=str(args.api_base_url),
+                sheet_width=float(case["sheet_width_mm"]),
+                sheet_height=float(case["sheet_height_mm"]),
+                default_qty=int(case["default_qty"]),
+                per_file_qty=dict(case["qty_overrides"]),
+                output_base_dir=output_base_dir,
+                auto_start_platform=bool(args.auto_start_platform),
+                health_timeout_s=float(args.health_timeout_s),
+                poll_interval_s=float(args.poll_interval_s),
+                run_poll_timeout_s=float(args.run_poll_timeout_s),
+                geometry_poll_timeout_s=float(args.geometry_poll_timeout_s),
+                request_timeout_s=float(args.request_timeout_s),
+                supabase_url=(str(args.supabase_url).strip() or None) if args.supabase_url else None,
+                supabase_anon_key=(str(args.supabase_anon_key).strip() or None) if args.supabase_anon_key else None,
+                project_name=f"H3 quality benchmark {case_id}",
+                project_description=f"H3 quality benchmark case={case_id} backend={backend}",
+                engine_backend=backend,
+            )
+            t_start = _time.monotonic()
+            try:
+                result = run_trial(config)
+                runtime_sec = round(_time.monotonic() - t_start, 3)
+                quality_summary_path = result.run_dir / "quality_summary.json"
+                quality_summary: dict[str, Any] | None = None
+                if quality_summary_path.is_file():
+                    loaded = _load_json(quality_summary_path)
+                    if isinstance(loaded, dict):
+                        quality_summary = loaded
+                base_entry.update(
+                    {
+                        "run_dir": str(result.run_dir),
+                        "success": bool(result.success),
+                        "final_run_status": result.final_run_status,
+                        "quality_summary_path": str(quality_summary_path) if quality_summary_path.is_file() else None,
+                        "quality_summary": quality_summary,
+                        "runtime_sec": runtime_sec,
+                    }
+                )
+                if result.error_message:
+                    base_entry["notes"]["error"] = result.error_message
+            except Exception as exc:  # noqa: BLE001
+                runtime_sec = round(_time.monotonic() - t_start, 3)
+                base_entry.update(
+                    {
+                        "run_dir": None,
+                        "success": False,
+                        "final_run_status": "error",
+                        "quality_summary_path": None,
+                        "quality_summary": None,
+                        "runtime_sec": runtime_sec,
+                    }
+                )
+                base_entry["notes"]["error"] = str(exc)
+
             entries.append(base_entry)
-            continue
 
-        config = TrialRunConfig(
-            dxf_dir=dxf_dir,
-            bearer_token=str(args.token).strip(),
-            token_source=("argv" if str(args.token).strip() else "auto"),
-            api_base_url=str(args.api_base_url),
-            sheet_width=float(case["sheet_width_mm"]),
-            sheet_height=float(case["sheet_height_mm"]),
-            default_qty=int(case["default_qty"]),
-            per_file_qty=dict(case["qty_overrides"]),
-            output_base_dir=output_base_dir,
-            auto_start_platform=bool(args.auto_start_platform),
-            health_timeout_s=float(args.health_timeout_s),
-            poll_interval_s=float(args.poll_interval_s),
-            run_poll_timeout_s=float(args.run_poll_timeout_s),
-            geometry_poll_timeout_s=float(args.geometry_poll_timeout_s),
-            request_timeout_s=float(args.request_timeout_s),
-            supabase_url=(str(args.supabase_url).strip() or None) if args.supabase_url else None,
-            supabase_anon_key=(str(args.supabase_anon_key).strip() or None) if args.supabase_anon_key else None,
-            project_name=f"H3 quality benchmark {case_id}",
-            project_description=f"H3 quality benchmark case={case_id}",
-        )
-        try:
-            result = run_trial(config)
-            quality_summary_path = result.run_dir / "quality_summary.json"
-            quality_summary: dict[str, Any] | None = None
-            if quality_summary_path.is_file():
-                loaded = _load_json(quality_summary_path)
-                if isinstance(loaded, dict):
-                    quality_summary = loaded
-            base_entry.update(
-                {
-                    "run_dir": str(result.run_dir),
-                    "success": bool(result.success),
-                    "final_run_status": result.final_run_status,
-                    "quality_summary_path": str(quality_summary_path) if quality_summary_path.is_file() else None,
-                    "quality_summary": quality_summary,
-                }
-            )
-            if result.error_message:
-                base_entry["notes"]["error"] = result.error_message
-        except Exception as exc:  # noqa: BLE001
-            base_entry.update(
-                {
-                    "run_dir": None,
-                    "success": False,
-                    "final_run_status": "error",
-                    "quality_summary_path": None,
-                    "quality_summary": None,
-                }
-            )
-            base_entry["notes"]["error"] = str(exc)
-
-        entries.append(base_entry)
+    compare_results = _build_compare_results(entries)
 
     payload = {
         "version": "h3_quality_benchmark_runner_v1",
         "generated_at_utc": _now_iso(),
         "manifest_path": str(manifest_path),
         "plan_only": bool(args.plan_only),
+        "backends": backends,
         "fixtures_root": str(fixtures_root),
         "entries": entries,
+        "compare_results": compare_results,
     }
     _write_json(output_path, payload)
 
     print(f"benchmark_cases={len(entries)}")
+    print(f"backends={','.join(backends)}")
     print(f"plan_only={bool(args.plan_only)}")
+    print(f"compare_results={len(compare_results)}")
     print(f"output={output_path}")
     return 0
 

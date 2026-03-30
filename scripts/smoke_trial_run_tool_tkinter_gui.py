@@ -71,6 +71,7 @@ def main() -> int:
                 technology_margin_mm="0.0",
                 technology_rotation_step_deg="90",
                 technology_allow_free_rotation=False,
+                engine_backend="auto",
             )
             qty_inputs = {
                 "part_a.dxf": "3",
@@ -130,6 +131,7 @@ def main() -> int:
                         technology_margin_mm="0.0",
                         technology_rotation_step_deg="90",
                         technology_allow_free_rotation=False,
+                        engine_backend="auto",
                     ),
                     {},
                 )
@@ -159,6 +161,7 @@ def main() -> int:
                         technology_margin_mm="0.0",
                         technology_rotation_step_deg="90",
                         technology_allow_free_rotation=False,
+                        engine_backend="auto",
                     ),
                     {},
                 ),
@@ -188,6 +191,7 @@ def main() -> int:
                         technology_margin_mm="0.0",
                         technology_rotation_step_deg="90",
                         technology_allow_free_rotation=False,
+                        engine_backend="auto",
                     ),
                     {},
                 ),
@@ -217,6 +221,7 @@ def main() -> int:
                         technology_margin_mm="0.0",
                         technology_rotation_step_deg="90",
                         technology_allow_free_rotation=False,
+                        engine_backend="auto",
                     ),
                     {"part_a.dxf": "x"},
                 ),
@@ -247,6 +252,7 @@ def main() -> int:
                             technology_margin_mm="0.0",
                             technology_rotation_step_deg="90",
                             technology_allow_free_rotation=False,
+                            engine_backend="auto",
                         ),
                         {},
                     ),
