@@ -248,7 +248,40 @@ Cavity source and validation rules:
 - Every cavity candidate is validated through the existing `can_place()` narrow-phase.
 - If no cavity candidate is feasible, the original global BLF grid-scan path runs unchanged.
 
-## 10. References
+## 10. Deterministic compaction post-pass policy (H3-T8)
+
+H3-T8 introduces an optional deterministic compaction pass on top of the existing constructive result.
+
+Activation and compatibility:
+
+- `nest` gets `--compaction off|slide`.
+- Default mode is `off`, so historical placement behavior remains unchanged when the flag is omitted.
+- `slide` runs after constructive placement and before output scoring/export.
+
+Scope and non-negotiable invariants:
+
+- Compaction is post-pass only; it is not a new constructive placer and not a full local search layer.
+- It cannot change:
+  - sheet assignment
+  - rotation choice
+  - part/instance identity or ordering
+  - placed/unplaced membership
+- Allowed movement is monotone left/down translation only.
+- Feasibility truth source remains the existing `can_place()` narrow-phase path.
+- Tie-break and candidate ordering remain integer-only and deterministic (no random or float ranking).
+
+Evidence model:
+
+- Output v2 includes additive `meta.compaction` evidence:
+  - `mode`
+  - `applied`
+  - `moved_items_count`
+  - `occupied_extent_before`
+  - `occupied_extent_after`
+- Determinism hash contract is unchanged and still derived from placement canonical view only.
+  Compaction metadata does not participate in hash generation.
+
+## 11. References
 
 - `docs/nesting_engine/tolerance_policy.md` (SCALE, contour winding, touching policy)
 - `docs/nesting_engine/json_canonicalization.md` (determinism reference)

@@ -96,6 +96,7 @@ chmod +x \
   scripts/smoke_part_in_part_pipeline.py \
   scripts/smoke_nesting_engine_determinism.sh \
   scripts/smoke_nesting_engine_float_policy_determinism.sh \
+  scripts/smoke_h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.py \
   scripts/smoke_svg_export.py || true
 
 # --- Sparrow binary resolve/build ---
@@ -289,6 +290,9 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   echo "[NEST] Targeted remnant_ unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml remnant_
 
+  echo "[NEST] Targeted compaction_ unit tests"
+  cargo test --manifest-path rust/nesting_engine/Cargo.toml compaction_
+
   echo "[NEST] Targeted determinism_ evidence unit tests"
   cargo test --manifest-path rust/nesting_engine/Cargo.toml determinism_
 
@@ -323,6 +327,11 @@ if [[ -f "rust/nesting_engine/Cargo.toml" ]]; then
   python3 scripts/smoke_part_in_part_pipeline.py \
     --bin "$NESTING_ENGINE_BIN_PATH" \
     --input "poc/nesting_engine/f3_2_part_in_part_offgrid_fixture_v2.json"
+
+  echo "[NEST][H3-T8] deterministic compaction post-pass smoke"
+  python3 scripts/smoke_h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.py \
+    --bin "$NESTING_ENGINE_BIN_PATH" \
+    --input "poc/nesting_engine/f3_4_compaction_slide_fixture_v2.json"
 
   TMP_BASELINE_OUT="$(mktemp /tmp/nesting_engine_baseline_out_XXXXXX.json)"
   TMP_BASELINE_OUT_2="$(mktemp /tmp/nesting_engine_baseline_out2_XXXXXX.json)"

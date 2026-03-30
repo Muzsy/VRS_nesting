@@ -1,10 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use crate::feasibility::aabb::aabb_from_polygon64;
-use crate::geometry::scale::mm_to_i64;
+use crate::feasibility::{
+    aabb::{Aabb, aabb_from_polygon64},
+    can_place, PlacedPart,
+    narrow::PlacedIndex,
+};
+use crate::geometry::scale::{i64_to_mm, mm_to_i64};
 use crate::geometry::types::Polygon64;
-use crate::placement::blf::{InflatedPartSpec, UnplacedItem, placed_extents_max_xy_i64};
+use crate::placement::blf::{
+    InflatedPartSpec, UnplacedItem, placed_extents_max_xy_i64, placed_polygon_for_state,
+    rotated_inflated_aabb,
+};
 use crate::placement::nfp_placer::NfpPlacerStatsV1;
 use crate::placement::{PlacedItem, PlacementResult, blf_place, nfp_place};
 use nesting_engine::nfp::cache::NfpCache;
@@ -30,6 +37,12 @@ pub enum PartOrderPolicy {
 pub enum PartInPartMode {
     Off,
     Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactionMode {
+    Off,
+    Slide,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,6 +201,7 @@ pub struct MultiSheetResult {
     pub remnant_area_score_ppm: u64,
     pub remnant_compactness_score_ppm: u64,
     pub remnant_min_width_score_ppm: u64,
+    pub compaction: CompactionEvidence,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -210,6 +224,34 @@ struct RemnantSheetScore {
 struct SheetEnvelopeExtents {
     max_x: i64,
     max_y: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OccupiedExtentI64 {
+    pub min_x: i64,
+    pub min_y: i64,
+    pub max_x: i64,
+    pub max_y: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompactionEvidence {
+    pub mode: CompactionMode,
+    pub applied: bool,
+    pub moved_items_count: u64,
+    pub occupied_extent_before: Option<OccupiedExtentI64>,
+    pub occupied_extent_after: Option<OccupiedExtentI64>,
+}
+
+#[derive(Debug, Clone)]
+struct CompactionPlacedState {
+    placed_index: usize,
+    rotation_deg: i32,
+    tx: i64,
+    ty: i64,
+    inflated_polygon: Polygon64,
+    polygon: Polygon64,
+    aabb: Aabb,
 }
 
 fn ppm_ratio(numerator: i128, denominator: i128) -> u64 {
@@ -339,6 +381,259 @@ fn compute_remnant_proxy_totals(
     totals
 }
 
+fn compute_occupied_extent_i64(
+    placed: &[PlacedItem],
+    parts: &[InflatedPartSpec],
+) -> Option<OccupiedExtentI64> {
+    if placed.is_empty() {
+        return None;
+    }
+
+    let mut part_by_id: BTreeMap<&str, &InflatedPartSpec> = BTreeMap::new();
+    for spec in parts {
+        part_by_id.insert(spec.id.as_str(), spec);
+    }
+
+    let mut out: Option<OccupiedExtentI64> = None;
+    for item in placed {
+        let Some(spec) = part_by_id.get(item.part_id.as_str()) else {
+            continue;
+        };
+        let tx = mm_to_i64(item.x_mm);
+        let ty = mm_to_i64(item.y_mm);
+        let rotated_aabb = rotated_inflated_aabb(&spec.inflated_polygon, item.rotation_deg);
+        let min_x = tx.saturating_add(rotated_aabb.min_x);
+        let min_y = ty.saturating_add(rotated_aabb.min_y);
+        let max_x = tx.saturating_add(rotated_aabb.max_x);
+        let max_y = ty.saturating_add(rotated_aabb.max_y);
+
+        out = Some(match out {
+            None => OccupiedExtentI64 {
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            },
+            Some(prev) => OccupiedExtentI64 {
+                min_x: prev.min_x.min(min_x),
+                min_y: prev.min_y.min(min_y),
+                max_x: prev.max_x.max(max_x),
+                max_y: prev.max_y.max(max_y),
+            },
+        });
+    }
+
+    out
+}
+
+fn collect_candidate_left_positions(
+    item_idx: usize,
+    states: &[CompactionPlacedState],
+    rotated_aabb: Aabb,
+    tx_min: i64,
+) -> Vec<i64> {
+    let current = &states[item_idx];
+    let mut candidates: BTreeSet<i64> = BTreeSet::new();
+    candidates.insert(tx_min);
+    candidates.insert(current.tx);
+
+    for (other_idx, other) in states.iter().enumerate() {
+        if other_idx == item_idx {
+            continue;
+        }
+        let anchor_touch = other.aabb.max_x.saturating_sub(rotated_aabb.min_x);
+        let anchor_gap = anchor_touch.saturating_add(1);
+        if anchor_touch <= current.tx {
+            candidates.insert(anchor_touch);
+        }
+        if anchor_gap <= current.tx {
+            candidates.insert(anchor_gap);
+        }
+    }
+
+    candidates.into_iter().collect()
+}
+
+fn collect_candidate_down_positions(
+    item_idx: usize,
+    states: &[CompactionPlacedState],
+    rotated_aabb: Aabb,
+    ty_min: i64,
+) -> Vec<i64> {
+    let current = &states[item_idx];
+    let mut candidates: BTreeSet<i64> = BTreeSet::new();
+    candidates.insert(ty_min);
+    candidates.insert(current.ty);
+
+    for (other_idx, other) in states.iter().enumerate() {
+        if other_idx == item_idx {
+            continue;
+        }
+        let anchor_touch = other.aabb.max_y.saturating_sub(rotated_aabb.min_y);
+        let anchor_gap = anchor_touch.saturating_add(1);
+        if anchor_touch <= current.ty {
+            candidates.insert(anchor_touch);
+        }
+        if anchor_gap <= current.ty {
+            candidates.insert(anchor_gap);
+        }
+    }
+
+    candidates.into_iter().collect()
+}
+
+fn can_place_with_current_sheet_state(
+    item_idx: usize,
+    candidate_polygon: &Polygon64,
+    states: &[CompactionPlacedState],
+    bin_polygon: &Polygon64,
+) -> bool {
+    let mut placed_index = PlacedIndex::new();
+    for (other_idx, state) in states.iter().enumerate() {
+        if other_idx == item_idx {
+            continue;
+        }
+        placed_index.insert(PlacedPart {
+            inflated_polygon: state.polygon.clone(),
+            aabb: state.aabb,
+        });
+    }
+    can_place(candidate_polygon, bin_polygon, &placed_index)
+}
+
+fn run_slide_compaction_postpass(
+    placed: &mut [PlacedItem],
+    parts: &[InflatedPartSpec],
+    bin_polygon: &Polygon64,
+) -> u64 {
+    if placed.is_empty() {
+        return 0;
+    }
+
+    let mut part_by_id: BTreeMap<&str, &InflatedPartSpec> = BTreeMap::new();
+    for spec in parts {
+        part_by_id.insert(spec.id.as_str(), spec);
+    }
+
+    let mut sheet_to_indices: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (idx, item) in placed.iter().enumerate() {
+        sheet_to_indices.entry(item.sheet).or_default().push(idx);
+    }
+
+    let bin_aabb = aabb_from_polygon64(bin_polygon);
+    let mut moved_items_count = 0_u64;
+
+    for placed_indices in sheet_to_indices.values() {
+        let mut states: Vec<CompactionPlacedState> = Vec::new();
+        for &placed_index in placed_indices {
+            let item = &placed[placed_index];
+            let Some(spec) = part_by_id.get(item.part_id.as_str()) else {
+                continue;
+            };
+            let tx = mm_to_i64(item.x_mm);
+            let ty = mm_to_i64(item.y_mm);
+            let polygon = placed_polygon_for_state(&spec.inflated_polygon, item.rotation_deg, tx, ty);
+            states.push(CompactionPlacedState {
+                placed_index,
+                rotation_deg: item.rotation_deg,
+                tx,
+                ty,
+                inflated_polygon: spec.inflated_polygon.clone(),
+                aabb: aabb_from_polygon64(&polygon),
+                polygon,
+            });
+        }
+
+        for item_idx in 0..states.len() {
+            let mut moved_this_item = false;
+            loop {
+                let rotated_aabb = rotated_inflated_aabb(
+                    &states[item_idx].inflated_polygon,
+                    states[item_idx].rotation_deg,
+                );
+                let tx_min = bin_aabb.min_x.saturating_sub(rotated_aabb.min_x);
+                let ty_min = bin_aabb.min_y.saturating_sub(rotated_aabb.min_y);
+                let mut changed = false;
+
+                for candidate_tx in collect_candidate_left_positions(
+                    item_idx,
+                    &states,
+                    rotated_aabb,
+                    tx_min,
+                ) {
+                    if candidate_tx >= states[item_idx].tx {
+                        continue;
+                    }
+                    let candidate_polygon = placed_polygon_for_state(
+                        &states[item_idx].inflated_polygon,
+                        states[item_idx].rotation_deg,
+                        candidate_tx,
+                        states[item_idx].ty,
+                    );
+                    if can_place_with_current_sheet_state(
+                        item_idx,
+                        &candidate_polygon,
+                        &states,
+                        bin_polygon,
+                    ) {
+                        states[item_idx].tx = candidate_tx;
+                        states[item_idx].polygon = candidate_polygon;
+                        states[item_idx].aabb = aabb_from_polygon64(&states[item_idx].polygon);
+                        moved_this_item = true;
+                        changed = true;
+                        break;
+                    }
+                }
+
+                for candidate_ty in collect_candidate_down_positions(
+                    item_idx,
+                    &states,
+                    rotated_aabb,
+                    ty_min,
+                ) {
+                    if candidate_ty >= states[item_idx].ty {
+                        continue;
+                    }
+                    let candidate_polygon = placed_polygon_for_state(
+                        &states[item_idx].inflated_polygon,
+                        states[item_idx].rotation_deg,
+                        states[item_idx].tx,
+                        candidate_ty,
+                    );
+                    if can_place_with_current_sheet_state(
+                        item_idx,
+                        &candidate_polygon,
+                        &states,
+                        bin_polygon,
+                    ) {
+                        states[item_idx].ty = candidate_ty;
+                        states[item_idx].polygon = candidate_polygon;
+                        states[item_idx].aabb = aabb_from_polygon64(&states[item_idx].polygon);
+                        moved_this_item = true;
+                        changed = true;
+                        break;
+                    }
+                }
+
+                if !changed {
+                    break;
+                }
+            }
+
+            if moved_this_item {
+                moved_items_count = moved_items_count.saturating_add(1);
+            }
+        }
+
+        for state in &states {
+            placed[state.placed_index].x_mm = i64_to_mm(state.tx);
+            placed[state.placed_index].y_mm = i64_to_mm(state.ty);
+        }
+    }
+
+    moved_items_count
+}
+
 pub fn greedy_multi_sheet(
     parts: &[InflatedPartSpec],
     bin_polygon: &Polygon64,
@@ -347,6 +642,7 @@ pub fn greedy_multi_sheet(
     placer_kind: PlacerKind,
     order_policy: PartOrderPolicy,
     part_in_part_mode: PartInPartMode,
+    compaction_mode: CompactionMode,
 ) -> (MultiSheetResult, Option<NfpPlacerStatsV1>) {
     let started_at = Instant::now();
     let mut stop = StopPolicy::from_env(time_limit_sec, started_at);
@@ -501,6 +797,14 @@ pub fn greedy_multi_sheet(
         }
     }
 
+    let occupied_extent_before = compute_occupied_extent_i64(&placed, parts);
+    let compaction_moved_items_count = if compaction_mode == CompactionMode::Slide {
+        run_slide_compaction_postpass(&mut placed, parts, bin_polygon)
+    } else {
+        0
+    };
+    let occupied_extent_after = compute_occupied_extent_i64(&placed, parts);
+
     let sheets_used = if placed.is_empty() {
         0
     } else {
@@ -515,6 +819,13 @@ pub fn greedy_multi_sheet(
         remnant_area_score_ppm: remnant.area_score_ppm,
         remnant_compactness_score_ppm: remnant.compactness_score_ppm,
         remnant_min_width_score_ppm: remnant.min_width_score_ppm,
+        compaction: CompactionEvidence {
+            mode: compaction_mode,
+            applied: compaction_moved_items_count > 0,
+            moved_items_count: compaction_moved_items_count,
+            occupied_extent_before,
+            occupied_extent_after,
+        },
     };
 
     if let Some(stats) = nfp_stats_total.as_mut() {
@@ -549,6 +860,7 @@ mod tests {
             PlacerKind::Blf,
             PartOrderPolicy::ByArea,
             PartInPartMode::Off,
+            CompactionMode::Off,
         );
         assert!(stats.is_none());
         assert!(!out.placed.is_empty());
@@ -631,5 +943,135 @@ mod tests {
         assert!(score_a.area_score_ppm <= 1_000_000);
         assert!(score_a.compactness_score_ppm <= 1_000_000);
         assert!(score_a.min_width_score_ppm <= 1_000_000);
+    }
+
+    fn compaction_slide_fixture_parts() -> Vec<InflatedPartSpec> {
+        let small = rect_poly(10.2, 10.0);
+        vec![
+            InflatedPartSpec {
+                id: "a".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: small.clone(),
+                nominal_bbox_area: bbox_area(&small.outer),
+            },
+            InflatedPartSpec {
+                id: "b".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: small.clone(),
+                nominal_bbox_area: bbox_area(&small.outer),
+            },
+            InflatedPartSpec {
+                id: "c".to_string(),
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                inflated_polygon: small,
+                nominal_bbox_area: bbox_area(&rect_poly(10.2, 10.0).outer),
+            },
+        ]
+    }
+
+    #[test]
+    fn compaction_postpass_primary_objective_is_not_worse() {
+        let parts = compaction_slide_fixture_parts();
+        let bin = rect_poly(40.0, 20.0);
+
+        let (off_result, _) = greedy_multi_sheet(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+            CompactionMode::Off,
+        );
+        let (slide_result, _) = greedy_multi_sheet(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+            CompactionMode::Slide,
+        );
+
+        assert_eq!(slide_result.unplaced.len(), off_result.unplaced.len());
+        assert_eq!(slide_result.sheets_used, off_result.sheets_used);
+    }
+
+    #[test]
+    fn compaction_postpass_is_deterministic_for_identical_input() {
+        let parts = compaction_slide_fixture_parts();
+        let bin = rect_poly(40.0, 20.0);
+
+        let (run_a, _) = greedy_multi_sheet(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+            CompactionMode::Slide,
+        );
+        let (run_b, _) = greedy_multi_sheet(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+            CompactionMode::Slide,
+        );
+        assert_eq!(run_a, run_b);
+    }
+
+    #[test]
+    fn compaction_slide_fixture_improves_extent_or_remnant() {
+        let parts = compaction_slide_fixture_parts();
+        let bin = rect_poly(40.0, 20.0);
+
+        let (off_result, _) = greedy_multi_sheet(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+            CompactionMode::Off,
+        );
+        let (slide_result, _) = greedy_multi_sheet(
+            &parts,
+            &bin,
+            1.0,
+            30,
+            PlacerKind::Blf,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+            CompactionMode::Slide,
+        );
+
+        assert!(slide_result.compaction.applied);
+        assert!(slide_result.compaction.moved_items_count > 0);
+
+        let off_after = off_result.compaction.occupied_extent_after.expect("off extent");
+        let slide_after = slide_result
+            .compaction
+            .occupied_extent_after
+            .expect("slide extent");
+
+        let off_w = off_after.max_x.saturating_sub(off_after.min_x);
+        let off_h = off_after.max_y.saturating_sub(off_after.min_y);
+        let slide_w = slide_after.max_x.saturating_sub(slide_after.min_x);
+        let slide_h = slide_after.max_y.saturating_sub(slide_after.min_y);
+
+        let extent_not_worse = slide_w <= off_w && slide_h <= off_h;
+        let remnant_not_worse = slide_result.remnant_value_ppm >= off_result.remnant_value_ppm;
+        assert!(extent_not_worse || remnant_not_worse);
     }
 }

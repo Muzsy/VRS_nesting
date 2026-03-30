@@ -730,6 +730,9 @@ def build_run_snapshot_payload(
     nesting_runtime_policy = compact_runtime_policy(
         runtime_policy_for_quality_profile(resolved_quality_profile)
     )
+    if "compaction" not in nesting_runtime_policy:
+        # Keep snapshot runtime policy explicit for compaction mode even on legacy profiles.
+        nesting_runtime_policy["compaction"] = "off"
 
     project_manifest_jsonb = {
         "project_id": _sanitize_required(str(project.get("id") or ""), field="project.id"),

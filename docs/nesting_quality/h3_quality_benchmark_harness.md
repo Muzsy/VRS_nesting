@@ -110,6 +110,10 @@ Delta mezok:
 - `utilization_pct_delta`
 - `runtime_sec_delta`
 - `nonzero_rotation_delta`
+- `remnant_value_ppm_delta`
+- `occupied_extent_width_delta_mm`
+- `occupied_extent_height_delta_mm`
+- `compaction_moved_items_delta`
 - `winner_by_sheet_count`
 - `winner_by_utilization`
 - `incomplete_reason` / `notes` (ha valamelyik side hianyzik vagy erroros)
@@ -117,9 +121,12 @@ Delta mezok:
 ## Evidence-first KPI-k
 - `placements_count`, `unplaced_count`, `sheets_used`
 - `solver_utilization_pct` (ha elerheto)
+- `remnant_value_ppm`, `remnant_compactness_score_ppm`
 - `sheet_width_mm`, `sheet_height_mm` (ha ismert)
 - `unique_rotations_deg`, `nonzero_rotation_count`, `rotation_histogram`
 - `occupied_extent_mm`, `coverage_ratio_x`, `coverage_ratio_y` (ha szamolhato)
+- `compaction_mode`, `compaction_applied`, `compaction_moved_items_count`
+- `occupied_extent_before_mm`, `occupied_extent_after_mm`
 - `artifact_completeness`, `artifact_presence`
 - `signals` (pl. `single_sheet`, `multi_row_layout_signal`, `coverage_ratio_known`)
 

@@ -908,6 +908,11 @@ def _build_summary_markdown(
     lines.append(f"- effective_engine_profile: {ev.get('effective_engine_profile', '')}")
     lines.append(f"- engine_profile_match: {ev.get('engine_profile_match', None)}")
     lines.append(f"- profile_effect: {ev.get('profile_effect', '')}")
+    lines.append(f"- compaction_mode: {ev.get('compaction_mode', '')}")
+    lines.append(f"- compaction_applied: {ev.get('compaction_applied', None)}")
+    lines.append(f"- compaction_moved_items_count: {ev.get('compaction_moved_items_count', None)}")
+    lines.append(f"- remnant_value_ppm: {ev.get('remnant_value_ppm', None)}")
+    lines.append(f"- remnant_compactness_score_ppm: {ev.get('remnant_compactness_score_ppm', None)}")
     lines.append(f"- solver_input_present: {ev.get('solver_input_present', False)}")
     lines.append(f"- solver_output_present: {ev.get('solver_output_present', False)}")
     lines.append(f"- run_log_present: {ev.get('run_log_present', False)}")
@@ -1166,6 +1171,45 @@ def _build_quality_summary_json(
     else:
         engine_profile_match = None
 
+    objective = viewer.get("objective")
+    objective_payload = objective if isinstance(objective, dict) else {}
+    meta_payload = viewer.get("meta")
+    meta_obj = meta_payload if isinstance(meta_payload, dict) else {}
+    compaction_payload = meta_obj.get("compaction")
+    compaction_obj = compaction_payload if isinstance(compaction_payload, dict) else {}
+
+    remnant_value_ppm = _as_int(objective_payload.get("remnant_value_ppm"))
+    if remnant_value_ppm is None:
+        remnant_value_ppm = _as_int(artifact_evidence.get("remnant_value_ppm"))
+    remnant_compactness_score_ppm = _as_int(objective_payload.get("remnant_compactness_score_ppm"))
+    if remnant_compactness_score_ppm is None:
+        remnant_compactness_score_ppm = _as_int(artifact_evidence.get("remnant_compactness_score_ppm"))
+
+    compaction_mode = str(
+        compaction_obj.get("mode")
+        or artifact_evidence.get("compaction_mode")
+        or ""
+    ).strip()
+    compaction_applied_raw = compaction_obj.get("applied", artifact_evidence.get("compaction_applied"))
+    compaction_applied = compaction_applied_raw if isinstance(compaction_applied_raw, bool) else None
+    compaction_moved_items_count = _as_int(
+        compaction_obj.get("moved_items_count", artifact_evidence.get("compaction_moved_items_count"))
+    )
+
+    occupied_extent_before_payload = compaction_obj.get("occupied_extent_before")
+    if not isinstance(occupied_extent_before_payload, dict):
+        occupied_extent_before_payload = artifact_evidence.get("occupied_extent_before_mm")
+    occupied_extent_before_mm = (
+        occupied_extent_before_payload if isinstance(occupied_extent_before_payload, dict) else None
+    )
+
+    occupied_extent_after_payload = compaction_obj.get("occupied_extent_after")
+    if not isinstance(occupied_extent_after_payload, dict):
+        occupied_extent_after_payload = artifact_evidence.get("occupied_extent_after_mm")
+    occupied_extent_after_mm = (
+        occupied_extent_after_payload if isinstance(occupied_extent_after_payload, dict) else None
+    )
+
     return {
         "status": "ok" if success else "error",
         "generated_at_utc": _now_iso(),
@@ -1182,6 +1226,13 @@ def _build_quality_summary_json(
         "engine_profile": str(artifact_evidence.get("engine_profile", "unknown")),
         "profile_effect": str(artifact_evidence.get("profile_effect", "")),
         "nesting_engine_cli_args": list(artifact_evidence.get("nesting_engine_cli_args", [])),
+        "remnant_value_ppm": remnant_value_ppm,
+        "remnant_compactness_score_ppm": remnant_compactness_score_ppm,
+        "compaction_mode": compaction_mode,
+        "compaction_applied": compaction_applied,
+        "compaction_moved_items_count": compaction_moved_items_count,
+        "occupied_extent_before_mm": occupied_extent_before_mm,
+        "occupied_extent_after_mm": occupied_extent_after_mm,
         "final_run_status": final_run_status or "",
         "placements_count": placements_count,
         "unplaced_count": unplaced_count,
@@ -1885,6 +1936,25 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         except (json.JSONDecodeError, OSError):
             pass
 
+    _solver_output_parsed: dict[str, Any] = {}
+    _solver_output_path = run_dir / "solver_output.json"
+    if _solver_output_path.is_file():
+        try:
+            _solver_output_parsed = json.loads(_solver_output_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    _solver_objective = _solver_output_parsed.get("objective")
+    _solver_objective_obj = _solver_objective if isinstance(_solver_objective, dict) else {}
+    _solver_meta = _solver_output_parsed.get("meta")
+    _solver_meta_obj = _solver_meta if isinstance(_solver_meta, dict) else {}
+    _solver_compaction = _solver_meta_obj.get("compaction")
+    _solver_compaction_obj = _solver_compaction if isinstance(_solver_compaction, dict) else {}
+    _compaction_applied_raw = _solver_compaction_obj.get("applied")
+    _compaction_applied = _compaction_applied_raw if isinstance(_compaction_applied_raw, bool) else None
+    _extent_before_raw = _solver_compaction_obj.get("occupied_extent_before")
+    _extent_after_raw = _solver_compaction_obj.get("occupied_extent_after")
+
     artifact_evidence: dict[str, Any] = {
         "engine_backend": _engine_meta_parsed.get("engine_backend", "unknown"),
         "engine_contract_version": _engine_meta_parsed.get("engine_contract_version", "unknown"),
@@ -1894,6 +1964,13 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         "engine_profile_match": _engine_meta_parsed.get("engine_profile_match"),
         "profile_effect": _engine_meta_parsed.get("profile_effect", ""),
         "nesting_engine_cli_args": _engine_meta_parsed.get("nesting_engine_cli_args", []),
+        "remnant_value_ppm": _as_int(_solver_objective_obj.get("remnant_value_ppm")),
+        "remnant_compactness_score_ppm": _as_int(_solver_objective_obj.get("remnant_compactness_score_ppm")),
+        "compaction_mode": str(_solver_compaction_obj.get("mode", "")).strip(),
+        "compaction_applied": _compaction_applied,
+        "compaction_moved_items_count": _as_int(_solver_compaction_obj.get("moved_items_count")),
+        "occupied_extent_before_mm": _extent_before_raw if isinstance(_extent_before_raw, dict) else None,
+        "occupied_extent_after_mm": _extent_after_raw if isinstance(_extent_after_raw, dict) else None,
         "solver_input_present": "solver_input" in _found_types,
         "solver_output_present": "solver_output" in _found_types,
         "run_log_present": "run_log" in _found_types,

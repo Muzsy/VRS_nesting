@@ -20,7 +20,7 @@ use crate::{
     },
     io::pipeline_io::{PartRequest, PipelineRequest},
     multi_bin::{
-        greedy::{PartInPartMode, PartOrderPolicy, PlacerKind},
+        greedy::{CompactionMode, PartInPartMode, PartOrderPolicy, PlacerKind},
         greedy_multi_sheet, MultiSheetResult,
     },
     placement::blf::{bbox_area, InflatedPartSpec, UnplacedItem},
@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --part-in-part off|auto, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>";
+const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --part-in-part off|auto, --compaction off|slide, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>";
 const DEFAULT_SA_ITERS: u64 = 256;
 const DEFAULT_SA_TEMP_START: u64 = 10_000;
 const DEFAULT_SA_TEMP_END: u64 = 50;
@@ -64,6 +64,7 @@ impl SaCliArgs {
 struct NestCliArgs {
     placer: PlacerKind,
     part_in_part_mode: PartInPartMode,
+    compaction_mode: CompactionMode,
     search_mode: SearchMode,
     sa: SaCliArgs,
 }
@@ -130,6 +131,7 @@ fn run_nest_with_args(args: &[String]) -> Result<(), String> {
 fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
     let mut placer = PlacerKind::Blf;
     let mut part_in_part_mode = PartInPartMode::Off;
+    let mut compaction_mode = CompactionMode::Off;
     let mut search_mode = SearchMode::None;
     let mut sa = SaCliArgs::default();
     let mut idx = 0usize;
@@ -170,6 +172,20 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
         }
         if let Some(value) = arg.strip_prefix("--part-in-part=") {
             part_in_part_mode = parse_part_in_part_mode(value)?;
+            idx += 1;
+            continue;
+        }
+        if arg == "--compaction" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --compaction (expected: off|slide)".to_string());
+            }
+            compaction_mode = parse_compaction_mode(&args[idx])?;
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--compaction=") {
+            compaction_mode = parse_compaction_mode(value)?;
             idx += 1;
             continue;
         }
@@ -261,6 +277,7 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
     Ok(NestCliArgs {
         placer,
         part_in_part_mode,
+        compaction_mode,
         search_mode,
         sa,
     })
@@ -292,6 +309,16 @@ fn parse_part_in_part_mode(value: &str) -> Result<PartInPartMode, String> {
         "auto" => Ok(PartInPartMode::Auto),
         other => Err(format!(
             "unsupported --part-in-part value '{other}' (expected: off|auto)"
+        )),
+    }
+}
+
+fn parse_compaction_mode(value: &str) -> Result<CompactionMode, String> {
+    match value {
+        "off" => Ok(CompactionMode::Off),
+        "slide" => Ok(CompactionMode::Slide),
+        other => Err(format!(
+            "unsupported --compaction value '{other}' (expected: off|slide)"
         )),
     }
 }
@@ -521,6 +548,7 @@ fn run_nest(cli: NestCliArgs) -> Result<(), String> {
                 effective_placer,
                 PartOrderPolicy::ByArea,
                 cli.part_in_part_mode,
+                cli.compaction_mode,
             ),
             SearchMode::Sa => {
                 let sa_cfg = build_sa_search_config(&input, cli.sa)?;
@@ -531,6 +559,7 @@ fn run_nest(cli: NestCliArgs) -> Result<(), String> {
                     effective_placer,
                     sa_cfg,
                     cli.part_in_part_mode,
+                    cli.compaction_mode,
                 )?
             }
         };

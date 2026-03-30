@@ -216,6 +216,10 @@ def _build_compare_delta(case_id: str, case_entries: list[dict[str, Any]]) -> di
             "utilization_pct_delta": None,
             "runtime_sec_delta": None,
             "nonzero_rotation_delta": None,
+            "remnant_value_ppm_delta": None,
+            "occupied_extent_width_delta_mm": None,
+            "occupied_extent_height_delta_mm": None,
+            "compaction_moved_items_delta": None,
             "winner_by_sheet_count": None,
             "winner_by_utilization": None,
             "incomplete_reason": f"not enough valid quality summaries (have {len(summaries)}, need 2)",
@@ -233,11 +237,33 @@ def _build_compare_delta(case_id: str, case_entries: list[dict[str, Any]]) -> di
     runtime2 = _safe_float(e2.get("runtime_sec"))
     nonzero1 = _safe_float(qs1.get("nonzero_rotation_count"))
     nonzero2 = _safe_float(qs2.get("nonzero_rotation_count"))
+    remnant1 = _safe_float(qs1.get("remnant_value_ppm"))
+    remnant2 = _safe_float(qs2.get("remnant_value_ppm"))
+    moved1 = _safe_float(qs1.get("compaction_moved_items_count"))
+    moved2 = _safe_float(qs2.get("compaction_moved_items_count"))
+    extent1_payload = qs1.get("occupied_extent_after_mm")
+    extent2_payload = qs2.get("occupied_extent_after_mm")
+    extent1 = extent1_payload if isinstance(extent1_payload, dict) else {}
+    extent2 = extent2_payload if isinstance(extent2_payload, dict) else {}
+    extent_w1 = _safe_float(extent1.get("width_mm"))
+    extent_w2 = _safe_float(extent2.get("width_mm"))
+    extent_h1 = _safe_float(extent1.get("height_mm"))
+    extent_h2 = _safe_float(extent2.get("height_mm"))
 
     sheet_count_delta = (sheets2 - sheets1) if sheets1 is not None and sheets2 is not None else None
     utilization_pct_delta = round(util2 - util1, 6) if util1 is not None and util2 is not None else None
     runtime_sec_delta = round(runtime2 - runtime1, 3) if runtime1 is not None and runtime2 is not None else None
     nonzero_rotation_delta = int(nonzero2 - nonzero1) if nonzero1 is not None and nonzero2 is not None else None
+    remnant_value_ppm_delta = (
+        round(remnant2 - remnant1, 3) if remnant1 is not None and remnant2 is not None else None
+    )
+    occupied_extent_width_delta_mm = (
+        round(extent_w2 - extent_w1, 3) if extent_w1 is not None and extent_w2 is not None else None
+    )
+    occupied_extent_height_delta_mm = (
+        round(extent_h2 - extent_h1, 3) if extent_h1 is not None and extent_h2 is not None else None
+    )
+    compaction_moved_items_delta = int(moved2 - moved1) if moved1 is not None and moved2 is not None else None
 
     winner_by_sheet: str | None = None
     if sheets1 is not None and sheets2 is not None:
@@ -269,6 +295,10 @@ def _build_compare_delta(case_id: str, case_entries: list[dict[str, Any]]) -> di
         "utilization_pct_delta": utilization_pct_delta,
         "runtime_sec_delta": runtime_sec_delta,
         "nonzero_rotation_delta": nonzero_rotation_delta,
+        "remnant_value_ppm_delta": remnant_value_ppm_delta,
+        "occupied_extent_width_delta_mm": occupied_extent_width_delta_mm,
+        "occupied_extent_height_delta_mm": occupied_extent_height_delta_mm,
+        "compaction_moved_items_delta": compaction_moved_items_delta,
         "winner_by_sheet_count": winner_by_sheet,
         "winner_by_utilization": winner_by_util,
         "incomplete_reason": None,

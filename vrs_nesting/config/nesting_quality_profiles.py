@@ -11,11 +11,13 @@ DEFAULT_QUALITY_PROFILE = "quality_default"
 VALID_PLACERS = ("blf", "nfp")
 VALID_SEARCH_MODES = ("none", "sa")
 VALID_PART_IN_PART_MODES = ("off", "auto")
+VALID_COMPACTION_MODES = ("off", "slide")
 
 _RUNTIME_POLICY_KEYS = (
     "placer",
     "search",
     "part_in_part",
+    "compaction",
     "sa_iters",
     "sa_temp_start",
     "sa_temp_end",
@@ -28,16 +30,19 @@ _QUALITY_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
         "placer": "blf",
         "search": "none",
         "part_in_part": "off",
+        "compaction": "off",
     },
     "quality_default": {
         "placer": "nfp",
         "search": "sa",
         "part_in_part": "auto",
+        "compaction": "slide",
     },
     "quality_aggressive": {
         "placer": "nfp",
         "search": "sa",
         "part_in_part": "auto",
+        "compaction": "slide",
         "sa_iters": 768,
         "sa_eval_budget_sec": 1,
     },
@@ -84,10 +89,15 @@ def validate_runtime_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
     if part_in_part not in VALID_PART_IN_PART_MODES:
         raise ValueError("invalid runtime policy part_in_part")
 
+    compaction = str(policy.get("compaction") or "").strip().lower()
+    if compaction not in VALID_COMPACTION_MODES:
+        raise ValueError("invalid runtime policy compaction")
+
     normalized: dict[str, Any] = {
         "placer": placer,
         "search": search,
         "part_in_part": part_in_part,
+        "compaction": compaction,
     }
 
     sa_fields = (
@@ -135,6 +145,8 @@ def build_nesting_engine_cli_args_from_runtime_policy(policy: Mapping[str, Any])
         str(normalized["search"]),
         "--part-in-part",
         str(normalized["part_in_part"]),
+        "--compaction",
+        str(normalized["compaction"]),
     ]
 
     if str(normalized["search"]) == "sa":
@@ -159,7 +171,12 @@ def build_nesting_engine_cli_args_for_quality_profile(name: str | None) -> list[
 
 def compact_runtime_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
     normalized = validate_runtime_policy(policy)
-    out = {"placer": normalized["placer"], "search": normalized["search"], "part_in_part": normalized["part_in_part"]}
+    out = {
+        "placer": normalized["placer"],
+        "search": normalized["search"],
+        "part_in_part": normalized["part_in_part"],
+        "compaction": normalized["compaction"],
+    }
     for field in _RUNTIME_POLICY_KEYS:
         if field in out:
             continue

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::{
     geometry::types::Polygon64,
     multi_bin::{
-        greedy::{PartInPartMode, PartOrderPolicy, PlacerKind},
+        greedy::{CompactionMode, PartInPartMode, PartOrderPolicy, PlacerKind},
         greedy_multi_sheet, MultiSheetResult,
     },
     placement::{blf::InflatedPartSpec, nfp_placer::NfpPlacerStatsV1},
@@ -203,6 +203,7 @@ pub fn run_sa_search_over_specs(
     placer_kind: PlacerKind,
     config: SaSearchConfig,
     part_in_part_mode: PartInPartMode,
+    compaction_mode: CompactionMode,
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
     run_sa_search_over_specs_with_eval_hook(
         base_specs,
@@ -211,6 +212,7 @@ pub fn run_sa_search_over_specs(
         placer_kind,
         config,
         part_in_part_mode,
+        compaction_mode,
         || {},
     )
 }
@@ -222,6 +224,7 @@ fn run_sa_search_over_specs_with_eval_hook<E>(
     placer_kind: PlacerKind,
     config: SaSearchConfig,
     part_in_part_mode: PartInPartMode,
+    compaction_mode: CompactionMode,
     mut on_eval: E,
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String>
 where
@@ -245,6 +248,7 @@ where
             placer_kind,
             PartOrderPolicy::ByInputOrder,
             part_in_part_mode,
+            compaction_mode,
         ));
     }
 
@@ -285,6 +289,7 @@ where
                 config.eval_budget_sec,
                 cost_encoding,
                 part_in_part_mode,
+                compaction_mode,
             )
         },
         || Instant::now() >= deadline,
@@ -373,6 +378,7 @@ fn eval_state_cost_with_result(
     eval_budget_sec: u64,
     cost_encoding: CostEncoding,
     part_in_part_mode: PartInPartMode,
+    compaction_mode: CompactionMode,
 ) -> Result<(i64, SaEvaluatedLayout), String> {
     let specs = specs_for_state(base_specs, state);
     let (result, stats) = greedy_multi_sheet(
@@ -383,6 +389,7 @@ fn eval_state_cost_with_result(
         placer_kind,
         PartOrderPolicy::ByInputOrder,
         part_in_part_mode,
+        compaction_mode,
     );
 
     let unplaced_count = u64::try_from(result.unplaced.len())
@@ -626,7 +633,8 @@ mod tests {
     };
     use crate::{
         multi_bin::{
-            greedy::PartInPartMode, greedy::PartOrderPolicy, greedy::PlacerKind,
+            greedy::CompactionMode, greedy::PartInPartMode, greedy::PartOrderPolicy,
+            greedy::PlacerKind,
             greedy_multi_sheet,
         },
         placement::blf::{bbox_area, rect_poly, InflatedPartSpec},
@@ -726,6 +734,7 @@ mod tests {
             PlacerKind::Blf,
             cfg,
             PartInPartMode::Off,
+            CompactionMode::Off,
         )
             .expect("run_a must succeed");
         let run_b = run_sa_search_over_specs(
@@ -735,6 +744,7 @@ mod tests {
             PlacerKind::Blf,
             cfg,
             PartInPartMode::Off,
+            CompactionMode::Off,
         )
             .expect("run_b must succeed");
 
@@ -760,6 +770,7 @@ mod tests {
             PlacerKind::Blf,
             PartOrderPolicy::ByArea,
             PartInPartMode::Off,
+            CompactionMode::Off,
         );
         assert_eq!(
             baseline.sheets_used, 2,
@@ -781,6 +792,7 @@ mod tests {
             PlacerKind::Blf,
             sa_cfg,
             PartInPartMode::Off,
+            CompactionMode::Off,
         )
         .expect("SA run must succeed on quality fixture");
 
@@ -927,6 +939,7 @@ mod tests {
             PlacerKind::Blf,
             PartOrderPolicy::ByInputOrder,
             PartInPartMode::Off,
+            CompactionMode::Off,
         );
         let actual = run_sa_search_over_specs(
             &specs,
@@ -935,6 +948,7 @@ mod tests {
             PlacerKind::Blf,
             cfg,
             PartInPartMode::Off,
+            CompactionMode::Off,
         )
         .expect("SA run must succeed even when only initial eval fits");
 
@@ -976,6 +990,7 @@ mod tests {
             PlacerKind::Blf,
             cfg,
             PartInPartMode::Off,
+            CompactionMode::Off,
             || eval_calls.set(eval_calls.get().saturating_add(1)),
         )
         .expect("SA run must succeed");

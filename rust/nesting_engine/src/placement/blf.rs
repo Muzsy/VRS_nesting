@@ -427,6 +427,10 @@ fn rotate_point(p: Point64, rotation_deg: i32) -> Point64 {
     }
 }
 
+pub(crate) fn rotate_polygon_for_placement(poly: &Polygon64, rotation_deg: i32) -> Polygon64 {
+    rotate_polygon(poly, rotation_deg)
+}
+
 fn translate_polygon(poly: &Polygon64, tx: i64, ty: i64) -> Polygon64 {
     Polygon64 {
         outer: poly.outer.iter().map(|p| Point64 { x: p.x + tx, y: p.y + ty }).collect(),
@@ -436,6 +440,20 @@ fn translate_polygon(poly: &Polygon64, tx: i64, ty: i64) -> Polygon64 {
             .map(|h| h.iter().map(|p| Point64 { x: p.x + tx, y: p.y + ty }).collect())
             .collect(),
     }
+}
+
+pub(crate) fn translate_polygon_for_placement(poly: &Polygon64, tx: i64, ty: i64) -> Polygon64 {
+    translate_polygon(poly, tx, ty)
+}
+
+pub(crate) fn placed_polygon_for_state(
+    inflated_polygon: &Polygon64,
+    rotation_deg: i32,
+    tx: i64,
+    ty: i64,
+) -> Polygon64 {
+    let rotated = rotate_polygon_for_placement(inflated_polygon, rotation_deg);
+    translate_polygon_for_placement(&rotated, tx, ty)
 }
 
 pub fn bbox_area(pts: &[Point64]) -> i128 {
@@ -482,7 +500,7 @@ pub fn rect_poly(w_mm: f64, h_mm: f64) -> Polygon64 {
 mod tests {
     use super::*;
     use crate::multi_bin::{
-        greedy::{PartInPartMode, PartOrderPolicy, PlacerKind, StopPolicy},
+        greedy::{CompactionMode, PartInPartMode, PartOrderPolicy, PlacerKind, StopPolicy},
         greedy_multi_sheet,
     };
     use std::time::Instant;
@@ -760,6 +778,7 @@ mod tests {
             PlacerKind::Blf,
             PartOrderPolicy::ByArea,
             PartInPartMode::Off,
+            CompactionMode::Off,
         );
         let (auto_result, _) = greedy_multi_sheet(
             &parts,
@@ -769,6 +788,7 @@ mod tests {
             PlacerKind::Blf,
             PartOrderPolicy::ByArea,
             PartInPartMode::Auto,
+            CompactionMode::Off,
         );
 
         assert_eq!(
@@ -811,6 +831,7 @@ mod tests {
             PlacerKind::Blf,
             PartOrderPolicy::ByArea,
             PartInPartMode::Off,
+            CompactionMode::Off,
         );
         let (auto_result, _) = greedy_multi_sheet(
             &parts,
@@ -820,6 +841,7 @@ mod tests {
             PlacerKind::Blf,
             PartOrderPolicy::ByArea,
             PartInPartMode::Auto,
+            CompactionMode::Off,
         );
 
         assert_eq!(off_result, auto_result);

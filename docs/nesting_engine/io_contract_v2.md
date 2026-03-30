@@ -65,6 +65,12 @@
 | `meta` | object | Igen | Futasi metaadatok | - |
 | `meta.elapsed_sec` | number (`>=0`) | Nem | Python runner-level meres (`runner_meta.json`), nem Rust kernel stdout mezo | sec |
 | `meta.determinism_hash` | string | Igen | Determinisztikus hash ertek | - |
+| `meta.compaction` | object | Igen | H3-T8 additive compaction evidence blokk | - |
+| `meta.compaction.mode` | string (`off` vagy `slide`) | Igen | Aktiv compaction policy mod | - |
+| `meta.compaction.applied` | boolean | Igen | Volt-e legalabb egy tenyleges compaction mozgas | - |
+| `meta.compaction.moved_items_count` | integer (`>=0`) | Igen | Hany placement kapott uj poziciot a post-pass soran | db |
+| `meta.compaction.occupied_extent_before` | object vagy `null` | Igen | Occupied extent a post-pass elott | mm |
+| `meta.compaction.occupied_extent_after` | object vagy `null` | Igen | Occupied extent a post-pass utan | mm |
 | `_note` | string | Nem | Emberi megjegyzes, illusztracios mintakhoz | - |
 
 Megjegyzes: a Rust `nest` stdout output `meta` objektuma determinisztikus kimenetre optimalizalt,
@@ -80,6 +86,21 @@ ezert csak a `determinism_hash` mezot adja vissza. A futasido (`elapsed_sec`) ru
 - Az F3-3 iteracio `remnant_*_ppm` mezoi proxy modellen alapulnak (sheet AABB + occupied envelope),
   nem exact polygon-remnant topologian.
 - A `meta.determinism_hash` canonicalization contract valtozatlan; az objective blokk bovulese ezt nem modositja.
+- A `meta.compaction` blokk additive evidence: placement metadata, nem objective-prioritas feluliras.
+  A hash contract valtozatlanul placement canonical view alapu, nem a compaction evidence-bol kepzett.
+
+### 3.2 Compaction extent payload (`meta.compaction.occupied_extent_*`)
+
+Ha van legalabb 1 placement, az `occupied_extent_before` es `occupied_extent_after` objektum:
+
+- `min_x_mm`
+- `min_y_mm`
+- `max_x_mm`
+- `max_y_mm`
+- `width_mm` (`max_x_mm - min_x_mm`)
+- `height_mm` (`max_y_mm - min_y_mm`)
+
+Ha nincs placement, ezek a mezok `null`-ok.
 
 ## 4. Geometria egyezmenyek (kobe vesett)
 

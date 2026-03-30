@@ -1,0 +1,22 @@
+# Codex checklist - h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence
+
+- [x] Canvas + goal YAML + run prompt artefaktok elerhetoek
+- [x] A quality-profile registry uj `compaction` runtime dimenziot kapott (`off|slide`)
+- [x] `fast_preview=off`, `quality_default=slide`, `quality_aggressive=slide` policy bent van a kanonikus registryben
+- [x] A snapshot `nesting_engine_runtime_policy` blokk explicit hordozza a `compaction` mezot
+- [x] A Rust `nest` CLI kezeli a `--compaction off|slide` flaget (`--compaction=<value>` formatummal is)
+- [x] Ismeretlen `--compaction` ertek fail-fast hibaval lep ki
+- [x] Determinisztikus compaction post-pass implementalva a multi-sheet placement eredmenyen
+- [x] A post-pass a meglvo `can_place` feasibility utat hasznalja
+- [x] A post-pass nem valtoztat sheet/rotation/placed-unplaced tagsagot, csak poziciot
+- [x] Az output v2 additive `meta.compaction` evidence blokkot ad (`mode`, `applied`, `moved_items_count`, `occupied_extent_before/after`)
+- [x] A determinism hash contract valtozatlan maradt (placement canonical view)
+- [x] Letrejott dedikalt fixture: `poc/nesting_engine/f3_4_compaction_slide_fixture_v2.json`
+- [x] Letrejott dedikalt smoke: `scripts/smoke_h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.py`
+- [x] A local quality summary gepileg olvashato compaction/remnant mezoket ad
+- [x] A benchmark compare output compaction/remnant/extent delta mezoket ad, ha adat elerheto
+- [x] Dokumentacio frissitve: architecture + io_contract_v2 + benchmark harness
+- [x] `scripts/check.sh` bovitve: `compaction_` targeted Rust teszt + T8 compaction smoke
+- [x] `cargo test --manifest-path rust/nesting_engine/Cargo.toml compaction_` PASS
+- [x] `python3 scripts/smoke_h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.py` PASS
+- [x] Report DoD -> Evidence matrix kitoltve

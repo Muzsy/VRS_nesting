@@ -1,0 +1,163 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T6/T7 quality
+      lane artefaktjait, a `vrs_nesting/config/nesting_quality_profiles.py`,
+      az `api/services/run_snapshot_builder.py`, a `rust/nesting_engine/src/main.rs`,
+      a `rust/nesting_engine/src/multi_bin/greedy.rs`, a
+      `rust/nesting_engine/src/placement/blf.rs`, az `rust/nesting_engine/src/export/output_v2.rs`,
+      a `scripts/trial_run_tool_core.py`, a `scripts/run_h3_quality_benchmark.py`,
+      a `scripts/check.sh`, valamint a vonatkozo nesting_engine es quality docs-okat.
+      Frissitsd a canvas-t ugy, hogy pontosan rogzitve legyen: T7 utan mar van
+      backend/profile truth, de nincs tenyleges post-placement compaction, ezert a
+      kovetkezo legkisebb valodi quality uplift egy determinisztikus compaction post-pass.
+    outputs:
+      - "canvases/web_platform/h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.yaml"
+      - "codex/prompts/web_platform/h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence/run.md"
+
+  - name: "Quality-profile registry es snapshot runtime policy bovitese compaction moddal"
+    description: >
+      Bovitsd a `vrs_nesting/config/nesting_quality_profiles.py` es az
+      `api/services/run_snapshot_builder.py` fajlokat ugy, hogy a kanonikus
+      runtime policy kapjon uj `compaction` dimenziot (`off|slide`).
+
+      Minimum policy:
+      - `fast_preview` -> `compaction=off`
+      - `quality_default` -> `compaction=slide`
+      - `quality_aggressive` -> `compaction=slide`
+
+      Kovetelmenyek:
+      - a registry maradjon az egyetlen source of truth;
+      - a snapshot `nesting_engine_runtime_policy` blokkja explicit hordozza a
+        compaction modot;
+      - a meglvo T7 truth ne torjon el.
+    outputs:
+      - "vrs_nesting/config/nesting_quality_profiles.py"
+      - "api/services/run_snapshot_builder.py"
+
+  - name: "Rust CLI: uj --compaction off|slide kapcsolo"
+    description: >
+      Módositsd a `rust/nesting_engine/src/main.rs` fajlt ugy, hogy a `nest`
+      subcommand explicit `--compaction off|slide` flag-et fogadjon. Frissitsd a
+      parser / help / supported-flags truthot. Ismeretlen ertekre fail-fast kell.
+      A default viselkedes legyen `off`, ha a flag nincs megadva.
+    outputs:
+      - "rust/nesting_engine/src/main.rs"
+
+  - name: "Determinista compaction post-pass implementalasa"
+    description: >
+      Módositsd a `rust/nesting_engine/src/placement/blf.rs` es a
+      `rust/nesting_engine/src/multi_bin/greedy.rs` fajlokat ugy, hogy a
+      `nesting_engine` eredmenyen opcionis, determinisztikus compaction post-pass
+      fusson `slide` modban.
+
+      Kritikus szabalyok:
+      - a compaction nem valtoztathat sheetet, rotaciot, part sorrendet,
+        placed/unplaced tagsagot;
+      - csak monoton balra/le jellegu huzas megengedett;
+      - a feasibility igazsagforras a meglvo `can_place` ut legyen;
+      - nincs uj random vagy float tie-break;
+      - az implementation integer-only es determinisztikus legyen.
+
+      A `blf.rs` csak annyiban modosuljon, amennyiben a compactionhoz szukseges
+      helper ujrafelhasznalas / `pub(crate)` kivezetes indokolt. Keruld a felesleges
+      placement-logika duplikalast.
+
+      Targeted Rust tesztek (`compaction_` prefix) keszuljenek a relevans cfg(test)
+      blokkban legalabb ezekre:
+      - a post-pass nem rontja a primary objective-ot;
+      - a post-pass determinisztikus azonos seed/input mellett;
+      - a dedikalt fixture-en van merheto quality evidence (kisebb occupied extent
+        vagy jobb/equal remnant score).
+    outputs:
+      - "rust/nesting_engine/src/placement/blf.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/search/sa.rs"
+
+  - name: "Output v2 compaction evidence es fixture"
+    description: >
+      Bovitsd az `rust/nesting_engine/src/export/output_v2.rs` fajlt additive
+      compaction evidence blokkal, es hozz letre egy kicsi, determinisztikus repo
+      fixture-t a compaction bizonyitasara.
+
+      Minimum elvaras:
+      - `meta.compaction` vagy ezzel ekvivalens blokk `mode`, `applied`,
+        `moved_items_count`, `occupied_extent_before`, `occupied_extent_after` mezokkel;
+      - uj fixture: `poc/nesting_engine/f3_4_compaction_slide_fixture_v2.json`.
+
+      A determinism hash contractot tilos megvaltoztatni.
+    outputs:
+      - "rust/nesting_engine/src/export/output_v2.rs"
+      - "poc/nesting_engine/f3_4_compaction_slide_fixture_v2.json"
+
+  - name: "Local quality summary + benchmark compare compaction evidence"
+    description: >
+      Frissitsd a `scripts/trial_run_tool_core.py`, `scripts/run_h3_quality_benchmark.py`
+      es `docs/nesting_quality/h3_quality_benchmark_harness.md` fajlokat ugy, hogy a
+      v2 objective/meta compaction truth gepileg olvashatoan bekeruljon a local
+      quality summarybe es a benchmark compare outputba.
+
+      Minimum mezok:
+      - `remnant_value_ppm`
+      - `remnant_compactness_score_ppm`
+      - `compaction_mode`
+      - `compaction_applied`
+      - `compaction_moved_items_count`
+      - `occupied_extent_before_mm`
+      - `occupied_extent_after_mm`
+
+      A compare output legalabb ezekre tudjon delta mezot adni, ha van adat:
+      - `remnant_value_ppm_delta`
+      - `occupied_extent_width_delta_mm`
+      - `occupied_extent_height_delta_mm`
+      - `compaction_moved_items_delta`
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "scripts/run_h3_quality_benchmark.py"
+      - "docs/nesting_quality/h3_quality_benchmark_harness.md"
+
+  - name: "Dokumentacio es gate frissitese"
+    description: >
+      Frissitsd a `docs/nesting_engine/architecture.md`, `docs/nesting_engine/io_contract_v2.md`
+      es a `scripts/check.sh` fajlokat ugy, hogy a deterministic compaction post-pass
+      scope-ja, output truth-ja es targeted gate-je dokumentalt legyen.
+
+      A check.sh-ben legyen explicit targeted futas:
+      `cargo test --manifest-path rust/nesting_engine/Cargo.toml compaction_`
+      valamint a dedikalt compaction smoke futtatasa.
+    outputs:
+      - "docs/nesting_engine/architecture.md"
+      - "docs/nesting_engine/io_contract_v2.md"
+      - "scripts/check.sh"
+
+  - name: "Task-specifikus compaction smoke"
+    description: >
+      Keszits dedikalt smoke scriptet, amely a repo fixture-en lefuttatja a
+      `nesting_engine` CLI-t `--compaction off` es `--compaction slide` modban,
+      majd bizonyitja, hogy a slide mod primary objective-ben nem rosszabb, es
+      legalabb egy explicit quality evidence-ben jobb vagy nem rosszabb.
+      A smoke valodi Supabase/worker nelkul is PASS legyen.
+    outputs:
+      - "scripts/smoke_h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A reportben kulon
+      nevezd meg:
+      - miert ez az elso tenyleges quality uplift T7 utan;
+      - hogyan mukodik a `compaction off|slide` policy;
+      - miert marad a compaction minimal-invaziv post-pass;
+      - milyen fixture es smoke bizonyitja a hatast;
+      - mely quality summary / benchmark mezokkel lett gepileg olvashato az eredmeny.
+    outputs:
+      - "codex/codex_checklist/web_platform/h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.md"
+      - "codex/reports/web_platform/h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.md"
+      - "codex/reports/web_platform/h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.verify.log"

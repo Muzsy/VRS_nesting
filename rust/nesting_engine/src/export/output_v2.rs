@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::geometry::scale::mm_to_i64;
-use crate::multi_bin::greedy::MultiSheetResult;
+use crate::geometry::scale::{i64_to_mm, mm_to_i64};
+use crate::multi_bin::greedy::{CompactionMode, MultiSheetResult, OccupiedExtentI64};
 use crate::placement::blf::PlacedItem;
 
 pub fn build_output_v2(
@@ -49,6 +49,10 @@ pub fn build_output_v2(
 
     let status = if result.unplaced.is_empty() { "ok" } else { "partial" };
     let determinism_hash = compute_determinism_hash(&placements);
+    let compaction_mode = match result.compaction.mode {
+        CompactionMode::Off => "off",
+        CompactionMode::Slide => "slide",
+    };
 
     json!({
         "version": "nesting_engine_v2",
@@ -67,8 +71,33 @@ pub fn build_output_v2(
             "remnant_min_width_score_ppm": result.remnant_min_width_score_ppm
         },
         "meta": {
-            "determinism_hash": determinism_hash
+            "determinism_hash": determinism_hash,
+            "compaction": {
+                "mode": compaction_mode,
+                "applied": result.compaction.applied,
+                "moved_items_count": result.compaction.moved_items_count,
+                "occupied_extent_before": occupied_extent_to_json(result.compaction.occupied_extent_before),
+                "occupied_extent_after": occupied_extent_to_json(result.compaction.occupied_extent_after)
+            }
         }
+    })
+}
+
+fn occupied_extent_to_json(extent: Option<OccupiedExtentI64>) -> Value {
+    let Some(extent) = extent else {
+        return Value::Null;
+    };
+    let min_x = i64_to_mm(extent.min_x);
+    let min_y = i64_to_mm(extent.min_y);
+    let max_x = i64_to_mm(extent.max_x);
+    let max_y = i64_to_mm(extent.max_y);
+    json!({
+        "min_x_mm": min_x,
+        "min_y_mm": min_y,
+        "max_x_mm": max_x,
+        "max_y_mm": max_y,
+        "width_mm": max_x - min_x,
+        "height_mm": max_y - min_y
     })
 }
 
@@ -139,7 +168,7 @@ fn compute_determinism_hash(placements: &[PlacedItem]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::multi_bin::greedy::MultiSheetResult;
+    use crate::multi_bin::greedy::{CompactionEvidence, CompactionMode, MultiSheetResult};
     use crate::placement::blf::{PlacedItem, UnplacedItem};
 
     #[test]
@@ -163,6 +192,13 @@ mod tests {
             remnant_area_score_ppm: 380_000,
             remnant_compactness_score_ppm: 900_000,
             remnant_min_width_score_ppm: 700_000,
+            compaction: CompactionEvidence {
+                mode: CompactionMode::Off,
+                applied: false,
+                moved_items_count: 0,
+                occupied_extent_before: None,
+                occupied_extent_after: None,
+            },
         };
 
         let a = build_output_v2(42, 0.1, 12.0, &res);
@@ -195,6 +231,13 @@ mod tests {
             remnant_area_score_ppm: 380_000,
             remnant_compactness_score_ppm: 900_000,
             remnant_min_width_score_ppm: 700_000,
+            compaction: CompactionEvidence {
+                mode: CompactionMode::Off,
+                applied: false,
+                moved_items_count: 0,
+                occupied_extent_before: None,
+                occupied_extent_after: None,
+            },
         };
 
         let first = serde_json::to_string(&build_output_v2(42, 0.1, 12.0, &res))
@@ -261,6 +304,13 @@ mod tests {
             remnant_area_score_ppm: 380_000,
             remnant_compactness_score_ppm: 900_000,
             remnant_min_width_score_ppm: 700_000,
+            compaction: CompactionEvidence {
+                mode: CompactionMode::Off,
+                applied: false,
+                moved_items_count: 0,
+                occupied_extent_before: None,
+                occupied_extent_after: None,
+            },
         };
 
         let out = build_output_v2(1, 0.0, 87.5, &res);
@@ -268,5 +318,49 @@ mod tests {
         assert_eq!(out["objective"]["remnant_area_score_ppm"], 380_000);
         assert_eq!(out["objective"]["remnant_compactness_score_ppm"], 900_000);
         assert_eq!(out["objective"]["remnant_min_width_score_ppm"], 700_000);
+    }
+
+    #[test]
+    fn compaction_meta_is_exposed_in_output_v2() {
+        let res = MultiSheetResult {
+            placed: vec![PlacedItem {
+                part_id: "a".to_string(),
+                instance: 0,
+                sheet: 0,
+                x_mm: 0.0,
+                y_mm: 0.0,
+                rotation_deg: 0,
+            }],
+            unplaced: vec![],
+            sheets_used: 1,
+            remnant_value_ppm: 1,
+            remnant_area_score_ppm: 1,
+            remnant_compactness_score_ppm: 1,
+            remnant_min_width_score_ppm: 1,
+            compaction: CompactionEvidence {
+                mode: CompactionMode::Slide,
+                applied: true,
+                moved_items_count: 2,
+                occupied_extent_before: Some(crate::multi_bin::greedy::OccupiedExtentI64 {
+                    min_x: 0,
+                    min_y: 0,
+                    max_x: 20_000_000,
+                    max_y: 10_000_000,
+                }),
+                occupied_extent_after: Some(crate::multi_bin::greedy::OccupiedExtentI64 {
+                    min_x: 0,
+                    min_y: 0,
+                    max_x: 18_000_000,
+                    max_y: 9_000_000,
+                }),
+            },
+        };
+
+        let out = build_output_v2(1, 0.0, 10.0, &res);
+        assert_eq!(out["meta"]["compaction"]["mode"], "slide");
+        assert_eq!(out["meta"]["compaction"]["applied"], true);
+        assert_eq!(out["meta"]["compaction"]["moved_items_count"], 2);
+        assert_eq!(out["meta"]["compaction"]["occupied_extent_before"]["width_mm"], 20.0);
+        assert_eq!(out["meta"]["compaction"]["occupied_extent_after"]["width_mm"], 18.0);
     }
 }
