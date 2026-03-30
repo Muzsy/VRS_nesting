@@ -7,6 +7,12 @@ import math
 from typing import Any
 
 from api.supabase_client import SupabaseClient
+from vrs_nesting.config.nesting_quality_profiles import (
+    DEFAULT_QUALITY_PROFILE,
+    compact_runtime_policy,
+    normalize_quality_profile_name,
+    runtime_policy_for_quality_profile,
+)
 
 
 SNAPSHOT_VERSION = "h2_e5_t2_snapshot_v1"
@@ -674,6 +680,7 @@ def build_run_snapshot_payload(
     access_token: str,
     owner_user_id: str,
     project_id: str,
+    quality_profile: str | None = None,
 ) -> dict[str, Any]:
     project_id_clean = _sanitize_required(project_id, field="project_id")
 
@@ -716,6 +723,13 @@ def build_run_snapshot_payload(
     technology_kerf_mm = _parse_nonnegative_float(technology_setup.get("kerf_mm"), field="kerf_mm")
     technology_spacing_mm = _parse_nonnegative_float(technology_setup.get("spacing_mm"), field="spacing_mm")
     technology_margin_mm = _parse_nonnegative_float(technology_setup.get("margin_mm"), field="margin_mm")
+    resolved_quality_profile = normalize_quality_profile_name(
+        quality_profile,
+        default=DEFAULT_QUALITY_PROFILE,
+    )
+    nesting_runtime_policy = compact_runtime_policy(
+        runtime_policy_for_quality_profile(resolved_quality_profile)
+    )
 
     project_manifest_jsonb = {
         "project_id": _sanitize_required(str(project.get("id") or ""), field="project.id"),
@@ -749,6 +763,9 @@ def build_run_snapshot_payload(
         "kerf_mm": technology_kerf_mm,
         "spacing_mm": technology_spacing_mm,
         "margin_mm": technology_margin_mm,
+        "quality_profile": resolved_quality_profile,
+        "engine_backend_hint": "nesting_engine_v2",
+        "nesting_engine_runtime_policy": nesting_runtime_policy,
         "snapshot_mode": "h1_minimum_builder",
     }
 

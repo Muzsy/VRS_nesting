@@ -46,29 +46,66 @@ python3 scripts/run_h3_quality_benchmark.py \
 python3 scripts/run_h3_quality_benchmark.py --engine-backend sparrow_v1
 ```
 
-5. Backend matrix futas (case x backend):
+5. Explicit quality profile kivalasztas:
+```bash
+python3 scripts/run_h3_quality_benchmark.py --quality-profile quality_default
+```
+
+6. Backend matrix futas (case x backend):
 ```bash
 python3 scripts/run_h3_quality_benchmark.py \
   --engine-backend sparrow_v1 --engine-backend nesting_engine_v2
 ```
 
-6. A/B compare convenience mod:
+7. Profile matrix futas (case x profile):
+```bash
+python3 scripts/run_h3_quality_benchmark.py \
+  --engine-backend nesting_engine_v2 \
+  --quality-profile fast_preview \
+  --quality-profile quality_default \
+  --quality-profile quality_aggressive
+```
+
+8. Backend + profile matrix futas (case x backend x profile):
+```bash
+python3 scripts/run_h3_quality_benchmark.py \
+  --engine-backend sparrow_v1 \
+  --engine-backend nesting_engine_v2 \
+  --quality-profile fast_preview \
+  --quality-profile quality_default \
+  --quality-profile quality_aggressive
+```
+
+9. A/B compare convenience mod:
 ```bash
 python3 scripts/run_h3_quality_benchmark.py --compare-backends
 ```
 
-7. Plan-only compare matrix ellenorzes:
+10. Plan-only compare matrix ellenorzes:
 ```bash
 python3 scripts/run_h3_quality_benchmark.py --plan-only --compare-backends
 ```
 
-## Backend matrix es compare delta
+11. Plan-only profile matrix ellenorzes:
+```bash
+python3 scripts/run_h3_quality_benchmark.py \
+  --plan-only \
+  --engine-backend nesting_engine_v2 \
+  --quality-profile fast_preview \
+  --quality-profile quality_default \
+  --quality-profile quality_aggressive
+```
+
+## Backend/Profile matrix es compare delta
 
 A `--compare-backends` flag automatikusan a `sparrow_v1` + `nesting_engine_v2` backend
-part futtatja minden case-re. Az output `compare_results` tombje gepileg olvashato
-delta blokkokat ad minden case-re, ahol ket backendes quality summary letezik.
+part futtatja minden case-re. Ha tobb quality profile van kerve, akkor a compare
+delta profile-onkent keszul (case + profile kulccsal). Az output `compare_results`
+tombje gepileg olvashato delta blokkokat ad minden olyan case/profile csoportra,
+ahol ket backendes quality summary letezik.
 
 Delta mezok:
+- `quality_profile`
 - `sheet_count_delta`
 - `utilization_pct_delta`
 - `runtime_sec_delta`

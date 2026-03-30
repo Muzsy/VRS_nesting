@@ -1,0 +1,86 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T4/T5/T6 quality
+      lane artefaktjait, a worker/main dual-engine logikat, a
+      `vrs_nesting/runner/nesting_engine_runner.py` jelenlegi CLI-jat, a
+      `run_snapshot_builder.py` solver_config eloallitasat, valamint a local
+      tool / benchmark jelenlegi backend-selector implementaciojat. Frissitsd a
+      canvas-t ugy, hogy pontosan rogzitve legyen: a backend es A/B compare mar
+      megvan, de a quality-profile registry es runtime mapping meg hianyzik.
+    outputs:
+      - "canvases/web_platform/h3_quality_t7_quality_profiles_and_run_config_integration.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t7_quality_profiles_and_run_config_integration.yaml"
+      - "codex/prompts/web_platform/h3_quality_t7_quality_profiles_and_run_config_integration/run.md"
+
+  - name: "Kozos quality-profile registry es v2 runner mapping"
+    description: >
+      Hozz letre kozos, importalhato quality-profile regisztert a
+      `nesting_engine_v2` runtime-hoz, minimum `fast_preview`, `quality_default`
+      es `quality_aggressive` presetekkel. Frissitsd a
+      `vrs_nesting/runner/nesting_engine_runner.py` fajlt ugy, hogy opcionisan
+      tovabbitani tudja a profile-bol szarmaztatott CLI flag-eket a Rust
+      `nesting_engine nest` hivashoz. A mapping legyen egyetlen source of truth,
+      determinisztikus es audit-olhato.
+    outputs:
+      - "vrs_nesting/config/nesting_quality_profiles.py"
+      - "vrs_nesting/runner/nesting_engine_runner.py"
+
+  - name: "Snapshot truth es worker runtime policy bekotese"
+    description: >
+      Frissitsd az `api/services/run_snapshot_builder.py` es `worker/main.py`
+      fajlokat ugy, hogy a snapshot `solver_config_jsonb` explicit
+      `quality_profile` truthot hordozzon, a worker pedig a resolved profile
+      alapjan epitse fel a `nesting_engine_runner` CLI argokat. Az `engine_meta`
+      tartalmazza a requested vs effective profile mezoket es a tenylegesen
+      hasznalt nesting-engine CLI argumentumokat is. A task ne nyisson SQL
+      migration vagy uj API schema kort.
+    outputs:
+      - "api/services/run_snapshot_builder.py"
+      - "worker/main.py"
+
+  - name: "Local tool es benchmark profile selector"
+    description: >
+      Bovitsd a local trial-run tool core/CLI/GUI vilagat es a
+      `run_h3_quality_benchmark.py` harness-t ugy, hogy explicit
+      `quality_profile` valasztast kezeljenek. A benchmark runner tudjon legalabb
+      case x profile matrixot epiteni `nesting_engine_v2` backendhez, es a
+      quality summary / benchmark output jelezze a requested vs effective profile
+      truthot. Frissitsd a benchmark harness dokumentaciot is. Ha regresszios GUI
+      smoke-frissites tenyleg szukseges, csak akkor modositsd azt.
+    outputs:
+      - "scripts/trial_run_tool_core.py"
+      - "scripts/run_trial_run_tool.py"
+      - "scripts/trial_run_tool_gui.py"
+      - "scripts/run_h3_quality_benchmark.py"
+      - "docs/nesting_quality/h3_quality_benchmark_harness.md"
+      - "scripts/smoke_trial_run_tool_tkinter_gui.py"
+
+  - name: "Task-specifikus quality-profile smoke"
+    description: >
+      Keszits dedikalt smoke scriptet, amely valodi Supabase, worker es solver
+      nelkul bizonyitja: a profile registry stabil; a worker a vart
+      nesting-engine CLI argokat allitja elo; a snapshot builder quality-profile
+      truthot ad; a local tool config normalizalas profile mezot is hordoz; es a
+      benchmark runner `--plan-only` modban profile matrixot tud epiteni.
+    outputs:
+      - "scripts/smoke_h3_quality_t7_quality_profiles_and_run_config_integration.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A reportben kulon
+      nevezd meg: mi a kanonikus profile-registry; hogyan kerul a profile truth a
+      snapshotba; hogyan epiti a worker a v2 runner CLI flagjeit; hogyan mukodik a
+      local tool / benchmark profile selector; es hogy a task miert maradt schema-
+      es tuningmentes runtime/policy integracios kor.
+    outputs:
+      - "codex/codex_checklist/web_platform/h3_quality_t7_quality_profiles_and_run_config_integration.md"
+      - "codex/reports/web_platform/h3_quality_t7_quality_profiles_and_run_config_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t7_quality_profiles_and_run_config_integration.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t7_quality_profiles_and_run_config_integration.md"
+      - "codex/reports/web_platform/h3_quality_t7_quality_profiles_and_run_config_integration.verify.log"

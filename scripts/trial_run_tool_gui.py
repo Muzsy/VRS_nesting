@@ -19,11 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from vrs_nesting.config.nesting_quality_profiles import DEFAULT_QUALITY_PROFILE
 from scripts.trial_run_tool_core import (
     TrialRunConfig,
     TrialRunResult,
     TrialRunToolError,
     VALID_ENGINE_BACKENDS,
+    VALID_QUALITY_PROFILES,
     _resolve_env,
     run_trial,
 )
@@ -61,6 +63,7 @@ class GuiFormValues:
     technology_rotation_step_deg: str
     technology_allow_free_rotation: bool
     engine_backend: str
+    quality_profile: str = DEFAULT_QUALITY_PROFILE
 
 
 def collect_dxf_files(dxf_dir: Path) -> list[Path]:
@@ -181,6 +184,9 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
     engine_backend = values.engine_backend.strip() or "auto"
     if engine_backend not in VALID_ENGINE_BACKENDS:
         raise TrialRunToolError(f"engine_backend must be one of {VALID_ENGINE_BACKENDS}, got: {engine_backend}")
+    quality_profile = values.quality_profile.strip() or DEFAULT_QUALITY_PROFILE
+    if quality_profile not in VALID_QUALITY_PROFILES:
+        raise TrialRunToolError(f"quality_profile must be one of {VALID_QUALITY_PROFILES}, got: {quality_profile}")
 
     config = TrialRunConfig(
         dxf_dir=dxf_dir,
@@ -204,6 +210,7 @@ def build_config_from_form(values: GuiFormValues, qty_inputs: Mapping[str, str])
         technology_rotation_step_deg=tech_rotation_step_deg,
         technology_allow_free_rotation=bool(values.technology_allow_free_rotation),
         engine_backend=engine_backend,
+        quality_profile=quality_profile,
     )
     return config, dxf_files
 
@@ -248,6 +255,7 @@ class TrialRunToolGuiApp:
         self._technology_rotation_step_deg_var = tk.StringVar(value=str(args.technology_rotation_step_deg))
         self._technology_allow_free_rotation_var = tk.BooleanVar(value=bool(args.technology_allow_free_rotation))
         self._engine_backend_var = tk.StringVar(value=args.engine_backend)
+        self._quality_profile_var = tk.StringVar(value=args.quality_profile)
         self._status_var = tk.StringVar(value="Idle")
         self._last_run_dir_var = tk.StringVar(value="")
 
@@ -263,6 +271,7 @@ class TrialRunToolGuiApp:
         self._technology_margin_mm_entry: Any | None = None
         self._technology_rotation_step_deg_entry: Any | None = None
         self._technology_allow_free_rotation_check: Any | None = None
+        self._quality_profile_combo: Any | None = None
         self._start_btn: Any | None = None
         self._log_text: Any | None = None
         self._qty_frame: Any | None = None
@@ -383,6 +392,17 @@ class TrialRunToolGuiApp:
             width=20,
         )
         self._engine_backend_combo.grid(row=row, column=3, sticky="w", pady=2)
+
+        row += 1
+        ttk.Label(main, text="Quality profile").grid(row=row, column=2, sticky="w", pady=2)
+        self._quality_profile_combo = ttk.Combobox(
+            main,
+            textvariable=self._quality_profile_var,
+            values=list(VALID_QUALITY_PROFILES),
+            state="readonly",
+            width=20,
+        )
+        self._quality_profile_combo.grid(row=row, column=3, sticky="w", pady=2)
 
         row += 1
         qty_group = ttk.LabelFrame(main, text="Detected DXF files and per-file qty")
@@ -529,6 +549,7 @@ class TrialRunToolGuiApp:
             technology_rotation_step_deg=self._technology_rotation_step_deg_var.get(),
             technology_allow_free_rotation=bool(self._technology_allow_free_rotation_var.get()),
             engine_backend=self._engine_backend_var.get(),
+            quality_profile=self._quality_profile_var.get(),
         )
 
     def _set_running(self, running: bool) -> None:
@@ -660,6 +681,12 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=list(VALID_ENGINE_BACKENDS),
         default="auto",
         help="Engine backend selector (auto | sparrow_v1 | nesting_engine_v2)",
+    )
+    parser.add_argument(
+        "--quality-profile",
+        choices=list(VALID_QUALITY_PROFILES),
+        default=DEFAULT_QUALITY_PROFILE,
+        help="Quality profile selector for nesting runtime policy",
     )
     return parser
 

@@ -12,7 +12,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.trial_run_tool_core import TrialRunConfig, TrialRunToolError, VALID_ENGINE_BACKENDS, parse_qty_overrides, run_trial
+from vrs_nesting.config.nesting_quality_profiles import DEFAULT_QUALITY_PROFILE
+from scripts.trial_run_tool_core import (
+    TrialRunConfig,
+    TrialRunToolError,
+    VALID_ENGINE_BACKENDS,
+    VALID_QUALITY_PROFILES,
+    parse_qty_overrides,
+    run_trial,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -115,6 +123,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="Engine backend for nesting worker (auto | sparrow_v1 | nesting_engine_v2)",
     )
+    parser.add_argument(
+        "--quality-profile",
+        choices=list(VALID_QUALITY_PROFILES),
+        default=DEFAULT_QUALITY_PROFILE,
+        help="Quality profile for nesting engine runtime policy",
+    )
     parser.add_argument("--non-interactive", action="store_true", help="Do not prompt for missing required inputs")
     return parser
 
@@ -197,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
             technology_rotation_step_deg=int(args.technology_rotation_step_deg),
             technology_allow_free_rotation=bool(args.technology_allow_free_rotation),
             engine_backend=str(args.engine_backend),
+            quality_profile=str(args.quality_profile),
         )
 
         result = run_trial(config)

@@ -20,11 +20,18 @@ import subprocess
 import time
 from uuid import uuid4
 
+from vrs_nesting.config.nesting_quality_profiles import (
+    DEFAULT_QUALITY_PROFILE,
+    VALID_QUALITY_PROFILE_NAMES,
+    normalize_quality_profile_name,
+)
+
 
 _JSON_INDENT = 2
 _JSON_SORT_KEYS = True
 
 VALID_ENGINE_BACKENDS = ("auto", "sparrow_v1", "nesting_engine_v2")
+VALID_QUALITY_PROFILES = tuple(VALID_QUALITY_PROFILE_NAMES)
 
 
 def _parse_dotenv(path: Path) -> dict[str, str]:
@@ -141,6 +148,7 @@ class TrialRunConfig:
     technology_rotation_step_deg: int = 90
     technology_allow_free_rotation: bool = False
     engine_backend: str = "auto"
+    quality_profile: str = DEFAULT_QUALITY_PROFILE
 
 
 @dataclass(frozen=True)
@@ -625,6 +633,20 @@ def _engine_backend_env_overrides(config: TrialRunConfig) -> dict[str, str] | No
     return {"WORKER_ENGINE_BACKEND": backend}
 
 
+def _quality_profile_env_overrides(config: TrialRunConfig) -> dict[str, str]:
+    """Return env overrides for WORKER_QUALITY_PROFILE."""
+    return {"WORKER_QUALITY_PROFILE": config.quality_profile}
+
+
+def _worker_env_overrides(config: TrialRunConfig) -> dict[str, str]:
+    """Compose worker-related env overrides for platform start/restart."""
+    out = dict(_quality_profile_env_overrides(config))
+    backend_overrides = _engine_backend_env_overrides(config)
+    if backend_overrides:
+        out.update(backend_overrides)
+    return out
+
+
 def _run_platform_command(*, command: str, recorder: _RunRecorder, env_overrides: dict[str, str] | None = None) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     cmd = [str(root / "scripts" / "run_web_platform.sh"), command]
@@ -691,7 +713,7 @@ def _platform_status_snapshot(recorder: _RunRecorder) -> dict[str, Any]:
 def _start_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder) -> dict[str, Any]:
     if not config.auto_start_platform:
         return {"attempted": False, "started": False}
-    result = _run_platform_command(command="start", recorder=recorder, env_overrides=_engine_backend_env_overrides(config))
+    result = _run_platform_command(command="start", recorder=recorder, env_overrides=_worker_env_overrides(config))
     return {
         "attempted": True,
         "started": bool(result.get("success", False)),
@@ -702,7 +724,7 @@ def _start_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder)
 def _restart_platform_if_requested(config: TrialRunConfig, recorder: _RunRecorder) -> dict[str, Any]:
     if not config.auto_start_platform:
         return {"attempted": False, "restarted": False}
-    result = _run_platform_command(command="restart", recorder=recorder, env_overrides=_engine_backend_env_overrides(config))
+    result = _run_platform_command(command="restart", recorder=recorder, env_overrides=_worker_env_overrides(config))
     return {
         "attempted": True,
         "restarted": bool(result.get("success", False)),
@@ -840,6 +862,7 @@ def _build_summary_markdown(
     error_message: str | None,
     artifact_evidence: dict[str, Any] | None = None,
     requested_engine_backend: str = "auto",
+    requested_engine_profile: str = DEFAULT_QUALITY_PROFILE,
 ) -> str:
     lines: list[str] = []
     lines.append("# Trial run summary")
@@ -877,9 +900,14 @@ def _build_summary_markdown(
     lines.append("## Engine & Artifact Evidence")
     lines.append("")
     lines.append(f"- requested_engine_backend: {requested_engine_backend}")
+    lines.append(f"- requested_engine_profile: {requested_engine_profile}")
     lines.append(f"- engine_backend: {ev.get('engine_backend', 'unknown')}")
     lines.append(f"- engine_contract_version: {ev.get('engine_contract_version', 'unknown')}")
     lines.append(f"- engine_profile: {ev.get('engine_profile', 'unknown')}")
+    lines.append(f"- requested_engine_profile_effective: {ev.get('requested_engine_profile', '')}")
+    lines.append(f"- effective_engine_profile: {ev.get('effective_engine_profile', '')}")
+    lines.append(f"- engine_profile_match: {ev.get('engine_profile_match', None)}")
+    lines.append(f"- profile_effect: {ev.get('profile_effect', '')}")
     lines.append(f"- solver_input_present: {ev.get('solver_input_present', False)}")
     lines.append(f"- solver_output_present: {ev.get('solver_output_present', False)}")
     lines.append(f"- run_log_present: {ev.get('run_log_present', False)}")
@@ -974,6 +1002,7 @@ def _build_quality_summary_json(
     viewer_payload: dict[str, Any] | None,
     artifact_evidence: dict[str, Any],
     requested_engine_backend: str = "auto",
+    requested_engine_profile: str = DEFAULT_QUALITY_PROFILE,
 ) -> dict[str, Any]:
     viewer = viewer_payload if isinstance(viewer_payload, dict) else {}
     final_run = final_run_payload if isinstance(final_run_payload, dict) else {}
@@ -1117,12 +1146,25 @@ def _build_quality_summary_json(
     }
 
     effective_engine_backend = str(artifact_evidence.get("engine_backend", "unknown"))
+    effective_engine_profile = str(
+        artifact_evidence.get("effective_engine_profile")
+        or artifact_evidence.get("engine_profile")
+        or "unknown"
+    )
     if requested_engine_backend == "auto":
         engine_backend_match = None
     elif effective_engine_backend == "unknown":
         engine_backend_match = None
     else:
         engine_backend_match = effective_engine_backend == requested_engine_backend
+
+    profile_match_value = artifact_evidence.get("engine_profile_match")
+    if isinstance(profile_match_value, bool):
+        engine_profile_match: bool | None = profile_match_value
+    elif requested_engine_profile and effective_engine_profile != "unknown":
+        engine_profile_match = effective_engine_profile == requested_engine_profile
+    else:
+        engine_profile_match = None
 
     return {
         "status": "ok" if success else "error",
@@ -1133,8 +1175,13 @@ def _build_quality_summary_json(
         "effective_engine_backend": effective_engine_backend,
         "engine_backend_match": engine_backend_match,
         "engine_backend": effective_engine_backend,
+        "requested_engine_profile": requested_engine_profile,
+        "effective_engine_profile": effective_engine_profile,
+        "engine_profile_match": engine_profile_match,
         "engine_contract_version": str(artifact_evidence.get("engine_contract_version", "unknown")),
         "engine_profile": str(artifact_evidence.get("engine_profile", "unknown")),
+        "profile_effect": str(artifact_evidence.get("profile_effect", "")),
+        "nesting_engine_cli_args": list(artifact_evidence.get("nesting_engine_cli_args", [])),
         "final_run_status": final_run_status or "",
         "placements_count": placements_count,
         "unplaced_count": unplaced_count,
@@ -1170,6 +1217,13 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         supabase_url=supabase_url,
         supabase_anon_key=supabase_anon_key,
     )
+    try:
+        resolved_quality_profile = normalize_quality_profile_name(
+            str(config.quality_profile or "").strip(),
+            default=DEFAULT_QUALITY_PROFILE,
+        )
+    except ValueError as exc:
+        raise TrialRunToolError(str(exc)) from exc
 
     normalized_config = TrialRunConfig(
         dxf_dir=config.dxf_dir.resolve(),
@@ -1202,6 +1256,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         technology_rotation_step_deg=int(config.technology_rotation_step_deg),
         technology_allow_free_rotation=bool(config.technology_allow_free_rotation),
         engine_backend=str(config.engine_backend).strip() or "auto",
+        quality_profile=resolved_quality_profile,
     )
 
     if normalized_config.engine_backend not in VALID_ENGINE_BACKENDS:
@@ -1272,6 +1327,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
             "output_base_dir": str(normalized_config.output_base_dir),
             "auto_start_platform": normalized_config.auto_start_platform,
             "engine_backend": normalized_config.engine_backend,
+            "quality_profile": normalized_config.quality_profile,
             "supabase_url_present": bool(normalized_config.supabase_url),
             "supabase_anon_key_present": bool(normalized_config.supabase_anon_key),
             "technology_setup_mode": "seed_new_project" if not normalized_config.existing_project_id else "existing_project_skip_seed",
@@ -1833,6 +1889,11 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         "engine_backend": _engine_meta_parsed.get("engine_backend", "unknown"),
         "engine_contract_version": _engine_meta_parsed.get("engine_contract_version", "unknown"),
         "engine_profile": _engine_meta_parsed.get("engine_profile", "unknown"),
+        "requested_engine_profile": _engine_meta_parsed.get("requested_engine_profile", ""),
+        "effective_engine_profile": _engine_meta_parsed.get("effective_engine_profile", ""),
+        "engine_profile_match": _engine_meta_parsed.get("engine_profile_match"),
+        "profile_effect": _engine_meta_parsed.get("profile_effect", ""),
+        "nesting_engine_cli_args": _engine_meta_parsed.get("nesting_engine_cli_args", []),
         "solver_input_present": "solver_input" in _found_types,
         "solver_output_present": "solver_output" in _found_types,
         "run_log_present": "run_log" in _found_types,
@@ -1858,6 +1919,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         error_message=error_message,
         artifact_evidence=artifact_evidence,
         requested_engine_backend=normalized_config.engine_backend,
+        requested_engine_profile=normalized_config.quality_profile,
     )
     recorder.write_text("summary.md", summary)
     quality_summary = _build_quality_summary_json(
@@ -1869,6 +1931,7 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         viewer_payload=viewer_payload,
         artifact_evidence=artifact_evidence,
         requested_engine_backend=normalized_config.engine_backend,
+        requested_engine_profile=normalized_config.quality_profile,
     )
     recorder.write_json("quality_summary.json", quality_summary)
 
@@ -1895,7 +1958,10 @@ __all__ = [
     "TrialRunResult",
     "TrialRunToolError",
     "VALID_ENGINE_BACKENDS",
+    "VALID_QUALITY_PROFILES",
     "_engine_backend_env_overrides",
+    "_quality_profile_env_overrides",
+    "_worker_env_overrides",
     "parse_qty_overrides",
     "run_trial",
 ]

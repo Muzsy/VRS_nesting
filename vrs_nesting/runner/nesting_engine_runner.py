@@ -86,6 +86,7 @@ def run_nesting_engine(
     time_limit_sec: int,
     run_root: str = "runs",
     nesting_engine_bin: str | None = None,
+    nesting_engine_cli_args: list[str] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     input_json = Path(input_path).resolve()
     if not input_json.is_file():
@@ -114,7 +115,8 @@ def run_nesting_engine(
     meta_path = run_dir / "runner_meta.json"
 
     bin_path = resolve_nesting_engine_bin(nesting_engine_bin)
-    cmd = [bin_path, "nest"]
+    extra_cli_args = [str(item) for item in (nesting_engine_cli_args or []) if str(item).strip()]
+    cmd = [bin_path, "nest", *extra_cli_args]
     _eprint(f"[nesting-engine-runner] run_dir={run_dir}")
     _eprint(f"[nesting-engine-runner] cmd={' '.join(cmd)}")
 
@@ -153,6 +155,7 @@ def run_nesting_engine(
             "output_sha256": "",
             "determinism_hash": "",
             "solver_version": "",
+            "nesting_engine_cli_args": list(extra_cli_args),
         }
         _write_json(meta_path, meta)
         raise NestingEngineNonZeroExitError(
@@ -179,6 +182,7 @@ def run_nesting_engine(
         "elapsed_sec": elapsed_sec,
         "return_code": int(proc.returncode),
         "determinism_hash": str(out_data.get("meta", {}).get("determinism_hash", "")),
+        "nesting_engine_cli_args": list(extra_cli_args),
     }
     _write_json(meta_path, meta)
     return run_dir, meta
@@ -191,12 +195,37 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--time-limit", type=int, required=True, help="Time limit in seconds")
     parser.add_argument("--run-root", default="runs", help="Root directory for run artifacts")
     parser.add_argument("--nesting-engine-bin", default=None, help="Explicit nesting_engine binary path")
+    parser.add_argument("--placer", choices=["blf", "nfp"], default=None, help="Optional placer override")
+    parser.add_argument("--search", choices=["none", "sa"], default=None, help="Optional search mode override")
+    parser.add_argument("--part-in-part", dest="part_in_part", choices=["off", "auto"], default=None, help="Optional part-in-part mode override")
+    parser.add_argument("--sa-iters", type=int, default=None, help="Optional SA iterations")
+    parser.add_argument("--sa-temp-start", type=int, default=None, help="Optional SA start temperature")
+    parser.add_argument("--sa-temp-end", type=int, default=None, help="Optional SA end temperature")
+    parser.add_argument("--sa-seed", type=int, default=None, help="Optional SA seed override")
+    parser.add_argument("--sa-eval-budget-sec", type=int, default=None, help="Optional SA eval budget seconds")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    nesting_engine_cli_args: list[str] = []
+    if args.placer:
+        nesting_engine_cli_args.extend(["--placer", str(args.placer)])
+    if args.search:
+        nesting_engine_cli_args.extend(["--search", str(args.search)])
+    if args.part_in_part:
+        nesting_engine_cli_args.extend(["--part-in-part", str(args.part_in_part)])
+    if args.sa_iters is not None:
+        nesting_engine_cli_args.extend(["--sa-iters", str(int(args.sa_iters))])
+    if args.sa_temp_start is not None:
+        nesting_engine_cli_args.extend(["--sa-temp-start", str(int(args.sa_temp_start))])
+    if args.sa_temp_end is not None:
+        nesting_engine_cli_args.extend(["--sa-temp-end", str(int(args.sa_temp_end))])
+    if args.sa_seed is not None:
+        nesting_engine_cli_args.extend(["--sa-seed", str(int(args.sa_seed))])
+    if args.sa_eval_budget_sec is not None:
+        nesting_engine_cli_args.extend(["--sa-eval-budget-sec", str(int(args.sa_eval_budget_sec))])
     try:
         run_dir, _meta = run_nesting_engine(
             args.input,
@@ -204,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             time_limit_sec=args.time_limit,
             run_root=args.run_root,
             nesting_engine_bin=args.nesting_engine_bin,
+            nesting_engine_cli_args=nesting_engine_cli_args,
         )
     except NestingEngineRunnerError as exc:
         _eprint(f"ERROR: {exc}")

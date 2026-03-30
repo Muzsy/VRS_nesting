@@ -19,6 +19,14 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import UUID
 
+from vrs_nesting.config.nesting_quality_profiles import (
+    DEFAULT_QUALITY_PROFILE,
+    build_nesting_engine_cli_args_from_runtime_policy,
+    compact_runtime_policy,
+    normalize_quality_profile_name,
+    runtime_policy_for_quality_profile,
+    validate_runtime_policy,
+)
 from worker.engine_adapter_input import (
     EngineAdapterInputError,
     build_nesting_engine_input_from_snapshot,
@@ -114,6 +122,16 @@ def _resolve_worker_engine_backend(raw: str) -> str:
     return cleaned
 
 
+def _resolve_worker_quality_profile_override(raw: str) -> str | None:
+    cleaned = str(raw or "").strip()
+    if not cleaned:
+        return None
+    try:
+        return normalize_quality_profile_name(cleaned, default=DEFAULT_QUALITY_PROFILE)
+    except ValueError as exc:
+        raise WorkerSettingsError(str(exc)) from exc
+
+
 def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
@@ -154,6 +172,7 @@ class WorkerSettings:
     sparrow_bin: str
     once: bool
     engine_backend: str = ENGINE_BACKEND_SPARROW_V1
+    quality_profile_override: str | None = None
 
 
 def load_settings(*, once: bool, poll_interval_s: float | None = None) -> WorkerSettings:
@@ -200,6 +219,9 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
     engine_backend = _resolve_worker_engine_backend(
         _resolve_env("WORKER_ENGINE_BACKEND", ENGINE_BACKEND_SPARROW_V1)
     )
+    quality_profile_override = _resolve_worker_quality_profile_override(
+        _resolve_env("WORKER_QUALITY_PROFILE", "")
+    )
 
     return WorkerSettings(
         supabase_url=supabase_url.rstrip("/"),
@@ -222,6 +244,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
         sparrow_bin=_resolve_env("SPARROW_BIN", ""),
         once=once,
         engine_backend=engine_backend,
+        quality_profile_override=quality_profile_override,
     )
 
 
@@ -1113,6 +1136,80 @@ def _snapshot_source_geometry_revision_ids(snapshot_row: dict[str, Any]) -> list
 
 
 @dataclass(frozen=True)
+class EngineProfileResolution:
+    requested_engine_profile: str
+    effective_engine_profile: str
+    engine_profile_match: bool | None
+    profile_resolution_source: str
+    runtime_policy_source: str
+    profile_effect: str
+    nesting_engine_runtime_policy: dict[str, Any]
+    nesting_engine_cli_args: list[str]
+
+
+def _resolve_engine_profile_resolution(
+    *,
+    snapshot_row: dict[str, Any],
+    settings: WorkerSettings,
+    engine_backend: str,
+) -> EngineProfileResolution:
+    solver_config_raw = snapshot_row.get("solver_config_jsonb")
+    solver_config = solver_config_raw if isinstance(solver_config_raw, dict) else {}
+
+    snapshot_quality_profile = str(solver_config.get("quality_profile") or "").strip()
+    if settings.quality_profile_override:
+        requested_profile = normalize_quality_profile_name(
+            settings.quality_profile_override,
+            default=DEFAULT_QUALITY_PROFILE,
+        )
+        profile_resolution_source = "runtime_override"
+    elif snapshot_quality_profile:
+        requested_profile = normalize_quality_profile_name(
+            snapshot_quality_profile,
+            default=DEFAULT_QUALITY_PROFILE,
+        )
+        profile_resolution_source = "snapshot_solver_config"
+    else:
+        requested_profile = DEFAULT_QUALITY_PROFILE
+        profile_resolution_source = "default"
+
+    registry_policy = compact_runtime_policy(runtime_policy_for_quality_profile(requested_profile))
+    runtime_policy = dict(registry_policy)
+    runtime_policy_source = "registry"
+
+    snapshot_runtime_policy_raw = solver_config.get("nesting_engine_runtime_policy")
+    if profile_resolution_source != "runtime_override" and isinstance(snapshot_runtime_policy_raw, dict):
+        try:
+            runtime_policy = compact_runtime_policy(validate_runtime_policy(snapshot_runtime_policy_raw))
+            runtime_policy_source = "snapshot_solver_config"
+        except ValueError:
+            runtime_policy = dict(registry_policy)
+            runtime_policy_source = "registry_fallback_invalid_snapshot_policy"
+
+    if engine_backend == ENGINE_BACKEND_NESTING_V2:
+        nesting_engine_cli_args = build_nesting_engine_cli_args_from_runtime_policy(runtime_policy)
+        effective_profile = requested_profile
+        profile_match: bool | None = True
+        profile_effect = "applied_to_nesting_engine_v2"
+    else:
+        nesting_engine_cli_args = []
+        effective_profile = "sparrow_v1_noop"
+        profile_match = False
+        profile_effect = "noop_non_nesting_backend"
+
+    return EngineProfileResolution(
+        requested_engine_profile=requested_profile,
+        effective_engine_profile=effective_profile,
+        engine_profile_match=profile_match,
+        profile_resolution_source=profile_resolution_source,
+        runtime_policy_source=runtime_policy_source,
+        profile_effect=profile_effect,
+        nesting_engine_runtime_policy=runtime_policy,
+        nesting_engine_cli_args=nesting_engine_cli_args,
+    )
+
+
+@dataclass(frozen=True)
 class SolverRunnerInvocation:
     cmd: list[str]
     run_dir: Path | None
@@ -1128,6 +1225,7 @@ def _build_solver_runner_invocation(
     run_root: Path,
     solver_input_path: Path,
     solver_input_payload: dict[str, Any],
+    nesting_engine_cli_args: list[str] | None = None,
 ) -> SolverRunnerInvocation:
     if engine_backend == ENGINE_BACKEND_SPARROW_V1:
         seed, time_limit_s = solver_runtime_params(solver_input_payload)
@@ -1156,6 +1254,7 @@ def _build_solver_runner_invocation(
 
     if engine_backend == ENGINE_BACKEND_NESTING_V2:
         seed, time_limit_s = nesting_engine_runtime_params(solver_input_payload)
+        extra_cli_args = [str(item) for item in (nesting_engine_cli_args or []) if str(item).strip()]
         cmd = [
             "python3",
             "-m",
@@ -1168,6 +1267,7 @@ def _build_solver_runner_invocation(
             str(time_limit_s),
             "--run-root",
             str(run_root.resolve()),
+            *extra_cli_args,
         ]
         timeout_s = max(int(time_limit_s) + int(settings.run_timeout_extra_s), 30)
         return SolverRunnerInvocation(
@@ -1260,6 +1360,11 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         if not project_id:
             raise WorkerError(f"run {run_id}: snapshot missing project_id")
         engine_backend = settings.engine_backend
+        profile_resolution = _resolve_engine_profile_resolution(
+            snapshot_row=snapshot_row,
+            settings=settings,
+            engine_backend=engine_backend,
+        )
         try:
             if engine_backend == ENGINE_BACKEND_SPARROW_V1:
                 solver_input_payload = build_solver_input_from_snapshot(snapshot_row)
@@ -1317,11 +1422,20 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             run_root=run_root,
             solver_input_path=input_dir / "solver_input.json",
             solver_input_payload=solver_input_payload,
+            nesting_engine_cli_args=profile_resolution.nesting_engine_cli_args,
         )
         engine_meta: dict[str, Any] = {
             "engine_backend": engine_backend,
             "engine_contract_version": engine_contract_version,
-            "engine_profile": "default",
+            "engine_profile": profile_resolution.requested_engine_profile,
+            "requested_engine_profile": profile_resolution.requested_engine_profile,
+            "effective_engine_profile": profile_resolution.effective_engine_profile,
+            "engine_profile_match": profile_resolution.engine_profile_match,
+            "profile_resolution_source": profile_resolution.profile_resolution_source,
+            "runtime_policy_source": profile_resolution.runtime_policy_source,
+            "profile_effect": profile_resolution.profile_effect,
+            "nesting_engine_runtime_policy": profile_resolution.nesting_engine_runtime_policy,
+            "nesting_engine_cli_args": list(profile_resolution.nesting_engine_cli_args),
             "solver_runner_module": invocation.solver_runner_module,
             "solver_input_hash": solver_input_hash,
         }
