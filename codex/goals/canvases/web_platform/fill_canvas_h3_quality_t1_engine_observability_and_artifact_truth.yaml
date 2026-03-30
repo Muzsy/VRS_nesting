@@ -50,6 +50,7 @@ steps:
       alapon.
     outputs:
       - "scripts/smoke_h3_quality_t1_engine_observability_and_artifact_truth.py"
+      - "scripts/smoke_trial_run_tool_cli_core.py"
       - "codex/codex_checklist/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
       - "codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
 

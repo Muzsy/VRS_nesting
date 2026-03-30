@@ -65,6 +65,7 @@ PASS_WITH_NOTES
 
 ## 6) Advisory notes
 - A trial summary quality mezok validalasara a dedikalt smoke a mar letezo `smoke_trial_run_tool_cli_core.py` scriptet is futtatja.
+- T9 closure-fix rendezeskent a T1 goal YAML outputs listaja explicit tartalmazza a `scripts/smoke_trial_run_tool_cli_core.py` fajlt, igy a historical report/file lista mar szerzodeskonzisztens.
 - A munkafa tartalmaz taskon kivuli modositasokat is; ezek a jelen task DoD teljesuleset nem blokkoljak.
 
 ## 7) Follow-ups

@@ -49,6 +49,7 @@ steps:
       a fake run eredmenyekbol kepzett compare delta blokkot is.
     outputs:
       - "scripts/smoke_h3_quality_t6_local_tool_backend_selector_and_ab_compare.py"
+      - "scripts/smoke_trial_run_tool_tkinter_gui.py"
 
   - name: "Checklist es report frissitese"
     description: >

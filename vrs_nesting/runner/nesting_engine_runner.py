@@ -198,6 +198,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--placer", choices=["blf", "nfp"], default=None, help="Optional placer override")
     parser.add_argument("--search", choices=["none", "sa"], default=None, help="Optional search mode override")
     parser.add_argument("--part-in-part", dest="part_in_part", choices=["off", "auto"], default=None, help="Optional part-in-part mode override")
+    parser.add_argument("--compaction", choices=["off", "slide"], default=None, help="Optional compaction mode override")
     parser.add_argument("--sa-iters", type=int, default=None, help="Optional SA iterations")
     parser.add_argument("--sa-temp-start", type=int, default=None, help="Optional SA start temperature")
     parser.add_argument("--sa-temp-end", type=int, default=None, help="Optional SA end temperature")
@@ -216,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         nesting_engine_cli_args.extend(["--search", str(args.search)])
     if args.part_in_part:
         nesting_engine_cli_args.extend(["--part-in-part", str(args.part_in_part)])
+    if args.compaction:
+        nesting_engine_cli_args.extend(["--compaction", str(args.compaction)])
     if args.sa_iters is not None:
         nesting_engine_cli_args.extend(["--sa-iters", str(int(args.sa_iters))])
     if args.sa_temp_start is not None:

@@ -97,6 +97,7 @@ chmod +x \
   scripts/smoke_nesting_engine_determinism.sh \
   scripts/smoke_nesting_engine_float_policy_determinism.sh \
   scripts/smoke_h3_quality_t8_deterministic_compaction_postpass_and_profile_evidence.py \
+  scripts/smoke_h3_quality_t9_quality_lane_audit_es_hibajavitas.py \
   scripts/smoke_svg_export.py || true
 
 # --- Sparrow binary resolve/build ---
@@ -139,6 +140,9 @@ python3 scripts/smoke_geometry_pipeline.py
 
 echo "[DOCS] Command references smoke"
 python3 scripts/smoke_docs_commands.py
+
+echo "[H3][T9] quality lane closure smoke"
+python3 scripts/smoke_h3_quality_t9_quality_lane_audit_es_hibajavitas.py
 
 echo "[DXF] Export --run-dir smoke"
 python3 scripts/smoke_export_run_dir_out.py

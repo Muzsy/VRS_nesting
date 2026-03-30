@@ -1,0 +1,76 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a H3-Quality-T9 closure-fix task alap artefaktjait: canvas,
+      goal YAML, runner prompt, checklist es report. A task celja a T1-T8 auditban
+      bizonyitott hibak minimal-invaziv javitasa, nem uj quality feature szallitasa.
+    outputs:
+      - "canvases/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t9_quality_lane_audit_es_hibajavitas.yaml"
+      - "codex/prompts/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas/run.md"
+      - "codex/codex_checklist/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.md"
+
+  - name: "Python runner compaction parser fix"
+    description: >
+      Javitsd a `vrs_nesting/runner/nesting_engine_runner.py` fajlt ugy, hogy a
+      Python CLI parser explicit fogadja a `--compaction off|slide` flaget, es a
+      `main()` ezt ugyanugy tovabbitsa a `nesting_engine_cli_args` listaba, mint a
+      tobbi quality/runtime override-ot. A fix maradjon minimal-invaziv:
+      ne nyulj a worker profile-feloldasi logikajahoz es ne vezess be uj CLI
+      szemantikat. A `run_nesting_engine()` metadata viselkedese maradjon audit-olhato.
+    outputs:
+      - "vrs_nesting/runner/nesting_engine_runner.py"
+
+  - name: "T1 smoke frissitese es uj closure-fix regression smoke"
+    description: >
+      Frissitsd a `scripts/smoke_h3_quality_t1_engine_observability_and_artifact_truth.py`
+      scriptet ugy, hogy backend-agnosztikus, valodi `engine_meta` truthot ellenorizzen,
+      ne stale `sparrow_v1` literal stringet. Keszits uj dedikalt smoke-ot is
+      `scripts/smoke_h3_quality_t9_quality_lane_audit_es_hibajavitas.py` neven,
+      amely pure-Python modon bizonyitja:
+      1) a `--compaction slide` parser fixet es arg-build tovabbitast,
+      2) a frissitett T1 smoke zold allapotat,
+      3) a T1/T6 historical task artefaktok outputs/report konzisztenciajat.
+      Bovitsd a `scripts/check.sh` gate-et ugy, hogy ez az uj smoke is lefusson.
+    outputs:
+      - "scripts/smoke_h3_quality_t1_engine_observability_and_artifact_truth.py"
+      - "scripts/smoke_h3_quality_t9_quality_lane_audit_es_hibajavitas.py"
+      - "scripts/check.sh"
+
+  - name: "T1 es T6 historical task-szerzodesi drift rendezese"
+    description: >
+      Rendezd evidence-first modon a T1 es T6 historical YAML/report driftet.
+      Ne vakon szelesitsd a historical YAML outputs listakat, es ne vakon vagd ki
+      a report allitasokat. Vizsgald meg, hogy a jelenlegi repo-evidencia alapjan a
+      kisebb, truth-preserving korrekcio melyik: a YAML minimalis bovitese, a report
+      pontositasa, vagy ezek kombinalt rendezese. A task vegen a T1 es T6 taskoknal
+      mar ne maradjon bizonyitott outputs/report ellentmondas.
+    outputs:
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t1_engine_observability_and_artifact_truth.yaml"
+      - "codex/reports/web_platform/h3_quality_t1_engine_observability_and_artifact_truth.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_h3_quality_t6_local_tool_backend_selector_and_ab_compare.yaml"
+      - "codex/reports/web_platform/h3_quality_t6_local_tool_backend_selector_and_ab_compare.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Frissitsd a checklistet es a reportot evidence-alapon. A report a Report
+      Standard v2 szerkezetet kovesse, kulon DoD -> Evidence Matrix resszel.
+      Kulon nevezd meg:
+      - mi volt a blokkolo T7/T8 parser hiba;
+      - hogyan lett a `--compaction` fix bekotve a Python runnerben;
+      - miert volt stale a T1 smoke;
+      - hogyan lett rendezve a T1/T6 outputs drift;
+      - hogy a task szandekosan closure-fix kor, nem uj quality feature.
+    outputs:
+      - "codex/codex_checklist/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.md
+    outputs:
+      - "codex/reports/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.md"
+      - "codex/reports/web_platform/h3_quality_t9_quality_lane_audit_es_hibajavitas.verify.log"

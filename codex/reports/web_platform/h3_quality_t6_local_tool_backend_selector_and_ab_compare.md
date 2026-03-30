@@ -90,6 +90,7 @@ PASS
 - A task tudatosan local tooling scope-ban maradt. A backend selector nem product feature, hanem local tool/runtime override.
 - A compare summary additive, evidence-first. Nem allit optimalitast, csak merheto kulonbseget.
 - A meglevo `smoke_trial_run_tool_tkinter_gui.py` script kapott egy regresszio fix-et az uj `engine_backend` mezo hozzaadasaval a `GuiFormValues`-hoz.
+- T9 closure-fix rendezeskent a T6 goal YAML outputs listaja explicit tartalmazza a `scripts/smoke_trial_run_tool_tkinter_gui.py` fajlt, igy a historical report/file lista mar szerzodeskonzisztens.
 - A `--compare-backends` flag fix `sparrow_v1` + `nesting_engine_v2` part hasznal; kesobb bovitheto.
 
 ## 7) Follow-ups
