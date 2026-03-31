@@ -6,7 +6,8 @@
       "Bash(python3 -m py_compile api/main.py)",
       "Bash(python3 -m py_compile scripts/smoke_h2_e3_t1_cut_rule_set_model.py)",
       "Bash(python3 scripts/smoke_h2_e3_t1_cut_rule_set_model.py)",
-      "Bash(./scripts/verify.sh --report codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.md)"
+      "Bash(./scripts/verify.sh --report codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.md)",
+      "Bash(wait)"
     ]
   }
 }
