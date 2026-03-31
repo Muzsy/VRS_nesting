@@ -1332,7 +1332,6 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         raise TrialRunToolError("sheet_width and sheet_height must be > 0")
 
     if not normalized_config.existing_project_id:
-        _require_supabase_runtime(normalized_config, where="new project mode (pre-flight)")
         technology_setup_input = _validated_technology_setup_input(normalized_config)
     else:
         technology_setup_input = {"note": "skipped in existing project mode"}
