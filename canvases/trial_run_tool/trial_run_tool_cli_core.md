@@ -126,8 +126,14 @@ Minden futas kulon directoryt hozzon letre `tmp/runs/` alatt. Minimum tartalom:
 - `viewer_data.json`
 - `downloaded_artifact_urls.json`
 - `summary.md`
+- `quality_summary.json`
 - a letoltott `sheet_*.svg`, `sheet_*.dxf`
 - elerheto `solver_output`, `runner_meta`, `solver_stderr`, `run_log` artifactok
+
+Hiba eseten (sikertelen futas) a run directory megkapja:
+- `platform_worker.log` — a worker log utolso 20 000 karaktere
+- `platform_api.log` — az API log utolso 20 000 karaktere
+- `platform_status_at_failure.json` — a platform allapota a hiba idejen
 
 A summary emberileg olvashato legyen, a JSON-ok pedig teljes auditot tegyenek lehetove.
 
@@ -142,6 +148,11 @@ plain text formaban. A tool legfeljebb redakalt formaban mentheti:
 A tool elsokent health checket vegezzen. Ha a platform nem elerheto, a jo minimum:
 - vagy dokumentalt flag mellett meghivja a `scripts/run_web_platform.sh start` scriptet,
 - vagy egyertelmu hibaval megall.
+
+A `scripts/run_web_platform.sh start` a kovetkezo readiness ellenorzeseket vegzi:
+- API: HTTP GET `/health` valasz
+- Worker: `.cache/web_platform/worker.ready` fajl megjelenese (a worker irja, mielott a poll loopba lep)
+- Frontend: HTTP GET `/` valasz
 
 Ne legyen rejtett, agressziv auto-healing logika. Kulonosen:
 - ne fusson csendben SQL lease reset;

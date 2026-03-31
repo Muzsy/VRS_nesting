@@ -1726,6 +1726,28 @@ def _cleanup_stale_temp_dirs(temp_root: Path, *, max_age_s: float) -> None:
         shutil.rmtree(entry, ignore_errors=True)
 
 
+def _worker_ready_file() -> Path:
+    return Path(__file__).resolve().parents[1] / ".cache" / "web_platform" / "worker.ready"
+
+
+def _write_worker_ready(worker_id: str) -> None:
+    ready_file = _worker_ready_file()
+    ready_file.parent.mkdir(parents=True, exist_ok=True)
+    ready_file.write_text(
+        json.dumps({"worker_id": worker_id, "ready_at": time.time(), "pid": os.getpid()}) + "\n",
+        encoding="utf-8",
+    )
+    logger.info("event=worker_ready worker_id=%s ready_file=%s", worker_id, ready_file)
+
+
+def _remove_worker_ready() -> None:
+    ready_file = _worker_ready_file()
+    try:
+        ready_file.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def run_worker_loop(settings: WorkerSettings) -> int:
     settings.temp_root.mkdir(parents=True, exist_ok=True)
     settings.run_root.mkdir(parents=True, exist_ok=True)
@@ -1734,6 +1756,8 @@ def run_worker_loop(settings: WorkerSettings) -> int:
     client = WorkerSupabaseClient(settings)
     last_processed_at = time.monotonic()
     last_alert_at = 0.0
+
+    _write_worker_ready(settings.worker_id)
 
     while True:
         item = client.claim_next_queue_item(settings.worker_id)
@@ -1792,7 +1816,10 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging()
     args = build_parser().parse_args(argv)
     settings = load_settings(once=bool(args.once), poll_interval_s=args.poll_interval_s)
-    return run_worker_loop(settings)
+    try:
+        return run_worker_loop(settings)
+    finally:
+        _remove_worker_ready()
 
 
 if __name__ == "__main__":

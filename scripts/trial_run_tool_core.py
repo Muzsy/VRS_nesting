@@ -791,6 +791,7 @@ def _ensure_api_health(
                 )
                 health_record["response"] = payload
                 health_record["ready_after_restart"] = True
+                recorder.log("platform restart completed (includes worker readiness)")
         return health_record
     except Exception as exc:  # noqa: BLE001
         health_record["initial_error"] = str(exc)
@@ -926,6 +927,8 @@ def _build_summary_markdown(
     lines.append(f"- solver_output_present: {ev.get('solver_output_present', False)}")
     lines.append(f"- run_log_present: {ev.get('run_log_present', False)}")
     lines.append(f"- runner_meta_present: {ev.get('runner_meta_present', False)}")
+    lines.append(f"- runner_solver_bin: {ev.get('runner_solver_bin', 'unknown')}")
+    lines.append(f"- runner_cmd: {ev.get('runner_cmd', 'unknown')}")
     lines.append(f"- solver_stderr_present: {ev.get('solver_stderr_present', False)}")
     lines.append(f"- engine_meta_present: {ev.get('engine_meta_present', False)}")
     lines.append(f"- artifact_completeness: {ev.get('artifact_completeness', '0/0')}")
@@ -1231,6 +1234,8 @@ def _build_quality_summary_json(
         "requested_engine_profile": requested_engine_profile,
         "effective_engine_profile": effective_engine_profile,
         "engine_profile_match": engine_profile_match,
+        "runner_solver_bin": str(artifact_evidence.get("runner_solver_bin", "unknown")),
+        "runner_cmd": str(artifact_evidence.get("runner_cmd", "unknown")),
         "engine_contract_version": str(artifact_evidence.get("engine_contract_version", "unknown")),
         "engine_profile": str(artifact_evidence.get("engine_profile", "unknown")),
         "profile_effect": str(artifact_evidence.get("profile_effect", "")),
@@ -1793,10 +1798,10 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
                 break
             time.sleep(normalized_config.poll_interval_s)
 
+        recorder.write_json("run_poll_history.json", {"status": "ok", "items": poll_history})
+
         if final_run_payload is None:
             raise TrialRunToolError("run polling timeout before terminal state")
-
-        recorder.write_json("run_poll_history.json", {"status": "ok", "items": poll_history})
         recorder.write_json("final_run.json", {"status": "ok", "run": final_run_payload})
 
         step = "artifacts-list"
@@ -1939,6 +1944,24 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     else:
         error_message = None
 
+    # --- Collect platform logs for diagnostics (especially useful on failure) ---
+    if not success:
+        _platform_log_dir = Path(__file__).resolve().parents[1] / ".cache" / "web_platform" / "logs"
+        for _log_name in ("worker.log", "api.log"):
+            _log_src = _platform_log_dir / _log_name
+            if _log_src.is_file():
+                try:
+                    _log_tail = _log_src.read_text(encoding="utf-8", errors="replace")[-20_000:]
+                    recorder.write_text(f"platform_{_log_name}", _log_tail)
+                    recorder.log(f"collected platform log: {_log_name} ({len(_log_tail)} chars)")
+                except OSError:
+                    pass
+        try:
+            _status_snapshot = _platform_status_snapshot(recorder)
+            recorder.write_json("platform_status_at_failure.json", _status_snapshot)
+        except Exception:  # noqa: BLE001
+            pass
+
     # --- Build artifact evidence for quality-debug summary ---
     _found_types = {str(item.get("artifact_type", "")).strip() for item in artifact_items if isinstance(item, dict)}
     _quality_evidence_types = {"solver_input", "solver_output", "run_log", "runner_meta", "solver_stderr", "engine_meta"}
@@ -1952,6 +1975,14 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     if _engine_meta_path.is_file():
         try:
             _engine_meta_parsed = json.loads(_engine_meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    _runner_meta_parsed: dict[str, Any] = {}
+    _runner_meta_path = run_dir / "runner_meta.json"
+    if _runner_meta_path.is_file():
+        try:
+            _runner_meta_parsed = json.loads(_runner_meta_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -1974,6 +2005,10 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
     _extent_before_raw = _solver_compaction_obj.get("occupied_extent_before")
     _extent_after_raw = _solver_compaction_obj.get("occupied_extent_after")
 
+    _runner_solver_bin = str(_runner_meta_parsed.get("solver_bin", "")).strip()
+    _runner_cmd = _runner_meta_parsed.get("cmd")
+    _runner_cmd_str = " ".join(_runner_cmd) if isinstance(_runner_cmd, list) else str(_runner_cmd or "").strip()
+
     artifact_evidence: dict[str, Any] = {
         "engine_backend": _engine_meta_parsed.get("engine_backend", "unknown"),
         "engine_contract_version": _engine_meta_parsed.get("engine_contract_version", "unknown"),
@@ -1994,6 +2029,8 @@ def run_trial(config: TrialRunConfig, *, transport: HttpTransport | None = None)
         "solver_output_present": "solver_output" in _found_types,
         "run_log_present": "run_log" in _found_types,
         "runner_meta_present": "runner_meta" in _found_types,
+        "runner_solver_bin": _runner_solver_bin or "unknown",
+        "runner_cmd": _runner_cmd_str or "unknown",
         "solver_stderr_present": "solver_stderr" in _found_types,
         "engine_meta_present": "engine_meta" in _found_types,
         "artifact_completeness": _completeness,

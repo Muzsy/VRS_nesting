@@ -50,6 +50,15 @@ Optional:
 - `WORKER_RUN_ROOT` (default: `runs`)
 - `SPARROW_BIN` (default from image: `/usr/local/bin/sparrow`)
 
+## Worker readiness signal
+On startup the worker writes a JSON readiness file to
+`.cache/web_platform/worker.ready` (relative to the repo root) containing
+`worker_id`, `ready_at` (epoch seconds), and `pid`. The file is written after
+the Supabase client is initialized but before the queue poll loop starts.
+
+`scripts/run_web_platform.sh start` waits for this file before reporting the
+platform as ready. The file is removed on normal shutdown and by `stop_all()`.
+
 ## Publish via GitHub Actions
 Use workflow: `.github/workflows/worker-image.yml`
 

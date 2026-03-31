@@ -114,6 +114,8 @@ Minimum mezok:
 - `engine_backend`
 - `engine_contract_version`
 - `engine_profile`
+- `runner_solver_bin` (a tenylegesen hasznalt solver binary path a runner_meta.json-bol)
+- `runner_cmd` (a tenylegesen futtatott parancs a runner_meta.json-bol)
 - `final_run_status`
 - `placements_count`
 - `unplaced_count`

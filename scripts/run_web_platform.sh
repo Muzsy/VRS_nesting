@@ -215,6 +215,33 @@ wait_http_ready() {
   done
 }
 
+WORKER_READY_FILE="${STATE_DIR}/worker.ready"
+
+wait_worker_ready() {
+  local timeout="$1"
+  local start
+  local now
+  start="$(date +%s)"
+  while true; do
+    if [[ -f "$WORKER_READY_FILE" ]]; then
+      echo "[OK] worker ready: ${WORKER_READY_FILE}"
+      return 0
+    fi
+    now="$(date +%s)"
+    if (( now - start >= timeout )); then
+      echo "ERROR: timeout waiting for worker readiness (${WORKER_READY_FILE})" >&2
+      local worker_log
+      worker_log="$(log_file_for worker)"
+      if [[ -f "$worker_log" ]]; then
+        echo "--- last 20 lines of worker log ---" >&2
+        tail -n 20 "$worker_log" >&2 || true
+      fi
+      return 1
+    fi
+    sleep 0.5
+  done
+}
+
 start_all() {
   need_cmd bash
   need_cmd curl
@@ -231,11 +258,14 @@ start_all() {
     api_cmd="${api_cmd} --reload"
   fi
 
+  rm -f "$WORKER_READY_FILE"
+
   start_service "api" "$ROOT_DIR" "$api_cmd"
   start_service "worker" "$ROOT_DIR" "python3 -m worker.main"
   start_service "frontend" "${ROOT_DIR}/frontend" "npm run dev -- --host ${FRONTEND_HOST} --port ${FRONTEND_PORT} --strictPort"
 
   wait_http_ready "http://${API_HOST}:${API_PORT}/health" "api" "$START_TIMEOUT_S"
+  wait_worker_ready "$START_TIMEOUT_S"
   wait_http_ready "http://${FRONTEND_HOST}:${FRONTEND_PORT}/" "frontend" "$START_TIMEOUT_S"
 
   echo ""
@@ -253,6 +283,7 @@ stop_all() {
   stop_service "frontend"
   stop_service "worker"
   stop_service "api"
+  rm -f "$WORKER_READY_FILE"
   cleanup_orphans
 }
 

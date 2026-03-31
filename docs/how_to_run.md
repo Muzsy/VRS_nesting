@@ -80,6 +80,7 @@ curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5173/
 Expected:
 - API health returns JSON with `status` (`ok` or `degraded`).
 - Frontend returns HTTP `200`.
+- Worker readiness: `run_web_platform.sh start` waits for `.cache/web_platform/worker.ready` before reporting success.
 
 ### Stop services
 - Press `Ctrl+C` in each terminal where the process is running.
