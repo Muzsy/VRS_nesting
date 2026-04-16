@@ -6,14 +6,20 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from vrs_nesting.geometry.clean import clean_ring
+from vrs_nesting.geometry.clean import clean_ring, rdp_tol_mm_from_env
 
 ARC_TOLERANCE_MM = 0.2
 CURVE_FLATTEN_TOLERANCE_MM = ARC_TOLERANCE_MM
 ARC_POLYGONIZE_MIN_SEGMENTS = 12
 
 
-def _clean_holes(raw_holes: Any, *, min_edge_len: float, where: str) -> list[list[list[float]]]:
+def _clean_holes(
+    raw_holes: Any,
+    *,
+    min_edge_len: float,
+    where: str,
+    simplify_tol_mm: float | None = None,
+) -> list[list[list[float]]]:
     if raw_holes is None:
         return []
     if not isinstance(raw_holes, list):
@@ -21,7 +27,15 @@ def _clean_holes(raw_holes: Any, *, min_edge_len: float, where: str) -> list[lis
 
     holes: list[list[list[float]]] = []
     for idx, hole in enumerate(raw_holes):
-        holes.append(clean_ring(hole, min_edge_len=min_edge_len, ccw=False, where=f"{where}[{idx}]"))
+        holes.append(
+            clean_ring(
+                hole,
+                min_edge_len=min_edge_len,
+                ccw=False,
+                simplify_tol_mm=simplify_tol_mm,
+                where=f"{where}[{idx}]",
+            )
+        )
     return holes
 
 
@@ -35,8 +49,20 @@ def polygonize_part_raw(
     if outer_raw is None:
         raise ValueError("part.outer_points_mm is required")
 
-    outer = clean_ring(outer_raw, min_edge_len=min_edge_len, ccw=True, where="part.outer_points_mm")
-    holes = _clean_holes(holes_raw, min_edge_len=min_edge_len, where="part.holes_points_mm")
+    simplify_tol_mm = rdp_tol_mm_from_env()
+    outer = clean_ring(
+        outer_raw,
+        min_edge_len=min_edge_len,
+        ccw=True,
+        simplify_tol_mm=simplify_tol_mm,
+        where="part.outer_points_mm",
+    )
+    holes = _clean_holes(
+        holes_raw,
+        min_edge_len=min_edge_len,
+        where="part.holes_points_mm",
+        simplify_tol_mm=simplify_tol_mm,
+    )
 
     return {
         "outer_points_mm": outer,
@@ -54,8 +80,20 @@ def polygonize_stock_raw(
     if outer_raw is None:
         raise ValueError("stock.outer_points_mm is required")
 
-    outer = clean_ring(outer_raw, min_edge_len=min_edge_len, ccw=True, where="stock.outer_points_mm")
-    holes = _clean_holes(holes_raw, min_edge_len=min_edge_len, where="stock.holes_points_mm")
+    simplify_tol_mm = rdp_tol_mm_from_env()
+    outer = clean_ring(
+        outer_raw,
+        min_edge_len=min_edge_len,
+        ccw=True,
+        simplify_tol_mm=simplify_tol_mm,
+        where="stock.outer_points_mm",
+    )
+    holes = _clean_holes(
+        holes_raw,
+        min_edge_len=min_edge_len,
+        where="stock.holes_points_mm",
+        simplify_tol_mm=simplify_tol_mm,
+    )
 
     return {
         "outer_points_mm": outer,

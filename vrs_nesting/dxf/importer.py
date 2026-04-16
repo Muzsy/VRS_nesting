@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from vrs_nesting.geometry.clean import GeometryCleanError, clean_ring
+from vrs_nesting.geometry.clean import GeometryCleanError, clean_ring, rdp_tol_mm_from_env
 from vrs_nesting.geometry.polygonize import (
     ARC_POLYGONIZE_MIN_SEGMENTS,
     CURVE_FLATTEN_TOLERANCE_MM,
@@ -545,6 +545,7 @@ def _prepend_path(dst: list[list[float]], src: list[list[float]]) -> None:
 
 
 def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
+    simplify_tol_mm = rdp_tol_mm_from_env()
     epsilon = CHAIN_ENDPOINT_EPSILON_MM
     scale = 1.0 / epsilon if epsilon > 0 else 1.0
 
@@ -654,7 +655,13 @@ def _chain_segments_to_rings(segments: list[list[list[float]]], *, layer: str) -
         if len(chain) >= 3 and _distance(chain[0], chain[-1]) <= CHAIN_ENDPOINT_EPSILON_MM:
             chain[-1] = [float(chain[0][0]), float(chain[0][1])]
             try:
-                ring = clean_ring(chain, min_edge_len=1e-6, ccw=True, where=f"{layer}.chain")
+                ring = clean_ring(
+                    chain,
+                    min_edge_len=1e-6,
+                    ccw=True,
+                    simplify_tol_mm=simplify_tol_mm,
+                    where=f"{layer}.chain",
+                )
                 _assert_non_self_intersecting(ring, where=f"{layer}.chain")
                 rings.append(ring)
             except GeometryCleanError as exc:
@@ -711,6 +718,7 @@ def _entity_to_path(entity: dict[str, Any], where: str) -> list[list[float]]:
 
 
 def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple[list[list[list[float]]], int]:
+    simplify_tol_mm = rdp_tol_mm_from_env()
     direct_rings: list[list[list[float]]] = []
     segment_paths: list[list[list[float]]] = []
 
@@ -729,7 +737,13 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
         if etype in {"LWPOLYLINE", "POLYLINE"} and closed:
             ring_points = path + [path[0]]
             try:
-                ring = clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.closed")
+                ring = clean_ring(
+                    ring_points,
+                    min_edge_len=1e-6,
+                    ccw=True,
+                    simplify_tol_mm=simplify_tol_mm,
+                    where=f"{where}.closed",
+                )
                 _assert_non_self_intersecting(ring, where=f"{where}.closed")
                 direct_rings.append(ring)
             except GeometryCleanError as exc:
@@ -739,7 +753,13 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
         if etype == "CIRCLE":
             ring_points = path + [path[0]]
             try:
-                ring = clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.circle")
+                ring = clean_ring(
+                    ring_points,
+                    min_edge_len=1e-6,
+                    ccw=True,
+                    simplify_tol_mm=simplify_tol_mm,
+                    where=f"{where}.circle",
+                )
                 _assert_non_self_intersecting(ring, where=f"{where}.circle")
                 direct_rings.append(ring)
             except GeometryCleanError as exc:
@@ -753,7 +773,13 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
             else:
                 ring_points.append(list(ring_points[0]))
             try:
-                ring = clean_ring(ring_points, min_edge_len=1e-6, ccw=True, where=f"{where}.spline")
+                ring = clean_ring(
+                    ring_points,
+                    min_edge_len=1e-6,
+                    ccw=True,
+                    simplify_tol_mm=simplify_tol_mm,
+                    where=f"{where}.spline",
+                )
                 _assert_non_self_intersecting(ring, where=f"{where}.spline")
                 direct_rings.append(ring)
             except GeometryCleanError as exc:
