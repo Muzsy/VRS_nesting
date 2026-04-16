@@ -121,6 +121,98 @@ pub fn can_place(candidate: &Polygon64, bin: &Polygon64, placed: &PlacedIndex) -
     true
 }
 
+/// Profiled variant of `can_place` that returns timing breakdown.
+/// Returns (result, CanPlaceProfile).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CanPlaceProfile {
+    pub poly_within_ns: u64,
+    pub poly_within_called: bool,
+    pub overlap_query_ns: u64,
+    pub overlap_candidates: u32,
+    pub narrow_phase_ns: u64,
+    pub narrow_phase_pairs: u32,
+    pub segment_pair_checks: u64,
+    pub rejected_by_aabb: bool,
+    pub rejected_by_within: bool,
+    pub rejected_by_narrow: bool,
+}
+
+pub fn can_place_profiled(candidate: &Polygon64, bin: &Polygon64, placed: &PlacedIndex) -> (bool, CanPlaceProfile) {
+    use std::time::Instant;
+    let mut prof = CanPlaceProfile::default();
+
+    if !polygon_has_valid_rings(candidate) || !polygon_has_valid_rings(bin) {
+        return (false, prof);
+    }
+
+    let candidate_aabb = aabb_from_polygon64(candidate);
+    let bin_aabb = aabb_from_polygon64(bin);
+    if !aabb_inside(&bin_aabb, &candidate_aabb) {
+        prof.rejected_by_aabb = true;
+        return (false, prof);
+    }
+
+    let t0 = Instant::now();
+    let within = poly_strictly_within(candidate, bin);
+    prof.poly_within_ns = t0.elapsed().as_nanos() as u64;
+    prof.poly_within_called = true;
+    if !within {
+        prof.rejected_by_within = true;
+        return (false, prof);
+    }
+
+    let t1 = Instant::now();
+    let mut maybe_overlap: Vec<(usize, &PlacedPart)> = placed
+        .query_overlaps(&candidate_aabb)
+        .into_iter()
+        .map(|idx| (idx, placed.get(idx)))
+        .filter(|(_, p)| aabb_overlaps(&candidate_aabb, &p.aabb))
+        .collect();
+    prof.overlap_query_ns = t1.elapsed().as_nanos() as u64;
+    prof.overlap_candidates = maybe_overlap.len() as u32;
+
+    if maybe_overlap.is_empty() {
+        return (true, prof);
+    }
+
+    maybe_overlap.sort_by(|a, b| {
+        a.1.aabb
+            .min_x
+            .cmp(&b.1.aabb.min_x)
+            .then(a.1.aabb.min_y.cmp(&b.1.aabb.min_y))
+            .then(a.1.aabb.max_x.cmp(&b.1.aabb.max_x))
+            .then(a.1.aabb.max_y.cmp(&b.1.aabb.max_y))
+            .then(a.0.cmp(&b.0))
+    });
+
+    let t2 = Instant::now();
+    for (_, other) in &maybe_overlap {
+        prof.narrow_phase_pairs += 1;
+        let cand_rings: usize = 1 + candidate.holes.len();
+        let other_rings: usize = 1 + other.inflated_polygon.holes.len();
+        let cand_segs: usize = candidate.outer.len() + candidate.holes.iter().map(|h| h.len()).sum::<usize>();
+        let other_segs: usize = other.inflated_polygon.outer.len() + other.inflated_polygon.holes.iter().map(|h| h.len()).sum::<usize>();
+        prof.segment_pair_checks += (cand_segs as u64) * (other_segs as u64) * (cand_rings as u64).max(1) * (other_rings as u64).max(1) / ((cand_rings as u64).max(1) * (other_rings as u64).max(1));
+        // Simplified: actual worst case is sum of ring_a_len * ring_b_len for all ring pairs
+        // More accurate count:
+        prof.segment_pair_checks = prof.segment_pair_checks.wrapping_sub(prof.segment_pair_checks); // reset
+        for ring_a in polygon_rings(candidate) {
+            for ring_b in polygon_rings(&other.inflated_polygon) {
+                prof.segment_pair_checks += (ring_a.len() as u64) * (ring_b.len() as u64);
+            }
+        }
+
+        if polygons_intersect_or_touch(candidate, &other.inflated_polygon) {
+            prof.narrow_phase_ns = t2.elapsed().as_nanos() as u64;
+            prof.rejected_by_narrow = true;
+            return (false, prof);
+        }
+    }
+    prof.narrow_phase_ns = t2.elapsed().as_nanos() as u64;
+
+    (true, prof)
+}
+
 fn polygon_has_valid_rings(poly: &Polygon64) -> bool {
     poly.outer.len() >= 3 && poly.holes.iter().all(|ring| ring.len() >= 3)
 }

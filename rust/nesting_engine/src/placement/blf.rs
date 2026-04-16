@@ -1,6 +1,10 @@
+use std::time::Instant;
+
+use serde::Serialize;
+
 use crate::feasibility::{
     aabb::{Aabb, aabb_from_polygon64},
-    can_place, PlacedPart,
+    can_place, can_place_profiled, CanPlaceProfile, PlacedPart,
     narrow::PlacedIndex,
 };
 use crate::geometry::{
@@ -21,6 +25,78 @@ const CAVITY_NUDGE_DIRS: [(i64, i64); 8] = [
     (-1, 1),
     (1, -1),
 ];
+
+// ── BLF_PROFILE_V1 telemetry ──────────────────────────────────────────
+
+fn blf_profile_enabled() -> bool {
+    matches!(
+        std::env::var("NESTING_ENGINE_BLF_PROFILE"),
+        Ok(v) if v == "1"
+    )
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct BlfProfileV1 {
+    // top-level
+    pub total_parts_requested: u64,
+    pub total_parts_placed: u64,
+    pub total_wall_ms: f64,
+    pub total_rotation_checks: u64,
+    pub total_candidates_considered: u64,
+    pub total_candidates_translated: u64,
+    pub total_candidates_rejected: u64,
+    pub total_candidates_accepted: u64,
+    pub total_cavity_candidates_generated: u64,
+    pub total_cavity_candidates_tested: u64,
+    pub total_grid_candidates_tested: u64,
+    pub total_stop_budget_hits: u64,
+    // timing
+    pub wall_ms_in_cavity_generation: f64,
+    pub wall_ms_in_grid_sweep: f64,
+    pub wall_ms_in_translate_polygon: f64,
+    pub wall_ms_in_can_place: f64,
+    pub wall_ms_in_poly_within: f64,
+    pub wall_ms_in_overlap_query: f64,
+    pub wall_ms_in_narrow_phase: f64,
+    // counters from can_place_profiled
+    pub can_place_calls: u64,
+    pub can_place_rejected_by_aabb: u64,
+    pub can_place_rejected_by_within: u64,
+    pub can_place_rejected_by_narrow: u64,
+    pub poly_within_calls: u64,
+    pub overlap_query_calls: u64,
+    pub narrow_phase_calls: u64,
+    pub segment_pair_checks: u64,
+    pub placed_overlap_candidates_total: u64,
+    // placement caps / early-outs (A4 telemetry; wiring pending)
+    pub instance_cap_hits: u64,
+    pub cavity_anchor_cap_applied: u64,
+    pub cavity_hole_bbox_fit_skipped: u64,
+    // stagnation
+    pub last_successful_placement_index: i64,
+    pub wall_ms_since_last_successful_placement: f64,
+    pub candidates_tested_since_last_success: u64,
+    pub progress_stalled: bool,
+    // per-part instance
+    pub per_instance: Vec<PartInstanceProfileV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct PartInstanceProfileV1 {
+    pub part_id: String,
+    pub instance: usize,
+    pub rotation_count: u64,
+    pub cavity_candidates_generated: u64,
+    pub cavity_candidates_tested: u64,
+    pub grid_candidates_tested: u64,
+    pub accepted: bool,
+    pub wall_ms_total: f64,
+    pub wall_ms_can_place: f64,
+    pub wall_ms_narrow_phase: f64,
+    pub wall_ms_translate: f64,
+    pub can_place_calls: u64,
+    pub timed_out: bool,
+}
 
 #[derive(Debug, Clone)]
 pub struct InflatedPartSpec {
@@ -62,6 +138,8 @@ pub fn blf_place(
     order_policy: PartOrderPolicy,
     part_in_part_mode: PartInPartMode,
 ) -> PlacementResult {
+    let profiling = blf_profile_enabled();
+    let blf_start = Instant::now();
     let ordered = order_parts_for_policy(parts, order_policy);
 
     let step = mm_to_i64(if grid_step_mm <= 0.0 { 1.0 } else { grid_step_mm }).max(1);
@@ -71,9 +149,20 @@ pub fn blf_place(
     let mut placed: Vec<PlacedItem> = Vec::new();
     let mut unplaced: Vec<UnplacedItem> = Vec::new();
 
+    // ── profile accumulators ───────────────────────────────────────
+    let mut prof = BlfProfileV1::default();
+    prof.last_successful_placement_index = -1;
+    let mut last_success_time = blf_start;
+    let mut global_candidate_counter: u64 = 0;
+    let mut candidates_since_last_success: u64 = 0;
+    for p in &ordered {
+        prof.total_parts_requested += p.quantity as u64;
+    }
+
     for part in &ordered {
         'instance_loop: for instance in 0..part.quantity {
             if stop.should_stop() {
+                if profiling { prof.total_stop_budget_hits += 1; }
                 unplaced.push(UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
@@ -81,6 +170,13 @@ pub fn blf_place(
                 });
                 continue;
             }
+
+            let inst_start = Instant::now();
+            let mut inst_prof = PartInstanceProfileV1 {
+                part_id: part.id.clone(),
+                instance,
+                ..Default::default()
+            };
 
             let mut found = false;
             let rotation_candidates: Vec<(i32, Polygon64, crate::feasibility::aabb::Aabb)> = part
@@ -92,12 +188,17 @@ pub fn blf_place(
                     (rotation, rotated, rotated_aabb)
                 })
                 .collect();
+            if profiling {
+                inst_prof.rotation_count = rotation_candidates.len() as u64;
+                prof.total_rotation_checks += rotation_candidates.len() as u64;
+            }
             if rotation_candidates.is_empty() {
                 unplaced.push(UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
                     reason: "PART_NEVER_FITS_SHEET".to_string(),
                 });
+                if profiling { prof.per_instance.push(inst_prof); }
                 continue;
             }
 
@@ -114,12 +215,14 @@ pub fn blf_place(
 
             let mut timed_out_current = false;
             if part_in_part_mode == PartInPartMode::Auto {
+                let cav_gen_start = Instant::now();
                 'cavity_rotation: for (rotation, rotated, rotated_aabb) in &rotation_candidates {
                     let tx_min = bin_aabb.min_x - rotated_aabb.min_x;
                     let ty_min = bin_aabb.min_y - rotated_aabb.min_y;
                     let tx_max = bin_aabb.max_x - rotated_aabb.max_x;
                     let ty_max = bin_aabb.max_y - rotated_aabb.max_y;
 
+                    let cav_start = Instant::now();
                     let cavity_candidates = collect_cavity_candidates(
                         &placed_polygons,
                         *rotated_aabb,
@@ -128,14 +231,64 @@ pub fn blf_place(
                         tx_max,
                         ty_max,
                     );
+                    if profiling {
+                        let cav_elapsed = cav_start.elapsed().as_secs_f64() * 1000.0;
+                        prof.wall_ms_in_cavity_generation += cav_elapsed;
+                        let n = cavity_candidates.len() as u64;
+                        prof.total_cavity_candidates_generated += n;
+                        inst_prof.cavity_candidates_generated += n;
+                    }
+
                     for (tx, ty) in cavity_candidates {
                         if stop.consume(1) {
                             timed_out_current = true;
+                            if profiling { prof.total_stop_budget_hits += 1; }
                             break 'cavity_rotation;
                         }
+                        if profiling {
+                            prof.total_cavity_candidates_tested += 1;
+                            inst_prof.cavity_candidates_tested += 1;
+                            prof.total_candidates_considered += 1;
+                            global_candidate_counter += 1;
+                            candidates_since_last_success += 1;
+                        }
 
+                        let tr_start = Instant::now();
                         let candidate = translate_polygon(rotated, tx, ty);
-                        if can_place(&candidate, bin_polygon, &placed_state) {
+                        if profiling {
+                            let tr_ms = tr_start.elapsed().as_secs_f64() * 1000.0;
+                            prof.wall_ms_in_translate_polygon += tr_ms;
+                            prof.total_candidates_translated += 1;
+                            inst_prof.wall_ms_translate += tr_ms;
+                        }
+
+                        let (feasible, cp) = if profiling {
+                            let cp_start = Instant::now();
+                            let (ok, cp) = can_place_profiled(&candidate, bin_polygon, &placed_state);
+                            let cp_ms = cp_start.elapsed().as_secs_f64() * 1000.0;
+                            prof.wall_ms_in_can_place += cp_ms;
+                            inst_prof.wall_ms_can_place += cp_ms;
+                            inst_prof.can_place_calls += 1;
+                            prof.can_place_calls += 1;
+                            prof.poly_within_calls += cp.poly_within_called as u64;
+                            prof.wall_ms_in_poly_within += cp.poly_within_ns as f64 / 1_000_000.0;
+                            prof.wall_ms_in_overlap_query += cp.overlap_query_ns as f64 / 1_000_000.0;
+                            prof.overlap_query_calls += 1;
+                            prof.placed_overlap_candidates_total += cp.overlap_candidates as u64;
+                            prof.wall_ms_in_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
+                            inst_prof.wall_ms_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
+                            prof.narrow_phase_calls += cp.narrow_phase_pairs as u64;
+                            prof.segment_pair_checks += cp.segment_pair_checks;
+                            if cp.rejected_by_aabb { prof.can_place_rejected_by_aabb += 1; }
+                            if cp.rejected_by_within { prof.can_place_rejected_by_within += 1; }
+                            if cp.rejected_by_narrow { prof.can_place_rejected_by_narrow += 1; }
+                            (ok, cp)
+                        } else {
+                            (can_place(&candidate, bin_polygon, &placed_state), CanPlaceProfile::default())
+                        };
+                        let _ = cp; // suppress unused warning when not profiling
+
+                        if feasible {
                             let candidate_aabb = aabb_from_polygon64(&candidate);
                             placed_state.insert(PlacedPart {
                                 inflated_polygon: candidate.clone(),
@@ -151,31 +304,53 @@ pub fn blf_place(
                                 rotation_deg: *rotation,
                             });
                             found = true;
+                            if profiling {
+                                prof.total_candidates_accepted += 1;
+                                prof.total_parts_placed += 1;
+                                prof.last_successful_placement_index = global_candidate_counter as i64;
+                                last_success_time = Instant::now();
+                                candidates_since_last_success = 0;
+                            }
                             break 'cavity_rotation;
+                        } else if profiling {
+                            prof.total_candidates_rejected += 1;
                         }
                     }
+                }
+                if profiling && !found {
+                    prof.wall_ms_in_cavity_generation += cav_gen_start.elapsed().as_secs_f64() * 1000.0
+                        - prof.wall_ms_in_can_place; // avoid double-counting; approximate
                 }
             }
 
             if found {
+                if profiling {
+                    inst_prof.accepted = true;
+                    inst_prof.wall_ms_total = inst_start.elapsed().as_secs_f64() * 1000.0;
+                    prof.per_instance.push(inst_prof);
+                }
                 continue;
             }
 
+            let grid_sweep_start = Instant::now();
             let mut ty = global_ty_min;
             while ty <= global_ty_max && !found {
                 if stop.consume(1) {
                     timed_out_current = true;
+                    if profiling { prof.total_stop_budget_hits += 1; }
                     break;
                 }
                 let mut tx = global_tx_min;
                 while tx <= global_tx_max && !found {
                     if stop.consume(1) {
                         timed_out_current = true;
+                        if profiling { prof.total_stop_budget_hits += 1; }
                         break;
                     }
                     for (rotation, rotated, rotated_aabb) in &rotation_candidates {
                         if stop.consume(1) {
                             timed_out_current = true;
+                            if profiling { prof.total_stop_budget_hits += 1; }
                             break;
                         }
                         let tx_min = bin_aabb.min_x - rotated_aabb.min_x;
@@ -185,9 +360,50 @@ pub fn blf_place(
                         if tx < tx_min || tx > tx_max || ty < ty_min || ty > ty_max {
                             continue;
                         }
+                        if profiling {
+                            prof.total_grid_candidates_tested += 1;
+                            inst_prof.grid_candidates_tested += 1;
+                            prof.total_candidates_considered += 1;
+                            global_candidate_counter += 1;
+                            candidates_since_last_success += 1;
+                        }
 
+                        let tr_start = Instant::now();
                         let candidate = translate_polygon(rotated, tx, ty);
-                        if can_place(&candidate, bin_polygon, &placed_state) {
+                        if profiling {
+                            let tr_ms = tr_start.elapsed().as_secs_f64() * 1000.0;
+                            prof.wall_ms_in_translate_polygon += tr_ms;
+                            prof.total_candidates_translated += 1;
+                            inst_prof.wall_ms_translate += tr_ms;
+                        }
+
+                        let (feasible, cp) = if profiling {
+                            let cp_start = Instant::now();
+                            let (ok, cp) = can_place_profiled(&candidate, bin_polygon, &placed_state);
+                            let cp_ms = cp_start.elapsed().as_secs_f64() * 1000.0;
+                            prof.wall_ms_in_can_place += cp_ms;
+                            inst_prof.wall_ms_can_place += cp_ms;
+                            inst_prof.can_place_calls += 1;
+                            prof.can_place_calls += 1;
+                            prof.poly_within_calls += cp.poly_within_called as u64;
+                            prof.wall_ms_in_poly_within += cp.poly_within_ns as f64 / 1_000_000.0;
+                            prof.wall_ms_in_overlap_query += cp.overlap_query_ns as f64 / 1_000_000.0;
+                            prof.overlap_query_calls += 1;
+                            prof.placed_overlap_candidates_total += cp.overlap_candidates as u64;
+                            prof.wall_ms_in_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
+                            inst_prof.wall_ms_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
+                            prof.narrow_phase_calls += cp.narrow_phase_pairs as u64;
+                            prof.segment_pair_checks += cp.segment_pair_checks;
+                            if cp.rejected_by_aabb { prof.can_place_rejected_by_aabb += 1; }
+                            if cp.rejected_by_within { prof.can_place_rejected_by_within += 1; }
+                            if cp.rejected_by_narrow { prof.can_place_rejected_by_narrow += 1; }
+                            (ok, cp)
+                        } else {
+                            (can_place(&candidate, bin_polygon, &placed_state), CanPlaceProfile::default())
+                        };
+                        let _ = cp;
+
+                        if feasible {
                             let candidate_aabb = aabb_from_polygon64(&candidate);
                             placed_state.insert(PlacedPart {
                                 inflated_polygon: candidate.clone(),
@@ -203,7 +419,16 @@ pub fn blf_place(
                                 rotation_deg: *rotation,
                             });
                             found = true;
+                            if profiling {
+                                prof.total_candidates_accepted += 1;
+                                prof.total_parts_placed += 1;
+                                prof.last_successful_placement_index = global_candidate_counter as i64;
+                                last_success_time = Instant::now();
+                                candidates_since_last_success = 0;
+                            }
                             break;
+                        } else if profiling {
+                            prof.total_candidates_rejected += 1;
                         }
                     }
                     if timed_out_current {
@@ -216,14 +441,22 @@ pub fn blf_place(
                 }
                 ty = ty.saturating_add(step);
             }
+            if profiling {
+                prof.wall_ms_in_grid_sweep += grid_sweep_start.elapsed().as_secs_f64() * 1000.0;
+            }
 
             if timed_out_current {
+                if profiling { inst_prof.timed_out = true; }
                 for remaining_instance in instance..part.quantity {
                     unplaced.push(UnplacedItem {
                         part_id: part.id.clone(),
                         instance: remaining_instance,
                         reason: "TIME_LIMIT_EXCEEDED".to_string(),
                     });
+                }
+                if profiling {
+                    inst_prof.wall_ms_total = inst_start.elapsed().as_secs_f64() * 1000.0;
+                    prof.per_instance.push(inst_prof);
                 }
                 break 'instance_loop;
             }
@@ -238,7 +471,27 @@ pub fn blf_place(
                         "PART_NEVER_FITS_SHEET".to_string()
                     },
                 });
+            } else if profiling {
+                inst_prof.accepted = true;
             }
+
+            if profiling {
+                inst_prof.wall_ms_total = inst_start.elapsed().as_secs_f64() * 1000.0;
+                prof.per_instance.push(inst_prof);
+            }
+        }
+    }
+
+    // ── emit profile ───────────────────────────────────────────────
+    if profiling {
+        prof.total_wall_ms = blf_start.elapsed().as_secs_f64() * 1000.0;
+        prof.wall_ms_since_last_successful_placement =
+            last_success_time.elapsed().as_secs_f64() * 1000.0;
+        prof.candidates_tested_since_last_success = candidates_since_last_success;
+        prof.progress_stalled = prof.total_parts_placed < prof.total_parts_requested
+            && candidates_since_last_success > 1000;
+        if let Ok(json) = serde_json::to_string(&prof) {
+            eprintln!("BLF_PROFILE_V1 {json}");
         }
     }
 

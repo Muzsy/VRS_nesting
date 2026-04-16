@@ -238,7 +238,14 @@ pub fn run_sa_search_over_specs(
     part_in_part_mode: PartInPartMode,
     compaction_mode: CompactionMode,
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
-    run_sa_search_over_specs_with_eval_hook(
+    let sa_start = Instant::now();
+    let mut eval_count: u64 = 0;
+    let profiling = matches!(
+        std::env::var("NESTING_ENGINE_BLF_PROFILE"),
+        Ok(v) if v == "1"
+    );
+
+    let result = run_sa_search_over_specs_with_eval_hook(
         base_specs,
         bin,
         grid_step_mm,
@@ -246,8 +253,18 @@ pub fn run_sa_search_over_specs(
         config,
         part_in_part_mode,
         compaction_mode,
-        || {},
-    )
+        || { eval_count += 1; },
+    );
+
+    if profiling {
+        let sa_wall_ms = sa_start.elapsed().as_secs_f64() * 1000.0;
+        eprintln!(
+            "SA_PROFILE_V1 {{\"sa_eval_count\":{},\"sa_wall_ms\":{:.1},\"sa_iters_configured\":{},\"sa_eval_budget_sec\":{},\"sa_time_limit_sec\":{}}}",
+            eval_count, sa_wall_ms, config.iters, config.eval_budget_sec, config.time_limit_sec
+        );
+    }
+
+    result
 }
 
 fn run_sa_search_over_specs_with_eval_hook<E>(

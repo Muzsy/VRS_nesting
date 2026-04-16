@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
       "Bash(python3 -m py_compile api/services/cut_rule_sets.py)",
@@ -7,7 +8,40 @@
       "Bash(python3 -m py_compile scripts/smoke_h2_e3_t1_cut_rule_set_model.py)",
       "Bash(python3 scripts/smoke_h2_e3_t1_cut_rule_set_model.py)",
       "Bash(./scripts/verify.sh --report codex/reports/web_platform/h2_e3_t1_cut_rule_set_model.md)",
-      "Bash(wait)"
-    ]
+      "Bash(wait)",
+      "Bash(grep -r \"\\\\.cache.*logs\\\\|cache.*web_platform\\\\|logs.*cache\" /home/muszy/projects/VRS_nesting --include=*.py --include=*.sh)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''worker/main.py''\\).read\\(\\)\\); print\\(''worker/main.py OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''scripts/trial_run_tool_core.py''\\).read\\(\\)\\); print\\(''scripts/trial_run_tool_core.py OK''\\)\")",
+      "Bash(bash -n scripts/run_web_platform.sh)",
+      "Bash(python3 -m pytest tests/ -v --tb=short)",
+      "Bash(grep -r \"quality_summary\\\\|runner_meta\\\\|artifact_evidence\" /home/muszy/projects/VRS_nesting --include=*.md)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''''worker/main.py''''\\).read\\(\\)\\); print\\(''''worker/main.py OK''''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''''scripts/trial_run_tool_core.py''''\\).read\\(\\)\\); print\\(''''trial_run_tool_core.py OK''''\\)\")",
+      "Bash(python3 -m pytest tests/ -q)",
+      "Bash(find /home/muszy/projects/VRS_nesting -path *rust/nesting_engine/src*.rs -type f)",
+      "Bash(grep -n \"pub fn blf_place\\\\|pub fn nfp_place\" /home/muszy/projects/VRS_nesting/rust/nesting_engine/src/placement/*.rs)",
+      "Bash(grep -n \"pub fn run_inflate_pipeline\" /home/muszy/projects/VRS_nesting/rust/nesting_engine/src/geometry/*.rs)",
+      "Bash(grep -r \"RUN_ARTIFACTS_BUCKET\\\\|run-artifacts\" /home/muszy/projects/VRS_nesting --include=*.py)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/v1/health)",
+      "Bash(curl -s http://127.0.0.1:8000/v1/projects/6fc759a5-83da-47d7-9a5a-083e36a0d697/runs/b915a585-bcaf-456f-a8fa-d1bef5e95b57/artifacts)",
+      "Bash(source .env.local)",
+      "Bash(BUCKET=run-artifacts)",
+      "Bash(PROJECT_ID=6fc759a5-83da-47d7-9a5a-083e36a0d697)",
+      "Bash(RUN_ID=b915a585-bcaf-456f-a8fa-d1bef5e95b57)",
+      "Bash(curl -s -X POST $SUPABASE_URL/storage/v1/object/list/$BUCKET -H 'apikey: $SUPABASE_ANON_KEY' -H 'Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY' -H 'Content-Type: application/json' -d '{prefix: projects/$PROJECT_ID/runs/$RUN_ID/, limit: 100}')",
+      "Bash(python3 -m json.tool /home/muszy/projects/VRS_nesting/tmp/repro_tests/test2_stdout.json)",
+      "Bash(python3 -c \":*)",
+      "Bash(SOLVER=\"/home/muszy/projects/VRS_nesting/rust/nesting_engine/target/release/nesting_engine\")",
+      "Bash(INPUT=\"/home/muszy/projects/VRS_nesting/tmp/runs/20260331T221106Z_sample_dxf_111ed6b1/solver_input_snapshot.json\")",
+      "Bash(OUTDIR=\"/home/muszy/projects/VRS_nesting/tmp/repro_tests\")",
+      "Bash(TL=5)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(open\\(''''$INPUT''''\\)\\); d[''''time_limit_sec'''']=$TL; json.dump\\(d,sys.stdout\\)\")",
+      "Bash(python3:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)"
+    ],
+    "defaultMode": "bypassPermissions",
+    "skipDangerousModePermissionPrompt": true
   }
 }
