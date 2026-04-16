@@ -145,23 +145,48 @@ fn mm_to_pts(path: &[MmPt]) -> Vec<Point64> {
 // Core offset operation
 // ---------------------------------------------------------------------------
 
+/// Minimum round-join arc tolerance: the CAD import tolerance
+/// (`ARC_TOLERANCE_MM = 0.2`). We refuse to produce finer detail in the
+/// offset step than the CAD source itself provides.
+const OFFSET_ROUND_ARC_TOL_MIN_MM: f64 = 0.2;
+/// Maximum round-join arc tolerance: keeps large offsets from producing
+/// visibly polygonal corners.
+const OFFSET_ROUND_ARC_TOL_MAX_MM: f64 = 1.0;
+
 /// Apply an outline offset to a shape (outer CCW + holes CW).
 ///
 /// `delta_mm` is applied uniformly:
 ///   positive → outer expands outward, holes contract inward.
 ///   negative → outer contracts inward.
 ///
-/// Uses `LineJoin::Round` for corner rounding.
+/// Uses `LineJoin::Round` for corner rounding with a tolerance that scales
+/// with the offset radius but is floored at the CAD import tolerance so we
+/// never synthesize finer geometry than the input.
+///
+/// After the offset, a `simplify_shape` pass removes the collinear /
+/// near-duplicate vertices that the rounded join can introduce. This is
+/// idempotent on already-valid shapes and only ever reduces vertex count.
 fn do_offset(shape: MmShape, delta_mm: f64) -> Result<MmShape, OffsetError> {
-    let style: OutlineStyle<f64> = OutlineStyle::new(delta_mm).line_join(LineJoin::Round(0.1_f64));
+    // Round join arc tolerance: `|delta| * 0.1`, clamped to
+    // [OFFSET_ROUND_ARC_TOL_MIN_MM, OFFSET_ROUND_ARC_TOL_MAX_MM].
+    let round_tol = (delta_mm.abs() * 0.1_f64)
+        .clamp(OFFSET_ROUND_ARC_TOL_MIN_MM, OFFSET_ROUND_ARC_TOL_MAX_MM);
+    let style: OutlineStyle<f64> = OutlineStyle::new(delta_mm).line_join(LineJoin::Round(round_tol));
 
     let result = shape.outline(&style);
 
-    result
+    let first_shape = result
         .into_iter()
         .next()
-        .map(canonicalize_offset_shape)
-        .ok_or_else(|| OffsetError::ClipperError("outline produced empty result".into()))
+        .ok_or_else(|| OffsetError::ClipperError("outline produced empty result".into()))?;
+
+    // Post-offset simplify: removes degenerate / collinear vertices that
+    // the rounded-join tessellation can produce after integer-grid quantization.
+    // `simplify_shape` is idempotent on already-valid shapes.
+    let post_simplified = first_shape.simplify_shape(FillRule::NonZero);
+    let final_shape = post_simplified.into_iter().next().unwrap_or(first_shape);
+
+    Ok(canonicalize_offset_shape(final_shape))
 }
 
 // ---------------------------------------------------------------------------

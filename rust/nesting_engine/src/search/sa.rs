@@ -176,6 +176,28 @@ where
     ))
 }
 
+/// Fractional safety margin reserved from `time_limit_sec` before computing
+/// the SA evaluation-slot budget. Controlled by
+/// `NESTING_ENGINE_SA_SAFETY_MARGIN_FRAC` (default 0.0 = unchanged behavior).
+/// Valid range: [0.0, 0.5). Any invalid or out-of-range value falls back to 0.0.
+/// When > 0, the clamp leaves `ceil(time_limit_sec * frac)` seconds of wall
+/// time unallocated so that solver output serialization + worker finalization
+/// do not get pre-empted by the final SA evaluation.
+fn sa_safety_margin_frac() -> f64 {
+    let raw = match std::env::var("NESTING_ENGINE_SA_SAFETY_MARGIN_FRAC") {
+        Ok(v) => v,
+        Err(_) => return 0.0_f64,
+    };
+    let parsed: f64 = match raw.trim().parse() {
+        Ok(v) => v,
+        Err(_) => return 0.0_f64,
+    };
+    if !parsed.is_finite() || parsed < 0.0 || parsed >= 0.5 {
+        return 0.0_f64;
+    }
+    parsed
+}
+
 pub fn clamp_sa_iters_by_time_limit_and_eval_budget(
     requested_iters: u64,
     time_limit_sec: u64,
@@ -185,11 +207,22 @@ pub fn clamp_sa_iters_by_time_limit_and_eval_budget(
         return requested_iters;
     }
 
+    // Optional safety reserve: subtract `ceil(time_limit_sec * frac)` seconds
+    // from the usable budget so the SA eval loop cannot monopolize the full
+    // wall-clock window. Default frac = 0.0 preserves existing behavior.
+    let margin_frac = sa_safety_margin_frac();
+    let reserve_sec: u64 = if margin_frac > 0.0 && time_limit_sec > 0 {
+        (time_limit_sec as f64 * margin_frac).ceil() as u64
+    } else {
+        0
+    };
+    let usable_time_sec = time_limit_sec.saturating_sub(reserve_sec);
+
     // Hard SA budget model: `1 + iters` evaluations.
     // 1 initial eval before the loop and `iters` candidate evals in-loop.
-    // Clamp by evaluation slots: max_evals = floor(time_limit_sec / eval_budget_sec),
+    // Clamp by evaluation slots: max_evals = floor(usable_time_sec / eval_budget_sec),
     // max_iters = max_evals.saturating_sub(1), effective_iters = min(requested_iters, max_iters).
-    let max_evals = time_limit_sec / eval_budget_sec;
+    let max_evals = usable_time_sec / eval_budget_sec;
     let max_iters = max_evals.saturating_sub(1);
     requested_iters.min(max_iters)
 }
