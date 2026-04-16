@@ -15,6 +15,48 @@ import type {
 const metaEnv = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
 const API_BASE = metaEnv.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8000/v1";
 
+function normalizeProject(raw: Record<string, unknown>): Project {
+  const ownerIdRaw = raw.owner_id ?? raw.owner_user_id ?? "";
+  const lifecycle = String(raw.lifecycle ?? "").trim().toLowerCase();
+  return {
+    id: String(raw.id ?? ""),
+    owner_id: String(ownerIdRaw),
+    name: String(raw.name ?? ""),
+    description: (raw.description as string | null | undefined) ?? null,
+    created_at: (raw.created_at as string | null | undefined) ?? null,
+    updated_at: (raw.updated_at as string | null | undefined) ?? null,
+    archived_at:
+      (raw.archived_at as string | null | undefined) ?? (lifecycle === "archived" ? ((raw.updated_at as string | null | undefined) ?? null) : null),
+  };
+}
+
+function normalizeUploadFileKind(rawFileType: string): string {
+  const value = String(rawFileType || "").trim().toLowerCase();
+  if (!value) {
+    return "source_dxf";
+  }
+  if (value === "stock_dxf" || value === "part_dxf") {
+    return "source_dxf";
+  }
+  return value;
+}
+
+function normalizeProjectFile(raw: Record<string, unknown>): ProjectFile {
+  const fileType = String(raw.file_type ?? raw.file_kind ?? "source_dxf");
+  return {
+    id: String(raw.id ?? ""),
+    project_id: String(raw.project_id ?? ""),
+    uploaded_by: String(raw.uploaded_by ?? ""),
+    file_type: fileType,
+    original_filename: String(raw.original_filename ?? raw.file_name ?? ""),
+    storage_key: String(raw.storage_key ?? raw.storage_path ?? ""),
+    size_bytes: Number(raw.size_bytes ?? raw.byte_size ?? 0) || null,
+    validation_status: (raw.validation_status as string | null | undefined) ?? null,
+    validation_error: (raw.validation_error as string | null | undefined) ?? null,
+    uploaded_at: (raw.uploaded_at as string | null | undefined) ?? (raw.created_at as string | null | undefined) ?? null,
+  };
+}
+
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const headers: HeadersInit = {
     Authorization: `Bearer ${token}`,
@@ -35,19 +77,28 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
 
 export const api = {
   listProjects(token: string): Promise<ProjectListResponse> {
-    return request<ProjectListResponse>("/projects", token, { method: "GET" });
+    return request<{ items: Array<Record<string, unknown>>; total: number; page: number; page_size: number }>("/projects", token, {
+      method: "GET",
+    }).then((response) => ({
+      ...response,
+      items: response.items.map((item) => normalizeProject(item)),
+    }));
   },
 
   createProject(token: string, payload: { name: string; description?: string }): Promise<Project> {
-    return request<Project>("/projects", token, { method: "POST", body: JSON.stringify(payload) });
+    return request<Record<string, unknown>>("/projects", token, { method: "POST", body: JSON.stringify(payload) }).then((response) =>
+      normalizeProject(response)
+    );
   },
 
   getProject(token: string, projectId: string): Promise<Project> {
-    return request<Project>(`/projects/${projectId}`, token, { method: "GET" });
+    return request<Record<string, unknown>>(`/projects/${projectId}`, token, { method: "GET" }).then((response) => normalizeProject(response));
   },
 
   patchProject(token: string, projectId: string, payload: { name?: string; description?: string }): Promise<Project> {
-    return request<Project>(`/projects/${projectId}`, token, { method: "PATCH", body: JSON.stringify(payload) });
+    return request<Record<string, unknown>>(`/projects/${projectId}`, token, { method: "PATCH", body: JSON.stringify(payload) }).then((response) =>
+      normalizeProject(response)
+    );
   },
 
   archiveProject(token: string, projectId: string): Promise<void> {
@@ -59,7 +110,24 @@ export const api = {
     projectId: string,
     payload: { filename: string; content_type: string; size_bytes: number; file_type: string }
   ): Promise<{ upload_url: string; file_id: string; storage_key: string; expires_at: string }> {
-    return request(`/projects/${projectId}/files/upload-url`, token, { method: "POST", body: JSON.stringify(payload) });
+    return request<{ upload_url: string; file_id: string; storage_key?: string; storage_path?: string; expires_at: string }>(
+      `/projects/${projectId}/files/upload-url`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filename: payload.filename,
+          content_type: payload.content_type,
+          size_bytes: payload.size_bytes,
+          file_kind: normalizeUploadFileKind(payload.file_type),
+        }),
+      }
+    ).then((response) => ({
+      upload_url: response.upload_url,
+      file_id: response.file_id,
+      storage_key: response.storage_key ?? response.storage_path ?? "",
+      expires_at: response.expires_at,
+    }));
   },
 
   completeUpload(
@@ -74,11 +142,18 @@ export const api = {
       content_hash_sha256: string | null;
     }
   ): Promise<ProjectFile> {
-    return request<ProjectFile>(`/projects/${projectId}/files`, token, { method: "POST", body: JSON.stringify(payload) });
+    return request<Record<string, unknown>>(`/projects/${projectId}/files`, token, { method: "POST", body: JSON.stringify(payload) }).then((response) =>
+      normalizeProjectFile(response)
+    );
   },
 
   listProjectFiles(token: string, projectId: string): Promise<ProjectFileListResponse> {
-    return request<ProjectFileListResponse>(`/projects/${projectId}/files`, token, { method: "GET" });
+    return request<{ items: Array<Record<string, unknown>>; total: number; page?: number; page_size?: number }>(`/projects/${projectId}/files`, token, {
+      method: "GET",
+    }).then((response) => ({
+      ...response,
+      items: response.items.map((item) => normalizeProjectFile(item)),
+    }));
   },
 
   deleteProjectFile(token: string, projectId: string, fileId: string): Promise<void> {
@@ -114,8 +189,24 @@ export const api = {
     return request<{ items: Array<{ id: string; name?: string | null }>; total: number }>(`/projects/${projectId}/run-configs`, token, { method: "GET" });
   },
 
-  createRun(token: string, projectId: string, payload: { run_config_id: string }): Promise<Run> {
-    return request<Run>(`/projects/${projectId}/runs`, token, { method: "POST", body: JSON.stringify(payload) });
+  createRun(
+    token: string,
+    projectId: string,
+    payload?: {
+      run_config_id?: string;
+      idempotency_key?: string;
+      run_purpose?: string;
+      time_limit_s?: number;
+      sa_eval_budget_sec?: number;
+    }
+  ): Promise<Run> {
+    const requestPayload = {
+      ...(payload?.idempotency_key ? { idempotency_key: payload.idempotency_key } : {}),
+      ...(payload?.run_purpose ? { run_purpose: payload.run_purpose } : {}),
+      ...(typeof payload?.time_limit_s === "number" ? { time_limit_s: payload.time_limit_s } : {}),
+      ...(typeof payload?.sa_eval_budget_sec === "number" ? { sa_eval_budget_sec: payload.sa_eval_budget_sec } : {}),
+    };
+    return request<Run>(`/projects/${projectId}/runs`, token, { method: "POST", body: JSON.stringify(requestPayload) });
   },
 
   rerun(token: string, projectId: string, runId: string): Promise<Run> {

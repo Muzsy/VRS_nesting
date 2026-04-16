@@ -305,18 +305,20 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
       const body = request.postDataJSON() as {
         file_id: string;
         original_filename: string;
-        storage_key: string;
+        storage_key?: string;
+        storage_path?: string;
         file_type: string;
         size_bytes: number;
       };
       const status = body.original_filename.toLowerCase().includes("invalid") ? "error" : "ok";
+      const storageKey = body.storage_key ?? body.storage_path ?? "";
       const file: MockFile = {
         id: body.file_id,
         project_id: projectId,
         uploaded_by: OWNER_ID,
         file_type: body.file_type || state.uploadFileTypeById[body.file_id] || "part_dxf",
         original_filename: body.original_filename,
-        storage_key: body.storage_key,
+        storage_key: storageKey,
         validation_status: status,
         validation_error: status === "error" ? "Invalid DXF geometry." : null,
         uploaded_at: NOW,
@@ -329,9 +331,9 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
     const uploadUrlMatch = path.match(/^\/projects\/([^/]+)\/files\/upload-url$/);
     if (uploadUrlMatch && method === "POST") {
       const projectId = uploadUrlMatch[1];
-      const body = request.postDataJSON() as { file_type?: string };
+      const body = request.postDataJSON() as { file_type?: string; file_kind?: string };
       const fileId = `file-${(state.filesByProject[projectId] ?? []).length + 1}-${Date.now()}`;
-      state.uploadFileTypeById[fileId] = body.file_type ?? "part_dxf";
+      state.uploadFileTypeById[fileId] = body.file_type ?? body.file_kind ?? "part_dxf";
       await json(route, {
         upload_url: `http://127.0.0.1:8000/signed-upload/${fileId}`,
         file_id: fileId,

@@ -12,6 +12,15 @@ interface PartChoice {
   rotationsText: string;
 }
 
+function isDxfSourceFile(file: ProjectFile): boolean {
+  const fileType = String(file.file_type || "").trim().toLowerCase();
+  if (fileType === "source_dxf" || fileType === "part_dxf" || fileType === "stock_dxf") {
+    return true;
+  }
+  const name = String(file.original_filename || "").trim().toLowerCase();
+  return name.endsWith(".dxf");
+}
+
 function parseRotations(raw: string): number[] {
   const parsed = raw
     .split(",")
@@ -52,7 +61,7 @@ export function NewRunPage() {
 
       const choiceMap: Record<string, PartChoice> = {};
       for (const file of fileResponse.items) {
-        if (file.file_type === "part_dxf") {
+        if (isDxfSourceFile(file)) {
           choiceMap[file.id] = {
             selected: false,
             quantity: 1,
@@ -62,7 +71,7 @@ export function NewRunPage() {
       }
       setPartChoices(choiceMap);
 
-      const stockCandidate = fileResponse.items.find((file) => file.file_type === "stock_dxf") ?? fileResponse.items[0] ?? null;
+      const stockCandidate = fileResponse.items.find((file) => isDxfSourceFile(file)) ?? fileResponse.items[0] ?? null;
       setStockFileId(stockCandidate?.id ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load files for wizard.");
@@ -103,7 +112,7 @@ export function NewRunPage() {
     setError("");
     try {
       const token = await getAccessToken();
-      const runConfig = await api.createRunConfig(token, projectId, {
+      await api.createRunConfig(token, projectId, {
         name: name.trim() || "run-config",
         schema_version: "dxf_v1",
         seed,
@@ -113,7 +122,7 @@ export function NewRunPage() {
         stock_file_id: stockFileId,
         parts_config: selectedParts,
       });
-      const run = await api.createRun(token, projectId, { run_config_id: runConfig.id });
+      const run = await api.createRun(token, projectId, { time_limit_s: timeLimit });
       navigate(`/projects/${projectId}/runs/${run.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run creation failed.");
@@ -167,8 +176,7 @@ export function NewRunPage() {
             >
               <option value="">Select stock file</option>
               {files
-                .filter((file) => file.file_type === "stock_dxf")
-                .concat(files.filter((file) => file.file_type !== "stock_dxf"))
+                .filter((file) => isDxfSourceFile(file))
                 .map((file) => (
                   <option key={file.id} value={file.id}>
                     {file.original_filename} ({file.file_type})
@@ -179,11 +187,11 @@ export function NewRunPage() {
 
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate">Part files</p>
-            {files.filter((file) => file.file_type === "part_dxf").length === 0 && (
-              <p className="rounded-md border border-dashed border-mist bg-slate-50 px-3 py-2 text-sm text-slate">No files tagged as `part_dxf` yet.</p>
+            {files.filter((file) => isDxfSourceFile(file)).length === 0 && (
+              <p className="rounded-md border border-dashed border-mist bg-slate-50 px-3 py-2 text-sm text-slate">No DXF source files uploaded yet.</p>
             )}
             {files
-              .filter((file) => file.file_type === "part_dxf")
+              .filter((file) => isDxfSourceFile(file))
               .map((file) => {
                 const choice = partChoices[file.id] ?? { selected: false, quantity: 1, rotationsText: "0,90,180,270" };
                 return (
