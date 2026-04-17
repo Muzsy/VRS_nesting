@@ -35,6 +35,13 @@ fn blf_profile_enabled() -> bool {
     )
 }
 
+fn read_env_u64(key: &str, default: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct BlfProfileV1 {
     // top-level
@@ -142,6 +149,9 @@ pub fn blf_place(
     let blf_start = Instant::now();
     let ordered = order_parts_for_policy(parts, order_policy);
 
+    let instance_cap = read_env_u64("NESTING_ENGINE_BLF_INSTANCE_CANDIDATE_CAP", 0);
+    let cavity_anchor_cap = read_env_u64("NESTING_ENGINE_BLF_CAVITY_ANCHOR_CAP", 0);
+
     let step = mm_to_i64(if grid_step_mm <= 0.0 { 1.0 } else { grid_step_mm }).max(1);
     let bin_aabb = aabb_from_polygon64(bin_polygon);
     let mut placed_state = PlacedIndex::new();
@@ -179,6 +189,8 @@ pub fn blf_place(
             };
 
             let mut found = false;
+            let mut instance_capped = false;
+            let mut instance_candidates_tested: u64 = 0;
             let rotation_candidates: Vec<(i32, Polygon64, crate::feasibility::aabb::Aabb)> = part
                 .allowed_rotations_deg
                 .iter()
@@ -223,13 +235,14 @@ pub fn blf_place(
                     let ty_max = bin_aabb.max_y - rotated_aabb.max_y;
 
                     let cav_start = Instant::now();
-                    let cavity_candidates = collect_cavity_candidates(
+                    let (cavity_candidates, bbox_fit_skipped) = collect_cavity_candidates(
                         &placed_polygons,
                         *rotated_aabb,
                         tx_min,
                         ty_min,
                         tx_max,
                         ty_max,
+                        cavity_anchor_cap,
                     );
                     if profiling {
                         let cav_elapsed = cav_start.elapsed().as_secs_f64() * 1000.0;
@@ -237,12 +250,22 @@ pub fn blf_place(
                         let n = cavity_candidates.len() as u64;
                         prof.total_cavity_candidates_generated += n;
                         inst_prof.cavity_candidates_generated += n;
+                        prof.cavity_hole_bbox_fit_skipped += bbox_fit_skipped;
+                        if cavity_anchor_cap > 0 && n >= cavity_anchor_cap {
+                            prof.cavity_anchor_cap_applied += 1;
+                        }
                     }
 
                     for (tx, ty) in cavity_candidates {
                         if stop.consume(1) {
                             timed_out_current = true;
                             if profiling { prof.total_stop_budget_hits += 1; }
+                            break 'cavity_rotation;
+                        }
+                        instance_candidates_tested += 1;
+                        if instance_cap > 0 && instance_candidates_tested >= instance_cap {
+                            if profiling { prof.instance_cap_hits += 1; }
+                            instance_capped = true;
                             break 'cavity_rotation;
                         }
                         if profiling {
@@ -334,14 +357,14 @@ pub fn blf_place(
 
             let grid_sweep_start = Instant::now();
             let mut ty = global_ty_min;
-            while ty <= global_ty_max && !found {
+            while ty <= global_ty_max && !found && !instance_capped {
                 if stop.consume(1) {
                     timed_out_current = true;
                     if profiling { prof.total_stop_budget_hits += 1; }
                     break;
                 }
                 let mut tx = global_tx_min;
-                while tx <= global_tx_max && !found {
+                while tx <= global_tx_max && !found && !instance_capped {
                     if stop.consume(1) {
                         timed_out_current = true;
                         if profiling { prof.total_stop_budget_hits += 1; }
@@ -359,6 +382,12 @@ pub fn blf_place(
                         let ty_max = bin_aabb.max_y - rotated_aabb.max_y;
                         if tx < tx_min || tx > tx_max || ty < ty_min || ty > ty_max {
                             continue;
+                        }
+                        instance_candidates_tested += 1;
+                        if instance_cap > 0 && instance_candidates_tested >= instance_cap {
+                            if profiling { prof.instance_cap_hits += 1; }
+                            instance_capped = true;
+                            break;
                         }
                         if profiling {
                             prof.total_grid_candidates_tested += 1;
@@ -431,12 +460,12 @@ pub fn blf_place(
                             prof.total_candidates_rejected += 1;
                         }
                     }
-                    if timed_out_current {
+                    if timed_out_current || instance_capped {
                         break;
                     }
                     tx = tx.saturating_add(step);
                 }
-                if timed_out_current {
+                if timed_out_current || instance_capped {
                     break;
                 }
                 ty = ty.saturating_add(step);
@@ -465,7 +494,9 @@ pub fn blf_place(
                 unplaced.push(UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
-                    reason: if stop.should_stop() {
+                    reason: if instance_capped {
+                        "INSTANCE_CANDIDATE_CAP".to_string()
+                    } else if stop.should_stop() {
                         "TIME_LIMIT_EXCEEDED".to_string()
                     } else {
                         "PART_NEVER_FITS_SHEET".to_string()
@@ -505,11 +536,15 @@ fn collect_cavity_candidates(
     ty_min: i64,
     tx_max: i64,
     ty_max: i64,
-) -> Vec<(i64, i64)> {
+    anchor_cap: u64,
+) -> (Vec<(i64, i64)>, u64) {
     let mut out: Vec<(i64, i64)> = Vec::new();
     let mut seen: std::collections::BTreeSet<(i64, i64)> = std::collections::BTreeSet::new();
+    let part_w = rotated_aabb.max_x - rotated_aabb.min_x;
+    let part_h = rotated_aabb.max_y - rotated_aabb.min_y;
+    let mut bbox_fit_skipped: u64 = 0;
 
-    for placed in placed_polygons {
+    'outer: for placed in placed_polygons {
         let mut hole_meta: Vec<(usize, Aabb, i128)> = placed
             .holes
             .iter()
@@ -534,6 +569,12 @@ fn collect_cavity_candidates(
         });
 
         for (hole_idx, hole_bbox, _) in hole_meta {
+            let hole_w = hole_bbox.max_x - hole_bbox.min_x;
+            let hole_h = hole_bbox.max_y - hole_bbox.min_y;
+            if hole_w < part_w || hole_h < part_h {
+                bbox_fit_skipped += 1;
+                continue;
+            }
             let hole = &placed.holes[hole_idx];
             for anchor in hole_anchor_points(hole, hole_bbox) {
                 let tx = anchor.x - rotated_aabb.min_x;
@@ -544,12 +585,15 @@ fn collect_cavity_candidates(
                 }
                 if seen.insert((tx, ty)) {
                     out.push((tx, ty));
+                    if anchor_cap > 0 && out.len() as u64 >= anchor_cap {
+                        break 'outer;
+                    }
                 }
             }
         }
     }
 
-    out
+    (out, bbox_fit_skipped)
 }
 
 fn hole_anchor_points(hole: &[Point64], hole_bbox: Aabb) -> Vec<Point64> {
@@ -1051,6 +1095,145 @@ mod tests {
         assert_eq!(
             auto_result.sheets_used, 1,
             "auto mode should place the small part into the cavity on sheet 1"
+        );
+    }
+
+    #[test]
+    fn collect_cavity_candidates_skips_small_holes_via_bbox_fit() {
+        // Frame: 100x100 outer with a 5x5 hole — too small for a 20x20 part.
+        let frame = rect_with_hole_poly(100.0, 100.0, 40.0, 40.0, 45.0, 45.0);
+        let placed_polygons = vec![frame];
+
+        let part_aabb = Aabb {
+            min_x: 0,
+            min_y: 0,
+            max_x: mm_to_i64(20.0),
+            max_y: mm_to_i64(20.0),
+        };
+
+        let (candidates, bbox_skipped) = collect_cavity_candidates(
+            &placed_polygons,
+            part_aabb,
+            i64::MIN / 2,
+            i64::MIN / 2,
+            i64::MAX / 2,
+            i64::MAX / 2,
+            0,
+        );
+
+        assert!(bbox_skipped > 0, "should skip the small 5x5 hole for 20x20 part");
+        assert!(candidates.is_empty(), "no candidates from tiny hole");
+    }
+
+    #[test]
+    fn collect_cavity_candidates_no_skip_when_hole_is_large_enough() {
+        // Frame: 100x100 outer with a 50x50 hole — large enough for a 20x20 part.
+        let frame = rect_with_hole_poly(100.0, 100.0, 25.0, 25.0, 75.0, 75.0);
+        let placed_polygons = vec![frame];
+
+        let part_aabb = Aabb {
+            min_x: 0,
+            min_y: 0,
+            max_x: mm_to_i64(20.0),
+            max_y: mm_to_i64(20.0),
+        };
+
+        let (candidates, bbox_skipped) = collect_cavity_candidates(
+            &placed_polygons,
+            part_aabb,
+            i64::MIN / 2,
+            i64::MIN / 2,
+            i64::MAX / 2,
+            i64::MAX / 2,
+            0,
+        );
+
+        assert_eq!(bbox_skipped, 0, "hole is big enough, no skip");
+        assert!(!candidates.is_empty(), "should generate candidates from 50x50 hole");
+    }
+
+    #[test]
+    fn collect_cavity_candidates_respects_anchor_cap() {
+        // Frame with large hole that generates many anchors.
+        let frame = rect_with_hole_poly(100.0, 100.0, 10.0, 10.0, 90.0, 90.0);
+        let placed_polygons = vec![frame];
+
+        let part_aabb = Aabb {
+            min_x: 0,
+            min_y: 0,
+            max_x: mm_to_i64(5.0),
+            max_y: mm_to_i64(5.0),
+        };
+
+        let (uncapped, _) = collect_cavity_candidates(
+            &placed_polygons,
+            part_aabb,
+            i64::MIN / 2,
+            i64::MIN / 2,
+            i64::MAX / 2,
+            i64::MAX / 2,
+            0,
+        );
+
+        let cap: u64 = 10;
+        let (capped, _) = collect_cavity_candidates(
+            &placed_polygons,
+            part_aabb,
+            i64::MIN / 2,
+            i64::MIN / 2,
+            i64::MAX / 2,
+            i64::MAX / 2,
+            cap,
+        );
+
+        assert!(
+            uncapped.len() > cap as usize,
+            "uncapped should have more than {cap} candidates, got {}",
+            uncapped.len()
+        );
+        assert_eq!(
+            capped.len(),
+            cap as usize,
+            "capped should have exactly {cap} candidates"
+        );
+    }
+
+    #[test]
+    fn blf_instance_candidate_cap_limits_placement_attempts() {
+        // Many parts, tiny cap → most will be unplaced with INSTANCE_CANDIDATE_CAP reason.
+        let part = InflatedPartSpec {
+            id: "p".to_string(),
+            quantity: 5,
+            allowed_rotations_deg: vec![0, 90],
+            inflated_polygon: rect_poly(10.0, 8.0),
+            nominal_bbox_area: bbox_area(&rect_poly(10.0, 8.0).outer),
+        };
+        let bin = rect_poly(40.0, 40.0);
+
+        // With cap=1, each instance gets only 1 candidate attempt.
+        // First instance will succeed (first position is valid), rest likely won't
+        // in just 1 attempt once space is scarce.
+        std::env::set_var("NESTING_ENGINE_BLF_INSTANCE_CANDIDATE_CAP", "1");
+        let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());
+        let res = blf_place(
+            &[part],
+            &bin,
+            1.0,
+            &mut stop,
+            PartOrderPolicy::ByArea,
+            PartInPartMode::Off,
+        );
+        std::env::remove_var("NESTING_ENGINE_BLF_INSTANCE_CANDIDATE_CAP");
+
+        let cap_reasons: Vec<_> = res
+            .unplaced
+            .iter()
+            .filter(|u| u.reason == "INSTANCE_CANDIDATE_CAP")
+            .collect();
+        // At least some instances should be capped (not all 5 can fit in 1 attempt each)
+        assert!(
+            !cap_reasons.is_empty(),
+            "with cap=1, at least some instances should hit INSTANCE_CANDIDATE_CAP"
         );
     }
 

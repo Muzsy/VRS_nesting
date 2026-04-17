@@ -120,6 +120,7 @@ Ha nincs placement, ezek a mezok `null`-ok.
 |---|---|
 | `PART_NEVER_FITS_SHEET` | A part nominalis + belso inflate utan sem fer el a hasznos tabla teruleten. |
 | `TIME_LIMIT_EXCEEDED` | A stop policy (wall-clock vagy work-budget) limitet ert el, mielott minden peldany elhelyezheto lett volna. |
+| `INSTANCE_CANDIDATE_CAP` | A per-instance candidate cap (`NESTING_ENGINE_BLF_INSTANCE_CANDIDATE_CAP`) limitet erte el. Az instance nem kapott tobb jelolt-probalkozast. Csak akkor aktiv, ha az env var > 0. |
 
 ## 6. `determinism_hash` szamitasi mod (normativ hivatkozas)
 

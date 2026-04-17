@@ -7,15 +7,22 @@ The crate is organized so nominal geometry handling and inflated feasibility log
 - `geometry/`
   - Current: SCALE conversions, polygon types, float-policy helpers, offset operations, and the nominal->inflated pipeline orchestrator.
   - Responsibility: pure geometry transforms (`mm <-> i64`, `inflate_part`, pipeline diagnostics).
+  - Offset post-simplify (A1): after `i_overlay` offset, a `SimplifyShape::simplify_shape(FillRule::NonZero)` pass removes collinear and micro-segment vertices. `LineJoin::Round` tolerance is spacing-proportional: `clamp(|delta| * 0.1, 0.2, 1.0)`. This reduces downstream narrow-phase cost.
 - `nesting/` (planned)
   - Responsibility: high-level nesting flow orchestration across candidate generation and feasibility checks.
-- `feasibility/` (planned)
-  - Responsibility: collision/touching checks and acceptance/rejection decisions on inflated geometry.
-- `placement/` (planned)
+- `feasibility/`
+  - Current: collision/touching checks on inflated geometry (`can_place` narrow-phase).
+  - Responsibility: acceptance/rejection decisions on inflated geometry.
+- `placement/`
+  - Current: BLF grid-sweep placer, cavity anchor generation, per-instance candidate cap (B1), cavity bbox-fit skip (B3a), cavity anchor cap (B3b), BLF profiling telemetry.
   - Responsibility: candidate placement search strategy and deterministic ordering rules.
-- `multi_bin/` (planned)
+- `multi_bin/`
+  - Current: greedy multi-sheet assignment, `PartOrderPolicy` (ByArea/ByInputOrder).
   - Responsibility: multi-sheet bin handling and sheet-level assignment flow.
-- `export/` (planned)
+- `search/`
+  - Current: SA core (`SplitMix64` PRNG, neighborhood operators, integer-only acceptance), SA safety margin (A2).
+  - Responsibility: metaheuristic search layer on top of constructive placers.
+- `export/`
   - Responsibility: output generation from nominal geometry (DXF/export-facing representation).
 
 ## 2. Determinism boundary model
@@ -125,6 +132,17 @@ Activation and compatibility rules:
   - `--sa-seed <u64>`
   - `--sa-eval-budget-sec <u64>`
 - SA-specific flags are rejected unless `--search sa` is active.
+
+SA safety margin (A2):
+
+- `NESTING_ENGINE_SA_SAFETY_MARGIN_FRAC` env var (default: `0.0`, range `[0.0, 0.5)`).
+- A nonzero fraction reserves that portion of `time_limit_sec` for output serialization:
+  ```
+  reserve_sec = ceil(time_limit_sec * safety_margin)
+  usable_time_sec = time_limit_sec - reserve_sec
+  max_evals = usable_time_sec / eval_budget_sec
+  ```
+- Recommended value: `0.05` (5% reserve).
 
 Current implementation map:
 
@@ -248,6 +266,25 @@ Cavity source and validation rules:
 - Every cavity candidate is validated through the existing `can_place()` narrow-phase.
 - If no cavity candidate is feasible, the original global BLF grid-scan path runs unchanged.
 
+Cavity performance optimizations:
+
+- **B3a — bbox-fit skip** (always active): Before generating anchors for a hole, the hole's AABB
+  is compared with the part's rotated AABB. If `hole_w < part_w || hole_h < part_h`, the hole is
+  skipped entirely. This is a pure optimization — no result change, only avoids wasted work.
+- **B3b — anchor cap** (`NESTING_ENGINE_BLF_CAVITY_ANCHOR_CAP`, default `0` = unlimited):
+  Limits the total number of cavity anchor candidates generated per `collect_cavity_candidates` call.
+  Lower-left, center, and first-vertex anchors are generated first, so the most promising anchors
+  survive the cap. Recommended: `200`–`500`.
+
+BLF per-instance candidate cap (B1):
+
+- `NESTING_ENGINE_BLF_INSTANCE_CANDIDATE_CAP` (default `0` = unlimited).
+- A shared counter tracks candidates tested across both cavity and grid phases for each instance.
+- On cap hit: the instance gets `INSTANCE_CANDIDATE_CAP` unplaced reason and the placer moves to
+  the next instance (does not stop the entire run).
+- StopPolicy (`consume(1)`) is checked before the cap — wall-clock/work-budget stop takes priority.
+- Recommended: `10000` for SA search (quality-neutral sweet spot on 500-part benchmarks).
+
 ## 10. Deterministic compaction post-pass policy (H3-T8)
 
 H3-T8 introduces an optional deterministic compaction pass on top of the existing constructive result.
@@ -281,10 +318,22 @@ Evidence model:
 - Determinism hash contract is unchanged and still derived from placement canonical view only.
   Compaction metadata does not participate in hash generation.
 
-## 11. References
+## 11. BLF profiling telemetry
+
+BLF profiling is opt-in via `NESTING_ENGINE_BLF_PROFILE=1`. When enabled, a `BLF_PROFILE_V1 {...}`
+JSON line is emitted to stderr with timing and counter metrics:
+
+- `wall_ms_*`: wall-clock time in major phases (grid sweep, cavity, `can_place`, `translate_polygon`)
+- `total_candidates_tested`: total feasibility checks across all instances
+- `instance_cap_hits`: instances truncated by B1 cap
+- `cavity_anchor_cap_applied`: rotations where B3b anchor cap was reached
+- `cavity_hole_bbox_fit_skipped`: holes skipped by B3a bbox-fit check
+
+## 12. References
 
 - `docs/nesting_engine/tolerance_policy.md` (SCALE, contour winding, touching policy)
 - `docs/nesting_engine/json_canonicalization.md` (determinism reference)
+- `docs/nesting_engine/blf_performance_fixes_changelog.md` (A1-A4, B1, B3, C1 fix changelog + benchmarks)
 - `canvases/nesting_engine/simulated_annealing_search.md` (F2-4 feature intent / task-level design)
 - `canvases/nesting_engine/arc_spline_polygonization_policy.md` (F3-1 curve policy intent)
 - `canvases/nesting_engine/part_in_part_pipeline.md` (F3-2 feature intent / task-level design)
