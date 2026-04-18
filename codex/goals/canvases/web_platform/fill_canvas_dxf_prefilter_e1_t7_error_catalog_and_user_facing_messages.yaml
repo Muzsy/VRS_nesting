@@ -1,0 +1,47 @@
+steps:
+  - name: "Felderítés és hibaforrás-inventory rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2/T3/T4/T5/T6 DXF
+      prefilter architecture dokumentumokat, a global error code catalogot, a DXF importer
+      strukturált hibáit, a geometry validation issue-kódokat, valamint a jelenlegi frontend
+      nyers hibamegjelenítési pontokat. Frissítsd a canvas-t úgy, hogy explicit módon rögzítse
+      a current-code error truth és a future canonical DXF prefilter error catalog külön szerepét.
+      Ez docs-only error-catalog freeze task maradjon.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.md"
+
+  - name: "DXF prefilter error catalog és user-facing message specifikáció dokumentum megírása"
+    description: >
+      Készítsd el a `docs/web_platform/architecture/dxf_prefilter_error_catalog_and_user_facing_messages.md`
+      dokumentumot a meglévő kód figyelembevételével. A dokumentum különítse el a current-code
+      error truthot és a future canonical prefilter error catalogot; adjon grounded inventoryt
+      a releváns jelenlegi hibaforrásokról; rögzítse a canonical kategóriákat, a minimum catalog-item
+      mezőket, a severity/presentation elveket, valamint a user-facing és debug evidence szétválasztását;
+      tartalmazzon valós importer/validator kódokra épülő mapping példákat; de ne implementáljon backend
+      translator servicet, frontend hibakezelést, API response modelt vagy OpenAPI frissítést.
+    outputs:
+      - "docs/web_platform/architecture/dxf_prefilter_error_catalog_and_user_facing_messages.md"
+
+  - name: "Checklist és report alapok frissítése"
+    description: >
+      Készítsd el a task checklist és report alapfájljait a Codex workflow szerint.
+      A report DoD->Evidence szerkezetben foglalja össze, hogy az error catalog dokumentum
+      mely meglévő kódforrásokra támaszkodik (`vrs_nesting/dxf/importer.py`,
+      `api/services/geometry_validation_report.py`, `docs/error_code_catalog.md`,
+      releváns frontend page-ek), és külön nevezze meg, hogy ez docs-only error-catalog freeze task,
+      nem backend/frontend/API implementáció.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t7_error_catalog_and_user_facing_messages.verify.log"
