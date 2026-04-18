@@ -1,0 +1,49 @@
+steps:
+  - name: "Felderítés és glossary-boundary rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1 scope
+      freeze dokumentumot, valamint a releváns importer / geometry import /
+      derivative / frontend / migration fájlokat. Frissítsd a canvas-t úgy,
+      hogy explicit módon rögzítse a jelenlegi kódból igazolható fogalmi
+      szinteket és a lezárandó terminológiai konfliktusokat. Ez docs-only
+      glossary task maradjon.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e1_t2_domain_glossary_and_role_model.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.md"
+
+  - name: "DXF prefilter domain glossary és role model dokumentum megírása"
+    description: >
+      Készítsd el a `docs/web_platform/architecture/dxf_prefilter_domain_glossary_and_role_model.md`
+      dokumentumot a meglévő kód figyelembevételével. A dokumentum különítse el
+      egymástól a file/object-level terminológiát, a geometry revision-level
+      `geometry_role` fogalmat, a contour-level `contour_role` fogalmat, a
+      legacy frontend `upload kind` kifejezéseket, valamint a jövőbeli DXF
+      prefilter canonical layer-role világot (`CUT_OUTER`, `CUT_INNER`,
+      `MARKING`). A dokumentum jelölje külön, mi current-code truth és mi future
+      canonical prefilter terminus. Rögzítsd benne azt is, hogy a legacy UI
+      terminológia nem source-of-truth, és adj tiltott összemosás / anti-pattern
+      listát.
+    outputs:
+      - "docs/web_platform/architecture/dxf_prefilter_domain_glossary_and_role_model.md"
+
+  - name: "Checklist és report alapok frissítése"
+    description: >
+      Készítsd el a task checklist és report alapfájljait a Codex workflow
+      szerint. A report DoD->Evidence szerkezetben foglalja össze, hogy a
+      glossary dokumentum mely meglévő kódhelyekre támaszkodik, és külön nevezze
+      meg, hogy ez a task docs-only domain glossary freeze, nem backend vagy
+      frontend implementáció.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t2_domain_glossary_and_role_model.verify.log"
