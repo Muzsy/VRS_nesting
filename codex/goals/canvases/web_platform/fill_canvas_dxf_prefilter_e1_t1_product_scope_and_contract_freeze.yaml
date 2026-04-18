@@ -1,0 +1,47 @@
+steps:
+  - name: "Felderítés és task artefaktok rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, valamint a
+      releváns importer / geometry import / validation / frontend entrypoint
+      fájlokat. Frissítsd a canvas-t úgy, hogy explicit módon rögzítse a
+      jelenlegi kódhelyzetet, a V1 scope-ot, a kizárásokat és a későbbi
+      integrációs pontokat. Ez docs-only contract freeze task maradjon.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e1_t1_product_scope_and_contract_freeze.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+
+  - name: "DXF prefilter V1 scope és boundary dokumentum megírása"
+    description: >
+      Készítsd el a `docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md`
+      dokumentumot a meglévő kód figyelembevételével. A dokumentum mondja ki,
+      hogy a modul a jelenlegi importer + geometry import + validation lánc elé
+      kerülő acceptance gate lesz, ne új párhuzamos DXF motor. Rögzítsd benne:
+      a kanonikus role-világot, a szín mint input-hint szerepét, a V1 in-scope
+      és out-of-scope elemeket, a fail-fast javítási elvet, a backend bekötési
+      pontot, valamint azt, hogy UI oldalon külön DXF Intake / Project
+      Preparation oldal a helyes irány a legacy NewRunPage további foltozása
+      helyett.
+    outputs:
+      - "docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md"
+
+  - name: "Checklist és report alapok frissítése"
+    description: >
+      Készítsd el a task checklist és report alapfájljait a Codex workflow
+      szerint. A report DoD->Evidence szerkezetben foglalja össze, hogy a scope
+      dokumentum mely meglévő kódhelyekre támaszkodik, és külön nevezze meg,
+      hogy ez a task docs-only contract freeze, nem backend vagy frontend
+      implementáció.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.verify.log"
