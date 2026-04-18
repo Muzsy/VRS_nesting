@@ -1,0 +1,45 @@
+steps:
+  - name: "Felderítés és API boundary rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2/T3/T4/T5 DXF
+      prefilter architecture dokumentumokat, valamint a releváns files / profile-version /
+      project-selection / runs artifact route mintákat. Frissítsd a canvas-t úgy, hogy
+      explicit módon rögzítse a current-code route truth és a future canonical DXF prefilter
+      API contract külön szerepét. Ez docs-only API contract freeze task maradjon.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e1_t6_api_contract_specification.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e1_t6_api_contract_specification.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e1_t6_api_contract_specification/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t6_api_contract_specification.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t6_api_contract_specification.md"
+
+  - name: "DXF prefilter API contract specifikáció dokumentum megírása"
+    description: >
+      Készítsd el a `docs/web_platform/architecture/dxf_prefilter_api_contract_specification.md`
+      dokumentumot a meglévő kód figyelembevételével. A dokumentum különítse el a current-code
+      route truthot és a future canonical prefilter API surface-et; rögzítse a rules profile/
+      version route-családot, a project-level active rules selection route-családot, a project/
+      file scoped preflight run és artifact route-családot, valamint a review/replace/rerun
+      action endpointok irányát; tartalmazzon request/response/status-code mintákat docs-szinten,
+      de ne implementáljon FastAPI route-ot, request modelt, OpenAPI frissítést vagy frontend integrációt.
+    outputs:
+      - "docs/web_platform/architecture/dxf_prefilter_api_contract_specification.md"
+
+  - name: "Checklist és report alapok frissítése"
+    description: >
+      Készítsd el a task checklist és report alapfájljait a Codex workflow szerint.
+      A report DoD->Evidence szerkezetben foglalja össze, hogy az API contract dokumentum
+      mely meglévő route mintákra támaszkodik (`files`, profile/version route-ok,
+      project selection route-ok, runs artifact surfaces), és külön nevezze meg,
+      hogy ez docs-only API contract freeze task, nem route/request-model/OpenAPI implementáció.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t6_api_contract_specification.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t6_api_contract_specification.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e1_t6_api_contract_specification.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e1_t6_api_contract_specification.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t6_api_contract_specification.verify.log"
