@@ -1,0 +1,47 @@
+steps:
+  - name: "Felderítés és data-model boundary rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2/T3/T4 DXF
+      prefilter architecture dokumentumokat, valamint a releváns enum migration /
+      file object / geometry revision / validation report / review action /
+      profile-version migration kodhelyeket. Frissítsd a canvas-t úgy, hogy explicit
+      módon rögzítse a data model és migration plan külön szerepét. Ez docs-only
+      data-model freeze task maradjon.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e1_t5_data_model_and_migration_plan.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.md"
+
+  - name: "DXF prefilter data model és migration terv dokumentum megírása"
+    description: >
+      Készítsd el a `docs/web_platform/architecture/dxf_prefilter_data_model_and_migration_plan.md`
+      dokumentumot a meglévő kód figyelembevételével. A dokumentum különítse el a
+      current-code truth és a future canonical prefilter persistence világot;
+      rögzítse a rules profile/version domain owner-scoped mintáját; rögzítse a
+      preflight run / diagnostics / artifact / review-decision persistence rétegek
+      fogalmi szerepét; tartalmazzon table-by-table adatmodell-javaslatot,
+      ownership/FK/uniqueness/index irányokat és migration slicing tervet;
+      de ne implementáljon SQL migrációt, RLS policyt, API payloadot vagy UI flow-t.
+    outputs:
+      - "docs/web_platform/architecture/dxf_prefilter_data_model_and_migration_plan.md"
+
+  - name: "Checklist és report alapok frissítése"
+    description: >
+      Készítsd el a task checklist és report alapfájljait a Codex workflow szerint.
+      A report DoD->Evidence szerkezetben foglalja össze, hogy a data-model dokumentum
+      mely meglévő file/geometry/validation/review táblákra, valamint mely profile/version
+      migration mintákra támaszkodik, és külön nevezze meg, hogy ez docs-only data-model
+      freeze task, nem SQL migration vagy API implementáció.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t5_data_model_and_migration_plan.verify.log"
