@@ -45,7 +45,7 @@ jobs:
 
       - name: Run repo gate
         run: |
-          ./scripts/check.sh
+          bash ./scripts/check.sh
 
       - name: Upload artifacts on failure
         if: failure()

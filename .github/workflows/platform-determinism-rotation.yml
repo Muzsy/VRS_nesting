@@ -33,7 +33,7 @@ jobs:
 
       - name: Rotation determinism smoke
         run: |
-          ./scripts/smoke_platform_determinism_rotation.sh
+          bash ./scripts/smoke_platform_determinism_rotation.sh
 
   determinism_arm64:
     name: determinism (arm64)
@@ -68,4 +68,4 @@ jobs:
 
       - name: Rotation determinism smoke
         run: |
-          ./scripts/smoke_platform_determinism_rotation.sh
+          bash ./scripts/smoke_platform_determinism_rotation.sh
