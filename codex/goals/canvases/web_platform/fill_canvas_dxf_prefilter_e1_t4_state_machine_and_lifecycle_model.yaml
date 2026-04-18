@@ -1,0 +1,46 @@
+steps:
+  - name: "Felderítés és lifecycle boundary rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2/T3 DXF
+      prefilter architecture dokumentumokat, valamint a releváns enum migration /
+      file object / geometry revision / validation report / files route / geometry import
+      service kodhelyeket. Frissítsd a canvas-t úgy, hogy explicit módon rögzítse a
+      state machine és lifecycle modell külön szerepét. Ez docs-only state-machine
+      freeze task maradjon.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.md"
+
+  - name: "DXF prefilter state machine és lifecycle modell dokumentum megírása"
+    description: >
+      Készítsd el a `docs/web_platform/architecture/dxf_prefilter_state_machine_and_lifecycle_model.md`
+      dokumentumot a meglévő kód figyelembevételével. A dokumentum különítse el
+      a file ingest, preflight run, acceptance outcome és geometry revision lifecycle
+      rétegeket; rögzítse a V1 minimum future canonical prefilter állapotokat docs-szinten;
+      mutassa be a meglevo `app.geometry_validation_status` truth és a future prefilter
+      state machine mappingjét; tartalmazzon transition táblát és anti-pattern listát;
+      de ne implementáljon data modelt, API payloadot, SQL enumot vagy UI state kódot.
+    outputs:
+      - "docs/web_platform/architecture/dxf_prefilter_state_machine_and_lifecycle_model.md"
+
+  - name: "Checklist és report alapok frissítése"
+    description: >
+      Készítsd el a task checklist és report alapfájljait a Codex workflow szerint.
+      A report DoD->Evidence szerkezetben foglalja össze, hogy a lifecycle/state-machine
+      dokumentum mely meglévő enumokra, migrationökre, routes/service-ekre és korábbi
+      T1/T2/T3 dokumentumokra támaszkodik, és külön nevezze meg, hogy ez docs-only
+      state-machine freeze task, nem migration vagy API implementáció.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t4_state_machine_and_lifecycle_model.verify.log"
