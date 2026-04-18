@@ -1,0 +1,47 @@
+steps:
+  - name: "Felderítés és policy/schema boundary rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2 DXF
+      prefilter architecture dokumentumokat, valamint a releváns importer /
+      files route / config / frontend upload entrypoint / profile-version mintákat.
+      Frissítsd a canvas-t úgy, hogy explicit módon rögzítse a policy matrix és a
+      rules profile schema külön szerepét. Ez docs-only policy/schema freeze task
+      maradjon.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.md"
+
+  - name: "DXF prefilter policy matrix és rules profile schema dokumentum megírása"
+    description: >
+      Készítsd el a `docs/web_platform/architecture/dxf_prefilter_policy_matrix_and_rules_profile_schema.md`
+      dokumentumot a meglévő kód figyelembevételével. A dokumentum különítse el
+      a policy matrix szerepét a rules profile schema szerepétől, rögzítse a V1
+      minimum rules profile mezőket, és jelölje külön a current-code truth,
+      future canonical contract és later extension részeket. A dokumentumnak
+      role-first szemléletűnek kell lennie: a canonical role a truth, a szín
+      input-hint. Rögzítsd a default / override / review-required alapmodellt is,
+      de ne implementálj data modelt, API payloadot vagy UI komponenst.
+    outputs:
+      - "docs/web_platform/architecture/dxf_prefilter_policy_matrix_and_rules_profile_schema.md"
+
+  - name: "Checklist és report alapok frissítése"
+    description: >
+      Készítsd el a task checklist és report alapfájljait a Codex workflow szerint.
+      A report DoD->Evidence szerkezetben foglalja össze, hogy a policy/schema
+      dokumentum mely meglévő kódhelyekre és meglévő repo profile/version mintákra
+      támaszkodik, és külön nevezze meg, hogy ez docs-only szabályfagyasztó task,
+      nem migration vagy API implementáció.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kötelező minőségkaput wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t3_policy_matrix_and_rules_profile_schema.verify.log"
