@@ -41,7 +41,11 @@
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
       "Bash(PRINT_ONLY=1 bash ./scripts/smoke_platform_determinism_rotation.sh)",
-      "Bash(bash ./scripts/smoke_platform_determinism_rotation.sh)"
+      "Bash(bash ./scripts/smoke_platform_determinism_rotation.sh)",
+      "Bash(chmod +x scripts/smoke_dxf_prefilter_e2_t1_preflight_inspect_engine_v1.py)",
+      "Bash(./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md)",
+      "Bash(bash scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md)",
+      "Bash(chmod +x scripts/verify.sh scripts/check.sh scripts/ensure_sparrow.sh scripts/*.sh scripts/*.py)"
     ],
     "defaultMode": "bypassPermissions",
     "skipDangerousModePermissionPrompt": true

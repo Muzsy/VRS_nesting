@@ -140,6 +140,68 @@ def _is_closed_entity(entity: dict[str, Any], where: str, default: bool = False)
     return closed
 
 
+def _extract_preflight_color_index_from_json(entity: dict[str, Any], where: str) -> int | None:
+    """Return raw ACI-style color index if the JSON fixture supplies one."""
+
+    value: Any = entity.get("color_index", None)
+    if value is None:
+        value = entity.get("color", None)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise DxfImportError(
+            "DXF_ENTITY_INVALID",
+            f"{where}.color_index must be integer when provided",
+        )
+    return int(value)
+
+
+def _extract_preflight_linetype_from_json(entity: dict[str, Any], where: str) -> str | None:
+    """Return raw linetype name if the JSON fixture supplies one."""
+
+    value: Any = entity.get("linetype_name", None)
+    if value is None:
+        value = entity.get("linetype", None)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise DxfImportError(
+            "DXF_ENTITY_INVALID",
+            f"{where}.linetype_name must be string when provided",
+        )
+    stripped = value.strip()
+    return stripped or None
+
+
+def _extract_preflight_raw_signals_from_dxf(entity_any: Any) -> dict[str, Any]:
+    """Read raw ACI color + linetype from an ezdxf entity without raising."""
+
+    dxf_attr = getattr(entity_any, "dxf", None)
+    color_raw = getattr(dxf_attr, "color", None) if dxf_attr is not None else None
+    linetype_raw = getattr(dxf_attr, "linetype", None) if dxf_attr is not None else None
+
+    color_index: int | None
+    if color_raw is None or isinstance(color_raw, bool):
+        color_index = None
+    else:
+        try:
+            color_index = int(color_raw)
+        except (TypeError, ValueError):
+            color_index = None
+
+    linetype_name: str | None
+    if linetype_raw is None:
+        linetype_name = None
+    else:
+        try:
+            text = str(linetype_raw).strip()
+        except Exception:
+            text = ""
+        linetype_name = text or None
+
+    return {"color_index": color_index, "linetype_name": linetype_name}
+
+
 def _extract_entities_from_json(path: Path) -> list[dict[str, Any]]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -170,6 +232,8 @@ def _extract_entities_from_json(path: Path) -> list[dict[str, Any]]:
             "layer": layer.strip(),
             "type": etype,
             "closed": _is_closed_entity(entity, where, default=False),
+            "color_index": _extract_preflight_color_index_from_json(entity, where),
+            "linetype_name": _extract_preflight_linetype_from_json(entity, where),
         }
 
         if etype in {"LWPOLYLINE", "POLYLINE"}:
@@ -233,9 +297,17 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
             expanded_type = str(expanded["type"]).upper()
             expanded_layer = str(expanded["layer"])
             expanded_where = f"{where}.expanded[{expanded_idx}]"
+            raw_signals = _extract_preflight_raw_signals_from_dxf(expanded_any)
 
             if expanded_type not in SUPPORTED_LAYER_ENTITY_TYPES:
-                out.append({"layer": expanded_layer, "type": expanded_type, "_unsupported": True})
+                out.append(
+                    {
+                        "layer": expanded_layer,
+                        "type": expanded_type,
+                        "_unsupported": True,
+                        **raw_signals,
+                    }
+                )
                 continue
 
             if expanded_type == "LWPOLYLINE":
@@ -246,6 +318,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                         "type": expanded_type,
                         "closed": bool(expanded_any.closed),
                         "points": _normalize_points(lw_points, f"{expanded_where}.points"),
+                        **raw_signals,
                     }
                 )
                 continue
@@ -258,6 +331,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                         "type": expanded_type,
                         "closed": bool(expanded_any.is_closed),
                         "points": _normalize_points(poly_points, f"{expanded_where}.points"),
+                        **raw_signals,
                     }
                 )
                 continue
@@ -273,6 +347,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                         "type": expanded_type,
                         "closed": False,
                         "points": _normalize_points(line_points, f"{expanded_where}.points", min_points=2),
+                        **raw_signals,
                     }
                 )
                 continue
@@ -287,6 +362,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                         "radius": float(expanded_any.dxf.radius),
                         "start_angle": float(expanded_any.dxf.start_angle),
                         "end_angle": float(expanded_any.dxf.end_angle),
+                        **raw_signals,
                     }
                 )
                 continue
@@ -301,6 +377,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                         "radius": float(expanded_any.dxf.radius),
                         "start_angle": 0.0,
                         "end_angle": 360.0,
+                        **raw_signals,
                     }
                 )
                 continue
@@ -318,6 +395,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                         "type": expanded_type,
                         "closed": _is_ellipse_closed(expanded_any),
                         "points": _normalize_points(ellipse_points, f"{expanded_where}.points", min_points=2),
+                        **raw_signals,
                     }
                 )
                 continue
@@ -335,6 +413,7 @@ def _extract_entities_from_dxf(path: Path) -> list[dict[str, Any]]:
                     "type": expanded_type,
                     "closed": bool(getattr(expanded_any, "closed", False)),
                     "points": _normalize_points(spline_points, f"{expanded_where}.points", min_points=2),
+                    **raw_signals,
                 }
             )
 
@@ -830,3 +909,79 @@ def import_part_raw(
         source_path=str(path.resolve()),
         source_entities=layer_entities,
     )
+
+
+def normalize_source_entities(source_path: str | Path) -> list[dict[str, Any]]:
+    """Public, read-only normalization for DXF preflight inspect (E2-T1).
+
+    This is the single surface that preflight inspect services (e.g.
+    ``api/services/dxf_preflight_inspect.py``) should use to read raw,
+    non-role-assigned source entities. It intentionally does NOT run any
+    repair, role resolution or acceptance gate: that scope is reserved for
+    later prefilter tasks (E2-T2 / E2-T3 / E2-T6).
+
+    Each returned entity preserves the preflight raw signals that the later
+    lane will depend on:
+
+    * ``layer`` (str)
+    * ``type`` (str, upper-cased)
+    * ``closed`` (bool, when applicable)
+    * ``color_index`` (int | None) -- raw ACI-style color index if available
+    * ``linetype_name`` (str | None) -- raw linetype name if available
+    * geometry payload fields (``points`` / ``center`` / ``radius`` / ...)
+
+    When the source backend cannot supply an explicit color/linetype value,
+    the field is set to ``None`` deterministically; no RGB or BYLAYER policy
+    is invented here.
+    """
+
+    path = Path(source_path)
+    if not path.is_file():
+        raise DxfImportError("DXF_PATH_NOT_FOUND", f"input file not found: {path}")
+    return _normalize_entities(path)
+
+
+def probe_layer_rings(
+    entities: list[dict[str, Any]], *, layer: str
+) -> dict[str, Any]:
+    """Soft, non-raising ring-candidate probe for a single layer (E2-T1).
+
+    Wraps the existing internal ``_collect_layer_rings`` chainer so the
+    caller always gets a deterministic dict back, even when the layer's
+    geometry is not clean enough to produce rings. A hard importer error on
+    this layer is surfaced as a structured diagnostic (``hard_error``)
+    instead of being raised, so the preflight inspect service can report
+    multiple layers in one pass without short-circuiting.
+
+    Returned shape::
+
+        {
+            "layer": str,
+            "entity_count": int,
+            "rings": list[list[list[float]]],
+            "open_path_count": int,
+            "hard_error": {"code": str, "message": str} | None,
+        }
+
+    The function is intentionally inspect-only: no role assignment, no gap
+    repair, no acceptance outcome.
+    """
+
+    layer_entities = [entity for entity in entities if entity.get("layer") == layer]
+    try:
+        rings, open_path_count = _collect_layer_rings(layer_entities, layer=layer)
+    except DxfImportError as exc:
+        return {
+            "layer": layer,
+            "entity_count": len(layer_entities),
+            "rings": [],
+            "open_path_count": 0,
+            "hard_error": {"code": exc.code, "message": exc.message},
+        }
+    return {
+        "layer": layer,
+        "entity_count": len(layer_entities),
+        "rings": rings,
+        "open_path_count": open_path_count,
+        "hard_error": None,
+    }

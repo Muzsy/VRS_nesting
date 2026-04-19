@@ -1,0 +1,78 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a DXF-E2-T1 task canvas/YAML/prompt/checklist/report alapjait,
+      a dxf_prefilter E1 docs-only lane outputjaihoz es a meglevo web_platform
+      implementacios taskmintakhoz igazodva. A canvas explicit modon rogzitse,
+      hogy ez inspect-only backend task, nem repair, nem acceptance gate es nem
+      route/persistence/UI bekotes.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e2_t1_preflight_inspect_engine_v1.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md"
+
+  - name: "Importer inspect helper felulet minimalis kinyitasa"
+    description: >
+      Bovitd a meglvo `vrs_nesting/dxf/importer.py` modult ugy, hogy a preflight
+      inspect engine minimal, public helper-feluleten keresztul elerhesse a
+      normalized source entities es a layer-szintu contour-probe logikat, uj
+      parhuzamos parser bevezetese nelkul. A megoldas legyen visszafele kompatibilis
+      a jelenlegi `import_part_raw()` acceptance vilaggal. A normalized entity shape
+      hordozza a preflight T1-hez szukseges raw signalokat (`layer`, `type`, `closed`,
+      `color_index`, `linetype_name` vagy ezekkel egyenerteku mezok) JSON fixture es
+      DXF backend esetben is, determinisztikus hiany-kezelessel.
+    outputs:
+      - "vrs_nesting/dxf/importer.py"
+
+  - name: "Kulon DXF preflight inspect service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_inspect.py` service reteget,
+      amely a public importer inspect helperre epitve nyers inspect result objektumot
+      allit elo. A kimenet kulon inventory es diagnostics retegre valjon szet, es
+      legalabb ezeket fedje le: entity/layer/color/linetype inventory, contour
+      candidates, open-path candidates, duplicate contour candidates, outer-like /
+      inner-like candidates. A taskban ne legyen role assignment, repair,
+      acceptance outcome, DB insert vagy route bekotes.
+    outputs:
+      - "api/services/dxf_preflight_inspect.py"
+
+  - name: "Preflight inspect unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic JSON fixture alapokon
+      bizonyitja a preflight inspect service es a minimal importer helper helyes
+      mukodeset. A coverage legalabb mutassa meg: layer/szin/linetype inventory
+      kepzodest; contour/open-path/duplicate candidate detektalast; olyan scenariot,
+      ahol a service diagnosztikai objektumot ad acceptance fail helyett; valamint
+      legalabb egy hard-fail scenariot, ahol stabil importer-hiba marad az eredmeny.
+    outputs:
+      - "tests/test_dxf_preflight_inspect.py"
+
+  - name: "Task-specifikus preflight inspect smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely backend-fuggetlenul, deterministic fixture-rel
+      bizonyitja a DXF-E2-T1 inspect engine vegpont nelkuli hasznalhatosagat. A smoke
+      adjon egyertelmu PASS/FAIL jelzest arra, hogy a nyers inspect result objektum
+      elkeszul, tartalmazza a vart inventory/candidate mezoket, es nem nyitja meg a
+      repair/acceptance gate worldot.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e2_t1_preflight_inspect_engine_v1.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E2-T1
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon nevezve,
+      hogy mi lett most megoldva az inspect engine scope-ban, es mi marad kifejezetten
+      a DXF-E2-T2/T3/T4/T5/T6 kovetkezo taskokra.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.verify.log"
