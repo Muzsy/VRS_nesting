@@ -1,0 +1,70 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a DXF-E2-T2 task canvas/YAML/prompt/checklist/report alapjait,
+      a DXF prefilter E1 docs-only lane es az E2-T1 inspect engine outputjaihoz
+      igazodva. A canvas explicit modon rogzitse, hogy ez role-resolver backend
+      task: inspect result + minimal rules profile -> canonical role assignment,
+      de meg nem repair, nem normalized DXF writer, nem acceptance gate es nem
+      route/persistence/UI bekotes.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e2_t2_color_layer_role_resolver_v1.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.md"
+
+  - name: "Kulon preflight role resolver service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_role_resolver.py` service reteget,
+      amely kizarolag az E2-T1 inspect result objektumara es egy minimal,
+      in-memory rules profile boundaryra epit. A service determinisztikusan
+      valassza szet az explicit canonical layer mappinget, a color-hint policy-t
+      es a topology-proxy alapu outer/inner feloldast. A kimenet legalabb kulon
+      retegeken adja vissza a `layer_role_assignments`, `entity_role_assignments`,
+      `resolved_role_inventory`, `review_required_candidates`, `blocking_conflicts`
+      es `diagnostics` mezoket. A taskban ne legyen geometry modositas,
+      normalized DXF writer, acceptance outcome, DB insert, route vagy UI bekotes.
+    outputs:
+      - "api/services/dxf_preflight_role_resolver.py"
+
+  - name: "Role resolver unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic inspect-result + rules-profile
+      fixture alapokon bizonyitja a role resolver helyes mukodeset. A coverage
+      legalabb mutassa meg: explicit canonical layer precedence; color-hint fallback;
+      topology-proxy alapu outer/inner feloldas; explicit layer vs color-hint konfliktus;
+      cut-like open-path nem-success jeloles; `interactive_review_on_ambiguity`
+      policy kulonbseget; valamint legalabb egy sikeres, egy review-required es egy
+      blocking-conflict scenariot.
+    outputs:
+      - "tests/test_dxf_preflight_role_resolver.py"
+
+  - name: "Task-specifikus role resolver smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely backend-fuggetlenul, deterministic inspect-result
+      fixture-rel bizonyitja a DXF-E2-T2 role resolver vegpont nelkuli hasznalhatosagat.
+      A smoke adjon egyertelmu PASS/FAIL jelzest arra, hogy a resolver helyesen kezeli
+      az explicit canonical layer mappinget, a color-hint fallbacket, a topology-proxy
+      feloldast es a review/blocking konfliktusokat, mikozben nem nyitja meg a repair
+      vagy acceptance gate worldot.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e2_t2_color_layer_role_resolver_v1.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E2-T2
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon nevezve,
+      hogy mi lett most megoldva a role resolver scope-ban, es mi marad kifejezetten
+      a DXF-E2-T3/T4/T5/T6 kovetkezo taskokra.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t2_color_layer_role_resolver_v1.verify.log"
