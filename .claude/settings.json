@@ -39,7 +39,9 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(open\\(''''$INPUT''''\\)\\); d[''''time_limit_sec'''']=$TL; json.dump\\(d,sys.stdout\\)\")",
       "Bash(python3:*)",
       "Bash(cargo build:*)",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "Bash(PRINT_ONLY=1 bash ./scripts/smoke_platform_determinism_rotation.sh)",
+      "Bash(bash ./scripts/smoke_platform_determinism_rotation.sh)"
     ],
     "defaultMode": "bypassPermissions",
     "skipDangerousModePermissionPrompt": true
