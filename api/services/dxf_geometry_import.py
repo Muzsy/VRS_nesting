@@ -132,6 +132,45 @@ def _canonical_hash_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
+def build_canonical_geometry_from_part_raw(
+    *,
+    part_raw: PartRaw,
+    storage_bucket: str,
+    storage_path: str,
+) -> tuple[dict[str, Any], dict[str, float]]:
+    """Public pure helper for canonical geometry + bbox from importer output."""
+    return _normalize_part_raw_geometry(
+        part_raw=part_raw,
+        storage_bucket=storage_bucket,
+        storage_path=storage_path,
+    )
+
+
+def canonical_hash_sha256(payload: dict[str, Any]) -> str:
+    """Public pure helper for canonical JSON hash generation."""
+    return _canonical_hash_sha256(payload)
+
+
+def build_canonical_geometry_probe_from_part_raw(
+    *,
+    part_raw: PartRaw,
+    storage_bucket: str,
+    storage_path: str,
+) -> dict[str, Any]:
+    """Return canonical payload + bbox + hash in one deterministic bundle."""
+    canonical_geometry_jsonb, bbox_jsonb = build_canonical_geometry_from_part_raw(
+        part_raw=part_raw,
+        storage_bucket=storage_bucket,
+        storage_path=storage_path,
+    )
+    return {
+        "canonical_format_version": _CANONICAL_FORMAT_VERSION,
+        "canonical_geometry_jsonb": canonical_geometry_jsonb,
+        "bbox_jsonb": bbox_jsonb,
+        "canonical_hash_sha256": canonical_hash_sha256(canonical_geometry_jsonb),
+    }
+
+
 def _next_revision_no(
     *,
     supabase: SupabaseClient,
@@ -184,12 +223,12 @@ def import_source_dxf_geometry_revision(
         tmp_path.write_bytes(blob)
         part_raw = import_part_raw(str(tmp_path))
 
-    canonical_geometry_jsonb, bbox_jsonb = _normalize_part_raw_geometry(
+    canonical_geometry_jsonb, bbox_jsonb = build_canonical_geometry_from_part_raw(
         part_raw=part_raw,
         storage_bucket=storage_bucket,
         storage_path=storage_path,
     )
-    canonical_hash_sha256 = _canonical_hash_sha256(canonical_geometry_jsonb)
+    canonical_hash_value = canonical_hash_sha256(canonical_geometry_jsonb)
     source_hash = source_hash_sha256.strip()
     if not source_hash:
         raise ValueError("missing source_hash_sha256")
@@ -208,7 +247,7 @@ def import_source_dxf_geometry_revision(
         "status": "parsed",
         "canonical_format_version": _CANONICAL_FORMAT_VERSION,
         "canonical_geometry_jsonb": canonical_geometry_jsonb,
-        "canonical_hash_sha256": canonical_hash_sha256,
+        "canonical_hash_sha256": canonical_hash_value,
         "source_hash_sha256": source_hash,
         "bbox_jsonb": bbox_jsonb,
         "created_by": created_by,

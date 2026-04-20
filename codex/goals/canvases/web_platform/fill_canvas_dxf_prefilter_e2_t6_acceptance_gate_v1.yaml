@@ -1,0 +1,78 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a DXF-E2-T6 task canvas/YAML/prompt/checklist/report alapjait,
+      a T5 normalized DXF writer es az E1 docs freeze eredmenyeihez igazodva.
+      A canvas explicit modon rogzitese, hogy ez acceptance gate backend task:
+      importer+validator visszateszteles es gate verdict, de meg nem persistence,
+      nem API route, nem upload trigger es nem UI.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e2_t6_acceptance_gate_v1.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+
+  - name: "Minimal public helper boundary kinyitasa a jelenlegi pipeline-bol"
+    description: >
+      A T6 ne private `_...` helper-ekre vagy kodduplikaciora uljon. Emelj ki vagy
+      vezess be minimal public pure helper boundaryt a jelenlegi pipeline-bol:
+      `api/services/dxf_geometry_import.py` adjon public pure helper(eke)t a
+      canonical geometry/bbox/hash eloallitashoz, es `api/services/geometry_validation_report.py`
+      adjon public pure helper(eke)t a local validator payload/status/report eloallitashoz.
+      Ne legyen DB insert, ne valtozzon a geometry import route/pipeline szerkezete.
+    outputs:
+      - "api/services/dxf_geometry_import.py"
+      - "api/services/geometry_validation_report.py"
+
+  - name: "Kulon acceptance gate service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_acceptance_gate.py` service reteget,
+      amely a T1 inspect + T2 role resolution + T3 gap repair + T4 duplicate dedupe +
+      T5 normalized writer truth-ra ul. A service a T5 `normalized_dxf.output_path`
+      artifactot a tenyleges `import_part_raw(...)` utvonalon visszateszteli,
+      majd a public helper boundarykon keresztul canonical geometry/bbox/hash es
+      validator probe eredmenyt allit elo. A verdict explicit precedence-szel szülessen:
+      importer fail -> rejected; validator rejected -> rejected; blocking conflicts -> rejected;
+      egyebkent review-required signalok -> preflight_review_required; csak teljesen tiszta
+      pass eseten -> accepted_for_import. A kimenet local maradjon, ne legyen DB/API/UI.
+    outputs:
+      - "api/services/dxf_preflight_acceptance_gate.py"
+
+  - name: "Acceptance gate unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic fixture alapon bizonyitja a
+      T6 acceptance gate helyes mukodeset. A coverage minimum fedje le a 3 canonical
+      outcome-ot: accepted_for_import, preflight_rejected, preflight_review_required.
+      Kulon legyen bizonyitva az outcome precedence, a blocking vs review signal szetvalasztas,
+      es hogy a gate nem nyit persistence/API/UI vilagot.
+    outputs:
+      - "tests/test_dxf_preflight_acceptance_gate.py"
+
+  - name: "Task-specifikus acceptance gate smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely deterministic fixture-rel bizonyitja a teljes
+      T1->T2->T3->T4->T5->T6 local backend lancot. A smoke adjon egyertelmu PASS/FAIL
+      jelzest arra, hogy a normalized DXF artifact importer+validator visszatesztelese
+      mukodik, es a gate a megfelelo accepted/rejected/review_required verdictet adja.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e2_t6_acceptance_gate_v1.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E2-T6
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon nevezve,
+      hogy milyen public helper boundary nyilt a geometry import es validator retegekben,
+      mi az acceptance outcome precedence, hogyan kulonul el a blocking es review-required
+      reasons csalad, es mi marad kifejezetten a DXF-E2-T7 illetve E3 scope-ra.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.verify.log"

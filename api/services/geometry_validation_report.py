@@ -414,6 +414,21 @@ def _build_validation_payload(
     return status, summary_jsonb, report_jsonb
 
 
+def build_geometry_validation_probe(
+    *,
+    geometry_revision: dict[str, Any],
+) -> dict[str, Any]:
+    """Public pure helper for validator status + summary/report payload."""
+    status, summary_jsonb, report_jsonb = _build_validation_payload(
+        geometry_revision=geometry_revision
+    )
+    return {
+        "status": status,
+        "summary_jsonb": summary_jsonb,
+        "report_jsonb": report_jsonb,
+    }
+
+
 def _next_validation_seq(
     *,
     supabase: SupabaseClient,
@@ -450,7 +465,12 @@ def create_geometry_validation_report(
     if not geometry_revision_id:
         raise ValueError("missing geometry revision id")
 
-    status, summary_jsonb, report_jsonb = _build_validation_payload(geometry_revision=geometry_revision)
+    validation_probe = build_geometry_validation_probe(
+        geometry_revision=geometry_revision
+    )
+    status = str(validation_probe["status"])
+    summary_jsonb = dict(validation_probe["summary_jsonb"])
+    report_jsonb = dict(validation_probe["report_jsonb"])
     validation_seq = _next_validation_seq(
         supabase=supabase,
         access_token=access_token,
