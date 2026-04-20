@@ -1,0 +1,76 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a DXF-E2-T5 task canvas/YAML/prompt/checklist/report alapjait,
+      az E2-T1 inspect engine, az E2-T2 role resolver, az E2-T3 gap repair,
+      az E2-T4 duplicate dedupe es az E1 docs freeze eredmenyeihez igazodva.
+      A canvas explicit modon rogzitese, hogy ez normalized DXF writer backend task:
+      local artifact writer + canonical layer/szin boundary, de meg nem acceptance gate,
+      nem persistence, nem API route es nem UI.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e2_t5_normalized_dxf_writer_v1.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md"
+
+  - name: "Kulon normalized DXF writer service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_normalized_dxf_writer.py`
+      service reteget, amely az inspect result + role resolution + gap repair result +
+      duplicate dedupe result + minimal rules profile boundaryra ul. A service a
+      meglevo importer public truth-jat (`normalize_source_entities`) hasznalja a
+      source entity replay boundaryhoz, de a cut-like worldot kizarolag a T4
+      `deduped_contour_working_set` alapjan irja vissza canonical `CUT_OUTER` /
+      `CUT_INNER` layerre. A marking-like worldot a T2 role truth alapjan,
+      source geometry replay-jel, canonical `MARKING` layerre irja, ahol a source
+      entity tipusa ezt deterministic modon lehetove teszi. A T5 a
+      `canonical_layer_colors` policy mezót hasznalja, local `output_path`-ra ir,
+      es explicit writer metadata/diagnostics shape-et ad vissza. A taskban ne
+      legyen acceptance outcome, DB insert, route vagy UI bekotes.
+    outputs:
+      - "api/services/dxf_preflight_normalized_dxf_writer.py"
+
+  - name: "Normalized writer unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic inspect-result +
+      role-resolution + gap-repair + duplicate-dedupe fixture alapokon bizonyitja
+      a normalized DXF writer helyes mukodeset. A coverage legalabb mutassa meg:
+      T4 deduped cut contours -> canonical `CUT_OUTER`/`CUT_INNER` writer;
+      `canonical_layer_colors` alkalmazasa; duplicate/open source cut entity nem
+      szivarog vissza; marking-like source entity canonical `MARKING` layerre kerul;
+      unsupported/out-of-scope source entity structured skip diagnosztikat kap;
+      az output shape nem ad acceptance outcome-ot es nem nyit persistence/API/UI
+      vilagot.
+    outputs:
+      - "tests/test_dxf_preflight_normalized_dxf_writer.py"
+
+  - name: "Task-specifikus normalized writer smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely deterministic fixture-rel bizonyitja a
+      DXF-E2-T5 normalized writer backend-hatar hasznalhatosagat. A smoke adjon
+      egyertelmu PASS/FAIL jelzest arra, hogy a T1->T2->T3->T4->T5 lanc local
+      artifactot tud eloallitani, a cut-like world canonical layerre irodik,
+      a marking passthrough kulon reteg marad, es a writer nem lep be a T6
+      acceptance gate vilagba.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e2_t5_normalized_dxf_writer_v1.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E2-T5
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon
+      nevezve, hogy a canonicalized cut-world writer es a marking passthrough
+      writer hogyan valik szet, milyen `canonical_layer_colors` boundary lett
+      rogzitve, es mi marad kifejezetten a DXF-E2-T6 acceptance gate kovetkezo taskra.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.verify.log"
