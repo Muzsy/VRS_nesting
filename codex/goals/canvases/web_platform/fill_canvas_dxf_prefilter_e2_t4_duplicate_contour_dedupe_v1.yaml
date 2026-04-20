@@ -1,0 +1,76 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a DXF-E2-T4 task canvas/YAML/prompt/checklist/report alapjait,
+      az E2-T1 inspect engine, az E2-T2 role resolver, az E2-T3 gap repair es
+      a docs-only E1 policy freeze eredmenyeihez igazodva. A canvas explicit
+      modon rogzitese, hogy ez duplicate contour dedupe backend task: cut-like,
+      mar lezart contour world -> determinisztikus keeper/drop dedupe + working
+      truth, de meg nem normalized DXF writer, nem acceptance gate es nem
+      route/persistence/UI.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.md"
+
+  - name: "Kulon preflight duplicate contour dedupe service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_duplicate_dedupe.py` service
+      reteget, amely az inspect result + role resolution + gap repair result +
+      minimal rules profile boundaryra ul. A service a meglevo importer public
+      probe truth-jat (`normalize_source_entities`, `probe_layer_rings`) hasznalja
+      az eredeti closed ring inventory ujraepitesere, ehhez hozzaveszi a T3
+      `repaired_path_working_set` elemeket, es csak cut-like canonical role-u,
+      zart konturok kozott vegez duplicate equivalence vizsgalatot.
+      A duplicate equivalence legyen explicit, tolerancias es determinisztikus;
+      keeper/drop policy kulon bizonyithato legyen. A taskban ne legyen DXF iras,
+      acceptance outcome, DB insert, route vagy UI bekotes.
+    outputs:
+      - "api/services/dxf_preflight_duplicate_dedupe.py"
+
+  - name: "Duplicate dedupe unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic inspect-result +
+      role-resolution + gap-repair + rules-profile fixture alapokon bizonyitja
+      a duplicate contour dedupe helyes mukodeset. A coverage legalabb mutassa
+      meg: exact duplicate same-role zart ring -> sikeres dedupe; tolerancian
+      beluli coordinate-noise duplicate -> sikeres dedupe; tolerancian kivuli
+      hasonlo kontur -> nincs auto-dedupe; original source ring vs T3 repaired
+      duplicate -> az original marad; cross-role duplicate -> review/blocking;
+      marking/unassigned duplicate -> nincs csendes dedupe; valamint azt, hogy
+      a T4 nem ad acceptance outcome-ot es nem ir DXF-et.
+    outputs:
+      - "tests/test_dxf_preflight_duplicate_dedupe.py"
+
+  - name: "Task-specifikus duplicate dedupe smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely deterministic fixture-rel bizonyitja a
+      DXF-E2-T4 duplicate dedupe backend-hatar hasznalhatosagat. A smoke adjon
+      egyertelmu PASS/FAIL jelzest arra, hogy a service helyesen kulonvalasztja
+      az inspect exact duplicate signaljait a T4 tenyleges keeper/drop
+      dedupe-donteseitol, es helyesen kezeli a review/blocking konfliktusokat,
+      mikozben nem nyitja meg a T5/T6 vilagot.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E2-T4
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon
+      nevezve, hogy az inspect `duplicate_contour_candidates` exact signalja es
+      a T4 tolerancias keeper/drop dedupe dontese hogyan valik szet, milyen
+      keeper policy lett rogzitve, es mi marad kifejezetten a DXF-E2-T5/T6
+      kovetkezo taskokra.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.verify.log"
