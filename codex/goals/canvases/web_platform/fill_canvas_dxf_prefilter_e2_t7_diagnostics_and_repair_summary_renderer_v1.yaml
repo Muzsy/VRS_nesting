@@ -1,0 +1,125 @@
+schema_version: "1"
+task_slug: "dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1"
+title: "DXF Prefilter E2-T7 — Diagnostics and repair summary renderer V1"
+objective: >
+  Vezesd be a DXF prefilter lane kulon backend diagnostics/repair summary renderer reteget,
+  amely a T1 inspect, T2 role resolver, T3 gap repair, T4 duplicate dedupe, T5 normalized writer
+  es T6 acceptance gate local truth-jait egyetlen, deterministic, UI-barát summary objektumba rendezi,
+  uj parser/validator, persistence, API route vagy frontend scope megnyitasa nelkul.
+
+context:
+  - "A task kizárólag a jelenlegi repo valós fájljaira és a már elkészült E2-T1..T6 service output shape-ekre épülhet."
+  - "A T7 nem acceptance gate logika és nem route/API task; presentation-ready backend summary truth."
+  - "A renderer csak a meglévő T1→T6 outputokat fogyaszthatja, nem futhat új DXF parse, importer probe vagy validator probe."
+  - "Az artifact references T7-ben még local backend referenciák; signed URL / storage upload / API response contract későbbi scope."
+  - "A service célja, hogy a következő E3/E4 rétegeknek ne kelljen 6 külön service outputot kézzel összefésülniük."
+
+definition_of_done:
+  - "Letrejott kulon backend diagnostics renderer service, amely a T1→T6 truth retegekre ul."
+  - "A service egyetlen, deterministic, JSON-serialisable summary objektumot ad vissza."
+  - "A summary kulon retegekben tartalmazza a source inventory, role mapping, issue, repair, acceptance es artifact reference vilagot."
+  - "Az issue-normalizalas explicit severity/source/family alapu."
+  - "A repair summary kulon visszaadja az alkalmazott javitasokat es a megmaradt unresolved jeleket."
+  - "Az artifact references local backend referenciak maradnak, nincs storage/API side effect."
+  - "Keszult task-specifikus unit teszt csomag es smoke script."
+  - "A task nem nyitotta meg a persistence / API route / UI scope-ot."
+  - "A report evidence alapon igazolja a summary shape-et es a fobb aggregaciokat."
+  - "./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md PASS."
+
+constraints:
+  - "Csak a YAML outputs listakban szereplo fajlokat hozhatod letre vagy modosithatod."
+  - "Nem nyithatsz meg DB persistence, storage upload, API route, upload trigger, worker vagy frontend scope-ot."
+  - "Nem vezethetsz be uj DXF parser/validator motort es nem futtathatsz uj importer/validator probe-ot a rendererben."
+  - "Nem nyithatod ujra a T1→T6 policy vagy precedence vilagot; a renderer csak a meglevo jeleket normalizalja."
+  - "A minosegkaput kizarolag wrapperrel futtasd: ./scripts/verify.sh --report ..."
+
+inputs:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md"
+  - "docs/web_platform/architecture/dxf_prefilter_error_catalog_and_user_facing_messages.md"
+  - "docs/web_platform/architecture/dxf_prefilter_api_contract_specification.md"
+  - "api/services/dxf_preflight_inspect.py"
+  - "api/services/dxf_preflight_role_resolver.py"
+  - "api/services/dxf_preflight_gap_repair.py"
+  - "api/services/dxf_preflight_duplicate_dedupe.py"
+  - "api/services/dxf_preflight_normalized_dxf_writer.py"
+  - "api/services/dxf_preflight_acceptance_gate.py"
+  - "tests/test_dxf_preflight_inspect.py"
+  - "tests/test_dxf_preflight_role_resolver.py"
+  - "tests/test_dxf_preflight_gap_repair.py"
+  - "tests/test_dxf_preflight_duplicate_dedupe.py"
+  - "tests/test_dxf_preflight_normalized_dxf_writer.py"
+  - "tests/test_dxf_preflight_acceptance_gate.py"
+  - "scripts/smoke_dxf_prefilter_e2_t1_preflight_inspect_engine_v1.py"
+  - "scripts/smoke_dxf_prefilter_e2_t2_color_layer_role_resolver_v1.py"
+  - "scripts/smoke_dxf_prefilter_e2_t3_gap_repair_v1.py"
+  - "scripts/smoke_dxf_prefilter_e2_t4_duplicate_contour_dedupe_v1.py"
+  - "scripts/smoke_dxf_prefilter_e2_t5_normalized_dxf_writer_v1.py"
+  - "scripts/smoke_dxf_prefilter_e2_t6_acceptance_gate_v1.py"
+  - "canvases/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+  - "canvases/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+
+steps:
+  - name: "Canvas/YAML/prompt/checklist/report alapok elokeszitese"
+    description: >
+      Keszitsd el a DXF-E2-T7 task canvas/YAML/prompt/checklist/report alapjait,
+      a jelenlegi E2-T1..T6 chain-re illesztve. A canvas explicit modon rogzitese,
+      hogy ez backend diagnostics renderer task: a meglevo service truthok presentation-ready
+      summary objektumba rendezese, de meg nem persistence/API/UI.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+
+  - name: "Kulon backend diagnostics renderer service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_diagnostics_renderer.py` service reteget,
+      amely a T1 inspect, T2 role resolution, T3 gap repair, T4 duplicate dedupe,
+      T5 normalized writer es T6 acceptance gate kimeneteit fogyasztja.
+      A service adjon vissza egyetlen, deterministic, JSON-serialisable summary objektumot,
+      legalabb kulon `source_inventory_summary`, `role_mapping_summary`, `issue_summary`,
+      `repair_summary`, `acceptance_summary` es `artifact_references` retegekkel.
+      Ne fusson benne uj importer/validator probe, ne legyen side effect, ne legyen API/persistence/UI.
+    outputs:
+      - "api/services/dxf_preflight_diagnostics_renderer.py"
+
+  - name: "Diagnostics renderer unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic fixture alapon bizonyitja a
+      T7 summary shape-et es a fo aggregaciokat. Minimum fedje le az accepted,
+      review-required es rejected flow-kat; a source inventory summary-t; az applied repair summary-t;
+      az artifact reference shape-et; es azt, hogy a renderer nem igenyel uj DXF parse/importer/validator futast.
+    outputs:
+      - "tests/test_dxf_preflight_diagnostics_renderer.py"
+
+  - name: "Task-specifikus diagnostics renderer smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely deterministic fixture-rel bizonyitja a teljes T1->T6 outputokra ulo,
+      T7 summary renderelest. A smoke adjon egyertelmu PASS/FAIL jelzest arra, hogy a renderer
+      a fontos accepted/review/rejected summary shape-eket es repair/issue aggregaciokat korrektul adja.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E2-T7 valtozasok alapjan.
+      A reportban legyen DoD -> Evidence Matrix, kulon nevezve, hogyan epul fel a summary object,
+      hogyan normalizalod az issue severity/source/family reteget, hogyan kulonul el az applied repair
+      summary es az unresolved signals vilaga, es mi marad kifejezetten E3/E4 scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.verify.log"
