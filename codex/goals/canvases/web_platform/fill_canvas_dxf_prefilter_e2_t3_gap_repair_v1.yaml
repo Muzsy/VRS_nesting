@@ -1,0 +1,85 @@
+steps:
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Hozd letre a DXF-E2-T3 task canvas/YAML/prompt/checklist/report alapjait,
+      az E2-T1 inspect engine, az E2-T2 role resolver es a docs-only E1 policy
+      freeze eredmenyeihez igazodva. A canvas explicit modon rogzitese, hogy ez
+      gap-repair backend task: residual open path vilag -> determinisztikus,
+      csak egyertelmu gap fixek + working truth, de meg nem duplicate dedupe,
+      nem normalized DXF writer, nem acceptance gate es nem route/persistence/UI.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e2_t3_gap_repair_v1.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e2_t3_gap_repair_v1/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md"
+
+  - name: "Public importer/probe boundary minimalis bovitese a residual open path geometriara"
+    description: >
+      Bovitsd minimalisan a `vrs_nesting/dxf/importer.py` public inspect/probe
+      feluletet ugy, hogy a T3 gap repair deterministic modon hozzaferssen a
+      residual open path chain-ekhez es azok endpoint-level evidence-ehez.
+      A bovites maradjon a meglevo importer truth folott; ne hozz letre uj
+      parser motort es ne valtoztasd meg a meglevo `CHAIN_ENDPOINT_EPSILON_MM`
+      policy jelenteset. A cel az, hogy a T3 service a residual open path
+      geometriat evidence-alapon tudja vizsgalni es javitani.
+    outputs:
+      - "vrs_nesting/dxf/importer.py"
+
+  - name: "Kulon preflight gap repair service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_gap_repair.py` service reteget,
+      amely az inspect result + role resolution + minimal rules profile boundaryra
+      ul. A service csak cut-like residual open path vilagban dolgozzon, es csak
+      olyan gap-et zarjon automatikusan, amely `auto_repair_enabled=true`,
+      `max_gap_close_mm` alatt van, es a partner-pairing egyertelmu. A kimenet
+      legalabb kulon retegeken adja vissza a `repair_candidate_inventory`,
+      `applied_gap_repairs`, `repaired_path_working_set`,
+      `remaining_open_path_candidates`, `review_required_candidates`,
+      `blocking_conflicts` es `diagnostics` mezoket. A taskban ne legyen DXF
+      iras, duplicate dedupe, acceptance outcome, DB insert, route vagy UI bekotes.
+    outputs:
+      - "api/services/dxf_preflight_gap_repair.py"
+
+  - name: "Gap repair unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic inspect-result +
+      role-resolution + rules-profile fixture alapokon bizonyitja a gap repair
+      helyes mukodeset. A coverage legalabb mutassa meg: auto-repair disabled;
+      threshold alatti egyertelmu residual gap javitas; threshold feletti gap;
+      ambiguus partnerjelolt -> review/blocking; cut-like open path repair utan
+      megszunik; repair utan is marado open path explicit signal; marking-like
+      open path nem kap csendes repairt; valamint azt, hogy a T3 nem ad
+      acceptance outcome-ot es nem ir DXF-et.
+    outputs:
+      - "tests/test_dxf_preflight_gap_repair.py"
+
+  - name: "Task-specifikus gap repair smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely deterministic fixture-rel bizonyitja a
+      DXF-E2-T3 gap repair backend-hatar hasznalhatosagat. A smoke adjon
+      egyertelmu PASS/FAIL jelzest arra, hogy a service helyesen kulonvalasztja
+      a residual open path candidate vilagot, az applied repair-eket, az
+      unresolved gap-eket es a review/blocking konfliktusokat, mikozben nem
+      nyitja meg a T4/T5/T6 vilagot.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e2_t3_gap_repair_v1.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E2-T3
+      valtozasok alapjan. A reportban legyen DoD -> Evidence Matrix, kulon
+      nevezve, hogy a mai importer chaining truth es a T3 uj residual gap repair
+      reteg hogyan valik szet, es mi marad kifejezetten a DXF-E2-T4/T5/T6
+      kovetkezo taskokra.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md"
+      - "codex/reports/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.verify.log"

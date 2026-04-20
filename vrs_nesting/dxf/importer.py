@@ -796,7 +796,10 @@ def _entity_to_path(entity: dict[str, Any], where: str) -> list[list[float]]:
     raise DxfImportError("DXF_UNSUPPORTED_ENTITY_TYPE", f"{where} has unsupported type {etype}")
 
 
-def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple[list[list[list[float]]], int]:
+def _collect_layer_rings(
+    entities: list[dict[str, Any]], *, layer: str
+) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
+    """Return ``(rings, open_paths)`` where ``open_paths`` is the list of residual chains."""
     simplify_tol_mm = rdp_tol_mm_from_env()
     direct_rings: list[list[list[float]]] = []
     segment_paths: list[list[list[float]]] = []
@@ -868,7 +871,7 @@ def _collect_layer_rings(entities: list[dict[str, Any]], *, layer: str) -> tuple
         segment_paths.append(path)
 
     chained_rings, open_paths = _chain_segments_to_rings(segment_paths, layer=layer)
-    return direct_rings + chained_rings, len(open_paths)
+    return direct_rings + chained_rings, open_paths
 
 
 def import_part_raw(
@@ -889,8 +892,10 @@ def import_part_raw(
     outer_entities = [entity for entity in layer_entities if entity.get("layer") == outer_layer]
     inner_entities = [entity for entity in layer_entities if entity.get("layer") == inner_layer]
 
-    outer_rings, outer_open = _collect_layer_rings(outer_entities, layer=outer_layer)
-    inner_rings, inner_open = _collect_layer_rings(inner_entities, layer=inner_layer)
+    outer_rings, outer_open_paths = _collect_layer_rings(outer_entities, layer=outer_layer)
+    inner_rings, inner_open_paths = _collect_layer_rings(inner_entities, layer=inner_layer)
+    outer_open = len(outer_open_paths)
+    inner_open = len(inner_open_paths)
 
     if not outer_rings:
         if outer_open > 0:
@@ -969,7 +974,7 @@ def probe_layer_rings(
 
     layer_entities = [entity for entity in entities if entity.get("layer") == layer]
     try:
-        rings, open_path_count = _collect_layer_rings(layer_entities, layer=layer)
+        rings, open_path_list = _collect_layer_rings(layer_entities, layer=layer)
     except DxfImportError as exc:
         return {
             "layer": layer,
@@ -982,6 +987,74 @@ def probe_layer_rings(
         "layer": layer,
         "entity_count": len(layer_entities),
         "rings": rings,
-        "open_path_count": open_path_count,
+        "open_path_count": len(open_path_list),
+        "hard_error": None,
+    }
+
+
+def probe_layer_open_paths(
+    entities: list[dict[str, Any]], *, layer: str
+) -> dict[str, Any]:
+    """Return structured endpoint evidence for residual open path chains (E2-T3).
+
+    Extends ``probe_layer_rings`` with per-chain endpoint geometry so the T3
+    gap repair service can determine whether a gap is repairable without
+    re-implementing chaining logic.
+
+    The open paths returned here are the *residual* chains that the importer's
+    own ``_chain_segments_to_rings`` could not close within
+    ``CHAIN_ENDPOINT_EPSILON_MM`` (0.2 mm). These are the starting point for
+    the T3 gap repair layer.
+
+    Returned shape::
+
+        {
+            "layer": str,
+            "entity_count": int,
+            "open_paths": [
+                {
+                    "path_index": int,
+                    "point_count": int,
+                    "start_point": [float, float],
+                    "end_point": [float, float],
+                    "points": list[list[float]],
+                }
+            ],
+            "hard_error": {"code": str, "message": str} | None,
+        }
+
+    The ``points`` list carries the full chain geometry so the T3 service can
+    produce a repaired ring without re-reading the source file. The function
+    is intentionally inspect/repair-safe: no role assignment, no acceptance
+    outcome.
+    """
+    layer_entities = [entity for entity in entities if entity.get("layer") == layer]
+    try:
+        _rings, open_path_chains = _collect_layer_rings(layer_entities, layer=layer)
+    except DxfImportError as exc:
+        return {
+            "layer": layer,
+            "entity_count": len(layer_entities),
+            "open_paths": [],
+            "hard_error": {"code": exc.code, "message": exc.message},
+        }
+
+    structured: list[dict[str, Any]] = []
+    for idx, chain in enumerate(open_path_chains):
+        if len(chain) < 2:
+            continue
+        structured.append(
+            {
+                "path_index": idx,
+                "point_count": len(chain),
+                "start_point": [float(chain[0][0]), float(chain[0][1])],
+                "end_point": [float(chain[-1][0]), float(chain[-1][1])],
+                "points": [[float(p[0]), float(p[1])] for p in chain],
+            }
+        )
+    return {
+        "layer": layer,
+        "entity_count": len(layer_entities),
+        "open_paths": structured,
         "hard_error": None,
     }
