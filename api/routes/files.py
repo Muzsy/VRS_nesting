@@ -71,6 +71,7 @@ class ProjectFileResponse(BaseModel):
     uploaded_by: str | None = None
     created_at: str | None = None
     latest_preflight_summary: dict[str, Any] | None = None
+    latest_preflight_diagnostics: dict[str, Any] | None = None
 
 
 class ProjectFileListResponse(BaseModel):
@@ -84,6 +85,7 @@ def _as_file_response(
     row: dict[str, Any],
     *,
     latest_preflight_summary: dict[str, Any] | None = None,
+    latest_preflight_diagnostics: dict[str, Any] | None = None,
 ) -> ProjectFileResponse:
     uploaded_by = row.get("uploaded_by")
     return ProjectFileResponse(
@@ -99,6 +101,7 @@ def _as_file_response(
         uploaded_by=str(uploaded_by) if uploaded_by is not None else None,
         created_at=row.get("created_at"),
         latest_preflight_summary=latest_preflight_summary,
+        latest_preflight_diagnostics=latest_preflight_diagnostics,
     )
 
 
@@ -146,6 +149,98 @@ def _latest_preflight_summary_from_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _latest_preflight_diagnostics_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    summary_jsonb = row.get("summary_jsonb")
+    summary_root = summary_jsonb if isinstance(summary_jsonb, dict) else {}
+
+    source_inventory_summary_raw = _as_dict(summary_root.get("source_inventory_summary"))
+    role_mapping_summary_raw = _as_dict(summary_root.get("role_mapping_summary"))
+    issue_summary_raw = _as_dict(summary_root.get("issue_summary"))
+    repair_summary_raw = _as_dict(summary_root.get("repair_summary"))
+    acceptance_summary_raw = _as_dict(summary_root.get("acceptance_summary"))
+
+    issue_counts_by_severity_raw = _as_dict(issue_summary_raw.get("counts_by_severity"))
+    repair_counts_raw = _as_dict(repair_summary_raw.get("counts"))
+
+    return {
+        "source_inventory_summary": {
+            "found_layers": _as_string_list(source_inventory_summary_raw.get("found_layers")),
+            "found_colors": _as_non_negative_int_list(source_inventory_summary_raw.get("found_colors")),
+            "found_linetypes": _as_string_list(source_inventory_summary_raw.get("found_linetypes")),
+            "entity_count": _as_non_negative_int(source_inventory_summary_raw.get("entity_count")),
+            "contour_count": _as_non_negative_int(source_inventory_summary_raw.get("contour_count")),
+            "open_path_layer_count": _as_non_negative_int(source_inventory_summary_raw.get("open_path_layer_count")),
+            "open_path_total_count": _as_non_negative_int(source_inventory_summary_raw.get("open_path_total_count")),
+            "duplicate_candidate_group_count": _as_non_negative_int(
+                source_inventory_summary_raw.get("duplicate_candidate_group_count")
+            ),
+            "duplicate_candidate_member_count": _as_non_negative_int(
+                source_inventory_summary_raw.get("duplicate_candidate_member_count")
+            ),
+        },
+        "role_mapping_summary": {
+            "resolved_role_inventory": {
+                key: _as_non_negative_int(value)
+                for key, value in _as_dict(role_mapping_summary_raw.get("resolved_role_inventory")).items()
+            },
+            "layer_role_assignments": _as_dict_list(role_mapping_summary_raw.get("layer_role_assignments")),
+            "review_required_count": _as_non_negative_int(role_mapping_summary_raw.get("review_required_count")),
+            "blocking_conflict_count": _as_non_negative_int(role_mapping_summary_raw.get("blocking_conflict_count")),
+        },
+        "issue_summary": {
+            "counts_by_severity": {
+                "blocking": _as_non_negative_int(issue_counts_by_severity_raw.get("blocking")),
+                "review_required": _as_non_negative_int(issue_counts_by_severity_raw.get("review_required")),
+                "warning": _as_non_negative_int(issue_counts_by_severity_raw.get("warning")),
+                "info": _as_non_negative_int(issue_counts_by_severity_raw.get("info")),
+            },
+            "normalized_issues": [
+                {
+                    "severity": str(issue.get("severity", "")).strip(),
+                    "family": str(issue.get("family", "")).strip(),
+                    "code": str(issue.get("code", "")).strip(),
+                    "message": str(issue.get("message", "")).strip(),
+                    "source": str(issue.get("source", "")).strip(),
+                }
+                for issue in _as_dict_list(issue_summary_raw.get("normalized_issues"))
+            ],
+        },
+        "repair_summary": {
+            "counts": {
+                "applied_gap_repair_count": _as_non_negative_int(repair_counts_raw.get("applied_gap_repair_count")),
+                "applied_duplicate_dedupe_count": _as_non_negative_int(repair_counts_raw.get("applied_duplicate_dedupe_count")),
+                "skipped_source_entity_count": _as_non_negative_int(repair_counts_raw.get("skipped_source_entity_count")),
+                "remaining_open_path_count": _as_non_negative_int(repair_counts_raw.get("remaining_open_path_count")),
+                "remaining_duplicate_count": _as_non_negative_int(repair_counts_raw.get("remaining_duplicate_count")),
+                "remaining_review_required_signal_count": _as_non_negative_int(
+                    repair_counts_raw.get("remaining_review_required_signal_count")
+                ),
+            },
+            "applied_gap_repairs": _as_dict_list(repair_summary_raw.get("applied_gap_repairs")),
+            "applied_duplicate_dedupes": _as_dict_list(repair_summary_raw.get("applied_duplicate_dedupes")),
+            "skipped_source_entities": _as_dict_list(repair_summary_raw.get("skipped_source_entities")),
+            "remaining_review_required_signals": _as_dict_list(repair_summary_raw.get("remaining_review_required_signals")),
+        },
+        "acceptance_summary": {
+            "acceptance_outcome": str(acceptance_summary_raw.get("acceptance_outcome", "")).strip(),
+            "precedence_rule_applied": str(acceptance_summary_raw.get("precedence_rule_applied", "")).strip(),
+            "importer_probe": _as_dict(acceptance_summary_raw.get("importer_probe")),
+            "validator_probe": _as_dict(acceptance_summary_raw.get("validator_probe")),
+            "blocking_reason_count": _as_non_negative_int(acceptance_summary_raw.get("blocking_reason_count")),
+            "review_required_reason_count": _as_non_negative_int(acceptance_summary_raw.get("review_required_reason_count")),
+        },
+        "artifact_references": [
+            {
+                "artifact_kind": str(artifact.get("artifact_kind", "")).strip(),
+                "download_label": str(artifact.get("download_label", "")).strip(),
+                "path": str(artifact.get("path", "")).strip(),
+                "exists": bool(artifact.get("exists")),
+            }
+            for artifact in _as_dict_list(summary_root.get("artifact_references"))
+        ],
+    }
+
+
 def _as_non_negative_int(raw: Any) -> int:
     if isinstance(raw, bool):
         return 0
@@ -154,6 +249,37 @@ def _as_non_negative_int(raw: Any) -> int:
     if isinstance(raw, float) and raw.is_integer() and raw >= 0:
         return int(raw)
     return 0
+
+
+def _as_dict(raw: Any) -> dict[str, Any]:
+    return raw if isinstance(raw, dict) else {}
+
+
+def _as_dict_list(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _as_string_list(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return [str(item) for item in raw]
+
+
+def _as_non_negative_int_list(raw: Any) -> list[int]:
+    if not isinstance(raw, list):
+        return []
+    values: list[int] = []
+    for item in raw:
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, int) and item >= 0:
+            values.append(item)
+            continue
+        if isinstance(item, float) and item.is_integer() and item >= 0:
+            values.append(int(item))
+    return values
 
 
 def _derive_recommended_action(*, run_status: str, acceptance_outcome: Any) -> str:
@@ -182,7 +308,7 @@ def _derive_recommended_action(*, run_status: str, acceptance_outcome: Any) -> s
     return "preflight_not_started"
 
 
-def _fetch_latest_preflight_summary_by_file_id(
+def _fetch_latest_preflight_row_by_file_id(
     *,
     supabase: SupabaseClient,
     access_token: str,
@@ -208,7 +334,7 @@ def _fetch_latest_preflight_summary_by_file_id(
         source_file_object_id = str(row.get("source_file_object_id", "")).strip()
         if not source_file_object_id or source_file_object_id in latest_by_file_id:
             continue
-        latest_by_file_id[source_file_object_id] = _latest_preflight_summary_from_row(row)
+        latest_by_file_id[source_file_object_id] = row
     return latest_by_file_id
 
 
@@ -420,10 +546,15 @@ def list_project_files(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     include_preflight_summary: bool = Query(default=False),
+    include_preflight_diagnostics: bool = Query(default=False),
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectFileListResponse:
     _ensure_project_access(supabase=supabase, user=user, project_id=project_id)
+    include_preflight_summary_flag = include_preflight_summary if isinstance(include_preflight_summary, bool) else False
+    include_preflight_diagnostics_flag = (
+        include_preflight_diagnostics if isinstance(include_preflight_diagnostics, bool) else False
+    )
 
     offset = (page - 1) * page_size
     params = {
@@ -438,25 +569,36 @@ def list_project_files(
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="list files", exc=exc)
 
-    latest_summary_by_file_id: dict[str, dict[str, Any]] = {}
-    if include_preflight_summary:
+    latest_preflight_row_by_file_id: dict[str, dict[str, Any]] = {}
+    if include_preflight_summary_flag or include_preflight_diagnostics_flag:
         file_ids = [str(row.get("id", "")).strip() for row in rows if str(row.get("id", "")).strip()]
         try:
-            latest_summary_by_file_id = _fetch_latest_preflight_summary_by_file_id(
+            latest_preflight_row_by_file_id = _fetch_latest_preflight_row_by_file_id(
                 supabase=supabase,
                 access_token=user.access_token,
                 file_ids=file_ids,
             )
         except SupabaseHTTPError as exc:
-            raise_supabase_http_error(operation="list file preflight summary", exc=exc)
+            raise_supabase_http_error(operation="list file latest preflight projection", exc=exc)
 
-    items = [
-        _as_file_response(
-            row,
-            latest_preflight_summary=latest_summary_by_file_id.get(str(row.get("id", "")).strip()),
+    items: list[ProjectFileResponse] = []
+    for row in rows:
+        file_id = str(row.get("id", "")).strip()
+        latest_row = latest_preflight_row_by_file_id.get(file_id)
+        items.append(
+            _as_file_response(
+                row,
+                latest_preflight_summary=(
+                    _latest_preflight_summary_from_row(latest_row) if include_preflight_summary_flag and latest_row else None
+                ),
+                latest_preflight_diagnostics=(
+                    _latest_preflight_diagnostics_from_row(latest_row)
+                    if include_preflight_diagnostics_flag and latest_row
+                    else None
+                ),
+            )
         )
-        for row in rows
-    ]
+
     return ProjectFileListResponse(items=items, total=len(items), page=page, page_size=page_size)
 
 

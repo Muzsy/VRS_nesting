@@ -4,6 +4,7 @@ import type {
   PreflightRulesProfileSnapshot,
   Project,
   ProjectFile,
+  ProjectFileLatestPreflightDiagnostics,
   ProjectFileLatestPreflightSummary,
   ProjectFileListResponse,
   ProjectListResponse,
@@ -57,7 +58,52 @@ function normalizeProjectFile(raw: Record<string, unknown>): ProjectFile {
     validation_error: (raw.validation_error as string | null | undefined) ?? null,
     uploaded_at: (raw.uploaded_at as string | null | undefined) ?? (raw.created_at as string | null | undefined) ?? null,
     latest_preflight_summary: normalizeLatestPreflightSummary(raw.latest_preflight_summary),
+    latest_preflight_diagnostics: normalizeLatestPreflightDiagnostics(raw.latest_preflight_diagnostics),
   };
+}
+
+function normalizeNonNegativeInt(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+  if (value < 0) {
+    return 0;
+  }
+  return Math.trunc(value);
+}
+
+function normalizeRecord(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  return raw as Record<string, unknown>;
+}
+
+function normalizeRecordArray(raw: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item));
+}
+
+function normalizeStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.map((item) => String(item ?? ""));
+}
+
+function normalizeNonNegativeIntArray(raw: unknown): number[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const values: number[] = [];
+  for (const item of raw) {
+    if (typeof item === "number" && Number.isFinite(item) && item >= 0) {
+      values.push(Math.trunc(item));
+    }
+  }
+  return values;
 }
 
 function normalizeLatestPreflightSummary(raw: unknown): ProjectFileLatestPreflightSummary | null {
@@ -67,15 +113,6 @@ function normalizeLatestPreflightSummary(raw: unknown): ProjectFileLatestPreflig
   const obj = raw as Record<string, unknown>;
   const runSeqRaw = obj.run_seq;
   const runSeq = typeof runSeqRaw === "number" && Number.isFinite(runSeqRaw) ? runSeqRaw : null;
-  const normalizeNonNegativeInt = (value: unknown): number => {
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      return 0;
-    }
-    if (value < 0) {
-      return 0;
-    }
-    return Math.trunc(value);
-  };
 
   return {
     preflight_run_id: String(obj.preflight_run_id ?? ""),
@@ -91,6 +128,94 @@ function normalizeLatestPreflightSummary(raw: unknown): ProjectFileLatestPreflig
     applied_duplicate_dedupe_count: normalizeNonNegativeInt(obj.applied_duplicate_dedupe_count),
     total_repair_count: normalizeNonNegativeInt(obj.total_repair_count),
     recommended_action: (obj.recommended_action as string | null | undefined) ?? null,
+  };
+}
+
+function normalizeLatestPreflightDiagnostics(raw: unknown): ProjectFileLatestPreflightDiagnostics | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const sourceInventorySummary = normalizeRecord(obj.source_inventory_summary);
+  const roleMappingSummary = normalizeRecord(obj.role_mapping_summary);
+  const issueSummary = normalizeRecord(obj.issue_summary);
+  const repairSummary = normalizeRecord(obj.repair_summary);
+  const acceptanceSummary = normalizeRecord(obj.acceptance_summary);
+  const issueCountsBySeverity = normalizeRecord(issueSummary.counts_by_severity);
+  const repairCounts = normalizeRecord(repairSummary.counts);
+
+  const resolvedRoleInventoryRaw = normalizeRecord(roleMappingSummary.resolved_role_inventory);
+  const resolvedRoleInventory: Record<string, number> = {};
+  for (const [key, value] of Object.entries(resolvedRoleInventoryRaw)) {
+    resolvedRoleInventory[key] = normalizeNonNegativeInt(value);
+  }
+
+  const normalizedIssues = normalizeRecordArray(issueSummary.normalized_issues).map((item) => ({
+    severity: String(item.severity ?? ""),
+    family: String(item.family ?? ""),
+    code: String(item.code ?? ""),
+    message: String(item.message ?? ""),
+    source: String(item.source ?? ""),
+  }));
+
+  const artifactReferences = normalizeRecordArray(obj.artifact_references).map((item) => ({
+    artifact_kind: String(item.artifact_kind ?? ""),
+    download_label: String(item.download_label ?? ""),
+    path: String(item.path ?? ""),
+    exists: Boolean(item.exists),
+  }));
+
+  return {
+    source_inventory_summary: {
+      found_layers: normalizeStringArray(sourceInventorySummary.found_layers),
+      found_colors: normalizeNonNegativeIntArray(sourceInventorySummary.found_colors),
+      found_linetypes: normalizeStringArray(sourceInventorySummary.found_linetypes),
+      entity_count: normalizeNonNegativeInt(sourceInventorySummary.entity_count),
+      contour_count: normalizeNonNegativeInt(sourceInventorySummary.contour_count),
+      open_path_layer_count: normalizeNonNegativeInt(sourceInventorySummary.open_path_layer_count),
+      open_path_total_count: normalizeNonNegativeInt(sourceInventorySummary.open_path_total_count),
+      duplicate_candidate_group_count: normalizeNonNegativeInt(sourceInventorySummary.duplicate_candidate_group_count),
+      duplicate_candidate_member_count: normalizeNonNegativeInt(sourceInventorySummary.duplicate_candidate_member_count),
+    },
+    role_mapping_summary: {
+      resolved_role_inventory: resolvedRoleInventory,
+      layer_role_assignments: normalizeRecordArray(roleMappingSummary.layer_role_assignments),
+      review_required_count: normalizeNonNegativeInt(roleMappingSummary.review_required_count),
+      blocking_conflict_count: normalizeNonNegativeInt(roleMappingSummary.blocking_conflict_count),
+    },
+    issue_summary: {
+      counts_by_severity: {
+        blocking: normalizeNonNegativeInt(issueCountsBySeverity.blocking),
+        review_required: normalizeNonNegativeInt(issueCountsBySeverity.review_required),
+        warning: normalizeNonNegativeInt(issueCountsBySeverity.warning),
+        info: normalizeNonNegativeInt(issueCountsBySeverity.info),
+      },
+      normalized_issues: normalizedIssues,
+    },
+    repair_summary: {
+      counts: {
+        applied_gap_repair_count: normalizeNonNegativeInt(repairCounts.applied_gap_repair_count),
+        applied_duplicate_dedupe_count: normalizeNonNegativeInt(repairCounts.applied_duplicate_dedupe_count),
+        skipped_source_entity_count: normalizeNonNegativeInt(repairCounts.skipped_source_entity_count),
+        remaining_open_path_count: normalizeNonNegativeInt(repairCounts.remaining_open_path_count),
+        remaining_duplicate_count: normalizeNonNegativeInt(repairCounts.remaining_duplicate_count),
+        remaining_review_required_signal_count: normalizeNonNegativeInt(repairCounts.remaining_review_required_signal_count),
+      },
+      applied_gap_repairs: normalizeRecordArray(repairSummary.applied_gap_repairs),
+      applied_duplicate_dedupes: normalizeRecordArray(repairSummary.applied_duplicate_dedupes),
+      skipped_source_entities: normalizeRecordArray(repairSummary.skipped_source_entities),
+      remaining_review_required_signals: normalizeRecordArray(repairSummary.remaining_review_required_signals),
+    },
+    acceptance_summary: {
+      acceptance_outcome: String(acceptanceSummary.acceptance_outcome ?? ""),
+      precedence_rule_applied: String(acceptanceSummary.precedence_rule_applied ?? ""),
+      importer_probe: normalizeRecord(acceptanceSummary.importer_probe),
+      validator_probe: normalizeRecord(acceptanceSummary.validator_probe),
+      blocking_reason_count: normalizeNonNegativeInt(acceptanceSummary.blocking_reason_count),
+      review_required_reason_count: normalizeNonNegativeInt(acceptanceSummary.review_required_reason_count),
+    },
+    artifact_references: artifactReferences,
   };
 }
 
@@ -188,12 +313,17 @@ export const api = {
   listProjectFiles(
     token: string,
     projectId: string,
-    options?: { include_preflight_summary?: boolean }
+    options?: { include_preflight_summary?: boolean; include_preflight_diagnostics?: boolean }
   ): Promise<ProjectFileListResponse> {
-    const includePreflightSummary = options?.include_preflight_summary === true;
-    const path = includePreflightSummary
-      ? `/projects/${projectId}/files?include_preflight_summary=true`
-      : `/projects/${projectId}/files`;
+    const params = new URLSearchParams();
+    if (options?.include_preflight_summary === true) {
+      params.set("include_preflight_summary", "true");
+    }
+    if (options?.include_preflight_diagnostics === true) {
+      params.set("include_preflight_diagnostics", "true");
+    }
+    const query = params.toString();
+    const path = query ? `/projects/${projectId}/files?${query}` : `/projects/${projectId}/files`;
     return request<{ items: Array<Record<string, unknown>>; total: number; page?: number; page_size?: number }>(path, token, {
       method: "GET",
     }).then((response) => ({

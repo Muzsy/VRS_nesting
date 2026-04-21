@@ -237,6 +237,10 @@ function formatRecommendedActionLabel(file: ProjectFile): string {
   return "Upload complete; waiting for preflight";
 }
 
+function formatExistsLabel(exists: boolean): string {
+  return exists ? "yes" : "no";
+}
+
 export function DxfIntakePage() {
   const { projectId } = useParams<{ projectId: string }>();
 
@@ -248,6 +252,7 @@ export function DxfIntakePage() {
   const [dragActive, setDragActive] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<PreflightSettingsDraft>(() => createDefaultPreflightSettingsDraft());
+  const [selectedDiagnosticsFileId, setSelectedDiagnosticsFileId] = useState<string | null>(null);
 
   async function loadData() {
     if (!projectId) {
@@ -259,7 +264,10 @@ export function DxfIntakePage() {
       const token = await getAccessToken();
       const [projectResponse, filesResponse] = await Promise.all([
         api.getProject(token, projectId),
-        api.listProjectFiles(token, projectId, { include_preflight_summary: true }),
+        api.listProjectFiles(token, projectId, {
+          include_preflight_summary: true,
+          include_preflight_diagnostics: true,
+        }),
       ]);
       setProject(projectResponse);
       setFiles(filesResponse.items);
@@ -273,6 +281,16 @@ export function DxfIntakePage() {
   useEffect(() => {
     void loadData();
   }, [projectId]);
+
+  useEffect(() => {
+    if (!selectedDiagnosticsFileId) {
+      return;
+    }
+    const selected = files.find((file) => file.id === selectedDiagnosticsFileId);
+    if (!selected || !selected.latest_preflight_diagnostics) {
+      setSelectedDiagnosticsFileId(null);
+    }
+  }, [files, selectedDiagnosticsFileId]);
 
   async function handleFilesSelected(fileList: FileList | null) {
     if (!projectId || !fileList || fileList.length === 0) {
@@ -374,6 +392,12 @@ export function DxfIntakePage() {
     }
     return Math.round((uploadProgress.done / uploadProgress.total) * 100);
   }, [uploadProgress]);
+
+  const selectedDiagnosticsFile = useMemo(
+    () => files.find((file) => file.id === selectedDiagnosticsFileId) ?? null,
+    [files, selectedDiagnosticsFileId]
+  );
+  const selectedDiagnostics = selectedDiagnosticsFile?.latest_preflight_diagnostics ?? null;
 
   if (!projectId) {
     return (
@@ -604,11 +628,14 @@ export function DxfIntakePage() {
                       <th className="py-2">Acceptance</th>
                       <th className="py-2">Recommended action</th>
                       <th className="py-2">Finished</th>
+                      <th className="py-2">Diagnostics</th>
                     </tr>
                   </thead>
                   <tbody>
                     {files.map((file) => {
                       const summary = file.latest_preflight_summary;
+                      const diagnostics = file.latest_preflight_diagnostics;
+                      const canViewDiagnostics = !!diagnostics;
                       const runStatusBadge = formatRunStatusBadge(file);
                       const issueBadge = formatIssueCountBadge(file);
                       const repairBadge = formatRepairCountBadge(file);
@@ -644,6 +671,20 @@ export function DxfIntakePage() {
                             {recommendedAction}
                           </td>
                           <td className="py-3">{formatDate(file.latest_preflight_summary?.finished_at ?? null)}</td>
+                          <td className="py-3">
+                            <button
+                              className={`rounded border px-2 py-1 text-xs font-medium ${
+                                canViewDiagnostics
+                                  ? "border-mist bg-white text-slate hover:bg-slate-100"
+                                  : "cursor-not-allowed border-mist/70 bg-slate-100 text-slate-400"
+                              }`}
+                              disabled={!canViewDiagnostics}
+                              onClick={() => setSelectedDiagnosticsFileId(file.id)}
+                              type="button"
+                            >
+                              View diagnostics
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -652,6 +693,176 @@ export function DxfIntakePage() {
               </div>
             )}
           </article>
+        </div>
+      )}
+
+      {selectedDiagnosticsFile && selectedDiagnostics && (
+        <div className="fixed inset-0 z-40 flex justify-end bg-ink/40">
+          <div className="h-full w-full max-w-3xl overflow-y-auto border-l border-mist bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4 border-b border-mist pb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Diagnostics</h2>
+                <p className="mt-1 text-sm text-slate">{selectedDiagnosticsFile.original_filename}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatRunStatusBadge(selectedDiagnosticsFile).className}`}>
+                    {formatRunStatusBadge(selectedDiagnosticsFile).label}
+                  </span>
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatAcceptanceOutcomeBadge(selectedDiagnosticsFile).className}`}>
+                    {formatAcceptanceOutcomeBadge(selectedDiagnosticsFile).label}
+                  </span>
+                  <span className="text-xs text-slate">
+                    {selectedDiagnosticsFile.latest_preflight_summary?.run_seq
+                      ? `Run #${selectedDiagnosticsFile.latest_preflight_summary.run_seq}`
+                      : "Run n/a"}
+                  </span>
+                  <span className="text-xs text-slate">
+                    Finished: {formatDate(selectedDiagnosticsFile.latest_preflight_summary?.finished_at ?? null)}
+                  </span>
+                </div>
+              </div>
+              <button
+                className="rounded-md border border-mist px-3 py-2 text-sm text-slate hover:bg-slate-100"
+                onClick={() => setSelectedDiagnosticsFileId(null)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Source inventory</h3>
+                <p className="mt-2 text-xs text-slate">
+                  Layers: {selectedDiagnostics.source_inventory_summary.found_layers.join(", ") || "-"}
+                </p>
+                <p className="mt-1 text-xs text-slate">
+                  Colors: {selectedDiagnostics.source_inventory_summary.found_colors.join(", ") || "-"}
+                </p>
+                <p className="mt-1 text-xs text-slate">
+                  Linetypes: {selectedDiagnostics.source_inventory_summary.found_linetypes.join(", ") || "-"}
+                </p>
+                <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
+                  <p>Entity count: {selectedDiagnostics.source_inventory_summary.entity_count}</p>
+                  <p>Contour count: {selectedDiagnostics.source_inventory_summary.contour_count}</p>
+                  <p>Open-path layers: {selectedDiagnostics.source_inventory_summary.open_path_layer_count}</p>
+                  <p>Open-path total: {selectedDiagnostics.source_inventory_summary.open_path_total_count}</p>
+                  <p>Duplicate groups: {selectedDiagnostics.source_inventory_summary.duplicate_candidate_group_count}</p>
+                  <p>Duplicate members: {selectedDiagnostics.source_inventory_summary.duplicate_candidate_member_count}</p>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Role mapping</h3>
+                <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
+                  <p>Review-required count: {selectedDiagnostics.role_mapping_summary.review_required_count}</p>
+                  <p>Blocking conflict count: {selectedDiagnostics.role_mapping_summary.blocking_conflict_count}</p>
+                </div>
+                <p className="mt-2 text-xs font-medium text-ink">Resolved role inventory</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate">
+                  {Object.keys(selectedDiagnostics.role_mapping_summary.resolved_role_inventory).length === 0 && <li>none</li>}
+                  {Object.entries(selectedDiagnostics.role_mapping_summary.resolved_role_inventory).map(([role, count]) => (
+                    <li key={role}>
+                      {role}: {count}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-xs font-medium text-ink">Layer role assignments</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate">
+                  {selectedDiagnostics.role_mapping_summary.layer_role_assignments.length === 0 && <li>none</li>}
+                  {selectedDiagnostics.role_mapping_summary.layer_role_assignments.map((assignment, index) => (
+                    <li key={`${index}-${String(assignment.layer ?? "layer")}`}>
+                      layer={String(assignment.layer ?? "-")} role={String(assignment.role ?? "-")}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Issues</h3>
+                <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
+                  <p>Blocking: {selectedDiagnostics.issue_summary.counts_by_severity.blocking}</p>
+                  <p>Review required: {selectedDiagnostics.issue_summary.counts_by_severity.review_required}</p>
+                  <p>Warning: {selectedDiagnostics.issue_summary.counts_by_severity.warning}</p>
+                  <p>Info: {selectedDiagnostics.issue_summary.counts_by_severity.info}</p>
+                </div>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[520px] border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-mist text-left text-slate">
+                        <th className="py-1">Severity</th>
+                        <th className="py-1">Family</th>
+                        <th className="py-1">Code</th>
+                        <th className="py-1">Message</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDiagnostics.issue_summary.normalized_issues.length === 0 && (
+                        <tr>
+                          <td className="py-2 text-slate" colSpan={4}>
+                            no normalized issues
+                          </td>
+                        </tr>
+                      )}
+                      {selectedDiagnostics.issue_summary.normalized_issues.map((issue, index) => (
+                        <tr className="border-b border-mist/60" key={`${issue.code}-${index}`}>
+                          <td className="py-1">{issue.severity || "-"}</td>
+                          <td className="py-1">{issue.family || "-"}</td>
+                          <td className="py-1">{issue.code || "-"}</td>
+                          <td className="py-1">{issue.message || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Repairs</h3>
+                <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
+                  <p>Applied gap repairs: {selectedDiagnostics.repair_summary.counts.applied_gap_repair_count}</p>
+                  <p>Applied duplicate dedupes: {selectedDiagnostics.repair_summary.counts.applied_duplicate_dedupe_count}</p>
+                  <p>Skipped source entities: {selectedDiagnostics.repair_summary.counts.skipped_source_entity_count}</p>
+                  <p>Remaining unresolved signals: {selectedDiagnostics.repair_summary.counts.remaining_review_required_signal_count}</p>
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate">
+                  <li>Gap repair entries: {selectedDiagnostics.repair_summary.applied_gap_repairs.length}</li>
+                  <li>Duplicate dedupe entries: {selectedDiagnostics.repair_summary.applied_duplicate_dedupes.length}</li>
+                  <li>Remaining review-required entries: {selectedDiagnostics.repair_summary.remaining_review_required_signals.length}</li>
+                </ul>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Acceptance</h3>
+                <div className="mt-2 space-y-1 text-xs text-slate">
+                  <p>Precedence rule: {selectedDiagnostics.acceptance_summary.precedence_rule_applied || "-"}</p>
+                  <p>Outcome: {selectedDiagnostics.acceptance_summary.acceptance_outcome || "-"}</p>
+                  <p>
+                    Importer highlight: pass=
+                    {String((selectedDiagnostics.acceptance_summary.importer_probe.is_pass as boolean | undefined) ?? false)} error=
+                    {String((selectedDiagnostics.acceptance_summary.importer_probe.error_code as string | undefined) ?? "-")}
+                  </p>
+                  <p>
+                    Validator highlight: status=
+                    {String((selectedDiagnostics.acceptance_summary.validator_probe.status as string | undefined) ?? "-")} pass=
+                    {String((selectedDiagnostics.acceptance_summary.validator_probe.is_pass as boolean | undefined) ?? false)}
+                  </p>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Artifacts</h3>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate">
+                  {selectedDiagnostics.artifact_references.length === 0 && <li>no artifact references</li>}
+                  {selectedDiagnostics.artifact_references.map((artifact, index) => (
+                    <li key={`${artifact.path}-${index}`}>
+                      {artifact.download_label || artifact.artifact_kind || "artifact"} | path: {artifact.path || "-"} | exists:{" "}
+                      {formatExistsLabel(artifact.exists)}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          </div>
         </div>
       )}
     </section>

@@ -29,6 +29,7 @@ export interface ProjectFile {
   validation_error?: string | null;
   uploaded_at?: string | null;
   latest_preflight_summary?: ProjectFileLatestPreflightSummary | null;
+  latest_preflight_diagnostics?: ProjectFileLatestPreflightDiagnostics | null;
 }
 
 export interface ProjectFileListResponse {
@@ -50,6 +51,69 @@ export interface ProjectFileLatestPreflightSummary {
   applied_duplicate_dedupe_count: number;
   total_repair_count: number;
   recommended_action?: string | null;
+}
+
+export interface ProjectFileLatestPreflightDiagnostics {
+  source_inventory_summary: {
+    found_layers: string[];
+    found_colors: number[];
+    found_linetypes: string[];
+    entity_count: number;
+    contour_count: number;
+    open_path_layer_count: number;
+    open_path_total_count: number;
+    duplicate_candidate_group_count: number;
+    duplicate_candidate_member_count: number;
+  };
+  role_mapping_summary: {
+    resolved_role_inventory: Record<string, number>;
+    layer_role_assignments: Array<Record<string, unknown>>;
+    review_required_count: number;
+    blocking_conflict_count: number;
+  };
+  issue_summary: {
+    counts_by_severity: {
+      blocking: number;
+      review_required: number;
+      warning: number;
+      info: number;
+    };
+    normalized_issues: Array<{
+      severity: string;
+      family: string;
+      code: string;
+      message: string;
+      source: string;
+    }>;
+  };
+  repair_summary: {
+    counts: {
+      applied_gap_repair_count: number;
+      applied_duplicate_dedupe_count: number;
+      skipped_source_entity_count: number;
+      remaining_open_path_count: number;
+      remaining_duplicate_count: number;
+      remaining_review_required_signal_count: number;
+    };
+    applied_gap_repairs: Array<Record<string, unknown>>;
+    applied_duplicate_dedupes: Array<Record<string, unknown>>;
+    skipped_source_entities: Array<Record<string, unknown>>;
+    remaining_review_required_signals: Array<Record<string, unknown>>;
+  };
+  acceptance_summary: {
+    acceptance_outcome: string;
+    precedence_rule_applied: string;
+    importer_probe: Record<string, unknown>;
+    validator_probe: Record<string, unknown>;
+    blocking_reason_count: number;
+    review_required_reason_count: number;
+  };
+  artifact_references: Array<{
+    artifact_kind: string;
+    download_label: string;
+    path: string;
+    exists: boolean;
+  }>;
 }
 
 export interface PreflightRulesProfileSnapshot {

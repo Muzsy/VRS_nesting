@@ -1,0 +1,109 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e4_t4_diagnostics_drawer_modal"
+title: "DXF Prefilter E4-T4 — Diagnostics drawer / modal"
+objective: >
+  Vezess be a DxfIntakePage latest preflight runs tablajahoz egy non-mutating
+  diagnostics drawer/modal nezetet a persisted T7 summary alapjan. A task a meglovo
+  /projects/{project_id}/files route optional latest diagnostics projectionjara epuljon,
+  ne nyisson uj historical preflight-runs vagy detail endpointot, es ne nyissa meg a
+  review / replace-rerun / accepted->parts scope-ot.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md"
+  - "api/routes/files.py"
+  - "api/services/dxf_preflight_diagnostics_renderer.py"
+  - "api/services/dxf_preflight_persistence.py"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/lib/api.ts"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "tests/test_project_files_preflight_summary.py"
+  - "canvases/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne hozz letre uj GET /projects/{project_id}/preflight-runs historical endpointot."
+  - "Ne hozz letre uj GET /projects/{project_id}/preflight-runs/{id} detail endpointot."
+  - "Ne nyiss review modal, replace-rerun, accepted->parts vagy mutating row-action scope-ot."
+  - "A diagnostics truth a persisted T7 summary_jsonb-bol jojjon; a frontend ne parse-olja kozvetlenul a nyers summary_jsonb-t."
+  - "A T4 artifact references current-code truth szerint local backend referenciak; ne talalj ki signed URL-t vagy download route-ot."
+  - "Ne bovitsd a NewRunPage.tsx legacy wizardot."
+  - "Az include_preflight_summary=false es include_preflight_diagnostics=false viselkedes ne torjon el."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans frontend/backend current-code
+      forrasokat. Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e4_t4_diagnostics_drawer_modal.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+
+  - name: "Backend optional latest diagnostics projection a file-list route-on"
+    description: >
+      Bovitsd a /projects/{project_id}/files route-ot egy optional diagnostics projection
+      aggal ugy, hogy a latest preflight run persisted summary_jsonb alapjan egy stabil,
+      drawer-ready diagnostics payload is visszajohessen file-onkent. Ne hozz letre uj
+      historical vagy detail endpointot.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Frontend type/API boundary bovitese a diagnostics payloadra"
+    description: >
+      Vezess be dedikalt frontend tipusokat es optional-safe API normalizaciot a
+      latest_preflight_diagnostics payloadra.
+    outputs:
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/lib/api.ts"
+
+  - name: "DxfIntakePage diagnostics trigger es drawer/modal UX"
+    description: >
+      A latest preflight runs tablaban vezess be non-mutating diagnostics trigger-t,
+      es ugyanazon az oldalon jelenits meg diagnostics drawer/modal nezetet a persisted
+      latest diagnostics payload alapjan. A nezet kulon blokkokban mutassa a source
+      inventory, role mapping, issue, repair, acceptance es artifact reference retegeket.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+
+  - name: "Task-specifikus route-level tesztek"
+    description: >
+      Keszits deterministic route-level coverage-et arra, hogy a diagnostics projection
+      optional, latest-run alapu es null-safe maradjon, mikozben a T3 summary viselkedes
+      sem torik el.
+    outputs:
+      - "tests/test_project_files_preflight_diagnostics.py"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely minimum bizonyitja:
+      - a DxfIntakePage diagnostics trigger es drawer/modal tokenjeit,
+      - az API/types boundary uj diagnostics mezoi jelen vannak,
+      - a route optional diagnostics query/projection bent van.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e4_t4_diagnostics_drawer_modal.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze meg,
+      hogy miert a meglevo file-list route optional diagnostics projectionja a helyes
+      T4 minimal modell, pontosan milyen drawer-ready shape-et vetit ki a backend,
+      es mi marad kesobbi scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.verify.log"
