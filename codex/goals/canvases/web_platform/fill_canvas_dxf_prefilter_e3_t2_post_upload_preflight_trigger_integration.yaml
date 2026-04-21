@@ -1,0 +1,104 @@
+version: 1
+metadata:
+  area: "web_platform"
+  task_slug: "dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration"
+  title: "DXF Prefilter E3-T2 — Upload utani preflight trigger bekotes"
+  objective: >
+    Koss be upload utani automatikus preflight triggert a meglevo `complete_upload`
+    flow-ba ugy, hogy egy sikeres `source_dxf` finalize utan a teljes T1->T7 + E3-T1
+    prefilter lanc background taskkent lefusson es persisted truth-va valjon, geometry import gate nelkul.
+  guards:
+    - "Valos repobol dolgozz; ne talalj ki nem letezo route-ot, request modelt vagy rules-profile domaint."
+    - "Csak olyan fajlt hozz letre vagy modosits, amely szerepel a YAML outputs listaban."
+    - "A task trigger-integration scope; ne nyiss geometry import gate-et, explicit preflight route-ot, UI-t vagy feature flaget."
+    - "A `complete_upload` response shape ne valtozzon."
+    - "A meglevo geometry import es legacy readability background task maradjon bent; ez a task csak preflight triggert kot be mellettuk."
+    - "A runtime a meglevo E2/T7 + E3-T1 service-ekre epuljon; ne duplikalj inspect/repair/writer/gate/render/persist logikat."
+    - "Current-code truth szerint nincs rules-profile domain; a runtime V1 bridge-kent `rules_profile=None` / ures snapshot vilagban fusson."
+    - "A `run_seq` ne kliens inputbol jojjon; service-side, az `app.preflight_runs` truth alapjan legyen determinisztikus."
+    - "A trigger FastAPI `BackgroundTasks`-ra uljon; ne vezess be worker queue-t vagy polling workflow-t."
+    - "A failure handling legyen minimalis es logger-alapu; ahol lehet, persisted `preflight_failed` truth legyen, de ne nyiss workflow engine scope-ot."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans current-code forrasokat. Hozd letre a task
+      canvas/YAML/runner/checklist/report alapfajljait a repo mintai szerint.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+
+  - name: "Kulon preflight runtime/orchestration service kialakitasa"
+    description: >
+      Hozz letre uj `api/services/dxf_preflight_runtime.py` service reteget, amely a storage-bol
+      letoltott source DXF-bol vegigfuttatja a meglevo T1 inspect, T2 role resolver, T3 gap repair,
+      T4 duplicate dedupe, T5 normalized writer, T6 acceptance gate, T7 diagnostics renderer es
+      E3-T1 persistence helper lancot. A service oldja meg a deterministic `run_seq` szamolast az
+      `app.preflight_runs` truth-bol, es tartalmazzon minimalis failure-handling/logging boundaryt.
+      Ne legyen route, ne legyen geometry import gate, ne vezessen be uj rules-profile domaint.
+    outputs:
+      - "api/services/dxf_preflight_runtime.py"
+
+  - name: "Upload utani trigger bekotese a files route-ba"
+    description: >
+      Modositsd az `api/routes/files.py` `complete_upload` flow-jat ugy, hogy source DXF finalize utan
+      a meglevo geometry import es legacy validation taskok mellett uj preflight background task is
+      regisztralodjon. A route response shape maradjon valtozatlan, a geometry import trigger ne tunjon el,
+      es ne nyisd meg itt a geometry import gate vagy explicit preflight-start endpoint scope-ot.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Szukseges minimalis persistence helper-bovitesek"
+    description: >
+      Ha a runtime service-nek szuksege van ra, vegezz minimalis, current-scope kompatibilis bovitest
+      az `api/services/dxf_preflight_persistence.py` service-ben (peldaul helper a `run_seq` lekeresre,
+      minimalis failed-run persistence-re vagy mas trigger-szintu adapterre). Ne valjon a task teljes
+      lifecycle engine-ne, es ne nyisson uj artifact/API scope-ot.
+    outputs:
+      - "api/services/dxf_preflight_persistence.py"
+
+  - name: "Task-specifikus unit teszt a runtime/orchestration logikara"
+    description: >
+      Keszits deterministic unit tesztet a runtime service-re. Minimum bizonyitsd:
+      - a T1->T7 + E3-T1 helper-ek sorrendi hivasa,
+      - accepted flow persistence meghivasa,
+      - runtime error minimalis failure handlingje,
+      - service-side `run_seq` szamolas,
+      - rules-profile current-code kompatibilitas (`None` / ures snapshot),
+      - route- vagy FastAPI-scope mentes service boundary.
+    outputs:
+      - "tests/test_dxf_preflight_runtime.py"
+
+  - name: "Task-specifikus route-trigger smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely bizonyitja, hogy a `complete_upload` source DXF eseten
+      uj preflight background taskot is regisztral a meglevo geometry import + legacy validation mellett,
+      mig nem source_dxf / nem .dxf finalize eseten nem. A smoke bizonyitsa azt is, hogy a route response
+      shape nem valtozik.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E3-T2 valtozasok alapjan.
+      A reportban kulon nevezd meg:
+      - miert marad bent a geometry import trigger is,
+      - hogyan epul fel a runtime/orchestration boundary,
+      - hogyan keletkezik a `run_seq`,
+      - hogyan kezeli a task a rules-profile domain hianyat,
+      - hogyan kezeli a minimalis failure pathot,
+      - es mi marad E3-T3 / E3-T4 / E3-T5 / kesobbi API/UI scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.verify.log"

@@ -14,6 +14,7 @@ from api.http_errors import raise_supabase_http_error
 from api.rate_limit import enforce_user_rate_limit
 from api.request_models import StrictRequestModel
 from api.services.dxf_geometry_import import import_source_dxf_geometry_revision_async
+from api.services.dxf_preflight_runtime import run_preflight_for_upload
 from api.services.dxf_validation import validate_dxf_file_async
 from api.services.file_ingest_metadata import canonical_file_name_from_storage_path, load_file_ingest_metadata
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
@@ -270,6 +271,18 @@ def complete_upload(
             bucket=storage_bucket,
             file_object_id=str(req.file_id),
             storage_path=storage_path,
+        )
+        background_tasks.add_task(
+            run_preflight_for_upload,
+            supabase=supabase,
+            access_token=user.access_token,
+            project_id=str(project_id),
+            source_file_object_id=str(req.file_id),
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            source_hash_sha256=source_hash_sha256,
+            created_by=user.id,
+            signed_url_ttl_s=settings.signed_url_ttl_s,
         )
 
     return _as_file_response(row)

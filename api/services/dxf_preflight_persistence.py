@@ -47,7 +47,10 @@ from typing import Any, Protocol
 __all__ = [
     "DxfPreflightPersistenceError",
     "persist_preflight_run",
+    "persist_preflight_failed_run",
     "canonical_preflight_storage_path",
+    "RunSeqQueryGateway",
+    "get_next_run_seq",
 ]
 
 _PREFLIGHT_ARTIFACT_BUCKET = "geometry-artifacts"
@@ -88,6 +91,14 @@ class StorageGateway(Protocol):
         content_type: str,
     ) -> None:
         """Upload raw bytes to the given bucket / object_key."""
+        ...
+
+
+class RunSeqQueryGateway(Protocol):
+    """Minimal query protocol for resolving the next preflight run_seq."""
+
+    def fetch_max_run_seq(self, *, source_file_object_id: str) -> int | None:
+        """Return the current max run_seq for this source file, or None if no rows exist."""
         ...
 
 
@@ -444,3 +455,68 @@ def _as_jsonable(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
+# ---------------------------------------------------------------------------
+# E3-T2 trigger helpers (run_seq resolution + failed-run persistence)
+# ---------------------------------------------------------------------------
+
+
+def get_next_run_seq(
+    *,
+    source_file_object_id: str,
+    db_query: RunSeqQueryGateway,
+) -> int:
+    """Return the next monotone run_seq for the given source file.
+
+    Queries ``app.preflight_runs`` via ``db_query.fetch_max_run_seq`` and
+    returns ``max + 1``, or ``1`` if no prior run exists.
+    """
+    _require_str_id(source_file_object_id, field="source_file_object_id")
+    current_max = db_query.fetch_max_run_seq(source_file_object_id=source_file_object_id)
+    if current_max is None:
+        return 1
+    if not isinstance(current_max, int) or isinstance(current_max, bool) or current_max < 1:
+        return 1
+    return current_max + 1
+
+
+def persist_preflight_failed_run(
+    *,
+    project_id: str,
+    source_file_object_id: str,
+    run_seq: int,
+    error_message: str,
+    db: DbGateway,
+) -> dict[str, Any]:
+    """Persist a minimal failed preflight run row (no diagnostics, no artifact).
+
+    Used by the E3-T2 runtime when the pipeline fails before the T7 summary
+    is available, so a full ``persist_preflight_run`` call is not possible.
+    Returns the inserted row dict.
+    """
+    _require_str_id(project_id, field="project_id")
+    _require_str_id(source_file_object_id, field="source_file_object_id")
+    if not isinstance(run_seq, int) or isinstance(run_seq, bool) or run_seq < 1:
+        raise DxfPreflightPersistenceError(
+            "DXF_PERSISTENCE_INVALID_RUN_SEQ",
+            "run_seq must be a positive integer.",
+        )
+    now = datetime.now(timezone.utc).isoformat()
+    safe_message = str(error_message or "").strip()[:2000]
+    run_row = db.insert_preflight_run(
+        payload={
+            "project_id": project_id,
+            "source_file_object_id": source_file_object_id,
+            "run_seq": run_seq,
+            "run_status": "preflight_failed",
+            "acceptance_outcome": None,
+            "rules_profile_snapshot_jsonb": {},
+            "summary_jsonb": {"error": safe_message},
+            "source_hash_sha256": None,
+            "normalized_hash_sha256": None,
+            "started_at": now,
+            "finished_at": now,
+        }
+    )
+    return dict(run_row)

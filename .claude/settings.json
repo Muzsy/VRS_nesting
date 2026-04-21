@@ -47,7 +47,10 @@
       "Bash(bash scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t1_preflight_inspect_engine_v1.md)",
       "Bash(chmod +x scripts/verify.sh scripts/check.sh scripts/ensure_sparrow.sh scripts/*.sh scripts/*.py)",
       "Bash(./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e2_t3_gap_repair_v1.md)",
-      "Bash(./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md)"
+      "Bash(./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md)",
+      "Bash(PYTHONPATH=. python3 -m pytest -q tests/test_dxf_preflight_runtime.py)",
+      "Bash(PYTHONPATH=. python3 scripts/smoke_dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.py)",
+      "Bash(./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md)"
     ],
     "defaultMode": "bypassPermissions",
     "skipDangerousModePermissionPrompt": true
