@@ -199,7 +199,7 @@ def _next_revision_no(
     return latest_revision_no + 1
 
 
-def import_source_dxf_geometry_revision(
+def import_dxf_geometry_revision_from_storage(
     *,
     supabase: SupabaseClient,
     access_token: str,
@@ -211,6 +211,7 @@ def import_source_dxf_geometry_revision(
     created_by: str,
     signed_url_ttl_s: int,
 ) -> dict[str, Any]:
+    """Import geometry from any storage-backed DXF using the canonical pipeline."""
     blob = download_storage_object_blob(
         supabase=supabase,
         access_token=access_token,
@@ -288,6 +289,32 @@ def import_source_dxf_geometry_revision(
                 )
 
     return current_geometry_revision
+
+
+def import_source_dxf_geometry_revision(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    project_id: str,
+    source_file_object_id: str,
+    storage_bucket: str,
+    storage_path: str,
+    source_hash_sha256: str,
+    created_by: str,
+    signed_url_ttl_s: int,
+) -> dict[str, Any]:
+    """Backward-compatible wrapper for source_dxf imports."""
+    return import_dxf_geometry_revision_from_storage(
+        supabase=supabase,
+        access_token=access_token,
+        project_id=project_id,
+        source_file_object_id=source_file_object_id,
+        storage_bucket=storage_bucket,
+        storage_path=storage_path,
+        source_hash_sha256=source_hash_sha256,
+        created_by=created_by,
+        signed_url_ttl_s=signed_url_ttl_s,
+    )
 
 
 def import_source_dxf_geometry_revision_async(

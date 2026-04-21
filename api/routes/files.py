@@ -13,7 +13,6 @@ from api.deps import get_settings, get_supabase_client
 from api.http_errors import raise_supabase_http_error
 from api.rate_limit import enforce_user_rate_limit
 from api.request_models import StrictRequestModel
-from api.services.dxf_geometry_import import import_source_dxf_geometry_revision_async
 from api.services.dxf_preflight_runtime import run_preflight_for_upload
 from api.services.dxf_validation import validate_dxf_file_async
 from api.services.file_ingest_metadata import canonical_file_name_from_storage_path, load_file_ingest_metadata
@@ -251,18 +250,6 @@ def complete_upload(
         raise_supabase_http_error(operation="file metadata insert", exc=exc)
 
     if normalized_kind == "source_dxf" and ingest_metadata.file_name.lower().endswith(".dxf"):
-        background_tasks.add_task(
-            import_source_dxf_geometry_revision_async,
-            supabase=supabase,
-            access_token=user.access_token,
-            project_id=str(project_id),
-            source_file_object_id=str(req.file_id),
-            storage_bucket=storage_bucket,
-            storage_path=storage_path,
-            source_hash_sha256=source_hash_sha256,
-            created_by=user.id,
-            signed_url_ttl_s=settings.signed_url_ttl_s,
-        )
         # Legacy, file-level DXF readability check kept as a secondary signal.
         background_tasks.add_task(
             validate_dxf_file_async,

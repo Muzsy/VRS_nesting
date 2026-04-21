@@ -28,9 +28,11 @@ from __future__ import annotations
 
 import logging
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from api.services.dxf_geometry_import import import_dxf_geometry_revision_from_storage
 from api.services.dxf_preflight_acceptance_gate import evaluate_dxf_prefilter_acceptance_gate
 from api.services.dxf_preflight_diagnostics_renderer import render_dxf_preflight_diagnostics_summary
 from api.services.dxf_preflight_duplicate_dedupe import dedupe_dxf_duplicate_contours
@@ -50,6 +52,8 @@ from api.services.file_ingest_metadata import download_storage_object_blob
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
 logger = logging.getLogger("vrs_api.dxf_preflight_runtime")
+_ACCEPTED_FOR_IMPORT = "accepted_for_import"
+_NORMALIZED_DXF_ARTIFACT_KIND = "normalized_dxf"
 
 __all__ = [
     "DxfPreflightRuntimeError",
@@ -230,6 +234,16 @@ def run_preflight_for_upload(
             db_gw=db_gw,
             storage_gw=storage_gw,
         )
+        _trigger_geometry_import_after_gate(
+            supabase=supabase,
+            access_token=access_token,
+            project_id=project_id,
+            source_file_object_id=source_file_object_id,
+            source_hash_sha256=source_hash_sha256,
+            created_by=created_by,
+            signed_url_ttl_s=signed_url_ttl_s,
+            persisted_result=result,
+        )
         logger.info(
             "preflight_runtime_complete %s run_seq=%s outcome=%s",
             _log_ctx,
@@ -328,6 +342,100 @@ def _execute_pipeline(
             db=db_gw,
             storage=storage_gw,
         )
+
+
+def _trigger_geometry_import_after_gate(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    project_id: str,
+    source_file_object_id: str,
+    source_hash_sha256: str,
+    created_by: str,
+    signed_url_ttl_s: int,
+    persisted_result: Mapping[str, Any],
+) -> None:
+    """Trigger geometry import only when persisted acceptance outcome is pass."""
+    acceptance_outcome = str(persisted_result.get("acceptance_outcome", "")).strip()
+    if acceptance_outcome != _ACCEPTED_FOR_IMPORT:
+        logger.info(
+            "preflight_runtime_geometry_import_skipped "
+            "project_id=%s source_file_object_id=%s acceptance_outcome=%s",
+            project_id,
+            source_file_object_id,
+            acceptance_outcome or "<empty>",
+        )
+        return
+
+    normalized_ref = _find_normalized_dxf_artifact_ref(
+        persisted_result.get("artifact_refs")
+    )
+    if normalized_ref is None:
+        logger.warning(
+            "preflight_runtime_geometry_import_missing_normalized_artifact "
+            "project_id=%s source_file_object_id=%s acceptance_outcome=%s",
+            project_id,
+            source_file_object_id,
+            acceptance_outcome,
+        )
+        return
+
+    storage_bucket = str(normalized_ref.get("storage_bucket", "")).strip()
+    storage_path = str(normalized_ref.get("storage_path", "")).strip()
+    if not storage_bucket or not storage_path:
+        logger.warning(
+            "preflight_runtime_geometry_import_invalid_normalized_artifact "
+            "project_id=%s source_file_object_id=%s acceptance_outcome=%s",
+            project_id,
+            source_file_object_id,
+            acceptance_outcome,
+        )
+        return
+
+    try:
+        import_dxf_geometry_revision_from_storage(
+            supabase=supabase,
+            access_token=access_token,
+            project_id=project_id,
+            source_file_object_id=source_file_object_id,
+            storage_bucket=storage_bucket,
+            storage_path=storage_path,
+            source_hash_sha256=source_hash_sha256,
+            created_by=created_by,
+            signed_url_ttl_s=signed_url_ttl_s,
+        )
+    except Exception as exc:
+        logger.warning(
+            "preflight_runtime_geometry_import_failed "
+            "project_id=%s source_file_object_id=%s bucket=%s storage_path=%s error=%s",
+            project_id,
+            source_file_object_id,
+            storage_bucket,
+            storage_path,
+            str(exc).strip()[:500],
+        )
+        return
+
+    logger.info(
+        "preflight_runtime_geometry_import_complete "
+        "project_id=%s source_file_object_id=%s bucket=%s storage_path=%s",
+        project_id,
+        source_file_object_id,
+        storage_bucket,
+        storage_path,
+    )
+
+
+def _find_normalized_dxf_artifact_ref(artifact_refs: Any) -> dict[str, Any] | None:
+    if not isinstance(artifact_refs, list):
+        return None
+    for item in artifact_refs:
+        if not isinstance(item, Mapping):
+            continue
+        artifact_kind = str(item.get("artifact_kind", "")).strip()
+        if artifact_kind == _NORMALIZED_DXF_ARTIFACT_KIND:
+            return {str(k): v for k, v in item.items()}
+    return None
 
 
 def _try_persist_failed_run(

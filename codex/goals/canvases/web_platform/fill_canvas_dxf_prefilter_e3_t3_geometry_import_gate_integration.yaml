@@ -1,0 +1,100 @@
+version: 1
+metadata:
+  area: "web_platform"
+  task_slug: "dxf_prefilter_e3_t3_geometry_import_gate_integration"
+  title: "DXF Prefilter E3-T3 — Geometry import gate bekotes"
+  objective: >
+    Koss be a geometry import gate-et ugy, hogy source DXF finalize utan a geometry import
+    mar ne a route-bol, hanem csak a persisted preflight acceptance outcome utan, kizrolag
+    `accepted_for_import` eseten induljon el, a persisted `normalized_dxf` artifact storage truth-rol.
+  guards:
+    - "Valos repobol dolgozz; ne talalj ki nem letezo rules-profile domaint, explicit preflight route-ot vagy UI-t."
+    - "Csak olyan fajlt hozz letre vagy modosits, amely szerepel a YAML outputs listaban."
+    - "Ez geometry import gate integration task; ne nyiss E3-T4 replace/rerun, E3-T5 feature flag vagy frontend scope-ot."
+    - "A `complete_upload` response shape maradjon valtozatlan."
+    - "A geometry import ne a nyers source DXF-re induljon, hanem csak a persisted `normalized_dxf` artifact truth-ra."
+    - "A `validate_dxf_file_async` secondary signal maradjon bent a route-ban."
+    - "A meglevo geometry import pipeline-t ne duplikald; csak minimalis helper/gate boundary nyithato."
+    - "Current-code truth szerint az E3-T2 runtime mar persistence utan fut; a gate-et ehhez a runtime-hoz koss."
+    - "Ne vezess be uj migrationt vagy kulon DB lifecycle allapotot csak az `imported` bridge miatt."
+    - "A geometry import helper hibaja ne torje el a `complete_upload` HTTP valaszt; logger warning + swallowed failure eleg V1-ben."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans current-code forrasokat. Hozd letre a task
+      canvas/YAML/runner/checklist/report alapfajljait a repo mintai szerint.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e3_t3_geometry_import_gate_integration.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+
+  - name: "Geometry import gate integration a preflight runtime utan"
+    description: >
+      Modositsd az `api/services/dxf_preflight_runtime.py` runtime/orchestration reteget ugy,
+      hogy persistence utan ellenorizze a persisted acceptance outcome-ot es csak
+      `accepted_for_import` eseten triggereljen geometry importot. A gate a persisted
+      `normalized_dxf` artifact ref-bol dolgozzon; rejected vagy review-required outcome eseten
+      explicit skip/log legyen. Import-failure logger warning legyen, de ne nyisson retry/polling scope-ot.
+    outputs:
+      - "api/services/dxf_preflight_runtime.py"
+
+  - name: "Minimalis geometry import helper boundary igazitas"
+    description: >
+      Ha a mai `api/services/dxf_geometry_import.py` helper- vagy fuggvenyhatara tulzottan
+      source-DXF-specifikus, vegezz minimalis, current-scope kompatibilis refaktort ugy,
+      hogy a meglevo geometry import pipeline tetszoleges storage-backed DXF ref-bol is
+      meghivhato legyen. A validator es derivative logikat ne duplikald.
+    outputs:
+      - "api/services/dxf_geometry_import.py"
+
+  - name: "A route kozvetlen geometry import triggerenek eltavolitasa"
+    description: >
+      Modositsd az `api/routes/files.py` `complete_upload` flow-jat ugy, hogy source DXF finalize utan
+      mar ne regisztraljon kozvetlen geometry import background taskot. A route-ban maradjon bent a
+      legacy `validate_dxf_file_async(...)` es a `run_preflight_for_upload(...)`. A response shape ne valtozzon.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Task-specifikus unit teszt a gate szemantikajara"
+    description: >
+      Keszits deterministic unit tesztet, amely minimum bizonyitja:
+      - accepted outcome + normalized artifact ref -> geometry import helper egyszer hivodik,
+      - rejected/review_required -> nincs import,
+      - accepted, de missing artifact ref -> skip,
+      - geometry import helper exception -> swallowed/logged,
+      - route mar nem rak fel kozvetlen geometry import background taskot.
+    outputs:
+      - "tests/test_dxf_preflight_geometry_import_gate.py"
+
+  - name: "Task-specifikus smoke a gateelt trigger integraciora"
+    description: >
+      Keszits deterministic smoke scriptet, amely bizonyitja, hogy source DXF finalize eseten a route
+      mar csak legacy validation + preflight runtime taskot regisztral, es kulon scenario-kban
+      bizonyitja a runtime gate szemantikat (accepted/import, rejected/skip, review/skip, missing artifact/skip).
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e3_t3_geometry_import_gate_integration.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E3-T3 valtozasok alapjan.
+      A reportban kulon nevezd meg:
+      - miert kellett a geometry importot kivenni a route-bol,
+      - hogyan kapcsolodik a gate a persisted acceptance outcome-hoz,
+      - miert a `normalized_dxf` artifact a geometry import input,
+      - hogyan marad bent a legacy validation secondary signalkent,
+      - hogyan van kezelve az import-failure minimalis logger boundaryvel,
+      - es mi marad E3-T4 / E3-T5 / kesobbi API/UI scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.verify.log"
