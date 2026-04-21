@@ -68,6 +68,7 @@ class ProjectFileResponse(BaseModel):
     sha256: str | None = None
     uploaded_by: str | None = None
     created_at: str | None = None
+    latest_preflight_summary: dict[str, Any] | None = None
 
 
 class ProjectFileListResponse(BaseModel):
@@ -77,7 +78,11 @@ class ProjectFileListResponse(BaseModel):
     page_size: int
 
 
-def _as_file_response(row: dict[str, Any]) -> ProjectFileResponse:
+def _as_file_response(
+    row: dict[str, Any],
+    *,
+    latest_preflight_summary: dict[str, Any] | None = None,
+) -> ProjectFileResponse:
     uploaded_by = row.get("uploaded_by")
     return ProjectFileResponse(
         id=str(row.get("id", "")),
@@ -91,7 +96,50 @@ def _as_file_response(row: dict[str, Any]) -> ProjectFileResponse:
         sha256=row.get("sha256"),
         uploaded_by=str(uploaded_by) if uploaded_by is not None else None,
         created_at=row.get("created_at"),
+        latest_preflight_summary=latest_preflight_summary,
     )
+
+
+def _latest_preflight_summary_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    run_seq = row.get("run_seq")
+    run_seq_value = int(run_seq) if isinstance(run_seq, int) and not isinstance(run_seq, bool) else None
+    return {
+        "preflight_run_id": str(row.get("id", "")),
+        "run_seq": run_seq_value,
+        "run_status": str(row.get("run_status", "")),
+        "acceptance_outcome": row.get("acceptance_outcome"),
+        "finished_at": row.get("finished_at"),
+    }
+
+
+def _fetch_latest_preflight_summary_by_file_id(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    file_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not file_ids:
+        return {}
+
+    in_values = ",".join(file_ids)
+    params = {
+        "select": "id,source_file_object_id,run_seq,run_status,acceptance_outcome,finished_at",
+        "source_file_object_id": f"in.({in_values})",
+        "order": "source_file_object_id.asc,run_seq.desc,finished_at.desc",
+    }
+    rows = supabase.select_rows(
+        table="app.preflight_runs",
+        access_token=access_token,
+        params=params,
+    )
+
+    latest_by_file_id: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        source_file_object_id = str(row.get("source_file_object_id", "")).strip()
+        if not source_file_object_id or source_file_object_id in latest_by_file_id:
+            continue
+        latest_by_file_id[source_file_object_id] = _latest_preflight_summary_from_row(row)
+    return latest_by_file_id
 
 
 def _sanitize_filename(raw_filename: str) -> str:
@@ -280,6 +328,7 @@ def list_project_files(
     project_id: UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    include_preflight_summary: bool = Query(default=False),
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectFileListResponse:
@@ -298,7 +347,25 @@ def list_project_files(
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="list files", exc=exc)
 
-    items = [_as_file_response(row) for row in rows]
+    latest_summary_by_file_id: dict[str, dict[str, Any]] = {}
+    if include_preflight_summary:
+        file_ids = [str(row.get("id", "")).strip() for row in rows if str(row.get("id", "")).strip()]
+        try:
+            latest_summary_by_file_id = _fetch_latest_preflight_summary_by_file_id(
+                supabase=supabase,
+                access_token=user.access_token,
+                file_ids=file_ids,
+            )
+        except SupabaseHTTPError as exc:
+            raise_supabase_http_error(operation="list file preflight summary", exc=exc)
+
+    items = [
+        _as_file_response(
+            row,
+            latest_preflight_summary=latest_summary_by_file_id.get(str(row.get("id", "")).strip()),
+        )
+        for row in rows
+    ]
     return ProjectFileListResponse(items=items, total=len(items), page=page, page_size=page_size)
 
 

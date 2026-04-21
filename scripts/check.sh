@@ -627,7 +627,7 @@ if isinstance(payload, dict):
     payload["time_limit_sec"] = 1
 dst.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 PY
-  RUNS=10 INPUT_JSON="$NEST_DET_INPUT" ./scripts/smoke_nesting_engine_determinism.sh
+  NESTING_ENGINE_STOP_MODE=work_budget RUNS=10 INPUT_JSON="$NEST_DET_INPUT" ./scripts/smoke_nesting_engine_determinism.sh
 
   echo "[NEST] Float-boundary determinism smoke"
   RUNS=10 ./scripts/smoke_nesting_engine_float_policy_determinism.sh

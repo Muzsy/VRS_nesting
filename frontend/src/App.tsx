@@ -3,6 +3,7 @@ import { AuthGuard } from "./components/AuthGuard";
 import { Layout } from "./components/Layout";
 import { AuthPage } from "./pages/AuthPage";
 import { ExportPage } from "./pages/ExportPage";
+import { DxfIntakePage } from "./pages/DxfIntakePage";
 import { NewRunPage } from "./pages/NewRunPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+          <Route path="/projects/:projectId/dxf-intake" element={<DxfIntakePage />} />
           <Route path="/projects/:projectId/new-run" element={<NewRunPage />} />
           <Route path="/projects/:projectId/runs/:runId" element={<RunDetailPage />} />
           <Route path="/projects/:projectId/runs/:runId/viewer" element={<ViewerPage />} />

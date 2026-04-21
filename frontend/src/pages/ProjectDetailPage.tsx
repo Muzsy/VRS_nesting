@@ -207,6 +207,13 @@ export function ProjectDetailPage() {
           <button className="rounded-md border border-mist px-3 py-2 text-sm text-slate hover:bg-slate-100" onClick={() => void loadPageData()} type="button">
             Refresh
           </button>
+          <button
+            className="rounded-md border border-mist px-3 py-2 text-sm text-slate hover:bg-slate-100"
+            onClick={() => navigate(`/projects/${projectId}/dxf-intake`)}
+            type="button"
+          >
+            DXF intake / preparation
+          </button>
           <button className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white" onClick={() => navigate(`/projects/${projectId}/new-run`)} type="button">
             New run wizard
           </button>

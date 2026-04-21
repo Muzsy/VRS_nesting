@@ -28,11 +28,20 @@ export interface ProjectFile {
   validation_status?: string | null;
   validation_error?: string | null;
   uploaded_at?: string | null;
+  latest_preflight_summary?: ProjectFileLatestPreflightSummary | null;
 }
 
 export interface ProjectFileListResponse {
   items: ProjectFile[];
   total: number;
+}
+
+export interface ProjectFileLatestPreflightSummary {
+  preflight_run_id: string;
+  run_seq?: number | null;
+  run_status?: string | null;
+  acceptance_outcome?: string | null;
+  finished_at?: string | null;
 }
 
 export interface RunMetrics {

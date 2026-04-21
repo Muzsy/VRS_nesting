@@ -1,0 +1,123 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e4_t1_dxf_intake_project_preparation_page"
+title: "DXF Prefilter E4-T1 — Uj DXF Intake / Project Preparation oldal"
+objective: >
+  Hozz letre kulon DXF Intake / Project Preparation oldalt a web frontendben,
+  repo-grounded minimal backend read-modellel, hogy a source DXF upload +
+  auto-preflight + file-szintu legfrissebb preflight statusz egy helyen
+  megjelenhessen. A task ne nyisson diagnostics/review/settings teljes scope-ot,
+  es ne foltozza tovabb a legacy NewRunPage-t.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md"
+  - "frontend/src/App.tsx"
+  - "frontend/src/pages/ProjectDetailPage.tsx"
+  - "frontend/src/pages/NewRunPage.tsx"
+  - "frontend/src/lib/api.ts"
+  - "frontend/src/lib/types.ts"
+  - "api/routes/files.py"
+  - "api/services/dxf_preflight_runtime.py"
+  - "canvases/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+  - "codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ez UI entrypoint task; ne nyiss diagnostics drawer, review modal, replace/rerun, feature flag vagy accepted->parts flow scope-ot."
+  - "A `NewRunPage.tsx` legacy wizardot ne bovitsd prefilter funkciokkal."
+  - "Az intake oldalon canonical `source_dxf` nyelvezetet hasznalj; ne erositsd vissza a `stock_dxf` / `part_dxf` belso truth-ot."
+  - "Current-code truth szerint a preflight upload utan automatikusan indul; ne talalj ki manualis `Start preflight` workflow-t."
+  - "Current-code truth szerint nincs implementalt rules-profile domain; teljes settings szerkesztot ne epits."
+  - "Ne implementalj teljes preflight-runs API csaladot; csak minimal page-enabling summary projection engedett."
+  - "A file list endpoint minimal summary bovitese legyen optional, ne torje el a meglevo file-list fogyasztokat."
+  - "A `ProjectDetailPage` maradjon mukodokepes; csak explicit intake CTA-t kapjon, ne teljes oldalszetszedest."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans frontend/backend current-code
+      forrasokat. Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+
+  - name: "Minimal backend file-list preflight summary projection"
+    description: >
+      Bovitd a `GET /projects/{project_id}/files` route-ot optional, page-enabling
+      summary projectionnel. Javasolt query param: `include_preflight_summary=true`.
+      A response file-onkent legfeljebb a legfrissebb preflight summaryt merge-elje:
+      `preflight_run_id`, `run_seq`, `run_status`, `acceptance_outcome`, `finished_at`.
+      Ez nem lehet teljes preflight-runs API.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Frontend API/types boundary bovitese"
+    description: >
+      Bovitd a frontend file modelleket es API helper-eket ugy, hogy optional latest
+      preflight summary shape-et tudjanak kezelni, es a `listProjectFiles(...)` tudja
+      kapcsolni az `include_preflight_summary=true` queryt az intake oldalhoz.
+    outputs:
+      - "frontend/src/lib/api.ts"
+      - "frontend/src/lib/types.ts"
+
+  - name: "Uj DXF Intake / Project Preparation oldal es route"
+    description: >
+      Hozz letre uj frontend oldalt es route-ot a dedikalt intake/preparation flow-hoz.
+      Az oldal canonical `source_dxf` upload nyelvezetet hasznaljon, explicit mondja ki,
+      hogy a preflight upload utan automatikusan indul, es jelenitsen meg minimal file-
+      szintu preflight statuszlistat. A settings/detailed diagnostics/review scope most
+      placeholder vagy info blokk szintjen maradjon.
+    outputs:
+      - "frontend/src/App.tsx"
+      - "frontend/src/pages/DxfIntakePage.tsx"
+
+  - name: "ProjectDetailPage explicit intake CTA"
+    description: >
+      A ProjectDetail oldalon jelenjen meg egyertelmu belepesi pont az uj intake oldalra.
+      A page maradjon kompatibilis a meglevo flow-val; most ne tavolitsd el eroszakosan a
+      legacy upload blokkot vagy a run wizard gombot.
+    outputs:
+      - "frontend/src/pages/ProjectDetailPage.tsx"
+
+  - name: "Task-specifikus backend unit teszt"
+    description: >
+      Keszits deterministic pytest coverage-et a file-list summary projectionre.
+      Minimum: include_preflight_summary false/true, missing summary, tobb run kozuli
+      latest valasztas, es optional field compatibility.
+    outputs:
+      - "tests/test_project_files_preflight_summary.py"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely minimum bizonyitja:
+      - az optional file-list preflight summary projection szerzodeset,
+      - az uj intake route jelenletet,
+      - es a ProjectDetail -> intake CTA jelenletet.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze meg,
+      hogy miert kellett kulon intake oldal, miert nem a NewRunPage tovabbi foltozasa a
+      helyes irany, hogyan jelenik meg az auto-preflight truth, es mi marad E4-T2/T3/T4
+      kesobbi scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.verify.log"

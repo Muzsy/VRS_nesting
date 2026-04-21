@@ -3,6 +3,7 @@ import type {
   BundleResponse,
   Project,
   ProjectFile,
+  ProjectFileLatestPreflightSummary,
   ProjectFileListResponse,
   ProjectListResponse,
   Run,
@@ -54,6 +55,23 @@ function normalizeProjectFile(raw: Record<string, unknown>): ProjectFile {
     validation_status: (raw.validation_status as string | null | undefined) ?? null,
     validation_error: (raw.validation_error as string | null | undefined) ?? null,
     uploaded_at: (raw.uploaded_at as string | null | undefined) ?? (raw.created_at as string | null | undefined) ?? null,
+    latest_preflight_summary: normalizeLatestPreflightSummary(raw.latest_preflight_summary),
+  };
+}
+
+function normalizeLatestPreflightSummary(raw: unknown): ProjectFileLatestPreflightSummary | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const obj = raw as Record<string, unknown>;
+  const runSeqRaw = obj.run_seq;
+  const runSeq = typeof runSeqRaw === "number" && Number.isFinite(runSeqRaw) ? runSeqRaw : null;
+  return {
+    preflight_run_id: String(obj.preflight_run_id ?? ""),
+    run_seq: runSeq,
+    run_status: (obj.run_status as string | null | undefined) ?? null,
+    acceptance_outcome: (obj.acceptance_outcome as string | null | undefined) ?? null,
+    finished_at: (obj.finished_at as string | null | undefined) ?? null,
   };
 }
 
@@ -147,8 +165,16 @@ export const api = {
     );
   },
 
-  listProjectFiles(token: string, projectId: string): Promise<ProjectFileListResponse> {
-    return request<{ items: Array<Record<string, unknown>>; total: number; page?: number; page_size?: number }>(`/projects/${projectId}/files`, token, {
+  listProjectFiles(
+    token: string,
+    projectId: string,
+    options?: { include_preflight_summary?: boolean }
+  ): Promise<ProjectFileListResponse> {
+    const includePreflightSummary = options?.include_preflight_summary === true;
+    const path = includePreflightSummary
+      ? `/projects/${projectId}/files?include_preflight_summary=true`
+      : `/projects/${projectId}/files`;
+    return request<{ items: Array<Record<string, unknown>>; total: number; page?: number; page_size?: number }>(path, token, {
       method: "GET",
     }).then((response) => ({
       ...response,
