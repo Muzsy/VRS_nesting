@@ -117,6 +117,9 @@ def test_list_project_files_with_preflight_summary_allows_missing_summary() -> N
 
     assert response.total == 2
     assert [item.latest_preflight_summary for item in response.items] == [None, None]
+    preflight_calls = [params for table, params in supabase.calls if table == "app.preflight_runs"]
+    assert preflight_calls
+    assert "summary_jsonb" in preflight_calls[0]["select"]
 
 
 def test_list_project_files_with_preflight_summary_picks_latest_run_per_file() -> None:
@@ -132,6 +135,22 @@ def test_list_project_files_with_preflight_summary_picks_latest_run_per_file() -
             "run_status": "preflight_complete",
             "acceptance_outcome": "preflight_rejected",
             "finished_at": "2026-04-21T12:00:00+00:00",
+            "summary_jsonb": {
+                "issue_summary": {
+                    "counts_by_severity": {
+                        "blocking": 2,
+                        "review_required": 0,
+                        "warning": 1,
+                        "info": 0,
+                    }
+                },
+                "repair_summary": {
+                    "counts": {
+                        "applied_gap_repair_count": 1,
+                        "applied_duplicate_dedupe_count": 0,
+                    }
+                },
+            },
         },
         {
             "id": "run-a-2",
@@ -140,6 +159,22 @@ def test_list_project_files_with_preflight_summary_picks_latest_run_per_file() -
             "run_status": "preflight_complete",
             "acceptance_outcome": "accepted_for_import",
             "finished_at": "2026-04-21T12:10:00+00:00",
+            "summary_jsonb": {
+                "issue_summary": {
+                    "counts_by_severity": {
+                        "blocking": 0,
+                        "review_required": 0,
+                        "warning": 1,
+                        "info": 2,
+                    }
+                },
+                "repair_summary": {
+                    "counts": {
+                        "applied_gap_repair_count": 2,
+                        "applied_duplicate_dedupe_count": 1,
+                    }
+                },
+            },
         },
         {
             "id": "run-b-1",
@@ -148,6 +183,22 @@ def test_list_project_files_with_preflight_summary_picks_latest_run_per_file() -
             "run_status": "preflight_complete",
             "acceptance_outcome": "preflight_review_required",
             "finished_at": "2026-04-21T12:20:00+00:00",
+            "summary_jsonb": {
+                "issue_summary": {
+                    "counts_by_severity": {
+                        "blocking": 0,
+                        "review_required": 3,
+                        "warning": 0,
+                        "info": 0,
+                    }
+                },
+                "repair_summary": {
+                    "counts": {
+                        "applied_gap_repair_count": 0,
+                        "applied_duplicate_dedupe_count": 2,
+                    }
+                },
+            },
         },
     ]
     supabase = FakeSupabase(
@@ -174,12 +225,28 @@ def test_list_project_files_with_preflight_summary_picks_latest_run_per_file() -
     assert summary_a["preflight_run_id"] == "run-a-2"
     assert summary_a["run_seq"] == 2
     assert summary_a["acceptance_outcome"] == "accepted_for_import"
+    assert summary_a["blocking_issue_count"] == 0
+    assert summary_a["review_required_issue_count"] == 0
+    assert summary_a["warning_issue_count"] == 1
+    assert summary_a["total_issue_count"] == 3
+    assert summary_a["applied_gap_repair_count"] == 2
+    assert summary_a["applied_duplicate_dedupe_count"] == 1
+    assert summary_a["total_repair_count"] == 3
+    assert summary_a["recommended_action"] == "ready_for_next_step"
 
     summary_b = by_file_id[file_b].latest_preflight_summary
     assert summary_b is not None
     assert summary_b["preflight_run_id"] == "run-b-1"
     assert summary_b["run_seq"] == 1
     assert summary_b["acceptance_outcome"] == "preflight_review_required"
+    assert summary_b["blocking_issue_count"] == 0
+    assert summary_b["review_required_issue_count"] == 3
+    assert summary_b["warning_issue_count"] == 0
+    assert summary_b["total_issue_count"] == 3
+    assert summary_b["applied_gap_repair_count"] == 0
+    assert summary_b["applied_duplicate_dedupe_count"] == 2
+    assert summary_b["total_repair_count"] == 2
+    assert summary_b["recommended_action"] == "review_required_wait_for_diagnostics"
 
 
 def test_list_project_files_preflight_summary_remains_optional_when_fields_missing() -> None:
@@ -195,6 +262,7 @@ def test_list_project_files_preflight_summary_remains_optional_when_fields_missi
                 "run_status": "preflight_complete",
                 "acceptance_outcome": None,
                 "finished_at": None,
+                "summary_jsonb": {},
             }
         ],
     )
@@ -214,3 +282,46 @@ def test_list_project_files_preflight_summary_remains_optional_when_fields_missi
     assert summary["run_seq"] is None
     assert summary["acceptance_outcome"] is None
     assert summary["finished_at"] is None
+    assert summary["blocking_issue_count"] == 0
+    assert summary["review_required_issue_count"] == 0
+    assert summary["warning_issue_count"] == 0
+    assert summary["total_issue_count"] == 0
+    assert summary["applied_gap_repair_count"] == 0
+    assert summary["applied_duplicate_dedupe_count"] == 0
+    assert summary["total_repair_count"] == 0
+    assert summary["recommended_action"] == "review_required_wait_for_diagnostics"
+
+
+def test_list_project_files_with_failed_run_maps_rejected_recommended_action() -> None:
+    project_id = str(uuid4())
+    file_id = str(uuid4())
+    supabase = FakeSupabase(
+        files_rows=[_file_row(file_id, project_id=project_id)],
+        preflight_rows=[
+            {
+                "id": "run-failed",
+                "source_file_object_id": file_id,
+                "run_seq": 4,
+                "run_status": "preflight_failed",
+                "acceptance_outcome": None,
+                "finished_at": "2026-04-21T13:00:00+00:00",
+                "summary_jsonb": {
+                    "issue_summary": {"counts_by_severity": {"blocking": 1, "review_required": 0, "warning": 0, "info": 0}},
+                    "repair_summary": {"counts": {"applied_gap_repair_count": 0, "applied_duplicate_dedupe_count": 0}},
+                },
+            }
+        ],
+    )
+
+    response = list_project_files(
+        project_id=UUID(project_id),
+        page=1,
+        page_size=50,
+        include_preflight_summary=True,
+        user=_auth_user(),
+        supabase=supabase,
+    )
+
+    summary = response.items[0].latest_preflight_summary
+    assert summary is not None
+    assert summary["recommended_action"] == "rejected_fix_and_reupload"

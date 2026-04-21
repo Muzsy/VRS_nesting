@@ -67,12 +67,30 @@ function normalizeLatestPreflightSummary(raw: unknown): ProjectFileLatestPreflig
   const obj = raw as Record<string, unknown>;
   const runSeqRaw = obj.run_seq;
   const runSeq = typeof runSeqRaw === "number" && Number.isFinite(runSeqRaw) ? runSeqRaw : null;
+  const normalizeNonNegativeInt = (value: unknown): number => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return 0;
+    }
+    if (value < 0) {
+      return 0;
+    }
+    return Math.trunc(value);
+  };
+
   return {
     preflight_run_id: String(obj.preflight_run_id ?? ""),
     run_seq: runSeq,
     run_status: (obj.run_status as string | null | undefined) ?? null,
     acceptance_outcome: (obj.acceptance_outcome as string | null | undefined) ?? null,
     finished_at: (obj.finished_at as string | null | undefined) ?? null,
+    blocking_issue_count: normalizeNonNegativeInt(obj.blocking_issue_count),
+    review_required_issue_count: normalizeNonNegativeInt(obj.review_required_issue_count),
+    warning_issue_count: normalizeNonNegativeInt(obj.warning_issue_count),
+    total_issue_count: normalizeNonNegativeInt(obj.total_issue_count),
+    applied_gap_repair_count: normalizeNonNegativeInt(obj.applied_gap_repair_count),
+    applied_duplicate_dedupe_count: normalizeNonNegativeInt(obj.applied_duplicate_dedupe_count),
+    total_repair_count: normalizeNonNegativeInt(obj.total_repair_count),
+    recommended_action: (obj.recommended_action as string | null | undefined) ?? null,
   };
 }
 

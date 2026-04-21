@@ -103,15 +103,83 @@ def _as_file_response(
 
 
 def _latest_preflight_summary_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    summary_jsonb = row.get("summary_jsonb")
+    summary_root = summary_jsonb if isinstance(summary_jsonb, dict) else {}
+    issue_summary = summary_root.get("issue_summary")
+    issue_summary_dict = issue_summary if isinstance(issue_summary, dict) else {}
+    counts_by_severity = issue_summary_dict.get("counts_by_severity")
+    severity_counts = counts_by_severity if isinstance(counts_by_severity, dict) else {}
+
+    blocking_issue_count = _as_non_negative_int(severity_counts.get("blocking"))
+    review_required_issue_count = _as_non_negative_int(severity_counts.get("review_required"))
+    warning_issue_count = _as_non_negative_int(severity_counts.get("warning"))
+    info_issue_count = _as_non_negative_int(severity_counts.get("info"))
+
+    repair_summary = summary_root.get("repair_summary")
+    repair_summary_dict = repair_summary if isinstance(repair_summary, dict) else {}
+    repair_counts_raw = repair_summary_dict.get("counts")
+    repair_counts = repair_counts_raw if isinstance(repair_counts_raw, dict) else {}
+    applied_gap_repair_count = _as_non_negative_int(repair_counts.get("applied_gap_repair_count"))
+    applied_duplicate_dedupe_count = _as_non_negative_int(repair_counts.get("applied_duplicate_dedupe_count"))
+
     run_seq = row.get("run_seq")
     run_seq_value = int(run_seq) if isinstance(run_seq, int) and not isinstance(run_seq, bool) else None
+    run_status = str(row.get("run_status", "")).strip()
+    acceptance_outcome = row.get("acceptance_outcome")
     return {
         "preflight_run_id": str(row.get("id", "")),
         "run_seq": run_seq_value,
-        "run_status": str(row.get("run_status", "")),
-        "acceptance_outcome": row.get("acceptance_outcome"),
+        "run_status": run_status,
+        "acceptance_outcome": acceptance_outcome,
         "finished_at": row.get("finished_at"),
+        "blocking_issue_count": blocking_issue_count,
+        "review_required_issue_count": review_required_issue_count,
+        "warning_issue_count": warning_issue_count,
+        "total_issue_count": blocking_issue_count + review_required_issue_count + warning_issue_count + info_issue_count,
+        "applied_gap_repair_count": applied_gap_repair_count,
+        "applied_duplicate_dedupe_count": applied_duplicate_dedupe_count,
+        "total_repair_count": applied_gap_repair_count + applied_duplicate_dedupe_count,
+        "recommended_action": _derive_recommended_action(
+            run_status=run_status,
+            acceptance_outcome=acceptance_outcome,
+        ),
     }
+
+
+def _as_non_negative_int(raw: Any) -> int:
+    if isinstance(raw, bool):
+        return 0
+    if isinstance(raw, int):
+        return raw if raw >= 0 else 0
+    if isinstance(raw, float) and raw.is_integer() and raw >= 0:
+        return int(raw)
+    return 0
+
+
+def _derive_recommended_action(*, run_status: str, acceptance_outcome: Any) -> str:
+    outcome = str(acceptance_outcome or "").strip().lower()
+    if outcome == "accepted_for_import":
+        return "ready_for_next_step"
+    if outcome == "preflight_review_required":
+        return "review_required_wait_for_diagnostics"
+    if outcome == "preflight_rejected":
+        return "rejected_fix_and_reupload"
+
+    status_value = run_status.strip().lower()
+    if status_value == "preflight_failed":
+        return "rejected_fix_and_reupload"
+    if status_value in {
+        "preflight_queued",
+        "preflight_running",
+        "preflight_in_progress",
+        "queued",
+        "running",
+        "in_progress",
+    }:
+        return "preflight_in_progress"
+    if status_value == "preflight_complete":
+        return "review_required_wait_for_diagnostics"
+    return "preflight_not_started"
 
 
 def _fetch_latest_preflight_summary_by_file_id(
@@ -125,7 +193,7 @@ def _fetch_latest_preflight_summary_by_file_id(
 
     in_values = ",".join(file_ids)
     params = {
-        "select": "id,source_file_object_id,run_seq,run_status,acceptance_outcome,finished_at",
+        "select": "id,source_file_object_id,run_seq,run_status,acceptance_outcome,finished_at,summary_jsonb",
         "source_file_object_id": f"in.({in_values})",
         "order": "source_file_object_id.asc,run_seq.desc,finished_at.desc",
     }

@@ -111,52 +111,130 @@ async function uploadFileToSignedUrl(uploadUrl: string, file: File): Promise<voi
   }
 }
 
-function formatPreflightStatus(file: ProjectFile): { label: string; className: string } {
+function formatRunStatusBadge(file: ProjectFile): { label: string; className: string } {
   const summary = file.latest_preflight_summary;
   if (!summary) {
     return {
-      label: "uploaded / no preflight yet",
+      label: "not started",
       className: "bg-slate-100 text-slate-700",
     };
   }
 
-  if (summary.acceptance_outcome === "accepted_for_import") {
+  const runStatus = String(summary.run_status ?? "").trim().toLowerCase();
+  if (runStatus === "preflight_complete") {
     return {
-      label: "accepted_for_import",
+      label: "preflight complete",
       className: "bg-green-100 text-green-800",
     };
   }
-  if (summary.acceptance_outcome === "preflight_rejected") {
+  if (runStatus === "preflight_failed") {
     return {
-      label: "preflight_rejected",
+      label: "preflight failed",
       className: "bg-red-100 text-red-800",
     };
   }
-  if (summary.acceptance_outcome === "preflight_review_required") {
+  if (runStatus === "preflight_running" || runStatus === "running" || runStatus === "preflight_in_progress") {
     return {
-      label: "preflight_review_required",
-      className: "bg-amber-100 text-amber-800",
-    };
-  }
-
-  if (summary.run_status === "preflight_failed") {
-    return {
-      label: "preflight_failed",
-      className: "bg-red-100 text-red-800",
-    };
-  }
-
-  if (summary.run_status) {
-    return {
-      label: summary.run_status,
+      label: "running",
       className: "bg-sky-100 text-sky-800",
     };
   }
+  if (runStatus === "preflight_queued" || runStatus === "queued") {
+    return {
+      label: "queued",
+      className: "bg-amber-100 text-amber-800",
+    };
+  }
+  if (runStatus) {
+    return {
+      label: runStatus.split("_").join(" "),
+      className: "bg-sky-100 text-sky-800",
+    };
+  }
+  return { label: "unknown", className: "bg-slate-100 text-slate-700" };
+}
 
-  return {
-    label: "preflight status unknown",
-    className: "bg-slate-100 text-slate-700",
-  };
+function formatAcceptanceOutcomeBadge(file: ProjectFile): { label: string; className: string } {
+  const summary = file.latest_preflight_summary;
+  if (!summary) {
+    return { label: "not available", className: "bg-slate-100 text-slate-700" };
+  }
+  if (summary.acceptance_outcome === "accepted_for_import") {
+    return { label: "accepted", className: "bg-green-100 text-green-800" };
+  }
+  if (summary.acceptance_outcome === "preflight_review_required") {
+    return { label: "review required", className: "bg-amber-100 text-amber-800" };
+  }
+  if (summary.acceptance_outcome === "preflight_rejected") {
+    return { label: "rejected", className: "bg-red-100 text-red-800" };
+  }
+  if (summary.run_status && summary.run_status !== "preflight_complete") {
+    return { label: "pending", className: "bg-sky-100 text-sky-800" };
+  }
+  return { label: "not available", className: "bg-slate-100 text-slate-700" };
+}
+
+function formatIssueCountBadge(file: ProjectFile): { label: string; className: string } {
+  const summary = file.latest_preflight_summary;
+  if (!summary) {
+    return { label: "no data", className: "bg-slate-100 text-slate-700" };
+  }
+  const total = summary.total_issue_count;
+  if (total <= 0) {
+    return { label: "0 issues", className: "bg-green-100 text-green-800" };
+  }
+  if (summary.blocking_issue_count > 0) {
+    return { label: `${total} issues`, className: "bg-red-100 text-red-800" };
+  }
+  if (summary.review_required_issue_count > 0) {
+    return { label: `${total} issues`, className: "bg-amber-100 text-amber-800" };
+  }
+  return { label: `${total} issues`, className: "bg-sky-100 text-sky-800" };
+}
+
+function formatRepairCountBadge(file: ProjectFile): { label: string; className: string } {
+  const summary = file.latest_preflight_summary;
+  if (!summary) {
+    return { label: "no data", className: "bg-slate-100 text-slate-700" };
+  }
+  if (summary.total_repair_count <= 0) {
+    return { label: "0 repairs", className: "bg-slate-100 text-slate-700" };
+  }
+  return { label: `${summary.total_repair_count} repairs`, className: "bg-indigo-100 text-indigo-800" };
+}
+
+function formatRecommendedActionLabel(file: ProjectFile): string {
+  const summary = file.latest_preflight_summary;
+  if (!summary) {
+    return "Upload complete; waiting for preflight";
+  }
+  switch (summary.recommended_action) {
+    case "ready_for_next_step":
+      return "Ready for next step";
+    case "review_required_wait_for_diagnostics":
+      return "Wait for diagnostics";
+    case "rejected_fix_and_reupload":
+      return "Fix source DXF and re-upload";
+    case "preflight_in_progress":
+      return "Preflight still running";
+    case "preflight_not_started":
+      return "Upload complete; waiting for preflight";
+    default:
+      break;
+  }
+  if (summary.acceptance_outcome === "accepted_for_import") {
+    return "Ready for next step";
+  }
+  if (summary.acceptance_outcome === "preflight_review_required") {
+    return "Wait for diagnostics";
+  }
+  if (summary.acceptance_outcome === "preflight_rejected") {
+    return "Fix source DXF and re-upload";
+  }
+  if (summary.run_status === "preflight_running" || summary.run_status === "running" || summary.run_status === "queued") {
+    return "Preflight still running";
+  }
+  return "Upload complete; waiting for preflight";
 }
 
 export function DxfIntakePage() {
@@ -504,7 +582,7 @@ export function DxfIntakePage() {
 
           <article className="space-y-4 rounded-xl border border-mist bg-white p-5">
             <header className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Latest file preflight status</h2>
+              <h2 className="text-lg font-semibold">Latest preflight runs</h2>
               <span className="text-sm text-slate">{files.length} files</span>
             </header>
 
@@ -516,26 +594,54 @@ export function DxfIntakePage() {
 
             {files.length > 0 && (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] border-collapse text-sm">
+                <table className="w-full min-w-[960px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-mist text-left text-slate">
                       <th className="py-2">Filename</th>
-                      <th className="py-2">Type</th>
-                      <th className="py-2">Latest preflight</th>
+                      <th className="py-2">Run status</th>
+                      <th className="py-2">Issues</th>
+                      <th className="py-2">Repairs</th>
+                      <th className="py-2">Acceptance</th>
+                      <th className="py-2">Recommended action</th>
                       <th className="py-2">Finished</th>
                     </tr>
                   </thead>
                   <tbody>
                     {files.map((file) => {
-                      const preflightStatus = formatPreflightStatus(file);
+                      const summary = file.latest_preflight_summary;
+                      const runStatusBadge = formatRunStatusBadge(file);
+                      const issueBadge = formatIssueCountBadge(file);
+                      const repairBadge = formatRepairCountBadge(file);
+                      const acceptanceBadge = formatAcceptanceOutcomeBadge(file);
+                      const recommendedAction = formatRecommendedActionLabel(file);
                       return (
                         <tr className="border-b border-mist/70" key={file.id}>
                           <td className="py-3">{file.original_filename}</td>
-                          <td className="py-3">{file.file_type}</td>
                           <td className="py-3">
-                            <span className={`rounded px-2 py-1 text-xs font-medium ${preflightStatus.className}`}>
-                              {preflightStatus.label}
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${runStatusBadge.className}`}>
+                              {runStatusBadge.label}
                             </span>
+                            <p className="mt-1 text-xs text-slate">{summary?.run_seq ? `Run #${summary.run_seq}` : "No run yet"}</p>
+                          </td>
+                          <td className="py-3">
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${issueBadge.className}`}>{issueBadge.label}</span>
+                            <p className="mt-1 text-xs text-slate">
+                              B:{summary?.blocking_issue_count ?? 0} R:{summary?.review_required_issue_count ?? 0} W:{summary?.warning_issue_count ?? 0}
+                            </p>
+                          </td>
+                          <td className="py-3">
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${repairBadge.className}`}>{repairBadge.label}</span>
+                            <p className="mt-1 text-xs text-slate">
+                              gap:{summary?.applied_gap_repair_count ?? 0} dedupe:{summary?.applied_duplicate_dedupe_count ?? 0}
+                            </p>
+                          </td>
+                          <td className="py-3">
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${acceptanceBadge.className}`}>
+                              {acceptanceBadge.label}
+                            </span>
+                          </td>
+                          <td className="py-3 text-sm text-slate">
+                            {recommendedAction}
                           </td>
                           <td className="py-3">{formatDate(file.latest_preflight_summary?.finished_at ?? null)}</td>
                         </tr>

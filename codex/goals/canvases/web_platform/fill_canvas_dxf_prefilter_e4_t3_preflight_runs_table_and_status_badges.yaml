@@ -1,0 +1,110 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges"
+title: "DXF Prefilter E4-T3 — Preflight runs table es status badges"
+objective: >
+  Gazdagitsd a file list endpoint optional latest-preflight summary projectionjat a
+  T3 tablazathoz szukseges issue/repair/action mezokkel, es alakitd at a DxfIntakePage
+  jobb oldali kartyajat olyan latest preflight runs table-le, ahol kulon runtime-status,
+  acceptance, issue es repair badge-ek latszanak. A task ne nyisson uj historical
+  preflight-runs endpointot, diagnostics drawer/modalt vagy row-level mutating actionokat.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/lib/api.ts"
+  - "api/routes/files.py"
+  - "api/services/dxf_preflight_persistence.py"
+  - "api/services/dxf_preflight_diagnostics_renderer.py"
+  - "tests/test_project_files_preflight_summary.py"
+  - "canvases/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne hozz letre uj GET /projects/{project_id}/preflight-runs historical endpointot."
+  - "Ne nyiss diagnostics drawer/modalt, review modal scope-ot, replace-rerun flow-t vagy accepted->parts flow-t."
+  - "A T3 actions oszlop current-code truth szerint csak recommended action / next step label lehet; ne talalj ki uj row-level buttonokat vagy mutating actionokat."
+  - "A summary_jsonb parse-olas backend oldalon tortenjen; a frontend lapos, optional-safe latest_preflight_summary shape-et fogyasszon."
+  - "Ne bovitsd a NewRunPage.tsx legacy wizardot."
+  - "Az include_preflight_summary=false file list viselkedes ne torjon el."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans frontend/backend current-code
+      forrasokat. Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+
+  - name: "Backend latest-preflight summary projection gazdagitasa"
+    description: >
+      Bovitsd a file list endpoint optional latest_preflight_summary projectionjat ugy,
+      hogy a preflight_runs.summary_jsonb alapjan issue/repair counts es stable
+      recommended_action mezok is bekeruljenek a summary shape-be. A latest-run selection
+      logika maradjon valtozatlanul file-onkenti legfrissebb runra epitve.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Frontend type/API boundary bovitese"
+    description: >
+      Frissitsd a frontend tipusokat es API normalizaciot ugy, hogy a bovitett
+      latest_preflight_summary mezok stabilan es optional-safe modon elerhetok legyenek.
+    outputs:
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/lib/api.ts"
+
+  - name: "DxfIntakePage latest runs table es status badges"
+    description: >
+      Alakitsd at a jobb oldali latest file preflight status kartyat T3-kompatibilis
+      latest preflight runs table-le. Vezess be kulon runtime-status, acceptance,
+      issue es repair badge helper-eket, valamint recommended action / next step
+      oszlopot. Ne nyiss diagnostics vagy row action scope-ot.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+
+  - name: "Task-specifikus backend tesztek"
+    description: >
+      Bovitsd a list_project_files summary projection coverage-et deterministic route-level
+      tesztekkel. Bizonyitsd, hogy a summary_jsonb counts mezok lapos projectionkent
+      megjelennek, a latest-run selection nem torik, es hianyos summary_jsonb mellett a
+      route optional-safe marad.
+    outputs:
+      - "tests/test_project_files_preflight_summary.py"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely minimum bizonyitja:
+      - a DxfIntakePage T3 oszlopait es badge helper-eit,
+      - a frontend types/api boundary uj summary mezoi jelen vannak,
+      - a route projection uj mezoi bent vannak.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze meg,
+      hogy miert a file-onkenti latest run projection a helyes T3 minimal modell,
+      mely summary mezoket vetiti ki most a backend, hogyan all ossze a recommended_action,
+      es mi marad kesobbi scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.verify.log"

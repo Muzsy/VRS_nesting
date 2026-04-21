@@ -42,6 +42,14 @@ export interface ProjectFileLatestPreflightSummary {
   run_status?: string | null;
   acceptance_outcome?: string | null;
   finished_at?: string | null;
+  blocking_issue_count: number;
+  review_required_issue_count: number;
+  warning_issue_count: number;
+  total_issue_count: number;
+  applied_gap_repair_count: number;
+  applied_duplicate_dedupe_count: number;
+  total_repair_count: number;
+  recommended_action?: string | null;
 }
 
 export interface PreflightRulesProfileSnapshot {
