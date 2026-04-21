@@ -1,0 +1,89 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e5_t1_core_unit_test_pack"
+title: "DXF Prefilter E5-T1 — Unit test pack az inspect / repair / acceptance magra"
+objective: >
+  Vezess be egy uj, fixture-driven pytest packot, amely a DXF prefilter T1→T6
+  core pipeline-t ugyanazon kis DXF scenario-ken vegigviszi, es cross-step
+  regressziokat rogzit. A task ne nyisson uj product/runtime/UI scope-ot,
+  es ne irja ujra a meglevo reteg-specifikus E2 teszteket.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "api/services/dxf_preflight_inspect.py"
+  - "api/services/dxf_preflight_role_resolver.py"
+  - "api/services/dxf_preflight_gap_repair.py"
+  - "api/services/dxf_preflight_duplicate_dedupe.py"
+  - "api/services/dxf_preflight_normalized_dxf_writer.py"
+  - "api/services/dxf_preflight_acceptance_gate.py"
+  - "tests/test_dxf_preflight_inspect.py"
+  - "tests/test_dxf_preflight_role_resolver.py"
+  - "tests/test_dxf_preflight_gap_repair.py"
+  - "tests/test_dxf_preflight_duplicate_dedupe.py"
+  - "tests/test_dxf_preflight_normalized_dxf_writer.py"
+  - "tests/test_dxf_preflight_acceptance_gate.py"
+  - "canvases/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne modosits production service kodot, hacsak nem derul ki bizonyitottan, hogy a test task maskepp nem vegezheto el."
+  - "Ne torold vagy irjad felul a meglevo T1..T6 reteg-specifikus tesztfajlokat."
+  - "Ne nyiss E3 runtime/persistence/route scope-ot, es ne nyiss E4 UI scope-ot."
+  - "A pack current-code truth szerint a valos T1→T6 chainre epuljon; ne fake-eld ki a writer/gate reteget csak kenyelmi okbol."
+  - "A T5/T6 `ezdxf` dependency truthjat vallald explicit modon; ne rejtsd el."
+  - "A strict vs lenient kimeneti kulonbseget current-code truth szerint rogzitsd, ne leegyszerusitett szabalyt tesztelj."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans T1..T6 service-eket,
+      valamint a meglevo reteg-specifikus teszteket. Hozd letre a task
+      canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e5_t1_core_unit_test_pack.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md"
+
+  - name: "Uj fixture-driven core unit test pack"
+    description: >
+      Keszits uj pytest packot, amely ugyanazon helperrel vegigviszi a T1→T6
+      core pipeline-t, es a minimum V1 scenario-kon cross-step invariansokat
+      ellenoriz. A pack ne irja ujra a meglevo T1..T6 retegteszteket, hanem
+      plusz regressziokent jojjon folejuk.
+    outputs:
+      - "tests/test_dxf_preflight_core_unit_pack.py"
+
+  - name: "Task-specifikus structural smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely minimum bizonyitja:
+      - az uj core-pack testfile letezik,
+      - a file a T1→T6 core helperre epul,
+      - a minimum scenario-k jelen vannak,
+      - az `ezdxf` dependency truth explicit guarddal szerepel,
+      - a task nem nyit route/UI/persistence scope-ot.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e5_t1_core_unit_test_pack.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon
+      nevezze meg, hogy miert uj cross-module fixture matrix a helyes E5-T1
+      current-code truth, mely scenario-kat fedi le, hogyan rogziti a strict vs
+      lenient kimeneti kulonbseget, es miert vallalja explicit modon az `ezdxf`
+      dependency truthot.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t1_core_unit_test_pack.verify.log"
