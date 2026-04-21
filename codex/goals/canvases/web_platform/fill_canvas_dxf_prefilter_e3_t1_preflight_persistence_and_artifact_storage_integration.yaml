@@ -1,0 +1,140 @@
+schema_version: "1"
+task_slug: "dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration"
+title: "DXF Prefilter E3-T1 — Preflight persistence es artifact storage bekotes"
+objective: >
+  Vezesd be a DXF prefilter lane minimalis persistence es artifact storage truth reteget:
+  a local T1->T7 outputokbol hozz letre canonical `preflight_runs`, `preflight_diagnostics`
+  es `preflight_artifacts` persistence-t, es a T5 normalized DXF local artifactot
+  tedd at canonical storage truth-va a `geometry-artifacts` bucketben, route/API/UI/trigger/gate
+  scope megnyitasa nelkul.
+
+context:
+  - "A task kizárólag a jelenlegi repo valós fájljaira és a már elkészült E2-T1..T7 output shape-ekre épülhet."
+  - "A repo current-code truth szerint ma nincs implementalt `preflight_runs` / `preflight_diagnostics` / `preflight_artifacts` domain."
+  - "A T7 mar ad stabil summary objektumot; az E3-T1 feladata ennek persistence truth-va forditasa."
+  - "A rules-profile domain docs-only szinten letezik, de current-code tablakkal meg nincs implementalva; a T1 nem epulhet kotelezo FK-kent erre a domainre."
+  - "A H0 storage policy szerint a canonical file-backed geometry artifact bucket a `geometry-artifacts`; a T5 normalized DXF-et ide kell feltolteni."
+  - "Ez meg nem upload trigger task es nem geometry import gate task; ezek a kovetkezo E3 taskokban jonnek."
+
+definition_of_done:
+  - "Letrejon a minimalis `preflight_runs` / `preflight_diagnostics` / `preflight_artifacts` migration."
+  - "A migration nem koveteli meg a meg nem letezo rules-profile domain azonnali implementaciojat."
+  - "Letrejon kulon backend persistence service a local T1→T7 truth perzisztalasara."
+  - "A T7 summary snapshot persisted truth-kent mentodik."
+  - "A T7 issue summary-bol `preflight_diagnostics` row-k szuletnek."
+  - "A T5 normalized DXF canonical `geometry-artifacts` storage pathra feltoltodik."
+  - "A `preflight_artifacts` tabla explicit storage truth-ot tartalmaz (`storage_bucket`, `storage_path`, content/hash metadata)."
+  - "Keszul task-specifikus unit teszt es smoke."
+  - "A task nem nyit route / request-model / OpenAPI / UI / trigger / gate scope-ot."
+  - "./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md PASS."
+
+constraints:
+  - "Csak a YAML outputs listakban szereplo fajlokat hozhatod letre vagy modosithatod."
+  - "Nem hozhatsz letre uj FastAPI route-ot, request modelt, OpenAPI exportot, frontend hookot vagy UI oldalt."
+  - "Nem vezethetsz be upload utani automatikus preflight triggert es nem kothetsz geometry import gate-et."
+  - "Nem implementalhatod most a teljes `dxf_rules_profiles` / `dxf_rules_profile_versions` persistence domaint csak azert, hogy FK legyen a preflight runon."
+  - "A service ne futtasson uj DXF parse/importer/validator probe-ot; kizárólag a mar eloallt T1→T7 truthot perzisztalja."
+  - "Ne csinalj globalis multi-bucket config refaktort; a canonical preflight artifact bucket most a `geometry-artifacts`."
+  - "A minosegkaput kizarolag wrapperrel futtasd: ./scripts/verify.sh --report ..."
+
+inputs:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_data_model_and_migration_plan.md"
+  - "docs/web_platform/architecture/dxf_prefilter_api_contract_specification.md"
+  - "docs/web_platform/architecture/h0_storage_bucket_strategia_es_path_policy.md"
+  - "api/supabase_client.py"
+  - "api/services/file_ingest_metadata.py"
+  - "api/services/dxf_preflight_normalized_dxf_writer.py"
+  - "api/services/dxf_preflight_acceptance_gate.py"
+  - "api/services/dxf_preflight_diagnostics_renderer.py"
+  - "api/routes/files.py"
+  - "worker/raw_output_artifacts.py"
+  - "canvases/web_platform/dxf_prefilter_e2_t5_normalized_dxf_writer_v1.md"
+  - "canvases/web_platform/dxf_prefilter_e2_t6_acceptance_gate_v1.md"
+  - "canvases/web_platform/dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.md"
+  - "tests/test_dxf_preflight_normalized_dxf_writer.py"
+  - "tests/test_dxf_preflight_acceptance_gate.py"
+  - "tests/test_dxf_preflight_diagnostics_renderer.py"
+  - "scripts/smoke_dxf_prefilter_e2_t5_normalized_dxf_writer_v1.py"
+  - "scripts/smoke_dxf_prefilter_e2_t6_acceptance_gate_v1.py"
+  - "scripts/smoke_dxf_prefilter_e2_t7_diagnostics_and_repair_summary_renderer_v1.py"
+
+steps:
+  - name: "Canvas/YAML/prompt/checklist/report alapok elokeszitese"
+    description: >
+      Keszitsd el a DXF-E3-T1 task canvas/YAML/prompt/checklist/report alapjait a jelenlegi
+      E2-T7 truth-ra illesztve. A canvas explicit modon rogzitese, hogy ez persistence + artifact storage
+      integration task: local preflight truth -> canonical persisted truth, de meg nem route/trigger/gate/UI.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md"
+
+  - name: "Minimalis preflight persistence migration letrehozasa"
+    description: >
+      Hozz letre uj migrationt, amely implementalja a minimalis V1 `preflight_runs`, `preflight_diagnostics`
+      es `preflight_artifacts` tablakat. A migration current-code groundon ne koveteljen meg azonnali
+      rules-profile FK domaint; helyette a preflight run tablaban legyen `rules_profile_snapshot_jsonb`.
+      A `preflight_artifacts` tabla explicit storage truth-ot tartalmazzon (`storage_bucket`, `storage_path`,
+      `artifact_kind`, `artifact_hash_sha256`, `content_type`, `size_bytes`, `metadata_jsonb`).
+    outputs:
+      - "supabase/migrations/20260421100000_dxf_e3_t1_preflight_persistence_and_artifact_storage.sql"
+
+  - name: "Kulon backend preflight persistence service kialakitasa"
+    description: >
+      Hozz letre kulon `api/services/dxf_preflight_persistence.py` service reteget, amely a local
+      T1 inspect, T2 role resolution, T3 gap repair, T4 duplicate dedupe, T5 normalized writer,
+      T6 acceptance gate es T7 diagnostics summary truth-okat perzisztalja. A service:
+      - letrehozza a preflight run row-t,
+      - a T7 issue summary-bol diagnostics row-kat general,
+      - feltolti a normalized DXF-et a `geometry-artifacts` bucketbe canonical storage pathra,
+      - letrehozza a `preflight_artifacts` row-t,
+      - es persisted summary truth-ot ad vissza.
+      Ne legyen route, ne legyen trigger, ne legyen geometry import gate.
+    outputs:
+      - "api/services/dxf_preflight_persistence.py"
+
+  - name: "Task-specifikus unit teszt csomag letrehozasa"
+    description: >
+      Keszits uj pytest unit tesztet, amely deterministic fake supabase gateway-jel bizonyitja a
+      persistence + artifact storage bridge-et. Minimum fedje le az accepted, review-required es rejected flow-kat,
+      a canonical storage path shape-et, a diagnostics row generalast a T7 issue summary-bol,
+      a summary_jsonb snapshot mentest, es azt, hogy a service nem kovetel letezo rules-profile FK domaint.
+    outputs:
+      - "tests/test_dxf_preflight_persistence.py"
+
+  - name: "Task-specifikus persistence smoke letrehozasa"
+    description: >
+      Keszits uj smoke scriptet, amely deterministic fixture-rel vegigveri a local T1->T7 truth ->
+      persistence -> artifact storage utvonalat fake supabase backenddel. A smoke egyertelmuen bizonyitsa,
+      hogy a normalized DXF a `geometry-artifacts` bucketbe kerul canonical pathra, a diagnostics row-k letrejonnek,
+      es a run truth persisted summary snapshotot tartalmaz.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E3-T1 valtozasok alapjan.
+      A reportban kulon nevezd meg:
+      - miert nem vezet be a task teljes rules-profile domaint,
+      - hogyan lett sharp-olva a `preflight_artifacts` storage truth,
+      - hogyan valik a T7 summary persisted truth-va,
+      - hogyan epul a canonical storage path,
+      - es mi marad E3-T2 / E3-T3 / kesobbi API/UI scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t1_preflight_persistence_and_artifact_storage_integration.verify.log"
