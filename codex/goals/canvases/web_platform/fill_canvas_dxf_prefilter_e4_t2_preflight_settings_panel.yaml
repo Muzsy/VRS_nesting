@@ -1,0 +1,123 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e4_t2_preflight_settings_panel"
+title: "DXF Prefilter E4-T2 — Preflight settings panel"
+objective: >
+  Epitsd meg a DXF Intake oldalon a minimal, valodi preflight settings panelt,
+  es kossd be a settings snapshotot a frontend upload finalize payload ->
+  backend complete_upload -> preflight runtime -> persisted rules_profile_snapshot
+  lancba. A task ne nyisson named rules-profile domaint, project-level settings
+  persistence-t vagy diagnostics/review scope-ot.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md"
+  - "docs/web_platform/architecture/dxf_prefilter_policy_matrix_and_rules_profile_schema.md"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "frontend/src/lib/api.ts"
+  - "frontend/src/lib/types.ts"
+  - "api/routes/files.py"
+  - "api/services/dxf_preflight_runtime.py"
+  - "api/services/dxf_preflight_persistence.py"
+  - "api/services/dxf_preflight_role_resolver.py"
+  - "api/services/dxf_preflight_gap_repair.py"
+  - "api/services/dxf_preflight_duplicate_dedupe.py"
+  - "api/services/dxf_preflight_normalized_dxf_writer.py"
+  - "tests/test_dxf_preflight_runtime.py"
+  - "canvases/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+  - "codex/reports/web_platform/dxf_prefilter_e4_t1_dxf_intake_project_preparation_page.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ez settings-panel task; ne nyiss diagnostics drawer, review modal, runs table, accepted->parts flow vagy feature flag scope-ot."
+  - "Current-code truth szerint nincs implementalt named rules-profile domain; ne epits profile CRUD-ot, profile listat vagy project-level persisted settings API-t."
+  - "A settings panel az intake oldalhoz kotott, upload-session szintu V1 bridge legyen."
+  - "A backend route csak minimalis mapping boundaryt kezeljen; ne duplikald az E2 service-ek rules-profile validaciojat a route-ban."
+  - "Ne bovitsd a `NewRunPage.tsx` legacy wizardot prefilter funkciokkal."
+  - "A `canonical_layer_colors` teljes editor scope-ja most out-of-scope; maradjon backend-default."
+  - "A legacy `validate_dxf_file_async(...)` task viselkedese ne torjon."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans frontend/backend current-code
+      forrasokat. Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e4_t2_preflight_settings_panel.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+
+  - name: "Frontend settings draft es upload payload boundary"
+    description: >
+      Vezess be minimal, explicit settings draft shape-et az intake oldalhoz es a
+      frontend API boundaryhoz. A DxfIntakePage read-only defaults blokkja valodi
+      szerkesztheto settings panelre valtozzon, deterministic backend-aligned
+      defaults-szal. Az upload finalize payload tudjon optional
+      `rules_profile_snapshot_jsonb` mezot kuldeni.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+      - "frontend/src/lib/api.ts"
+      - "frontend/src/lib/types.ts"
+
+  - name: "complete_upload route bridge bovitese"
+    description: >
+      Bovitd a `FileCompleteRequest` es `complete_upload` route szerzodeset ugy,
+      hogy optional rules-profile snapshot mappinget fogadjon, es ezt a snapshotot
+      tovabbadja a preflight runtime background tasknak. A route csak minimalis
+      mapping boundaryt kezeljen; a policy-validacio maradjon az E2 service-ekben.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Preflight runtime rules_profile plumbing"
+    description: >
+      Szuntesd meg a `rules_profile=None` hardcode-ot a runtime-ban. A
+      `run_preflight_for_upload(...)` es a pipeline vegye at az optional
+      rules_profile mappinget, es adja tovabb a role resolver / gap repair /
+      duplicate dedupe / normalized writer / persistence hivasoknak. A task ne
+      nyisson uj route-ot vagy rules-profile domaint.
+    outputs:
+      - "api/services/dxf_preflight_runtime.py"
+
+  - name: "Task-specifikus backend tesztek"
+    description: >
+      Frissitsd a runtime unit tesztet rules_profile plumbing coverage-del, es
+      keszits kulon deterministic route-level tesztet arra, hogy a complete_upload
+      snapshotot ad tovabb a background tasknak. A legacy validation task bent
+      maradjon secondary signalkent.
+    outputs:
+      - "tests/test_dxf_preflight_runtime.py"
+      - "tests/test_project_file_complete_preflight_settings.py"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely minimum bizonyitja:
+      - a DxfIntakePage settings panel mezoit es reset/defaults jelenletet,
+      - az API helper optional `rules_profile_snapshot_jsonb` supportjat,
+      - a route bridge snapshot tovabbitasat,
+      - es hogy a runtime mar nem hardcoded `rules_profile=None` modban fut.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e4_t2_preflight_settings_panel.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze
+      meg, hogy miert upload-session szintu V1 bridge a helyes irany a jelenlegi
+      code truth mellett, milyen defaultok lettek befagyasztva a UI-ba, es mi marad
+      kesobbi scope-ban (named profiles, project-level persistence, diagnostics/review).
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.verify.log"

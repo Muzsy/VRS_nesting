@@ -1,6 +1,7 @@
 import type {
   ArtifactUrlResponse,
   BundleResponse,
+  PreflightRulesProfileSnapshot,
   Project,
   ProjectFile,
   ProjectFileLatestPreflightSummary,
@@ -158,6 +159,7 @@ export const api = {
       file_type: string;
       size_bytes: number;
       content_hash_sha256: string | null;
+      rules_profile_snapshot_jsonb?: PreflightRulesProfileSnapshot | null;
     }
   ): Promise<ProjectFile> {
     return request<Record<string, unknown>>(`/projects/${projectId}/files`, token, { method: "POST", body: JSON.stringify(payload) }).then((response) =>

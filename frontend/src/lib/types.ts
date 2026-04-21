@@ -44,6 +44,26 @@ export interface ProjectFileLatestPreflightSummary {
   finished_at?: string | null;
 }
 
+export interface PreflightRulesProfileSnapshot {
+  strict_mode: boolean;
+  auto_repair_enabled: boolean;
+  interactive_review_on_ambiguity: boolean;
+  max_gap_close_mm: number;
+  duplicate_contour_merge_tolerance_mm: number;
+  cut_color_map: number[];
+  marking_color_map: number[];
+}
+
+export interface PreflightSettingsDraft {
+  strict_mode: boolean;
+  auto_repair_enabled: boolean;
+  interactive_review_on_ambiguity: boolean;
+  max_gap_close_mm: number;
+  duplicate_contour_merge_tolerance_mm: number;
+  cut_color_map_text: string;
+  marking_color_map_text: string;
+}
+
 export interface RunMetrics {
   placements_count: number;
   unplaced_count: number;

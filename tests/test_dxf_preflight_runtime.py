@@ -6,7 +6,7 @@ real DXF file I/O) to verify:
 - accepted flow calls persist_preflight_run,
 - runtime error triggers _try_persist_failed_run / persist_preflight_failed_run,
 - run_seq is computed from app.preflight_runs truth via get_next_run_seq,
-- rules_profile=None is passed through the whole chain,
+- rules_profile plumbing is passed through the whole chain,
 - no FastAPI / APIRouter scope in the service module,
 - persist_preflight_failed_run stores preflight_failed run status,
 - get_next_run_seq returns 1 when no prior runs exist,
@@ -108,6 +108,16 @@ _FAKE_PERSIST_RESULT = {
     "artifact_refs": [],
     "normalized_hash_sha256": None,
     "summary_snapshot": _FAKE_T7,
+}
+
+_FAKE_RULES_PROFILE = {
+    "strict_mode": True,
+    "auto_repair_enabled": True,
+    "interactive_review_on_ambiguity": False,
+    "max_gap_close_mm": 0.75,
+    "duplicate_contour_merge_tolerance_mm": 0.025,
+    "cut_color_map": [1, 7],
+    "marking_color_map": [2],
 }
 
 
@@ -276,6 +286,36 @@ def test_rules_profile_none_passed_to_persist(monkeypatch: Any) -> None:
 
     _, kwargs = mocks["persist"].call_args
     assert kwargs.get("rules_profile") is None
+
+
+def test_rules_profile_mapping_passed_through_pipeline_and_persist(monkeypatch: Any) -> None:
+    mocks = _patch_pipeline(monkeypatch)
+    supabase = _make_fake_supabase()
+
+    run_preflight_for_upload(
+        supabase=supabase,
+        access_token="tok",
+        project_id="proj-1",
+        source_file_object_id="file-1",
+        storage_bucket="source-files",
+        storage_path="projects/proj-1/files/file-1/part.dxf",
+        source_hash_sha256="deadbeef",
+        created_by="user-1",
+        signed_url_ttl_s=300,
+        rules_profile=_FAKE_RULES_PROFILE,
+    )
+
+    _, roles_kwargs = mocks["roles"].call_args
+    _, gap_kwargs = mocks["gap"].call_args
+    _, dedupe_kwargs = mocks["dedupe"].call_args
+    _, writer_kwargs = mocks["writer"].call_args
+    _, persist_kwargs = mocks["persist"].call_args
+
+    assert roles_kwargs.get("rules_profile") == _FAKE_RULES_PROFILE
+    assert gap_kwargs.get("rules_profile") == _FAKE_RULES_PROFILE
+    assert dedupe_kwargs.get("rules_profile") == _FAKE_RULES_PROFILE
+    assert writer_kwargs.get("rules_profile") == _FAKE_RULES_PROFILE
+    assert persist_kwargs.get("rules_profile") == _FAKE_RULES_PROFILE
 
 
 def test_pipeline_error_triggers_failed_run_persist(monkeypatch: Any) -> None:

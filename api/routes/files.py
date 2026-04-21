@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -54,6 +55,7 @@ class FileCompleteRequest(StrictRequestModel):
     content_type: str | None = Field(default=None, max_length=100)
     sha256: str | None = Field(default=None, max_length=128)
     content_hash_sha256: str | None = Field(default=None, max_length=128)
+    rules_profile_snapshot_jsonb: dict[str, Any] | None = None
 
 
 class ProjectFileResponse(BaseModel):
@@ -140,6 +142,24 @@ def _fetch_latest_preflight_summary_by_file_id(
             continue
         latest_by_file_id[source_file_object_id] = _latest_preflight_summary_from_row(row)
     return latest_by_file_id
+
+
+def _coerce_rules_profile_snapshot(rules_profile_snapshot_jsonb: dict[str, Any] | None) -> dict[str, Any] | None:
+    if rules_profile_snapshot_jsonb is None:
+        return None
+    if not isinstance(rules_profile_snapshot_jsonb, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="rules_profile_snapshot_jsonb must be a JSON object",
+        )
+    try:
+        json.dumps(rules_profile_snapshot_jsonb, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="rules_profile_snapshot_jsonb must be JSON-serializable",
+        ) from exc
+    return rules_profile_snapshot_jsonb
 
 
 def _sanitize_filename(raw_filename: str) -> str:
@@ -297,6 +317,8 @@ def complete_upload(
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="file metadata insert", exc=exc)
 
+    rules_profile_snapshot = _coerce_rules_profile_snapshot(req.rules_profile_snapshot_jsonb)
+
     if normalized_kind == "source_dxf" and ingest_metadata.file_name.lower().endswith(".dxf"):
         # Legacy, file-level DXF readability check kept as a secondary signal.
         background_tasks.add_task(
@@ -318,6 +340,7 @@ def complete_upload(
             source_hash_sha256=source_hash_sha256,
             created_by=user.id,
             signed_url_ttl_s=settings.signed_url_ttl_s,
+            rules_profile=rules_profile_snapshot,
         )
 
     return _as_file_response(row)

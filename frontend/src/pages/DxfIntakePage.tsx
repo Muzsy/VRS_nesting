@@ -3,12 +3,76 @@ import type { DragEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { getAccessToken } from "../lib/supabase";
-import type { Project, ProjectFile } from "../lib/types";
+import type {
+  PreflightRulesProfileSnapshot,
+  PreflightSettingsDraft,
+  Project,
+  ProjectFile,
+} from "../lib/types";
 
 interface UploadProgressState {
   total: number;
   done: number;
   status: string;
+}
+
+const DEFAULT_PREFLIGHT_SETTINGS_DRAFT: PreflightSettingsDraft = {
+  strict_mode: false,
+  auto_repair_enabled: false,
+  interactive_review_on_ambiguity: true,
+  max_gap_close_mm: 1.0,
+  duplicate_contour_merge_tolerance_mm: 0.05,
+  cut_color_map_text: "",
+  marking_color_map_text: "",
+};
+
+function createDefaultPreflightSettingsDraft(): PreflightSettingsDraft {
+  return { ...DEFAULT_PREFLIGHT_SETTINGS_DRAFT };
+}
+
+function parseAciColorMap(raw: string, fieldName: "cut_color_map" | "marking_color_map"): number[] {
+  const tokens = raw
+    .split(",")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  const values: number[] = [];
+  const seen = new Set<number>();
+  for (const token of tokens) {
+    if (!/^\d+$/.test(token)) {
+      throw new Error(`${fieldName} must be a comma-separated list of integer ACI values.`);
+    }
+    const value = Number(token);
+    if (!Number.isInteger(value) || value < 0 || value > 256) {
+      throw new Error(`${fieldName} entries must be integers in range [0, 256].`);
+    }
+    if (!seen.has(value)) {
+      values.push(value);
+      seen.add(value);
+    }
+  }
+  return values;
+}
+
+function buildRulesProfileSnapshotFromDraft(draft: PreflightSettingsDraft): PreflightRulesProfileSnapshot {
+  const maxGap = Number(draft.max_gap_close_mm);
+  if (!Number.isFinite(maxGap) || maxGap <= 0) {
+    throw new Error("max_gap_close_mm must be a positive number.");
+  }
+
+  const duplicateTolerance = Number(draft.duplicate_contour_merge_tolerance_mm);
+  if (!Number.isFinite(duplicateTolerance) || duplicateTolerance <= 0) {
+    throw new Error("duplicate_contour_merge_tolerance_mm must be a positive number.");
+  }
+
+  return {
+    strict_mode: draft.strict_mode,
+    auto_repair_enabled: draft.auto_repair_enabled,
+    interactive_review_on_ambiguity: draft.interactive_review_on_ambiguity,
+    max_gap_close_mm: maxGap,
+    duplicate_contour_merge_tolerance_mm: duplicateTolerance,
+    cut_color_map: parseAciColorMap(draft.cut_color_map_text, "cut_color_map"),
+    marking_color_map: parseAciColorMap(draft.marking_color_map_text, "marking_color_map"),
+  };
 }
 
 function formatDate(value?: string | null): string {
@@ -105,6 +169,7 @@ export function DxfIntakePage() {
 
   const [dragActive, setDragActive] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState<PreflightSettingsDraft>(() => createDefaultPreflightSettingsDraft());
 
   async function loadData() {
     if (!projectId) {
@@ -137,6 +202,14 @@ export function DxfIntakePage() {
     }
 
     const selected = Array.from(fileList);
+    let rulesProfileSnapshot: PreflightRulesProfileSnapshot;
+    try {
+      rulesProfileSnapshot = buildRulesProfileSnapshotFromDraft(settingsDraft);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid preflight settings.");
+      return;
+    }
+
     setUploadProgress({ total: selected.length, done: 0, status: "Preparing source DXF upload..." });
     setError("");
 
@@ -176,6 +249,7 @@ export function DxfIntakePage() {
           file_type: "source_dxf",
           size_bytes: file.size,
           content_hash_sha256: null,
+          rules_profile_snapshot_jsonb: rulesProfileSnapshot,
         });
 
         setUploadProgress({
@@ -210,6 +284,10 @@ export function DxfIntakePage() {
   function handleDragLeave(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setDragActive(false);
+  }
+
+  function handleResetSettings(): void {
+    setSettingsDraft(createDefaultPreflightSettingsDraft());
   }
 
   const uploadPercent = useMemo(() => {
@@ -287,8 +365,140 @@ export function DxfIntakePage() {
             )}
 
             <div className="rounded-md border border-mist bg-slate-50 px-4 py-3 text-sm text-slate">
-              <p className="font-medium text-ink">Current defaults (read-only in E4-T1)</p>
-              <p className="mt-1">Rules profile/settings editor arrives in E4-T2. This page currently uses backend defaults.</p>
+              <p className="font-medium text-ink">Preflight settings (upload-session draft)</p>
+              <p className="mt-1">
+                These values are sent as <code>rules_profile_snapshot_jsonb</code> during upload finalize from this page.
+                They apply to new source DXF uploads started here.
+              </p>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <label className="flex items-center gap-2 rounded border border-mist bg-white px-3 py-2">
+                  <input
+                    checked={settingsDraft.strict_mode}
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        strict_mode: event.target.checked,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="font-mono text-xs text-slate">strict_mode</span>
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 rounded border border-mist bg-white px-3 py-2">
+                  <input
+                    checked={settingsDraft.auto_repair_enabled}
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        auto_repair_enabled: event.target.checked,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="font-mono text-xs text-slate">auto_repair_enabled</span>
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 rounded border border-mist bg-white px-3 py-2 sm:col-span-2">
+                  <input
+                    checked={settingsDraft.interactive_review_on_ambiguity}
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        interactive_review_on_ambiguity: event.target.checked,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="font-mono text-xs text-slate">interactive_review_on_ambiguity</span>
+                  </span>
+                </label>
+              </div>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="font-mono text-xs text-slate">max_gap_close_mm</span>
+                  <input
+                    className="w-full rounded border border-mist bg-white px-2 py-1"
+                    min={0.000001}
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        max_gap_close_mm: Number(event.target.value),
+                      }))
+                    }
+                    step="0.01"
+                    type="number"
+                    value={settingsDraft.max_gap_close_mm}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="font-mono text-xs text-slate">duplicate_contour_merge_tolerance_mm</span>
+                  <input
+                    className="w-full rounded border border-mist bg-white px-2 py-1"
+                    min={0.000001}
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        duplicate_contour_merge_tolerance_mm: Number(event.target.value),
+                      }))
+                    }
+                    step="0.001"
+                    type="number"
+                    value={settingsDraft.duplicate_contour_merge_tolerance_mm}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 grid gap-3">
+                <label className="space-y-1">
+                  <span className="font-mono text-xs text-slate">cut_color_map</span>
+                  <input
+                    className="w-full rounded border border-mist bg-white px-2 py-1"
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        cut_color_map_text: event.target.value,
+                      }))
+                    }
+                    placeholder="e.g. 1,3,7"
+                    type="text"
+                    value={settingsDraft.cut_color_map_text}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="font-mono text-xs text-slate">marking_color_map</span>
+                  <input
+                    className="w-full rounded border border-mist bg-white px-2 py-1"
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        marking_color_map_text: event.target.value,
+                      }))
+                    }
+                    placeholder="e.g. 2,4,6"
+                    type="text"
+                    value={settingsDraft.marking_color_map_text}
+                  />
+                </label>
+                <p className="text-xs text-slate">
+                  Comma-separated ACI indices in range <code>[0,256]</code>.
+                </p>
+              </div>
+
+              <div className="mt-3">
+                <button
+                  className="rounded border border-mist bg-white px-3 py-1.5 text-xs font-medium text-slate hover:bg-slate-100"
+                  onClick={handleResetSettings}
+                  type="button"
+                >
+                  Reset to defaults
+                </button>
+              </div>
             </div>
           </article>
 

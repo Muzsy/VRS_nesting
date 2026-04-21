@@ -19,7 +19,8 @@ Scope boundary (intentional):
 
 * does NOT create a FastAPI route or request model,
 * does NOT implement a geometry import gate or replace/rerun flow,
-* does NOT implement the rules-profile domain — runs with ``rules_profile=None``,
+* does NOT implement the full rules-profile domain; it consumes only the
+  optional snapshot mapping passed from upload finalize,
 * does NOT introduce worker queue, outbox, polling, or heartbeat,
 * does NOT duplicate E2/T7 service logic.
 """
@@ -184,6 +185,7 @@ def run_preflight_for_upload(
     source_hash_sha256: str,
     created_by: str,
     signed_url_ttl_s: int,
+    rules_profile: Mapping[str, Any] | None = None,
 ) -> None:
     """Run the full T1→T7 + E3-T1 prefilter pipeline as a background task.
 
@@ -233,6 +235,7 @@ def run_preflight_for_upload(
             run_seq=run_seq,
             db_gw=db_gw,
             storage_gw=storage_gw,
+            rules_profile=rules_profile,
         )
         _trigger_geometry_import_after_gate(
             supabase=supabase,
@@ -283,6 +286,7 @@ def _execute_pipeline(
     run_seq: int,
     db_gw: DbGateway,
     storage_gw: StorageGateway,
+    rules_profile: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     """Download source DXF and execute the T1→T7 + E3-T1 pipeline."""
     blob = download_storage_object_blob(
@@ -303,10 +307,12 @@ def _execute_pipeline(
         normalized_local = tmp_path / "normalized.dxf"
 
         inspect_result = inspect_dxf_source(source_local)
-        role_resolution = resolve_dxf_roles(inspect_result)
-        gap_repair_result = repair_dxf_gaps(inspect_result, role_resolution)
+        role_resolution = resolve_dxf_roles(inspect_result, rules_profile=rules_profile)
+        gap_repair_result = repair_dxf_gaps(
+            inspect_result, role_resolution, rules_profile=rules_profile
+        )
         duplicate_dedupe_result = dedupe_dxf_duplicate_contours(
-            inspect_result, role_resolution, gap_repair_result
+            inspect_result, role_resolution, gap_repair_result, rules_profile=rules_profile
         )
         normalized_dxf_writer_result = write_normalized_dxf(
             inspect_result,
@@ -314,6 +320,7 @@ def _execute_pipeline(
             gap_repair_result,
             duplicate_dedupe_result,
             output_path=normalized_local,
+            rules_profile=rules_profile,
         )
         acceptance_gate_result = evaluate_dxf_prefilter_acceptance_gate(
             inspect_result,
@@ -337,7 +344,7 @@ def _execute_pipeline(
             t7_summary=t7_summary,
             acceptance_gate_result=acceptance_gate_result,
             normalized_dxf_writer_result=normalized_dxf_writer_result,
-            rules_profile=None,
+            rules_profile=rules_profile,
             run_seq=run_seq,
             db=db_gw,
             storage=storage_gw,
