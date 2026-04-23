@@ -1,0 +1,104 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e5_t3_ui_smoke_and_integration_tests"
+title: "DXF Prefilter E5-T3 — UI smoke / integration tesztek"
+objective: >
+  Vezess be egy uj, Playwright-alapu browser-level UI smoke / integration packot
+  a DxfIntakePage korul. A task a meglovo mock API harnessre es auth bypass
+  modra epuljon, ne nyisson uj backend endpointot vagy uj frontend tesztframeworkot,
+  es current-code truth szerint a settings -> upload finalize bridge, a latest
+  preflight runs table, a diagnostics drawer es az accepted/non-accepted advisory
+  allapotok stabilitasat bizonyitsa.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "frontend/package.json"
+  - "frontend/playwright.config.ts"
+  - "frontend/e2e/support/mockApi.ts"
+  - "frontend/e2e/phase4.stable.spec.ts"
+  - "frontend/e2e/phase4.async.spec.ts"
+  - "frontend/src/App.tsx"
+  - "frontend/src/pages/ProjectDetailPage.tsx"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "frontend/src/lib/api.ts"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/lib/supabase.ts"
+  - "canvases/web_platform/dxf_prefilter_e4_t2_preflight_settings_panel.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+  - "canvases/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+  - "canvases/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne vezess be uj frontend tesztframeworkot; a helyes current-code stack a meglovo Playwright harness."
+  - "Ne indits valodi backendet vagy Supabase-t a UI tesztekhez; auth bypass + mock API legyen a truth."
+  - "Ne nyiss uj backend endpointot, query parametert vagy route-ot csak a UI teszt miatt."
+  - "Ne nyiss review modal, accepted->parts, replace/rerun vagy UX redesign scope-ot."
+  - "Az E5-T3 nem replacement az E5-T2-höz; ne irj route-level backend E2E-t a browser specbe."
+  - "A 'tovabbengedesi' allitas current-code truth szerint accepted advisory allapot legyen (`Ready for next step`), ne valodi tovabblepteto gomb."
+  - "Ha a mock API harness bovul, az csak a DxfIntakePage current-code flow determinisztikus seedelesere es request capture-jere terjedjen ki."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans frontend/playwright current-code
+      forrasokat. Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md"
+
+  - name: "Mock API harness bovitese a DXF intake current-code truthra"
+    description: >
+      Bovitsd a meglovo frontend Playwright mock API support layert ugy, hogy a DXF intake
+      UI tesztekhez deterministic latest_preflight_summary/latest_preflight_diagnostics seedeles,
+      source_dxf finalize utani state frissites es rules_profile_snapshot_jsonb request capture
+      elerheto legyen. Ne talalj ki valodi backend runtime-ot.
+    outputs:
+      - "frontend/e2e/support/mockApi.ts"
+
+  - name: "Uj DxfIntake Playwright spec"
+    description: >
+      Keszits uj, dedikalt Playwright specet a DxfIntakePage koruli legfontosabb V1 flow-kra:
+      settings -> upload finalize bridge, accepted latest run -> diagnostics drawer, es legalabb
+      egy non-accepted latest run vizualis allapot. A spec current-code truth szerint mocked UI
+      integration legyen.
+    outputs:
+      - "frontend/e2e/dxf_prefilter_e5_t3_dxf_intake.spec.ts"
+
+  - name: "Task-specifikus structural smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely minimum bizonyitja:
+      - az uj Playwright spec file letezik,
+      - a spec a DxfIntakePage flowra epul,
+      - a installMockApi harness hasznalata explicit,
+      - van settings/upload bridge assertion,
+      - van accepted diagnostics drawer scenario,
+      - van non-accepted status scenario,
+      - nincs uj backend endpoint vagy accepted->parts scope.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze meg,
+      hogy miert mocked browser integration a helyes E5-T3 current-code truth, hogyan
+      bizonyitja a pack a settings finalize bridge-et, a diagnostics drawer fo blokkjait,
+      es hogyan ertelmezi a tovabbengedest accepted advisory allapotkent.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.verify.log"

@@ -22,6 +22,8 @@ interface MockFile {
   validation_status: string;
   validation_error: string | null;
   uploaded_at: string;
+  latest_preflight_summary?: Record<string, unknown> | null;
+  latest_preflight_diagnostics?: Record<string, unknown> | null;
 }
 
 interface MockRun {
@@ -97,6 +99,7 @@ interface MockState {
   uploadFileTypeById: Record<string, string>;
   configCounter: number;
   runCounter: number;
+  finalizedBodies: Array<Record<string, unknown>>;
 }
 
 const OWNER_ID = "e2e-user";
@@ -175,6 +178,7 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
     uploadFileTypeById: {},
     configCounter: 1,
     runCounter: 1,
+    finalizedBodies: [],
   };
 
   const createdRunStatus = options?.createdRunStatus ?? "running";
@@ -309,7 +313,9 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
         storage_path?: string;
         file_type: string;
         size_bytes: number;
+        rules_profile_snapshot_jsonb?: Record<string, unknown> | null;
       };
+      state.finalizedBodies.push(request.postDataJSON() as Record<string, unknown>);
       const status = body.original_filename.toLowerCase().includes("invalid") ? "error" : "ok";
       const storageKey = body.storage_key ?? body.storage_path ?? "";
       const file: MockFile = {
