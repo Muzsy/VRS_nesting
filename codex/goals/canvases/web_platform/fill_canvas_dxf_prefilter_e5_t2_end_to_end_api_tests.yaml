@@ -1,0 +1,96 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e5_t2_end_to_end_api_tests"
+title: "DXF Prefilter E5-T2 — End-to-end API tesztek"
+objective: >
+  Vezess be egy uj, onallo API-level end-to-end pytest packot, amely a jelenlegi
+  DXF prefilter finalize -> background runtime -> persistence -> file-list
+  projection lancot ugyanazon scenario-kon vegigviszi. A task ne nyisson uj
+  endpointot vagy UI scope-ot, es ne irja ujra a meglevo E3/E4 route teszteket.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "api/routes/files.py"
+  - "api/services/dxf_preflight_runtime.py"
+  - "api/services/dxf_preflight_persistence.py"
+  - "api/services/dxf_preflight_inspect.py"
+  - "api/services/dxf_preflight_role_resolver.py"
+  - "api/services/dxf_preflight_gap_repair.py"
+  - "api/services/dxf_preflight_duplicate_dedupe.py"
+  - "api/services/dxf_preflight_normalized_dxf_writer.py"
+  - "api/services/dxf_preflight_acceptance_gate.py"
+  - "api/services/dxf_preflight_diagnostics_renderer.py"
+  - "tests/test_dxf_preflight_runtime.py"
+  - "tests/test_dxf_preflight_geometry_import_gate.py"
+  - "tests/test_project_file_complete_preflight_settings.py"
+  - "tests/test_project_files_preflight_summary.py"
+  - "tests/test_project_files_preflight_diagnostics.py"
+  - "tests/test_dxf_preflight_core_unit_pack.py"
+  - "canvases/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne talalj ki uj `/preflight` vagy `/preflight-runs/{id}` endpointot; az E5-T2 current-code truth a meglavo `complete_upload` finalize route."
+  - "Ne irj teljes ASGI/TestClient stack tesztet, ha a jelenlegi repo route-callable + fake deps mintaja eleg; ez a preferalt current-code stilus."
+  - "Ne patch-eld szet a core T1→T7 pipeline-t; csak I/O seam patch megengedett (metadata, blob download, geometry import recorder)."
+  - "Ne torold vagy irjad felul a meglevo E3/E4 route/runtime/projection teszteket."
+  - "Ne nyiss UI/Playwright/browser scope-ot."
+  - "A route import-lanc es a T5/T6 writer/gate `ezdxf` dependency truthjat vallald explicit modon."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans route/runtime/persistence
+      kodot, valamint a meglevo E3/E4 route teszteket. Hozd letre a task
+      canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e5_t2_end_to_end_api_tests.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+
+  - name: "Uj API-level end-to-end pytest pack"
+    description: >
+      Keszits uj, onallo pytest file-t, amely current-code truth szerint a
+      `complete_upload -> BackgroundTasks -> run_preflight_for_upload ->
+      list_project_files` lancot ugyanazon scenario-kon vegigviszi. A teszt
+      helper fake Supabase/storage vilaggal dolgozhat, de a core T1→T7 runtime
+      pipeline maradjon valodi.
+    outputs:
+      - "tests/test_dxf_preflight_api_end_to_end.py"
+
+  - name: "Task-specifikus structural smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely minimum bizonyitja:
+      - az uj API E2E pack file letezik,
+      - a file `complete_upload`, `BackgroundTasks`, `run_preflight_for_upload`,
+        `list_project_files` truthra epul,
+      - explicit `ezdxf` guard szerepel,
+      - accepted / review_required / rejected scenario-k jelen vannak,
+      - nincs UI / Playwright / TestClient / uj endpoint scope.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e5_t2_end_to_end_api_tests.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze
+      meg, hogy miert a `complete_upload -> BackgroundTasks -> runtime ->
+      list_project_files` a helyes current-code E2E API truth, mely scenario-kat
+      fedi le a pack, hogyan bizonyitja a geometry import gate accepted vs
+      non-accepted kulonbseget, es miert vallalja explicit modon az `ezdxf`
+      dependency truthot.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.md"
+      - "codex/reports/web_platform/dxf_prefilter_e5_t2_end_to_end_api_tests.verify.log"
