@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -131,15 +131,20 @@ class SupabaseClient:
         return self._probe(path="/storage/v1/bucket")
 
     def _storage_signed_absolute_url(self, signed_path: str) -> str:
+        def _normalize_absolute_url(url: str) -> str:
+            split = urlsplit(url)
+            encoded_path = quote(split.path, safe="/%")
+            return urlunsplit((split.scheme, split.netloc, encoded_path, split.query, split.fragment))
+
         if signed_path.startswith("http://") or signed_path.startswith("https://"):
-            return signed_path
+            return _normalize_absolute_url(signed_path)
 
         normalized = signed_path if signed_path.startswith("/") else f"/{signed_path}"
         if normalized.startswith("/storage/v1/"):
-            return f"{self._base_url}{normalized}"
+            return _normalize_absolute_url(f"{self._base_url}{normalized}")
         if normalized.startswith("/object/"):
-            return f"{self._base_url}/storage/v1{normalized}"
-        return f"{self._base_url}{normalized}"
+            return _normalize_absolute_url(f"{self._base_url}/storage/v1{normalized}")
+        return _normalize_absolute_url(f"{self._base_url}{normalized}")
 
     def get_auth_user(self, access_token: str) -> dict[str, Any]:
         payload = self._request_json("GET", "/auth/v1/user", token=access_token)

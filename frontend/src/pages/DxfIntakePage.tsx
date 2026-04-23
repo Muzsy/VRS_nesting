@@ -86,12 +86,15 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString();
 }
 
-async function uploadFileToSignedUrl(uploadUrl: string, file: File): Promise<void> {
+async function uploadFileToSignedUrl(uploadUrl: string, file: File, token: string): Promise<void> {
+  const headers = {
+    "Content-Type": file.type || "application/octet-stream",
+    Authorization: `Bearer ${token}`,
+  };
+
   const putResponse = await fetch(uploadUrl, {
     method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-    },
+    headers,
     body: file,
   });
   if (putResponse.ok) {
@@ -100,9 +103,7 @@ async function uploadFileToSignedUrl(uploadUrl: string, file: File): Promise<voi
 
   const postResponse = await fetch(uploadUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-    },
+    headers,
     body: file,
   });
   if (!postResponse.ok) {
@@ -331,7 +332,7 @@ export function DxfIntakePage() {
           done: index,
           status: `Uploading ${file.name}`,
         });
-        await uploadFileToSignedUrl(signed.upload_url, file);
+        await uploadFileToSignedUrl(signed.upload_url, file, token);
 
         setUploadProgress({
           total: selected.length,
