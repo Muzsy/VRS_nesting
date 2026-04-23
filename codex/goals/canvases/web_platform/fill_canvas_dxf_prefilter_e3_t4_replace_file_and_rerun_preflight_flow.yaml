@@ -1,0 +1,139 @@
+schema_version: "1"
+task_slug: "dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow"
+title: "DXF Prefilter E3-T4 — Replace file es re-run preflight flow"
+objective: >
+  Vezesd be az explicit replace-file actiont ugy, hogy a jelenlegi source DXF signed-upload +
+  complete_upload flow-hoz illeszkedjen, minimalis persisted replacement lineage truth-ot hozzon letre,
+  es replacement finalize utan a mar meglevo auto-preflight runtime implicit modon ujrainduljon.
+
+context:
+  - "A task kizárólag a jelenlegi repo valós fájljaira és a már kész E3-T2/E3-T3 runtime truthra épülhet."
+  - "A jelenlegi code truth szerint source DXF finalize utan mar automatikusan fut a preflight runtime; ehhez nem kell kulon rerun endpoint."
+  - "Az API contract docs mar korabban rogzitette a replace action route-ot: POST /projects/{project_id}/files/{file_id}/replace."
+  - "A jelenlegi file ingest model ketlepeses: upload-url -> signed upload -> complete_upload. A replace flow-nak ehhez kell igazodnia."
+  - "A preflight run audit mar source_file_object_id-hoz kotve persisted truth; a replacement celja, hogy az uj file explicit lineage kapcsolatot kapjon az elozohoz."
+  - "Ez backend/API task; UI button, diagnostics UX, historical lineage UI, feature flag es rollout nincs scope-ban."
+
+definition_of_done:
+  - "Letrejon az explicit POST /projects/{project_id}/files/{file_id}/replace route."
+  - "A replacement route csak letezo, projektbe tartozo source_dxf targetra mukodik."
+  - "A replacement route signed upload URL-t es uj replacement file_id-t ad vissza a meglevo upload-url mintahoz igazodva."
+  - "A complete_upload kap optional replacement bridge mezot."
+  - "Minimalis persisted replacement lineage truth jon letre a file_objects domainben."
+  - "Replacement finalize utan a meglevo auto-preflight runtime az uj replacement file-ra indul."
+  - "Nem jon letre kulon manualis rerun endpoint."
+  - "Nem tortenik regi file in-place feluliras."
+  - "Keszul task-specifikus unit teszt es smoke."
+  - "./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md PASS."
+
+constraints:
+  - "Csak a YAML outputs listakban szereplo fajlokat hozhatod letre vagy modosithatod."
+  - "Ne nyiss frontend/UI scope-ot, ne modositsd a DxfIntakePage-et es ne vezess be uj frontend API helper kotelezest."
+  - "Ne hozz letre kulon manualis rerun endpointot; a rerun current-code truth szerint replacement finalize utan implicit."
+  - "Ne ird felul in-place a regi file_objects sort uj tartalommal."
+  - "Ne torold automatikusan a regi file storage objectet vagy korabbi preflight run auditot."
+  - "Ne nyiss review workflow, artifact download/detail, feature flag vagy rollout scope-ot."
+  - "A replacement lineage-hez minimalis persisted truth kell; ne maradjon pusztan response-level informacio."
+  - "A minosegkaput kizarolag wrapperrel futtasd: ./scripts/verify.sh --report ..."
+
+inputs:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_api_contract_specification.md"
+  - "docs/web_platform/architecture/dxf_prefilter_state_machine_and_lifecycle_model.md"
+  - "api/routes/files.py"
+  - "api/request_models.py"
+  - "api/services/dxf_preflight_runtime.py"
+  - "api/services/dxf_preflight_persistence.py"
+  - "tests/test_dxf_preflight_runtime.py"
+  - "tests/test_dxf_preflight_geometry_import_gate.py"
+  - "tests/test_dxf_preflight_api_end_to_end.py"
+  - "scripts/smoke_dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.py"
+  - "scripts/smoke_dxf_prefilter_e3_t3_geometry_import_gate_integration.py"
+  - "canvases/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+  - "canvases/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+  - "codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+  - "codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+
+steps:
+  - name: "Canvas/YAML/prompt/checklist/report alapok elokeszitese"
+    description: >
+      Keszitsd el a DXF-E3-T4 task canvas/YAML/prompt/checklist/report alapjait a jelenlegi
+      E3-T2/E3-T3 truth-ra illesztve. A canvas explicit modon rogzitese, hogy ez replace-file
+      action + implicit rerun backend flow task, nem UI task.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+
+  - name: "Minimalis replacement lineage migration letrehozasa"
+    description: >
+      Hozz letre uj migrationt, amely minimalis persisted replacement lineage truth-ot vezet be a
+      file_objects domainben. A javasolt current-code kompatibilis irany egy nullable self-FK,
+      pl. `replaces_file_object_id uuid null references app.file_objects(id) on delete restrict`.
+      Adj megfelelo indexet is, de ne nyiss kulon replacement tablat vagy historical summary domaint.
+    outputs:
+      - "supabase/migrations/20260424100000_dxf_e3_t4_replace_file_and_rerun_preflight_flow.sql"
+
+  - name: "Replace action route es request/response bridge bekotese"
+    description: >
+      Modositsd az api/routes/files.py fajlt ugy, hogy letrejojjon az explicit
+      POST /projects/{project_id}/files/{file_id}/replace route. A route validalja a target file-t,
+      uj replacement file_id-t general, signed upload URL-t ker a meglevo helperen keresztul,
+      es explicit replacement response truth-ot ad vissza. A complete_upload request kapjon optional
+      replacement bridge mezot (`replaces_file_object_id` vagy ennek egyertelmu current-code megfeleloje).
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Complete upload replacement finalize bridge"
+    description: >
+      Modositsd a complete_upload flow-t ugy, hogy replacement finalize eseten az uj file_objects row
+      persisted lineage truth-tal jojjon letre, mikozben a meglevo source DXF branch ugyanugy elinditja
+      a legacy validation + preflight runtime taskokat. Ne torold a regi file row-t, ne irj felul in-place.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Task-specifikus unit teszt letrehozasa"
+    description: >
+      Keszits deterministic pytest coverage-et, amely minimum bizonyitja:
+      - replace route signed replacement upload slotot ad source_dxf targetra,
+      - invalid replacement target hiba,
+      - complete_upload replacement finalize persisted lineage truth-ot hoz letre,
+      - replacement finalize utan ugyanaz a ket background task regisztralodik,
+      - nincs uj manualis rerun endpoint-hivas.
+    outputs:
+      - "tests/test_dxf_preflight_replace_flow.py"
+
+  - name: "Task-specifikus smoke letrehozasa"
+    description: >
+      Keszits deterministic smoke scriptet, amely fake supabase es fake signed upload response mellett
+      vegigveri a replace route -> finalize replacement -> auto-preflight rerun backend flow-t.
+      A smoke kulon bizonyitsa az uj file_id-t, a replacement target evidence-et es a persisted lineage bridge-et.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett DXF-E3-T4 valtozasok alapjan.
+      A reportban kulon nevezd meg:
+      - miert replace action route a helyes current-code irany,
+      - miert implicit a rerun es miert nincs kulon rerun endpoint,
+      - hogyan maradnak meg auditkent a korabbi preflight runok,
+      - miert kell minimalis persisted lineage truth,
+      - es mi marad E3-T5 / kesobbi UI scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.verify.log"

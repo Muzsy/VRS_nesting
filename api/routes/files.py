@@ -56,6 +56,22 @@ class FileCompleteRequest(StrictRequestModel):
     sha256: str | None = Field(default=None, max_length=128)
     content_hash_sha256: str | None = Field(default=None, max_length=128)
     rules_profile_snapshot_jsonb: dict[str, Any] | None = None
+    replaces_file_object_id: UUID | None = None
+
+
+class FileReplaceRequest(StrictRequestModel):
+    filename: str = Field(min_length=1, max_length=260)
+    content_type: str | None = Field(default="application/dxf", max_length=100)
+    size_bytes: int = Field(gt=0)
+
+
+class FileReplaceResponse(BaseModel):
+    upload_url: str
+    file_id: str
+    storage_bucket: str
+    storage_path: str
+    expires_at: str
+    replaces_file_id: str
 
 
 class ProjectFileResponse(BaseModel):
@@ -392,6 +408,26 @@ def _ensure_project_access(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
 
+def _validate_replacement_target(
+    *,
+    supabase: SupabaseClient,
+    user: AuthenticatedUser,
+    project_id: UUID,
+    replaces_file_object_id: UUID,
+) -> None:
+    params = {
+        "select": "id,file_kind",
+        "id": f"eq.{replaces_file_object_id}",
+        "project_id": f"eq.{project_id}",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=params)
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="replacement target file not found in project")
+    if str(rows[0].get("file_kind", "")).strip() != "source_dxf":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="replacement target must be a source_dxf file")
+
+
 @router.post("/upload-url", response_model=UploadUrlResponse)
 def create_upload_url(
     project_id: UUID,
@@ -493,6 +529,14 @@ def complete_upload(
     if not source_hash_sha256:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="metadata extraction failed: missing sha256")
 
+    if req.replaces_file_object_id is not None:
+        _validate_replacement_target(
+            supabase=supabase,
+            user=user,
+            project_id=project_id,
+            replaces_file_object_id=req.replaces_file_object_id,
+        )
+
     payload = {
         "id": str(req.file_id),
         "project_id": str(project_id),
@@ -505,6 +549,8 @@ def complete_upload(
         "sha256": source_hash_sha256,
         "uploaded_by": user.id,
     }
+    if req.replaces_file_object_id is not None:
+        payload["replaces_file_object_id"] = str(req.replaces_file_object_id)
 
     try:
         row = supabase.insert_row(table="app.file_objects", access_token=user.access_token, payload=payload)
@@ -644,3 +690,53 @@ def delete_project_file(
         except SupabaseHTTPError:
             return Response(status_code=status.HTTP_204_NO_CONTENT)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{file_id}/replace", response_model=FileReplaceResponse)
+def replace_file(
+    project_id: UUID,
+    file_id: UUID,
+    req: FileReplaceRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    supabase: SupabaseClient = Depends(get_supabase_client),
+    settings: Settings = Depends(get_settings),
+) -> FileReplaceResponse:
+    _ensure_project_access(supabase=supabase, user=user, project_id=project_id)
+    _validate_replacement_target(
+        supabase=supabase,
+        user=user,
+        project_id=project_id,
+        replaces_file_object_id=file_id,
+    )
+
+    if settings.max_dxf_size_bytes > 0 and req.size_bytes > settings.max_dxf_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"file too large: max={settings.max_dxf_size_bytes} bytes",
+        )
+
+    safe_name = _sanitize_filename(req.filename)
+    if not safe_name.lower().endswith(".dxf"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="replacement DXF file must have .dxf extension")
+
+    new_file_id = str(uuid4())
+    storage_path = f"projects/{project_id}/files/{new_file_id}/{safe_name}"
+
+    try:
+        signed = supabase.create_signed_upload_url(
+            access_token=user.access_token,
+            bucket=settings.storage_bucket,
+            object_key=storage_path,
+            expires_in=300,
+        )
+    except SupabaseHTTPError as exc:
+        raise_supabase_http_error(operation="replacement upload-url generation", exc=exc)
+
+    return FileReplaceResponse(
+        upload_url=str(signed["upload_url"]),
+        file_id=new_file_id,
+        storage_bucket=settings.storage_bucket,
+        storage_path=storage_path,
+        expires_at=str(signed["expires_at"]),
+        replaces_file_id=str(file_id),
+    )
