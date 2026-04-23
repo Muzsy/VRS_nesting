@@ -242,6 +242,20 @@ function formatExistsLabel(exists: boolean): string {
   return exists ? "yes" : "no";
 }
 
+function canOpenConditionalReviewModal(file: ProjectFile): boolean {
+  return file.latest_preflight_summary?.acceptance_outcome === "preflight_review_required" && !!file.latest_preflight_diagnostics;
+}
+
+function formatSignalRecord(signal: Record<string, unknown>): string {
+  const entries = Object.entries(signal);
+  if (entries.length === 0) {
+    return "empty signal";
+  }
+  return entries
+    .map(([key, value]) => `${key}=${String(value ?? "-")}`)
+    .join(" | ");
+}
+
 export function DxfIntakePage() {
   const { projectId } = useParams<{ projectId: string }>();
 
@@ -254,6 +268,11 @@ export function DxfIntakePage() {
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<PreflightSettingsDraft>(() => createDefaultPreflightSettingsDraft());
   const [selectedDiagnosticsFileId, setSelectedDiagnosticsFileId] = useState<string | null>(null);
+  const [selectedReviewFileId, setSelectedReviewFileId] = useState<string | null>(null);
+  const [reviewReplacementFile, setReviewReplacementFile] = useState<File | null>(null);
+  const [reviewReplacementStatus, setReviewReplacementStatus] = useState("");
+  const [reviewReplacementError, setReviewReplacementError] = useState("");
+  const [reviewReplacementUploading, setReviewReplacementUploading] = useState(false);
 
   async function loadData() {
     if (!projectId) {
@@ -292,6 +311,20 @@ export function DxfIntakePage() {
       setSelectedDiagnosticsFileId(null);
     }
   }, [files, selectedDiagnosticsFileId]);
+
+  useEffect(() => {
+    if (!selectedReviewFileId) {
+      return;
+    }
+    const selected = files.find((file) => file.id === selectedReviewFileId);
+    if (!selected || !canOpenConditionalReviewModal(selected)) {
+      setSelectedReviewFileId(null);
+      setReviewReplacementFile(null);
+      setReviewReplacementStatus("");
+      setReviewReplacementError("");
+      setReviewReplacementUploading(false);
+    }
+  }, [files, selectedReviewFileId]);
 
   async function handleFilesSelected(fileList: FileList | null) {
     if (!projectId || !fileList || fileList.length === 0) {
@@ -387,6 +420,89 @@ export function DxfIntakePage() {
     setSettingsDraft(createDefaultPreflightSettingsDraft());
   }
 
+  function openConditionalReviewModal(fileId: string): void {
+    setSelectedReviewFileId(fileId);
+    setReviewReplacementFile(null);
+    setReviewReplacementStatus("");
+    setReviewReplacementError("");
+    setReviewReplacementUploading(false);
+  }
+
+  function closeConditionalReviewModal(): void {
+    setSelectedReviewFileId(null);
+    setReviewReplacementFile(null);
+    setReviewReplacementStatus("");
+    setReviewReplacementError("");
+    setReviewReplacementUploading(false);
+  }
+
+  function handleReviewReplacementFileChange(fileList: FileList | null): void {
+    const selectedFile = fileList && fileList.length > 0 ? fileList[0] : null;
+    setReviewReplacementFile(selectedFile);
+    setReviewReplacementStatus("");
+    setReviewReplacementError("");
+  }
+
+  async function handleReviewReplacementUpload(): Promise<void> {
+    if (!projectId || reviewReplacementUploading) {
+      return;
+    }
+    const selectedReviewFile = files.find((file) => file.id === selectedReviewFileId);
+    if (!selectedReviewFile || !canOpenConditionalReviewModal(selectedReviewFile)) {
+      setReviewReplacementError("Selected review file is no longer eligible for replacement review.");
+      return;
+    }
+    if (!reviewReplacementFile) {
+      setReviewReplacementError("Select a replacement DXF file before upload.");
+      return;
+    }
+
+    let rulesProfileSnapshot: PreflightRulesProfileSnapshot;
+    try {
+      rulesProfileSnapshot = buildRulesProfileSnapshotFromDraft(settingsDraft);
+    } catch (err) {
+      setReviewReplacementError(err instanceof Error ? err.message : "Invalid preflight settings.");
+      return;
+    }
+
+    setReviewReplacementUploading(true);
+    setReviewReplacementError("");
+    setReviewReplacementStatus("Requesting replacement upload slot...");
+
+    try {
+      const token = await getAccessToken();
+      const signed = await api.replaceProjectFile(token, projectId, selectedReviewFile.id, {
+        filename: reviewReplacementFile.name,
+        content_type: reviewReplacementFile.type || "application/dxf",
+        size_bytes: reviewReplacementFile.size,
+      });
+
+      setReviewReplacementStatus(`Uploading ${reviewReplacementFile.name}...`);
+      await uploadFileToSignedUrl(signed.upload_url, reviewReplacementFile, token);
+
+      setReviewReplacementStatus(`Finalizing ${reviewReplacementFile.name}...`);
+      await api.completeUpload(token, projectId, {
+        file_id: signed.file_id,
+        original_filename: reviewReplacementFile.name,
+        storage_key: signed.storage_path,
+        file_type: "source_dxf",
+        size_bytes: reviewReplacementFile.size,
+        content_hash_sha256: null,
+        replaces_file_object_id: signed.replaces_file_id,
+        rules_profile_snapshot_jsonb: rulesProfileSnapshot,
+      });
+
+      setReviewReplacementStatus("Replacement uploaded. Refreshing latest preflight state...");
+      await loadData();
+      setReviewReplacementStatus("Replacement complete. Preflight rerun starts automatically.");
+      setReviewReplacementFile(null);
+    } catch (err) {
+      setReviewReplacementError(err instanceof Error ? err.message : "Replacement upload failed.");
+    } finally {
+      setReviewReplacementUploading(false);
+    }
+  }
+
   const uploadPercent = useMemo(() => {
     if (!uploadProgress || uploadProgress.total <= 0) {
       return 0;
@@ -399,6 +515,21 @@ export function DxfIntakePage() {
     [files, selectedDiagnosticsFileId]
   );
   const selectedDiagnostics = selectedDiagnosticsFile?.latest_preflight_diagnostics ?? null;
+  const selectedReviewFile = useMemo(
+    () => files.find((file) => file.id === selectedReviewFileId) ?? null,
+    [files, selectedReviewFileId]
+  );
+  const selectedReviewDiagnostics = selectedReviewFile?.latest_preflight_diagnostics ?? null;
+  const selectedReviewSummary = selectedReviewFile?.latest_preflight_summary ?? null;
+  const reviewRequiredIssues = useMemo(() => {
+    if (!selectedReviewDiagnostics) {
+      return [];
+    }
+    return selectedReviewDiagnostics.issue_summary.normalized_issues.filter(
+      (issue) => String(issue.severity ?? "").trim().toLowerCase() === "review_required"
+    );
+  }, [selectedReviewDiagnostics]);
+  const remainingReviewSignals = selectedReviewDiagnostics?.repair_summary.remaining_review_required_signals ?? [];
 
   if (!projectId) {
     return (
@@ -619,7 +750,7 @@ export function DxfIntakePage() {
 
             {files.length > 0 && (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[960px] border-collapse text-sm">
+                <table className="w-full min-w-[1080px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-mist text-left text-slate">
                       <th className="py-2">Filename</th>
@@ -629,6 +760,7 @@ export function DxfIntakePage() {
                       <th className="py-2">Acceptance</th>
                       <th className="py-2">Recommended action</th>
                       <th className="py-2">Finished</th>
+                      <th className="py-2">Review</th>
                       <th className="py-2">Diagnostics</th>
                     </tr>
                   </thead>
@@ -642,6 +774,7 @@ export function DxfIntakePage() {
                       const repairBadge = formatRepairCountBadge(file);
                       const acceptanceBadge = formatAcceptanceOutcomeBadge(file);
                       const recommendedAction = formatRecommendedActionLabel(file);
+                      const canOpenReview = canOpenConditionalReviewModal(file);
                       return (
                         <tr className="border-b border-mist/70" key={file.id}>
                           <td className="py-3">{file.original_filename}</td>
@@ -673,6 +806,19 @@ export function DxfIntakePage() {
                           </td>
                           <td className="py-3">{formatDate(file.latest_preflight_summary?.finished_at ?? null)}</td>
                           <td className="py-3">
+                            {canOpenReview ? (
+                              <button
+                                className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                                onClick={() => openConditionalReviewModal(file.id)}
+                                type="button"
+                              >
+                                Open review
+                              </button>
+                            ) : (
+                              <span className="text-xs text-slate-400">n/a</span>
+                            )}
+                          </td>
+                          <td className="py-3">
                             <button
                               className={`rounded border px-2 py-1 text-xs font-medium ${
                                 canViewDiagnostics
@@ -694,6 +840,128 @@ export function DxfIntakePage() {
               </div>
             )}
           </article>
+        </div>
+      )}
+
+      {selectedReviewFile && selectedReviewDiagnostics && selectedReviewSummary && canOpenConditionalReviewModal(selectedReviewFile) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-mist bg-white p-5 shadow-xl">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-4 border-b border-mist pb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Conditional review modal</h2>
+                <p className="mt-1 text-sm text-slate">{selectedReviewFile.original_filename}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatAcceptanceOutcomeBadge(selectedReviewFile).className}`}>
+                    {formatAcceptanceOutcomeBadge(selectedReviewFile).label}
+                  </span>
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatRunStatusBadge(selectedReviewFile).className}`}>
+                    {formatRunStatusBadge(selectedReviewFile).label}
+                  </span>
+                  <span className="text-xs text-slate">{selectedReviewSummary.run_seq ? `Run #${selectedReviewSummary.run_seq}` : "Run n/a"}</span>
+                  <span className="text-xs text-slate">Finished: {formatDate(selectedReviewSummary.finished_at ?? null)}</span>
+                </div>
+              </div>
+              <button
+                className="rounded-md border border-mist px-3 py-2 text-sm text-slate hover:bg-slate-100"
+                onClick={closeConditionalReviewModal}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <section className="rounded-lg border border-mist bg-slate-50 p-4">
+                <h3 className="text-sm font-semibold text-ink">Review summary</h3>
+                <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
+                  <p>Review-required issues: {selectedReviewSummary.review_required_issue_count}</p>
+                  <p>Remaining review-required signals: {selectedReviewDiagnostics.repair_summary.counts.remaining_review_required_signal_count}</p>
+                  <p>Recommended action: {formatRecommendedActionLabel(selectedReviewFile)}</p>
+                  <p>Precedence rule: {selectedReviewDiagnostics.acceptance_summary.precedence_rule_applied || "-"}</p>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Review-required issues</h3>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate">
+                  {reviewRequiredIssues.length === 0 && <li>none</li>}
+                  {reviewRequiredIssues.map((issue, index) => (
+                    <li key={`${issue.code}-${index}`}>
+                      [{issue.family || "-"} / {issue.code || "-"}] {issue.message || "-"}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Remaining review-required signals</h3>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate">
+                  {remainingReviewSignals.length === 0 && <li>none</li>}
+                  {remainingReviewSignals.map((signal, index) => (
+                    <li key={`remaining-review-signal-${index}`}>{formatSignalRecord(signal)}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+                <h3 className="text-sm font-semibold text-amber-900">What to do now</h3>
+                <p className="mt-2">
+                  Current-code note: persisted review decision save is not implemented yet. This modal provides guidance and a replacement
+                  upload entrypoint only.
+                </p>
+                <p className="mt-1">
+                  Use replacement upload to submit a corrected source DXF. Finalize still goes through the existing
+                  <code> complete_upload </code>
+                  route with <code>replaces_file_object_id</code> and the current <code>rules_profile_snapshot_jsonb</code>.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="rounded border border-mist bg-white px-3 py-1.5 text-xs font-medium text-slate hover:bg-slate-100"
+                    onClick={() => {
+                      setSelectedDiagnosticsFileId(selectedReviewFile.id);
+                      closeConditionalReviewModal();
+                    }}
+                    type="button"
+                  >
+                    Open full diagnostics drawer
+                  </button>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-mist p-4">
+                <h3 className="text-sm font-semibold text-ink">Replace source DXF</h3>
+                <p className="mt-2 text-xs text-slate">
+                  This uses <code>POST /projects/{`{project_id}`}/files/{`{file_id}`}/replace</code> then signed upload and finalize.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <input
+                    accept=".dxf"
+                    className="max-w-full rounded border border-mist px-2 py-1 text-xs"
+                    disabled={reviewReplacementUploading}
+                    onChange={(event) => handleReviewReplacementFileChange(event.target.files)}
+                    type="file"
+                  />
+                  <button
+                    className={`rounded px-3 py-1.5 text-xs font-medium ${
+                      reviewReplacementUploading
+                        ? "cursor-not-allowed border border-mist/70 bg-slate-100 text-slate-400"
+                        : "border border-accent bg-sky-50 text-accent hover:bg-sky-100"
+                    }`}
+                    disabled={reviewReplacementUploading || !reviewReplacementFile}
+                    onClick={() => void handleReviewReplacementUpload()}
+                    type="button"
+                  >
+                    Upload replacement DXF
+                  </button>
+                </div>
+                {reviewReplacementFile && <p className="mt-2 text-xs text-slate">Selected file: {reviewReplacementFile.name}</p>}
+                {reviewReplacementStatus && <p className="mt-2 text-xs text-slate">{reviewReplacementStatus}</p>}
+                {reviewReplacementError && (
+                  <p className="mt-2 rounded border border-danger/40 bg-red-50 px-2 py-1 text-xs text-danger">{reviewReplacementError}</p>
+                )}
+              </section>
+            </div>
+          </div>
         </div>
       )}
 

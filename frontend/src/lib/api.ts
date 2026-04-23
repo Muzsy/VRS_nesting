@@ -4,6 +4,7 @@ import type {
   PreflightRulesProfileSnapshot,
   Project,
   ProjectFile,
+  ProjectFileReplaceUploadResponse,
   ProjectFileLatestPreflightDiagnostics,
   ProjectFileLatestPreflightSummary,
   ProjectFileListResponse,
@@ -292,6 +293,22 @@ export const api = {
     }));
   },
 
+  replaceProjectFile(
+    token: string,
+    projectId: string,
+    fileId: string,
+    payload: { filename: string; content_type: string; size_bytes: number }
+  ): Promise<ProjectFileReplaceUploadResponse> {
+    return request<ProjectFileReplaceUploadResponse>(
+      `/projects/${projectId}/files/${fileId}/replace`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
   completeUpload(
     token: string,
     projectId: string,
@@ -302,6 +319,7 @@ export const api = {
       file_type: string;
       size_bytes: number;
       content_hash_sha256: string | null;
+      replaces_file_object_id?: string | null;
       rules_profile_snapshot_jsonb?: PreflightRulesProfileSnapshot | null;
     }
   ): Promise<ProjectFile> {

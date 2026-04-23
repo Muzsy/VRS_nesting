@@ -1,3 +1,14 @@
+declare global {
+  interface ImportMetaEnv {
+    readonly VITE_API_BASE_URL?: string;
+    readonly VITE_DXF_PREFLIGHT_ENABLED?: string;
+  }
+
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
+}
+
 export type RunStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Project {
@@ -35,6 +46,15 @@ export interface ProjectFile {
 export interface ProjectFileListResponse {
   items: ProjectFile[];
   total: number;
+}
+
+export interface ProjectFileReplaceUploadResponse {
+  upload_url: string;
+  file_id: string;
+  storage_bucket: string;
+  storage_path: string;
+  expires_at: string;
+  replaces_file_id: string;
 }
 
 export interface ProjectFileLatestPreflightSummary {

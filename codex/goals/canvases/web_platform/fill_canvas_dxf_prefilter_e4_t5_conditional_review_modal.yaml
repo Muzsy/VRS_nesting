@@ -1,0 +1,94 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e4_t5_conditional_review_modal"
+title: "DXF Prefilter E4-T5 — Conditional review modal"
+objective: >
+  Vezess be a DxfIntakePage latest preflight tablajahoz egy felteteles review modalt,
+  amely csak a preflight_review_required file-okra aktiv, a persisted diagnostics truth
+  review slice-at emeli ki, es a jelenlegi backend replacement flow-ra epitve replacement
+  upload entrypointot ad. Ne talalj ki persisted review-decision domaint vagy uj review API-t.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_api_contract_specification.md"
+  - "docs/web_platform/architecture/dxf_prefilter_v1_scope_and_boundary.md"
+  - "api/routes/files.py"
+  - "frontend/src/lib/featureFlags.ts"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/lib/api.ts"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "canvases/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+  - "canvases/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne hozz letre uj preflight review-decision API route-ot."
+  - "Ne hozz letre preflight_review_decisions persistence tablat vagy migrationt."
+  - "Ne talalj ki rules-profile save/update domaint."
+  - "A review modal current-code truth szerint guidance + replacement entrypoint, nem persisted review engine."
+  - "A replacement flow a meglvo POST /projects/{project_id}/files/{file_id}/replace route-ra es a complete_upload finalize bridge-re epuljon."
+  - "A page jelenlegi settings draftja replacement finalize-kor is rules_profile_snapshot_jsonb-kent menjen at."
+  - "Ne torold vagy regresszald az E4-T4 diagnostics drawert."
+  - "Ne nyiss accepted->parts, download URL vagy redesign scope-ot."
+  - "Ne bovitsd a NewRunPage.tsx legacy wizardot."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans current-code frontend/backend
+      fajlokat. Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e4_t5_conditional_review_modal.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e4_t5_conditional_review_modal/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+
+  - name: "Frontend API/type boundary a replacement review flow-hoz"
+    description: >
+      Vezess be explicit frontend helper-t es tipusokat a jelenlegi replacement route-hoz,
+      uj route vagy backend contract kitalalasa nelkul.
+    outputs:
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/lib/api.ts"
+
+  - name: "DxfIntakePage conditional review modal"
+    description: >
+      Vezess be page-local, review-required file-okra korlatozott review modalt.
+      A modal emelje ki a review-required diagnostics szeletet, mutasson current-code
+      guidance-ot, es adjon replacement upload entrypointot a meglevo route + finalize
+      flow-ra epitve.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely bizonyitja:
+      - a review trigger csak review-required file-ra jelenik meg,
+      - a review modal tokenek bent vannak,
+      - a replacement helper/current-code disclaimer bent van,
+      - a diagnostics drawer nem tunt el.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e4_t5_conditional_review_modal.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze meg,
+      hogy miert guidance + replacement entrypoint a helyes T5 current-code modell,
+      miert nem persisted review decision save, es hogyan orzi meg a task a T4 drawer-t.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.verify.log"
