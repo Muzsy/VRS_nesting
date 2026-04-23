@@ -404,7 +404,9 @@ def test_complete_upload_without_replacement_no_lineage_field(
 # ---------------------------------------------------------------------------
 
 
-def test_no_manual_rerun_endpoint_exists() -> None:
+def test_no_manual_rerun_endpoint_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "http://fake.local")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
     import api.main as main_mod
 
     app = main_mod.app
