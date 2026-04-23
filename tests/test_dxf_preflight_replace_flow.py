@@ -143,6 +143,7 @@ _SETTINGS = Settings(
     rate_limit_upload_urls_per_window=100,
     signed_url_ttl_s=3600,
     enable_security_headers=False,
+    dxf_preflight_required=True,
     allowed_origins=(),
 )
 

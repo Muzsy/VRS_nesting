@@ -14,6 +14,7 @@ from api.deps import get_settings, get_supabase_client
 from api.http_errors import raise_supabase_http_error
 from api.rate_limit import enforce_user_rate_limit
 from api.request_models import StrictRequestModel
+from api.services.dxf_geometry_import import import_source_dxf_geometry_revision_async
 from api.services.dxf_preflight_runtime import run_preflight_for_upload
 from api.services.dxf_validation import validate_dxf_file_async
 from api.services.file_ingest_metadata import canonical_file_name_from_storage_path, load_file_ingest_metadata
@@ -569,19 +570,33 @@ def complete_upload(
             file_object_id=str(req.file_id),
             storage_path=storage_path,
         )
-        background_tasks.add_task(
-            run_preflight_for_upload,
-            supabase=supabase,
-            access_token=user.access_token,
-            project_id=str(project_id),
-            source_file_object_id=str(req.file_id),
-            storage_bucket=storage_bucket,
-            storage_path=storage_path,
-            source_hash_sha256=source_hash_sha256,
-            created_by=user.id,
-            signed_url_ttl_s=settings.signed_url_ttl_s,
-            rules_profile=rules_profile_snapshot,
-        )
+        if settings.dxf_preflight_required:
+            background_tasks.add_task(
+                run_preflight_for_upload,
+                supabase=supabase,
+                access_token=user.access_token,
+                project_id=str(project_id),
+                source_file_object_id=str(req.file_id),
+                storage_bucket=storage_bucket,
+                storage_path=storage_path,
+                source_hash_sha256=source_hash_sha256,
+                created_by=user.id,
+                signed_url_ttl_s=settings.signed_url_ttl_s,
+                rules_profile=rules_profile_snapshot,
+            )
+        else:
+            background_tasks.add_task(
+                import_source_dxf_geometry_revision_async,
+                supabase=supabase,
+                access_token=user.access_token,
+                project_id=str(project_id),
+                source_file_object_id=str(req.file_id),
+                storage_bucket=storage_bucket,
+                storage_path=storage_path,
+                source_hash_sha256=source_hash_sha256,
+                created_by=user.id,
+                signed_url_ttl_s=settings.signed_url_ttl_s,
+            )
 
     return _as_file_response(row)
 
@@ -701,6 +716,11 @@ def replace_file(
     supabase: SupabaseClient = Depends(get_supabase_client),
     settings: Settings = Depends(get_settings),
 ) -> FileReplaceResponse:
+    if not settings.dxf_preflight_required:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="DXF prefilter lane is disabled; replacement flow is not available",
+        )
     _ensure_project_access(supabase=supabase, user=user, project_id=project_id)
     _validate_replacement_target(
         supabase=supabase,

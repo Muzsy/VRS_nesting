@@ -212,7 +212,7 @@ def test_route_no_longer_registers_direct_geometry_import_task(monkeypatch: Any)
         background_tasks=background_tasks,
         user=AuthenticatedUser(id="user-1", access_token="token"),
         supabase=_RouteFakeSupabase(),
-        settings=SimpleNamespace(storage_bucket="source-files", signed_url_ttl_s=300),
+        settings=SimpleNamespace(storage_bucket="source-files", signed_url_ttl_s=300, dxf_preflight_required=True),
     )
 
     task_funcs = [task.func for task in background_tasks.tasks]

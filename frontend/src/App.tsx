@@ -9,6 +9,7 @@ import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { ViewerPage } from "./pages/ViewerPage";
+import { DXF_PREFLIGHT_ENABLED } from "./lib/featureFlags";
 
 export default function App() {
   return (
@@ -20,7 +21,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-          <Route path="/projects/:projectId/dxf-intake" element={<DxfIntakePage />} />
+          {DXF_PREFLIGHT_ENABLED && <Route path="/projects/:projectId/dxf-intake" element={<DxfIntakePage />} />}
           <Route path="/projects/:projectId/new-run" element={<NewRunPage />} />
           <Route path="/projects/:projectId/runs/:runId" element={<RunDetailPage />} />
           <Route path="/projects/:projectId/runs/:runId/viewer" element={<ViewerPage />} />

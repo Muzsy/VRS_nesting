@@ -1,0 +1,121 @@
+schema_version: "1"
+task_slug: "dxf_prefilter_e3_t5_feature_flag_and_rollout_gate"
+title: "DXF Prefilter E3-T5 — Feature flag es rollout gate"
+objective: >
+  Vezesd be a DXF prefilter lane env-level feature flag + rollout gate megoldasat a jelenlegi
+  repo-grounded upload/preflight/import lancra illesztve, ugy hogy flag OFF eseten a source DXF
+  finalize legacy direct geometry import fallbackra alljon vissza, replacement flow gate-elve legyen,
+  es a DXF Intake route/CTA minimalisan kapuzva legyen frontend oldalon.
+
+context:
+  - "A jelenlegi complete_upload source DXF branch mindig validate + preflight runtime taskot indit."
+  - "A legacy fallback current-code truthkent mar letezik az import_source_dxf_geometry_revision_async helperben."
+  - "A repo-ban nincs project-level settings domain vagy runtime frontend config endpoint."
+  - "Az E4 intake UI mar bent van, ezert a rollout gate-nek minimalis frontend visibility kaput is kell adnia."
+  - "Ez rollout task, nem uj product domain task; ne nyiss migration, project settings vagy explicit config API scope-ot."
+  - "A minosegkaput kizarolag wrapperrel futtasd: ./scripts/verify.sh --report ..."
+
+constraints:
+  - "A canonical backend flag env-level legyen; ne vezess be project-level persisted rollout mezot."
+  - "A flag OFF fallback a jelenlegi import_source_dxf_geometry_revision_async helperre epuljon; ne duplikald a geometry import logikat."
+  - "A replacement route OFF eseten legyen gate-elve; ne nyisson replacement upload slotot."
+  - "A frontend current-code V1 megoldasa build-time mirror flag; ne vezess be uj runtime config endpointot."
+  - "Ne modosits nem listazott fajlt, es ne nyiss E4-T5/T6/T7, review/download vagy project-settings scope-ot."
+
+inputs:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "api/config.py"
+  - "api/routes/files.py"
+  - "api/services/dxf_preflight_runtime.py"
+  - "api/services/dxf_geometry_import.py"
+  - "frontend/src/App.tsx"
+  - "frontend/src/pages/ProjectDetailPage.tsx"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "canvases/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+  - "canvases/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+  - "canvases/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+  - "codex/reports/web_platform/dxf_prefilter_e3_t2_post_upload_preflight_trigger_integration.md"
+  - "codex/reports/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+  - "codex/reports/web_platform/dxf_prefilter_e3_t4_replace_file_and_rerun_preflight_flow.md"
+
+steps:
+  - name: "Canvas/YAML/prompt/checklist/report alapok elokeszitese"
+    description: >
+      Keszitsd el a DXF-E3-T5 task canvas/YAML/prompt/checklist/report alapjait a jelenlegi
+      E3-T2/E3-T4 truth-ra illesztve. A canvas explicit modon rogzitese, hogy ez env-level
+      rollout gate task, nem project-settings vagy runtime config API task.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md"
+
+  - name: "Backend settings feature flag bekotese"
+    description: >
+      Modositsd az api/config.py fajlt ugy, hogy a Settings kapjon canonical backend DXF prefilter
+      rollout flaget. A current-code stilushoz illeszkedo env parse legyen booleanszeru; hasznalhatsz
+      canonical `API_DXF_PREFLIGHT_REQUIRED` nevet es optional docs-compat aliast (`DXF_PREFLIGHT_REQUIRED`).
+    outputs:
+      - "api/config.py"
+
+  - name: "Route-level rollout gate es legacy fallback bekotese"
+    description: >
+      Modositsd az api/routes/files.py fajlt ugy, hogy source DXF complete_upload finalize eseten
+      flag ON -> validate + run_preflight_for_upload,
+      flag OFF -> validate + import_source_dxf_geometry_revision_async.
+      Ugyanitt gate-eld a replace_file route-ot is feature OFF eseten.
+      Ne duplikald a geometry import implementaciot a route-ban.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Minimalis frontend visibility gate bekotese"
+    description: >
+      Vezess be minimalis build-time frontend feature gate helper(eke)t a DXF Intake route/CTA
+      kapuzasahoz. A DxfIntakePage belso UX-et ne ird ujra; eleg a route/CTA visibility kontroll.
+    outputs:
+      - "frontend/src/lib/featureFlags.ts"
+      - "frontend/src/App.tsx"
+      - "frontend/src/pages/ProjectDetailPage.tsx"
+
+  - name: "Task-specifikus unit teszt letrehozasa"
+    description: >
+      Keszits deterministic pytest coverage-et, amely minimum bizonyitja:
+      - settings loader parse-olja a backend flaget,
+      - flag ON eseten complete_upload validate + preflight runtime taskot regisztral,
+      - flag OFF eseten complete_upload validate + direct geometry import taskot regisztral,
+      - flag OFF eseten replace route gate-elt.
+    outputs:
+      - "tests/test_dxf_preflight_feature_flag_gate.py"
+
+  - name: "Task-specifikus smoke letrehozasa"
+    description: >
+      Keszits deterministic smoke scriptet, amely fake supabase es patch-elt background task hivasok
+      mellett bizonyitja a feature ON es a feature OFF utvonalak kulonbseget, valamint a replacement
+      route gate-et.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a task checklistet es reportot a tenylegesen elvegzett E3-T5 valtozasok alapjan.
+      A reportban kulon nevezd meg:
+      - miert env-level canonical gate a helyes V1 current-code irany,
+      - hogyan ter vissza a rendszer legacy import utra,
+      - miert csak build-time mirror flag a frontend gate,
+      - es mi marad kesobbi project-level rollout / config endpoint scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.md"
+      - "codex/reports/web_platform/dxf_prefilter_e3_t5_feature_flag_and_rollout_gate.verify.log"

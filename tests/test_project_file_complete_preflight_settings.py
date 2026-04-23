@@ -59,7 +59,7 @@ def _run_complete_upload(*, snapshot: dict[str, Any] | None) -> tuple[list[Any],
         background_tasks=background_tasks,
         user=AuthenticatedUser(id="user-1", access_token="token"),
         supabase=_RouteFakeSupabase(),
-        settings=SimpleNamespace(storage_bucket="source-files", signed_url_ttl_s=300),
+        settings=SimpleNamespace(storage_bucket="source-files", signed_url_ttl_s=300, dxf_preflight_required=True),
     )
     return background_tasks.tasks, response
 

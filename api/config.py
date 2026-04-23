@@ -51,6 +51,7 @@ class Settings:
     rate_limit_upload_urls_per_window: int
     signed_url_ttl_s: int
     enable_security_headers: bool
+    dxf_preflight_required: bool
     allowed_origins: tuple[str, ...]
 
     @property
@@ -114,6 +115,10 @@ def load_settings() -> Settings:
 
     security_headers_raw = _resolve_env("API_ENABLE_SECURITY_HEADERS", "1").strip().lower()
     enable_security_headers = security_headers_raw not in {"0", "false", "no", "off"}
+
+    dxf_preflight_raw = (_resolve_env("API_DXF_PREFLIGHT_REQUIRED") or _resolve_env("DXF_PREFLIGHT_REQUIRED", "1")).strip().lower()
+    dxf_preflight_required = dxf_preflight_raw not in {"0", "false", "no", "off"}
+
     storage_bucket = _resolve_env("API_STORAGE_BUCKET", "source-files").strip()
     if not storage_bucket:
         raise SettingsError("API_STORAGE_BUCKET cannot be empty")
@@ -132,5 +137,6 @@ def load_settings() -> Settings:
         rate_limit_upload_urls_per_window=upload_limit,
         signed_url_ttl_s=signed_url_ttl_s,
         enable_security_headers=enable_security_headers,
+        dxf_preflight_required=dxf_preflight_required,
         allowed_origins=origins,
     )
