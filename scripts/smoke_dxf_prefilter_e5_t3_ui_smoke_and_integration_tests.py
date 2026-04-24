@@ -1,56 +1,24 @@
 #!/usr/bin/env python3
-"""DXF Prefilter E5-T3 -- structural smoke for DXF Intake UI smoke / integration pack.
+"""DXF Prefilter E5-T3 structural smoke.
 
-Deterministic structural checks (no Playwright execution):
-1. Playwright spec file exists.
-2. Spec references DxfIntakePage route and installMockApi harness.
-3. rules_profile_snapshot_jsonb finalize payload capture is asserted in spec.
-4. Accepted scenario (accepted_for_import + Ready for next step + drawer blocks) present.
-5. Non-accepted scenario (preflight_review_required) present.
-6. mockApi.ts harness has latest_preflight_summary/diagnostics + finalizedBodies extensions.
-7. Forbidden scope guard: no real backend, no new endpoint, no accepted->parts scope.
+Deterministic structural checks (no runtime backend/UI execution):
+1. Playwright spec file exists for the DxfIntakePage UI flows.
+2. Spec uses installMockApi harness (not ad-hoc page.route).
+3. Settings -> upload finalize bridge scenario is present (rules_profile_snapshot_jsonb assertion).
+4. Accepted latest run -> diagnostics drawer scenario is present with E4-T7 canonical copy.
+5. Non-accepted latest run -> correct badge / advisory scenario is present with E4-T7 canonical copy.
+6. Stale pre-T7 text strings are gone from spec.
+7. MockApi.ts has latest_part_creation_projection field in MockFile interface.
+8. No new backend endpoint, tesztframework or accepted->parts future scope invented.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-SPEC_PATH = ROOT / "frontend" / "e2e" / "dxf_prefilter_e5_t3_dxf_intake.spec.ts"
-MOCK_API_PATH = ROOT / "frontend" / "e2e" / "support" / "mockApi.ts"
-
-SPEC_REQUIRED_TOKENS = [
-    "installMockApi",
-    "dxf-intake",
-    "rules_profile_snapshot_jsonb",
-    "accepted_for_import",
-    "preflight_review_required",
-    "Ready for next step",
-    "View diagnostics",
-    "Source inventory",
-    "Role mapping",
-    "finalizedBodies",
-]
-
-MOCK_REQUIRED_TOKENS = [
-    "latest_preflight_summary",
-    "latest_preflight_diagnostics",
-    "finalizedBodies",
-]
-
-SPEC_FORBIDDEN_TOKENS = [
-    "BackgroundTasks",
-    "TestClient",
-    "@testing-library",
-    "cypress",
-    "run_preflight_for_upload",
-    "create_parts",
-    "CreateParts",
-]
+SPEC = ROOT / "frontend" / "e2e" / "dxf_prefilter_e5_t3_dxf_intake.spec.ts"
+MOCK_API = ROOT / "frontend" / "e2e" / "support" / "mockApi.ts"
 
 
 def _assert(cond: bool, message: str) -> None:
@@ -58,63 +26,135 @@ def _assert(cond: bool, message: str) -> None:
         raise AssertionError(f"FAIL: {message}")
 
 
-def check_spec_exists() -> None:
-    _assert(SPEC_PATH.is_file(), f"Playwright spec missing: {SPEC_PATH}")
-    print(f"  [OK] spec file exists: {SPEC_PATH.relative_to(ROOT)}")
+def _check_file_exists(path: Path) -> None:
+    _assert(path.is_file(), f"missing file: {path}")
 
 
-def check_mock_api_exists() -> None:
-    _assert(MOCK_API_PATH.is_file(), f"mockApi.ts missing: {MOCK_API_PATH}")
-    print(f"  [OK] mockApi.ts exists: {MOCK_API_PATH.relative_to(ROOT)}")
+def _contains_all(content: str, required: list[str], *, label: str) -> None:
+    for token in required:
+        _assert(token in content, f"missing {label} token: {token!r}")
 
 
-def check_spec_content(content: str) -> None:
-    for token in SPEC_REQUIRED_TOKENS:
-        _assert(token in content, f"spec missing required token: {token!r}")
-    print(f"  [OK] spec required tokens present ({len(SPEC_REQUIRED_TOKENS)} checked)")
-
-    for forbidden in SPEC_FORBIDDEN_TOKENS:
-        _assert(forbidden not in content, f"spec contains forbidden scope token: {forbidden!r}")
-    print(f"  [OK] spec scope guard: no forbidden tokens ({len(SPEC_FORBIDDEN_TOKENS)} checked)")
-
-    # Verify all 6 diagnostics drawer block headings are asserted
-    drawer_blocks = ["Source inventory", "Role mapping", "Issues", "Repairs", "Acceptance", "Artifacts"]
-    for block in drawer_blocks:
-        _assert(block in content, f"spec missing diagnostics drawer block assertion: {block!r}")
-    print(f"  [OK] diagnostics drawer: all 6 block headings asserted ({drawer_blocks})")
-
-    # Verify settings bridge assertions present
-    _assert("strict_mode" in content, "spec missing strict_mode bridge assertion")
-    _assert("max_gap_close_mm" in content, "spec missing max_gap_close_mm bridge assertion")
-    print("  [OK] settings -> finalize payload bridge assertions present")
-
-    # Verify advisory only (no mutation)
-    _assert('"Ready for next step"' in content or "'Ready for next step'" in content,
-            "spec missing Ready for next step advisory assertion")
-    _assert("not.toBeVisible" in content, "spec missing not.toBeVisible guard for non-accepted advisory")
-    print("  [OK] advisory-only accepted state asserted (Ready for next step + not.toBeVisible guard)")
-
-
-def check_mock_api_content(content: str) -> None:
-    for token in MOCK_REQUIRED_TOKENS:
-        _assert(token in content, f"mockApi.ts missing required token: {token!r}")
-    print(f"  [OK] mockApi.ts extensions present ({len(MOCK_REQUIRED_TOKENS)} checked)")
+def _contains_none(content: str, forbidden: list[str], *, label: str) -> None:
+    for token in forbidden:
+        _assert(token not in content, f"unexpected {label} token still present: {token!r}")
 
 
 def main() -> None:
     print("=== smoke_dxf_prefilter_e5_t3_ui_smoke_and_integration_tests ===")
-    print()
 
-    check_spec_exists()
-    check_mock_api_exists()
+    for path in (SPEC, MOCK_API):
+        _check_file_exists(path)
 
-    spec_content = SPEC_PATH.read_text(encoding="utf-8")
-    check_spec_content(spec_content)
+    spec_src = SPEC.read_text(encoding="utf-8")
+    mock_src = MOCK_API.read_text(encoding="utf-8")
 
-    mock_content = MOCK_API_PATH.read_text(encoding="utf-8")
-    check_mock_api_content(mock_content)
+    # 1) Spec uses installMockApi harness
+    _contains_all(
+        spec_src,
+        [
+            'from "./support/mockApi"',
+            "installMockApi(page)",
+            "mock.state.projects.push",
+            "mock.state.filesByProject",
+        ],
+        label="mock-harness-usage",
+    )
+    print("  [OK] Spec uses installMockApi harness")
 
-    print()
+    # 2) Settings -> upload finalize bridge scenario
+    _contains_all(
+        spec_src,
+        [
+            "rules_profile_snapshot_jsonb",
+            "mock.state.finalizedBodies",
+            'input[type="checkbox"]',
+            'input[step="0.01"]',
+            'input[type="file"]',
+            "Upload complete. Preflight starts automatically.",
+        ],
+        label="settings-upload-bridge-scenario",
+    )
+    print("  [OK] Settings -> upload finalize bridge scenario present")
+
+    # 3) Accepted latest run -> diagnostics drawer scenario with E4-T7 canonical copy
+    _contains_all(
+        spec_src,
+        [
+            "ACCEPTED_SUMMARY",
+            "ACCEPTED_DIAGNOSTICS",
+            "latest_preflight_summary: ACCEPTED_SUMMARY",
+            "latest_preflight_diagnostics: ACCEPTED_DIAGNOSTICS",
+            'acceptance_outcome: "accepted_for_import"',
+            "View diagnostics",
+            # E4-T7 canonical copy
+            "Ready — proceed to part creation",
+            "Preflight diagnostics",
+            "Source inventory",
+            "Role mapping",
+            "Issues",
+            "Repairs",
+            "Acceptance outcome",
+            "Artifacts",
+        ],
+        label="accepted-diagnostics-drawer-scenario",
+    )
+    print("  [OK] Accepted latest run -> diagnostics drawer scenario present with E4-T7 copy")
+
+    # 4) Non-accepted (review_required) scenario with E4-T7 canonical copy
+    _contains_all(
+        spec_src,
+        [
+            "REVIEW_REQUIRED_SUMMARY",
+            "REVIEW_REQUIRED_DIAGNOSTICS",
+            "latest_preflight_summary: REVIEW_REQUIRED_SUMMARY",
+            'acceptance_outcome: "preflight_review_required"',
+            "review required",
+            # E4-T7 canonical copy
+            "Open review overlay to inspect issues",
+        ],
+        label="non-accepted-scenario",
+    )
+    print("  [OK] Non-accepted (review_required) scenario present with E4-T7 copy")
+
+    # 5) Stale pre-T7 copy strings are gone
+    _contains_none(
+        spec_src,
+        [
+            '"Ready for next step"',
+            '"Wait for diagnostics"',
+            '{ name: "Diagnostics" }',
+            '{ name: "Acceptance" }',
+        ],
+        label="stale-pre-t7-copy",
+    )
+    print("  [OK] Stale pre-T7 copy strings removed from spec")
+
+    # 6) MockFile interface has latest_part_creation_projection
+    _contains_all(
+        mock_src,
+        [
+            "latest_part_creation_projection?: Record<string, unknown> | null;",
+        ],
+        label="mock-file-part-creation-projection",
+    )
+    print("  [OK] MockFile interface has latest_part_creation_projection field")
+
+    # 7) No new backend endpoint or tesztframework invented
+    _contains_none(
+        spec_src,
+        [
+            "import { test } from 'vitest'",
+            "import { render } from '@testing-library",
+            "from 'cypress'",
+            "supertest",
+            "createProjectPart",
+            "replaceProjectFile",
+        ],
+        label="no-new-scope",
+    )
+    print("  [OK] No new backend endpoint / tesztframework / accepted->parts scope in spec")
+
     print("All checks passed.")
 
 

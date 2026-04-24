@@ -24,6 +24,7 @@ interface MockFile {
   uploaded_at: string;
   latest_preflight_summary?: Record<string, unknown> | null;
   latest_preflight_diagnostics?: Record<string, unknown> | null;
+  latest_part_creation_projection?: Record<string, unknown> | null;
 }
 
 interface MockRun {

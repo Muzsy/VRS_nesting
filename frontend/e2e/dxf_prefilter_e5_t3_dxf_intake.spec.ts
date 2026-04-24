@@ -201,21 +201,21 @@ test.describe("DXF Prefilter E5-T3 — DXF Intake UI smoke / integration", () =>
     // Acceptance badge shows "accepted" (accepted_for_import outcome) — exact to avoid substring matches
     await expect(page.getByText("accepted", { exact: true })).toBeVisible();
 
-    // Recommended action is advisory: "Ready for next step" (not a mutating button)
-    await expect(page.getByText("Ready for next step")).toBeVisible();
+    // Recommended action is advisory: "Ready — proceed to part creation" (not a mutating button)
+    await expect(page.getByText("Ready — proceed to part creation")).toBeVisible();
 
     // "View diagnostics" button enabled and opens drawer
     await page.getByRole("button", { name: "View diagnostics" }).click();
 
     // Drawer header
-    await expect(page.getByRole("heading", { name: "Diagnostics" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Preflight diagnostics" })).toBeVisible();
 
     // All 6 diagnostic blocks must render
     await expect(page.getByRole("heading", { name: "Source inventory" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Role mapping" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Issues" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Repairs" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Acceptance" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Acceptance outcome" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Artifacts" })).toBeVisible();
 
     // Drawer is read-only: only a Close button, no mutation actions
@@ -223,7 +223,7 @@ test.describe("DXF Prefilter E5-T3 — DXF Intake UI smoke / integration", () =>
 
     // Close drawer
     await page.getByRole("button", { name: "Close" }).click();
-    await expect(page.getByRole("heading", { name: "Diagnostics" })).not.toBeVisible();
+    await expect(page.getByRole("heading", { name: "Preflight diagnostics" })).not.toBeVisible();
   });
 
   test("E5-T3 UI#3: non-accepted (review_required) latest run -> correct badge, no false accepted advisory", async ({ page }) => {
@@ -253,16 +253,16 @@ test.describe("DXF Prefilter E5-T3 — DXF Intake UI smoke / integration", () =>
     await expect(page.getByText("review required", { exact: true })).toBeVisible();
 
     // Recommended action for non-accepted state
-    await expect(page.getByText("Wait for diagnostics")).toBeVisible();
+    await expect(page.getByText("Open review overlay to inspect issues")).toBeVisible();
 
-    // "Ready for next step" must NOT appear (no false accepted advisory)
-    await expect(page.getByText("Ready for next step")).not.toBeVisible();
+    // "Ready — proceed to part creation" must NOT appear (no false accepted advisory)
+    await expect(page.getByText("Ready — proceed to part creation")).not.toBeVisible();
 
     // Diagnostics drawer is accessible since diagnostics payload exists
     const viewBtn = page.getByRole("button", { name: "View diagnostics" });
     await expect(viewBtn).toBeEnabled();
     await viewBtn.click();
-    await expect(page.getByRole("heading", { name: "Diagnostics" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Preflight diagnostics" })).toBeVisible();
 
     // Drawer acceptance badge also reflects non-accepted state
     await expect(page.locator(".fixed").getByText("review required", { exact: true })).toBeVisible();

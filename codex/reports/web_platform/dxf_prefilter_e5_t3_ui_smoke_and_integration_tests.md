@@ -27,9 +27,9 @@ A spec `E5-T3 UI#1` tesztje:
 
 A spec `E5-T3 UI#2` tesztje:
 1. Seedel egy fájlt teljes `accepted_for_import` preflight summary + diagnostics payloaddal.
-2. Assertálja az `accepted` badge-et és a `Ready for next step` advisory szöveget.
+2. Assertálja az `accepted` badge-et és a `Ready — proceed to part creation` advisory szöveget (E4-T7 canonical copy).
 3. Megnyitja a diagnostics drawer-t a `View diagnostics` gombbal.
-4. Assertálja mind a 6 drawer szekció fejlécét: **Source inventory**, **Role mapping**, **Issues**, **Repairs**, **Acceptance**, **Artifacts**.
+4. Assertálja mind a 6 drawer szekció fejlécét: **Source inventory**, **Role mapping**, **Issues**, **Repairs**, **Acceptance outcome**, **Artifacts**.
 5. Assertálja, hogy a drawer read-only (csak `Close` gomb létezik, nincs mutáló action).
 6. Bezárja a drawer-t és assertálja, hogy eltűnik.
 
@@ -37,7 +37,7 @@ A spec `E5-T3 UI#2` tesztje:
 
 A mai kódban nincs E4-T6 accepted→parts flow. A spec ezért:
 - **nem** keres `Create parts` gombot vagy navigációt;
-- az `accepted_for_import` fájl esetén a `Ready for next step` szöveg **advisory szövegként** jelenik meg a táblázat "Recommended action" oszlopában — nem mutáló gombként;
+- az `accepted_for_import` fájl esetén a `Ready — proceed to part creation` szöveg (E4-T7 canonical copy) **advisory szövegként** jelenik meg a táblázat "Next step" oszlopában — nem mutáló gombként;
 - a `not.toBeVisible()` guard (`E5-T3 UI#3`) bizonyítja, hogy `review_required` fájlra NEM jelenik meg ez az advisory.
 
 ## Futtatott ellenőrzések
@@ -53,33 +53,33 @@ A mai kódban nincs E4-T6 accepted→parts flow. A spec ezért:
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-04-23T20:49:49+02:00 → 2026-04-23T20:52:38+02:00 (169s)
+- futás: 2026-04-24T21:47:44+02:00 → 2026-04-24T21:50:30+02:00 (166s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.verify.log`
-- git: `main@d9904ce`
-- módosított fájlok (git status): 10
+- git: `main@c8e3497`
+- módosított fájlok (git status): 6
 
 **git diff --stat**
 
 ```text
- frontend/e2e/support/mockApi.ts | 6 ++++++
- frontend/tsconfig.tsbuildinfo   | 2 +-
- 2 files changed, 7 insertions(+), 1 deletion(-)
+ ...efilter_e5_t3_ui_smoke_and_integration_tests.md |   6 +-
+ ...efilter_e5_t3_ui_smoke_and_integration_tests.md |   6 +-
+ ...e5_t3_ui_smoke_and_integration_tests.verify.log |  92 ++++-----
+ .../e2e/dxf_prefilter_e5_t3_dxf_intake.spec.ts     |  18 +-
+ frontend/e2e/support/mockApi.ts                    |   1 +
+ ...efilter_e5_t3_ui_smoke_and_integration_tests.py | 224 ++++++++++++---------
+ 6 files changed, 194 insertions(+), 153 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
+ M codex/codex_checklist/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md
+ M codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md
+ M codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.verify.log
+ M frontend/e2e/dxf_prefilter_e5_t3_dxf_intake.spec.ts
  M frontend/e2e/support/mockApi.ts
- M frontend/tsconfig.tsbuildinfo
-?? canvases/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md
-?? codex/codex_checklist/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md
-?? codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.yaml
-?? codex/prompts/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests/
-?? codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.md
-?? codex/reports/web_platform/dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.verify.log
-?? frontend/e2e/dxf_prefilter_e5_t3_dxf_intake.spec.ts
-?? scripts/smoke_dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.py
+ M scripts/smoke_dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.py
 ```
 
 <!-- AUTO_VERIFY_END -->

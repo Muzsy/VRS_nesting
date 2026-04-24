@@ -5,10 +5,10 @@
 - [x] A meglévő mock API harness bővült: `MockFile.latest_preflight_summary`, `MockFile.latest_preflight_diagnostics`, `MockState.finalizedBodies`
 - [x] POST `/projects/{id}/files` handler capture-olja a finalize body-t `state.finalizedBodies`-ba
 - [x] Browserből bizonyított a settings -> upload finalize bridge (`rules_profile_snapshot_jsonb` payload assertion)
-- [x] Browserből bizonyított az accepted latest run táblázat (`accepted` badge + `Ready for next step` advisory)
-- [x] Browserből bizonyított a diagnostics drawer 6 fő blokkja: Source inventory, Role mapping, Issues, Repairs, Acceptance, Artifacts
+- [x] Browserből bizonyított az accepted latest run táblázat (`accepted` badge + `Ready — proceed to part creation` advisory)
+- [x] Browserből bizonyított a diagnostics drawer 6 fő blokkja: Source inventory, Role mapping, Issues, Repairs, Acceptance outcome, Artifacts
 - [x] Browserből bizonyított legalább egy non-accepted (`review_required`) latest run vizuális állapota
-- [x] `Ready for next step` advisory nem jelenik meg non-accepted fájlnál (`not.toBeVisible` guard)
+- [x] `Ready — proceed to part creation` advisory nem jelenik meg non-accepted fájlnál (`not.toBeVisible` guard)
 - [x] Diagnostics drawer non-accepted file esetén is megnyitható (ha van `latest_preflight_diagnostics`)
 - [x] Nem nyílt új backend endpoint, új tesztframework vagy accepted->parts scope
 - [x] Elkészült a task-specifikus structural smoke (`scripts/smoke_dxf_prefilter_e5_t3_ui_smoke_and_integration_tests.py`)
