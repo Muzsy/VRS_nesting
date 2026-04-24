@@ -4,6 +4,9 @@ import type {
   PreflightRulesProfileSnapshot,
   Project,
   ProjectFile,
+  ProjectFileLatestPartCreationProjection,
+  ProjectPartCreateRequest,
+  ProjectPartCreateResponse,
   ProjectFileReplaceUploadResponse,
   ProjectFileLatestPreflightDiagnostics,
   ProjectFileLatestPreflightSummary,
@@ -60,6 +63,7 @@ function normalizeProjectFile(raw: Record<string, unknown>): ProjectFile {
     uploaded_at: (raw.uploaded_at as string | null | undefined) ?? (raw.created_at as string | null | undefined) ?? null,
     latest_preflight_summary: normalizeLatestPreflightSummary(raw.latest_preflight_summary),
     latest_preflight_diagnostics: normalizeLatestPreflightDiagnostics(raw.latest_preflight_diagnostics),
+    latest_part_creation_projection: normalizeLatestPartCreationProjection(raw.latest_part_creation_projection),
   };
 }
 
@@ -220,6 +224,27 @@ function normalizeLatestPreflightDiagnostics(raw: unknown): ProjectFileLatestPre
   };
 }
 
+function normalizeLatestPartCreationProjection(raw: unknown): ProjectFileLatestPartCreationProjection | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const obj = raw as Record<string, unknown>;
+  return {
+    acceptance_outcome: (obj.acceptance_outcome as string | null | undefined) ?? null,
+    geometry_revision_id: (obj.geometry_revision_id as string | null | undefined) ?? null,
+    geometry_revision_status: (obj.geometry_revision_status as string | null | undefined) ?? null,
+    has_nesting_derivative: Boolean(obj.has_nesting_derivative),
+    part_creation_ready: Boolean(obj.part_creation_ready),
+    readiness_reason: String(obj.readiness_reason ?? ""),
+    suggested_code: String(obj.suggested_code ?? ""),
+    suggested_name: String(obj.suggested_name ?? ""),
+    source_label: String(obj.source_label ?? ""),
+    existing_part_definition_id: (obj.existing_part_definition_id as string | null | undefined) ?? null,
+    existing_part_revision_id: (obj.existing_part_revision_id as string | null | undefined) ?? null,
+    existing_part_code: (obj.existing_part_code as string | null | undefined) ?? null,
+  };
+}
+
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const headers: HeadersInit = {
     Authorization: `Bearer ${token}`,
@@ -331,7 +356,11 @@ export const api = {
   listProjectFiles(
     token: string,
     projectId: string,
-    options?: { include_preflight_summary?: boolean; include_preflight_diagnostics?: boolean }
+    options?: {
+      include_preflight_summary?: boolean;
+      include_preflight_diagnostics?: boolean;
+      include_part_creation_projection?: boolean;
+    }
   ): Promise<ProjectFileListResponse> {
     const params = new URLSearchParams();
     if (options?.include_preflight_summary === true) {
@@ -339,6 +368,9 @@ export const api = {
     }
     if (options?.include_preflight_diagnostics === true) {
       params.set("include_preflight_diagnostics", "true");
+    }
+    if (options?.include_part_creation_projection === true) {
+      params.set("include_part_creation_projection", "true");
     }
     const query = params.toString();
     const path = query ? `/projects/${projectId}/files?${query}` : `/projects/${projectId}/files`;
@@ -348,6 +380,17 @@ export const api = {
       ...response,
       items: response.items.map((item) => normalizeProjectFile(item)),
     }));
+  },
+
+  createProjectPart(
+    token: string,
+    projectId: string,
+    payload: ProjectPartCreateRequest
+  ): Promise<ProjectPartCreateResponse> {
+    return request<ProjectPartCreateResponse>(`/projects/${projectId}/parts`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   deleteProjectFile(token: string, projectId: string, fileId: string): Promise<void> {

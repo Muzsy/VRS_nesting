@@ -1,0 +1,104 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e4_t6_accepted_files_to_parts_flow"
+title: "DXF Prefilter E4-T6 — Accepted files -> parts flow"
+objective: >
+  Kösd be a DxfIntakePage-be az accepted file-okbol a meglvo parts route-ra epulo,
+  minimalis current-code parts-flowt. Ne hozz letre uj accepted-files endpointot,
+  uj parts bulk route-ot vagy uj persisted draft domaint. A files list route optional
+  projectionjen keresztul add at a geometry import readiness truthot, majd a frontend
+  hivja a meglevo POST /projects/{project_id}/parts route-ot.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "docs/web_platform/architecture/dxf_prefilter_api_contract_specification.md"
+  - "api/routes/files.py"
+  - "api/routes/parts.py"
+  - "api/services/dxf_preflight_runtime.py"
+  - "api/services/dxf_geometry_import.py"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/lib/api.ts"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "canvases/web_platform/dxf_prefilter_e3_t3_geometry_import_gate_integration.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t3_preflight_runs_table_and_status_badges.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne hozz letre uj accepted-files, geometry-list vagy parts bulk endpointot."
+  - "Ne hozz letre uj persisted draft domaint a code/name inputokhoz."
+  - "A parts-flow a meglevo POST /projects/{project_id}/parts route-ra epuljon."
+  - "A files route csak optional projectiont bovitsen; ne valjon kulon workflow endpointta."
+  - "A projection current-code truth szerint kulonböztesse meg: accepted+ready, accepted+pending, not eligible."
+  - "A T4 diagnostics drawer es a T5 conditional review modal nem regresszalhat."
+  - "Ne bovitsd a NewRunPage.tsx legacy wizardot."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans current-code backend/frontend
+      fajlokat. Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e4_t6_accepted_files_to_parts_flow.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+
+  - name: "Files route optional part-creation projection"
+    description: >
+      Bovitsd a meglvo list_project_files route-ot egy optional part-creation projectionnel.
+      Uj endpoint helyett a jelenlegi file list response kapjon egy optional mezot, amely a
+      latest acceptance allapot, a geometry revision truth es - ha minimalisan bizonyithato -
+      a mar letrehozott part truth alapjan readiness informaciot ad a frontendnek.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Frontend type/API boundary a parts-flowhoz"
+    description: >
+      Vezess be optional tipusokat az uj part-creation projectionhoz, es adj minimalis
+      frontend helper-t a POST /projects/{project_id}/parts route-hoz. Ne vezess be uj
+      workflow endpointot vagy persisted draft domaint.
+    outputs:
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/lib/api.ts"
+
+  - name: "DxfIntakePage accepted files -> parts blokk"
+    description: >
+      A DxfIntakePage kapjon kulon accepted-files blokkot. A blokk csak accepted file-okat
+      mutasson, kulon kezelje a ready/pending/already-created allapotot, es ready file-ra
+      tenylegesen tudja hivni a meglvo parts route-ot. A code/name draft page-local legyen.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely bizonyitja:
+      - bent van az optional part-creation projection a files route-on,
+      - bent van az uj frontend type/API boundary,
+      - a DxfIntakePage accepted files blokkot renderelo tokenek bent vannak,
+      - a create-part flow csak accepted/ready allapotra epit,
+      - a review/rejected/pending allapotokhoz nincs hamis aktiv create CTA.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e4_t6_accepted_files_to_parts_flow.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report kulon nevezze meg,
+      hogy miert optional file-list projection a helyes current-code megoldas, hogyan kezeli
+      a T6 a geometry-import-pending allapotot, es hogyan nem regresszalja a T4/T5 UX-et.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.verify.log"

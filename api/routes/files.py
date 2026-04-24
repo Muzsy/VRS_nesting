@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -89,6 +90,7 @@ class ProjectFileResponse(BaseModel):
     created_at: str | None = None
     latest_preflight_summary: dict[str, Any] | None = None
     latest_preflight_diagnostics: dict[str, Any] | None = None
+    latest_part_creation_projection: dict[str, Any] | None = None
 
 
 class ProjectFileListResponse(BaseModel):
@@ -103,6 +105,7 @@ def _as_file_response(
     *,
     latest_preflight_summary: dict[str, Any] | None = None,
     latest_preflight_diagnostics: dict[str, Any] | None = None,
+    latest_part_creation_projection: dict[str, Any] | None = None,
 ) -> ProjectFileResponse:
     uploaded_by = row.get("uploaded_by")
     return ProjectFileResponse(
@@ -119,6 +122,7 @@ def _as_file_response(
         created_at=row.get("created_at"),
         latest_preflight_summary=latest_preflight_summary,
         latest_preflight_diagnostics=latest_preflight_diagnostics,
+        latest_part_creation_projection=latest_part_creation_projection,
     )
 
 
@@ -353,6 +357,234 @@ def _fetch_latest_preflight_row_by_file_id(
             continue
         latest_by_file_id[source_file_object_id] = row
     return latest_by_file_id
+
+
+def _fetch_latest_geometry_revision_by_file_id(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    file_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not file_ids:
+        return {}
+
+    in_values = ",".join(file_ids)
+    params = {
+        "select": "id,source_file_object_id,status,revision_no,created_at",
+        "source_file_object_id": f"in.({in_values})",
+        "order": "source_file_object_id.asc,revision_no.desc,created_at.desc",
+    }
+    rows = supabase.select_rows(
+        table="app.geometry_revisions",
+        access_token=access_token,
+        params=params,
+    )
+
+    latest_by_file_id: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        source_file_object_id = str(row.get("source_file_object_id", "")).strip()
+        if not source_file_object_id or source_file_object_id in latest_by_file_id:
+            continue
+        latest_by_file_id[source_file_object_id] = row
+    return latest_by_file_id
+
+
+def _fetch_nesting_derivative_by_geometry_revision_id(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    geometry_revision_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not geometry_revision_ids:
+        return {}
+
+    in_values = ",".join(geometry_revision_ids)
+    params = {
+        "select": "id,geometry_revision_id,derivative_kind,created_at",
+        "geometry_revision_id": f"in.({in_values})",
+        "derivative_kind": "eq.nesting_canonical",
+        "order": "geometry_revision_id.asc,created_at.desc",
+    }
+    rows = supabase.select_rows(
+        table="app.geometry_derivatives",
+        access_token=access_token,
+        params=params,
+    )
+
+    derivative_by_geometry_id: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        geometry_revision_id = str(row.get("geometry_revision_id", "")).strip()
+        if not geometry_revision_id or geometry_revision_id in derivative_by_geometry_id:
+            continue
+        derivative_by_geometry_id[geometry_revision_id] = row
+    return derivative_by_geometry_id
+
+
+def _fetch_existing_part_projection_by_geometry_revision_id(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    geometry_revision_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not geometry_revision_ids:
+        return {}
+
+    in_values = ",".join(geometry_revision_ids)
+    part_revision_params = {
+        "select": "id,part_definition_id,source_geometry_revision_id,revision_no,created_at",
+        "source_geometry_revision_id": f"in.({in_values})",
+        "order": "source_geometry_revision_id.asc,revision_no.desc,created_at.desc",
+    }
+    part_revision_rows = supabase.select_rows(
+        table="app.part_revisions",
+        access_token=access_token,
+        params=part_revision_params,
+    )
+
+    latest_part_revision_by_geometry_id: dict[str, dict[str, Any]] = {}
+    for row in part_revision_rows:
+        geometry_revision_id = str(row.get("source_geometry_revision_id", "")).strip()
+        if not geometry_revision_id or geometry_revision_id in latest_part_revision_by_geometry_id:
+            continue
+        latest_part_revision_by_geometry_id[geometry_revision_id] = row
+
+    definition_ids = sorted(
+        {
+            str(row.get("part_definition_id", "")).strip()
+            for row in latest_part_revision_by_geometry_id.values()
+            if str(row.get("part_definition_id", "")).strip()
+        }
+    )
+    if not definition_ids:
+        return {}
+
+    definition_in_values = ",".join(definition_ids)
+    definition_params = {
+        "select": "id,code,current_revision_id",
+        "id": f"in.({definition_in_values})",
+    }
+    definition_rows = supabase.select_rows(
+        table="app.part_definitions",
+        access_token=access_token,
+        params=definition_params,
+    )
+    definition_by_id = {str(row.get("id", "")).strip(): row for row in definition_rows}
+
+    result: dict[str, dict[str, Any]] = {}
+    for geometry_revision_id, revision_row in latest_part_revision_by_geometry_id.items():
+        part_definition_id = str(revision_row.get("part_definition_id", "")).strip()
+        if not part_definition_id:
+            continue
+        part_definition = definition_by_id.get(part_definition_id, {})
+        result[geometry_revision_id] = {
+            "part_definition_id": part_definition_id,
+            "part_revision_id": str(revision_row.get("id", "")).strip() or None,
+            "part_code": str(part_definition.get("code", "")).strip() or None,
+        }
+    return result
+
+
+def _derive_suggested_code(file_name: str) -> str:
+    stem = Path(file_name).stem.strip() if file_name else ""
+    source = stem or file_name.strip()
+    tokenized = re.sub(r"[^A-Za-z0-9]+", "_", source).strip("_").upper()
+    if not tokenized:
+        return "PART"
+    return tokenized[:120]
+
+
+def _derive_suggested_name(file_name: str) -> str:
+    stem = Path(file_name).stem.strip() if file_name else ""
+    source = stem or file_name.strip()
+    readable = re.sub(r"[_\-]+", " ", source).strip()
+    readable = re.sub(r"\s+", " ", readable)
+    if not readable:
+        return "Part"
+    return readable[:240]
+
+
+def _derive_non_accepted_readiness_reason(*, latest_preflight_row: dict[str, Any] | None) -> str:
+    if latest_preflight_row is None:
+        return "not_eligible_no_preflight_run"
+
+    acceptance_outcome = str(latest_preflight_row.get("acceptance_outcome", "")).strip().lower()
+    if acceptance_outcome == "preflight_review_required":
+        return "not_eligible_review_required"
+    if acceptance_outcome == "preflight_rejected":
+        return "not_eligible_rejected"
+
+    run_status = str(latest_preflight_row.get("run_status", "")).strip().lower()
+    if run_status in {
+        "preflight_queued",
+        "preflight_running",
+        "preflight_in_progress",
+        "queued",
+        "running",
+        "in_progress",
+    }:
+        return "not_eligible_preflight_pending"
+    return "not_eligible_not_accepted"
+
+
+def _build_latest_part_creation_projection(
+    *,
+    file_row: dict[str, Any],
+    latest_preflight_row: dict[str, Any] | None,
+    latest_geometry_revision_row: dict[str, Any] | None,
+    nesting_derivative_row: dict[str, Any] | None,
+    existing_part_projection: dict[str, Any] | None,
+) -> dict[str, Any]:
+    file_name = str(file_row.get("file_name", "")).strip()
+    source_label = file_name
+    suggested_code = _derive_suggested_code(file_name)
+    suggested_name = _derive_suggested_name(file_name)
+
+    acceptance_outcome_raw = str((latest_preflight_row or {}).get("acceptance_outcome", "")).strip()
+    acceptance_outcome = acceptance_outcome_raw or None
+    is_accepted_for_import = acceptance_outcome_raw == "accepted_for_import"
+
+    file_kind = str(file_row.get("file_kind", "")).strip().lower()
+    geometry_revision_id = str((latest_geometry_revision_row or {}).get("id", "")).strip() or None
+    geometry_revision_status = str((latest_geometry_revision_row or {}).get("status", "")).strip() or None
+    has_nesting_derivative = nesting_derivative_row is not None
+
+    existing_part_definition_id = str((existing_part_projection or {}).get("part_definition_id", "")).strip() or None
+    existing_part_revision_id = str((existing_part_projection or {}).get("part_revision_id", "")).strip() or None
+    existing_part_code = str((existing_part_projection or {}).get("part_code", "")).strip() or None
+
+    part_creation_ready = False
+    readiness_reason = "not_eligible_not_accepted"
+
+    if file_kind != "source_dxf":
+        readiness_reason = "not_eligible_file_kind"
+    elif not is_accepted_for_import:
+        readiness_reason = _derive_non_accepted_readiness_reason(latest_preflight_row=latest_preflight_row)
+    elif not geometry_revision_id:
+        readiness_reason = "accepted_geometry_import_pending"
+    elif str(geometry_revision_status or "").strip().lower() != "validated":
+        readiness_reason = "accepted_geometry_not_validated"
+    elif not has_nesting_derivative:
+        readiness_reason = "accepted_missing_nesting_derivative"
+    elif existing_part_definition_id and existing_part_revision_id:
+        readiness_reason = "accepted_existing_part"
+    else:
+        part_creation_ready = True
+        readiness_reason = "accepted_ready"
+
+    return {
+        "acceptance_outcome": acceptance_outcome,
+        "geometry_revision_id": geometry_revision_id,
+        "geometry_revision_status": geometry_revision_status,
+        "has_nesting_derivative": has_nesting_derivative,
+        "part_creation_ready": part_creation_ready,
+        "readiness_reason": readiness_reason,
+        "suggested_code": suggested_code,
+        "suggested_name": suggested_name,
+        "source_label": source_label,
+        "existing_part_definition_id": existing_part_definition_id,
+        "existing_part_revision_id": existing_part_revision_id,
+        "existing_part_code": existing_part_code,
+    }
 
 
 def _coerce_rules_profile_snapshot(rules_profile_snapshot_jsonb: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -608,6 +840,7 @@ def list_project_files(
     page_size: int = Query(default=50, ge=1, le=200),
     include_preflight_summary: bool = Query(default=False),
     include_preflight_diagnostics: bool = Query(default=False),
+    include_part_creation_projection: bool = Query(default=False),
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
 ) -> ProjectFileListResponse:
@@ -615,6 +848,9 @@ def list_project_files(
     include_preflight_summary_flag = include_preflight_summary if isinstance(include_preflight_summary, bool) else False
     include_preflight_diagnostics_flag = (
         include_preflight_diagnostics if isinstance(include_preflight_diagnostics, bool) else False
+    )
+    include_part_creation_projection_flag = (
+        include_part_creation_projection if isinstance(include_part_creation_projection, bool) else False
     )
 
     offset = (page - 1) * page_size
@@ -630,9 +866,10 @@ def list_project_files(
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="list files", exc=exc)
 
+    file_ids = [str(row.get("id", "")).strip() for row in rows if str(row.get("id", "")).strip()]
+
     latest_preflight_row_by_file_id: dict[str, dict[str, Any]] = {}
-    if include_preflight_summary_flag or include_preflight_diagnostics_flag:
-        file_ids = [str(row.get("id", "")).strip() for row in rows if str(row.get("id", "")).strip()]
+    if include_preflight_summary_flag or include_preflight_diagnostics_flag or include_part_creation_projection_flag:
         try:
             latest_preflight_row_by_file_id = _fetch_latest_preflight_row_by_file_id(
                 supabase=supabase,
@@ -642,10 +879,53 @@ def list_project_files(
         except SupabaseHTTPError as exc:
             raise_supabase_http_error(operation="list file latest preflight projection", exc=exc)
 
+    latest_geometry_revision_by_file_id: dict[str, dict[str, Any]] = {}
+    nesting_derivative_by_geometry_revision_id: dict[str, dict[str, Any]] = {}
+    existing_part_by_geometry_revision_id: dict[str, dict[str, Any]] = {}
+    if include_part_creation_projection_flag:
+        try:
+            latest_geometry_revision_by_file_id = _fetch_latest_geometry_revision_by_file_id(
+                supabase=supabase,
+                access_token=user.access_token,
+                file_ids=file_ids,
+            )
+        except SupabaseHTTPError as exc:
+            raise_supabase_http_error(operation="list file geometry projection", exc=exc)
+
+        geometry_revision_ids = sorted(
+            {
+                str(row.get("id", "")).strip()
+                for row in latest_geometry_revision_by_file_id.values()
+                if str(row.get("id", "")).strip()
+            }
+        )
+        if geometry_revision_ids:
+            try:
+                nesting_derivative_by_geometry_revision_id = _fetch_nesting_derivative_by_geometry_revision_id(
+                    supabase=supabase,
+                    access_token=user.access_token,
+                    geometry_revision_ids=geometry_revision_ids,
+                )
+                existing_part_by_geometry_revision_id = _fetch_existing_part_projection_by_geometry_revision_id(
+                    supabase=supabase,
+                    access_token=user.access_token,
+                    geometry_revision_ids=geometry_revision_ids,
+                )
+            except SupabaseHTTPError as exc:
+                raise_supabase_http_error(operation="list file part creation projection", exc=exc)
+
     items: list[ProjectFileResponse] = []
     for row in rows:
         file_id = str(row.get("id", "")).strip()
         latest_row = latest_preflight_row_by_file_id.get(file_id)
+        latest_geometry_revision_row = latest_geometry_revision_by_file_id.get(file_id)
+        geometry_revision_id = str((latest_geometry_revision_row or {}).get("id", "")).strip()
+        nesting_derivative_row = (
+            nesting_derivative_by_geometry_revision_id.get(geometry_revision_id) if geometry_revision_id else None
+        )
+        existing_part_projection = (
+            existing_part_by_geometry_revision_id.get(geometry_revision_id) if geometry_revision_id else None
+        )
         items.append(
             _as_file_response(
                 row,
@@ -655,6 +935,17 @@ def list_project_files(
                 latest_preflight_diagnostics=(
                     _latest_preflight_diagnostics_from_row(latest_row)
                     if include_preflight_diagnostics_flag and latest_row
+                    else None
+                ),
+                latest_part_creation_projection=(
+                    _build_latest_part_creation_projection(
+                        file_row=row,
+                        latest_preflight_row=latest_row,
+                        latest_geometry_revision_row=latest_geometry_revision_row,
+                        nesting_derivative_row=nesting_derivative_row,
+                        existing_part_projection=existing_part_projection,
+                    )
+                    if include_part_creation_projection_flag
                     else None
                 ),
             )

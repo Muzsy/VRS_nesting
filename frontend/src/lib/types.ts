@@ -41,6 +41,7 @@ export interface ProjectFile {
   uploaded_at?: string | null;
   latest_preflight_summary?: ProjectFileLatestPreflightSummary | null;
   latest_preflight_diagnostics?: ProjectFileLatestPreflightDiagnostics | null;
+  latest_part_creation_projection?: ProjectFileLatestPartCreationProjection | null;
 }
 
 export interface ProjectFileListResponse {
@@ -134,6 +135,41 @@ export interface ProjectFileLatestPreflightDiagnostics {
     path: string;
     exists: boolean;
   }>;
+}
+
+export interface ProjectFileLatestPartCreationProjection {
+  acceptance_outcome?: string | null;
+  geometry_revision_id?: string | null;
+  geometry_revision_status?: string | null;
+  has_nesting_derivative: boolean;
+  part_creation_ready: boolean;
+  readiness_reason: string;
+  suggested_code: string;
+  suggested_name: string;
+  source_label: string;
+  existing_part_definition_id?: string | null;
+  existing_part_revision_id?: string | null;
+  existing_part_code?: string | null;
+}
+
+export interface ProjectPartCreateRequest {
+  code: string;
+  name: string;
+  geometry_revision_id: string;
+  source_label?: string;
+}
+
+export interface ProjectPartCreateResponse {
+  part_definition_id: string;
+  part_revision_id: string;
+  revision_no: number;
+  lifecycle: string;
+  code: string;
+  name: string;
+  current_revision_id?: string | null;
+  source_geometry_revision_id: string;
+  selected_nesting_derivative_id: string;
+  was_existing_definition: boolean;
 }
 
 export interface PreflightRulesProfileSnapshot {

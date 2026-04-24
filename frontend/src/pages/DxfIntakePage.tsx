@@ -8,12 +8,18 @@ import type {
   PreflightSettingsDraft,
   Project,
   ProjectFile,
+  ProjectFileLatestPartCreationProjection,
 } from "../lib/types";
 
 interface UploadProgressState {
   total: number;
   done: number;
   status: string;
+}
+
+interface PartCreationDraftState {
+  code: string;
+  name: string;
 }
 
 const DEFAULT_PREFLIGHT_SETTINGS_DRAFT: PreflightSettingsDraft = {
@@ -256,6 +262,104 @@ function formatSignalRecord(signal: Record<string, unknown>): string {
     .join(" | ");
 }
 
+function getPartCreationProjection(file: ProjectFile): ProjectFileLatestPartCreationProjection | null {
+  return file.latest_part_creation_projection ?? null;
+}
+
+function canCreatePartFromAcceptedFile(file: ProjectFile): boolean {
+  const projection = getPartCreationProjection(file);
+  if (!projection) {
+    return false;
+  }
+  if (!projection.part_creation_ready || !projection.geometry_revision_id) {
+    return false;
+  }
+  if (projection.existing_part_definition_id || projection.existing_part_revision_id) {
+    return false;
+  }
+  return true;
+}
+
+function formatPartCreationReadiness(file: ProjectFile): { label: string; className: string; description: string } {
+  const projection = getPartCreationProjection(file);
+  if (!projection) {
+    return {
+      label: "not eligible",
+      className: "bg-slate-100 text-slate-700",
+      description: "Part-creation projection is not available for this file.",
+    };
+  }
+
+  switch (projection.readiness_reason) {
+    case "accepted_ready":
+      return {
+        label: "ready",
+        className: "bg-green-100 text-green-800",
+        description: "Geometry is validated and the nesting derivative is ready for part creation.",
+      };
+    case "accepted_geometry_import_pending":
+      return {
+        label: "pending",
+        className: "bg-sky-100 text-sky-800",
+        description: "Geometry import pending. Refresh after import finishes.",
+      };
+    case "accepted_geometry_not_validated":
+      return {
+        label: "pending",
+        className: "bg-amber-100 text-amber-800",
+        description: `Geometry status is ${projection.geometry_revision_status || "unknown"}, not validated yet.`,
+      };
+    case "accepted_missing_nesting_derivative":
+      return {
+        label: "pending",
+        className: "bg-amber-100 text-amber-800",
+        description: "Missing nesting_canonical derivative for this accepted file.",
+      };
+    case "accepted_existing_part":
+      return {
+        label: "already created",
+        className: "bg-indigo-100 text-indigo-800",
+        description: `Part already exists (${projection.existing_part_code || projection.existing_part_definition_id || "existing definition"}).`,
+      };
+    case "not_eligible_review_required":
+      return {
+        label: "not eligible",
+        className: "bg-amber-100 text-amber-800",
+        description: "Preflight is review-required; resolve review state first.",
+      };
+    case "not_eligible_rejected":
+      return {
+        label: "not eligible",
+        className: "bg-red-100 text-red-800",
+        description: "Preflight rejected this file; fix source and re-upload.",
+      };
+    case "not_eligible_preflight_pending":
+      return {
+        label: "not eligible",
+        className: "bg-sky-100 text-sky-800",
+        description: "Preflight is still running; part creation is disabled.",
+      };
+    case "not_eligible_file_kind":
+      return {
+        label: "not eligible",
+        className: "bg-slate-100 text-slate-700",
+        description: "Only source DXF files are eligible for this flow.",
+      };
+    case "not_eligible_no_preflight_run":
+      return {
+        label: "not eligible",
+        className: "bg-slate-100 text-slate-700",
+        description: "No preflight run yet for this file.",
+      };
+    default:
+      return {
+        label: "not eligible",
+        className: "bg-slate-100 text-slate-700",
+        description: "File is not eligible for part creation in the current state.",
+      };
+  }
+}
+
 export function DxfIntakePage() {
   const { projectId } = useParams<{ projectId: string }>();
 
@@ -273,6 +377,10 @@ export function DxfIntakePage() {
   const [reviewReplacementStatus, setReviewReplacementStatus] = useState("");
   const [reviewReplacementError, setReviewReplacementError] = useState("");
   const [reviewReplacementUploading, setReviewReplacementUploading] = useState(false);
+  const [partCreationDraftByFileId, setPartCreationDraftByFileId] = useState<Record<string, PartCreationDraftState>>({});
+  const [partCreationStatus, setPartCreationStatus] = useState("");
+  const [partCreationError, setPartCreationError] = useState("");
+  const [partCreationInFlightFileId, setPartCreationInFlightFileId] = useState<string | null>(null);
 
   async function loadData() {
     if (!projectId) {
@@ -287,6 +395,7 @@ export function DxfIntakePage() {
         api.listProjectFiles(token, projectId, {
           include_preflight_summary: true,
           include_preflight_diagnostics: true,
+          include_part_creation_projection: true,
         }),
       ]);
       setProject(projectResponse);
@@ -325,6 +434,37 @@ export function DxfIntakePage() {
       setReviewReplacementUploading(false);
     }
   }, [files, selectedReviewFileId]);
+
+  useEffect(() => {
+    setPartCreationDraftByFileId((previous) => {
+      const next: Record<string, PartCreationDraftState> = { ...previous };
+      let changed = false;
+
+      for (const file of files) {
+        const projection = getPartCreationProjection(file);
+        if (!projection || projection.acceptance_outcome !== "accepted_for_import") {
+          continue;
+        }
+        if (!next[file.id]) {
+          next[file.id] = {
+            code: projection.suggested_code || "PART",
+            name: projection.suggested_name || file.original_filename,
+          };
+          changed = true;
+        }
+      }
+
+      for (const fileId of Object.keys(next)) {
+        const stillExists = files.some((file) => file.id === fileId);
+        if (!stillExists) {
+          delete next[fileId];
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+  }, [files]);
 
   async function handleFilesSelected(fileList: FileList | null) {
     if (!projectId || !fileList || fileList.length === 0) {
@@ -503,6 +643,66 @@ export function DxfIntakePage() {
     }
   }
 
+  function handlePartDraftChange(file: ProjectFile, field: "code" | "name", value: string): void {
+    const projection = getPartCreationProjection(file);
+    setPartCreationDraftByFileId((previous) => {
+      const current = previous[file.id] ?? {
+        code: projection?.suggested_code || "PART",
+        name: projection?.suggested_name || file.original_filename,
+      };
+      return {
+        ...previous,
+        [file.id]: {
+          ...current,
+          [field]: value,
+        },
+      };
+    });
+  }
+
+  async function handleCreatePart(file: ProjectFile): Promise<void> {
+    if (!projectId || partCreationInFlightFileId) {
+      return;
+    }
+    const projection = getPartCreationProjection(file);
+    if (!projection || !canCreatePartFromAcceptedFile(file) || !projection.geometry_revision_id) {
+      setPartCreationError("Selected file is not ready for part creation yet.");
+      return;
+    }
+
+    const draft = partCreationDraftByFileId[file.id] ?? {
+      code: projection.suggested_code || "PART",
+      name: projection.suggested_name || file.original_filename,
+    };
+    const code = draft.code.trim();
+    const name = draft.name.trim();
+    if (!code || !name) {
+      setPartCreationError("Part code and name are required.");
+      return;
+    }
+
+    setPartCreationError("");
+    setPartCreationInFlightFileId(file.id);
+    setPartCreationStatus(`Creating part from ${file.original_filename}...`);
+
+    try {
+      const token = await getAccessToken();
+      const created = await api.createProjectPart(token, projectId, {
+        code,
+        name,
+        geometry_revision_id: projection.geometry_revision_id,
+        source_label: projection.source_label || file.original_filename,
+      });
+      setPartCreationStatus(`Created part ${created.code} (revision ${created.revision_no}). Refreshing state...`);
+      await loadData();
+      setPartCreationStatus(`Created part ${created.code} (revision ${created.revision_no}).`);
+    } catch (err) {
+      setPartCreationError(err instanceof Error ? err.message : "Part creation failed.");
+    } finally {
+      setPartCreationInFlightFileId(null);
+    }
+  }
+
   const uploadPercent = useMemo(() => {
     if (!uploadProgress || uploadProgress.total <= 0) {
       return 0;
@@ -530,6 +730,44 @@ export function DxfIntakePage() {
     );
   }, [selectedReviewDiagnostics]);
   const remainingReviewSignals = selectedReviewDiagnostics?.repair_summary.remaining_review_required_signals ?? [];
+  const acceptedFilesForParts = useMemo(
+    () =>
+      files.filter((file) => {
+        const projection = getPartCreationProjection(file);
+        return projection?.acceptance_outcome === "accepted_for_import";
+      }),
+    [files]
+  );
+  const nonAcceptedReviewRequiredCount = useMemo(
+    () =>
+      files.filter((file) => {
+        const projection = getPartCreationProjection(file);
+        return projection?.acceptance_outcome === "preflight_review_required";
+      }).length,
+    [files]
+  );
+  const nonAcceptedRejectedCount = useMemo(
+    () =>
+      files.filter((file) => {
+        const projection = getPartCreationProjection(file);
+        return projection?.acceptance_outcome === "preflight_rejected";
+      }).length,
+    [files]
+  );
+  const nonAcceptedPendingCount = useMemo(
+    () =>
+      files.filter((file) => {
+        const projection = getPartCreationProjection(file);
+        if (!projection) {
+          return false;
+        }
+        return (
+          projection.readiness_reason === "not_eligible_preflight_pending" ||
+          projection.readiness_reason === "not_eligible_no_preflight_run"
+        );
+      }).length,
+    [files]
+  );
 
   if (!projectId) {
     return (
@@ -562,7 +800,8 @@ export function DxfIntakePage() {
       {loading && <p className="rounded-md border border-mist bg-white px-3 py-2 text-sm text-slate">Loading intake data...</p>}
 
       {!loading && (
-        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <>
+          <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <article className="space-y-4 rounded-xl border border-mist bg-white p-5">
             <header>
               <h2 className="text-lg font-semibold">Source DXF upload</h2>
@@ -840,7 +1079,130 @@ export function DxfIntakePage() {
               </div>
             )}
           </article>
-        </div>
+          </div>
+
+          <article className="space-y-4 rounded-xl border border-mist bg-white p-5">
+            <header className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Accepted files -&gt; parts</h2>
+                <p className="mt-1 text-sm text-slate">
+                  This block uses the existing <code>POST /projects/{`{project_id}`}/parts</code> route only for accepted and ready files.
+                </p>
+              </div>
+              <span className="text-sm text-slate">{acceptedFilesForParts.length} accepted files</span>
+            </header>
+
+            {(nonAcceptedReviewRequiredCount > 0 || nonAcceptedRejectedCount > 0 || nonAcceptedPendingCount > 0) && (
+              <p className="rounded-md border border-mist bg-slate-50 px-3 py-2 text-xs text-slate">
+                Not eligible outside accepted scope: review-required {nonAcceptedReviewRequiredCount}, rejected {nonAcceptedRejectedCount}, preflight
+                pending/not-started {nonAcceptedPendingCount}.
+              </p>
+            )}
+
+            {partCreationStatus && (
+              <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">{partCreationStatus}</p>
+            )}
+            {partCreationError && (
+              <p className="rounded-md border border-danger/40 bg-red-50 px-3 py-2 text-sm text-danger">{partCreationError}</p>
+            )}
+
+            {acceptedFilesForParts.length === 0 && (
+              <p className="rounded-md border border-dashed border-mist bg-slate-50 px-4 py-3 text-sm text-slate">
+                No accepted files yet. Create-part actions appear after preflight reaches accepted state.
+              </p>
+            )}
+
+            {acceptedFilesForParts.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[980px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-mist text-left text-slate">
+                      <th className="py-2">Filename</th>
+                      <th className="py-2">Part status</th>
+                      <th className="py-2">Geometry revision</th>
+                      <th className="py-2">Part code</th>
+                      <th className="py-2">Part name</th>
+                      <th className="py-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {acceptedFilesForParts.map((file) => {
+                      const projection = getPartCreationProjection(file);
+                      const readiness = formatPartCreationReadiness(file);
+                      if (!projection) {
+                        return null;
+                      }
+                      const draft = partCreationDraftByFileId[file.id] ?? {
+                        code: projection.suggested_code || "PART",
+                        name: projection.suggested_name || file.original_filename,
+                      };
+                      const canCreate = canCreatePartFromAcceptedFile(file);
+                      const disableCreate = !canCreate || partCreationInFlightFileId !== null;
+
+                      return (
+                        <tr className="border-b border-mist/70" key={`accepted-part-row-${file.id}`}>
+                          <td className="py-3">{file.original_filename}</td>
+                          <td className="py-3">
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${readiness.className}`}>{readiness.label}</span>
+                            <p className="mt-1 text-xs text-slate">{readiness.description}</p>
+                          </td>
+                          <td className="py-3 text-xs text-slate">
+                            {projection.geometry_revision_id || "-"}
+                            {projection.geometry_revision_status && (
+                              <p className="mt-1">status: {projection.geometry_revision_status}</p>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            <input
+                              className={`w-full rounded border px-2 py-1 text-xs ${
+                                canCreate ? "border-mist bg-white text-ink" : "cursor-not-allowed border-mist/70 bg-slate-100 text-slate-500"
+                              }`}
+                              disabled={!canCreate}
+                              onChange={(event) => handlePartDraftChange(file, "code", event.target.value)}
+                              value={draft.code}
+                            />
+                          </td>
+                          <td className="py-3">
+                            <input
+                              className={`w-full rounded border px-2 py-1 text-xs ${
+                                canCreate ? "border-mist bg-white text-ink" : "cursor-not-allowed border-mist/70 bg-slate-100 text-slate-500"
+                              }`}
+                              disabled={!canCreate}
+                              onChange={(event) => handlePartDraftChange(file, "name", event.target.value)}
+                              value={draft.name}
+                            />
+                          </td>
+                          <td className="py-3">
+                            <button
+                              className={`rounded border px-2 py-1 text-xs font-medium ${
+                                disableCreate
+                                  ? "cursor-not-allowed border-mist/70 bg-slate-100 text-slate-400"
+                                  : "border-accent bg-sky-50 text-accent hover:bg-sky-100"
+                              }`}
+                              disabled={disableCreate}
+                              onClick={() => void handleCreatePart(file)}
+                              type="button"
+                            >
+                              {partCreationInFlightFileId === file.id ? "Creating..." : "Create part"}
+                            </button>
+                            {!canCreate && projection.readiness_reason === "accepted_existing_part" && (
+                              <p className="mt-1 text-xs text-slate">
+                                Existing part: {projection.existing_part_code || projection.existing_part_definition_id || "already linked"}.
+                              </p>
+                            )}
+                            {!canCreate && projection.readiness_reason === "accepted_geometry_import_pending" && (
+                              <p className="mt-1 text-xs text-slate">Geometry import pending. Refresh after import.</p>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
+        </>
       )}
 
       {selectedReviewFile && selectedReviewDiagnostics && selectedReviewSummary && canOpenConditionalReviewModal(selectedReviewFile) && (
