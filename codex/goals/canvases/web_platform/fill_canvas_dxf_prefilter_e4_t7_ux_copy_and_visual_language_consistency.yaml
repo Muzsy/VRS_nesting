@@ -1,0 +1,90 @@
+schema_version: "1.0"
+task_slug: "dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency"
+title: "DXF Prefilter E4-T7 — UX szovegek es vizualis nyelv egysegesitese"
+objective: >
+  Egysegesitsd a DxfIntakePage user-facing copy-jat es vizualis nyelvet ugy,
+  hogy ne jojjon letre uj workflow, endpoint vagy persisted domain. A feladat
+  current-code frontend presentation konszolidacio: kozos copy/tone truth,
+  egyseges badge-ek, szekciocimek, helper szovegek es modal headline-ok.
+
+context_files:
+  - "AGENTS.md"
+  - "docs/codex/overview.md"
+  - "docs/codex/yaml_schema.md"
+  - "docs/codex/report_standard.md"
+  - "docs/qa/testing_guidelines.md"
+  - "frontend/src/pages/DxfIntakePage.tsx"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/lib/api.ts"
+  - "frontend/src/index.css"
+  - "canvases/web_platform/dxf_prefilter_e4_t4_diagnostics_drawer_modal.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t5_conditional_review_modal.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t6_accepted_files_to_parts_flow.md"
+  - "canvases/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md"
+
+constraints:
+  - "Csak olyan fajlt hozhatsz letre vagy modosithatsz, ami szerepel valamelyik step outputs listajaban."
+  - "Ne hozz letre uj backend route-ot, projectiont, workflowt vagy persisted domaint."
+  - "Ne modositsd a frontend API contractot, ha nem muszaj."
+  - "Ne regresszald a diagnostics drawer, a conditional review modal vagy az accepted files -> parts flow funkcionalis viselkedeset."
+  - "A T7 current-code feladat copy- es presentation-konszolidacio, nem redesign."
+  - "Ne bovitsd a NewRunPage.tsx legacy wizardot."
+
+steps:
+  - name: "Felderites es task-artefaktok letrehozasa"
+    description: >
+      Olvasd el az AGENTS/doc szabalyokat es a relevans current-code frontend fajlokat.
+      Hozd letre a task canvas/YAML/runner/checklist/report alapfajljait.
+    outputs:
+      - "canvases/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md"
+      - "codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.yaml"
+      - "codex/prompts/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency/run.md"
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md"
+
+  - name: "Kozos presentation truth kialakitasa"
+    description: >
+      Alakits ki egy minimalis, current-code frontend presentation reteget a DxfIntake UX-hez.
+      Ez lehet helyi helper a page-ben vagy kulon helper fajl, ha az a legkisebb tiszta megoldas.
+      A cel a section copy, badge/tone mapping, CTA label-ek es helper szovegek egy kozos truthba rendezese.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+      - "frontend/src/lib/dxfIntakePresentation.ts"
+
+  - name: "DxfIntakePage copy es vizualis nyelv egysegesitese"
+    description: >
+      A DxfIntakePage hasznalja a kozos presentation truthot. Egységesitsd a section title/subcopy,
+      badge-eket, empty state-eket, pending/allapot szovegeket, diagnostics es review overlay copy-t,
+      valamint a CTA-k nyelvet. Ne valtoztasd meg a backend-flowkat vagy az akcio-logikat.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+      - "frontend/src/index.css"
+      - "frontend/src/lib/dxfIntakePresentation.ts"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits deterministic smoke scriptet, amely bizonyitja:
+      - bent van a kozos presentation/copy truth,
+      - a DxfIntakePage az uj presentation truthra epit,
+      - a diagnostics es review overlay kulon headline/subcopy vilagot kap,
+      - a T4/T5/T6 trigger tokenek tovabbra is bent maradnak,
+      - nincs uj workflow token vagy backend endpoint igeny.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.py"
+
+  - name: "Checklist es report evidence frissitese"
+    description: >
+      Frissitsd a checklistet es reportot evidence alapon. A report nevezze meg, hogy a T7
+      miert presentation-konszolidacios task, hogyan kulonul el a status / next step / technical note copy,
+      es hogyan marad regressziomentes a diagnostics/review/parts flow.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a kotelezo minosegkaput wrapperrel.
+      Parancs: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.md"
+      - "codex/reports/web_platform/dxf_prefilter_e4_t7_ux_copy_and_visual_language_consistency.verify.log"

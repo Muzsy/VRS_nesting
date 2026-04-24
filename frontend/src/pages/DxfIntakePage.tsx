@@ -3,6 +3,15 @@ import type { DragEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { getAccessToken } from "../lib/supabase";
+import {
+  INTAKE_COPY,
+  acceptanceOutcomeBadge,
+  issueCountBadge,
+  partCreationReadinessBadge,
+  recommendedNextStep,
+  repairCountBadge,
+  runStatusBadge,
+} from "../lib/dxfIntakePresentation";
 import type {
   PreflightRulesProfileSnapshot,
   PreflightSettingsDraft,
@@ -83,7 +92,7 @@ function buildRulesProfileSnapshotFromDraft(draft: PreflightSettingsDraft): Pref
 
 function formatDate(value?: string | null): string {
   if (!value) {
-    return "-";
+    return "—";
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -116,132 +125,6 @@ async function uploadFileToSignedUrl(uploadUrl: string, file: File, token: strin
     const body = await postResponse.text();
     throw new Error(body || `Upload failed (${postResponse.status}).`);
   }
-}
-
-function formatRunStatusBadge(file: ProjectFile): { label: string; className: string } {
-  const summary = file.latest_preflight_summary;
-  if (!summary) {
-    return {
-      label: "not started",
-      className: "bg-slate-100 text-slate-700",
-    };
-  }
-
-  const runStatus = String(summary.run_status ?? "").trim().toLowerCase();
-  if (runStatus === "preflight_complete") {
-    return {
-      label: "preflight complete",
-      className: "bg-green-100 text-green-800",
-    };
-  }
-  if (runStatus === "preflight_failed") {
-    return {
-      label: "preflight failed",
-      className: "bg-red-100 text-red-800",
-    };
-  }
-  if (runStatus === "preflight_running" || runStatus === "running" || runStatus === "preflight_in_progress") {
-    return {
-      label: "running",
-      className: "bg-sky-100 text-sky-800",
-    };
-  }
-  if (runStatus === "preflight_queued" || runStatus === "queued") {
-    return {
-      label: "queued",
-      className: "bg-amber-100 text-amber-800",
-    };
-  }
-  if (runStatus) {
-    return {
-      label: runStatus.split("_").join(" "),
-      className: "bg-sky-100 text-sky-800",
-    };
-  }
-  return { label: "unknown", className: "bg-slate-100 text-slate-700" };
-}
-
-function formatAcceptanceOutcomeBadge(file: ProjectFile): { label: string; className: string } {
-  const summary = file.latest_preflight_summary;
-  if (!summary) {
-    return { label: "not available", className: "bg-slate-100 text-slate-700" };
-  }
-  if (summary.acceptance_outcome === "accepted_for_import") {
-    return { label: "accepted", className: "bg-green-100 text-green-800" };
-  }
-  if (summary.acceptance_outcome === "preflight_review_required") {
-    return { label: "review required", className: "bg-amber-100 text-amber-800" };
-  }
-  if (summary.acceptance_outcome === "preflight_rejected") {
-    return { label: "rejected", className: "bg-red-100 text-red-800" };
-  }
-  if (summary.run_status && summary.run_status !== "preflight_complete") {
-    return { label: "pending", className: "bg-sky-100 text-sky-800" };
-  }
-  return { label: "not available", className: "bg-slate-100 text-slate-700" };
-}
-
-function formatIssueCountBadge(file: ProjectFile): { label: string; className: string } {
-  const summary = file.latest_preflight_summary;
-  if (!summary) {
-    return { label: "no data", className: "bg-slate-100 text-slate-700" };
-  }
-  const total = summary.total_issue_count;
-  if (total <= 0) {
-    return { label: "0 issues", className: "bg-green-100 text-green-800" };
-  }
-  if (summary.blocking_issue_count > 0) {
-    return { label: `${total} issues`, className: "bg-red-100 text-red-800" };
-  }
-  if (summary.review_required_issue_count > 0) {
-    return { label: `${total} issues`, className: "bg-amber-100 text-amber-800" };
-  }
-  return { label: `${total} issues`, className: "bg-sky-100 text-sky-800" };
-}
-
-function formatRepairCountBadge(file: ProjectFile): { label: string; className: string } {
-  const summary = file.latest_preflight_summary;
-  if (!summary) {
-    return { label: "no data", className: "bg-slate-100 text-slate-700" };
-  }
-  if (summary.total_repair_count <= 0) {
-    return { label: "0 repairs", className: "bg-slate-100 text-slate-700" };
-  }
-  return { label: `${summary.total_repair_count} repairs`, className: "bg-indigo-100 text-indigo-800" };
-}
-
-function formatRecommendedActionLabel(file: ProjectFile): string {
-  const summary = file.latest_preflight_summary;
-  if (!summary) {
-    return "Upload complete; waiting for preflight";
-  }
-  switch (summary.recommended_action) {
-    case "ready_for_next_step":
-      return "Ready for next step";
-    case "review_required_wait_for_diagnostics":
-      return "Wait for diagnostics";
-    case "rejected_fix_and_reupload":
-      return "Fix source DXF and re-upload";
-    case "preflight_in_progress":
-      return "Preflight still running";
-    case "preflight_not_started":
-      return "Upload complete; waiting for preflight";
-    default:
-      break;
-  }
-  if (summary.acceptance_outcome === "accepted_for_import") {
-    return "Ready for next step";
-  }
-  if (summary.acceptance_outcome === "preflight_review_required") {
-    return "Wait for diagnostics";
-  }
-  if (summary.acceptance_outcome === "preflight_rejected") {
-    return "Fix source DXF and re-upload";
-  }
-  if (summary.run_status === "preflight_running" || summary.run_status === "running" || summary.run_status === "queued") {
-    return "Preflight still running";
-  }
-  return "Upload complete; waiting for preflight";
 }
 
 function formatExistsLabel(exists: boolean): string {
@@ -278,86 +161,6 @@ function canCreatePartFromAcceptedFile(file: ProjectFile): boolean {
     return false;
   }
   return true;
-}
-
-function formatPartCreationReadiness(file: ProjectFile): { label: string; className: string; description: string } {
-  const projection = getPartCreationProjection(file);
-  if (!projection) {
-    return {
-      label: "not eligible",
-      className: "bg-slate-100 text-slate-700",
-      description: "Part-creation projection is not available for this file.",
-    };
-  }
-
-  switch (projection.readiness_reason) {
-    case "accepted_ready":
-      return {
-        label: "ready",
-        className: "bg-green-100 text-green-800",
-        description: "Geometry is validated and the nesting derivative is ready for part creation.",
-      };
-    case "accepted_geometry_import_pending":
-      return {
-        label: "pending",
-        className: "bg-sky-100 text-sky-800",
-        description: "Geometry import pending. Refresh after import finishes.",
-      };
-    case "accepted_geometry_not_validated":
-      return {
-        label: "pending",
-        className: "bg-amber-100 text-amber-800",
-        description: `Geometry status is ${projection.geometry_revision_status || "unknown"}, not validated yet.`,
-      };
-    case "accepted_missing_nesting_derivative":
-      return {
-        label: "pending",
-        className: "bg-amber-100 text-amber-800",
-        description: "Missing nesting_canonical derivative for this accepted file.",
-      };
-    case "accepted_existing_part":
-      return {
-        label: "already created",
-        className: "bg-indigo-100 text-indigo-800",
-        description: `Part already exists (${projection.existing_part_code || projection.existing_part_definition_id || "existing definition"}).`,
-      };
-    case "not_eligible_review_required":
-      return {
-        label: "not eligible",
-        className: "bg-amber-100 text-amber-800",
-        description: "Preflight is review-required; resolve review state first.",
-      };
-    case "not_eligible_rejected":
-      return {
-        label: "not eligible",
-        className: "bg-red-100 text-red-800",
-        description: "Preflight rejected this file; fix source and re-upload.",
-      };
-    case "not_eligible_preflight_pending":
-      return {
-        label: "not eligible",
-        className: "bg-sky-100 text-sky-800",
-        description: "Preflight is still running; part creation is disabled.",
-      };
-    case "not_eligible_file_kind":
-      return {
-        label: "not eligible",
-        className: "bg-slate-100 text-slate-700",
-        description: "Only source DXF files are eligible for this flow.",
-      };
-    case "not_eligible_no_preflight_run":
-      return {
-        label: "not eligible",
-        className: "bg-slate-100 text-slate-700",
-        description: "No preflight run yet for this file.",
-      };
-    default:
-      return {
-        label: "not eligible",
-        className: "bg-slate-100 text-slate-700",
-        description: "File is not eligible for part creation in the current state.",
-      };
-  }
 }
 
 export function DxfIntakePage() {
@@ -783,7 +586,7 @@ export function DxfIntakePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">DXF Intake / Project Preparation</h1>
           <p className="mt-1 text-sm text-slate">
-            {project?.name ?? "Project"}: source DXF upload and latest preflight status in one place.
+            {INTAKE_COPY.page.subtitle(project?.name ?? "Project")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -804,9 +607,9 @@ export function DxfIntakePage() {
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <article className="space-y-4 rounded-xl border border-mist bg-white p-5">
             <header>
-              <h2 className="text-lg font-semibold">Source DXF upload</h2>
+              <h2 className="text-lg font-semibold">{INTAKE_COPY.upload.title}</h2>
               <p className="mt-1 text-sm text-slate">
-                Uploading a source DXF automatically starts preflight after finalize. No manual preflight trigger is required.
+                {INTAKE_COPY.upload.helper}
               </p>
             </header>
 
@@ -824,8 +627,8 @@ export function DxfIntakePage() {
                 onChange={(event) => void handleFilesSelected(event.target.files)}
                 type="file"
               />
-              <p className="text-sm font-medium text-ink">Drag and drop source DXF files here</p>
-              <p className="mt-1 text-xs text-slate">or click to open file picker</p>
+              <p className="text-sm font-medium text-ink">{INTAKE_COPY.upload.dropzone_primary}</p>
+              <p className="mt-1 text-xs text-slate">{INTAKE_COPY.upload.dropzone_secondary}</p>
             </label>
 
             {uploadProgress && (
@@ -838,11 +641,9 @@ export function DxfIntakePage() {
             )}
 
             <div className="rounded-md border border-mist bg-slate-50 px-4 py-3 text-sm text-slate">
-              <p className="font-medium text-ink">Preflight settings (upload-session draft)</p>
-              <p className="mt-1">
-                These values are sent as <code>rules_profile_snapshot_jsonb</code> during upload finalize from this page.
-                They apply to new source DXF uploads started here.
-              </p>
+              <p className="font-medium text-ink">{INTAKE_COPY.settings.title}</p>
+              <p className="mt-1">{INTAKE_COPY.settings.helper}</p>
+              <p className="mt-0.5 font-mono text-xs text-slate/70">{INTAKE_COPY.settings.helper_tech}</p>
 
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <label className="flex items-center gap-2 rounded border border-mist bg-white px-3 py-2">
@@ -969,7 +770,7 @@ export function DxfIntakePage() {
                   onClick={handleResetSettings}
                   type="button"
                 >
-                  Reset to defaults
+                  {INTAKE_COPY.settings.reset_label}
                 </button>
               </div>
             </div>
@@ -983,7 +784,7 @@ export function DxfIntakePage() {
 
             {files.length === 0 && (
               <p className="rounded-md border border-dashed border-mist bg-slate-50 px-4 py-3 text-sm text-slate">
-                No files uploaded yet.
+                {INTAKE_COPY.runs.empty}
               </p>
             )}
 
@@ -997,7 +798,7 @@ export function DxfIntakePage() {
                       <th className="py-2">Issues</th>
                       <th className="py-2">Repairs</th>
                       <th className="py-2">Acceptance</th>
-                      <th className="py-2">Recommended action</th>
+                      <th className="py-2">{INTAKE_COPY.runs.col_next_step}</th>
                       <th className="py-2">Finished</th>
                       <th className="py-2">Review</th>
                       <th className="py-2">Diagnostics</th>
@@ -1008,20 +809,22 @@ export function DxfIntakePage() {
                       const summary = file.latest_preflight_summary;
                       const diagnostics = file.latest_preflight_diagnostics;
                       const canViewDiagnostics = !!diagnostics;
-                      const runStatusBadge = formatRunStatusBadge(file);
-                      const issueBadge = formatIssueCountBadge(file);
-                      const repairBadge = formatRepairCountBadge(file);
-                      const acceptanceBadge = formatAcceptanceOutcomeBadge(file);
-                      const recommendedAction = formatRecommendedActionLabel(file);
+                      const runBadge = runStatusBadge(file);
+                      const issueBadge = issueCountBadge(file);
+                      const repairBadge = repairCountBadge(file);
+                      const acceptanceBadge = acceptanceOutcomeBadge(file);
+                      const nextStep = recommendedNextStep(file);
                       const canOpenReview = canOpenConditionalReviewModal(file);
                       return (
                         <tr className="border-b border-mist/70" key={file.id}>
                           <td className="py-3">{file.original_filename}</td>
                           <td className="py-3">
-                            <span className={`rounded px-2 py-1 text-xs font-medium ${runStatusBadge.className}`}>
-                              {runStatusBadge.label}
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${runBadge.className}`}>
+                              {runBadge.label}
                             </span>
-                            <p className="mt-1 text-xs text-slate">{summary?.run_seq ? `Run #${summary.run_seq}` : "No run yet"}</p>
+                            <p className="mt-1 text-xs text-slate">
+                              {summary?.run_seq ? INTAKE_COPY.runs.run_seq(summary.run_seq) : INTAKE_COPY.runs.no_run_yet}
+                            </p>
                           </td>
                           <td className="py-3">
                             <span className={`rounded px-2 py-1 text-xs font-medium ${issueBadge.className}`}>{issueBadge.label}</span>
@@ -1041,7 +844,7 @@ export function DxfIntakePage() {
                             </span>
                           </td>
                           <td className="py-3 text-sm text-slate">
-                            {recommendedAction}
+                            {nextStep}
                           </td>
                           <td className="py-3">{formatDate(file.latest_preflight_summary?.finished_at ?? null)}</td>
                           <td className="py-3">
@@ -1051,10 +854,10 @@ export function DxfIntakePage() {
                                 onClick={() => openConditionalReviewModal(file.id)}
                                 type="button"
                               >
-                                Open review
+                                {INTAKE_COPY.runs.cta_open_review}
                               </button>
                             ) : (
-                              <span className="text-xs text-slate-400">n/a</span>
+                              <span className="text-xs text-slate-400">{INTAKE_COPY.runs.review_na}</span>
                             )}
                           </td>
                           <td className="py-3">
@@ -1068,7 +871,7 @@ export function DxfIntakePage() {
                               onClick={() => setSelectedDiagnosticsFileId(file.id)}
                               type="button"
                             >
-                              View diagnostics
+                              {INTAKE_COPY.runs.cta_view_diagnostics}
                             </button>
                           </td>
                         </tr>
@@ -1084,9 +887,9 @@ export function DxfIntakePage() {
           <article className="space-y-4 rounded-xl border border-mist bg-white p-5">
             <header className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold">Accepted files -&gt; parts</h2>
+                <h2 className="text-lg font-semibold">{INTAKE_COPY.acceptedParts.title}</h2>
                 <p className="mt-1 text-sm text-slate">
-                  This block uses the existing <code>POST /projects/{`{project_id}`}/parts</code> route only for accepted and ready files.
+                  {INTAKE_COPY.acceptedParts.helper}
                 </p>
               </div>
               <span className="text-sm text-slate">{acceptedFilesForParts.length} accepted files</span>
@@ -1094,8 +897,11 @@ export function DxfIntakePage() {
 
             {(nonAcceptedReviewRequiredCount > 0 || nonAcceptedRejectedCount > 0 || nonAcceptedPendingCount > 0) && (
               <p className="rounded-md border border-mist bg-slate-50 px-3 py-2 text-xs text-slate">
-                Not eligible outside accepted scope: review-required {nonAcceptedReviewRequiredCount}, rejected {nonAcceptedRejectedCount}, preflight
-                pending/not-started {nonAcceptedPendingCount}.
+                {INTAKE_COPY.acceptedParts.non_eligible_note(
+                  nonAcceptedReviewRequiredCount,
+                  nonAcceptedRejectedCount,
+                  nonAcceptedPendingCount,
+                )}
               </p>
             )}
 
@@ -1108,7 +914,7 @@ export function DxfIntakePage() {
 
             {acceptedFilesForParts.length === 0 && (
               <p className="rounded-md border border-dashed border-mist bg-slate-50 px-4 py-3 text-sm text-slate">
-                No accepted files yet. Create-part actions appear after preflight reaches accepted state.
+                {INTAKE_COPY.acceptedParts.empty}
               </p>
             )}
 
@@ -1128,7 +934,7 @@ export function DxfIntakePage() {
                   <tbody>
                     {acceptedFilesForParts.map((file) => {
                       const projection = getPartCreationProjection(file);
-                      const readiness = formatPartCreationReadiness(file);
+                      const readiness = partCreationReadinessBadge(file);
                       if (!projection) {
                         return null;
                       }
@@ -1147,7 +953,7 @@ export function DxfIntakePage() {
                             <p className="mt-1 text-xs text-slate">{readiness.description}</p>
                           </td>
                           <td className="py-3 text-xs text-slate">
-                            {projection.geometry_revision_id || "-"}
+                            {projection.geometry_revision_id || "—"}
                             {projection.geometry_revision_status && (
                               <p className="mt-1">status: {projection.geometry_revision_status}</p>
                             )}
@@ -1183,15 +989,19 @@ export function DxfIntakePage() {
                               onClick={() => void handleCreatePart(file)}
                               type="button"
                             >
-                              {partCreationInFlightFileId === file.id ? "Creating..." : "Create part"}
+                              {partCreationInFlightFileId === file.id
+                                ? INTAKE_COPY.acceptedParts.cta_creating
+                                : INTAKE_COPY.acceptedParts.cta_create}
                             </button>
                             {!canCreate && projection.readiness_reason === "accepted_existing_part" && (
                               <p className="mt-1 text-xs text-slate">
-                                Existing part: {projection.existing_part_code || projection.existing_part_definition_id || "already linked"}.
+                                {INTAKE_COPY.acceptedParts.note_existing_part(
+                                  projection.existing_part_code || projection.existing_part_definition_id || "existing definition",
+                                )}
                               </p>
                             )}
                             {!canCreate && projection.readiness_reason === "accepted_geometry_import_pending" && (
-                              <p className="mt-1 text-xs text-slate">Geometry import pending. Refresh after import.</p>
+                              <p className="mt-1 text-xs text-slate">{INTAKE_COPY.acceptedParts.note_geometry_pending}</p>
                             )}
                           </td>
                         </tr>
@@ -1205,22 +1015,28 @@ export function DxfIntakePage() {
         </>
       )}
 
+      {/* Review required overlay — guidance + replacement upload entry point */}
       {selectedReviewFile && selectedReviewDiagnostics && selectedReviewSummary && canOpenConditionalReviewModal(selectedReviewFile) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
           <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-mist bg-white p-5 shadow-xl">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-4 border-b border-mist pb-4">
               <div>
-                <h2 className="text-xl font-semibold">Conditional review modal</h2>
+                <h2 className="text-xl font-semibold">{INTAKE_COPY.review.overlay_title}</h2>
                 <p className="mt-1 text-sm text-slate">{selectedReviewFile.original_filename}</p>
+                <p className="mt-0.5 text-xs text-slate">{INTAKE_COPY.review.overlay_subtitle}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatAcceptanceOutcomeBadge(selectedReviewFile).className}`}>
-                    {formatAcceptanceOutcomeBadge(selectedReviewFile).label}
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${acceptanceOutcomeBadge(selectedReviewFile).className}`}>
+                    {acceptanceOutcomeBadge(selectedReviewFile).label}
                   </span>
-                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatRunStatusBadge(selectedReviewFile).className}`}>
-                    {formatRunStatusBadge(selectedReviewFile).label}
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${runStatusBadge(selectedReviewFile).className}`}>
+                    {runStatusBadge(selectedReviewFile).label}
                   </span>
-                  <span className="text-xs text-slate">{selectedReviewSummary.run_seq ? `Run #${selectedReviewSummary.run_seq}` : "Run n/a"}</span>
-                  <span className="text-xs text-slate">Finished: {formatDate(selectedReviewSummary.finished_at ?? null)}</span>
+                  <span className="text-xs text-slate">
+                    {selectedReviewSummary.run_seq
+                      ? INTAKE_COPY.runs.run_seq(selectedReviewSummary.run_seq)
+                      : INTAKE_COPY.runs.review_na}
+                  </span>
+                  <span className="text-xs text-slate">{formatDate(selectedReviewSummary.finished_at ?? null)}</span>
                 </div>
               </div>
               <button
@@ -1234,48 +1050,41 @@ export function DxfIntakePage() {
 
             <div className="space-y-4">
               <section className="rounded-lg border border-mist bg-slate-50 p-4">
-                <h3 className="text-sm font-semibold text-ink">Review summary</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.review.section_summary}</h3>
                 <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
                   <p>Review-required issues: {selectedReviewSummary.review_required_issue_count}</p>
                   <p>Remaining review-required signals: {selectedReviewDiagnostics.repair_summary.counts.remaining_review_required_signal_count}</p>
-                  <p>Recommended action: {formatRecommendedActionLabel(selectedReviewFile)}</p>
-                  <p>Precedence rule: {selectedReviewDiagnostics.acceptance_summary.precedence_rule_applied || "-"}</p>
+                  <p>Next step: {recommendedNextStep(selectedReviewFile)}</p>
+                  <p>Precedence rule: {selectedReviewDiagnostics.acceptance_summary.precedence_rule_applied || "—"}</p>
                 </div>
               </section>
 
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Review-required issues</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.review.section_issues}</h3>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate">
-                  {reviewRequiredIssues.length === 0 && <li>none</li>}
+                  {reviewRequiredIssues.length === 0 && <li>{INTAKE_COPY.review.none_label}</li>}
                   {reviewRequiredIssues.map((issue, index) => (
                     <li key={`${issue.code}-${index}`}>
-                      [{issue.family || "-"} / {issue.code || "-"}] {issue.message || "-"}
+                      [{issue.family || "—"} / {issue.code || "—"}] {issue.message || "—"}
                     </li>
                   ))}
                 </ul>
               </section>
 
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Remaining review-required signals</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.review.section_signals}</h3>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate">
-                  {remainingReviewSignals.length === 0 && <li>none</li>}
+                  {remainingReviewSignals.length === 0 && <li>{INTAKE_COPY.review.none_label}</li>}
                   {remainingReviewSignals.map((signal, index) => (
                     <li key={`remaining-review-signal-${index}`}>{formatSignalRecord(signal)}</li>
                   ))}
                 </ul>
               </section>
 
-              <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
-                <h3 className="text-sm font-semibold text-amber-900">What to do now</h3>
-                <p className="mt-2">
-                  Current-code note: persisted review decision save is not implemented yet. This modal provides guidance and a replacement
-                  upload entrypoint only.
-                </p>
-                <p className="mt-1">
-                  Use replacement upload to submit a corrected source DXF. Finalize still goes through the existing
-                  <code> complete_upload </code>
-                  route with <code>replaces_file_object_id</code> and the current <code>rules_profile_snapshot_jsonb</code>.
-                </p>
+              {/* Guidance — actionable next step */}
+              <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <h3 className="text-sm font-semibold text-amber-900">{INTAKE_COPY.review.guidance_title}</h3>
+                <p className="mt-2 text-sm text-amber-900">{INTAKE_COPY.review.guidance_body}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     className="rounded border border-mist bg-white px-3 py-1.5 text-xs font-medium text-slate hover:bg-slate-100"
@@ -1285,16 +1094,20 @@ export function DxfIntakePage() {
                     }}
                     type="button"
                   >
-                    Open full diagnostics drawer
+                    {INTAKE_COPY.review.cta_open_diagnostics}
                   </button>
                 </div>
               </section>
 
+              {/* Technical note — backend/API truth, not actionable guidance */}
+              <section className="rounded-lg border border-mist bg-slate-50 p-4">
+                <h3 className="text-xs font-semibold text-slate">{INTAKE_COPY.review.tech_note_title}</h3>
+                <p className="mt-1 text-xs text-slate">{INTAKE_COPY.review.tech_note_body}</p>
+              </section>
+
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Replace source DXF</h3>
-                <p className="mt-2 text-xs text-slate">
-                  This uses <code>POST /projects/{`{project_id}`}/files/{`{file_id}`}/replace</code> then signed upload and finalize.
-                </p>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.review.section_replace}</h3>
+                <p className="mt-2 text-xs text-slate">{INTAKE_COPY.review.replace_helper}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <input
                     accept=".dxf"
@@ -1313,7 +1126,7 @@ export function DxfIntakePage() {
                     onClick={() => void handleReviewReplacementUpload()}
                     type="button"
                   >
-                    Upload replacement DXF
+                    {INTAKE_COPY.review.cta_upload_replacement}
                   </button>
                 </div>
                 {reviewReplacementFile && <p className="mt-2 text-xs text-slate">Selected file: {reviewReplacementFile.name}</p>}
@@ -1327,27 +1140,29 @@ export function DxfIntakePage() {
         </div>
       )}
 
+      {/* Preflight diagnostics drawer — read-only snapshot */}
       {selectedDiagnosticsFile && selectedDiagnostics && (
         <div className="fixed inset-0 z-40 flex justify-end bg-ink/40">
           <div className="h-full w-full max-w-3xl overflow-y-auto border-l border-mist bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4 border-b border-mist pb-4">
               <div>
-                <h2 className="text-xl font-semibold">Diagnostics</h2>
+                <h2 className="text-xl font-semibold">{INTAKE_COPY.diagnostics.overlay_title}</h2>
                 <p className="mt-1 text-sm text-slate">{selectedDiagnosticsFile.original_filename}</p>
+                <p className="mt-0.5 text-xs text-slate">{INTAKE_COPY.diagnostics.overlay_subtitle}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatRunStatusBadge(selectedDiagnosticsFile).className}`}>
-                    {formatRunStatusBadge(selectedDiagnosticsFile).label}
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${runStatusBadge(selectedDiagnosticsFile).className}`}>
+                    {runStatusBadge(selectedDiagnosticsFile).label}
                   </span>
-                  <span className={`rounded px-2 py-1 text-xs font-medium ${formatAcceptanceOutcomeBadge(selectedDiagnosticsFile).className}`}>
-                    {formatAcceptanceOutcomeBadge(selectedDiagnosticsFile).label}
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${acceptanceOutcomeBadge(selectedDiagnosticsFile).className}`}>
+                    {acceptanceOutcomeBadge(selectedDiagnosticsFile).label}
                   </span>
                   <span className="text-xs text-slate">
                     {selectedDiagnosticsFile.latest_preflight_summary?.run_seq
-                      ? `Run #${selectedDiagnosticsFile.latest_preflight_summary.run_seq}`
-                      : "Run n/a"}
+                      ? INTAKE_COPY.runs.run_seq(selectedDiagnosticsFile.latest_preflight_summary.run_seq)
+                      : INTAKE_COPY.runs.review_na}
                   </span>
                   <span className="text-xs text-slate">
-                    Finished: {formatDate(selectedDiagnosticsFile.latest_preflight_summary?.finished_at ?? null)}
+                    {formatDate(selectedDiagnosticsFile.latest_preflight_summary?.finished_at ?? null)}
                   </span>
                 </div>
               </div>
@@ -1362,15 +1177,15 @@ export function DxfIntakePage() {
 
             <div className="space-y-5">
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Source inventory</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_source}</h3>
                 <p className="mt-2 text-xs text-slate">
-                  Layers: {selectedDiagnostics.source_inventory_summary.found_layers.join(", ") || "-"}
+                  Layers: {selectedDiagnostics.source_inventory_summary.found_layers.join(", ") || "—"}
                 </p>
                 <p className="mt-1 text-xs text-slate">
-                  Colors: {selectedDiagnostics.source_inventory_summary.found_colors.join(", ") || "-"}
+                  Colors: {selectedDiagnostics.source_inventory_summary.found_colors.join(", ") || "—"}
                 </p>
                 <p className="mt-1 text-xs text-slate">
-                  Linetypes: {selectedDiagnostics.source_inventory_summary.found_linetypes.join(", ") || "-"}
+                  Linetypes: {selectedDiagnostics.source_inventory_summary.found_linetypes.join(", ") || "—"}
                 </p>
                 <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
                   <p>Entity count: {selectedDiagnostics.source_inventory_summary.entity_count}</p>
@@ -1383,7 +1198,7 @@ export function DxfIntakePage() {
               </section>
 
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Role mapping</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_roles}</h3>
                 <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
                   <p>Review-required count: {selectedDiagnostics.role_mapping_summary.review_required_count}</p>
                   <p>Blocking conflict count: {selectedDiagnostics.role_mapping_summary.blocking_conflict_count}</p>
@@ -1402,14 +1217,14 @@ export function DxfIntakePage() {
                   {selectedDiagnostics.role_mapping_summary.layer_role_assignments.length === 0 && <li>none</li>}
                   {selectedDiagnostics.role_mapping_summary.layer_role_assignments.map((assignment, index) => (
                     <li key={`${index}-${String(assignment.layer ?? "layer")}`}>
-                      layer={String(assignment.layer ?? "-")} role={String(assignment.role ?? "-")}
+                      layer={String(assignment.layer ?? "—")} role={String(assignment.role ?? "—")}
                     </li>
                   ))}
                 </ul>
               </section>
 
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Issues</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_issues}</h3>
                 <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
                   <p>Blocking: {selectedDiagnostics.issue_summary.counts_by_severity.blocking}</p>
                   <p>Review required: {selectedDiagnostics.issue_summary.counts_by_severity.review_required}</p>
@@ -1430,16 +1245,16 @@ export function DxfIntakePage() {
                       {selectedDiagnostics.issue_summary.normalized_issues.length === 0 && (
                         <tr>
                           <td className="py-2 text-slate" colSpan={4}>
-                            no normalized issues
+                            {INTAKE_COPY.diagnostics.no_issues}
                           </td>
                         </tr>
                       )}
                       {selectedDiagnostics.issue_summary.normalized_issues.map((issue, index) => (
                         <tr className="border-b border-mist/60" key={`${issue.code}-${index}`}>
-                          <td className="py-1">{issue.severity || "-"}</td>
-                          <td className="py-1">{issue.family || "-"}</td>
-                          <td className="py-1">{issue.code || "-"}</td>
-                          <td className="py-1">{issue.message || "-"}</td>
+                          <td className="py-1">{issue.severity || "—"}</td>
+                          <td className="py-1">{issue.family || "—"}</td>
+                          <td className="py-1">{issue.code || "—"}</td>
+                          <td className="py-1">{issue.message || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1448,7 +1263,7 @@ export function DxfIntakePage() {
               </section>
 
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Repairs</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_repairs}</h3>
                 <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
                   <p>Applied gap repairs: {selectedDiagnostics.repair_summary.counts.applied_gap_repair_count}</p>
                   <p>Applied duplicate dedupes: {selectedDiagnostics.repair_summary.counts.applied_duplicate_dedupe_count}</p>
@@ -1463,30 +1278,30 @@ export function DxfIntakePage() {
               </section>
 
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Acceptance</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_acceptance}</h3>
                 <div className="mt-2 space-y-1 text-xs text-slate">
-                  <p>Precedence rule: {selectedDiagnostics.acceptance_summary.precedence_rule_applied || "-"}</p>
-                  <p>Outcome: {selectedDiagnostics.acceptance_summary.acceptance_outcome || "-"}</p>
+                  <p>Precedence rule: {selectedDiagnostics.acceptance_summary.precedence_rule_applied || "—"}</p>
+                  <p>Outcome: {selectedDiagnostics.acceptance_summary.acceptance_outcome || "—"}</p>
                   <p>
                     Importer highlight: pass=
                     {String((selectedDiagnostics.acceptance_summary.importer_probe.is_pass as boolean | undefined) ?? false)} error=
-                    {String((selectedDiagnostics.acceptance_summary.importer_probe.error_code as string | undefined) ?? "-")}
+                    {String((selectedDiagnostics.acceptance_summary.importer_probe.error_code as string | undefined) ?? "—")}
                   </p>
                   <p>
                     Validator highlight: status=
-                    {String((selectedDiagnostics.acceptance_summary.validator_probe.status as string | undefined) ?? "-")} pass=
+                    {String((selectedDiagnostics.acceptance_summary.validator_probe.status as string | undefined) ?? "—")} pass=
                     {String((selectedDiagnostics.acceptance_summary.validator_probe.is_pass as boolean | undefined) ?? false)}
                   </p>
                 </div>
               </section>
 
               <section className="rounded-lg border border-mist p-4">
-                <h3 className="text-sm font-semibold text-ink">Artifacts</h3>
+                <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_artifacts}</h3>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate">
-                  {selectedDiagnostics.artifact_references.length === 0 && <li>no artifact references</li>}
+                  {selectedDiagnostics.artifact_references.length === 0 && <li>{INTAKE_COPY.diagnostics.no_artifacts}</li>}
                   {selectedDiagnostics.artifact_references.map((artifact, index) => (
                     <li key={`${artifact.path}-${index}`}>
-                      {artifact.download_label || artifact.artifact_kind || "artifact"} | path: {artifact.path || "-"} | exists:{" "}
+                      {artifact.download_label || artifact.artifact_kind || "artifact"} | path: {artifact.path || "—"} | exists:{" "}
                       {formatExistsLabel(artifact.exists)}
                     </li>
                   ))}
