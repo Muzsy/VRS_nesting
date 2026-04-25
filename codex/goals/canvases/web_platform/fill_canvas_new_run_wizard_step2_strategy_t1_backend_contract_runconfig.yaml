@@ -1,0 +1,123 @@
+steps:
+  - name: "Felderites es T1 artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a csatolt New Run
+      Wizard Step2 strategia tervet, valamint a relevans valos fajlokat:
+      `api/routes/run_configs.py`, `api/routes/runs.py`, `api/services/run_creation.py`,
+      `api/services/run_snapshot_builder.py`,
+      `api/services/project_strategy_scoring_selection.py`,
+      `vrs_nesting/config/nesting_quality_profiles.py`, a H3-E1 strategy profile
+      migraciokat es a run_configs bridge migraciot. Frissitsd/veglegesitsd a
+      canvas-t ugy, hogy a T1 scope contract + migration + minimal run_config
+      bekotes maradjon, es ne csusszon at frontend/worker/full resolver munkaba.
+    outputs:
+      - "canvases/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig/new_run_wizard_step2_strategy_t1_backend_contract_runconfig.md"
+      - "codex/goals/canvases/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig/fill_canvas_new_run_wizard_step2_strategy_t1_backend_contract_runconfig.yaml"
+      - "codex/prompts/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig/run.md"
+
+  - name: "Run config DB migration strategia mezokkel"
+    description: >
+      Hozz letre uj additive Supabase migrationt, amely boviti az
+      `app.run_configs` tablat a `run_strategy_profile_version_id` es
+      `solver_config_overrides_jsonb` mezokkel, letrehozza a szukseges indexet,
+      es ha a repo jelenlegi PostgREST bridge mintai szerint kell, frissiti a
+      `public.run_configs` view-t es az `public.run_configs_view_iud()` functiont
+      is. A migration legyen idempotens, visszafele kompatibilis, es ne toroljon
+      adatot.
+    outputs:
+      - "supabase/migrations/20260425xxxxxx_new_run_wizard_step2_strategy_t1_runconfig_contract.sql"
+
+  - name: "Run config API contract es override validacio"
+    description: >
+      Bovitsd az `api/routes/run_configs.py` request/response/list/insert flow-jat
+      az uj strategy mezokkel. Ha `run_strategy_profile_version_id` erkezik,
+      ellenorizd owner scope-pal es active status-szal az
+      `app.run_strategy_profile_versions` tablan. A
+      `solver_config_overrides_jsonb` csak a whitelistelt kulcsokat fogadhatja:
+      `quality_profile`, `sa_eval_budget_sec`, `nesting_engine_runtime_policy`,
+      `engine_backend_hint`. Hasznald a mar letezo quality profile es runtime
+      policy helper validaciot. A normalizalt override keruljon tarolasra es a
+      response-ba.
+    outputs:
+      - "api/routes/run_configs.py"
+
+  - name: "Run create request contract bovites"
+    description: >
+      Bovitsd az `api/routes/runs.py` `RunCreateRequest` modelljet a T1 backend
+      contract mezokkel: `run_config_id`, `run_strategy_profile_version_id`,
+      `quality_profile`, `engine_backend_hint`, `nesting_engine_runtime_policy`.
+      A mar letezo `sa_eval_budget_sec` maradjon. A route adja tovabb ezeket a
+      `create_queued_run_from_project_snapshot(...)` hivasnak ugy, hogy az ures
+      regi request tovabbra is mukodjon.
+    outputs:
+      - "api/routes/runs.py"
+
+  - name: "Run creation minimal run_config bekotes"
+    description: >
+      Bovitsd az `api/services/run_creation.py` service-t optional
+      `run_config_id` es strategy override parameterekkel. Legyen helper, amely
+      betolti es validalja a run configot ugyanahhoz a projekthez es userhez.
+      Az `_insert_run(...)` mentse a `run_config_id`-t a `nesting_runs` sorba, es
+      a `request_payload_jsonb` audit mezokben jelenjen meg a T1 contract
+      bemenet. A service adja tovabb az explicit request override-okat a snapshot
+      buildernek. Ne implementalj meg teljes request > run_config > project
+      selection > default precedence resolvert; azt csak keszitsd elo.
+    outputs:
+      - "api/services/run_creation.py"
+
+  - name: "Snapshot builder explicit request override support"
+    description: >
+      Bovitsd az `api/services/run_snapshot_builder.py` buildert optional
+      `quality_profile`, `engine_backend_hint` es `nesting_engine_runtime_policy`
+      parameterekkel. A validacio legyen determinisztikus es a mar letezo
+      `vrs_nesting.config.nesting_quality_profiles` helpereken alapuljon. Default
+      viselkedes ne torjon. Explicit override eseten a `solver_config_jsonb`
+      tartalmazza a normalizalt `quality_profile`, `engine_backend_hint` es
+      `nesting_engine_runtime_policy` truthot; a `sa_eval_budget_sec` eddigi
+      mukodese maradjon kompatibilis.
+    outputs:
+      - "api/services/run_snapshot_builder.py"
+
+  - name: "Project strategy selection loader payload bovites"
+    description: >
+      Bovitsd az `api/services/project_strategy_scoring_selection.py`
+      strategy-version loader select listajat ugy, hogy a version payloadban a
+      kesobbi Step2 preload/resolver szamara elerheto legyen a
+      `solver_config_jsonb`, `placement_config_jsonb` es
+      `manufacturing_bias_jsonb` is. A scoring loaderhez csak akkor nyulj, ha a
+      kozos helper miatt elkerulhetetlen; a T1 lenyege a run strategy version
+      payload.
+    outputs:
+      - "api/services/project_strategy_scoring_selection.py"
+
+  - name: "Dedikalt backend contract smoke"
+    description: >
+      Hozz letre fake-client alapu smoke scriptet, amely valodi Supabase, worker
+      es solver nelkul bizonyitja a T1 DoD-t: migration oszlopok/index;
+      run_config modellek es validacio; owner/active strategy version check;
+      run create request modell; run_creation `run_config_id` scope + insert;
+      snapshot builder explicit override truth; project strategy selection loader
+      bovitett select listaja. A smoke legyen gyors es determinisztikus.
+    outputs:
+      - "scripts/smoke_new_run_wizard_step2_strategy_t1_backend_contract_runconfig.py"
+
+  - name: "Checklist es report evidence alapon"
+    description: >
+      Hozd letre/frissitsd a task checklistet es reportot. A reportban legyen
+      DoD -> Evidence matrix, kulon jelolve: migration, run_config API,
+      run_create contract, run_config_id persistence, snapshot override truth,
+      selection loader payload, smoke eredmeny, es hogy mi marad T2/T3 scope-ban.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig.md"
+
+  - name: "Repo gate es verify report"
+    description: >
+      Futtasd a standard ellenorzest es a task-specifikus smoke-ot. Minimum:
+      `python3 -m py_compile ...`,
+      `python3 scripts/smoke_new_run_wizard_step2_strategy_t1_backend_contract_runconfig.py`,
+      majd `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig.md`.
+      A verify log es AUTO_VERIFY blokk keruljon a reportba.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t1_backend_contract_runconfig.verify.log"

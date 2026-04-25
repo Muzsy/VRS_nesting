@@ -57,6 +57,34 @@ def _load_project_for_owner(
     return rows[0]
 
 
+def _load_run_config_for_owner(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    owner_user_id: str,
+    project_id: str,
+    run_config_id: str,
+) -> dict[str, Any]:
+    params = {
+        "select": "id,project_id,created_by",
+        "id": f"eq.{run_config_id}",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.run_configs", access_token=access_token, params=params)
+    if not rows:
+        raise RunCreationError(status_code=404, detail="run_config not found")
+
+    row = rows[0]
+    row_project_id = str(row.get("project_id") or "").strip()
+    if row_project_id != project_id:
+        raise RunCreationError(status_code=400, detail="run_config does not belong to project")
+
+    created_by = str(row.get("created_by") or "").strip()
+    if created_by != owner_user_id:
+        raise RunCreationError(status_code=403, detail="run_config does not belong to owner")
+    return row
+
+
 def _fetch_run_row(
     *,
     supabase: SupabaseClient,
@@ -139,15 +167,28 @@ def _insert_run(
     run_purpose: str,
     idempotency_key: str | None,
     snapshot_hash_sha256: str,
+    run_config_id: str | None,
+    run_strategy_profile_version_id: str | None,
+    quality_profile: str | None,
+    engine_backend_hint: str | None,
+    has_nesting_engine_runtime_policy: bool,
+    sa_eval_budget_sec: int | None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "project_id": project_id,
         "requested_by": owner_user_id,
+        "run_config_id": run_config_id,
         "status": "queued",
         "run_purpose": run_purpose,
         "request_payload_jsonb": {
             "source": "h1_e4_t2_run_creation",
             "snapshot_hash_sha256": snapshot_hash_sha256,
+            "run_config_id": run_config_id,
+            "run_strategy_profile_version_id": run_strategy_profile_version_id,
+            "quality_profile": quality_profile,
+            "engine_backend_hint": engine_backend_hint,
+            "has_nesting_engine_runtime_policy": has_nesting_engine_runtime_policy,
+            "sa_eval_budget_sec": sa_eval_budget_sec,
         },
         "queued_at": _now_iso(),
     }
@@ -230,6 +271,11 @@ def create_queued_run_from_project_snapshot(
     project_id: str,
     run_purpose: str | None = None,
     idempotency_key: str | None = None,
+    run_config_id: str | None = None,
+    run_strategy_profile_version_id: str | None = None,
+    quality_profile: str | None = None,
+    engine_backend_hint: str | None = None,
+    nesting_engine_runtime_policy: dict[str, Any] | None = None,
     time_limit_s: int | None = None,
     sa_eval_budget_sec: int | None = None,
 ) -> dict[str, Any]:
@@ -242,6 +288,27 @@ def create_queued_run_from_project_snapshot(
 
     run_purpose_clean = _sanitize_run_purpose(run_purpose)
     idempotency_key_clean = _sanitize_optional(idempotency_key)
+    run_config_id_clean = _sanitize_optional(run_config_id)
+    run_strategy_profile_version_id_clean = _sanitize_optional(run_strategy_profile_version_id)
+    quality_profile_clean = _sanitize_optional(quality_profile)
+    engine_backend_hint_clean = _sanitize_optional(engine_backend_hint)
+
+    runtime_policy_clean: dict[str, Any] | None
+    if nesting_engine_runtime_policy is None:
+        runtime_policy_clean = None
+    else:
+        if not isinstance(nesting_engine_runtime_policy, dict):
+            raise RunCreationError(status_code=400, detail="invalid nesting_engine_runtime_policy")
+        runtime_policy_clean = dict(nesting_engine_runtime_policy)
+
+    if run_config_id_clean is not None:
+        _load_run_config_for_owner(
+            supabase=supabase,
+            access_token=access_token,
+            owner_user_id=owner_user_id,
+            project_id=project_id,
+            run_config_id=run_config_id_clean,
+        )
 
     try:
         snapshot_payload = build_run_snapshot_payload(
@@ -249,6 +316,9 @@ def create_queued_run_from_project_snapshot(
             access_token=access_token,
             owner_user_id=owner_user_id,
             project_id=project_id,
+            quality_profile=quality_profile_clean,
+            engine_backend_hint=engine_backend_hint_clean,
+            nesting_engine_runtime_policy=runtime_policy_clean,
             time_limit_s=time_limit_s,
             sa_eval_budget_sec=sa_eval_budget_sec,
         )
@@ -346,6 +416,12 @@ def create_queued_run_from_project_snapshot(
             run_purpose=run_purpose_clean,
             idempotency_key=idempotency_key_clean,
             snapshot_hash_sha256=snapshot_hash,
+            run_config_id=run_config_id_clean,
+            run_strategy_profile_version_id=run_strategy_profile_version_id_clean,
+            quality_profile=quality_profile_clean,
+            engine_backend_hint=engine_backend_hint_clean,
+            has_nesting_engine_runtime_policy=runtime_policy_clean is not None,
+            sa_eval_budget_sec=sa_eval_budget_sec,
         )
     except SupabaseHTTPError as exc:
         if idempotency_key_clean is not None and _is_duplicate_error(exc, constraint_hint="uq_nesting_runs_project_idempotency_key"):

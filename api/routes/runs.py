@@ -31,6 +31,11 @@ router = APIRouter(prefix="/projects/{project_id}/runs", tags=["runs"])
 class RunCreateRequest(StrictRequestModel):
     idempotency_key: str | None = Field(default=None, max_length=160)
     run_purpose: str = Field(default="nesting", min_length=1, max_length=120)
+    run_config_id: UUID | None = None
+    run_strategy_profile_version_id: UUID | None = None
+    quality_profile: str | None = Field(default=None, max_length=120)
+    engine_backend_hint: str | None = Field(default=None, max_length=120)
+    nesting_engine_runtime_policy: dict[str, Any] | None = None
     time_limit_s: int | None = Field(default=None, ge=1, le=3600)
     sa_eval_budget_sec: int | None = Field(default=None, ge=1, le=3600)
 
@@ -603,6 +608,15 @@ def create_run(
             project_id=str(project_id),
             run_purpose=req.run_purpose,
             idempotency_key=req.idempotency_key,
+            run_config_id=str(req.run_config_id) if req.run_config_id is not None else None,
+            run_strategy_profile_version_id=(
+                str(req.run_strategy_profile_version_id)
+                if req.run_strategy_profile_version_id is not None
+                else None
+            ),
+            quality_profile=req.quality_profile,
+            engine_backend_hint=req.engine_backend_hint,
+            nesting_engine_runtime_policy=req.nesting_engine_runtime_policy,
             time_limit_s=req.time_limit_s,
             sa_eval_budget_sec=req.sa_eval_budget_sec,
         )

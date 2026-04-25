@@ -11,11 +11,23 @@ from api.deps import get_supabase_client
 from api.http_errors import raise_supabase_http_error
 from api.request_models import StrictRequestModel
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
+from vrs_nesting.config.nesting_quality_profiles import (
+    compact_runtime_policy,
+    normalize_quality_profile_name,
+    validate_runtime_policy,
+)
 
 
 router = APIRouter(prefix="/projects/{project_id}/run-configs", tags=["run-configs"])
 
 _ALLOWED_ROTATIONS = {0, 90, 180, 270}
+_ALLOWED_ENGINE_BACKEND_HINTS = {"sparrow_v1", "nesting_engine_v2"}
+_ALLOWED_SOLVER_OVERRIDE_KEYS = {
+    "quality_profile",
+    "sa_eval_budget_sec",
+    "nesting_engine_runtime_policy",
+    "engine_backend_hint",
+}
 
 
 class RunConfigPartEntry(StrictRequestModel):
@@ -33,6 +45,8 @@ class RunConfigCreateRequest(StrictRequestModel):
     margin_mm: float = Field(default=5.0, ge=0.0, le=100.0)
     stock_file_id: UUID
     parts_config: list[RunConfigPartEntry] = Field(min_length=1, max_length=500)
+    run_strategy_profile_version_id: UUID | None = None
+    solver_config_overrides_jsonb: dict[str, Any] | None = None
 
 
 class RunConfigResponse(BaseModel):
@@ -47,6 +61,8 @@ class RunConfigResponse(BaseModel):
     margin_mm: float
     stock_file_id: str | None = None
     parts_config: list[RunConfigPartEntry]
+    run_strategy_profile_version_id: str | None = None
+    solver_config_overrides_jsonb: dict[str, Any] = Field(default_factory=dict)
     created_at: str | None = None
 
 
@@ -75,6 +91,8 @@ def _parse_parts_config(raw: Any) -> list[RunConfigPartEntry]:
 
 
 def _to_response(payload: dict[str, Any]) -> RunConfigResponse:
+    raw_overrides = payload.get("solver_config_overrides_jsonb")
+    solver_overrides = raw_overrides if isinstance(raw_overrides, dict) else {}
     return RunConfigResponse(
         id=str(payload.get("id", "")),
         project_id=str(payload.get("project_id", "")),
@@ -87,6 +105,12 @@ def _to_response(payload: dict[str, Any]) -> RunConfigResponse:
         margin_mm=float(payload.get("margin_mm") or 0.0),
         stock_file_id=str(payload.get("stock_file_id")) if payload.get("stock_file_id") is not None else None,
         parts_config=_parse_parts_config(payload.get("parts_config")),
+        run_strategy_profile_version_id=(
+            str(payload.get("run_strategy_profile_version_id"))
+            if payload.get("run_strategy_profile_version_id") is not None
+            else None
+        ),
+        solver_config_overrides_jsonb=solver_overrides,
         created_at=payload.get("created_at"),
     )
 
@@ -137,6 +161,96 @@ def _validate_rotations(parts: list[RunConfigPartEntry]) -> None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid allowed_rotations_deg value")
 
 
+def _normalize_bool(raw: Any) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        cleaned = raw.strip().lower()
+        if cleaned in {"true", "t", "1", "yes", "y"}:
+            return True
+        if cleaned in {"false", "f", "0", "no", "n"}:
+            return False
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    return bool(raw)
+
+
+def _validate_strategy_version_for_owner(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    owner_user_id: str,
+    version_id: str,
+) -> None:
+    params = {
+        "select": "id,owner_user_id,is_active",
+        "id": f"eq.{version_id}",
+        "limit": "1",
+    }
+    rows = supabase.select_rows(table="app.run_strategy_profile_versions", access_token=access_token, params=params)
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run strategy profile version not found")
+    row = rows[0]
+    version_owner = str(row.get("owner_user_id") or "").strip()
+    if version_owner != owner_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="run strategy profile version does not belong to owner")
+    if "is_active" in row and not _normalize_bool(row.get("is_active")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="run strategy profile version is inactive")
+
+
+def _parse_sa_eval_budget_sec(raw: Any) -> int:
+    if isinstance(raw, bool):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid solver override sa_eval_budget_sec")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid solver override sa_eval_budget_sec") from exc
+    if value < 1 or value > 3600:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid solver override sa_eval_budget_sec")
+    return value
+
+
+def _normalize_engine_backend_hint(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    if value not in _ALLOWED_ENGINE_BACKEND_HINTS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid solver override engine_backend_hint")
+    return value
+
+
+def _normalize_solver_config_overrides(raw: dict[str, Any] | None) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="solver_config_overrides_jsonb must be an object")
+    out: dict[str, Any] = {}
+    for key, value in raw.items():
+        if key not in _ALLOWED_SOLVER_OVERRIDE_KEYS:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"unsupported solver override key: {key}")
+        if key == "quality_profile":
+            if not isinstance(value, str) or not value.strip():
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid solver override quality_profile")
+            try:
+                out[key] = normalize_quality_profile_name(value)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+            continue
+        if key == "sa_eval_budget_sec":
+            out[key] = _parse_sa_eval_budget_sec(value)
+            continue
+        if key == "nesting_engine_runtime_policy":
+            if not isinstance(value, dict):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid solver override nesting_engine_runtime_policy")
+            try:
+                out[key] = compact_runtime_policy(validate_runtime_policy(value))
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+            continue
+        if key == "engine_backend_hint":
+            out[key] = _normalize_engine_backend_hint(value)
+            continue
+    return out
+
+
 @router.post("", response_model=RunConfigResponse)
 def create_run_config(
     project_id: UUID,
@@ -146,6 +260,15 @@ def create_run_config(
 ) -> RunConfigResponse:
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
     _validate_rotations(req.parts_config)
+    strategy_version_id = str(req.run_strategy_profile_version_id) if req.run_strategy_profile_version_id is not None else None
+    if strategy_version_id is not None:
+        _validate_strategy_version_for_owner(
+            supabase=supabase,
+            access_token=user.access_token,
+            owner_user_id=user.id,
+            version_id=strategy_version_id,
+        )
+    solver_config_overrides = _normalize_solver_config_overrides(req.solver_config_overrides_jsonb)
 
     file_ids: set[UUID] = {req.stock_file_id}
     for entry in req.parts_config:
@@ -175,6 +298,8 @@ def create_run_config(
             }
             for entry in req.parts_config
         ],
+        "run_strategy_profile_version_id": strategy_version_id,
+        "solver_config_overrides_jsonb": solver_config_overrides,
     }
 
     try:
@@ -194,7 +319,10 @@ def list_run_configs(
     _ensure_project_access(supabase=supabase, access_token=user.access_token, user_id=user.id, project_id=project_id)
 
     params = {
-        "select": "id,project_id,created_by,name,schema_version,seed,time_limit_s,spacing_mm,margin_mm,stock_file_id,parts_config,created_at",
+        "select": (
+            "id,project_id,created_by,name,schema_version,seed,time_limit_s,spacing_mm,margin_mm,"
+            "stock_file_id,parts_config,run_strategy_profile_version_id,solver_config_overrides_jsonb,created_at"
+        ),
         "project_id": f"eq.{project_id}",
         "order": "created_at.desc",
         "limit": str(limit),

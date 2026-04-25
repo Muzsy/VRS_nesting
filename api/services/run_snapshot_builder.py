@@ -12,10 +12,12 @@ from vrs_nesting.config.nesting_quality_profiles import (
     compact_runtime_policy,
     normalize_quality_profile_name,
     runtime_policy_for_quality_profile,
+    validate_runtime_policy,
 )
 
 
 SNAPSHOT_VERSION = "h2_e5_t2_snapshot_v1"
+_SUPPORTED_ENGINE_BACKEND_HINTS = {"sparrow_v1", "nesting_engine_v2"}
 
 
 @dataclass
@@ -120,6 +122,16 @@ def _parse_hole_rings_payload(raw: Any, *, field: str) -> list[list[list[float]]
     if not isinstance(raw, list):
         raise RunSnapshotBuilderError(status_code=400, detail=f"invalid {field}")
     return [_parse_ring_payload(ring_raw, field=f"{field}[{idx}]") for idx, ring_raw in enumerate(raw)]
+
+
+def _normalize_engine_backend_hint(raw: str | None) -> str:
+    cleaned = _sanitize_optional(raw)
+    if cleaned is None:
+        return "nesting_engine_v2"
+    lowered = cleaned.lower()
+    if lowered not in _SUPPORTED_ENGINE_BACKEND_HINTS:
+        raise RunSnapshotBuilderError(status_code=400, detail="invalid engine_backend_hint")
+    return lowered
 
 
 def _parse_bbox_payload(raw: Any, *, field: str) -> dict[str, float]:
@@ -681,6 +693,8 @@ def build_run_snapshot_payload(
     owner_user_id: str,
     project_id: str,
     quality_profile: str | None = None,
+    engine_backend_hint: str | None = None,
+    nesting_engine_runtime_policy: dict[str, Any] | None = None,
     time_limit_s: int | None = None,
     sa_eval_budget_sec: int | None = None,
 ) -> dict[str, Any]:
@@ -729,9 +743,18 @@ def build_run_snapshot_payload(
         quality_profile,
         default=DEFAULT_QUALITY_PROFILE,
     )
-    nesting_runtime_policy = compact_runtime_policy(
+    resolved_engine_backend_hint = _normalize_engine_backend_hint(engine_backend_hint)
+    default_runtime_policy = compact_runtime_policy(
         runtime_policy_for_quality_profile(resolved_quality_profile)
     )
+    nesting_runtime_policy = dict(default_runtime_policy)
+    if nesting_engine_runtime_policy is not None:
+        if not isinstance(nesting_engine_runtime_policy, dict):
+            raise RunSnapshotBuilderError(status_code=400, detail="invalid nesting_engine_runtime_policy")
+        try:
+            nesting_runtime_policy = compact_runtime_policy(validate_runtime_policy(nesting_engine_runtime_policy))
+        except ValueError as exc:
+            raise RunSnapshotBuilderError(status_code=400, detail="invalid nesting_engine_runtime_policy") from exc
     if "compaction" not in nesting_runtime_policy:
         # Keep snapshot runtime policy explicit for compaction mode even on legacy profiles.
         nesting_runtime_policy["compaction"] = "off"
@@ -773,7 +796,7 @@ def build_run_snapshot_payload(
         "spacing_mm": technology_spacing_mm,
         "margin_mm": technology_margin_mm,
         "quality_profile": resolved_quality_profile,
-        "engine_backend_hint": "nesting_engine_v2",
+        "engine_backend_hint": resolved_engine_backend_hint,
         "nesting_engine_runtime_policy": nesting_runtime_policy,
         "snapshot_mode": "h1_minimum_builder",
         **({"sa_eval_budget_sec": sa_eval_budget_sec} if sa_eval_budget_sec is not None and sa_eval_budget_sec > 0 else {}),

@@ -82,7 +82,10 @@ def _load_strategy_version_for_owner(
     require_active: bool,
 ) -> dict[str, Any]:
     params = {
-        "select": "id,run_strategy_profile_id,owner_user_id,version_no,lifecycle,is_active",
+        "select": (
+            "id,run_strategy_profile_id,owner_user_id,version_no,lifecycle,is_active,"
+            "solver_config_jsonb,placement_config_jsonb,manufacturing_bias_jsonb"
+        ),
         "id": f"eq.{version_id}",
         "limit": "1",
     }
