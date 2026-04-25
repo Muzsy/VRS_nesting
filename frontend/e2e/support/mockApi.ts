@@ -53,6 +53,35 @@ interface MockArtifact {
   created_at: string;
 }
 
+interface MockStrategyProfile {
+  id: string;
+  owner_user_id: string;
+  strategy_code: string;
+  display_name: string;
+  description: string | null;
+  lifecycle: string;
+  is_active: boolean;
+  metadata_jsonb: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MockStrategyProfileVersion {
+  id: string;
+  run_strategy_profile_id: string;
+  owner_user_id: string;
+  version_no: number;
+  lifecycle: string;
+  is_active: boolean;
+  solver_config_jsonb: Record<string, unknown> | null;
+  placement_config_jsonb: Record<string, unknown> | null;
+  manufacturing_bias_jsonb: Record<string, unknown> | null;
+  notes: string | null;
+  metadata_jsonb: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface ViewerSheet {
   sheet_index: number;
   dxf_artifact_id: string | null;
@@ -102,6 +131,11 @@ interface MockState {
   configCounter: number;
   runCounter: number;
   finalizedBodies: Array<Record<string, unknown>>;
+  strategyProfiles: MockStrategyProfile[];
+  strategyVersionsByProfile: Record<string, MockStrategyProfileVersion[]>;
+  projectStrategySelections: Record<string, { active_run_strategy_profile_version_id: string; selected_by: string; selected_at: string }>;
+  runConfigBodies: Array<Record<string, unknown>>;
+  runCreateBodies: Array<Record<string, unknown>>;
 }
 
 const OWNER_ID = "e2e-user";
@@ -161,7 +195,11 @@ export interface MockApiOptions {
   initialArtifactsByRun?: Record<string, MockArtifact[]>;
   initialViewerDataByRun?: Record<string, ViewerData>;
   createdRunStatus?: RunStatus;
+  initialStrategyProfiles?: MockStrategyProfile[];
+  initialStrategyVersionsByProfile?: Record<string, MockStrategyProfileVersion[]>;
 }
+
+export type { MockStrategyProfile, MockStrategyProfileVersion };
 
 export interface MockApiHandle {
   state: MockState;
@@ -182,6 +220,11 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
     configCounter: 1,
     runCounter: 1,
     finalizedBodies: [],
+    strategyProfiles: options?.initialStrategyProfiles ? [...options.initialStrategyProfiles] : [],
+    strategyVersionsByProfile: options?.initialStrategyVersionsByProfile ? { ...options.initialStrategyVersionsByProfile } : {},
+    projectStrategySelections: {},
+    runConfigBodies: [],
+    runCreateBodies: [],
   };
 
   const createdRunStatus = options?.createdRunStatus ?? "running";
@@ -258,9 +301,10 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
     }
     if (runsListMatch && method === "POST") {
       const projectId = runsListMatch[1];
-      const body = request.postDataJSON() as { run_config_id?: string };
+      const body = request.postDataJSON() as Record<string, unknown>;
+      state.runCreateBodies.push(body);
       const runId = `run-${state.runCounter++}`;
-      const run = makeRun(runId, projectId, createdRunStatus, { run_config_id: body.run_config_id ?? "cfg-1" });
+      const run = makeRun(runId, projectId, createdRunStatus, { run_config_id: (body.run_config_id as string | undefined) ?? "cfg-1" });
       state.runsByProject[projectId] = [...(state.runsByProject[projectId] ?? []), run];
       await json(route, run);
       return;
@@ -293,9 +337,62 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
       return;
     }
 
+    if (path === "/run-strategy-profiles" && method === "GET") {
+      await json(route, state.strategyProfiles);
+      return;
+    }
+
+    const strategyVersionsMatch = path.match(/^\/run-strategy-profiles\/([^/]+)\/versions$/);
+    if (strategyVersionsMatch && method === "GET") {
+      const profileId = strategyVersionsMatch[1];
+      await json(route, state.strategyVersionsByProfile[profileId] ?? []);
+      return;
+    }
+
+    const projectStrategySelectionMatch = path.match(/^\/projects\/([^/]+)\/run-strategy-selection$/);
+    if (projectStrategySelectionMatch && method === "GET") {
+      const projectId = projectStrategySelectionMatch[1];
+      const sel = state.projectStrategySelections[projectId];
+      if (!sel) {
+        await json(route, { message: "no strategy selection" }, 404);
+        return;
+      }
+      await json(route, {
+        project_id: projectId,
+        active_run_strategy_profile_version_id: sel.active_run_strategy_profile_version_id,
+        selected_at: sel.selected_at,
+        selected_by: sel.selected_by,
+        run_strategy_profile_id: null,
+        version_no: null,
+      });
+      return;
+    }
+    if (projectStrategySelectionMatch && method === "PUT") {
+      const projectId = projectStrategySelectionMatch[1];
+      const body = request.postDataJSON() as { active_run_strategy_profile_version_id?: string };
+      const versionId = body.active_run_strategy_profile_version_id ?? "";
+      state.projectStrategySelections[projectId] = {
+        active_run_strategy_profile_version_id: versionId,
+        selected_by: OWNER_ID,
+        selected_at: NOW,
+      };
+      await json(route, {
+        project_id: projectId,
+        active_run_strategy_profile_version_id: versionId,
+        selected_at: NOW,
+        selected_by: OWNER_ID,
+        run_strategy_profile_id: null,
+        version_no: null,
+        was_existing_selection: false,
+      });
+      return;
+    }
+
     const runConfigMatch = path.match(/^\/projects\/([^/]+)\/run-configs$/);
     if (runConfigMatch && method === "POST") {
       const cfgId = `cfg-${state.configCounter++}`;
+      const body = request.postDataJSON() as Record<string, unknown>;
+      state.runConfigBodies.push(body);
       await json(route, { id: cfgId });
       return;
     }

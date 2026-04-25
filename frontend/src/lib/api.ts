@@ -1,6 +1,8 @@
 import type {
   ArtifactUrlResponse,
   BundleResponse,
+  EngineBackendHint,
+  NestingEngineRuntimePolicy,
   PreflightRulesProfileSnapshot,
   Project,
   ProjectFile,
@@ -14,10 +16,15 @@ import type {
   ProjectFileLatestPreflightSummary,
   ProjectFileListResponse,
   ProjectListResponse,
+  ProjectRunStrategySelection,
+  QualityProfileName,
   Run,
   RunArtifactListResponse,
   RunListResponse,
   RunLogResponse,
+  RunStrategyProfile,
+  RunStrategyProfileVersion,
+  SolverConfigOverrides,
   ViewerDataResponse,
 } from "./types";
 
@@ -265,6 +272,26 @@ async function request<T>(path: string, token: string, init?: RequestInit): Prom
   return (await response.json()) as T;
 }
 
+async function requestOrNull<T>(path: string, token: string, init?: RequestInit): Promise<T | null> {
+  const headers: HeadersInit = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    ...(init?.headers ?? {}),
+  };
+  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `API request failed: ${response.status}`);
+  }
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
+}
+
 export const api = {
   listProjects(token: string): Promise<ProjectListResponse> {
     return request<{ items: Array<Record<string, unknown>>; total: number; page: number; page_size: number }>("/projects", token, {
@@ -441,6 +468,8 @@ export const api = {
       margin_mm: number;
       stock_file_id: string;
       parts_config: Array<{ file_id: string; quantity: number; allowed_rotations_deg: number[] }>;
+      run_strategy_profile_version_id?: string;
+      solver_config_overrides_jsonb?: SolverConfigOverrides;
     }
   ): Promise<{ id: string }> {
     return request<{ id: string }>(`/projects/${projectId}/run-configs`, token, { method: "POST", body: JSON.stringify(payload) });
@@ -459,12 +488,21 @@ export const api = {
       run_purpose?: string;
       time_limit_s?: number;
       sa_eval_budget_sec?: number;
+      run_strategy_profile_version_id?: string;
+      quality_profile?: QualityProfileName;
+      engine_backend_hint?: EngineBackendHint;
+      nesting_engine_runtime_policy?: NestingEngineRuntimePolicy;
     }
   ): Promise<Run> {
     const requestPayload = {
+      ...(payload?.run_config_id ? { run_config_id: payload.run_config_id } : {}),
       ...(payload?.idempotency_key ? { idempotency_key: payload.idempotency_key } : {}),
       ...(payload?.run_purpose ? { run_purpose: payload.run_purpose } : {}),
       ...(typeof payload?.time_limit_s === "number" ? { time_limit_s: payload.time_limit_s } : {}),
+      ...(payload?.run_strategy_profile_version_id ? { run_strategy_profile_version_id: payload.run_strategy_profile_version_id } : {}),
+      ...(payload?.quality_profile ? { quality_profile: payload.quality_profile } : {}),
+      ...(payload?.engine_backend_hint ? { engine_backend_hint: payload.engine_backend_hint } : {}),
+      ...(payload?.nesting_engine_runtime_policy ? { nesting_engine_runtime_policy: payload.nesting_engine_runtime_policy } : {}),
       ...(typeof payload?.sa_eval_budget_sec === "number" ? { sa_eval_budget_sec: payload.sa_eval_budget_sec } : {}),
     };
     return request<Run>(`/projects/${projectId}/runs`, token, { method: "POST", body: JSON.stringify(requestPayload) });
@@ -498,6 +536,25 @@ export const api = {
     return request<BundleResponse>(`/projects/${projectId}/runs/${runId}/artifacts/bundle`, token, {
       method: "POST",
       body: JSON.stringify({ artifact_ids: artifactIds }),
+    });
+  },
+
+  listRunStrategyProfiles(token: string): Promise<RunStrategyProfile[]> {
+    return request<RunStrategyProfile[]>("/run-strategy-profiles", token, { method: "GET" });
+  },
+
+  listRunStrategyProfileVersions(token: string, profileId: string): Promise<RunStrategyProfileVersion[]> {
+    return request<RunStrategyProfileVersion[]>(`/run-strategy-profiles/${profileId}/versions`, token, { method: "GET" });
+  },
+
+  getProjectRunStrategySelection(token: string, projectId: string): Promise<ProjectRunStrategySelection | null> {
+    return requestOrNull<ProjectRunStrategySelection>(`/projects/${projectId}/run-strategy-selection`, token, { method: "GET" });
+  },
+
+  setProjectRunStrategySelection(token: string, projectId: string, versionId: string): Promise<ProjectRunStrategySelection> {
+    return request<ProjectRunStrategySelection>(`/projects/${projectId}/run-strategy-selection`, token, {
+      method: "PUT",
+      body: JSON.stringify({ active_run_strategy_profile_version_id: versionId }),
     });
   },
 

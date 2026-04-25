@@ -334,3 +334,65 @@ export interface BundleResponse {
   bundle_url: string;
   expires_at: string;
 }
+
+export type QualityProfileName = "fast_preview" | "quality_default" | "quality_aggressive";
+export type EngineBackendHint = "sparrow_v1" | "nesting_engine_v2";
+export type EngineBackendHintMode = "auto" | EngineBackendHint;
+
+export interface NestingEngineRuntimePolicy {
+  placer: "blf" | "nfp";
+  search: "none" | "sa";
+  part_in_part: "off" | "auto";
+  compaction: "off" | "slide";
+  sa_iters?: number;
+  sa_temp_start?: number;
+  sa_temp_end?: number;
+  sa_seed?: number;
+  sa_eval_budget_sec?: number;
+}
+
+export interface SolverConfigOverrides {
+  quality_profile?: QualityProfileName;
+  sa_eval_budget_sec?: number;
+  nesting_engine_runtime_policy?: NestingEngineRuntimePolicy;
+  engine_backend_hint?: EngineBackendHint;
+}
+
+export interface RunStrategyProfile {
+  id: string;
+  owner_user_id: string;
+  strategy_code: string;
+  display_name: string;
+  description?: string | null;
+  lifecycle: string;
+  is_active: boolean;
+  metadata_jsonb?: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RunStrategyProfileVersion {
+  id: string;
+  run_strategy_profile_id: string;
+  owner_user_id: string;
+  version_no: number;
+  lifecycle: string;
+  is_active: boolean;
+  solver_config_jsonb?: Record<string, unknown> | null;
+  placement_config_jsonb?: Record<string, unknown> | null;
+  manufacturing_bias_jsonb?: Record<string, unknown> | null;
+  notes?: string | null;
+  metadata_jsonb?: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ProjectRunStrategySelection {
+  project_id: string;
+  active_run_strategy_profile_version_id: string;
+  selected_at?: string | null;
+  selected_by: string;
+  run_strategy_profile_id?: string | null;
+  version_no?: number | null;
+  was_existing_selection?: boolean | null;
+}

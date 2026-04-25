@@ -2,14 +2,33 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { getAccessToken } from "../lib/supabase";
-import type { ProjectFile } from "../lib/types";
+import type {
+  EngineBackendHint,
+  EngineBackendHintMode,
+  NestingEngineRuntimePolicy,
+  ProjectFile,
+  ProjectRunStrategySelection,
+  QualityProfileName,
+  RunStrategyProfile,
+  RunStrategyProfileVersion,
+  SolverConfigOverrides,
+} from "../lib/types";
 
 type WizardStep = 1 | 2 | 3;
+type StrategySource = "project_default" | "choose_profile" | "custom";
 
 interface PartChoice {
   selected: boolean;
   quantity: number;
   rotationsText: string;
+}
+
+interface RunStrategyRunPayload {
+  run_strategy_profile_version_id?: string;
+  quality_profile?: QualityProfileName;
+  engine_backend_hint?: EngineBackendHint;
+  nesting_engine_runtime_policy?: NestingEngineRuntimePolicy;
+  sa_eval_budget_sec?: number;
 }
 
 function isDxfSourceFile(file: ProjectFile): boolean {
@@ -69,6 +88,24 @@ export function NewRunPage() {
   const [partChoices, setPartChoices] = useState<Record<string, PartChoice>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Strategy state
+  const [strategySource, setStrategySource] = useState<StrategySource>("project_default");
+  const [strategyProfiles, setStrategyProfiles] = useState<RunStrategyProfile[]>([]);
+  const [strategyVersionsByProfile, setStrategyVersionsByProfile] = useState<Record<string, RunStrategyProfileVersion[]>>({});
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [selectedVersionId, setSelectedVersionId] = useState("");
+  const [projectStrategySelection, setProjectStrategySelection] = useState<ProjectRunStrategySelection | null>(null);
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  // Custom overrides
+  const [qualityProfile, setQualityProfile] = useState<QualityProfileName | "">("");
+  const [engineBackendHintMode, setEngineBackendHintMode] = useState<EngineBackendHintMode>("auto");
+  const [saEvalBudget, setSaEvalBudget] = useState<number | "">("");
+  const [placer, setPlacer] = useState<"blf" | "nfp">("nfp");
+  const [search, setSearch] = useState<"none" | "sa">("sa");
+  const [partInPart, setPartInPart] = useState<"off" | "auto">("off");
+  const [compaction, setCompaction] = useState<"off" | "slide">("off");
+  const [saIters, setSaIters] = useState<number | "">("");
+
   async function loadFiles() {
     if (!projectId) {
       return;
@@ -103,8 +140,43 @@ export function NewRunPage() {
     }
   }
 
+  async function loadStrategyData() {
+    if (!projectId) return;
+    setStrategyLoading(true);
+    try {
+      const token = await getAccessToken();
+      const [profiles, selection] = await Promise.all([
+        api.listRunStrategyProfiles(token),
+        api.getProjectRunStrategySelection(token, projectId),
+      ]);
+      setStrategyProfiles(profiles);
+      setProjectStrategySelection(selection);
+    } catch {
+      // strategy loading errors are non-fatal; wizard continues with project_default
+    } finally {
+      setStrategyLoading(false);
+    }
+  }
+
+  async function loadProfileVersions(profileId: string) {
+    if (!profileId) return;
+    try {
+      const token = await getAccessToken();
+      const versions = await api.listRunStrategyProfileVersions(token, profileId);
+      setStrategyVersionsByProfile((prev) => ({ ...prev, [profileId]: versions }));
+      const activeVersion = versions.find((v) => v.is_active) ?? versions[0];
+      setSelectedVersionId(activeVersion?.id ?? "");
+    } catch {
+      // non-fatal
+    }
+  }
+
   useEffect(() => {
     void loadFiles();
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadStrategyData();
   }, [projectId]);
 
   const selectedParts = useMemo(
@@ -129,6 +201,37 @@ export function NewRunPage() {
 
   const canMoveToStep2 = stockFileId.length > 0 && selectedParts.length > 0;
 
+  function buildNestingRuntimePolicy(): NestingEngineRuntimePolicy {
+    const policy: NestingEngineRuntimePolicy = { placer, search, part_in_part: partInPart, compaction };
+    if (search === "sa" && typeof saIters === "number" && saIters > 0) {
+      policy.sa_iters = saIters;
+    }
+    return policy;
+  }
+
+  function buildSolverConfigOverrides(): SolverConfigOverrides {
+    const overrides: SolverConfigOverrides = { nesting_engine_runtime_policy: buildNestingRuntimePolicy() };
+    if (qualityProfile) overrides.quality_profile = qualityProfile;
+    if (engineBackendHintMode !== "auto") overrides.engine_backend_hint = engineBackendHintMode;
+    if (typeof saEvalBudget === "number" && saEvalBudget > 0) overrides.sa_eval_budget_sec = saEvalBudget;
+    return overrides;
+  }
+
+  function buildRunStrategyRequestPayload(): RunStrategyRunPayload {
+    if (strategySource === "project_default") return {};
+    if (strategySource === "choose_profile") {
+      return selectedVersionId ? { run_strategy_profile_version_id: selectedVersionId } : {};
+    }
+    // custom
+    const payload: RunStrategyRunPayload = {};
+    if (selectedVersionId) payload.run_strategy_profile_version_id = selectedVersionId;
+    if (qualityProfile) payload.quality_profile = qualityProfile;
+    if (engineBackendHintMode !== "auto") payload.engine_backend_hint = engineBackendHintMode;
+    if (typeof saEvalBudget === "number" && saEvalBudget > 0) payload.sa_eval_budget_sec = saEvalBudget;
+    payload.nesting_engine_runtime_policy = buildNestingRuntimePolicy();
+    return payload;
+  }
+
   async function handleSubmitRun() {
     if (!projectId) {
       return;
@@ -143,7 +246,8 @@ export function NewRunPage() {
     setError("");
     try {
       const token = await getAccessToken();
-      await api.createRunConfig(token, projectId, {
+
+      const runConfig = await api.createRunConfig(token, projectId, {
         name: name.trim() || "run-config",
         schema_version: "dxf_v1",
         seed,
@@ -152,6 +256,8 @@ export function NewRunPage() {
         margin_mm: margin,
         stock_file_id: stockFileId,
         parts_config: selectedParts,
+        ...(strategySource !== "project_default" && selectedVersionId ? { run_strategy_profile_version_id: selectedVersionId } : {}),
+        ...(strategySource === "custom" ? { solver_config_overrides_jsonb: buildSolverConfigOverrides() } : {}),
       });
 
       // Keep snapshot source of truth in sync with wizard quantities.
@@ -218,7 +324,11 @@ export function NewRunPage() {
         });
       }
 
-      const run = await api.createRun(token, projectId, { time_limit_s: timeLimit });
+      const run = await api.createRun(token, projectId, {
+        run_config_id: runConfig.id,
+        time_limit_s: timeLimit,
+        ...buildRunStrategyRequestPayload(),
+      });
       navigate(`/projects/${projectId}/runs/${run.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run creation failed.");
@@ -230,6 +340,24 @@ export function NewRunPage() {
   if (!projectId) {
     return <p className="rounded-md border border-danger/40 bg-red-50 px-4 py-3 text-danger">Missing project id in route.</p>;
   }
+
+  const strategySummaryLabel =
+    strategySource === "project_default"
+      ? projectStrategySelection
+        ? `Project default (v${projectStrategySelection.version_no ?? "?"})`
+        : "Project default (global fallback)"
+      : strategySource === "choose_profile"
+      ? selectedVersionId
+        ? `Profile version: ${selectedVersionId.slice(0, 8)}…`
+        : "Choose profile (no version selected)"
+      : [
+          "Custom",
+          qualityProfile ? `quality=${qualityProfile}` : null,
+          engineBackendHintMode !== "auto" ? `engine=${engineBackendHintMode}` : "engine=auto",
+          typeof saEvalBudget === "number" && saEvalBudget > 0 ? `sa_budget=${saEvalBudget}s` : null,
+        ]
+          .filter(Boolean)
+          .join(", ");
 
   return (
     <section className="space-y-6">
@@ -395,6 +523,196 @@ export function NewRunPage() {
               />
             </label>
           </div>
+
+          {/* Strategy section */}
+          <div className="space-y-3 rounded-md border border-mist p-4">
+            <p className="text-sm font-semibold text-ink">Nesting strategy</p>
+            {strategyLoading ? (
+              <p className="text-sm text-slate">Loading strategy data...</p>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-5" role="radiogroup" aria-label="Strategy source">
+                  {(["project_default", "choose_profile", "custom"] as StrategySource[]).map((src) => (
+                    <label key={src} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        checked={strategySource === src}
+                        name="strategySource"
+                        onChange={() => setStrategySource(src)}
+                        type="radio"
+                        value={src}
+                      />
+                      {src === "project_default" ? "Project default" : src === "choose_profile" ? "Choose profile" : "Custom overrides"}
+                    </label>
+                  ))}
+                </div>
+
+                {strategySource === "project_default" && (
+                  <p className="text-xs text-slate">
+                    {projectStrategySelection
+                      ? `Project default: profile version ${projectStrategySelection.active_run_strategy_profile_version_id.slice(0, 8)}…`
+                      : "No project default strategy selected — global default will be used."}
+                  </p>
+                )}
+
+                {(strategySource === "choose_profile" || strategySource === "custom") && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Profile</span>
+                      <select
+                        aria-label="Strategy profile"
+                        className="w-full rounded-md border border-mist px-3 py-2 text-sm"
+                        disabled={strategyProfiles.length === 0}
+                        onChange={(e) => {
+                          setSelectedProfileId(e.target.value);
+                          void loadProfileVersions(e.target.value);
+                        }}
+                        value={selectedProfileId}
+                      >
+                        <option value="">{strategyProfiles.length === 0 ? "No profiles available" : "Select profile…"}</option>
+                        {strategyProfiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.display_name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Version</span>
+                      <select
+                        aria-label="Strategy version"
+                        className="w-full rounded-md border border-mist px-3 py-2 text-sm"
+                        disabled={!selectedProfileId || (strategyVersionsByProfile[selectedProfileId] ?? []).length === 0}
+                        onChange={(e) => setSelectedVersionId(e.target.value)}
+                        value={selectedVersionId}
+                      >
+                        <option value="">Select version…</option>
+                        {(strategyVersionsByProfile[selectedProfileId] ?? []).map((v) => (
+                          <option key={v.id} value={v.id}>
+                            v{v.version_no}
+                            {v.is_active ? " (active)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+
+                {strategySource === "custom" && (
+                  <div className="grid gap-3 rounded-md border border-mist bg-slate-50 p-3 md:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Quality profile</span>
+                      <select
+                        aria-label="Quality profile"
+                        className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                        onChange={(e) => setQualityProfile(e.target.value as QualityProfileName | "")}
+                        value={qualityProfile}
+                      >
+                        <option value="">Default</option>
+                        <option value="fast_preview">Fast preview</option>
+                        <option value="quality_default">Quality default</option>
+                        <option value="quality_aggressive">Quality aggressive</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Engine backend</span>
+                      <select
+                        aria-label="Engine backend"
+                        className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                        onChange={(e) => setEngineBackendHintMode(e.target.value as EngineBackendHintMode)}
+                        value={engineBackendHintMode}
+                      >
+                        <option value="auto">Auto (resolver default)</option>
+                        <option value="sparrow_v1">Sparrow v1</option>
+                        <option value="nesting_engine_v2">Nesting Engine v2</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">SA eval budget (s)</span>
+                      <input
+                        aria-label="SA eval budget (s)"
+                        className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                        min={0}
+                        onChange={(e) => setSaEvalBudget(e.target.value ? Number.parseFloat(e.target.value) : "")}
+                        step="0.5"
+                        type="number"
+                        value={saEvalBudget}
+                      />
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Placer</span>
+                      <select
+                        aria-label="Placer"
+                        className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                        onChange={(e) => setPlacer(e.target.value as "blf" | "nfp")}
+                        value={placer}
+                      >
+                        <option value="nfp">NFP</option>
+                        <option value="blf">BLF</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Search</span>
+                      <select
+                        aria-label="Search"
+                        className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                        onChange={(e) => setSearch(e.target.value as "none" | "sa")}
+                        value={search}
+                      >
+                        <option value="sa">SA (simulated annealing)</option>
+                        <option value="none">None</option>
+                      </select>
+                    </label>
+
+                    {search === "sa" && (
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-slate">SA iterations</span>
+                        <input
+                          aria-label="SA iterations"
+                          className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                          min={1}
+                          onChange={(e) => setSaIters(e.target.value ? Number.parseInt(e.target.value, 10) : "")}
+                          type="number"
+                          value={saIters}
+                        />
+                      </label>
+                    )}
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Part in part</span>
+                      <select
+                        aria-label="Part in part"
+                        className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                        onChange={(e) => setPartInPart(e.target.value as "off" | "auto")}
+                        value={partInPart}
+                      >
+                        <option value="off">Off</option>
+                        <option value="auto">Auto</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-slate">Compaction</span>
+                      <select
+                        aria-label="Compaction"
+                        className="w-full rounded-md border border-mist bg-white px-3 py-2 text-sm"
+                        onChange={(e) => setCompaction(e.target.value as "off" | "slide")}
+                        value={compaction}
+                      >
+                        <option value="off">Off</option>
+                        <option value="slide">Slide</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="flex justify-between">
             <button className="rounded-md border border-mist px-4 py-2 text-sm text-slate hover:bg-slate-100" onClick={() => setStep(1)} type="button">
               Back
@@ -427,6 +745,9 @@ export function NewRunPage() {
             </p>
             <p className="text-sm text-slate">
               <strong className="text-ink">Margin:</strong> {margin} mm
+            </p>
+            <p className="col-span-2 text-sm text-slate">
+              <strong className="text-ink">Strategy:</strong> {strategySummaryLabel}
             </p>
           </div>
           <div className="flex justify-between">

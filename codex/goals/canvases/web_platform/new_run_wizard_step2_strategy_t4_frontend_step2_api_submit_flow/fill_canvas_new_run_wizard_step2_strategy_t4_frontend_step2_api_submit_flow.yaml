@@ -1,0 +1,115 @@
+steps:
+  - name: "Felderites es T4 canvas veglegesites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2/T3 artefaktokat es
+      reportokat, valamint a valos frontend/backend contractot ezekben a fajlokban:
+      `frontend/src/pages/NewRunPage.tsx`, `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts`,
+      `frontend/e2e/support/mockApi.ts`, `frontend/e2e/phase4.stable.spec.ts`,
+      `api/routes/run_configs.py`, `api/routes/runs.py`, `api/routes/run_strategy_profiles.py`,
+      `api/routes/project_strategy_scoring_selection.py`, `vrs_nesting/config/nesting_quality_profiles.py`.
+      Veglegesitsd ezt a canvas-t ugy, hogy a scope kizarolag frontend Step2 strategy UI,
+      frontend API kliens es submit-flow javitas legyen. Ne modosit backend route-ot, DB migrationt,
+      workert vagy solver kodot.
+    outputs:
+      - "canvases/web_platform/new_run_wizard_step2_strategy_t4_frontend_step2_api_submit_flow/new_run_wizard_step2_strategy_t4_frontend_step2_api_submit_flow.md"
+
+  - name: "Frontend strategy tipusok felvetele"
+    description: >
+      Bovitsd a `frontend/src/lib/types.ts` fajlt a T1/T2 backend contracttal kompatibilis
+      tipusokkal. Legalabb legyen: `RunStrategyProfile`, `RunStrategyProfileVersion`,
+      `ProjectRunStrategySelection`, `QualityProfileName`, `EngineBackendHint`,
+      `EngineBackendHintMode`, `NestingEngineRuntimePolicy`, `SolverConfigOverrides`.
+      Fontos: `EngineBackendHint` csak `sparrow_v1 | nesting_engine_v2` lehet, mert ezt fogadja
+      el a backend API. Az `auto` csak UI mode legyen (`EngineBackendHintMode`), amely bekuldeskor
+      mezokihagyast jelent. Ne vezess be backend altal nem ismert payload mezot.
+    outputs:
+      - "frontend/src/lib/types.ts"
+
+  - name: "Frontend API kliens strategy endpointok es payload contract"
+    description: >
+      Bovitsd a `frontend/src/lib/api.ts` fajlt. Adj hozza normalizalast es metodusokat:
+      `listRunStrategyProfiles(token)`, `listRunStrategyProfileVersions(token, profileId)`,
+      `getProjectRunStrategySelection(token, projectId)`, valamint `setProjectRunStrategySelection(token, projectId, versionId)`.
+      A `getProjectRunStrategySelection` kezelje a 404-et normalis `null` valaszkent, mert a project
+      default strategy hianya nem fatal wizard hiba. Bovitsd a `createRunConfig(...)` payload tipusat
+      es request bodyjat a `run_strategy_profile_version_id` es `solver_config_overrides_jsonb` mezokkel.
+      Javitsd a jelenlegi `createRun(...)` hibat: ha payloadban van `run_config_id`, az tenylegesen
+      keruljon bele a `requestPayload` JSON bodyba. Ugyanitt add hozza a T1/T2 run-level strategy
+      mezoket: `run_strategy_profile_version_id`, `quality_profile`, `engine_backend_hint`,
+      `nesting_engine_runtime_policy`, `sa_eval_budget_sec`.
+    outputs:
+      - "frontend/src/lib/api.ts"
+      - "frontend/src/lib/types.ts"
+
+  - name: "NewRunPage Step2 strategy UI es elotoltes"
+    description: >
+      Bovitsd a `frontend/src/pages/NewRunPage.tsx` komponenst strategy allapottal es Step2 UI-val.
+      Legyen strategy source valaszto: `Project default`, `Choose profile`, `Custom overrides`.
+      Toltsd be a project run strategy selectiont es a strategy profile/version listakat a frontend
+      API kliensen keresztul. A project selection 404 ne legyen fatal error. `Choose profile` es
+      `Custom overrides` modban legyen profile/version selector. `Custom overrides` modban legyen
+      constrained advanced blokk: quality profile (`fast_preview`, `quality_default`, `quality_aggressive`),
+      engine backend hint mode (`auto`, `sparrow_v1`, `nesting_engine_v2`), SA eval budget, runtime policy
+      mezok (`placer`, `search`, `part_in_part`, `compaction`, opcionális `sa_iters`). Az `auto`
+      engine backend mod ne kuldjon `engine_backend_hint` mezot. A meglevo file/part selection flow es
+      a regi Step2 alapparameterek ne torjenek el.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+      - "frontend/src/lib/api.ts"
+      - "frontend/src/lib/types.ts"
+
+  - name: "Submit flow run_config_id es strategy payload bekotese"
+    description: >
+      Javitsd a `handleSubmitRun()` flow-t a `frontend/src/pages/NewRunPage.tsx` fajlban.
+      A `createRunConfig(...)` valaszat tarold el, majd a part requirement sync utan a `createRun(...)`
+      hivas kapja meg a `run_config_id: runConfig.id` mezot. A Step2 strategy valasztas alapjan epits
+      ket kompatibilis payload reszt: run_config strategy mezok (`run_strategy_profile_version_id`,
+      `solver_config_overrides_jsonb`) es run request strategy mezok (`run_strategy_profile_version_id`,
+      `quality_profile`, `engine_backend_hint`, `nesting_engine_runtime_policy`, `sa_eval_budget_sec`).
+      `Project default` modban ne kuldj explicit strategy override-ot, csak a `run_config_id` es a
+      meglevo `time_limit_s` menjen. `Choose profile` modban kuldd a profile version id-t. `Custom
+      overrides` modban kuldd a profile version id-t, ha van, es a valid override mezoket. Frissitsd
+      a Step3 summary-t, hogy megjelenjen a strategy source, profile/version, quality profile, backend
+      hint mode, SA budget es runtime policy rovid osszefoglaloja.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+      - "frontend/src/lib/api.ts"
+
+  - name: "Mock API es Playwright strategy payload E2E"
+    description: >
+      Bovitsd a `frontend/e2e/support/mockApi.ts` fajlt strategy profile/version es project strategy
+      selection mock endpointokkal. Adj a mock state-hez olyan capture listakat, amelyek kulon taroljak
+      a `POST /run-configs` bodykat es a `POST /runs` bodykat. Hozz letre uj Playwright specet:
+      `frontend/e2e/new_run_wizard_step2_strategy_t4.spec.ts`. A spec hozzon letre mock projectet,
+      stock/part DXF-et vagy elore feltoltott file state-et, strategy profile-t es versiont, menjen
+      vegig a wizardon, valasszon custom strategy-t, inditson run-t, majd assertalja: a run-config
+      POST body tartalmazza a `run_strategy_profile_version_id` es `solver_config_overrides_jsonb`
+      mezoket; a run POST body tartalmazza a `run_config_id` mezot es a strategy request mezoket.
+      A meglevo Phase 4 stable spec ne torjon el.
+    outputs:
+      - "frontend/e2e/support/mockApi.ts"
+      - "frontend/e2e/new_run_wizard_step2_strategy_t4.spec.ts"
+
+  - name: "Checklist es report evidence alapon"
+    description: >
+      Hozd letre a task checklistet es reportot. A reportban legyen DoD -> Evidence matrix, kulon
+      jelolve: frontend tipusok, API kliens endpointok, 404 project default kezeles, `createRunConfig`
+      strategy payload, `createRun` `run_config_id` javitas, `createRun` strategy payload, Step2 UI,
+      Step3 summary, mock API capture, Playwright E2E eredmeny, frontend build eredmeny, verify eredmeny.
+      A kovetkezo scope-kent a frontend/worker end-to-end observability vagy rollout polish maradjon,
+      ne backend contract.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t4_frontend_step2_api_submit_flow.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t4_frontend_step2_api_submit_flow.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a kotelezo ellenorzeseket: `npm --prefix frontend run build`, majd
+      `npm --prefix frontend run test:e2e -- frontend/e2e/new_run_wizard_step2_strategy_t4.spec.ts`,
+      vegul `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t4_frontend_step2_api_submit_flow.md`.
+      Ha a Playwright browser lokalisan nincs telepitve, azt ne hallgassd el: a reportban kulon jelold
+      kornyezeti blockernek, es add meg, melyik parancs meddig jutott. A verify log es AUTO_VERIFY
+      blokk keruljon a reportba.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t4_frontend_step2_api_submit_flow.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t4_frontend_step2_api_submit_flow.verify.log"
