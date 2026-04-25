@@ -58,6 +58,80 @@ function resolveExistingPartRevisionId(file: ProjectFile): string | null {
   return cleaned.length > 0 ? cleaned : null;
 }
 
+const NON_ELIGIBLE_READINESS_REASONS = new Set([
+  "not_eligible_rejected",
+  "not_eligible_review_required",
+  "not_eligible_preflight_pending",
+  "not_eligible_no_preflight_run",
+]);
+
+function resolveAcceptanceOutcome(file: ProjectFile): string {
+  return String(file.latest_part_creation_projection?.acceptance_outcome ?? file.latest_preflight_summary?.acceptance_outcome ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveReadinessReason(file: ProjectFile): string {
+  return String(file.latest_part_creation_projection?.readiness_reason ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function hasLinkedPartRevision(file: ProjectFile): boolean {
+  return resolveExistingPartRevisionId(file) !== null;
+}
+
+function isProjectReadyPartFile(file: ProjectFile): boolean {
+  if (!isDxfSourceFile(file)) {
+    return false;
+  }
+  if (!file.latest_part_creation_projection || !hasLinkedPartRevision(file)) {
+    return false;
+  }
+
+  const readinessReason = resolveReadinessReason(file);
+  if (NON_ELIGIBLE_READINESS_REASONS.has(readinessReason)) {
+    return false;
+  }
+
+  if (readinessReason === "accepted_existing_part" || readinessReason === "ready") {
+    return true;
+  }
+
+  return resolveAcceptanceOutcome(file) === "accepted_for_import";
+}
+
+function isRunUsableStockFile(file: ProjectFile): boolean {
+  if (!isDxfSourceFile(file)) {
+    return false;
+  }
+  const projection = file.latest_part_creation_projection;
+  if (!projection) {
+    return false;
+  }
+
+  const readinessReason = resolveReadinessReason(file);
+  if (NON_ELIGIBLE_READINESS_REASONS.has(readinessReason)) {
+    return false;
+  }
+
+  const acceptanceOutcome = resolveAcceptanceOutcome(file);
+  if (acceptanceOutcome === "preflight_rejected" || acceptanceOutcome === "preflight_review_required") {
+    return false;
+  }
+
+  if (!file.latest_preflight_summary && !hasLinkedPartRevision(file)) {
+    return false;
+  }
+
+  if (hasLinkedPartRevision(file)) {
+    return true;
+  }
+
+  const geometryRevisionId = String(projection.geometry_revision_id ?? "").trim();
+  return acceptanceOutcome === "accepted_for_import" && geometryRevisionId.length > 0;
+}
+
 function resolvePartRevisionIdForFile(
   file: ProjectFile,
   partRevisionBySourceFileId: Map<string, string>
@@ -115,24 +189,10 @@ export function NewRunPage() {
     try {
       const token = await getAccessToken();
       const fileResponse = await api.listProjectFiles(token, projectId, {
+        include_preflight_summary: true,
         include_part_creation_projection: true,
       });
       setFiles(fileResponse.items);
-
-      const choiceMap: Record<string, PartChoice> = {};
-      for (const file of fileResponse.items) {
-        if (isDxfSourceFile(file)) {
-          choiceMap[file.id] = {
-            selected: false,
-            quantity: 1,
-            rotationsText: "0,90,180,270",
-          };
-        }
-      }
-      setPartChoices(choiceMap);
-
-      const stockCandidate = fileResponse.items.find((file) => isDxfSourceFile(file)) ?? fileResponse.items[0] ?? null;
-      setStockFileId(stockCandidate?.id ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load files for wizard.");
     } finally {
@@ -179,16 +239,48 @@ export function NewRunPage() {
     void loadStrategyData();
   }, [projectId]);
 
+  const dxfSourceFiles = useMemo(() => files.filter(isDxfSourceFile), [files]);
+
+  const projectReadyPartFiles = useMemo(() => dxfSourceFiles.filter((file) => isProjectReadyPartFile(file)), [dxfSourceFiles]);
+
+  const eligibleStockFiles = useMemo(() => dxfSourceFiles.filter((file) => isRunUsableStockFile(file)), [dxfSourceFiles]);
+
+  const intakeAttentionFiles = useMemo(() => dxfSourceFiles.filter((file) => !isProjectReadyPartFile(file)), [dxfSourceFiles]);
+
+  useEffect(() => {
+    setPartChoices((prev) => {
+      const next: Record<string, PartChoice> = {};
+      for (const file of projectReadyPartFiles) {
+        const existing = prev[file.id];
+        next[file.id] = {
+          selected: existing?.selected ?? false,
+          quantity: Math.max(1, existing?.quantity ?? 1),
+          rotationsText: existing?.rotationsText ?? "0,90,180,270",
+        };
+      }
+      return next;
+    });
+  }, [projectReadyPartFiles]);
+
+  useEffect(() => {
+    setStockFileId((currentStockFileId) => {
+      if (eligibleStockFiles.some((file) => file.id === currentStockFileId)) {
+        return currentStockFileId;
+      }
+      return eligibleStockFiles[0]?.id ?? "";
+    });
+  }, [eligibleStockFiles]);
+
   const selectedParts = useMemo(
     () =>
-      files
+      projectReadyPartFiles
         .filter((file) => partChoices[file.id]?.selected)
         .map((file) => ({
           file_id: file.id,
           quantity: Math.max(1, partChoices[file.id].quantity),
           allowed_rotations_deg: parseRotations(partChoices[file.id].rotationsText),
         })),
-    [files, partChoices]
+    [projectReadyPartFiles, partChoices]
   );
 
   const filesById = useMemo(() => {
@@ -272,10 +364,7 @@ export function NewRunPage() {
       const wizardRevisionIds = new Set<string>();
       const selectedRevisionIds = new Set<string>();
 
-      for (const file of files) {
-        if (!isDxfSourceFile(file)) {
-          continue;
-        }
+      for (const file of projectReadyPartFiles) {
         const revisionId = resolvePartRevisionIdForFile(file, partRevisionBySourceFileId);
         if (revisionId) {
           wizardRevisionIds.add(revisionId);
@@ -399,64 +488,70 @@ export function NewRunPage() {
               value={stockFileId}
             >
               <option value="">Select stock file</option>
-              {files
-                .filter((file) => isDxfSourceFile(file))
-                .map((file) => (
-                  <option key={file.id} value={file.id}>
-                    {file.original_filename} ({file.file_type})
-                  </option>
-                ))}
+              {eligibleStockFiles.map((file) => (
+                <option key={file.id} value={file.id}>
+                  {file.original_filename} ({file.file_type})
+                </option>
+              ))}
             </select>
           </label>
 
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate">Part files</p>
-            {files.filter((file) => isDxfSourceFile(file)).length === 0 && (
-              <p className="rounded-md border border-dashed border-mist bg-slate-50 px-3 py-2 text-sm text-slate">No DXF source files uploaded yet.</p>
+            {projectReadyPartFiles.length === 0 && (
+              <div className="space-y-2 rounded-md border border-dashed border-mist bg-slate-50 px-3 py-3 text-sm text-slate">
+                <p>No project-ready parts yet. Open DXF Intake / Project Preparation and create parts first.</p>
+                <Link className="font-medium text-accent underline" to={`/projects/${projectId}/dxf-intake`}>
+                  Open DXF Intake / Project Preparation
+                </Link>
+                {dxfSourceFiles.length > 0 && (
+                  <p className="text-xs text-slate">
+                    {intakeAttentionFiles.length} source file(s) are currently not eligible for part selection in this wizard.
+                  </p>
+                )}
+              </div>
             )}
-            {files
-              .filter((file) => isDxfSourceFile(file))
-              .map((file) => {
-                const choice = partChoices[file.id] ?? { selected: false, quantity: 1, rotationsText: "0,90,180,270" };
-                return (
-                  <div className="grid gap-2 rounded-md border border-mist p-3 md:grid-cols-[auto_1fr_120px_170px]" key={file.id}>
-                    <input
-                      checked={choice.selected}
-                      onChange={(event) =>
-                        setPartChoices((prev) => ({
-                          ...prev,
-                          [file.id]: { ...choice, selected: event.target.checked },
-                        }))
-                      }
-                      type="checkbox"
-                    />
-                    <span className="text-sm">{file.original_filename}</span>
-                    <input
-                      className="rounded-md border border-mist px-2 py-1 text-sm"
-                      min={1}
-                      onChange={(event) =>
-                        setPartChoices((prev) => ({
-                          ...prev,
-                          [file.id]: { ...choice, quantity: Number.parseInt(event.target.value, 10) || 1 },
-                        }))
-                      }
-                      type="number"
-                      value={choice.quantity}
-                    />
-                    <input
-                      className="rounded-md border border-mist px-2 py-1 text-sm"
-                      onChange={(event) =>
-                        setPartChoices((prev) => ({
-                          ...prev,
-                          [file.id]: { ...choice, rotationsText: event.target.value },
-                        }))
-                      }
-                      placeholder="0,90,180,270"
-                      value={choice.rotationsText}
-                    />
-                  </div>
-                );
-              })}
+            {projectReadyPartFiles.map((file) => {
+              const choice = partChoices[file.id] ?? { selected: false, quantity: 1, rotationsText: "0,90,180,270" };
+              return (
+                <div className="grid gap-2 rounded-md border border-mist p-3 md:grid-cols-[auto_1fr_120px_170px]" key={file.id}>
+                  <input
+                    checked={choice.selected}
+                    onChange={(event) =>
+                      setPartChoices((prev) => ({
+                        ...prev,
+                        [file.id]: { ...choice, selected: event.target.checked },
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span className="text-sm">{file.original_filename}</span>
+                  <input
+                    className="rounded-md border border-mist px-2 py-1 text-sm"
+                    min={1}
+                    onChange={(event) =>
+                      setPartChoices((prev) => ({
+                        ...prev,
+                        [file.id]: { ...choice, quantity: Number.parseInt(event.target.value, 10) || 1 },
+                      }))
+                    }
+                    type="number"
+                    value={choice.quantity}
+                  />
+                  <input
+                    className="rounded-md border border-mist px-2 py-1 text-sm"
+                    onChange={(event) =>
+                      setPartChoices((prev) => ({
+                        ...prev,
+                        [file.id]: { ...choice, rotationsText: event.target.value },
+                      }))
+                    }
+                    placeholder="0,90,180,270"
+                    value={choice.rotationsText}
+                  />
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex justify-end">

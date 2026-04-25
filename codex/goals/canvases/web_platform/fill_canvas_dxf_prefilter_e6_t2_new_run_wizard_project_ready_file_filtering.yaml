@@ -1,0 +1,86 @@
+steps:
+  - name: "New Run Wizard intake-aware betöltés"
+    description: >
+      Módosítsd a frontend/src/pages/NewRunPage.tsx fájlt úgy, hogy a loadFiles() a project file listát
+      include_preflight_summary=true és include_part_creation_projection=true opciókkal kérje le. A későbbi
+      szűréshez a fileResponse.items feldolgozása ne csak nyers DXF/source type alapján történjen. A meglévő
+      stratégia Step2 flow-t, run_config_id átadást és strategy payloadot ne módosítsd funkcionálisan.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+
+  - name: "Project-ready file helper és memoizált listák"
+    description: >
+      A NewRunPage-ben vezess be explicit project-ready helper logikát. A partként választható file csak DXF source lehet,
+      latest_part_creation_projection.readiness_reason=accepted_existing_part értékkel és existing_part_revision_id-val
+      vagy resolveExistingPartRevisionId(file) által visszaadott linked revisionnel. Rejected, review-required, pending
+      vagy preflight nélküli source upload nem kerülhet part checkbox listába. A stock/eligible source helper se engedjen
+      rejected/review/pending file-t, és a default stock candidate ne az első nyers DXF legyen. Használhatsz useMemo-val
+      képzett projectReadyPartFiles, eligibleStockFiles és intakeAttentionFiles listákat.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+
+  - name: "Step 1 stock és part választók szűrése"
+    description: >
+      Módosítsd a Step 1 renderelést és state inicializálást. A part choice map csak projectReadyPartFiles alapján készüljön.
+      A selectedParts és wizardRevisionIds sync ne járjon be rejected/pending nyers DXF-eket. A stock dropdown eligibleStockFiles
+      vagy project-ready accepted source listából rendereljen, ne files.filter(isDxfSourceFile)-ból. Ha a korábbi stockFileId már
+      nem eligible, állítsd át az első eligible candidate-re vagy üresre. A Continue to parameters gomb továbbra is csak stock +
+      legalább egy kiválasztott project-ready part esetén legyen aktív.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+
+  - name: "Step 1 blocked/empty UX"
+    description: >
+      A NewRunPage Step 1-ben adj egyértelmű user-facing üzenetet, ha nincs project-ready part. Ne jelenjen meg félrevezető
+      No DXF source files uploaded yet szöveg, amikor vannak DXF source uploadok, de azok rejected/review/pending vagy még nem
+      part-linked állapotúak. Használd a következő copyt vagy ezzel egyenértékűt: No project-ready parts yet. Open DXF Intake /
+      Project Preparation and create parts first. Legyen link a /projects/{projectId}/dxf-intake route-ra. Opcionálisan mutasd,
+      hány source upload nem eligible, de ezek ne legyenek választható stock/part inputok.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+
+  - name: "Mock API és E6-T2 Playwright regresszió"
+    description: >
+      Bővítsd a frontend/e2e/support/mockApi.ts mockot, ha szükséges, hogy a New Run Wizard tesztben legyen accepted/linked,
+      rejected és review/pending source DXF is latest_part_creation_projection mezőkkel. Hozd létre az E6-T2 Playwright specet.
+      A spec ellenőrizze, hogy rejected/review/pending file nem látszik stock dropdownban és part checkbox listában, accepted/linked
+      file látszik, és a Continue csak project-ready part kiválasztása után működik. A filtered flow ne fusson Selected file has no
+      linked part revision hibára. A spec ne igényeljen valós Supabase/backend/worker környezetet.
+    outputs:
+      - "frontend/e2e/support/mockApi.ts"
+      - "frontend/e2e/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.spec.ts"
+
+  - name: "Offline E6-T2 smoke script"
+    description: >
+      Hozz létre offline source-level smoke scriptet. Ellenőrizze, hogy a NewRunPage kéri az include_preflight_summary és
+      include_part_creation_projection opciókat, létezik project-ready/eligible helper, a helper linked revisiont ellenőriz,
+      a stock candidate nem az első nyers DXF mintából jön, a part lista nem közvetlen files.filter(isDxfSourceFile) kontrollforrás,
+      létezik a No project-ready parts yet empty state, az E2E spec létezik és rejected exclusion assertet tartalmaz. Ellenőrizze
+      azt is, hogy nincs gyökérszintű duplikált E6-T2 canvas/yaml. Ne igényeljen node_modules-t, Supabase-t vagy futó szervert.
+      Hiba esetén exit code != 0.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.py"
+
+  - name: "Checklist és report evidence alapon"
+    description: >
+      Hozd létre a checklistet és reportot. A report a docs/codex/report_standard.md szerint készüljön, DoD → Evidence Matrixszal.
+      PASS csak tényleges bizonyíték alapján szerepelhet. Dokumentáld, hogy a wizard már nem listáz rejected/review/pending source
+      DXF-et stock vagy part inputként, partként csak linked part revisionnel rendelkező file választható, az empty state nem félrevezető,
+      az E2E és smoke eredménye mi volt, valamint a frontend build és verify eredményét. Környezeti blocker esetén pontosan jelöld
+      BLOCKED-ként, ne írj hamis PASS-t.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.md"
+      - "codex/reports/web_platform/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a célzott és standard ellenőrzéseket. Minimum: python3 scripts/smoke_dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.py.
+      Ha a frontend dependency környezet rendelkezésre áll, futtasd: npm --prefix frontend run build, majd
+      node frontend/node_modules/@playwright/test/cli.js test --config=frontend/playwright.config.ts
+      frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts
+      frontend/e2e/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.spec.ts. Végül kötelezően futtasd:
+      ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.md.
+      A verify log kerüljön a report mellé. Sikertelen gate esetén a report legyen FAIL vagy BLOCKED pontos okkal.
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.md"
+      - "codex/reports/web_platform/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.verify.log"
