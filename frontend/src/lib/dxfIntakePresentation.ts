@@ -281,3 +281,139 @@ export function partCreationReadinessBadge(
       };
   }
 }
+
+export interface ProjectDetailIntakeStatus {
+  statusLabel: string;
+  statusClassName: string;
+  nextStep: string;
+  isProjectReady: boolean;
+  isAttention: boolean;
+  isLinkedPart: boolean;
+}
+
+export function projectDetailIntakeStatus(file: ProjectFile): ProjectDetailIntakeStatus {
+  const fileKind = String(file.file_type ?? "").trim().toLowerCase();
+  if (fileKind !== "source_dxf") {
+    return {
+      statusLabel: "uploaded",
+      statusClassName: TONE.neutral,
+      nextStep: "Available for project workflows.",
+      isProjectReady: true,
+      isAttention: false,
+      isLinkedPart: false,
+    };
+  }
+
+  const projection = file.latest_part_creation_projection ?? null;
+  const summary = file.latest_preflight_summary ?? null;
+  const outcome = String(summary?.acceptance_outcome ?? "").trim().toLowerCase();
+  const runStatus = String(summary?.run_status ?? "").trim().toLowerCase();
+  const readinessReason = String(projection?.readiness_reason ?? "").trim().toLowerCase();
+
+  if (readinessReason === "accepted_existing_part") {
+    return {
+      statusLabel: "already created",
+      statusClassName: TONE.neutral,
+      nextStep: `Part linked (${projection?.existing_part_code || projection?.existing_part_definition_id || "existing part"}).`,
+      isProjectReady: true,
+      isAttention: false,
+      isLinkedPart: true,
+    };
+  }
+  if (readinessReason === "accepted_ready") {
+    return {
+      statusLabel: "ready for part creation",
+      statusClassName: TONE.success,
+      nextStep: "Use DXF Intake to create part.",
+      isProjectReady: true,
+      isAttention: false,
+      isLinkedPart: false,
+    };
+  }
+  if (readinessReason === "accepted_geometry_import_pending") {
+    return {
+      statusLabel: "geometry import pending",
+      statusClassName: TONE.queued,
+      nextStep: "Refresh after geometry import completes.",
+      isProjectReady: true,
+      isAttention: false,
+      isLinkedPart: false,
+    };
+  }
+  if (readinessReason === "accepted_geometry_not_validated") {
+    return {
+      statusLabel: "accepted - geometry pending validation",
+      statusClassName: TONE.attention,
+      nextStep: "Check DXF Intake diagnostics for geometry state.",
+      isProjectReady: true,
+      isAttention: false,
+      isLinkedPart: false,
+    };
+  }
+  if (readinessReason === "accepted_missing_nesting_derivative") {
+    return {
+      statusLabel: "accepted - derivative pending",
+      statusClassName: TONE.attention,
+      nextStep: "Refresh later or inspect DXF Intake diagnostics.",
+      isProjectReady: true,
+      isAttention: false,
+      isLinkedPart: false,
+    };
+  }
+  if (outcome === "preflight_rejected" || readinessReason === "not_eligible_rejected") {
+    return {
+      statusLabel: "rejected",
+      statusClassName: TONE.blocked,
+      nextStep: "Fix in DXF Intake and re-upload.",
+      isProjectReady: false,
+      isAttention: true,
+      isLinkedPart: false,
+    };
+  }
+  if (outcome === "preflight_review_required" || readinessReason === "not_eligible_review_required") {
+    return {
+      statusLabel: "review required",
+      statusClassName: TONE.attention,
+      nextStep: "Open DXF Intake review flow.",
+      isProjectReady: false,
+      isAttention: true,
+      isLinkedPart: false,
+    };
+  }
+  if (!summary || readinessReason === "not_eligible_no_preflight_run") {
+    return {
+      statusLabel: "preflight pending",
+      statusClassName: TONE.queued,
+      nextStep: "Wait for preflight or open DXF Intake.",
+      isProjectReady: false,
+      isAttention: true,
+      isLinkedPart: false,
+    };
+  }
+  if (
+    runStatus === "preflight_queued" ||
+    runStatus === "queued" ||
+    runStatus === "preflight_running" ||
+    runStatus === "running" ||
+    runStatus === "preflight_in_progress" ||
+    readinessReason === "not_eligible_preflight_pending"
+  ) {
+    return {
+      statusLabel: "preflight pending",
+      statusClassName: TONE.queued,
+      nextStep: "Preflight is running - check back shortly.",
+      isProjectReady: false,
+      isAttention: true,
+      isLinkedPart: false,
+    };
+  }
+
+  return {
+    statusLabel: "intake attention",
+    statusClassName: TONE.attention,
+    nextStep: recommendedNextStep(file),
+    isProjectReady: false,
+    isAttention: true,
+    isLinkedPart: false,
+  };
+}

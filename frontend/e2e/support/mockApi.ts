@@ -22,6 +22,7 @@ interface MockFile {
   validation_status: string;
   validation_error: string | null;
   uploaded_at: string;
+  deleted_at?: string | null;
   latest_preflight_summary?: Record<string, unknown> | null;
   latest_preflight_diagnostics?: Record<string, unknown> | null;
   latest_part_creation_projection?: Record<string, unknown> | null;
@@ -414,8 +415,10 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
     const filesListMatch = path.match(/^\/projects\/([^/]+)\/files$/);
     if (filesListMatch && method === "GET") {
       const projectId = filesListMatch[1];
+      const includeDeleted = url.searchParams.get("include_deleted") === "true";
       const files = state.filesByProject[projectId] ?? [];
-      await json(route, { items: files, total: files.length });
+      const visibleFiles = includeDeleted ? files : files.filter((item) => !item.deleted_at);
+      await json(route, { items: visibleFiles, total: visibleFiles.length });
       return;
     }
     if (filesListMatch && method === "POST") {
@@ -454,6 +457,23 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
       };
       state.filesByProject[projectId] = [...(state.filesByProject[projectId] ?? []), file];
       await json(route, file);
+      return;
+    }
+
+    const fileItemMatch = path.match(/^\/projects\/([^/]+)\/files\/([^/]+)$/);
+    if (fileItemMatch && method === "DELETE") {
+      const projectId = fileItemMatch[1];
+      const fileId = fileItemMatch[2];
+      const files = state.filesByProject[projectId] ?? [];
+      const index = files.findIndex((item) => item.id === fileId);
+      if (index < 0) {
+        await json(route, { detail: "file not found" }, 404);
+        return;
+      }
+      if (!files[index].deleted_at) {
+        files[index] = { ...files[index], deleted_at: new Date().toISOString() };
+      }
+      await route.fulfill({ status: 204, body: "" });
       return;
     }
 

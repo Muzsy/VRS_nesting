@@ -39,6 +39,7 @@ export interface ProjectFile {
   validation_status?: string | null;
   validation_error?: string | null;
   uploaded_at?: string | null;
+  deleted_at?: string | null;
   latest_preflight_summary?: ProjectFileLatestPreflightSummary | null;
   latest_preflight_diagnostics?: ProjectFileLatestPreflightDiagnostics | null;
   latest_part_creation_projection?: ProjectFileLatestPartCreationProjection | null;

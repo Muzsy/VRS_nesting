@@ -70,6 +70,7 @@ function normalizeProjectFile(raw: Record<string, unknown>): ProjectFile {
     validation_status: (raw.validation_status as string | null | undefined) ?? null,
     validation_error: (raw.validation_error as string | null | undefined) ?? null,
     uploaded_at: (raw.uploaded_at as string | null | undefined) ?? (raw.created_at as string | null | undefined) ?? null,
+    deleted_at: (raw.deleted_at as string | null | undefined) ?? null,
     latest_preflight_summary: normalizeLatestPreflightSummary(raw.latest_preflight_summary),
     latest_preflight_diagnostics: normalizeLatestPreflightDiagnostics(raw.latest_preflight_diagnostics),
     latest_part_creation_projection: normalizeLatestPartCreationProjection(raw.latest_part_creation_projection),
@@ -386,12 +387,16 @@ export const api = {
     token: string,
     projectId: string,
     options?: {
+      include_deleted?: boolean;
       include_preflight_summary?: boolean;
       include_preflight_diagnostics?: boolean;
       include_part_creation_projection?: boolean;
     }
   ): Promise<ProjectFileListResponse> {
     const params = new URLSearchParams();
+    if (options?.include_deleted === true) {
+      params.set("include_deleted", "true");
+    }
     if (options?.include_preflight_summary === true) {
       params.set("include_preflight_summary", "true");
     }

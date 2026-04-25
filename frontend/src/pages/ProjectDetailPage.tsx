@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { getAccessToken } from "../lib/supabase";
-import type { Project, ProjectFile, Run } from "../lib/types";
+import { projectDetailIntakeStatus } from "../lib/dxfIntakePresentation";
 import { DXF_PREFLIGHT_ENABLED } from "../lib/featureFlags";
+import { getAccessToken } from "../lib/supabase";
+import type { ProjectDetailIntakeStatus } from "../lib/dxfIntakePresentation";
+import type { Project, ProjectFile, Run } from "../lib/types";
 
 type UploadKind = "stock_dxf" | "part_dxf";
 
@@ -12,6 +14,11 @@ interface UploadProgressState {
   total: number;
   done: number;
   status: string;
+}
+
+interface ProjectFileRow {
+  file: ProjectFile;
+  status: ProjectDetailIntakeStatus;
 }
 
 function formatDate(value?: string | null): string {
@@ -23,6 +30,10 @@ function formatDate(value?: string | null): string {
     return value;
   }
   return date.toLocaleString();
+}
+
+function isSourceDxf(file: ProjectFile): boolean {
+  return String(file.file_type ?? "") === "source_dxf";
 }
 
 async function uploadFileToSignedUrl(uploadUrl: string, file: File, token: string): Promise<void> {
@@ -76,7 +87,10 @@ export function ProjectDetailPage() {
       const token = await getAccessToken();
       const [projectResponse, fileResponse, runResponse] = await Promise.all([
         api.getProject(token, projectId),
-        api.listProjectFiles(token, projectId),
+        api.listProjectFiles(token, projectId, {
+          include_preflight_summary: true,
+          include_part_creation_projection: true,
+        }),
         api.listRuns(token, projectId),
       ]);
       setProject(projectResponse);
@@ -173,7 +187,7 @@ export function ProjectDetailPage() {
     setDragActive(false);
   }
 
-  async function handleDeleteFile(fileId: string) {
+  async function handleHideUpload(fileId: string) {
     if (!projectId) {
       return;
     }
@@ -183,7 +197,7 @@ export function ProjectDetailPage() {
       await api.deleteProjectFile(token, projectId, fileId);
       await loadPageData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete file failed.");
+      setError(err instanceof Error ? err.message : "Archive upload failed.");
     }
   }
 
@@ -193,6 +207,71 @@ export function ProjectDetailPage() {
     }
     return Math.round((uploadProgress.done / uploadProgress.total) * 100);
   }, [uploadProgress]);
+
+  const fileRows = useMemo<ProjectFileRow[]>(() => files.map((file) => ({ file, status: projectDetailIntakeStatus(file) })), [files]);
+  const projectReadyRows = useMemo<ProjectFileRow[]>(() => fileRows.filter((row) => row.status.isProjectReady), [fileRows]);
+  const intakeAttentionRows = useMemo<ProjectFileRow[]>(() => fileRows.filter((row) => row.status.isAttention), [fileRows]);
+
+  function openDxfIntake(): void {
+    if (!projectId) {
+      return;
+    }
+    navigate(`/projects/${projectId}/dxf-intake`);
+  }
+
+  function renderProjectReadyAction(row: ProjectFileRow): JSX.Element {
+    if (isSourceDxf(row.file)) {
+      if (DXF_PREFLIGHT_ENABLED) {
+        return (
+          <button
+            className="rounded-md border border-mist px-3 py-1.5 text-slate hover:bg-slate-100"
+            onClick={openDxfIntake}
+            type="button"
+          >
+            Manage in DXF Intake
+          </button>
+        );
+      }
+      return (
+        <span className="rounded-md border border-mist/80 px-3 py-1.5 text-xs text-slate">
+          {row.status.isLinkedPart ? "Linked to part" : "Managed in intake"}
+        </span>
+      );
+    }
+
+    return (
+      <button
+        className="rounded-md border border-mist px-3 py-1.5 text-slate hover:bg-slate-100"
+        onClick={() => void handleHideUpload(row.file.id)}
+        type="button"
+      >
+        Archive upload
+      </button>
+    );
+  }
+
+  function renderAttentionAction(row: ProjectFileRow): JSX.Element {
+    return (
+      <div className="flex justify-end gap-2">
+        {DXF_PREFLIGHT_ENABLED && (
+          <button
+            className="rounded-md border border-mist px-3 py-1.5 text-slate hover:bg-slate-100"
+            onClick={openDxfIntake}
+            type="button"
+          >
+            Manage in DXF Intake
+          </button>
+        )}
+        <button
+          className="rounded-md border border-mist px-3 py-1.5 text-slate hover:bg-slate-100"
+          onClick={() => void handleHideUpload(row.file.id)}
+          type="button"
+        >
+          Hide upload
+        </button>
+      </div>
+    );
+  }
 
   if (!projectId) {
     return <p className="rounded-md border border-danger/40 bg-red-50 px-4 py-3 text-danger">Missing project id in route.</p>;
@@ -212,7 +291,7 @@ export function ProjectDetailPage() {
           {DXF_PREFLIGHT_ENABLED && (
             <button
               className="rounded-md border border-mist px-3 py-2 text-sm text-slate hover:bg-slate-100"
-              onClick={() => navigate(`/projects/${projectId}/dxf-intake`)}
+              onClick={openDxfIntake}
               type="button"
             >
               DXF intake / preparation
@@ -232,7 +311,7 @@ export function ProjectDetailPage() {
           <article className="space-y-4 rounded-xl border border-mist bg-white p-5">
             <header className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Files</h2>
-              <span className="text-sm text-slate">{files.length} items</span>
+              <span className="text-sm text-slate">{fileRows.length} active items</span>
             </header>
 
             <div className="grid gap-2 md:grid-cols-[1fr_1fr]">
@@ -284,54 +363,83 @@ export function ProjectDetailPage() {
               </div>
             )}
 
-            {files.length === 0 && <p className="rounded-md border border-dashed border-mist bg-slate-50 px-4 py-3 text-sm text-slate">No files uploaded yet.</p>}
+            {fileRows.length === 0 && <p className="rounded-md border border-dashed border-mist bg-slate-50 px-4 py-3 text-sm text-slate">No files uploaded yet.</p>}
 
-            {files.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[680px] border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-mist text-left text-slate">
-                      <th className="py-2">Filename</th>
-                      <th className="py-2">Type</th>
-                      <th className="py-2">Validation</th>
-                      <th className="py-2">Uploaded</th>
-                      <th className="py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {files.map((file) => (
-                      <tr className="border-b border-mist/70" key={file.id}>
-                        <td className="py-3">{file.original_filename}</td>
-                        <td className="py-3">{file.file_type}</td>
-                        <td className="py-3">
-                          <span
-                            className={`rounded px-2 py-1 text-xs font-medium ${
-                              file.validation_status === "ok"
-                                ? "bg-green-100 text-green-800"
-                                : file.validation_status === "error"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {file.validation_status ?? "pending"}
-                          </span>
-                          {file.validation_error && <p className="mt-1 max-w-[260px] truncate text-xs text-danger">{file.validation_error}</p>}
-                        </td>
-                        <td className="py-3">{formatDate(file.uploaded_at)}</td>
-                        <td className="py-3 text-right">
-                          <button
-                            className="rounded-md border border-danger/30 px-3 py-1.5 text-danger hover:bg-red-50"
-                            onClick={() => void handleDeleteFile(file.id)}
-                            type="button"
-                          >
-                            Delete
-                          </button>
-                        </td>
+            {projectReadyRows.length > 0 && (
+              <section className="space-y-2">
+                <header className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold">Project-ready files</h3>
+                  <span className="text-xs text-slate">{projectReadyRows.length} items</span>
+                </header>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-mist text-left text-slate">
+                        <th className="py-2">Filename</th>
+                        <th className="py-2">Type</th>
+                        <th className="py-2">Intake status</th>
+                        <th className="py-2">Next step</th>
+                        <th className="py-2">Uploaded</th>
+                        <th className="py-2 text-right">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {projectReadyRows.map((row) => (
+                        <tr className="border-b border-mist/70" key={row.file.id}>
+                          <td className="py-3">{row.file.original_filename}</td>
+                          <td className="py-3">{row.file.file_type}</td>
+                          <td className="py-3">
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${row.status.statusClassName}`}>{row.status.statusLabel}</span>
+                          </td>
+                          <td className="py-3 text-xs text-slate">{row.status.nextStep}</td>
+                          <td className="py-3">{formatDate(row.file.uploaded_at)}</td>
+                          <td className="py-3 text-right">{renderProjectReadyAction(row)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {intakeAttentionRows.length > 0 && (
+              <section className="space-y-2">
+                <header className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold">Intake attention</h3>
+                  <span className="text-xs text-slate">{intakeAttentionRows.length} source uploads</span>
+                </header>
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Rejected, review-required, or pending source DXF uploads are managed in DXF Intake and are not project-ready items.
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-mist text-left text-slate">
+                        <th className="py-2">Filename</th>
+                        <th className="py-2">Type</th>
+                        <th className="py-2">Intake status</th>
+                        <th className="py-2">Next step</th>
+                        <th className="py-2">Uploaded</th>
+                        <th className="py-2 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {intakeAttentionRows.map((row) => (
+                        <tr className="border-b border-mist/70" key={row.file.id}>
+                          <td className="py-3">{row.file.original_filename}</td>
+                          <td className="py-3">{row.file.file_type}</td>
+                          <td className="py-3">
+                            <span className={`rounded px-2 py-1 text-xs font-medium ${row.status.statusClassName}`}>{row.status.statusLabel}</span>
+                          </td>
+                          <td className="py-3 text-xs text-slate">{row.status.nextStep}</td>
+                          <td className="py-3">{formatDate(row.file.uploaded_at)}</td>
+                          <td className="py-3 text-right">{renderAttentionAction(row)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             )}
           </article>
 

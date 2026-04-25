@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -88,6 +89,7 @@ class ProjectFileResponse(BaseModel):
     sha256: str | None = None
     uploaded_by: str | None = None
     created_at: str | None = None
+    deleted_at: str | None = None
     latest_preflight_summary: dict[str, Any] | None = None
     latest_preflight_diagnostics: dict[str, Any] | None = None
     latest_part_creation_projection: dict[str, Any] | None = None
@@ -120,6 +122,7 @@ def _as_file_response(
         sha256=row.get("sha256"),
         uploaded_by=str(uploaded_by) if uploaded_by is not None else None,
         created_at=row.get("created_at"),
+        deleted_at=row.get("deleted_at"),
         latest_preflight_summary=latest_preflight_summary,
         latest_preflight_diagnostics=latest_preflight_diagnostics,
         latest_part_creation_projection=latest_part_creation_projection,
@@ -839,6 +842,7 @@ def list_project_files(
     project_id: UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    include_deleted: bool = Query(default=False),
     include_preflight_summary: bool = Query(default=False),
     include_preflight_diagnostics: bool = Query(default=False),
     include_part_creation_projection: bool = Query(default=False),
@@ -853,15 +857,18 @@ def list_project_files(
     include_part_creation_projection_flag = (
         include_part_creation_projection if isinstance(include_part_creation_projection, bool) else False
     )
+    include_deleted_flag = include_deleted if isinstance(include_deleted, bool) else False
 
     offset = (page - 1) * page_size
     params = {
-        "select": "id,project_id,storage_bucket,storage_path,file_name,mime_type,file_kind,byte_size,sha256,uploaded_by,created_at",
+        "select": "id,project_id,storage_bucket,storage_path,file_name,mime_type,file_kind,byte_size,sha256,uploaded_by,created_at,deleted_at",
         "project_id": f"eq.{project_id}",
         "order": "created_at.desc",
         "limit": str(page_size),
         "offset": str(offset),
     }
+    if not include_deleted_flag:
+        params["deleted_at"] = "is.null"
     try:
         rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
@@ -961,12 +968,11 @@ def delete_project_file(
     file_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     supabase: SupabaseClient = Depends(get_supabase_client),
-    settings: Settings = Depends(get_settings),
 ) -> Response:
     _ensure_project_access(supabase=supabase, user=user, project_id=project_id)
 
     params = {
-        "select": "id,storage_bucket,storage_path",
+        "select": "id,deleted_at",
         "id": f"eq.{file_id}",
         "project_id": f"eq.{project_id}",
         "limit": "1",
@@ -974,28 +980,20 @@ def delete_project_file(
     rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=params)
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
+    existing_deleted_at = rows[0].get("deleted_at")
+    if isinstance(existing_deleted_at, str) and existing_deleted_at.strip():
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    storage_path = str(rows[0].get("storage_path", "")).strip()
-    storage_bucket = str(rows[0].get("storage_bucket", "")).strip() or settings.storage_bucket
-
+    archived_at = datetime.now(timezone.utc).isoformat()
     try:
-        supabase.delete_rows(
+        supabase.update_rows(
             table="app.file_objects",
             access_token=user.access_token,
+            payload={"deleted_at": archived_at},
             filters={"id": f"eq.{file_id}", "project_id": f"eq.{project_id}"},
         )
     except SupabaseHTTPError as exc:
-        raise_supabase_http_error(operation="delete file metadata", exc=exc)
-
-    if storage_path:
-        try:
-            supabase.remove_object(
-                access_token=user.access_token,
-                bucket=storage_bucket,
-                object_key=storage_path,
-            )
-        except SupabaseHTTPError:
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        raise_supabase_http_error(operation="archive file metadata", exc=exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

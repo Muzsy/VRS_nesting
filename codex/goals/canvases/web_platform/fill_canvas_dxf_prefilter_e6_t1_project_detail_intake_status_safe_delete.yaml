@@ -1,0 +1,95 @@
+steps:
+  - name: "File object soft archive migration"
+    description: >
+      Hozz létre új Supabase migrationt az app.file_objects soft archive támogatásához. Add hozzá a nullable
+      deleted_at timestamptz oszlopot és egy aktív projekt-listázást segítő partial indexet deleted_at is null feltétellel.
+      A migration kommentben rögzítse, hogy ez FK-safe archive/hide művelethez kell, nem preflight/geometry lineage hard delete-hez.
+    outputs:
+      - "supabase/migrations/20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql"
+
+  - name: "Backend file list és delete soft archive"
+    description: >
+      Módosítsd az api/routes/files.py fájlt. A ProjectFileResponse és _as_file_response kezelje a deleted_at mezőt.
+      A list_project_files endpoint kapjon include_deleted: bool = Query(default=False) paramétert, válassza ki a deleted_at
+      oszlopot, és alapértelmezésben deleted_at=is.null filterrel csak aktív file objecteket adjon vissza. A preflight summary,
+      diagnostics és part creation projection include-ok ne törjenek el. A delete_project_file ne hard delete-et hívjon az
+      app.file_objects táblán, hanem idempotens supabase.update_rows soft archive-ot végezzen deleted_at aktuális UTC timestamp
+      beállításával. Ne töröljön storage objectet ebben a taskban. Hiba esetén domainnyelvű archive üzenetet adjon, ne a régi
+      delete file metadata failed szöveget.
+    outputs:
+      - "api/routes/files.py"
+
+  - name: "Frontend API és type kompatibilitás"
+    description: >
+      Módosítsd a frontend/src/lib/types.ts és frontend/src/lib/api.ts fájlokat. A ProjectFile típus és normalizeProjectFile
+      kezelje a deleted_at mezőt. A listProjectFiles options bővüljön include_deleted?: boolean támogatással, amely
+      include_deleted=true query paramétert küld. A legacy validation_status normalizálást ne töröld ki, mert régi smoke-ok és
+      mockok még használhatják, de a Project Detail task már nem támaszkodhat rá fő státuszforrásként.
+    outputs:
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/lib/api.ts"
+
+  - name: "Project Detail intake-aware UI"
+    description: >
+      Módosítsd a frontend/src/pages/ProjectDetailPage.tsx oldalt. A loadPageData include_preflight_summary=true és
+      include_part_creation_projection=true opciókkal kérje le a project file listát. Cseréld le a Validation oszlopot
+      intake-aware státusz/next-step megjelenítésre a latest_preflight_summary és latest_part_creation_projection alapján.
+      Ne használd többé fő státuszként a file.validation_status ?? "pending" fallbacket. A rejected/review/pending source DXF-ek
+      ne projekt-ready file-ként legyenek bemutatva: külön attention szekció vagy egyértelmű elkülönítés szükséges. A hard Delete
+      copy helyett domainhelyes Hide upload / Archive upload / Manage in DXF Intake copyt használj. Linked part sorokon ne legyen
+      félrevezető hard delete action. A DXF intake / preparation CTA maradjon.
+    outputs:
+      - "frontend/src/pages/ProjectDetailPage.tsx"
+
+  - name: "Megosztott intake presentation helper finomítás"
+    description: >
+      Ha a ProjectDetailPage tiszta és tesztelhető megvalósításához szükséges, egészítsd ki a frontend/src/lib/dxfIntakePresentation.ts
+      helper-eit Project Detail által is használható státusz/next-step segédfüggvénnyel. Ne törd el a meglévő DXF Intake oldali
+      helper contractot és copyt. Ha végül nincs szükség új helperre, csak akkor hagyd érintetlenül ezt a fájlt, ha a ProjectDetailPage
+      önmagában egyszerű és nem duplikál jelentős státuszlogikát.
+    outputs:
+      - "frontend/src/lib/dxfIntakePresentation.ts"
+      - "frontend/src/pages/ProjectDetailPage.tsx"
+
+  - name: "Mock API és Project Detail E2E"
+    description: >
+      Bővítsd a frontend/e2e/support/mockApi.ts mockot úgy, hogy kezelje a DELETE /projects/:projectId/files/:fileId route-ot,
+      és soft archive-szerűen eltávolítsa az adott file-t az aktív mock listából. Hozd létre a T1 E2E specet. A spec állítson össze
+      6 accepted/linked és 2 rejected/review/pending source DXF-et tartalmazó projektet, nyissa meg a Project Detail oldalt, és
+      ellenőrizze, hogy nincs hamis minden-sor pending fallback, az accepted/linked sorok intake/projection truthot mutatnak,
+      a rejected/review source nem projekt-ready itemként jelenik meg, majd Hide/Archive action után nincs delete file metadata failed
+      hiba és a sor eltűnik az aktív UI-ból.
+    outputs:
+      - "frontend/e2e/support/mockApi.ts"
+      - "frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts"
+
+  - name: "Offline E6-T1 smoke script"
+    description: >
+      Hozz létre offline source-level smoke scriptet. Ne igényeljen Supabase-t, node_modules-t vagy futó backend/frontend szervert.
+      Ellenőrizze a migration deleted_at és partial index tartalmát, az api/routes/files.py active filter + include_deleted + update_rows
+      soft archive contractját, a ProjectDetailPage include flagjeit és intake-aware státuszlogikáját, a régi file.validation_status ??
+      "pending" fő fallback eltűnését, a mock DELETE route-ot, az E2E spec létét, valamint hogy a task artefaktok saját alkönyvtárban
+      vannak gyökérszintű duplikált canvas/yaml nélkül. Hiba esetén nem nulla exit code-dal álljon le.
+    outputs:
+      - "scripts/smoke_dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.py"
+
+  - name: "Checklist és report evidence alapon"
+    description: >
+      Hozd létre a checklistet és reportot. A report a docs/codex/report_standard.md szerint készüljön, DoD → Evidence matrixszal.
+      PASS csak tényleges bizonyíték alapján szerepelhet. Dokumentáld a soft archive döntést, a Project Detail intake-aware státusz
+      bizonyítékait, az E2E eredményt, az offline smoke eredményt, a frontend buildet, és a verify eredményt. Környezeti blocker esetén
+      pontosan jelöld BLOCKED-ként, ne írj hamis PASS-t.
+    outputs:
+      - "codex/codex_checklist/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md"
+      - "codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a célzott és standard ellenőrzéseket. Minimum: python3 scripts/smoke_dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.py.
+      Ha a frontend dependency környezet rendelkezésre áll, futtasd: npm --prefix frontend run build, majd
+      node frontend/node_modules/@playwright/test/cli.js test --config=frontend/playwright.config.ts frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts.
+      Végül kötelezően futtasd: ./scripts/verify.sh --report codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md.
+      A verify log kerüljön a report mellé. Sikertelen gate esetén a report legyen FAIL vagy BLOCKED pontos okkal.
+    outputs:
+      - "codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md"
+      - "codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.verify.log"
