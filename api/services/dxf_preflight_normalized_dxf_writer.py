@@ -120,6 +120,7 @@ def write_normalized_dxf(
 
     ezdxf = _require_ezdxf()
     doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 4  # millimeters — ezdxf defaults to 6 (meters)
     msp = doc.modelspace()
 
     _ensure_canonical_layers(doc, profile["canonical_layer_colors"])

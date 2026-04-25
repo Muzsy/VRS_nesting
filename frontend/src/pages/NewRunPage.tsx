@@ -30,6 +30,27 @@ function parseRotations(raw: string): number[] {
   return deduped.length > 0 ? deduped : [0, 90, 180, 270];
 }
 
+function resolveExistingPartRevisionId(file: ProjectFile): string | null {
+  const raw = file.latest_part_creation_projection?.existing_part_revision_id;
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const cleaned = raw.trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function resolvePartRevisionIdForFile(
+  file: ProjectFile,
+  partRevisionBySourceFileId: Map<string, string>
+): string | null {
+  const direct = resolveExistingPartRevisionId(file);
+  if (direct) {
+    return direct;
+  }
+  const fallback = partRevisionBySourceFileId.get(file.id);
+  return fallback ?? null;
+}
+
 export function NewRunPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -56,7 +77,9 @@ export function NewRunPage() {
     setError("");
     try {
       const token = await getAccessToken();
-      const fileResponse = await api.listProjectFiles(token, projectId);
+      const fileResponse = await api.listProjectFiles(token, projectId, {
+        include_part_creation_projection: true,
+      });
       setFiles(fileResponse.items);
 
       const choiceMap: Record<string, PartChoice> = {};
@@ -96,6 +119,14 @@ export function NewRunPage() {
     [files, partChoices]
   );
 
+  const filesById = useMemo(() => {
+    const byId = new Map<string, ProjectFile>();
+    for (const file of files) {
+      byId.set(file.id, file);
+    }
+    return byId;
+  }, [files]);
+
   const canMoveToStep2 = stockFileId.length > 0 && selectedParts.length > 0;
 
   async function handleSubmitRun() {
@@ -122,6 +153,71 @@ export function NewRunPage() {
         stock_file_id: stockFileId,
         parts_config: selectedParts,
       });
+
+      // Keep snapshot source of truth in sync with wizard quantities.
+      const requirements = await api.listProjectPartRequirements(token, projectId);
+      const requirementsByRevisionId = new Map(requirements.items.map((item) => [item.part_revision_id, item]));
+      const partRevisionBySourceFileId = new Map(
+        requirements.items
+          .map((item) => [String(item.source_file_object_id || "").trim(), item.part_revision_id] as const)
+          .filter(([sourceFileId, partRevisionId]) => sourceFileId.length > 0 && String(partRevisionId || "").trim().length > 0)
+      );
+
+      const wizardRevisionIds = new Set<string>();
+      const selectedRevisionIds = new Set<string>();
+
+      for (const file of files) {
+        if (!isDxfSourceFile(file)) {
+          continue;
+        }
+        const revisionId = resolvePartRevisionIdForFile(file, partRevisionBySourceFileId);
+        if (revisionId) {
+          wizardRevisionIds.add(revisionId);
+        }
+      }
+
+      for (const selected of selectedParts) {
+        const sourceFile = filesById.get(selected.file_id);
+        if (!sourceFile) {
+          throw new Error(`Selected file not found: ${selected.file_id}`);
+        }
+        const partRevisionId = resolvePartRevisionIdForFile(sourceFile, partRevisionBySourceFileId);
+        if (!partRevisionId) {
+          throw new Error(`Selected file has no linked part revision: ${sourceFile.original_filename}`);
+        }
+        const existing = requirementsByRevisionId.get(partRevisionId);
+        await api.upsertProjectPartRequirement(token, projectId, {
+          part_revision_id: partRevisionId,
+          required_qty: Math.max(1, selected.quantity),
+          placement_priority: existing?.placement_priority ?? 50,
+          placement_policy: existing?.placement_policy ?? "normal",
+          is_active: true,
+          ...(existing?.notes ? { notes: existing.notes } : {}),
+        });
+        selectedRevisionIds.add(partRevisionId);
+      }
+
+      // Reflect wizard selection: mapped-but-unselected parts are deactivated.
+      for (const requirement of requirements.items) {
+        if (!wizardRevisionIds.has(requirement.part_revision_id)) {
+          continue;
+        }
+        if (selectedRevisionIds.has(requirement.part_revision_id)) {
+          continue;
+        }
+        if (!requirement.is_active) {
+          continue;
+        }
+        await api.upsertProjectPartRequirement(token, projectId, {
+          part_revision_id: requirement.part_revision_id,
+          required_qty: Math.max(1, requirement.required_qty),
+          placement_priority: requirement.placement_priority,
+          placement_policy: requirement.placement_policy,
+          is_active: false,
+          ...(requirement.notes ? { notes: requirement.notes } : {}),
+        });
+      }
+
       const run = await api.createRun(token, projectId, { time_limit_s: timeLimit });
       navigate(`/projects/${projectId}/runs/${run.id}`);
     } catch (err) {

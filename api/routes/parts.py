@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from api.request_models import StrictRequestModel
 from api.services.part_creation import PartCreationError, create_part_from_geometry_revision
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
+logger = logging.getLogger("vrs_api.parts")
 
 router = APIRouter(prefix="/projects/{project_id}/parts", tags=["parts"])
 
@@ -104,5 +106,29 @@ def create_part(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="part creation", exc=exc)
+
+    revision = result.get("part_revision")
+    if isinstance(revision, dict):
+        part_revision_id = str(revision.get("id") or "").strip()
+        if part_revision_id:
+            try:
+                supabase.insert_row(
+                    table="app.project_part_requirements",
+                    access_token=user.access_token,
+                    payload={
+                        "project_id": str(project_id),
+                        "part_revision_id": part_revision_id,
+                        "required_qty": 1,
+                        "placement_priority": 50,
+                        "placement_policy": "normal",
+                        "is_active": True,
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "create_part_auto_requirement_failed project_id=%s part_revision_id=%s",
+                    project_id,
+                    part_revision_id,
+                )
 
     return _as_create_response(result)

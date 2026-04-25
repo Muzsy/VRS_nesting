@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -19,7 +20,10 @@ from api.http_errors import raise_supabase_http_error
 from api.rate_limit import enforce_user_rate_limit
 from api.request_models import StrictRequestModel
 from api.services.run_creation import RunCreationError, create_queued_run_from_project_snapshot
+from api.services.sheet_creation import SheetCreationError, create_sheet_revision
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
+
+logger = logging.getLogger("vrs_api.runs")
 
 router = APIRouter(prefix="/projects/{project_id}/runs", tags=["runs"])
 
@@ -157,6 +161,233 @@ class ViewerDataResponse(BaseModel):
 
 
 _TERMINAL_STATES = {"done", "failed", "cancelled"}
+
+_DEFAULT_TECHNOLOGY_SETUP_PAYLOAD = {
+    "display_name": "Default Setup",
+    "lifecycle": "approved",
+    "is_default": False,
+    "machine_code": "DEFAULT",
+    "material_code": "DEFAULT",
+    "thickness_mm": 3.0,
+    "kerf_mm": 0.2,
+    "spacing_mm": 0.0,
+    "margin_mm": 0.0,
+    "rotation_step_deg": 90,
+    "allow_free_rotation": False,
+}
+
+
+def _ensure_project_part_requirements(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    project_id: str,
+) -> None:
+    """Auto-seed project part requirements from approved part revisions if none exist.
+
+    Handles projects where parts were created before auto-requirement seeding was
+    introduced in POST /projects/{id}/parts.
+    """
+    try:
+        existing = supabase.select_rows(
+            table="app.project_part_requirements",
+            access_token=access_token,
+            params={
+                "select": "id",
+                "project_id": f"eq.{project_id}",
+                "is_active": "eq.true",
+                "required_qty": "gt.0",
+                "limit": "1",
+            },
+        )
+        if existing:
+            return
+
+        geom_rows = supabase.select_rows(
+            table="app.geometry_revisions",
+            access_token=access_token,
+            params={
+                "select": "id",
+                "project_id": f"eq.{project_id}",
+            },
+        )
+        if not geom_rows:
+            return
+
+        geom_ids = ",".join(str(r.get("id")) for r in geom_rows if r.get("id"))
+        if not geom_ids:
+            return
+
+        part_revision_rows = supabase.select_rows(
+            table="app.part_revisions",
+            access_token=access_token,
+            params={
+                "select": "id,source_geometry_revision_id",
+                "source_geometry_revision_id": f"in.({geom_ids})",
+                "lifecycle": "eq.approved",
+                "order": "source_geometry_revision_id.asc,created_at.desc",
+            },
+        )
+        if not part_revision_rows:
+            return
+
+        seen_geom_ids: set[str] = set()
+        for pr in part_revision_rows:
+            part_revision_id = str(pr.get("id") or "").strip()
+            geom_id = str(pr.get("source_geometry_revision_id") or "").strip()
+            if not part_revision_id or geom_id in seen_geom_ids:
+                continue
+            seen_geom_ids.add(geom_id)
+            try:
+                supabase.insert_row(
+                    table="app.project_part_requirements",
+                    access_token=access_token,
+                    payload={
+                        "project_id": project_id,
+                        "part_revision_id": part_revision_id,
+                        "required_qty": 1,
+                        "placement_priority": 50,
+                        "placement_policy": "normal",
+                        "is_active": True,
+                    },
+                )
+                logger.info(
+                    "create_run_auto_seeded_part_requirement project_id=%s part_revision_id=%s",
+                    project_id,
+                    part_revision_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "create_run_auto_seed_part_requirement_failed project_id=%s part_revision_id=%s error=%s",
+                    project_id,
+                    part_revision_id,
+                    str(exc)[:200],
+                )
+    except Exception as exc:
+        logger.warning(
+            "create_run_auto_seed_part_requirements_failed project_id=%s error=%s",
+            project_id,
+            str(exc)[:200],
+        )
+
+
+_DEFAULT_SHEET_CODE = "DEFAULT-SHEET"
+_DEFAULT_SHEET_WIDTH_MM = 3000.0
+_DEFAULT_SHEET_HEIGHT_MM = 1500.0
+
+
+def _ensure_project_sheet_inputs(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    owner_user_id: str,
+    project_id: str,
+) -> None:
+    """Auto-create a default sheet + project_sheet_input if none exist.
+
+    The web UI has no sheet dimension config; this seeds a 3000×1500 mm default
+    so POST /runs does not block on missing sheet inputs.
+    """
+    try:
+        existing = supabase.select_rows(
+            table="app.project_sheet_inputs",
+            access_token=access_token,
+            params={
+                "select": "id",
+                "project_id": f"eq.{project_id}",
+                "is_active": "eq.true",
+                "required_qty": "gt.0",
+                "limit": "1",
+            },
+        )
+        if existing:
+            return
+
+        result = create_sheet_revision(
+            supabase=supabase,
+            access_token=access_token,
+            owner_user_id=owner_user_id,
+            raw_code=_DEFAULT_SHEET_CODE,
+            raw_name="Default Sheet",
+            raw_width_mm=_DEFAULT_SHEET_WIDTH_MM,
+            raw_height_mm=_DEFAULT_SHEET_HEIGHT_MM,
+        )
+        sheet_revision = result.get("sheet_revision")
+        if not isinstance(sheet_revision, dict):
+            logger.warning("create_run_auto_seed_sheet_inputs_invalid_revision project_id=%s", project_id)
+            return
+        sheet_revision_id = str(sheet_revision.get("id") or "").strip()
+        if not sheet_revision_id:
+            logger.warning("create_run_auto_seed_sheet_inputs_empty_revision_id project_id=%s", project_id)
+            return
+
+        supabase.insert_row(
+            table="app.project_sheet_inputs",
+            access_token=access_token,
+            payload={
+                "project_id": project_id,
+                "sheet_revision_id": sheet_revision_id,
+                "required_qty": 1,
+                "is_active": True,
+                "is_default": True,
+                "placement_priority": 10,
+            },
+        )
+        logger.info(
+            "create_run_auto_seeded_sheet_input project_id=%s sheet_revision_id=%s",
+            project_id,
+            sheet_revision_id,
+        )
+    except SheetCreationError as exc:
+        logger.warning(
+            "create_run_auto_seed_sheet_inputs_failed project_id=%s error=%s",
+            project_id,
+            exc.detail,
+        )
+    except Exception as exc:
+        logger.warning(
+            "create_run_auto_seed_sheet_inputs_failed project_id=%s error=%s",
+            project_id,
+            str(exc)[:200],
+        )
+
+
+def _ensure_approved_technology_setup(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    project_id: str,
+) -> None:
+    """Auto-create a default approved technology setup if none exists for the project.
+
+    Allows projects created before the auto-seed was introduced in POST /projects
+    to still start runs without manual DB intervention.
+    """
+    try:
+        rows = supabase.select_rows(
+            table="app.project_technology_setups",
+            access_token=access_token,
+            params={
+                "select": "id",
+                "project_id": f"eq.{project_id}",
+                "lifecycle": "eq.approved",
+                "limit": "1",
+            },
+        )
+        if rows:
+            return
+        supabase.insert_row(
+            table="app.project_technology_setups",
+            access_token=access_token,
+            payload={"project_id": project_id, **_DEFAULT_TECHNOLOGY_SETUP_PAYLOAD},
+        )
+        logger.info("create_run_auto_seeded_technology_setup project_id=%s", project_id)
+    except Exception as exc:
+        logger.warning(
+            "create_run_auto_seed_technology_setup_failed project_id=%s error=%s",
+            project_id,
+            str(exc)[:200],
+        )
 
 
 def _now_iso() -> str:
@@ -346,6 +577,22 @@ def create_run(
             "requested_by": f"eq.{user.id}",
             "project_id": f"eq.{project_id}",
         },
+    )
+    _ensure_approved_technology_setup(
+        supabase=supabase,
+        access_token=user.access_token,
+        project_id=str(project_id),
+    )
+    _ensure_project_part_requirements(
+        supabase=supabase,
+        access_token=user.access_token,
+        project_id=str(project_id),
+    )
+    _ensure_project_sheet_inputs(
+        supabase=supabase,
+        access_token=user.access_token,
+        owner_user_id=user.id,
+        project_id=str(project_id),
     )
 
     try:

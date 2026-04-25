@@ -815,6 +815,7 @@ def complete_upload(
                 created_by=user.id,
                 signed_url_ttl_s=settings.signed_url_ttl_s,
                 rules_profile=rules_profile_snapshot,
+                service_token=settings.supabase_service_role_key or None,
             )
         else:
             background_tasks.add_task(

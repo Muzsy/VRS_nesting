@@ -180,7 +180,10 @@ fn to_jag_polygon(points: &[Point], label: &str) -> Result<SPolygon, String> {
 fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
     let outer: Vec<Point> = if let Some(raw_outer) = &stock.outer_points {
         if raw_outer.len() < 3 {
-            return Err(format!("stock {} outer_points must have >=3 points", stock.id));
+            return Err(format!(
+                "stock {} outer_points must have >=3 points",
+                stock.id
+            ));
         }
         raw_outer.iter().map(point_from_input).collect()
     } else {
@@ -207,7 +210,10 @@ fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
             let mut parsed = Vec::new();
             for hole in raw_holes {
                 if hole.len() < 3 {
-                    return Err(format!("stock {} hole polygon must have >=3 points", stock.id));
+                    return Err(format!(
+                        "stock {} hole polygon must have >=3 points",
+                        stock.id
+                    ));
                 }
                 parsed.push(hole.iter().map(point_from_input).collect());
             }
@@ -215,8 +221,8 @@ fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
         }
     };
 
-    let (min_x, min_y, max_x, max_y) = polygon_bbox(&outer)
-        .ok_or_else(|| format!("stock {} outer polygon is empty", stock.id))?;
+    let (min_x, min_y, max_x, max_y) =
+        polygon_bbox(&outer).ok_or_else(|| format!("stock {} outer polygon is empty", stock.id))?;
     let bbox_w = max_x - min_x;
     let bbox_h = max_y - min_y;
     if bbox_w <= 0.0 || bbox_h <= 0.0 {
@@ -286,6 +292,27 @@ fn dims_for_rotation(width: f64, height: f64, rot: i64) -> Option<(f64, f64)> {
     }
 }
 
+fn rotated_bbox_min_offset(width: f64, height: f64, rot: i64) -> Option<(f64, f64)> {
+    match rot.rem_euclid(360) {
+        0 => Some((0.0, 0.0)),
+        90 => Some((-height, 0.0)),
+        180 => Some((-width, -height)),
+        270 => Some((0.0, -width)),
+        _ => None,
+    }
+}
+
+fn placement_anchor_from_rect_min(
+    rect_min_x: f64,
+    rect_min_y: f64,
+    width: f64,
+    height: f64,
+    rot: i64,
+) -> Option<(f64, f64)> {
+    let (bbox_min_x, bbox_min_y) = rotated_bbox_min_offset(width, height, rot)?;
+    Some((rect_min_x - bbox_min_x, rect_min_y - bbox_min_y))
+}
+
 fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> Result<bool, String> {
     let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg)?;
     for sheet in sheets {
@@ -325,10 +352,22 @@ fn jag_edge_from_points(a: Point, b: Point) -> Option<JagEdge> {
 
 fn rect_corners(rect: Rect) -> [Point; 4] {
     [
-        Point { x: rect.x1, y: rect.y1 },
-        Point { x: rect.x2, y: rect.y1 },
-        Point { x: rect.x2, y: rect.y2 },
-        Point { x: rect.x1, y: rect.y2 },
+        Point {
+            x: rect.x1,
+            y: rect.y1,
+        },
+        Point {
+            x: rect.x2,
+            y: rect.y1,
+        },
+        Point {
+            x: rect.x2,
+            y: rect.y2,
+        },
+        Point {
+            x: rect.x1,
+            y: rect.y2,
+        },
     ]
 }
 
@@ -406,12 +445,20 @@ fn try_place_on_sheet(
             continue;
         }
 
+        // Output x/y must be the translation anchor used by the validator:
+        // rotate shape around (0,0), then translate by (x,y).
+        let Some((placement_x, placement_y)) =
+            placement_anchor_from_rect_min(x, y, instance.width, instance.height, *rot)
+        else {
+            continue;
+        };
+
         let placed = Placement {
             instance_id: instance.instance_id.clone(),
             part_id: instance.part_id.clone(),
             sheet_index,
-            x,
-            y,
+            x: placement_x,
+            y: placement_y,
             rotation_deg: *rot,
         };
 
@@ -477,7 +524,9 @@ fn main() -> Result<(), String> {
 
         let mut placed = None;
         for (idx, sheet) in sheets.iter().enumerate() {
-            if let Some(candidate) = try_place_on_sheet(instance, sheet, &mut per_sheet_cursor[idx], idx) {
+            if let Some(candidate) =
+                try_place_on_sheet(instance, sheet, &mut per_sheet_cursor[idx], idx)
+            {
                 placed = Some(candidate);
                 break;
             }
@@ -526,4 +575,74 @@ fn main() -> Result<(), String> {
         .map_err(|e| format!("failed to write output json {output_path}: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dims_for_rotation, placement_anchor_from_rect_min, rotated_bbox_min_offset};
+
+    fn approx_eq(a: f64, b: f64) -> bool {
+        (a - b).abs() <= 1e-9
+    }
+
+    #[test]
+    fn rotated_bbox_min_offset_matches_expected_quadrants() {
+        let width = 1000.0;
+        let height = 2000.0;
+        let expected = [
+            (0, (0.0, 0.0)),
+            (90, (-2000.0, 0.0)),
+            (180, (-1000.0, -2000.0)),
+            (270, (0.0, -1000.0)),
+        ];
+
+        for (rot, (exp_x, exp_y)) in expected {
+            let (x, y) = rotated_bbox_min_offset(width, height, rot).expect("supported rotation");
+            assert!(approx_eq(x, exp_x), "rot={rot} min_x={x} expected={exp_x}");
+            assert!(approx_eq(y, exp_y), "rot={rot} min_y={y} expected={exp_y}");
+        }
+    }
+
+    #[test]
+    fn placement_anchor_from_rect_min_keeps_rotated_bbox_inside_target_rect() {
+        let width = 1000.0;
+        let height = 2000.0;
+        let rect_min_x = 0.0;
+        let rect_min_y = 480.0;
+
+        for rot in [0, 90, 180, 270] {
+            let (anchor_x, anchor_y) =
+                placement_anchor_from_rect_min(rect_min_x, rect_min_y, width, height, rot)
+                    .expect("supported rotation");
+            let (min_off_x, min_off_y) =
+                rotated_bbox_min_offset(width, height, rot).expect("supported rotation");
+            let Some((rw, rh)) = dims_for_rotation(width, height, rot) else {
+                panic!("unsupported rotation in test");
+            };
+
+            let placed_min_x = anchor_x + min_off_x;
+            let placed_min_y = anchor_y + min_off_y;
+            let placed_max_x = placed_min_x + rw;
+            let placed_max_y = placed_min_y + rh;
+
+            assert!(
+                approx_eq(placed_min_x, rect_min_x),
+                "rot={rot} placed_min_x={placed_min_x} rect_min_x={rect_min_x}"
+            );
+            assert!(
+                approx_eq(placed_min_y, rect_min_y),
+                "rot={rot} placed_min_y={placed_min_y} rect_min_y={rect_min_y}"
+            );
+            assert!(
+                approx_eq(placed_max_x, rect_min_x + rw),
+                "rot={rot} placed_max_x={placed_max_x} expected={}",
+                rect_min_x + rw
+            );
+            assert!(
+                approx_eq(placed_max_y, rect_min_y + rh),
+                "rot={rot} placed_max_y={placed_max_y} expected={}",
+                rect_min_y + rh
+            );
+        }
+    }
 }

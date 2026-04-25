@@ -182,6 +182,7 @@ def _make_settings(*, dxf_preflight_required: bool) -> Settings:
     return Settings(
         supabase_url="http://fake.local",
         supabase_anon_key="anon",
+        supabase_service_role_key="",
         supabase_project_ref="ref",
         supabase_db_password="pw",
         database_url="postgresql://fake",

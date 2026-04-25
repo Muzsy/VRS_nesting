@@ -323,7 +323,67 @@ def list_project_part_requirements(
         "order": "placement_priority.asc,created_at.asc",
     }
     rows = supabase.select_rows(table="app.project_part_requirements", access_token=access_token, params=params)
+
+    part_revision_ids = sorted(
+        {
+            str(row.get("part_revision_id") or "").strip()
+            for row in rows
+            if str(row.get("part_revision_id") or "").strip()
+        }
+    )
+
+    source_file_by_part_revision: dict[str, str] = {}
+    if part_revision_ids:
+        in_values = ",".join(part_revision_ids)
+        part_revision_rows = supabase.select_rows(
+            table="app.part_revisions",
+            access_token=access_token,
+            params={
+                "select": "id,source_geometry_revision_id",
+                "id": f"in.({in_values})",
+            },
+        )
+        source_geometry_by_part_revision: dict[str, str] = {}
+        geometry_revision_ids: set[str] = set()
+        for row in part_revision_rows:
+            part_revision_id = str(row.get("id") or "").strip()
+            source_geometry_revision_id = str(row.get("source_geometry_revision_id") or "").strip()
+            if not part_revision_id or not source_geometry_revision_id:
+                continue
+            source_geometry_by_part_revision[part_revision_id] = source_geometry_revision_id
+            geometry_revision_ids.add(source_geometry_revision_id)
+
+        source_file_by_geometry_revision: dict[str, str] = {}
+        if geometry_revision_ids:
+            geometry_in_values = ",".join(sorted(geometry_revision_ids))
+            geometry_rows = supabase.select_rows(
+                table="app.geometry_revisions",
+                access_token=access_token,
+                params={
+                    "select": "id,source_file_object_id",
+                    "id": f"in.({geometry_in_values})",
+                },
+            )
+            for row in geometry_rows:
+                geometry_revision_id = str(row.get("id") or "").strip()
+                source_file_object_id = str(row.get("source_file_object_id") or "").strip()
+                if not geometry_revision_id or not source_file_object_id:
+                    continue
+                source_file_by_geometry_revision[geometry_revision_id] = source_file_object_id
+
+        for part_revision_id, geometry_revision_id in source_geometry_by_part_revision.items():
+            source_file_object_id = source_file_by_geometry_revision.get(geometry_revision_id)
+            if source_file_object_id:
+                source_file_by_part_revision[part_revision_id] = source_file_object_id
+
+    enriched_rows: list[dict[str, Any]] = []
+    for row in rows:
+        row_copy = dict(row)
+        part_revision_id = str(row_copy.get("part_revision_id") or "").strip()
+        row_copy["source_file_object_id"] = source_file_by_part_revision.get(part_revision_id)
+        enriched_rows.append(row_copy)
+
     return {
         "project": project,
-        "items": rows,
+        "items": enriched_rows,
     }

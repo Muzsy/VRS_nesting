@@ -45,6 +45,7 @@ class ProjectPartRequirementUpsertResponse(BaseModel):
 class ProjectPartRequirementListItem(BaseModel):
     project_part_requirement_id: str
     part_revision_id: str
+    source_file_object_id: str | None = None
     required_qty: int
     placement_priority: int
     placement_policy: str
@@ -119,6 +120,7 @@ def _as_list_response(result: dict[str, Any]) -> ProjectPartRequirementListRespo
             ProjectPartRequirementListItem(
                 project_part_requirement_id=requirement_id,
                 part_revision_id=revision_id,
+                source_file_object_id=(str(row.get("source_file_object_id")).strip() if row.get("source_file_object_id") is not None else None),
                 required_qty=required_qty,
                 placement_priority=placement_priority,
                 placement_policy=placement_policy,

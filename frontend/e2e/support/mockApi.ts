@@ -94,6 +94,7 @@ interface ViewerData {
 interface MockState {
   projects: MockProject[];
   filesByProject: Record<string, MockFile[]>;
+  partRequirementsByProject: Record<string, Array<Record<string, unknown>>>;
   runsByProject: Record<string, MockRun[]>;
   artifactsByRun: Record<string, MockArtifact[]>;
   viewerDataByRun: Record<string, ViewerData>;
@@ -173,6 +174,7 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
   const state: MockState = {
     projects: options?.initialProjects ? [...options.initialProjects] : [],
     filesByProject: options?.initialFilesByProject ? { ...options.initialFilesByProject } : {},
+    partRequirementsByProject: {},
     runsByProject: options?.initialRunsByProject ? { ...options.initialRunsByProject } : {},
     artifactsByRun: options?.initialArtifactsByRun ? { ...options.initialArtifactsByRun } : {},
     viewerDataByRun: options?.initialViewerDataByRun ? { ...options.initialViewerDataByRun } : {},
@@ -329,9 +331,70 @@ export async function installMockApi(page: Page, options?: MockApiOptions): Prom
         validation_status: status,
         validation_error: status === "error" ? "Invalid DXF geometry." : null,
         uploaded_at: NOW,
+        latest_part_creation_projection: {
+          existing_part_revision_id: `part-rev-${body.file_id}`,
+          part_creation_ready: true,
+          has_nesting_derivative: true,
+          readiness_reason: "ready",
+          suggested_code: body.original_filename,
+          suggested_name: body.original_filename,
+          source_label: body.original_filename,
+        },
       };
       state.filesByProject[projectId] = [...(state.filesByProject[projectId] ?? []), file];
       await json(route, file);
+      return;
+    }
+
+    const partRequirementsMatch = path.match(/^\/projects\/([^/]+)\/part-requirements$/);
+    if (partRequirementsMatch && method === "GET") {
+      const projectId = partRequirementsMatch[1];
+      const items = state.partRequirementsByProject[projectId] ?? [];
+      await json(route, { items, total: items.length });
+      return;
+    }
+    if (partRequirementsMatch && method === "POST") {
+      const projectId = partRequirementsMatch[1];
+      const body = request.postDataJSON() as {
+        part_revision_id: string;
+        required_qty: number;
+        placement_priority?: number;
+        placement_policy?: string;
+        is_active?: boolean;
+        notes?: string | null;
+      };
+      const nowIso = new Date().toISOString();
+      const existingRows = state.partRequirementsByProject[projectId] ?? [];
+      const existingIndex = existingRows.findIndex((item) => String(item.part_revision_id || "") === String(body.part_revision_id || ""));
+      const base = {
+        id: existingIndex >= 0 ? String(existingRows[existingIndex].id || "") : `ppr-${projectId}-${existingRows.length + 1}`,
+        project_id: projectId,
+        part_revision_id: String(body.part_revision_id || ""),
+        required_qty: Number(body.required_qty || 1),
+        placement_priority: Number(body.placement_priority ?? 50),
+        placement_policy: String(body.placement_policy ?? "normal"),
+        is_active: body.is_active ?? true,
+        notes: body.notes ?? null,
+        created_at: existingIndex >= 0 ? String(existingRows[existingIndex].created_at || NOW) : nowIso,
+        updated_at: nowIso,
+      };
+      if (existingIndex >= 0) {
+        existingRows[existingIndex] = base;
+      } else {
+        existingRows.push(base);
+      }
+      state.partRequirementsByProject[projectId] = existingRows;
+      await json(route, {
+        project_part_requirement_id: base.id,
+        project_id: base.project_id,
+        part_revision_id: base.part_revision_id,
+        required_qty: base.required_qty,
+        placement_priority: base.placement_priority,
+        placement_policy: base.placement_policy,
+        is_active: base.is_active,
+        notes: base.notes,
+        was_existing_requirement: existingIndex >= 0,
+      });
       return;
     }
 

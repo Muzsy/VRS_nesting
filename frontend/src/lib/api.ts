@@ -5,6 +5,8 @@ import type {
   Project,
   ProjectFile,
   ProjectFileLatestPartCreationProjection,
+  ProjectPartRequirementListResponse,
+  ProjectPartRequirementUpsertResponse,
   ProjectPartCreateRequest,
   ProjectPartCreateResponse,
   ProjectFileReplaceUploadResponse,
@@ -388,6 +390,28 @@ export const api = {
     payload: ProjectPartCreateRequest
   ): Promise<ProjectPartCreateResponse> {
     return request<ProjectPartCreateResponse>(`/projects/${projectId}/parts`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  listProjectPartRequirements(token: string, projectId: string): Promise<ProjectPartRequirementListResponse> {
+    return request<ProjectPartRequirementListResponse>(`/projects/${projectId}/part-requirements`, token, { method: "GET" });
+  },
+
+  upsertProjectPartRequirement(
+    token: string,
+    projectId: string,
+    payload: {
+      part_revision_id: string;
+      required_qty: number;
+      placement_priority?: number;
+      placement_policy?: string;
+      is_active?: boolean;
+      notes?: string;
+    }
+  ): Promise<ProjectPartRequirementUpsertResponse> {
+    return request<ProjectPartRequirementUpsertResponse>(`/projects/${projectId}/part-requirements`, token, {
       method: "POST",
       body: JSON.stringify(payload),
     });

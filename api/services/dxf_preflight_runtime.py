@@ -140,9 +140,11 @@ class _SupabaseStorageGateway:
         supabase: SupabaseClient,
         access_token: str,
         signed_url_ttl_s: int,
+        service_token: str | None = None,
     ) -> None:
         self._supabase = supabase
         self._access_token = access_token
+        self._service_token = service_token
         self._ttl = signed_url_ttl_s
 
     def upload_bytes(
@@ -153,8 +155,11 @@ class _SupabaseStorageGateway:
         payload: bytes,
         content_type: str,
     ) -> None:
+        # Use service token for backend artifact uploads to bypass RLS policies
+        # that restrict regular user tokens from writing to internal artifact paths.
+        upload_token = self._service_token or self._access_token
         signed = self._supabase.create_signed_upload_url(
-            access_token=self._access_token,
+            access_token=upload_token,
             bucket=bucket,
             object_key=object_key,
             expires_in=self._ttl,
@@ -186,6 +191,7 @@ def run_preflight_for_upload(
     created_by: str,
     signed_url_ttl_s: int,
     rules_profile: Mapping[str, Any] | None = None,
+    service_token: str | None = None,
 ) -> None:
     """Run the full T1→T7 + E3-T1 prefilter pipeline as a background task.
 
@@ -208,6 +214,7 @@ def run_preflight_for_upload(
         supabase=supabase,
         access_token=access_token,
         signed_url_ttl_s=signed_url_ttl_s,
+        service_token=service_token,
     )
 
     try:

@@ -172,6 +172,34 @@ export interface ProjectPartCreateResponse {
   was_existing_definition: boolean;
 }
 
+export interface ProjectPartRequirement {
+  project_part_requirement_id: string;
+  part_revision_id: string;
+  source_file_object_id?: string | null;
+  required_qty: number;
+  placement_priority: number;
+  placement_policy: string;
+  is_active: boolean;
+  notes?: string | null;
+}
+
+export interface ProjectPartRequirementListResponse {
+  items: ProjectPartRequirement[];
+  total: number;
+}
+
+export interface ProjectPartRequirementUpsertResponse {
+  project_part_requirement_id: string;
+  project_id: string;
+  part_revision_id: string;
+  required_qty: number;
+  placement_priority: number;
+  placement_policy: string;
+  is_active: boolean;
+  notes?: string | null;
+  was_existing_requirement: boolean;
+}
+
 export interface PreflightRulesProfileSnapshot {
   strict_mode: boolean;
   auto_repair_enabled: boolean;

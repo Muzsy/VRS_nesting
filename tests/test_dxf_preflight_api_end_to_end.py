@@ -352,7 +352,7 @@ def _run_api_flow_scenario(
         background_tasks=background_tasks,
         user=_USER,
         supabase=supabase,
-        settings=SimpleNamespace(storage_bucket="source-files", signed_url_ttl_s=300, dxf_preflight_required=True),
+        settings=SimpleNamespace(storage_bucket="source-files", signed_url_ttl_s=300, dxf_preflight_required=True, supabase_service_role_key=""),
     )
 
     task_funcs = [task.func for task in background_tasks.tasks]

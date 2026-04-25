@@ -40,6 +40,7 @@ def _resolve_env(key: str, default: str = "") -> str:
 class Settings:
     supabase_url: str
     supabase_anon_key: str
+    supabase_service_role_key: str
     supabase_project_ref: str
     supabase_db_password: str
     database_url: str
@@ -126,6 +127,7 @@ def load_settings() -> Settings:
     return Settings(
         supabase_url=supabase_url.rstrip("/"),
         supabase_anon_key=supabase_anon_key,
+        supabase_service_role_key=_resolve_env("SUPABASE_SERVICE_ROLE_KEY"),
         supabase_project_ref=_resolve_env("SUPABASE_PROJECT_REF"),
         supabase_db_password=_resolve_env("SUPABASE_DB_PASSWORD"),
         database_url=_resolve_env("DATABASE_URL"),
