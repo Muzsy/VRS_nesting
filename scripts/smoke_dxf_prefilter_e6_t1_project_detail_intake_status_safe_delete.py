@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TASK_SLUG = "dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete"
 
-MIGRATION = ROOT / "supabase" / "migrations" / "20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20260425190000_dxf_e6_t1_file_object_soft_archive.sql"
 FILES_ROUTE = ROOT / "api" / "routes" / "files.py"
 PROJECT_DETAIL_PAGE = ROOT / "frontend" / "src" / "pages" / "ProjectDetailPage.tsx"
 MOCK_API = ROOT / "frontend" / "e2e" / "support" / "mockApi.ts"
@@ -47,6 +47,11 @@ def _contains_none(content: str, tokens: list[str], *, label: str) -> None:
 def main() -> None:
     print("=== smoke_dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete ===")
 
+    _assert("xxxxxx" not in MIGRATION.name, f"migration filename must be Supabase-timestamped, got: {MIGRATION.name}")
+    _assert(
+        not (ROOT / "supabase" / "migrations" / "20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql").exists(),
+        "invalid placeholder migration filename must not remain",
+    )
     migration_src = _read(MIGRATION)
     _contains_all(
         migration_src,
@@ -68,6 +73,9 @@ def main() -> None:
             "include_deleted: bool = Query(default=False)",
             "created_at,deleted_at",
             'params["deleted_at"] = "is.null"',
+            "_is_missing_deleted_at_column_error",
+            "legacy_params",
+            "file archive metadata migration is not applied",
             "supabase.update_rows(",
             'payload={"deleted_at": archived_at}',
             'operation="archive file metadata"',

@@ -644,6 +644,25 @@ def _ensure_project_access(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
 
+def _is_missing_deleted_at_column_error(exc: SupabaseHTTPError) -> bool:
+    """Return true for old DBs that do not have file_objects.deleted_at yet.
+
+    E6-T1 introduced soft archive semantics for uploaded source files. During a
+    rolling/local upgrade the API may be restarted before the Supabase migration
+    is applied. In that state the file-list endpoint must stay usable instead of
+    breaking the whole Project Detail page with a generic ``list files failed``.
+    """
+
+    message = str(exc).lower()
+    return "deleted_at" in message and (
+        "does not exist" in message
+        or "could not find" in message
+        or "schema cache" in message
+        or "pgrst204" in message
+        or "42703" in message
+    )
+
+
 def _validate_replacement_target(
     *,
     supabase: SupabaseClient,
@@ -872,7 +891,20 @@ def list_project_files(
     try:
         rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=params)
     except SupabaseHTTPError as exc:
-        raise_supabase_http_error(operation="list files", exc=exc)
+        if not _is_missing_deleted_at_column_error(exc):
+            raise_supabase_http_error(operation="list files", exc=exc)
+
+        legacy_params = {
+            "select": "id,project_id,storage_bucket,storage_path,file_name,mime_type,file_kind,byte_size,sha256,uploaded_by,created_at",
+            "project_id": f"eq.{project_id}",
+            "order": "created_at.desc",
+            "limit": str(page_size),
+            "offset": str(offset),
+        }
+        try:
+            rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=legacy_params)
+        except SupabaseHTTPError as legacy_exc:
+            raise_supabase_http_error(operation="list files", exc=legacy_exc)
 
     file_ids = [str(row.get("id", "")).strip() for row in rows if str(row.get("id", "")).strip()]
 
@@ -977,7 +1009,23 @@ def delete_project_file(
         "project_id": f"eq.{project_id}",
         "limit": "1",
     }
-    rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=params)
+    try:
+        rows = supabase.select_rows(table="app.file_objects", access_token=user.access_token, params=params)
+    except SupabaseHTTPError as exc:
+        if not _is_missing_deleted_at_column_error(exc):
+            raise_supabase_http_error(operation="archive file metadata", exc=exc)
+        legacy_rows = supabase.select_rows(
+            table="app.file_objects",
+            access_token=user.access_token,
+            params={"select": "id", "id": f"eq.{file_id}", "project_id": f"eq.{project_id}", "limit": "1"},
+        )
+        if not legacy_rows:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="file archive metadata migration is not applied; run the latest Supabase migrations before hiding uploads",
+        ) from exc
+
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
     existing_deleted_at = rows[0].get("deleted_at")
@@ -993,6 +1041,11 @@ def delete_project_file(
             filters={"id": f"eq.{file_id}", "project_id": f"eq.{project_id}"},
         )
     except SupabaseHTTPError as exc:
+        if _is_missing_deleted_at_column_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="file archive metadata migration is not applied; run the latest Supabase migrations before hiding uploads",
+            ) from exc
         raise_supabase_http_error(operation="archive file metadata", exc=exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -53,9 +53,9 @@ select
   rc.margin_mm,
   rc.stock_file_id,
   rc.parts_config,
+  rc.created_at,
   rc.run_strategy_profile_version_id,
-  rc.solver_config_overrides_jsonb,
-  rc.created_at
+  rc.solver_config_overrides_jsonb
 from app.run_configs rc;
 
 create or replace function public.run_configs_view_iud()

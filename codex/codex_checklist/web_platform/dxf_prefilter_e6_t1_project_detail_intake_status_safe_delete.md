@@ -1,7 +1,7 @@
 # Codex checklist - dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete
 
 - [x] Canvas + goal YAML + run prompt artefaktok elerhetoek
-- [x] Elkeszult a soft-archive migration (`supabase/migrations/20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql`)
+- [x] Elkeszult a soft-archive migration (`supabase/migrations/20260425190000_dxf_e6_t1_file_object_soft_archive.sql`)
 - [x] `api/routes/files.py` list endpoint kezeli a `deleted_at` mezot es `include_deleted` queryt
 - [x] `DELETE /projects/{project_id}/files/{file_id}` soft archive (`update_rows`) es nem hard delete
 - [x] Frontend API/types kezeli a `deleted_at` mezot es `include_deleted` opciot

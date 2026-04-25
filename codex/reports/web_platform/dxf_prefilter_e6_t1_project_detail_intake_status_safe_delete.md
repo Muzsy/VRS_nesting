@@ -27,7 +27,7 @@
 ## 3) Valtozasok osszefoglalasa
 ### 3.1 Erintett fajlok
 - **DB migration:**
-  - `supabase/migrations/20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql`
+  - `supabase/migrations/20260425190000_dxf_e6_t1_file_object_soft_archive.sql`
 - **Backend:**
   - `api/routes/files.py`
 - **Frontend app:**
@@ -66,7 +66,7 @@
 | 1. Project Detail nem mutat minden DXF-et hamis pending fallbackkel | PASS | `frontend/src/pages/ProjectDetailPage.tsx:90`, `frontend/src/pages/ProjectDetailPage.tsx:380`, `scripts/smoke_dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.py:102` | Az oldal intake status oszlopot renderel, a legacy pending fallback tiltva van smoke-checkkel. | smoke + E2E |
 | 2. Project Detail DXF Intake truth alapjan statusz/next-stepet mutat | PASS | `frontend/src/lib/dxfIntakePresentation.ts:294`, `frontend/src/pages/ProjectDetailPage.tsx:211`, `frontend/src/pages/ProjectDetailPage.tsx:394` | A status mapping a latest preflight/projection mezokbol tortenik. | E2E |
 | 3. Rejected/review/pending source DXF nem project-ready sor | PASS | `frontend/src/lib/dxfIntakePresentation.ts:363`, `frontend/src/pages/ProjectDetailPage.tsx:405`, `frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts:264` | Kulon `Intake attention` szekcio es explicit E2E assert biztositja az elkulonitest. | E2E |
-| 4. DELETE endpoint soft archive, nem hard delete | PASS | `api/routes/files.py:845`, `api/routes/files.py:870`, `api/routes/files.py:965`, `supabase/migrations/20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql:5` | `deleted_at` mezot hasznalo active filter + `update_rows` archive van, hard delete nincs. | smoke |
+| 4. DELETE endpoint soft archive, nem hard delete | PASS | `api/routes/files.py:845`, `api/routes/files.py:870`, `api/routes/files.py:965`, `supabase/migrations/20260425190000_dxf_e6_t1_file_object_soft_archive.sql:5` | `deleted_at` mezot hasznalo active filter + `update_rows` archive van, hard delete nincs. | smoke |
 | 5. Sikeres archive utan a file eltunik aktiv listabol | PASS | `api/routes/files.py:870`, `frontend/src/pages/ProjectDetailPage.tsx:190`, `frontend/e2e/support/mockApi.ts:418`, `frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts:275` | API default aktiv listat ad vissza, UI ujratolt, E2E ellenorzi a sor eltuneset. | E2E |
 | 6. Nincs `delete file metadata failed` regresszio normal archive eseten | PASS | `api/routes/files.py:996`, `frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts:276` | A backend operation neve `archive file metadata`, E2E tiltja a regi hiba megjeleneset. | E2E |
 | 7. E2E lefedi a status + hide/archive regressziot | PASS | `frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts:58` | A spec 6 accepted/linked + 2 rejected/review adattal fut es hide flow-t is ellenoriz. | Playwright targeted run |
@@ -83,42 +83,36 @@
 
 - eredmény: **PASS**
 - check.sh exit kód: `0`
-- futás: 2026-04-25T23:07:51+02:00 → 2026-04-25T23:10:46+02:00 (175s)
+- futás: 2026-04-26T00:02:32+02:00 → 2026-04-26T00:05:24+02:00 (172s)
 - parancs: `./scripts/check.sh`
 - log: `/home/muszy/projects/VRS_nesting/codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.verify.log`
-- git: `main@96c99ad`
-- módosított fájlok (git status): 15
+- git: `main@f081767`
+- módosított fájlok (git status): 8
 
 **git diff --stat**
 
 ```text
- api/routes/files.py                       |  34 +++--
- frontend/e2e/support/mockApi.ts           |  22 ++-
- frontend/src/lib/api.ts                   |   5 +
- frontend/src/lib/dxfIntakePresentation.ts | 136 +++++++++++++++++++
- frontend/src/lib/types.ts                 |   1 +
- frontend/src/pages/ProjectDetailPage.tsx  | 214 ++++++++++++++++++++++--------
- 6 files changed, 340 insertions(+), 72 deletions(-)
+ api/routes/files.py                                | 57 +++++++++++++-
+ ..._t1_project_detail_intake_status_safe_delete.md |  2 +-
+ ..._t1_project_detail_intake_status_safe_delete.md |  4 +-
+ ...ect_detail_intake_status_safe_delete.verify.log | 90 +++++++++++-----------
+ frontend/src/lib/dxfIntakePresentation.ts          | 21 ++++-
+ ..._t1_project_detail_intake_status_safe_delete.py | 10 ++-
+ ...25xxxxxx_dxf_e6_t1_file_object_soft_archive.sql | 13 ----
+ 7 files changed, 129 insertions(+), 68 deletions(-)
 ```
 
 **git status --porcelain (preview)**
 
 ```text
  M api/routes/files.py
- M frontend/e2e/support/mockApi.ts
- M frontend/src/lib/api.ts
+ M codex/codex_checklist/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md
+ M codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md
+ M codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.verify.log
  M frontend/src/lib/dxfIntakePresentation.ts
- M frontend/src/lib/types.ts
- M frontend/src/pages/ProjectDetailPage.tsx
-?? canvases/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md
-?? codex/codex_checklist/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md
-?? codex/goals/canvases/web_platform/fill_canvas_dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.yaml
-?? codex/prompts/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete/
-?? codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.md
-?? codex/reports/web_platform/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.verify.log
-?? frontend/e2e/dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.spec.ts
-?? scripts/smoke_dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.py
-?? supabase/migrations/20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql
+ M scripts/smoke_dxf_prefilter_e6_t1_project_detail_intake_status_safe_delete.py
+ D supabase/migrations/20260425xxxxxx_dxf_e6_t1_file_object_soft_archive.sql
+?? supabase/migrations/20260425190000_dxf_e6_t1_file_object_soft_archive.sql
 ```
 
 <!-- AUTO_VERIFY_END -->

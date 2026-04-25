@@ -292,11 +292,26 @@ export interface ProjectDetailIntakeStatus {
 }
 
 export function projectDetailIntakeStatus(file: ProjectFile): ProjectDetailIntakeStatus {
+  const projection = file.latest_part_creation_projection ?? null;
+  const summary = file.latest_preflight_summary ?? null;
+  const legacyValidationStatus = String(file.validation_status ?? "").trim().toLowerCase();
+
+  if (!summary && legacyValidationStatus === "error") {
+    return {
+      statusLabel: "error",
+      statusClassName: TONE.blocked,
+      nextStep: file.validation_error || "Fix upload and try again.",
+      isProjectReady: false,
+      isAttention: true,
+      isLinkedPart: false,
+    };
+  }
+
   const fileKind = String(file.file_type ?? "").trim().toLowerCase();
   if (fileKind !== "source_dxf") {
     return {
-      statusLabel: "uploaded",
-      statusClassName: TONE.neutral,
+      statusLabel: legacyValidationStatus === "ok" ? "ok" : "uploaded",
+      statusClassName: legacyValidationStatus === "ok" ? TONE.success : TONE.neutral,
       nextStep: "Available for project workflows.",
       isProjectReady: true,
       isAttention: false,
@@ -304,8 +319,6 @@ export function projectDetailIntakeStatus(file: ProjectFile): ProjectDetailIntak
     };
   }
 
-  const projection = file.latest_part_creation_projection ?? null;
-  const summary = file.latest_preflight_summary ?? null;
   const outcome = String(summary?.acceptance_outcome ?? "").trim().toLowerCase();
   const runStatus = String(summary?.run_status ?? "").trim().toLowerCase();
   const readinessReason = String(projection?.readiness_reason ?? "").trim().toLowerCase();
