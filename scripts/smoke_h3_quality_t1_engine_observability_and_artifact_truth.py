@@ -62,7 +62,8 @@ def _assert_worker_canonical_truth() -> None:
     _assert_contains(worker_text, 'artifact_type="solver_input"', what="worker canonical input registration")
     _assert_contains(worker_text, 'filename="solver_input.json"', what="worker canonical input registration")
     _assert_contains(worker_text, '"legacy_artifact_type": "engine_meta"', what="worker engine meta registration")
-    _assert_contains(worker_text, '"engine_backend": engine_backend', what="worker engine meta payload")
+    # T3: engine_meta is assembled via _build_engine_meta_payload helper
+    _assert_contains(worker_text, '"engine_backend": backend_resolution.effective_engine_backend', what="worker engine meta payload")
     _assert_contains(
         worker_text,
         '"requested_engine_profile": profile_resolution.requested_engine_profile',
@@ -78,6 +79,9 @@ def _assert_worker_canonical_truth() -> None:
         '"nesting_engine_cli_args": list(profile_resolution.nesting_engine_cli_args)',
         what="worker engine meta payload",
     )
+    _assert_contains(worker_text, '"requested_engine_backend": backend_resolution.requested_engine_backend', what="worker engine meta T3 audit fields")
+    _assert_contains(worker_text, '"effective_engine_backend": backend_resolution.effective_engine_backend', what="worker engine meta T3 audit fields")
+    _assert_contains(worker_text, '"backend_resolution_source": backend_resolution.backend_resolution_source', what="worker engine meta T3 audit fields")
 
 
 def _as_dict(model: Any) -> dict[str, Any]:

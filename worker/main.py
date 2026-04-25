@@ -65,9 +65,11 @@ class WorkerLeaseLostError(WorkerError):
 
 logger = logging.getLogger("vrs_worker")
 
+ENGINE_BACKEND_AUTO = "auto"
 ENGINE_BACKEND_SPARROW_V1 = "sparrow_v1"
 ENGINE_BACKEND_NESTING_V2 = "nesting_engine_v2"
-_SUPPORTED_WORKER_ENGINE_BACKENDS = (ENGINE_BACKEND_SPARROW_V1, ENGINE_BACKEND_NESTING_V2)
+_SUPPORTED_WORKER_ENGINE_BACKENDS = (ENGINE_BACKEND_AUTO, ENGINE_BACKEND_SPARROW_V1, ENGINE_BACKEND_NESTING_V2)
+_SUPPORTED_EFFECTIVE_ENGINE_BACKENDS = (ENGINE_BACKEND_SPARROW_V1, ENGINE_BACKEND_NESTING_V2)
 
 
 def _configure_logging() -> None:
@@ -130,6 +132,65 @@ def _resolve_worker_quality_profile_override(raw: str) -> str | None:
         return normalize_quality_profile_name(cleaned, default=DEFAULT_QUALITY_PROFILE)
     except ValueError as exc:
         raise WorkerSettingsError(str(exc)) from exc
+
+
+@dataclass(frozen=True)
+class WorkerEngineBackendResolution:
+    requested_engine_backend: str
+    effective_engine_backend: str
+    backend_resolution_source: str
+    snapshot_engine_backend_hint: str | None
+
+
+def _resolve_effective_engine_backend(
+    *,
+    requested_engine_backend: str,
+    snapshot_row: dict[str, Any],
+) -> WorkerEngineBackendResolution:
+    solver_config_raw = snapshot_row.get("solver_config_jsonb")
+    solver_config = solver_config_raw if isinstance(solver_config_raw, dict) else {}
+    snapshot_hint = str(solver_config.get("engine_backend_hint") or "").strip().lower()
+    hint_for_audit: str | None = snapshot_hint if snapshot_hint else None
+
+    if requested_engine_backend != ENGINE_BACKEND_AUTO:
+        return WorkerEngineBackendResolution(
+            requested_engine_backend=requested_engine_backend,
+            effective_engine_backend=requested_engine_backend,
+            backend_resolution_source="worker_env_explicit",
+            snapshot_engine_backend_hint=hint_for_audit,
+        )
+
+    if snapshot_hint in _SUPPORTED_EFFECTIVE_ENGINE_BACKENDS:
+        return WorkerEngineBackendResolution(
+            requested_engine_backend=requested_engine_backend,
+            effective_engine_backend=snapshot_hint,
+            backend_resolution_source="snapshot_solver_config",
+            snapshot_engine_backend_hint=snapshot_hint,
+        )
+
+    if not snapshot_hint:
+        logger.warning(
+            "event=engine_backend_hint_missing requested=%s fallback=sparrow_v1",
+            requested_engine_backend,
+        )
+        return WorkerEngineBackendResolution(
+            requested_engine_backend=requested_engine_backend,
+            effective_engine_backend=ENGINE_BACKEND_SPARROW_V1,
+            backend_resolution_source="fallback_missing_snapshot_engine_backend_hint",
+            snapshot_engine_backend_hint=None,
+        )
+
+    logger.warning(
+        "event=engine_backend_hint_invalid requested=%s hint=%r fallback=sparrow_v1",
+        requested_engine_backend,
+        snapshot_hint,
+    )
+    return WorkerEngineBackendResolution(
+        requested_engine_backend=requested_engine_backend,
+        effective_engine_backend=ENGINE_BACKEND_SPARROW_V1,
+        backend_resolution_source="fallback_invalid_snapshot_engine_backend_hint",
+        snapshot_engine_backend_hint=snapshot_hint,
+    )
 
 
 def _sql_literal(value: str) -> str:
@@ -217,7 +278,7 @@ def load_settings(*, once: bool, poll_interval_s: float | None = None) -> Worker
     run_root = Path(_resolve_env("WORKER_RUN_ROOT", "runs")).resolve()
     temp_root = Path(_resolve_env("WORKER_TEMP_ROOT", "/tmp/vrs_worker")).resolve()
     engine_backend = _resolve_worker_engine_backend(
-        _resolve_env("WORKER_ENGINE_BACKEND", ENGINE_BACKEND_SPARROW_V1)
+        _resolve_env("WORKER_ENGINE_BACKEND", ENGINE_BACKEND_AUTO)
     )
     quality_profile_override = _resolve_worker_quality_profile_override(
         _resolve_env("WORKER_QUALITY_PROFILE", "")
@@ -1286,6 +1347,60 @@ def _build_solver_runner_invocation(
     raise WorkerError(f"unsupported worker engine backend: {engine_backend}")
 
 
+def _build_engine_meta_payload(
+    *,
+    backend_resolution: WorkerEngineBackendResolution,
+    snapshot_row: dict[str, Any],
+    engine_contract_version: str,
+    profile_resolution: EngineProfileResolution,
+    invocation: SolverRunnerInvocation,
+    solver_input_hash: str,
+) -> dict[str, Any]:
+    solver_config_raw = snapshot_row.get("solver_config_jsonb")
+    solver_config = solver_config_raw if isinstance(solver_config_raw, dict) else {}
+
+    raw_pv_id = solver_config.get("strategy_profile_version_id")
+    strategy_profile_version_id = (str(raw_pv_id).strip() or None) if raw_pv_id is not None else None
+
+    raw_src = solver_config.get("strategy_resolution_source")
+    strategy_resolution_source = (str(raw_src).strip() or None) if raw_src is not None else None
+
+    raw_fs = solver_config.get("strategy_field_sources")
+    strategy_field_sources: dict[str, Any] | None = raw_fs if isinstance(raw_fs, dict) else None
+
+    raw_oa = solver_config.get("strategy_overrides_applied")
+    strategy_overrides_applied: list[Any] | None = raw_oa if isinstance(raw_oa, list) else None
+
+    payload: dict[str, Any] = {
+        "engine_backend": backend_resolution.effective_engine_backend,
+        "engine_contract_version": engine_contract_version,
+        "engine_profile": profile_resolution.requested_engine_profile,
+        "requested_engine_profile": profile_resolution.requested_engine_profile,
+        "effective_engine_profile": profile_resolution.effective_engine_profile,
+        "engine_profile_match": profile_resolution.engine_profile_match,
+        "profile_resolution_source": profile_resolution.profile_resolution_source,
+        "runtime_policy_source": profile_resolution.runtime_policy_source,
+        "profile_effect": profile_resolution.profile_effect,
+        "nesting_engine_runtime_policy": profile_resolution.nesting_engine_runtime_policy,
+        "nesting_engine_cli_args": list(profile_resolution.nesting_engine_cli_args),
+        "solver_runner_module": invocation.solver_runner_module,
+        "solver_input_hash": solver_input_hash,
+        "requested_engine_backend": backend_resolution.requested_engine_backend,
+        "effective_engine_backend": backend_resolution.effective_engine_backend,
+        "backend_resolution_source": backend_resolution.backend_resolution_source,
+        "snapshot_engine_backend_hint": backend_resolution.snapshot_engine_backend_hint,
+    }
+    if strategy_profile_version_id is not None:
+        payload["strategy_profile_version_id"] = strategy_profile_version_id
+    if strategy_resolution_source is not None:
+        payload["strategy_resolution_source"] = strategy_resolution_source
+    if strategy_field_sources is not None:
+        payload["strategy_field_sources"] = strategy_field_sources
+    if strategy_overrides_applied is not None:
+        payload["strategy_overrides_applied"] = strategy_overrides_applied
+    return payload
+
+
 def _sync_run_log_artifact(
     *,
     client: WorkerSupabaseClient,
@@ -1365,7 +1480,11 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         project_id = str(project_manifest.get("project_id") or "").strip()
         if not project_id:
             raise WorkerError(f"run {run_id}: snapshot missing project_id")
-        engine_backend = settings.engine_backend
+        backend_resolution = _resolve_effective_engine_backend(
+            requested_engine_backend=settings.engine_backend,
+            snapshot_row=snapshot_row,
+        )
+        engine_backend = backend_resolution.effective_engine_backend
         profile_resolution = _resolve_engine_profile_resolution(
             snapshot_row=snapshot_row,
             settings=settings,
@@ -1430,21 +1549,14 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             solver_input_payload=solver_input_payload,
             nesting_engine_cli_args=profile_resolution.nesting_engine_cli_args,
         )
-        engine_meta: dict[str, Any] = {
-            "engine_backend": engine_backend,
-            "engine_contract_version": engine_contract_version,
-            "engine_profile": profile_resolution.requested_engine_profile,
-            "requested_engine_profile": profile_resolution.requested_engine_profile,
-            "effective_engine_profile": profile_resolution.effective_engine_profile,
-            "engine_profile_match": profile_resolution.engine_profile_match,
-            "profile_resolution_source": profile_resolution.profile_resolution_source,
-            "runtime_policy_source": profile_resolution.runtime_policy_source,
-            "profile_effect": profile_resolution.profile_effect,
-            "nesting_engine_runtime_policy": profile_resolution.nesting_engine_runtime_policy,
-            "nesting_engine_cli_args": list(profile_resolution.nesting_engine_cli_args),
-            "solver_runner_module": invocation.solver_runner_module,
-            "solver_input_hash": solver_input_hash,
-        }
+        engine_meta = _build_engine_meta_payload(
+            backend_resolution=backend_resolution,
+            snapshot_row=snapshot_row,
+            engine_contract_version=engine_contract_version,
+            profile_resolution=profile_resolution,
+            invocation=invocation,
+            solver_input_hash=solver_input_hash,
+        )
         engine_meta_blob = (
             json.dumps(engine_meta, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
         ).encode("utf-8")

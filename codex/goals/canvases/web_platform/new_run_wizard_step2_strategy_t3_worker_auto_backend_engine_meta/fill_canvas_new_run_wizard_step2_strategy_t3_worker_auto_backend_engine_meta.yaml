@@ -1,0 +1,93 @@
+steps:
+  - name: "Felderites es T3 canvas veglegesites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1 es T2 artefaktokat,
+      valamint a valos T2 utani allapotot ezekben a fajlokban: `worker/main.py`,
+      `api/services/run_strategy_resolution.py`, `api/services/run_creation.py`,
+      `api/services/run_snapshot_builder.py`, `scripts/smoke_new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.py`.
+      Veglegesitsd ezt a canvas-t ugy, hogy a scope kizarolag worker `auto` backend resolution
+      es `engine_meta.json` audit bovites legyen. Ne bovitsd frontend/API contract/DB migration iranyba.
+    outputs:
+      - "canvases/web_platform/new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta/new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.md"
+
+  - name: "Worker backend mode contract bovites"
+    description: >
+      Frissitsd a `worker/main.py` backend konstansait es settings parsing logikajat. Legyen uj
+      `ENGINE_BACKEND_AUTO = "auto"`, a `_SUPPORTED_WORKER_ENGINE_BACKENDS` fogadja az `auto`,
+      `sparrow_v1`, `nesting_engine_v2` ertekeket, es a `WORKER_ENGINE_BACKEND` defaultja legyen
+      `auto`. Az `auto` csak runtime valasztasi mod, runner invocationhoz tovabbra is csak
+      `sparrow_v1` vagy `nesting_engine_v2` juthat el effektív backendkent.
+    outputs:
+      - "worker/main.py"
+
+  - name: "Per-run effective backend resolution helper"
+    description: >
+      Hozz letre izolalt helper logikat a `worker/main.py` fajlban a snapshot-alapu backend
+      feloldashoz. Javasolt dataclass: `WorkerEngineBackendResolution` mezokkel:
+      `requested_engine_backend`, `effective_engine_backend`, `backend_resolution_source`,
+      `snapshot_engine_backend_hint`. Javasolt helper: `_resolve_effective_engine_backend(...)`.
+      `WORKER_ENGINE_BACKEND=auto` eseten olvassa a snapshot `solver_config_jsonb.engine_backend_hint`
+      mezot. Valid hint: `sparrow_v1`, `nesting_engine_v2`. Missing vagy invalid hint eseten fallback
+      legyen `sparrow_v1`, explicit warning loggal. Explicit env backend eseten a snapshot hint ne
+      irja felul az env dontest.
+    outputs:
+      - "worker/main.py"
+
+  - name: "Process run bekotese effektív backendhez"
+    description: >
+      Frissitsd a `process_run(...)` flow-t a `worker/main.py` fajlban. Snapshot fetch utan fusson le
+      a backend resolution. A solver input mapping, `_resolve_engine_profile_resolution(...)` es
+      `_build_solver_runner_invocation(...)` mar az effektív backendet kapja. A `sparrow_v1` ag
+      tovabbra is `build_solver_input_from_snapshot(...)`-ot hasznaljon, a `nesting_engine_v2` ag
+      tovabbra is `build_nesting_engine_input_from_snapshot(...)`-ot hasznaljon. A profile effect
+      viselkedes ne romoljon: `sparrow_v1` -> `noop_non_nesting_backend`, `nesting_engine_v2` ->
+      runtime policy + CLI args alkalmazva.
+    outputs:
+      - "worker/main.py"
+
+  - name: "engine_meta payload bovites"
+    description: >
+      Frissitsd az `engine_meta.json` osszeallitasat a `worker/main.py` fajlban. A kompatibilitas
+      kedveert az `engine_backend` mezo maradjon meg, es az effektív backend erteket kapja. Add hozza:
+      `requested_engine_backend`, `effective_engine_backend`, `backend_resolution_source`,
+      `snapshot_engine_backend_hint`, `strategy_profile_version_id`, `strategy_resolution_source`,
+      `strategy_field_sources`, `strategy_overrides_applied`. A strategy trace mezoket a snapshot
+      `solver_config_jsonb`-bol olvasd ki biztonsagosan. Ha nincs kulon engine_meta builder helper,
+      hozz letre egy izolalt helperfuggvenyt, hogy a smoke process_run nelkul is tudja validalni a
+      payloadot. A refaktor miatt frissitsd a T1 smoke statikus kod-pattern ellenorzeset is.
+    outputs:
+      - "worker/main.py"
+      - "scripts/smoke_h3_quality_t1_engine_observability_and_artifact_truth.py"
+
+  - name: "T3 worker smoke teszt keszitese"
+    description: >
+      Hozd letre a `scripts/smoke_new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.py`
+      smoke scriptet. Ne igenyeljen Supabase-t, storage-ot, solver binarist vagy valos run-t.
+      Tesztelje legalabb: `auto` elfogadasa; explicit env backend override; `auto` + `nesting_engine_v2`
+      hint; `auto` + `sparrow_v1` hint; missing hint fallback; invalid hint fallback; engine_meta
+      requested/effective/source mezok; engine_meta strategy trace mezok; `nesting_engine_v2` ag CLI args;
+      `sparrow_v1` ag noop profile effect. A smoke legyen gyors, determinisztikus es egyertelmu PASS/FAIL
+      kimenetet adjon.
+    outputs:
+      - "scripts/smoke_new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.py"
+
+  - name: "Checklist es report evidence alapon"
+    description: >
+      Hozd letre a task checklistet es reportot. A reportban legyen DoD -> Evidence matrix,
+      kulon jelolve: `auto` settings contract, effective backend resolution, explicit env override,
+      fallback warningok, solver input mapping, engine_meta bovites, strategy trace mezok, T3 smoke
+      eredmeny, es a kovetkezo scope-kent frontend Step2 UI + API client submit flow.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a kotelezo ellenorzeseket: `python3 -m py_compile worker/main.py
+      scripts/smoke_new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.py`, majd
+      `python3 scripts/smoke_new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.py`, vegul
+      `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.md`.
+      A verify log es AUTO_VERIFY blokk keruljon a reportba.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t3_worker_auto_backend_engine_meta.verify.log"
