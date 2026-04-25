@@ -210,7 +210,7 @@ Only do this if no production data in these columns needs to be preserved.
 
 ## 6. Known Limitations
 
-1. **Run Detail polling**: `RunDetailPage` fetches `viewer-data` on every polling cycle (every 3 s while running). After the run reaches a terminal state, subsequent polls are unnecessary for the audit data. A future optimization would fetch viewer-data once on terminal state and skip it on subsequent polls.
+1. **Run Detail polling**: Covered in T8. The `viewer-data` audit fetch is now guarded by a once-only flag (`viewerDataAttemptedRef`) that is set only when the run reaches a terminal status (`done`, `failed`, `cancelled`). The polling timer skips further API refreshes once terminal state is confirmed via `isTerminalRef`, preventing redundant calls. The fetch remains non-fatal: a 404 or network error from `viewer-data` does not set the global error banner.
 
 2. **`strategy_field_sources` UI**: Covered in T7. The Run Detail audit card now renders the field-source breakdown as sorted key/source pairs (e.g. `quality_profile: run_config`). An empty or null `strategy_field_sources` value shows a stable "No field source evidence" fallback.
 

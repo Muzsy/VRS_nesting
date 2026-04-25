@@ -1,0 +1,64 @@
+steps:
+  - name: "Run Detail polling és viewer-data fetch guard"
+    description: >
+      Módosítsd a `frontend/src/pages/RunDetailPage.tsx` fájlt úgy, hogy a Run Detail oldal ne kérje le feltétel nélkül
+      a `viewer-data` audit payloadot minden refresh ciklusban. A `viewer-data` fetch csak terminális run státusznál
+      (`done`, `failed`, `cancelled`) történjen meg, adott `projectId/runId` párosra egyszer. A 404 vagy egyéb viewer-data
+      hiba továbbra is non-fatal legyen, ne állítsa be a globális `error` bannert, és ne okozzon ismételt 3 másodperces
+      hívássorozatot. A timer callback ne kizárólag stale `run` closure alapján döntsön; a frissen lekért státuszt vagy refet
+      használd. `projectId` vagy `runId` váltáskor reseteld az egyszeri viewer-data guardot. A meglévő T5/T6/T7 audit UI
+      (`Strategy and engine audit`, `Strategy field sources`, `No field source evidence`, `Not available yet`) maradjon működőképes.
+    outputs:
+      - "frontend/src/pages/RunDetailPage.tsx"
+
+  - name: "T8 Playwright spec hozzáadása"
+    description: >
+      Hozd létre a T8 E2E specet a meglévő `installMockApi` minták alapján. Az első teszt done run + engine_meta artifact +
+      viewer-data payload mellett számolja a `/viewer-data` GET requesteket, ellenőrizze az audit kártya megjelenését, várjon
+      legalább egy régi polling ciklusnál hosszabb ideig, majd assertálja, hogy a viewer-data request count nem nőtt 1 fölé.
+      A második teszt running run mellett számolja a `/viewer-data` requesteket, várjon egy polling ciklusnál hosszabb ideig,
+      és assertálja, hogy viewer-data hívás nem történt, valamint nincs viewer-data eredetű fatal error banner. A teszt ne
+      függjön valódi backendtől, Supabase-től, workertől vagy solver bináristól.
+    outputs:
+      - "frontend/e2e/new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.spec.ts"
+
+  - name: "Offline T8 smoke script"
+    description: >
+      Hozz létre offline source-level smoke scriptet. Ne importáljon app modult, és ne igényeljen node_modules-t vagy külső
+      szolgáltatást. Ellenőrizze, hogy a RunDetailPage tartalmaz explicit once/attempted guardot a viewer-data fetch körül,
+      terminális státuszra épülő feltételt, nem támaszkodik kizárólag stale `run` closure-re, és megőrizte a T5/T7 audit UI
+      szövegeket. Ellenőrizze, hogy a T8 E2E spec létezik, tartalmazza a done-once és running-no-viewer-data eseteket,
+      a rollout doc már nem nyitott limitationként kezeli a polling problémát, valamint a T8 artefaktok saját alkönyvtárban
+      vannak gyökérszintű duplikált canvas/yaml nélkül. Hiba esetén nem nulla exit code-dal álljon le.
+    outputs:
+      - "scripts/smoke_new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.py"
+
+  - name: "Rollout dokumentum frissítése"
+    description: >
+      Frissítsd a `docs/web_platform/architecture/new_run_wizard_step2_strategy_rollout_and_compatibility_plan.md` dokumentumot.
+      A Run Detail polling optimalizáció ne maradjon nyitott known limitationként. Röviden dokumentáld, hogy T8 után a
+      terminális állapothoz kötött viewer-data audit fetch egyszeri és non-fatal. A valóban megmaradó limitationök, például
+      production E2E real solver/Supabase ellen, Strategy profile CRUD UI, és `choose_profile` edge case-ek, maradhatnak.
+    outputs:
+      - "docs/web_platform/architecture/new_run_wizard_step2_strategy_rollout_and_compatibility_plan.md"
+
+  - name: "Checklist és report evidence alapon"
+    description: >
+      Hozd létre a T8 checklistet és reportot. A report a `docs/codex/report_standard.md` szerint készüljön, DoD → Evidence
+      matrixszal. PASS csak tényleges bizonyíték alapján szerepelhet. Dokumentáld a célzott T8 smoke eredményét, a frontend
+      build és T5/T6/T7/T8 Playwright eredményét, vagy pontosan jelöld BLOCKED-ként, ha a dependency környezet miatt nem
+      futtatható. A report tartalmazzon AUTO_VERIFY blokkot, amelyet a verify wrapper frissít.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a célzott és standard ellenőrzéseket. Minimum: `python3 scripts/smoke_new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.py`.
+      Ha a frontend dependency környezet rendelkezésre áll, futtasd: `npm --prefix frontend run build`, majd
+      `node frontend/node_modules/@playwright/test/cli.js test --config=frontend/playwright.config.ts frontend/e2e/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.spec.ts frontend/e2e/new_run_wizard_step2_strategy_t6_full_chain_closure.spec.ts frontend/e2e/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.spec.ts frontend/e2e/new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.spec.ts`.
+      Végül kötelezően futtasd: `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.md`.
+      A verify log kerüljön a report mellé. Sikertelen gate esetén ne rejtsd el a hibát: a report legyen FAIL vagy BLOCKED pontos okkal.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t8_run_detail_polling_optimization.verify.log"

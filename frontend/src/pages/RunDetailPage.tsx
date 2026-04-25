@@ -45,6 +45,9 @@ export function RunDetailPage() {
   const [cancelling, setCancelling] = useState(false);
 
   const nextOffsetRef = useRef(0);
+  // Guards reset on projectId/runId change via useEffect
+  const viewerDataAttemptedRef = useRef(false);
+  const isTerminalRef = useRef(false);
 
   async function refreshRunData(includeLogs: boolean) {
     if (!projectId || !runId) {
@@ -57,8 +60,13 @@ export function RunDetailPage() {
       setRun(runResponse);
       setArtifacts(artifactResponse.items);
 
-      const shouldPollLog = includeLogs && (runResponse.status === "running" || runResponse.status === "queued");
-      if (shouldPollLog) {
+      const runIsTerminal = TERMINAL_STATUSES.has(runResponse.status);
+      if (runIsTerminal) {
+        isTerminalRef.current = true;
+      }
+
+      const shouldFetchLog = includeLogs && (runResponse.status === "running" || runResponse.status === "queued");
+      if (shouldFetchLog) {
         const logResponse = await api.getRunLog(token, projectId, runId, nextOffsetRef.current, 120);
         if (logResponse.lines.length > 0) {
           setLogLines((prev) => [...prev, ...logResponse.lines]);
@@ -66,11 +74,15 @@ export function RunDetailPage() {
         nextOffsetRef.current = logResponse.next_offset;
       }
 
-      try {
-        const vd = await api.getViewerData(token, projectId, runId);
-        setViewerData(vd);
-      } catch {
-        // viewer-data is non-fatal; audit card shows fallback
+      // viewer-data: only once, only when terminal, non-fatal
+      if (runIsTerminal && !viewerDataAttemptedRef.current) {
+        viewerDataAttemptedRef.current = true;
+        try {
+          const vd = await api.getViewerData(token, projectId, runId);
+          setViewerData(vd);
+        } catch {
+          // viewer-data is non-fatal; audit card shows fallback
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run data refresh failed.");
@@ -86,7 +98,10 @@ export function RunDetailPage() {
     setLoading(true);
     setError("");
     setLogLines([]);
+    setViewerData(null);
     nextOffsetRef.current = 0;
+    viewerDataAttemptedRef.current = false;
+    isTerminalRef.current = false;
 
     const runOnce = async () => {
       await refreshRunData(true);
@@ -98,11 +113,10 @@ export function RunDetailPage() {
     void runOnce();
 
     const timer = window.setInterval(() => {
-      if (cancelled) {
+      if (cancelled || isTerminalRef.current) {
         return;
       }
-      const shouldPoll = !run || !TERMINAL_STATUSES.has(run.status);
-      void refreshRunData(shouldPoll);
+      void refreshRunData(true);
     }, 3000);
 
     return () => {
