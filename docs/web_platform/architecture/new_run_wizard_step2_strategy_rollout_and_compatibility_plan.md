@@ -212,7 +212,7 @@ Only do this if no production data in these columns needs to be preserved.
 
 1. **Run Detail polling**: `RunDetailPage` fetches `viewer-data` on every polling cycle (every 3 s while running). After the run reaches a terminal state, subsequent polls are unnecessary for the audit data. A future optimization would fetch viewer-data once on terminal state and skip it on subsequent polls.
 
-2. **`strategy_field_sources` UI**: The `strategy_field_sources` dict is tracked in the backend, the frontend type, and the mock API, but is not yet rendered in the Run Detail audit card. A future T6/polish task can add a collapsible "Field sources" section.
+2. **`strategy_field_sources` UI**: Covered in T7. The Run Detail audit card now renders the field-source breakdown as sorted key/source pairs (e.g. `quality_profile: run_config`). An empty or null `strategy_field_sources` value shows a stable "No field source evidence" fallback.
 
 3. **Production E2E with real solver**: The T4/T5/T6 Playwright specs use mock APIs. End-to-end validation against a real solver binary and Supabase instance is not covered by this task and requires a separate infra-smoke pipeline.
 

@@ -1,0 +1,62 @@
+steps:
+  - name: "Run Detail field-source UI renderelés"
+    description: >
+      Módosítsd a `frontend/src/pages/RunDetailPage.tsx` fájlt úgy, hogy a meglévő `Strategy and engine audit`
+      kártya a `viewerData.strategy_field_sources` tartalmát is megjelenítse. A kulcsokat determinisztikusan,
+      név szerint rendezve rendereld. Látszódjon a `Strategy field sources` címke, valamint minden field/source pár,
+      például `quality_profile: run_config`. Ha a mező null, undefined vagy üres objektum, jelenjen meg stabil
+      fallback (`No field source evidence` vagy `-`). A meglévő `Not available yet` fallback és az összes T5/T6 auditmező
+      maradjon változatlanul működőképes.
+    outputs:
+      - "frontend/src/pages/RunDetailPage.tsx"
+
+  - name: "T7 Playwright spec hozzáadása"
+    description: >
+      Hozd létre a T7 E2E specet a meglévő `installMockApi` minták alapján. Az első teszt done run + engine_meta artifact +
+      viewer-data payload mellett ellenőrizze, hogy a `Strategy field sources` rész megjeleníti a `quality_profile`,
+      `engine_backend_hint`, `nesting_engine_runtime_policy` mezőket és a hozzájuk tartozó `run_config`, `request`,
+      `global_default` forrásokat. A második teszt null vagy üres `strategy_field_sources` mellett ellenőrizze a stabil fallbacket.
+      A teszt ne függjön valódi backendtől, Supabase-től, workertől vagy solver bináristól.
+    outputs:
+      - "frontend/e2e/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.spec.ts"
+
+  - name: "Offline T7 smoke script"
+    description: >
+      Hozz létre offline source-level smoke scriptet. Ne importáljon app modult, és ne igényeljen node_modules-t vagy külső
+      szolgáltatást. Ellenőrizze, hogy a RunDetailPage használja a `strategy_field_sources` mezőt, tartalmazza a
+      `Strategy field sources` szöveget és fallbacket, a frontend típus és mock API tartalmazza a mezőt, a T7 E2E spec létezik
+      és tartalmazza a kötelező field/source értékeket, a rollout doc már nem állítja known limitationként a field-source UI
+      hiányát, valamint a T7 artefaktok saját alkönyvtárban vannak gyökérszintű duplikált canvas/yaml nélkül. A script passed/failed
+      összesítést írjon, és hiba esetén nem nulla exit code-dal álljon le.
+    outputs:
+      - "scripts/smoke_new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.py"
+
+  - name: "Rollout dokumentum frissítése"
+    description: >
+      Frissítsd a `docs/web_platform/architecture/new_run_wizard_step2_strategy_rollout_and_compatibility_plan.md` dokumentumot.
+      A `strategy_field_sources` UI-renderelés ne maradjon nyitott known limitationként. Röviden dokumentáld, hogy a Run Detail
+      audit kártya megjeleníti a field-source breakdown-t. A valóban megmaradó limitationök, például production E2E real solver/Supabase
+      ellen, strategy profile CRUD UI, és esetleges polling optimalizáció, maradhatnak.
+    outputs:
+      - "docs/web_platform/architecture/new_run_wizard_step2_strategy_rollout_and_compatibility_plan.md"
+
+  - name: "Checklist és report evidence alapon"
+    description: >
+      Hozd létre a T7 checklistet és reportot. A report a `docs/codex/report_standard.md` szerint készüljön, DoD → Evidence
+      matrixszal. A reportban PASS csak tényleges bizonyíték alapján szerepelhet. Dokumentáld a célzott T7 smoke eredményét,
+      a frontend build és T5/T6/T7 Playwright eredményét, vagy pontosan jelöld BLOCKED-ként, ha a dependency környezet miatt nem
+      futtatható. A report tartalmazzon AUTO_VERIFY blokkot, amelyet a verify wrapper frissít.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a célzott és standard ellenőrzéseket. Minimum: `python3 scripts/smoke_new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.py`.
+      Ha a frontend dependency környezet rendelkezésre áll, futtasd: `npm --prefix frontend run build`, majd
+      `node frontend/node_modules/@playwright/test/cli.js test --config=frontend/playwright.config.ts frontend/e2e/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.spec.ts frontend/e2e/new_run_wizard_step2_strategy_t6_full_chain_closure.spec.ts frontend/e2e/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.spec.ts`.
+      Végül kötelezően futtasd: `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.md`.
+      A verify log kerüljön a report mellé. Sikertelen gate esetén ne rejtsd el a hibát: a report legyen FAIL vagy BLOCKED pontos okkal.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t7_strategy_field_sources_polish.verify.log"

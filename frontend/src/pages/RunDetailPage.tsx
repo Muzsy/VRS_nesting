@@ -359,6 +359,24 @@ export function RunDetailPage() {
                   : "Not found in artifacts"}
               </dd>
             </div>
+            <div className="md:col-span-2">
+              <dt className="text-slate">Strategy field sources</dt>
+              <dd className="mt-1 font-medium text-ink">
+                {viewerData.strategy_field_sources && Object.keys(viewerData.strategy_field_sources).length > 0 ? (
+                  <ul className="space-y-0.5">
+                    {Object.keys(viewerData.strategy_field_sources)
+                      .sort()
+                      .map((field) => (
+                        <li key={field} className="font-mono text-xs">
+                          {field}: {(viewerData.strategy_field_sources as Record<string, string>)[field]}
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  "No field source evidence"
+                )}
+              </dd>
+            </div>
           </dl>
         )}
       </article>
