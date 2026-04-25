@@ -8,6 +8,7 @@
 - [x] `selectedParts` es `wizardRevisionIds` sync project-ready file korre szukult
 - [x] Blocked/empty UX copy + DXF Intake CTA megjelenik, ha nincs project-ready part
 - [x] Elkeszult az E6-T2 Playwright regresszio spec (`frontend/e2e/dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.spec.ts`)
+- [x] E6-T2 regresszio explicit lefedi a `rejected + existing_part_revision_id` (stale linkage) esetet (`Kor_D120-BodyPad.dxf`)
 - [x] Elkeszult az offline smoke (`scripts/smoke_dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.py`)
 - [x] `python3 scripts/smoke_dxf_prefilter_e6_t2_new_run_wizard_project_ready_file_filtering.py` lefutott
 - [x] `npm --prefix frontend run build` lefutott

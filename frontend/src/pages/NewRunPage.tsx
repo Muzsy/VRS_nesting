@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { projectDetailIntakeStatus } from "../lib/dxfIntakePresentation";
 import { getAccessToken } from "../lib/supabase";
 import type {
   EngineBackendHint,
@@ -66,7 +67,13 @@ const NON_ELIGIBLE_READINESS_REASONS = new Set([
 ]);
 
 function resolveAcceptanceOutcome(file: ProjectFile): string {
-  return String(file.latest_part_creation_projection?.acceptance_outcome ?? file.latest_preflight_summary?.acceptance_outcome ?? "")
+  return String(file.latest_part_creation_projection?.acceptance_outcome ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolvePreflightAcceptanceOutcome(file: ProjectFile): string {
+  return String(file.latest_preflight_summary?.acceptance_outcome ?? "")
     .trim()
     .toLowerCase();
 }
@@ -77,6 +84,10 @@ function resolveReadinessReason(file: ProjectFile): string {
     .toLowerCase();
 }
 
+function hasAcceptedPreflight(file: ProjectFile): boolean {
+  return resolvePreflightAcceptanceOutcome(file) === "accepted_for_import";
+}
+
 function hasLinkedPartRevision(file: ProjectFile): boolean {
   return resolveExistingPartRevisionId(file) !== null;
 }
@@ -85,28 +96,37 @@ function isProjectReadyPartFile(file: ProjectFile): boolean {
   if (!isDxfSourceFile(file)) {
     return false;
   }
+  if (!hasAcceptedPreflight(file)) {
+    return false;
+  }
   if (!file.latest_part_creation_projection || !hasLinkedPartRevision(file)) {
     return false;
   }
 
-  const readinessReason = resolveReadinessReason(file);
-  if (NON_ELIGIBLE_READINESS_REASONS.has(readinessReason)) {
+  const intakeStatus = projectDetailIntakeStatus(file);
+  if (!intakeStatus.isProjectReady || !intakeStatus.isLinkedPart) {
     return false;
   }
 
-  if (readinessReason === "accepted_existing_part" || readinessReason === "ready") {
-    return true;
-  }
-
-  return resolveAcceptanceOutcome(file) === "accepted_for_import";
+  const readinessReason = resolveReadinessReason(file);
+  return readinessReason === "accepted_existing_part";
 }
 
 function isRunUsableStockFile(file: ProjectFile): boolean {
   if (!isDxfSourceFile(file)) {
     return false;
   }
+  if (!hasAcceptedPreflight(file)) {
+    return false;
+  }
+
   const projection = file.latest_part_creation_projection;
   if (!projection) {
+    return false;
+  }
+
+  const intakeStatus = projectDetailIntakeStatus(file);
+  if (!intakeStatus.isProjectReady) {
     return false;
   }
 
@@ -115,21 +135,13 @@ function isRunUsableStockFile(file: ProjectFile): boolean {
     return false;
   }
 
-  const acceptanceOutcome = resolveAcceptanceOutcome(file);
-  if (acceptanceOutcome === "preflight_rejected" || acceptanceOutcome === "preflight_review_required") {
+  const projectionOutcome = resolveAcceptanceOutcome(file);
+  if (projectionOutcome === "preflight_rejected" || projectionOutcome === "preflight_review_required") {
     return false;
-  }
-
-  if (!file.latest_preflight_summary && !hasLinkedPartRevision(file)) {
-    return false;
-  }
-
-  if (hasLinkedPartRevision(file)) {
-    return true;
   }
 
   const geometryRevisionId = String(projection.geometry_revision_id ?? "").trim();
-  return acceptanceOutcome === "accepted_for_import" && geometryRevisionId.length > 0;
+  return hasLinkedPartRevision(file) || geometryRevisionId.length > 0;
 }
 
 function resolvePartRevisionIdForFile(

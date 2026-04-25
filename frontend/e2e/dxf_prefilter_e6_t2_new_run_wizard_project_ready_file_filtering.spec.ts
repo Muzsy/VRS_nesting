@@ -149,6 +149,30 @@ test.describe("DXF Prefilter E6-T2 - New Run Wizard project-ready filtering", ()
         },
       },
       {
+        id: "f-rejected-stale-linkage-1",
+        project_id: "p-e6-t2",
+        uploaded_by: "e2e-user",
+        file_type: "source_dxf",
+        original_filename: "Kor_D120-BodyPad.dxf",
+        storage_key: "users/e2e-user/projects/p-e6-t2/files/f-rejected-stale-linkage-1/Kor_D120-BodyPad.dxf",
+        validation_status: "ok",
+        validation_error: null,
+        uploaded_at: "2026-04-26T09:02:30Z",
+        latest_preflight_summary: rejectedSummary("pf-rej-stale-1"),
+        latest_part_creation_projection: {
+          acceptance_outcome: "accepted_for_import",
+          part_creation_ready: false,
+          has_nesting_derivative: true,
+          readiness_reason: "accepted_existing_part",
+          suggested_code: "KOR_D120_BODYPAD",
+          suggested_name: "Kor D120 BodyPad",
+          source_label: "Kor_D120-BodyPad.dxf",
+          existing_part_definition_id: "part-def-stale-1",
+          existing_part_revision_id: "part-rev-stale-1",
+          existing_part_code: "PART-STALE-001",
+        },
+      },
+      {
         id: "f-review-1",
         project_id: "p-e6-t2",
         uploaded_by: "e2e-user",
@@ -200,6 +224,7 @@ test.describe("DXF Prefilter E6-T2 - New Run Wizard project-ready filtering", ()
     await expect(stockSelect.locator("option", { hasText: "source_linked_01.dxf" })).toHaveCount(1);
     await expect(stockSelect.locator("option", { hasText: "source_linked_02.dxf" })).toHaveCount(1);
     await expect(stockSelect.locator("option", { hasText: "source_rejected_01.dxf" })).toHaveCount(0);
+    await expect(stockSelect.locator("option", { hasText: "Kor_D120-BodyPad.dxf" })).toHaveCount(0);
     await expect(stockSelect.locator("option", { hasText: "source_review_01.dxf" })).toHaveCount(0);
     await expect(stockSelect.locator("option", { hasText: "source_pending_01.dxf" })).toHaveCount(0);
 
@@ -207,6 +232,7 @@ test.describe("DXF Prefilter E6-T2 - New Run Wizard project-ready filtering", ()
     await expect(page.locator("span", { hasText: "source_linked_02.dxf" })).toBeVisible();
     await expect(page.locator('input[type="checkbox"]')).toHaveCount(2);
     await expect(page.locator("span", { hasText: "source_rejected_01.dxf" })).toHaveCount(0);
+    await expect(page.locator("span", { hasText: "Kor_D120-BodyPad.dxf" })).toHaveCount(0);
     await expect(page.locator("span", { hasText: "source_review_01.dxf" })).toHaveCount(0);
     await expect(page.locator("span", { hasText: "source_pending_01.dxf" })).toHaveCount(0);
 

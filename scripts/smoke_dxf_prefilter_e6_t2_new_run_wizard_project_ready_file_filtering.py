@@ -50,10 +50,14 @@ def main() -> None:
         [
             "include_preflight_summary: true",
             "include_part_creation_projection: true",
+            "function resolvePreflightAcceptanceOutcome(file: ProjectFile): string",
+            "function hasAcceptedPreflight(file: ProjectFile): boolean",
             "function hasLinkedPartRevision(file: ProjectFile): boolean",
             "function isProjectReadyPartFile(file: ProjectFile): boolean",
             "function isRunUsableStockFile(file: ProjectFile): boolean",
             "resolveExistingPartRevisionId(file) !== null",
+            'resolvePreflightAcceptanceOutcome(file) === "accepted_for_import"',
+            "projectDetailIntakeStatus(file)",
             "projectReadyPartFiles",
             "eligibleStockFiles",
             "No project-ready parts yet. Open DXF Intake / Project Preparation and create parts first.",
@@ -66,6 +70,7 @@ def main() -> None:
         [
             "fileResponse.items.find((file) => isDxfSourceFile(file)) ?? fileResponse.items[0] ?? null",
             "files.filter((file) => isDxfSourceFile(file))",
+            "if (hasLinkedPartRevision(file)) {\n    return true;\n  }",
         ],
         label="legacy-step1-controls",
     )
@@ -76,6 +81,7 @@ def main() -> None:
         e2e_src,
         [
             "source_rejected_01.dxf",
+            "Kor_D120-BodyPad.dxf",
             "source_review_01.dxf",
             "source_pending_01.dxf",
             "toHaveCount(0)",
