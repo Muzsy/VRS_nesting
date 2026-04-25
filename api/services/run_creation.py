@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from api.services.run_snapshot_builder import RunSnapshotBuilderError, build_run_snapshot_payload
+from api.services.run_strategy_resolution import (
+    ResolvedRunStrategy,
+    RunStrategyResolutionError,
+    resolve_run_strategy,
+)
 from api.supabase_client import SupabaseClient, SupabaseHTTPError
 
 
@@ -168,11 +173,7 @@ def _insert_run(
     idempotency_key: str | None,
     snapshot_hash_sha256: str,
     run_config_id: str | None,
-    run_strategy_profile_version_id: str | None,
-    quality_profile: str | None,
-    engine_backend_hint: str | None,
-    has_nesting_engine_runtime_policy: bool,
-    sa_eval_budget_sec: int | None,
+    resolved_strategy: ResolvedRunStrategy,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "project_id": project_id,
@@ -184,11 +185,15 @@ def _insert_run(
             "source": "h1_e4_t2_run_creation",
             "snapshot_hash_sha256": snapshot_hash_sha256,
             "run_config_id": run_config_id,
-            "run_strategy_profile_version_id": run_strategy_profile_version_id,
-            "quality_profile": quality_profile,
-            "engine_backend_hint": engine_backend_hint,
-            "has_nesting_engine_runtime_policy": has_nesting_engine_runtime_policy,
-            "sa_eval_budget_sec": sa_eval_budget_sec,
+            "run_strategy_profile_version_id": resolved_strategy.strategy_profile_version_id,
+            "quality_profile": resolved_strategy.quality_profile,
+            "engine_backend_hint": resolved_strategy.engine_backend_hint,
+            "has_nesting_engine_runtime_policy": True,
+            "sa_eval_budget_sec": resolved_strategy.sa_eval_budget_sec,
+            "strategy_resolution_source": resolved_strategy.strategy_resolution_source,
+            "effective_strategy_profile_version_id": resolved_strategy.strategy_profile_version_id,
+            "strategy_field_sources": resolved_strategy.field_sources,
+            "strategy_overrides_applied": resolved_strategy.overrides_applied,
         },
         "queued_at": _now_iso(),
     }
@@ -301,14 +306,21 @@ def create_queued_run_from_project_snapshot(
             raise RunCreationError(status_code=400, detail="invalid nesting_engine_runtime_policy")
         runtime_policy_clean = dict(nesting_engine_runtime_policy)
 
-    if run_config_id_clean is not None:
-        _load_run_config_for_owner(
+    try:
+        resolved_strategy = resolve_run_strategy(
             supabase=supabase,
             access_token=access_token,
             owner_user_id=owner_user_id,
             project_id=project_id,
             run_config_id=run_config_id_clean,
+            request_run_strategy_profile_version_id=run_strategy_profile_version_id_clean,
+            request_quality_profile=quality_profile_clean,
+            request_engine_backend_hint=engine_backend_hint_clean,
+            request_nesting_engine_runtime_policy=runtime_policy_clean,
+            request_sa_eval_budget_sec=sa_eval_budget_sec,
         )
+    except RunStrategyResolutionError as exc:
+        raise RunCreationError(status_code=exc.status_code, detail=exc.detail) from exc
 
     try:
         snapshot_payload = build_run_snapshot_payload(
@@ -316,11 +328,15 @@ def create_queued_run_from_project_snapshot(
             access_token=access_token,
             owner_user_id=owner_user_id,
             project_id=project_id,
-            quality_profile=quality_profile_clean,
-            engine_backend_hint=engine_backend_hint_clean,
-            nesting_engine_runtime_policy=runtime_policy_clean,
+            quality_profile=resolved_strategy.quality_profile,
+            engine_backend_hint=resolved_strategy.engine_backend_hint,
+            nesting_engine_runtime_policy=resolved_strategy.nesting_engine_runtime_policy,
             time_limit_s=time_limit_s,
-            sa_eval_budget_sec=sa_eval_budget_sec,
+            sa_eval_budget_sec=resolved_strategy.sa_eval_budget_sec,
+            strategy_profile_version_id=resolved_strategy.strategy_profile_version_id,
+            strategy_resolution_source=resolved_strategy.strategy_resolution_source,
+            strategy_field_sources=resolved_strategy.field_sources,
+            strategy_overrides_applied=resolved_strategy.overrides_applied,
         )
     except RunSnapshotBuilderError as exc:
         raise RunCreationError(status_code=exc.status_code, detail=exc.detail) from exc
@@ -417,11 +433,7 @@ def create_queued_run_from_project_snapshot(
             idempotency_key=idempotency_key_clean,
             snapshot_hash_sha256=snapshot_hash,
             run_config_id=run_config_id_clean,
-            run_strategy_profile_version_id=run_strategy_profile_version_id_clean,
-            quality_profile=quality_profile_clean,
-            engine_backend_hint=engine_backend_hint_clean,
-            has_nesting_engine_runtime_policy=runtime_policy_clean is not None,
-            sa_eval_budget_sec=sa_eval_budget_sec,
+            resolved_strategy=resolved_strategy,
         )
     except SupabaseHTTPError as exc:
         if idempotency_key_clean is not None and _is_duplicate_error(exc, constraint_hint="uq_nesting_runs_project_idempotency_key"):

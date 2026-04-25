@@ -1,0 +1,83 @@
+steps:
+  - name: "Felderites es T2 canvas veglegesites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1 artefaktokat,
+      valamint a valos T1 utan allapotot a kovetkezo fajlokban: `api/routes/run_configs.py`,
+      `api/routes/runs.py`, `api/services/run_creation.py`, `api/services/run_snapshot_builder.py`,
+      `api/services/project_strategy_scoring_selection.py`, `vrs_nesting/config/nesting_quality_profiles.py`,
+      `supabase/migrations/20260425110000_new_run_wizard_step2_strategy_t1_runconfig_contract.sql`.
+      Veglegesitsd ezt a canvas-t ugy, hogy a scope kizarolag T2 resolver + snapshot precedence legyen.
+      Ne bovitsd frontend/worker iranyba.
+    outputs:
+      - "canvases/web_platform/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.md"
+      - "codex/goals/canvases/web_platform/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence/fill_canvas_new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.yaml"
+
+  - name: "Run strategy resolver service letrehozasa"
+    description: >
+      Hozd letre az `api/services/run_strategy_resolution.py` service-t. A service legyen route-fuggetlen,
+      Supabase clienttel dolgozzon, es adjon egy `resolve_run_strategy(...)` publikus fuggvenyt.
+      Implementalja a request > run_config > project selection > global default precedence sorrendet.
+      Toltse be owner scope-pal a run_configot, a project strategy selectiont es a strategy profile versiont.
+      Normalizalja a quality profile nevet, validalja/kompaktalja a runtime policyt, validalja az
+      `engine_backend_hint` mezot (`sparrow_v1`, `nesting_engine_v2`), es adjon vissza audit trace-t:
+      `strategy_resolution_source`, `effective_strategy_profile_version_id`, `field_sources`,
+      `overrides_applied`, `trace_jsonb`. Ne importaljon FastAPI route modelleket.
+    outputs:
+      - "api/services/run_strategy_resolution.py"
+
+  - name: "Run creation bekotese a resolverhez"
+    description: >
+      Frissitsd az `api/services/run_creation.py` fajlt ugy, hogy a snapshot builder elott a
+      `resolve_run_strategy(...)` service-t hivja. A T1-ben kapott request mezok es `run_config_id`
+      nyers tovabbitasa helyett a resolver eredmenyet adja at a snapshot buildernek. A run
+      `request_payload_jsonb` tartalmazza a resolution summary mezoket:
+      `strategy_resolution_source`, `effective_strategy_profile_version_id`, `strategy_field_sources`,
+      `strategy_overrides_applied`. A meglovo `run_config_id` scope validation maradjon meg vagy legyen
+      konszolidalva a resolverrel ugy, hogy a hibak tovabbra is determinisztikusak maradjanak.
+    outputs:
+      - "api/services/run_creation.py"
+
+  - name: "Snapshot builder strategy trace bovites"
+    description: >
+      Frissitsd az `api/services/run_snapshot_builder.py` fajlt. A `build_run_snapshot_payload(...)`
+      fogadjon optional resolver trace mezoket: `strategy_profile_version_id`,
+      `strategy_resolution_source`, `strategy_field_sources`, `strategy_overrides_applied`.
+      A `solver_config_jsonb` tartalmazza ezeket az audit mezoket a mar meglevo
+      `quality_profile`, `engine_backend_hint`, `nesting_engine_runtime_policy` mellett.
+      Regi hivasoknal maradjon kompatibilis default viselkedes.
+    outputs:
+      - "api/services/run_snapshot_builder.py"
+
+  - name: "T2 smoke precedence teszt keszitese"
+    description: >
+      Hozd letre a `scripts/smoke_new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.py`
+      smoke scriptet. Fake Supabase clienttel, valodi DB/worker/solver nelkul bizonyitsa legalabb:
+      default-only resolution; project selection fallback; run_config profile precedence a project selection
+      felett; run_config solver override precedence a profile solver config felett; explicit request override
+      precedence minden forras felett; snapshot `solver_config_jsonb` trace mezok; run `request_payload_jsonb`
+      resolution summary; idegen owner strategy version elutasitas; invalid runtime policy elutasitas.
+      A script legyen gyors, determinisztikus, es egyertelmu PASS/FAIL kimenetet adjon.
+    outputs:
+      - "scripts/smoke_new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.py"
+
+  - name: "Checklist es report evidence alapon"
+    description: >
+      Hozd letre/frissitsd a task checklistet es reportot. A reportban legyen DoD -> Evidence matrix,
+      kulon jelolve: resolver service, precedence sorrend, run_config tartalmi feloldas, project selection
+      fallback, snapshot trace mezok, request_payload summary, smoke eredmeny, es a kovetkezo scope-ok:
+      worker auto backend, engine_meta bovites, frontend Step2 UI.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a kotelezo ellenorzeseket: `python3 -m py_compile api/services/run_strategy_resolution.py
+      api/services/run_creation.py api/services/run_snapshot_builder.py
+      scripts/smoke_new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.py`, majd
+      `python3 scripts/smoke_new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.py`, vegul
+      `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.md`.
+      A verify log es AUTO_VERIFY blokk keruljon a reportba.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t2_resolution_snapshot_precedence.verify.log"

@@ -697,6 +697,10 @@ def build_run_snapshot_payload(
     nesting_engine_runtime_policy: dict[str, Any] | None = None,
     time_limit_s: int | None = None,
     sa_eval_budget_sec: int | None = None,
+    strategy_profile_version_id: str | None = None,
+    strategy_resolution_source: str | None = None,
+    strategy_field_sources: dict[str, str] | None = None,
+    strategy_overrides_applied: list[str] | None = None,
 ) -> dict[str, Any]:
     project_id_clean = _sanitize_required(project_id, field="project_id")
 
@@ -800,6 +804,10 @@ def build_run_snapshot_payload(
         "nesting_engine_runtime_policy": nesting_runtime_policy,
         "snapshot_mode": "h1_minimum_builder",
         **({"sa_eval_budget_sec": sa_eval_budget_sec} if sa_eval_budget_sec is not None and sa_eval_budget_sec > 0 else {}),
+        **({"strategy_profile_version_id": strategy_profile_version_id} if strategy_profile_version_id is not None else {}),
+        **({"strategy_resolution_source": strategy_resolution_source} if strategy_resolution_source is not None else {}),
+        **({"strategy_field_sources": strategy_field_sources} if strategy_field_sources is not None else {}),
+        **({"strategy_overrides_applied": strategy_overrides_applied} if strategy_overrides_applied is not None else {}),
     }
 
     manufacturing_manifest_jsonb, includes_manufacturing = _build_manufacturing_manifest(
