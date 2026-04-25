@@ -163,6 +163,14 @@ class ViewerDataResponse(BaseModel):
     input_artifact_source: str | None = None
     output_artifact_filename: str | None = None
     output_artifact_kind: str | None = None
+    requested_engine_backend: str | None = None
+    effective_engine_backend: str | None = None
+    backend_resolution_source: str | None = None
+    snapshot_engine_backend_hint: str | None = None
+    strategy_profile_version_id: str | None = None
+    strategy_resolution_source: str | None = None
+    strategy_field_sources: dict[str, Any] | None = None
+    strategy_overrides_applied: list[str] | None = None
 
 
 _TERMINAL_STATES = {"done", "failed", "cancelled"}
@@ -1475,6 +1483,23 @@ def get_viewer_data(
     computed_sheet_count = len(sheets)
     sheet_count = max(reported_sheet_count, computed_sheet_count)
 
+    _eff = str(engine_meta_payload.get("effective_engine_backend") or "").strip()
+    if not _eff:
+        _eff = str(engine_meta_payload.get("engine_backend") or "").strip()
+
+    _strategy_field_sources = engine_meta_payload.get("strategy_field_sources")
+    _strategy_overrides_applied_raw = engine_meta_payload.get("strategy_overrides_applied")
+    if isinstance(_strategy_field_sources, dict):
+        _sfs: dict[str, Any] | None = {str(k): v for k, v in _strategy_field_sources.items()}
+    else:
+        _sfs = None
+    if isinstance(_strategy_overrides_applied_raw, list):
+        _soa: list[str] | None = [str(x) for x in _strategy_overrides_applied_raw]
+    elif isinstance(_strategy_overrides_applied_raw, str):
+        _soa = [_strategy_overrides_applied_raw]
+    else:
+        _soa = None
+
     return ViewerDataResponse(
         run_id=str(run_id),
         status=str(run_row.get("status", "")),
@@ -1488,6 +1513,14 @@ def get_viewer_data(
         input_artifact_source=input_artifact_source,
         output_artifact_filename=output_artifact_filename,
         output_artifact_kind=output_artifact_kind,
+        requested_engine_backend=str(engine_meta_payload.get("requested_engine_backend") or "").strip() or None,
+        effective_engine_backend=_eff or None,
+        backend_resolution_source=str(engine_meta_payload.get("backend_resolution_source") or "").strip() or None,
+        snapshot_engine_backend_hint=str(engine_meta_payload.get("snapshot_engine_backend_hint") or "").strip() or None,
+        strategy_profile_version_id=str(engine_meta_payload.get("strategy_profile_version_id") or "").strip() or None,
+        strategy_resolution_source=str(engine_meta_payload.get("strategy_resolution_source") or "").strip() or None,
+        strategy_field_sources=_sfs,
+        strategy_overrides_applied=_soa,
     )
 
 

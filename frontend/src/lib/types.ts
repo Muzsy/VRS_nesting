@@ -326,6 +326,20 @@ export interface ViewerDataResponse {
   sheets: ViewerSheet[];
   placements: ViewerPlacement[];
   unplaced: ViewerUnplaced[];
+  engine_backend?: string | null;
+  engine_contract_version?: string | null;
+  engine_profile?: string | null;
+  input_artifact_source?: string | null;
+  output_artifact_filename?: string | null;
+  output_artifact_kind?: string | null;
+  requested_engine_backend?: string | null;
+  effective_engine_backend?: string | null;
+  backend_resolution_source?: string | null;
+  snapshot_engine_backend_hint?: string | null;
+  strategy_profile_version_id?: string | null;
+  strategy_resolution_source?: string | null;
+  strategy_field_sources?: Record<string, string> | null;
+  strategy_overrides_applied?: string[] | null;
 }
 
 export interface BundleResponse {

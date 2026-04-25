@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { getAccessToken } from "../lib/supabase";
-import type { Run, RunArtifact, RunLogLine } from "../lib/types";
+import type { Run, RunArtifact, RunLogLine, ViewerDataResponse } from "../lib/types";
 
 const TERMINAL_STATUSES = new Set(["done", "failed", "cancelled"]);
 
@@ -37,6 +37,7 @@ export function RunDetailPage() {
   const [run, setRun] = useState<Run | null>(null);
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [logLines, setLogLines] = useState<RunLogLine[]>([]);
+  const [viewerData, setViewerData] = useState<ViewerDataResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [downloadingArtifactId, setDownloadingArtifactId] = useState<string | null>(null);
@@ -63,6 +64,13 @@ export function RunDetailPage() {
           setLogLines((prev) => [...prev, ...logResponse.lines]);
         }
         nextOffsetRef.current = logResponse.next_offset;
+      }
+
+      try {
+        const vd = await api.getViewerData(token, projectId, runId);
+        setViewerData(vd);
+      } catch {
+        // viewer-data is non-fatal; audit card shows fallback
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Run data refresh failed.");
@@ -304,6 +312,56 @@ export function RunDetailPage() {
           Terminal state reached: {run?.status.toUpperCase()}. Use re-run if you need a fresh attempt.
         </p>
       )}
+
+      <article className="rounded-xl border border-mist bg-white p-5">
+        <h2 className="text-lg font-semibold">Strategy and engine audit</h2>
+        {!viewerData ? (
+          <p className="mt-2 text-sm text-slate">Not available yet — engine audit evidence is populated after the run completes.</p>
+        ) : (
+          <dl className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+            <div>
+              <dt className="text-slate">Requested backend</dt>
+              <dd className="font-medium text-ink">{viewerData.requested_engine_backend ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate">Effective backend</dt>
+              <dd className="font-medium text-ink">{viewerData.effective_engine_backend ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate">Backend resolution source</dt>
+              <dd className="font-medium text-ink">{viewerData.backend_resolution_source ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate">Snapshot backend hint</dt>
+              <dd className="font-medium text-ink">{viewerData.snapshot_engine_backend_hint ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate">Strategy profile version ID</dt>
+              <dd className="font-medium text-ink">{viewerData.strategy_profile_version_id ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate">Strategy resolution source</dt>
+              <dd className="font-medium text-ink">{viewerData.strategy_resolution_source ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate">Strategy overrides applied</dt>
+              <dd className="font-medium text-ink">
+                {viewerData.strategy_overrides_applied && viewerData.strategy_overrides_applied.length > 0
+                  ? viewerData.strategy_overrides_applied.join(", ")
+                  : "-"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate">engine_meta.json artifact</dt>
+              <dd className="font-medium text-ink">
+                {sortedArtifacts.some((a) => a.artifact_type === "engine_meta" || a.filename === "engine_meta.json")
+                  ? "Present"
+                  : "Not found in artifacts"}
+              </dd>
+            </div>
+          </dl>
+        )}
+      </article>
     </section>
   );
 }

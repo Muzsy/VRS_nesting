@@ -1,0 +1,101 @@
+steps:
+  - name: "Felderites es T5 canvas veglegesites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2/T3/T4 artefaktokat
+      es reportokat, majd ellenorizd a valos jelenlegi kodot ezekben a fajlokban:
+      `api/routes/runs.py`, `worker/main.py`, `frontend/src/pages/RunDetailPage.tsx`,
+      `frontend/src/pages/ViewerPage.tsx`, `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts`,
+      `frontend/e2e/support/mockApi.ts`, valamint a T4 E2E specet. Veglegesitsd ezt a canvas-t
+      ugy, hogy a scope kizarolag run detail strategy/engine observability, viewer-data contract
+      bovites, frontend megjelenites, mock E2E es dedikalt smoke legyen. Ne modosit DB migrationt,
+      worker backend resolution logikat, strategy resolvert vagy New Run Wizard Step2 submit-flowt,
+      kiveve ha a felderites bizonyitott regressziot talal.
+    outputs:
+      - "canvases/web_platform/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.md"
+
+  - name: "Backend viewer-data engine_meta audit mezok"
+    description: >
+      Bovitsd az `api/routes/runs.py` fajlban a `ViewerDataResponse` modellt az engine_meta audit
+      mezokkel: `requested_engine_backend`, `effective_engine_backend`, `backend_resolution_source`,
+      `snapshot_engine_backend_hint`, `strategy_profile_version_id`, `strategy_resolution_source`,
+      `strategy_field_sources`, `strategy_overrides_applied`. A `get_viewer_data(...)` return blokkban
+      ezeket az ertekeket az `engine_meta_payload` dictbol toltsd. Minden uj mezo optional legyen.
+      Hianyzo vagy olvashatatlan `engine_meta.json` artifact ne okozzon 500-as hibat. A dict/list
+      tipusokat ellenorizd normalizalas elott: `strategy_field_sources` csak dictbol jojjon,
+      `strategy_overrides_applied` csak listabol vagy string listava normalizalva. A regi `engine_backend`,
+      `engine_contract_version`, `engine_profile`, input/output artifact evidence mezok maradjanak
+      visszafele kompatibilisek. `effective_engine_backend` fallbackkent hasznalhatja az `engine_backend`
+      erteket, ha a T3 uj mezo hianyzik.
+    outputs:
+      - "api/routes/runs.py"
+
+  - name: "Frontend viewer-data tipusok es RunDetail audit kartya"
+    description: >
+      Bovitsd a `frontend/src/lib/types.ts` `ViewerDataResponse` interface-et a backend response
+      regi engine evidence es uj T5 audit mezoivel. Ezutan bovitsd a `frontend/src/pages/RunDetailPage.tsx`
+      komponenst ugy, hogy a run/adat/artifact refresh mellett non-fatal modon lekerezze az
+      `api.getViewerData(token, projectId, runId)` endpointot. Ha a viewer-data hivas hibazik vagy
+      404-et ad, a Run Detail oldal ne torjon el es ne irja felul a fo `error` allapotot; jelenjen meg
+      fallback szoveg az audit kartyaban. Adj hozza egy `Strategy and engine audit` kartyat, amely legalabb
+      a requested/effective backendet, backend resolution source-t, snapshot hintet, strategy profile
+      version id-t, strategy resolution source-t, strategy overrides applied listat es engine_meta artifact
+      present/missing allapotot mutatja. A meglevo run log polling, cancel, rerun, artifact listing es
+      metric kartyak viselkedese ne torjon el.
+    outputs:
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/pages/RunDetailPage.tsx"
+
+  - name: "Mock API es RunDetail observability Playwright E2E"
+    description: >
+      Bovitsd a `frontend/e2e/support/mockApi.ts` mock `ViewerData` interface-et az uj optional
+      observability mezokkel. A meglevo `GET /projects/{projectId}/runs/{runId}/viewer-data` handler
+      maradjon, de tudja visszaadni ezeket a mezoket. Hozz letre uj Playwright specet:
+      `frontend/e2e/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.spec.ts`.
+      A spec hozzon letre mock projectet, egy `done` statuszu mock run-t, engine_meta artifact sort
+      es viewer-data payloadot ezekkel az ertekekkel: requested=`auto`, effective=`nesting_engine_v2`,
+      backend source=`snapshot_solver_config`, snapshot hint=`nesting_engine_v2`, profile version id=`version-t5-1`,
+      strategy source=`run_config`, overrides=`quality_profile` es `engine_backend_hint`. Navigaljon
+      kozvetlenul a Run Detail oldalra, majd assertalja, hogy a `Strategy and engine audit` kartya es
+      a felsorolt ertekek megjelennek. Adj egy masodik regresszios esetet, ahol nincs viewer-data payload,
+      de a Run Detail oldal tovabbra is betolt es fallbacket mutat.
+    outputs:
+      - "frontend/e2e/support/mockApi.ts"
+      - "frontend/e2e/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.spec.ts"
+
+  - name: "Dedikalt T5 smoke script"
+    description: >
+      Hozd letre a `scripts/smoke_new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.py`
+      scriptet. A smoke legyen offline-barat: ne igenyeljen Supabase-t, DB-t, workert, solver binarist
+      vagy frontend node_modules-t. Source-szintu ellenorzesekkel bizonyitsa legalabb: az `api/routes/runs.py`
+      `ViewerDataResponse` tartalmazza az uj mezoket; a `get_viewer_data(...)` return az `engine_meta_payload`
+      alapjan tolti oket; a `frontend/src/lib/types.ts` `ViewerDataResponse` tartalmazza az uj mezoket;
+      a `RunDetailPage.tsx` hivja az `api.getViewerData(...)` metodust es tartalmazza a `Strategy and engine audit`
+      UI szoveget; a mock API `ViewerData` interface es az uj Playwright spec tartalmazza a kotelezo
+      observability mezoket/assertionoket. A script osszesitsen passed/failed checkeket es hiba eseten
+      nem nulla exit code-dal lepjen ki.
+    outputs:
+      - "scripts/smoke_new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.py"
+
+  - name: "Checklist es report evidence alapon"
+    description: >
+      Hozd letre a task checklistet es reportot. A report a `docs/codex/report_standard.md` szerint
+      keszuljon, DoD -> Evidence matrix-szal. Evidence sorokban legyen konkret utvonal es lehetoseg szerint
+      sorsav: backend response model, backend return mezok, frontend ViewerDataResponse tipus, RunDetail
+      viewer-data fetch, audit kartya UI, mock API bovitese, Playwright spec, dedikalt smoke eredmeny,
+      frontend build eredmeny, verify eredmeny. Ha valamely frontend build vagy Playwright futas kornyezeti
+      okbol nem futtathato, azt pontosan dokumentald, ne jelold PASS-nak.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a celzott es standard ellenorzeseket. Minimum: `python3 scripts/smoke_new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.py`.
+      Ha a frontend dependency kornyezet rendelkezesre all, futtasd: `npm --prefix frontend run build`, majd
+      `node frontend/node_modules/@playwright/test/cli.js test --config=frontend/playwright.config.ts frontend/e2e/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.spec.ts`.
+      Vegul kotelezoen futtasd: `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.md`.
+      A verify log es AUTO_VERIFY blokk keruljon a reportba. Sikertelen gate eseten ne rejtsd el a hibat:
+      a report legyen FAIL vagy BLOCKED pontos okkal.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.verify.log"
