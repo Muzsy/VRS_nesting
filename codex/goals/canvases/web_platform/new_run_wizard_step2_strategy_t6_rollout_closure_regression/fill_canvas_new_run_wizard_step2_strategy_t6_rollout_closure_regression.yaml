@@ -1,0 +1,80 @@
+steps:
+  - name: "Felderites es T6 canvas veglegesites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a T1/T2/T3/T4/T5 canvasokat
+      es reportokat, majd ellenorizd a valos jelenlegi kodot ezekben a fajlokban: `api/routes/run_configs.py`,
+      `api/routes/runs.py`, `api/services/run_strategy_resolution.py`, `api/services/run_creation.py`,
+      `api/services/run_snapshot_builder.py`, `worker/main.py`, `frontend/src/pages/NewRunPage.tsx`,
+      `frontend/src/pages/RunDetailPage.tsx`, `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts`,
+      `frontend/e2e/support/mockApi.ts`, `frontend/e2e/new_run_wizard_step2_strategy_t4.spec.ts`,
+      `frontend/e2e/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.spec.ts`.
+      Veglegesitsd ezt a canvas-t ugy, hogy a scope kizarolag full-chain closure E2E, rollout/compatibility
+      dokumentacio, offline closure smoke, checklist/report es verify legyen. Ne modosit DB migrationt,
+      worker backend resolutiont, strategy resolvert, snapshot buildert vagy New Run Wizard/Run Detail runtime
+      kodot, kiveve ha a felderites bizonyitott regressziot talal.
+    outputs:
+      - "canvases/web_platform/new_run_wizard_step2_strategy_t6_rollout_closure_regression/new_run_wizard_step2_strategy_t6_rollout_closure_regression.md"
+
+  - name: "Full-chain frontend E2E: Step2 strategy -> Run Detail audit"
+    description: >
+      Hozd letre a `frontend/e2e/new_run_wizard_step2_strategy_t6_full_chain_closure.spec.ts` specet.
+      A spec a meglevo `installMockApi` helperre epuljon, kulso szolgaltatasfugges nelkul. Hozzon letre
+      mock projectet, valid DXF source file-t, active strategy profile-t es active version-t. A mock API-t
+      `createdRunStatus: "done"` modban hasznalja, es a varhatoan letrejovo `run-1` runhoz elore adjon
+      `initialArtifactsByRun` engine_meta artifactot, valamint `initialViewerDataByRun` strategy/backend audit
+      payloadot. Menjen vegig a New Run Wizard flow-n: Step1 part valasztas, Step2 Custom overrides,
+      profile/version valasztas, `quality_aggressive`, `nesting_engine_v2`, kis pozitiv SA eval budget,
+      summary, Start run. Assertalja a `runConfigBodies.at(-1)` es `runCreateBodies.at(-1)` payloadokat
+      a T4 kritikus mezokkel, majd a Run Detail oldalon assertalja a T5 audit kartyat es az audit ertekeket.
+      Ne masold vakon a T4/T5 teszteket: ez egyetlen pozitiv end-to-end closure scenario legyen.
+    outputs:
+      - "frontend/e2e/new_run_wizard_step2_strategy_t6_full_chain_closure.spec.ts"
+
+  - name: "Rollout es kompatibilitasi dokumentum"
+    description: >
+      Hozd letre a `docs/web_platform/architecture/new_run_wizard_step2_strategy_rollout_and_compatibility_plan.md`
+      dokumentumot. A doc roviden foglalja ossze a T1-T5 implementalt lanccat, majd adjon konkret rollout
+      sorrendet: DB migration, backend, worker `WORKER_ENGINE_BACKEND=auto`, frontend, smoke/E2E/verify.
+      Targyalja a visszafele kompatibilitast: regi run create request, regi run_config strategy mezok nelkul,
+      hianyzo project selection, hianyzo/regi engine_meta.json, `sparrow_v1` fallback. Tartalmazzon runtime
+      ellenorzesi pontokat: snapshot `solver_config_jsonb`, `engine_meta.json`, `viewer-data` response,
+      Run Detail audit kartya. Tartalmazzon rollback strategiat es known limitations szakaszt.
+    outputs:
+      - "docs/web_platform/architecture/new_run_wizard_step2_strategy_rollout_and_compatibility_plan.md"
+
+  - name: "Dedikalt T6 offline closure smoke"
+    description: >
+      Hozd letre a `scripts/smoke_new_run_wizard_step2_strategy_t6_full_chain_closure.py` scriptet.
+      A smoke legyen offline-barat: ne igenyeljen DB-t, Supabase-t, node_modules-t, workert vagy solver binarist.
+      Source-szintu ellenorzesekkel bizonyitsa a T1-T5 kritikus szerzodeseket: run_config strategy migration
+      es API contract, RunCreateRequest `run_config_id` es strategy mezok, resolver file es precedence forrasok,
+      run_creation resolver hivas, snapshot strategy trace mezok, worker `auto` backend es engine_meta audit mezok,
+      NewRunPage `createRunConfig` -> `createRun` payload, RunDetail `api.getViewerData` es `Strategy and engine audit`,
+      T4/T5/T6 E2E specek. Ellenorizze a T1-T6 canvas/yaml/runner sajat alkonyvtaras strukturat es tiltsa a
+      `new_run_wizard_step2_strategy_t*` gyokerszintu duplikalt canvas/yaml fajlokat. A script osszesitsen
+      passed/failed checkeket es hiba eseten nem nulla exit code-dal lepjen ki.
+    outputs:
+      - "scripts/smoke_new_run_wizard_step2_strategy_t6_full_chain_closure.py"
+
+  - name: "Checklist es zaroriport evidence alapon"
+    description: >
+      Hozd letre a task checklistet es reportot. A report a `docs/codex/report_standard.md` szerint keszuljon,
+      DoD -> Evidence matrix-szal. Evidence sorokban legyen konkret utvonal es lehetoseg szerint sorsav:
+      T6 E2E spec, T6 smoke script, rollout doc, T1-T5 reportok PASS allapota, artefakt-struktura, duplikatum-tiltas,
+      frontend build, T4/T5/T6 Playwright, verify eredmeny. Ha valamely frontend build vagy Playwright futas
+      kornyezeti okbol nem futtathato, azt pontosan dokumentald, ne jelold PASS-nak.
+    outputs:
+      - "codex/codex_checklist/web_platform/new_run_wizard_step2_strategy_t6_rollout_closure_regression.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t6_rollout_closure_regression.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a celzott es standard ellenorzeseket. Minimum: `python3 scripts/smoke_new_run_wizard_step2_strategy_t6_full_chain_closure.py`.
+      Ha a frontend dependency kornyezet rendelkezesre all, futtasd: `npm --prefix frontend run build`, majd
+      `node frontend/node_modules/@playwright/test/cli.js test --config=frontend/playwright.config.ts frontend/e2e/new_run_wizard_step2_strategy_t4.spec.ts frontend/e2e/new_run_wizard_step2_strategy_t5_run_detail_strategy_observability.spec.ts frontend/e2e/new_run_wizard_step2_strategy_t6_full_chain_closure.spec.ts`.
+      Vegul kotelezoen futtasd: `./scripts/verify.sh --report codex/reports/web_platform/new_run_wizard_step2_strategy_t6_rollout_closure_regression.md`.
+      A verify log es AUTO_VERIFY blokk keruljon a reportba. Sikertelen gate eseten ne rejtsd el a hibat:
+      a report legyen FAIL vagy BLOCKED pontos okkal.
+    outputs:
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t6_rollout_closure_regression.md"
+      - "codex/reports/web_platform/new_run_wizard_step2_strategy_t6_rollout_closure_regression.verify.log"
