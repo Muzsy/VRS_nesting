@@ -149,6 +149,24 @@ def _rotation_policy_to_allowed_degrees_v2(solver_config: dict[str, Any]) -> lis
     return ordered
 
 
+def _shift_polygon_to_origin(
+    outer_points: list[list[float]],
+    holes_points: list[list[list[float]]],
+) -> tuple[list[list[float]], list[list[list[float]]]]:
+    all_pts: list[list[float]] = list(outer_points)
+    for hole in holes_points:
+        all_pts.extend(hole)
+    if not all_pts:
+        return outer_points, holes_points
+    min_x = min(p[0] for p in all_pts)
+    min_y = min(p[1] for p in all_pts)
+    if min_x == 0.0 and min_y == 0.0:
+        return outer_points, holes_points
+    shifted_outer = [[p[0] - min_x, p[1] - min_y] for p in outer_points]
+    shifted_holes = [[[p[0] - min_x, p[1] - min_y] for p in pt] for pt in holes_points]
+    return shifted_outer, shifted_holes
+
+
 def _build_geometry_index(geometry_manifest: list[Any]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for idx, raw_item in enumerate(geometry_manifest):
@@ -165,6 +183,7 @@ def _build_geometry_index(geometry_manifest: list[Any]) -> dict[str, dict[str, A
             polygon.get("hole_rings", []),
             field=f"geometry_manifest_jsonb[{idx}].polygon.hole_rings",
         )
+        outer_points, holes_points = _shift_polygon_to_origin(outer_points, holes_points)
         width = _parse_positive_float(bbox.get("width"), field=f"geometry_manifest_jsonb[{idx}].bbox.width")
         height = _parse_positive_float(bbox.get("height"), field=f"geometry_manifest_jsonb[{idx}].bbox.height")
         out[derivative_id] = {

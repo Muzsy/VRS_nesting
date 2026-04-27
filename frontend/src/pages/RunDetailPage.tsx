@@ -67,11 +67,15 @@ export function RunDetailPage() {
 
       const shouldFetchLog = includeLogs && (runResponse.status === "running" || runResponse.status === "queued");
       if (shouldFetchLog) {
-        const logResponse = await api.getRunLog(token, projectId, runId, nextOffsetRef.current, 120);
-        if (logResponse.lines.length > 0) {
-          setLogLines((prev) => [...prev, ...logResponse.lines]);
+        try {
+          const logResponse = await api.getRunLog(token, projectId, runId, nextOffsetRef.current, 120);
+          if (logResponse.lines.length > 0) {
+            setLogLines((prev) => [...prev, ...logResponse.lines]);
+          }
+          nextOffsetRef.current = logResponse.next_offset;
+        } catch {
+          // log fetch is non-fatal; run status and artifacts remain visible
         }
-        nextOffsetRef.current = logResponse.next_offset;
       }
 
       // viewer-data: only once, only when terminal, non-fatal

@@ -548,6 +548,27 @@ export const api = {
     return request<RunStrategyProfile[]>("/run-strategy-profiles", token, { method: "GET" });
   },
 
+  createRunStrategyProfile(
+    token: string,
+    payload: { strategy_code: string; display_name: string; description?: string }
+  ): Promise<RunStrategyProfile> {
+    return request<RunStrategyProfile>("/run-strategy-profiles", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  createRunStrategyProfileVersion(
+    token: string,
+    profileId: string,
+    payload: { solver_config_jsonb?: Record<string, unknown>; notes?: string; is_active?: boolean }
+  ): Promise<RunStrategyProfileVersion> {
+    return request<RunStrategyProfileVersion>(`/run-strategy-profiles/${profileId}/versions`, token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   listRunStrategyProfileVersions(token: string, profileId: string): Promise<RunStrategyProfileVersion[]> {
     return request<RunStrategyProfileVersion[]>(`/run-strategy-profiles/${profileId}/versions`, token, { method: "GET" });
   },

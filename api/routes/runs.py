@@ -835,8 +835,14 @@ def get_run_log(
             expires_in=settings.signed_url_ttl_s,
         )
         blob = supabase.download_signed_object(signed_url=str(signed["download_url"]))
-    except SupabaseHTTPError as exc:
-        raise_supabase_http_error(operation="get run log", exc=exc)
+    except SupabaseHTTPError:
+        return RunLogResponse(
+            lines=[],
+            total_lines=0,
+            next_offset=offset,
+            run_status=run_status,
+            stop_polling=run_status in _TERMINAL_STATES,
+        )
 
     all_lines = blob.decode("utf-8", errors="replace").splitlines()
     total = len(all_lines)

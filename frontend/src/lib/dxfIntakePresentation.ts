@@ -323,6 +323,16 @@ export function projectDetailIntakeStatus(file: ProjectFile): ProjectDetailIntak
   const runStatus = String(summary?.run_status ?? "").trim().toLowerCase();
   const readinessReason = String(projection?.readiness_reason ?? "").trim().toLowerCase();
 
+  if (outcome === "preflight_rejected" || readinessReason === "not_eligible_rejected") {
+    return {
+      statusLabel: "rejected",
+      statusClassName: TONE.blocked,
+      nextStep: "Fix in DXF Intake and re-upload.",
+      isProjectReady: false,
+      isAttention: true,
+      isLinkedPart: false,
+    };
+  }
   if (readinessReason === "accepted_existing_part") {
     return {
       statusLabel: "already created",
@@ -370,16 +380,6 @@ export function projectDetailIntakeStatus(file: ProjectFile): ProjectDetailIntak
       nextStep: "Refresh later or inspect DXF Intake diagnostics.",
       isProjectReady: true,
       isAttention: false,
-      isLinkedPart: false,
-    };
-  }
-  if (outcome === "preflight_rejected" || readinessReason === "not_eligible_rejected") {
-    return {
-      statusLabel: "rejected",
-      statusClassName: TONE.blocked,
-      nextStep: "Fix in DXF Intake and re-upload.",
-      isProjectReady: false,
-      isAttention: true,
       isLinkedPart: false,
     };
   }
