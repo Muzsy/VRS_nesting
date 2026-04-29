@@ -10,7 +10,7 @@ DEFAULT_QUALITY_PROFILE = "quality_default"
 
 VALID_PLACERS = ("blf", "nfp")
 VALID_SEARCH_MODES = ("none", "sa")
-VALID_PART_IN_PART_MODES = ("off", "auto")
+VALID_PART_IN_PART_MODES = ("off", "auto", "prepack")
 VALID_COMPACTION_MODES = ("off", "slide")
 
 _RUNTIME_POLICY_KEYS = (
@@ -45,6 +45,12 @@ _QUALITY_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
         "compaction": "slide",
         "sa_iters": 768,
         "sa_eval_budget_sec": 1,
+    },
+    "quality_cavity_prepack": {
+        "placer": "nfp",
+        "search": "sa",
+        "part_in_part": "prepack",
+        "compaction": "slide",
     },
 }
 
@@ -137,6 +143,8 @@ def get_quality_profile_policy(name: str | None) -> dict[str, Any]:
 
 def build_nesting_engine_cli_args_from_runtime_policy(policy: Mapping[str, Any]) -> list[str]:
     normalized = validate_runtime_policy(policy)
+    requested_part_in_part = str(normalized["part_in_part"])
+    effective_engine_part_in_part = "off" if requested_part_in_part == "prepack" else requested_part_in_part
 
     args: list[str] = [
         "--placer",
@@ -144,7 +152,7 @@ def build_nesting_engine_cli_args_from_runtime_policy(policy: Mapping[str, Any])
         "--search",
         str(normalized["search"]),
         "--part-in-part",
-        str(normalized["part_in_part"]),
+        effective_engine_part_in_part,
         "--compaction",
         str(normalized["compaction"]),
     ]

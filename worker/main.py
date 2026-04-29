@@ -1206,6 +1206,9 @@ class EngineProfileResolution:
     profile_effect: str
     nesting_engine_runtime_policy: dict[str, Any]
     nesting_engine_cli_args: list[str]
+    requested_part_in_part_policy: str
+    effective_engine_part_in_part: str
+    cavity_prepack_enabled: bool
 
 
 def _resolve_engine_profile_resolution(
@@ -1253,6 +1256,10 @@ def _resolve_engine_profile_resolution(
     if isinstance(snapshot_sa_override, int) and snapshot_sa_override > 0:
         runtime_policy["sa_eval_budget_sec"] = snapshot_sa_override
 
+    requested_part_in_part_policy = str(runtime_policy.get("part_in_part") or "").strip().lower()
+    cavity_prepack_enabled = requested_part_in_part_policy == "prepack"
+    effective_engine_part_in_part = "off" if cavity_prepack_enabled else requested_part_in_part_policy
+
     if engine_backend == ENGINE_BACKEND_NESTING_V2:
         nesting_engine_cli_args = build_nesting_engine_cli_args_from_runtime_policy(runtime_policy)
         effective_profile = requested_profile
@@ -1273,6 +1280,9 @@ def _resolve_engine_profile_resolution(
         profile_effect=profile_effect,
         nesting_engine_runtime_policy=runtime_policy,
         nesting_engine_cli_args=nesting_engine_cli_args,
+        requested_part_in_part_policy=requested_part_in_part_policy,
+        effective_engine_part_in_part=effective_engine_part_in_part,
+        cavity_prepack_enabled=cavity_prepack_enabled,
     )
 
 
@@ -1383,6 +1393,9 @@ def _build_engine_meta_payload(
         "profile_effect": profile_resolution.profile_effect,
         "nesting_engine_runtime_policy": profile_resolution.nesting_engine_runtime_policy,
         "nesting_engine_cli_args": list(profile_resolution.nesting_engine_cli_args),
+        "requested_part_in_part_policy": profile_resolution.requested_part_in_part_policy,
+        "effective_engine_part_in_part": profile_resolution.effective_engine_part_in_part,
+        "cavity_prepack_enabled": profile_resolution.cavity_prepack_enabled,
         "solver_runner_module": invocation.solver_runner_module,
         "solver_input_hash": solver_input_hash,
         "requested_engine_backend": backend_resolution.requested_engine_backend,
