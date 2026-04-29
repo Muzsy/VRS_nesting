@@ -242,3 +242,49 @@ nem a `nest` solver endpointet.
 | Objective | opcionális `metrics` | kotelezo `objective` |
 | Determinizmus hash | nincs definialva | kotelezo `meta.determinism_hash` normativ szaballyal |
 | Kompatibilitas | aktiv v1 contract | kulonallo v2 contract |
+
+## 9. Additive cavity prepack policy (worker-side, v1)
+
+Ez a szekcio normativan rogziti, hogy a cavity-first/composite modell elso
+iteracioja additive worker-side policy, nem uj Rust IO contract.
+
+### 9.1 Fontos scope-hatar
+
+- A solver input/output contract verzioja valtozatlanul `nesting_engine_v2`.
+- A cavity plan nem a `nesting_engine_v2` JSON-ba epitett uj mezo, hanem kulon
+  sidecar artifact:
+  - `<run_dir>/cavity_plan.json`
+  - `runs/<run_id>/inputs/cavity_plan.json`
+
+### 9.2 `part_in_part=prepack` policy jelentese
+
+- `part_in_part=prepack` worker policy ertek.
+- Rust CLI jelenleg csak `off|auto` erteket fogad, ezert prepack modban az
+  effective engine CLI `--part-in-part off`.
+- Normativ szabaly: prepack es legacy engine runtime `--part-in-part auto`
+  ugyanazon runban nem aktiv egyszerre.
+
+### 9.3 Top-level input invarians prepack modban
+
+Ha prepack aktiv:
+- parent composite virtual top-level part:
+  - `quantity=1`
+  - `holes_points_mm=[]`
+  - `outer_points_mm` a parent kulso konturja
+- child top-level `quantity` csokken az internal placement darabszammal
+- child `quantity=0` eseten child nem megy top-level solver inputba
+
+### 9.4 Result normalizer kovetelmeny
+
+Prepack eseten a normalizernek:
+- virtual parent ID-kat vissza kell mapelnie valodi parent revision ID-kra
+- internal child placementeket abszolut sheet placementte kell expanzionalnia
+- top-level child instanceeket offsetelnie kell (`top_level_instance_base`)
+
+Ha `cavity_plan` hianyzik vagy `enabled=false`, legacy normalizer viselkedes
+kotelezo.
+
+### 9.5 Nem-cel deklaracio
+
+- Ez a contract NEM allit full hole-aware NFP kepesseget.
+- Ez a contract NEM oldja meg a manufacturing cut-ordert.

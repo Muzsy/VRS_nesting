@@ -1,0 +1,46 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a cavity
+      fejlesztesi tervet, a root-cause reportot, a jelenlegi IO contractot,
+      quality profile registryt, worker policy mappinget es Rust CLI-t.
+      Frissitsd a task artefaktokat, ha a valos repo elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t1_contract_and_policy.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t1_contract_and_policy.yaml"
+      - "codex/prompts/nesting_engine/cavity_t1_contract_and_policy/run.md"
+
+  - name: "Cavity contract dokumentacio"
+    description: >
+      Hozd letre a `cavity_plan_v1` contract dokumentumot. Ird le a schema
+      minimalis mezoket, virtual parent mappinget, internal child placement
+      formatumot, quantity_delta es instance_bases szabalyokat, disabled
+      viselkedest es backward compatibility kovetelmenyeket.
+    outputs:
+      - "docs/nesting_engine/cavity_prepack_contract_v1.md"
+      - "docs/nesting_engine/io_contract_v2.md"
+
+  - name: "Quality policy dokumentacio"
+    description: >
+      Hozd letre a cavity prepack quality policy dokumentumot. Ird le, hogy a
+      `part_in_part=prepack` Python worker policy, nem Rust CLI ertek; prepack
+      es legacy BLF runtime part-in-part nem futhat egyszerre; a
+      `quality_default` atallitasa csak benchmark utan dontheto el.
+    outputs:
+      - "docs/nesting_quality/cavity_prepack_quality_policy.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es reportot evidence alapon. A report magyarul
+      nevezze meg, hogy ebben a taskban nem keszult implementacios kod.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t1_contract_and_policy.md"
+      - "codex/reports/nesting_engine/cavity_t1_contract_and_policy.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t1_contract_and_policy.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t1_contract_and_policy.md"
+      - "codex/reports/nesting_engine/cavity_t1_contract_and_policy.verify.log"

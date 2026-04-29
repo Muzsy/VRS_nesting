@@ -1,0 +1,46 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex workflow dokumentumokat, a cavity
+      fejlesztesi tervet es a root-cause reportot. Ellenorizd a valos
+      artifact, storage es viewer-data kodutvonalakat. Frissitsd a canvas-t,
+      YAML-t es runner promptot, ha a repo allapota elter a tervtol.
+    outputs:
+      - "canvases/nesting_engine/cavity_t0_artifact_recovery_and_baseline_replay.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t0_artifact_recovery_and_baseline_replay.yaml"
+      - "codex/prompts/nesting_engine/cavity_t0_artifact_recovery_and_baseline_replay/run.md"
+
+  - name: "Artifact URL recovery teszt es javitas"
+    description: >
+      Vizsgald meg az `api/routes/runs.py` artifact normalizalasat, URL
+      endpointjat es viewer-data letoltesi fallbackjeit. Keszits fake Supabase
+      alapu regresszios tesztet vagy smoke-ot, amely bizonyitja, hogy
+      `solver_input` es `engine_meta` artifact sorbol signed download URL
+      kerheto. Csak akkor modosits `worker/main.py`-t vagy
+      `api/supabase_client.py`-t, ha a bizonyitek szerint a bucket/path iras
+      vagy helper contract hibas.
+    outputs:
+      - "api/routes/runs.py"
+      - "api/supabase_client.py"
+      - "worker/main.py"
+      - "tests/test_run_artifact_url_recovery.py"
+      - "scripts/smoke_cavity_t0_artifact_recovery_and_baseline_replay.py"
+
+  - name: "Baseline replay evidence"
+    description: >
+      Ha a javitas utan production/trial `solver_input_snapshot.json` es
+      `engine_meta.json` letoltheto, futtass legacy replayt a jelenlegi NFP+SA
+      policyvel es rogzitett telemetryvel. Ha nem letoltheto, dokumentald a
+      pontos blokkot es a reprodukcio hianyat bizonyitekkal. Ne modosits Rust
+      fallbacket es ne implementalj cavity logikat.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t0_artifact_recovery_and_baseline_replay.md"
+      - "codex/reports/nesting_engine/cavity_t0_artifact_recovery_and_baseline_replay.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t0_artifact_recovery_and_baseline_replay.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t0_artifact_recovery_and_baseline_replay.md"
+      - "codex/reports/nesting_engine/cavity_t0_artifact_recovery_and_baseline_replay.verify.log"

@@ -1,0 +1,63 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el T1-T6 artefaktjait, a DXF preflight API/diagnostics utvonalat,
+      Run Detail viewer-data contractot es a relevans frontend komponenseket.
+      Frissitsd a task artefaktokat, ha a valos repo elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t7_ui_observability.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t7_ui_observability.yaml"
+      - "codex/prompts/nesting_engine/cavity_t7_ui_observability/run.md"
+
+  - name: "Backend observability mezok"
+    description: >
+      Additiv modon tedd elerhetove a cavity diagnosztika es run summary
+      adatokat. Ne keverd ossze a preflight accepted/rejected/review filtering
+      logikaval es ne modositss New Run Wizard file filteringet.
+    outputs:
+      - "api/routes/files.py"
+      - "api/services/dxf_preflight_runtime.py"
+      - "api/services/dxf_preflight_inspect.py"
+      - "api/services/dxf_preflight_role_resolver.py"
+      - "api/services/dxf_preflight_acceptance_gate.py"
+      - "api/services/dxf_geometry_import.py"
+      - "api/services/part_creation.py"
+      - "api/routes/runs.py"
+
+  - name: "Frontend cavity observability"
+    description: >
+      Jelenitsd meg a DXF Intake diagnostics drawerben a belso kivagas/cavity
+      jelolt osszegzest es Run Detail oldalon a cavity prepack summaryt, ha van.
+      Copy a presentation module-on keresztul menjen; backward compatible TS
+      normalizalas szukseges.
+    outputs:
+      - "frontend/src/pages/DxfIntakePage.tsx"
+      - "frontend/src/lib/dxfIntakePresentation.ts"
+      - "frontend/src/pages/RunDetailPage.tsx"
+      - "frontend/src/lib/types.ts"
+      - "frontend/src/lib/api.ts"
+
+  - name: "UI smoke vagy Playwright"
+    description: >
+      Adj celzott frontend smoke/Playwright bizonyitekot arra, hogy a cavity
+      blokkok megjelennek, ha van adat, es nem jelennek meg, ha nincs. A build
+      legyen zold.
+    outputs:
+      - "frontend/e2e/cavity_prepack_observability.spec.ts"
+      - "scripts/smoke_cavity_t7_ui_observability.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es magyar reportot. Nevezd meg explicit, hogy New
+      Run Wizard rejected-file filtering nem valtozott.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t7_ui_observability.md"
+      - "codex/reports/nesting_engine/cavity_t7_ui_observability.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t7_ui_observability.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t7_ui_observability.md"
+      - "codex/reports/nesting_engine/cavity_t7_ui_observability.verify.log"

@@ -1,0 +1,43 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el T5 artefaktjait, az SVG/DXF exporter modulokat es a meglevo H1-E6
+      export smoke-okat. Frissitsd a task artefaktokat, ha a valos repo elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t6_svg_dxf_export_validation.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t6_svg_dxf_export_validation.yaml"
+      - "codex/prompts/nesting_engine/cavity_t6_svg_dxf_export_validation/run.md"
+
+  - name: "Composite export smoke"
+    description: >
+      Keszits synthetic projection smoke-ot parent hole + internal child rows
+      adatokkal. Bizonyitsa, hogy SVG es DXF exportban parent es child geometria
+      is megjelenik, parent holes megmaradnak, virtual part ID nem kerul
+      user-facing artifactba.
+    outputs:
+      - "scripts/smoke_cavity_t6_svg_dxf_export_validation.py"
+
+  - name: "Exporter minimal fix ha szukseges"
+    description: >
+      Csak akkor modositsd az exportereket, ha a smoke bizonyitja, hogy a T5
+      projection mellett nem mukodnek. A fix legyen minimalis es ne probalja
+      megoldani a manufacturing cut-ordert.
+    outputs:
+      - "worker/sheet_svg_artifacts.py"
+      - "worker/sheet_dxf_artifacts.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es magyar reportot. Ha exporter kodmodositas nem
+      kellett, ezt bizonyitsd a smoke eredmennyel.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t6_svg_dxf_export_validation.md"
+      - "codex/reports/nesting_engine/cavity_t6_svg_dxf_export_validation.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t6_svg_dxf_export_validation.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t6_svg_dxf_export_validation.md"
+      - "codex/reports/nesting_engine/cavity_t6_svg_dxf_export_validation.verify.log"

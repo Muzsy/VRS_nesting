@@ -1,0 +1,45 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el T1-T4 artefaktjait, a jelenlegi v2 result normalizert, a
+      placement transform helper hasznalatat es a projection schema mezoket.
+      Frissitsd a task artefaktokat, ha a valos repo elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t5_result_normalizer_expansion.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t5_result_normalizer_expansion.yaml"
+      - "codex/prompts/nesting_engine/cavity_t5_result_normalizer_expansion/run.md"
+
+  - name: "Cavity plan normalizer expansion"
+    description: >
+      Bovitsd a `worker/result_normalizer.py` v2 agat opcionalis
+      `run_dir/cavity_plan.json` olvasassal. Virtual parent placementet mapelj
+      real parent revisionre, internal child placementeket expandalj abszolut
+      sheet transformma, top-level child placement es unplaced instanceeket
+      offsetelj. Cavity plan hianyaban a regi viselkedes valtozatlan maradjon.
+    outputs:
+      - "worker/result_normalizer.py"
+
+  - name: "Unit tesztek es smoke"
+    description: >
+      Adj teszteket virtual parent mappingre, internal child absolute transformra,
+      top-level child offsetre, unplaced offsetre, missing/disabled cavity plan
+      backward compatibilityre es virtual ID user-facing eltuntetesre.
+    outputs:
+      - "tests/worker/test_result_normalizer_cavity_plan.py"
+      - "scripts/smoke_cavity_t5_result_normalizer_expansion.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es magyar reportot DoD->Evidence matrixszal.
+      Kulon nevezd meg a quantity/instance accounting bizonyitekait.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t5_result_normalizer_expansion.md"
+      - "codex/reports/nesting_engine/cavity_t5_result_normalizer_expansion.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t5_result_normalizer_expansion.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t5_result_normalizer_expansion.md"
+      - "codex/reports/nesting_engine/cavity_t5_result_normalizer_expansion.verify.log"

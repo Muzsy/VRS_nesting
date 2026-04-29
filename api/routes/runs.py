@@ -902,6 +902,50 @@ def _resolve_artifact_for_run(
     return _normalize_artifact_row(rows[0])
 
 
+def _artifact_url_bucket_candidates(*, artifact: dict[str, Any], settings: Settings) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+
+    for raw in (
+        artifact.get("storage_bucket"),
+        settings.storage_bucket,
+    ):
+        bucket = str(raw or "").strip()
+        if not bucket or bucket in seen:
+            continue
+        seen.add(bucket)
+        out.append(bucket)
+    return out
+
+
+def _create_signed_download_for_artifact(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    artifact: dict[str, Any],
+    settings: Settings,
+) -> dict[str, Any]:
+    storage_key = str(artifact.get("storage_key") or "").strip()
+    if not storage_key:
+        raise SupabaseHTTPError("artifact storage_key is empty")
+
+    last_error: SupabaseHTTPError | None = None
+    for bucket in _artifact_url_bucket_candidates(artifact=artifact, settings=settings):
+        try:
+            return supabase.create_signed_download_url(
+                access_token=access_token,
+                bucket=bucket,
+                object_key=storage_key,
+                expires_in=settings.signed_url_ttl_s,
+            )
+        except SupabaseHTTPError as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise last_error
+    raise SupabaseHTTPError("artifact signing bucket candidates are empty")
+
+
 @router.get("/{run_id}/artifacts/{artifact_id}/url", response_model=ArtifactUrlResponse)
 def get_artifact_url(
     project_id: UUID,
@@ -921,12 +965,11 @@ def get_artifact_url(
             run_id=run_id,
             artifact_id=artifact_id,
         )
-        storage_bucket = str(artifact.get("storage_bucket") or "").strip() or settings.storage_bucket
-        signed = supabase.create_signed_download_url(
+        signed = _create_signed_download_for_artifact(
+            supabase=supabase,
             access_token=user.access_token,
-            bucket=storage_bucket,
-            object_key=str(artifact.get("storage_key", "")),
-            expires_in=settings.signed_url_ttl_s,
+            artifact=artifact,
+            settings=settings,
         )
     except SupabaseHTTPError as exc:
         raise_supabase_http_error(operation="artifact url", exc=exc)

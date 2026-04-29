@@ -1,0 +1,56 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el T2 es T3 artefaktjait, a worker solver input irasi utvonalat,
+      raw artifact persist mintat es engine_meta irast. Frissitsd a task
+      artefaktokat, ha a valos repo elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t4_worker_integration_and_artifacts.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t4_worker_integration_and_artifacts.yaml"
+      - "codex/prompts/nesting_engine/cavity_t4_worker_integration_and_artifacts/run.md"
+
+  - name: "Worker prepack bekotes"
+    description: >
+      A base `build_nesting_engine_input_from_snapshot(...)` utan hivd meg a T3
+      prepackert, ha a T2 policy szerint enabled. A hash, snapshot write es
+      runner invocation a tenylegesen futtatott payloadot hasznalja. Non-prepack
+      modban a viselkedes maradjon valtozatlan.
+    outputs:
+      - "worker/main.py"
+      - "worker/cavity_prepack.py"
+
+  - name: "Cavity plan artifact persist"
+    description: >
+      Ird ki es toltsd fel a `cavity_plan.json` sidecart
+      `runs/<run_id>/inputs/cavity_plan.json` storage keyre. Regisztrald
+      artifactkent repo-kompatibilis `artifact_type`/metadata mellett, es
+      logolj audit mezoket: enabled, virtual parent count, internal placements
+      count, quantity reduced count, top-level holes removed count.
+    outputs:
+      - "worker/main.py"
+      - "worker/raw_output_artifacts.py"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits fake worker/client smoke-ot, amely bizonyitja a prepackelt solver
+      input snapshotot, a `cavity_plan` artifact rekordot es a non-prepack
+      backward compatible utvonalat solver process nelkul vagy minimal fake
+      runnerrel.
+    outputs:
+      - "scripts/smoke_cavity_t4_worker_integration_and_artifacts.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es magyar reportot. Ne modosits result normalizert
+      azon tul, ami elkerulhetetlen crash vedelmi shim, es ezt indokold.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t4_worker_integration_and_artifacts.md"
+      - "codex/reports/nesting_engine/cavity_t4_worker_integration_and_artifacts.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t4_worker_integration_and_artifacts.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t4_worker_integration_and_artifacts.md"
+      - "codex/reports/nesting_engine/cavity_t4_worker_integration_and_artifacts.verify.log"

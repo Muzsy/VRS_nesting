@@ -1,0 +1,54 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el a T1 contractot, a quality profile registryt, a worker profile
+      resolution kodot, a nesting_engine_runner argparse valasztasait es a Rust
+      `PartInPartMode` parser allapotat. Frissitsd a task artefaktokat, ha a
+      valos repo elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t2_runtime_profile_prepack_mode.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t2_runtime_profile_prepack_mode.yaml"
+      - "codex/prompts/nesting_engine/cavity_t2_runtime_profile_prepack_mode/run.md"
+
+  - name: "Prepack runtime policy es profile"
+    description: >
+      Bovitsd a Python quality profile registryt `part_in_part=prepack`
+      validacioval es `quality_cavity_prepack` profillal. A `quality_default`
+      maradjon valtozatlan. A registry legyen tovabbra is a source of truth.
+    outputs:
+      - "vrs_nesting/config/nesting_quality_profiles.py"
+
+  - name: "Worker CLI mapping es trace"
+    description: >
+      Worker oldalon vezesd be a prepack policy effective mappinget: requested
+      `prepack` -> cavity prepack enabled, engine CLI `--part-in-part off`.
+      Rustnak ne kuldj `prepack` erteket. Ha a runner argparse modositasa
+      szukseges, csak Python oldalon tedd, Rust parser bovitese nelkul.
+    outputs:
+      - "worker/main.py"
+      - "vrs_nesting/runner/nesting_engine_runner.py"
+
+  - name: "Task-specifikus smoke"
+    description: >
+      Keszits smoke-ot, amely solver futtatas nelkul bizonyitja a
+      `quality_cavity_prepack` validalasat, a `quality_default` valtozatlansagat
+      es azt, hogy prepack policy eseten a Rust CLI-be `--part-in-part off`
+      kerul.
+    outputs:
+      - "scripts/smoke_cavity_t2_runtime_profile_prepack_mode.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es a magyar reportot DoD->Evidence matrixszal.
+      Nevezd meg explicit, hogy geometry packer nem keszult.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t2_runtime_profile_prepack_mode.md"
+      - "codex/reports/nesting_engine/cavity_t2_runtime_profile_prepack_mode.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t2_runtime_profile_prepack_mode.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t2_runtime_profile_prepack_mode.md"
+      - "codex/reports/nesting_engine/cavity_t2_runtime_profile_prepack_mode.verify.log"

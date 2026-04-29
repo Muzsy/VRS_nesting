@@ -1,0 +1,45 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el T0-T7 reportjait, a root-cause reportot es a benchmark harness
+      dokumentaciot. Csak bizonyitott production snapshotot hasznalj; ha nincs,
+      dokumentald blokkolokent. Frissitsd a task artefaktokat, ha a valos repo
+      elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t8_production_regression_benchmark.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t8_production_regression_benchmark.yaml"
+      - "codex/prompts/nesting_engine/cavity_t8_production_regression_benchmark/run.md"
+
+  - name: "Replay es benchmark harness"
+    description: >
+      Keszits vagy bovits smoke/benchmark harness-t, amely legacy es
+      `quality_cavity_prepack` modot ossze tud hasonlitani ugyanazon inputon.
+      Core nesting logikat ne modosits; ha regresszio derul ki, kulon fix taskot
+      nyiss T2-T6 megfelelo retegre.
+    outputs:
+      - "scripts/smoke_cavity_t8_production_regression_benchmark.py"
+      - "scripts/run_h3_quality_benchmark.py"
+
+  - name: "Rollout decision dokumentum"
+    description: >
+      Ird meg a rollout dontesi dokumentumot legacy vs prepack evidence
+      tablazattal. Ne allitsd at a `quality_default` profilt ebben a taskban.
+    outputs:
+      - "docs/nesting_quality/cavity_prepack_rollout_decision.md"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es magyar reportot. Tartalmazzon effective placer,
+      fallback warning, placed/unplaced, elapsed es NFP/BLF/SA profile
+      osszehasonlitast, vagy explicit production artifact blokkot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t8_production_regression_benchmark.md"
+      - "codex/reports/nesting_engine/cavity_t8_production_regression_benchmark.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t8_production_regression_benchmark.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t8_production_regression_benchmark.md"
+      - "codex/reports/nesting_engine/cavity_t8_production_regression_benchmark.verify.log"

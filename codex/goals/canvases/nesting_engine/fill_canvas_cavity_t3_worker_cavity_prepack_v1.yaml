@@ -1,0 +1,48 @@
+steps:
+  - name: "Felderites es task artefaktok rogzites"
+    description: >
+      Olvasd el T1 es T2 artefaktjait, a worker engine adaptert, snapshot
+      manifest peldakat, result normalizer transform helpereket es a Shapely
+      hasznalati mintakat. Frissitsd a task artefaktokat, ha a valos repo elter.
+    outputs:
+      - "canvases/nesting_engine/cavity_t3_worker_cavity_prepack_v1.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_t3_worker_cavity_prepack_v1.yaml"
+      - "codex/prompts/nesting_engine/cavity_t3_worker_cavity_prepack_v1/run.md"
+
+  - name: "Pure cavity prepack modul"
+    description: >
+      Implementald a DB/API mentes `worker/cavity_prepack.py` modult a
+      `build_cavity_prepacked_engine_input(...)` public fuggvennyel. A modul
+      epitsen part/geometry indexet, parent cavity candidate listat,
+      deterministic child candidate sorrendet, bbox es exact fit checket,
+      virtual parent instanceket, `quantity_delta` es `instance_bases`
+      adatokat. V1-ben child holes unsupported diagnostic legyen.
+    outputs:
+      - "worker/cavity_prepack.py"
+
+  - name: "Unit tesztek es smoke"
+    description: >
+      Adj teszteket disabled mode-ra, tiny hole/no child esetre, usable cavity
+      reservationre, tobb parent instance virtual ID-kra, instance base
+      stabilitasra es no hardcode viselkedesre. A smoke synthetic snapshotbol
+      bizonyitsa, hogy a prepackelt solver inputban nincs top-level parent hole.
+    outputs:
+      - "tests/worker/test_cavity_prepack.py"
+      - "scripts/smoke_cavity_t3_worker_cavity_prepack_v1.py"
+
+  - name: "Checklist es report frissitese"
+    description: >
+      Toltsd ki a checklistet es magyar reportot. A reportban legyen bizonyitek
+      arra, hogy a modul nem ir fajlt, nem hiv API-t es nem tartalmaz filename
+      vagy part_code hardcodeot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_t3_worker_cavity_prepack_v1.md"
+      - "codex/reports/nesting_engine/cavity_t3_worker_cavity_prepack_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_t3_worker_cavity_prepack_v1.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_t3_worker_cavity_prepack_v1.md"
+      - "codex/reports/nesting_engine/cavity_t3_worker_cavity_prepack_v1.verify.log"
