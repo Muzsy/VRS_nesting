@@ -36,6 +36,7 @@ from worker.engine_adapter_input import (
     solver_input_sha256,
     solver_runtime_params,
 )
+from worker.cavity_prepack import CavityPrepackError, build_cavity_prepacked_engine_input
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 from worker.raw_output_artifacts import persist_raw_output_artifacts
 from worker.result_normalizer import assert_projection_within_sheet_bounds, normalize_solver_output_projection
@@ -1365,6 +1366,7 @@ def _build_engine_meta_payload(
     profile_resolution: EngineProfileResolution,
     invocation: SolverRunnerInvocation,
     solver_input_hash: str,
+    cavity_prepack_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     solver_config_raw = snapshot_row.get("solver_config_jsonb")
     solver_config = solver_config_raw if isinstance(solver_config_raw, dict) else {}
@@ -1411,7 +1413,93 @@ def _build_engine_meta_payload(
         payload["strategy_field_sources"] = strategy_field_sources
     if strategy_overrides_applied is not None:
         payload["strategy_overrides_applied"] = strategy_overrides_applied
+    if isinstance(cavity_prepack_summary, dict):
+        payload["cavity_prepack"] = cavity_prepack_summary
     return payload
+
+
+def _summarize_cavity_plan(cavity_plan: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(cavity_plan, dict):
+        return {
+            "enabled": False,
+            "version": "",
+            "virtual_parent_count": 0,
+            "internal_placements_count": 0,
+            "quantity_reduced_part_count": 0,
+            "top_level_holes_removed_count": 0,
+        }
+
+    virtual_parts_raw = cavity_plan.get("virtual_parts")
+    virtual_parts = virtual_parts_raw if isinstance(virtual_parts_raw, dict) else {}
+    quantity_delta_raw = cavity_plan.get("quantity_delta")
+    quantity_delta = quantity_delta_raw if isinstance(quantity_delta_raw, dict) else {}
+
+    internal_placements_count = 0
+    top_level_holes_removed_count = 0
+    for value in virtual_parts.values():
+        if not isinstance(value, dict):
+            continue
+        placements = value.get("internal_placements")
+        if isinstance(placements, list):
+            internal_placements_count += len([item for item in placements if isinstance(item, dict)])
+        cavity_diag = value.get("cavity_diagnostics")
+        if isinstance(cavity_diag, list):
+            top_level_holes_removed_count += len([item for item in cavity_diag if isinstance(item, dict)])
+
+    quantity_reduced_part_count = 0
+    for value in quantity_delta.values():
+        if not isinstance(value, dict):
+            continue
+        try:
+            internal_qty = int(value.get("internal_qty") or 0)
+        except (TypeError, ValueError):
+            internal_qty = 0
+        if internal_qty > 0:
+            quantity_reduced_part_count += 1
+
+    return {
+        "enabled": bool(cavity_plan.get("enabled")),
+        "version": str(cavity_plan.get("version") or "").strip(),
+        "virtual_parent_count": len(virtual_parts),
+        "internal_placements_count": internal_placements_count,
+        "quantity_reduced_part_count": quantity_reduced_part_count,
+        "top_level_holes_removed_count": top_level_holes_removed_count,
+    }
+
+
+def _register_solver_input_artifact_compat(
+    *,
+    client: WorkerSupabaseClient | Any,
+    run_id: str,
+    storage_bucket: str,
+    storage_key: str,
+    size_bytes: int,
+) -> None:
+    if hasattr(client, "insert_run_artifact"):
+        client.insert_run_artifact(
+            run_id=run_id,
+            storage_bucket=storage_bucket,
+            artifact_type="solver_input",
+            filename="solver_input.json",
+            storage_key=storage_key,
+            size_bytes=size_bytes,
+            sheet_index=None,
+        )
+        return
+    if hasattr(client, "register_run_artifact_raw"):
+        client.register_run_artifact_raw(
+            run_id=run_id,
+            artifact_kind="log",
+            storage_bucket=storage_bucket,
+            storage_path=storage_key,
+            metadata_json={
+                "legacy_artifact_type": "solver_input",
+                "filename": "solver_input.json",
+                "size_bytes": int(size_bytes),
+            },
+        )
+        return
+    raise WorkerError("client does not support solver_input artifact registration")
 
 
 def _sync_run_log_artifact(
@@ -1503,18 +1591,29 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             settings=settings,
             engine_backend=engine_backend,
         )
+        cavity_plan_payload: dict[str, Any] | None = None
+        cavity_prepack_summary = _summarize_cavity_plan(None)
         try:
             if engine_backend == ENGINE_BACKEND_SPARROW_V1:
                 solver_input_payload = build_solver_input_from_snapshot(snapshot_row)
                 solver_input_hash = solver_input_sha256(solver_input_payload)
                 engine_contract_version = str(solver_input_payload.get("contract_version", "v1"))
             elif engine_backend == ENGINE_BACKEND_NESTING_V2:
-                solver_input_payload = build_nesting_engine_input_from_snapshot(snapshot_row)
+                base_engine_input_payload = build_nesting_engine_input_from_snapshot(snapshot_row)
+                if profile_resolution.cavity_prepack_enabled:
+                    solver_input_payload, cavity_plan_payload = build_cavity_prepacked_engine_input(
+                        snapshot_row=snapshot_row,
+                        base_engine_input=base_engine_input_payload,
+                        enabled=True,
+                    )
+                    cavity_prepack_summary = _summarize_cavity_plan(cavity_plan_payload)
+                else:
+                    solver_input_payload = base_engine_input_payload
                 solver_input_hash = nesting_engine_input_sha256(solver_input_payload)
                 engine_contract_version = str(solver_input_payload.get("version", ENGINE_BACKEND_NESTING_V2))
             else:
                 raise WorkerError(f"unsupported worker engine backend: {engine_backend}")
-        except EngineAdapterInputError as exc:
+        except (EngineAdapterInputError, CavityPrepackError) as exc:
             raise WorkerError(f"run {run_id}: snapshot->solver_input mapping failed: {exc}") from exc
 
         solver_input_blob = (json.dumps(solver_input_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
@@ -1539,15 +1638,50 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         # through the standard run_artifacts table instead of relying on
         # side-channel storage paths.
         solver_input_storage_key = f"runs/{run_id}/inputs/solver_input_snapshot.json"
-        client.insert_run_artifact(
+        _register_solver_input_artifact_compat(
+            client=client,
             run_id=run_id,
             storage_bucket=settings.storage_bucket,
-            artifact_type="solver_input",
-            filename="solver_input.json",
             storage_key=solver_input_storage_key,
             size_bytes=len(solver_input_blob),
-            sheet_index=None,
         )
+
+        if cavity_plan_payload is not None:
+            cavity_plan_blob = (
+                json.dumps(cavity_plan_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+            ).encode("utf-8")
+            cavity_plan_path = input_dir / "cavity_plan.json"
+            cavity_plan_path.write_text(
+                json.dumps(cavity_plan_payload, ensure_ascii=True, indent=2),
+                encoding="utf-8",
+            )
+            cavity_plan_storage_key = f"runs/{run_id}/inputs/cavity_plan.json"
+            client.upload_object(
+                bucket=settings.storage_bucket,
+                object_key=cavity_plan_storage_key,
+                payload=cavity_plan_blob,
+            )
+            client.register_run_artifact_raw(
+                run_id=run_id,
+                artifact_kind="log",
+                storage_bucket=settings.storage_bucket,
+                storage_path=cavity_plan_storage_key,
+                metadata_json={
+                    "legacy_artifact_type": "cavity_plan",
+                    "filename": "cavity_plan.json",
+                    "size_bytes": len(cavity_plan_blob),
+                    "cavity_prepack_summary": cavity_prepack_summary,
+                },
+            )
+            logger.info(
+                "event=cavity_plan_persisted run_id=%s enabled=%s virtual_parents=%s internal_placements=%s quantity_reduced=%s holes_removed=%s",
+                run_id,
+                cavity_prepack_summary["enabled"],
+                cavity_prepack_summary["virtual_parent_count"],
+                cavity_prepack_summary["internal_placements_count"],
+                cavity_prepack_summary["quantity_reduced_part_count"],
+                cavity_prepack_summary["top_level_holes_removed_count"],
+            )
 
         # --- Engine meta artifact ---
         # Persist engine backend / contract / profile metadata as an explicit
@@ -1569,6 +1703,7 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             profile_resolution=profile_resolution,
             invocation=invocation,
             solver_input_hash=solver_input_hash,
+            cavity_prepack_summary=cavity_prepack_summary,
         )
         engine_meta_blob = (
             json.dumps(engine_meta, ensure_ascii=False, sort_keys=True, indent=2) + "\n"

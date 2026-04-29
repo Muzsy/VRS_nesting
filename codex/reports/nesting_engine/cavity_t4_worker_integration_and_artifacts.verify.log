@@ -1,0 +1,705 @@
+[PYTEST] Unit tests
+........................................................................ [ 28%]
+........................................................................ [ 56%]
+........................................................................ [ 84%]
+.........................................                                [100%]
+257 passed in 4.76s
+[MYPY] Type check
+Success: no issues found in 26 source files
+[SPARROW] Resolve/build via scripts/ensure_sparrow.sh
+[ensure_sparrow] pin commit (fallback_cache): c95454e390276231b278c879d25b39708398b7d3
+HEAD is now at c95454e Merge pull request #132 from JeroenGar/rand-0.10
+[ensure_sparrow] build source: .cache/sparrow (/home/muszy/projects/VRS_nesting/.cache/sparrow)
+    Finished `release` profile [optimized] target(s) in 0.46s
+[3/3] Sparrow IO smoketest
+[1/2] Sparrow run via runner module
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260429T202350Z_5acc14eb
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260429T202350Z_5acc14eb/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260429T202350Z_5acc14eb
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260429T202350Z_5acc14eb/output/final_swim.json
+PASS ✅
+ strip_height=5752.0
+ strip_width =5928.3433
+ placed_items=48 (demand_sum=48)
+ overlap-check: PASS
+[DXF] Import convention smoke
+[OK] DXF import convention smoke passed
+[GEO] Polygonize + offset robustness smoke
+[OK] geometry pipeline smoke passed
+[DOCS] Command references smoke
+[OK] docs command smoke passed
+[H3][T9] quality lane closure smoke
+PASS smoke_h3_quality_t9_quality_lane_audit_es_hibajavitas
+[DXF] Export --run-dir smoke
+[OK] exporter --run-dir smoke passed
+[DXF] Source geometry BLOCK/INSERT export smoke
+[OK] source geometry export smoke passed
+[DXF] Multi-sheet wrapper edge-cases smoke
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_6dr_cot8/run_a/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_6dr_cot8/run_a/sheets/sheet_001/instance.json -t 2 -s 0
+[runner] run_dir=/tmp/vrs_wrapper_edge_smoke_6dr_cot8/run_b/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/vrs_wrapper_edge_smoke_6dr_cot8/run_b/sheets/sheet_001/instance.json -t 2 -s 0
+[OK] multisheet wrapper edge-cases smoke passed
+[DXF] Real fixture import smoke
+[OK] real DXF fixture smoke passed
+[DXF] Real NFP pairs smoke
+[OK] real DXF NFP pairs smoke passed
+[DXF] Real Sparrow pipeline smoke
+[OK] real DXF + Sparrow pipeline smoke passed
+[DXF] SVG export artifact smoke
+[OK] svg export smoke passed
+[4/5] Nesting solution validator smoke
+    Finished `release` profile [optimized] target(s) in 0.39s
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260429T202547Z_10c94642
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260429T202547Z_10c94642/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260429T202547Z_10c94642/solver_output.json --seed 0 --time-limit 60
+[INFO] vrs_run_dir: /home/muszy/projects/VRS_nesting/runs/20260429T202547Z_10c94642
+PASS: nesting solution is valid
+ input=/home/muszy/projects/VRS_nesting/runs/20260429T202547Z_10c94642/solver_input.json
+ output=/home/muszy/projects/VRS_nesting/runs/20260429T202547Z_10c94642/solver_output.json
+[5/5] Determinism hash stability smoke
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260429T202548Z_ce7ade93
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260429T202548Z_ce7ade93/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260429T202548Z_ce7ade93/solver_output.json --seed 0 --time-limit 60
+[vrs-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260429T202548Z_d51e4b34
+[vrs-runner] cmd=/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /home/muszy/projects/VRS_nesting/runs/20260429T202548Z_d51e4b34/solver_input.json --output /home/muszy/projects/VRS_nesting/runs/20260429T202548Z_d51e4b34/solver_output.json --seed 0 --time-limit 60
+[INFO] Determinism hash stable: 5c30cb009aeca88d97c3129af6f3c5d7dbc2112e777441681d76229ad251031d
+[6/6] Timeout/perf guard smoke
+[OK] timeout/perf guard smoke passed
+[BUILD] nesting_engine (release)
+    Finished `release` profile [optimized] target(s) in 0.26s
+[NEST] Targeted can_place_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 2 tests
+test feasibility::narrow::tests::can_place_rejects_touching_bin_boundary ... ok
+test feasibility::narrow::tests::can_place_is_deterministic_for_identical_aabb_ties ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted blf_budget_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 1 test
+test placement::blf::tests::blf_budget_stop_is_deterministic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 75 filtered out; finished in 0.03s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted blf_part_in_part_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 3 tests
+test placement::blf::tests::blf_part_in_part_off_mode_preserves_baseline ... ok
+test placement::blf::tests::blf_part_in_part_offgrid_hole_improves_sheet_count ... ok
+test placement::blf::tests::blf_part_in_part_hole_collapsed_like_outer_only_source_is_ignored ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.24s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted nfp_budget_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 1 test
+test placement::nfp_placer::tests::nfp_budget_stop_is_deterministic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 75 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted cfr_sort_key_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 1 test
+test nfp::cfr::tests::cfr_sort_key_precompute_hash_called_once_per_component ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted sa_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 9 tests
+test search::sa::tests::sa_iters_clamp_allows_zero_when_only_initial_eval_fits ... ok
+test search::sa::tests::sa_core_stop_hook_can_short_circuit_before_first_iter ... ok
+test search::sa::tests::sa_move_neighbor_preserves_permutation ... ok
+test search::sa::tests::sa_prefers_higher_remnant_value_when_sheets_tie ... ok
+test search::sa::tests::sa_core_is_deterministic_fixed_seed ... ok
+test search::sa::tests::sa_search_zero_iter_budget_returns_initial_eval_result ... ok
+test search::sa::tests::sa_search_reuses_best_evaluated_result_without_final_rerun ... ok
+test search::sa::tests::sa_search_is_deterministic_tiny_blf_case ... ok
+test search::sa::tests::sa_quality_fixture_improves_sheets_used ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 67 filtered out; finished in 0.73s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted remnant_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 4 tests
+test search::sa::tests::sa_prefers_higher_remnant_value_when_sheets_tie ... ok
+test multi_bin::greedy::tests::remnant_score_is_integer_and_deterministic ... ok
+test multi_bin::greedy::tests::remnant_score_prefers_more_compact_proxy_layout ... ok
+test export::output_v2::tests::remnant_objective_is_exposed_in_output_v2 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted compaction_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 4 tests
+test export::output_v2::tests::compaction_meta_is_exposed_in_output_v2 ... ok
+test multi_bin::greedy::tests::compaction_slide_fixture_improves_extent_or_remnant ... ok
+test multi_bin::greedy::tests::compaction_postpass_primary_objective_is_not_worse ... ok
+test multi_bin::greedy::tests::compaction_postpass_is_deterministic_for_identical_input ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted determinism_ evidence unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 3 tests
+test geometry::offset::tests::offset_determinism_canonicalizes_hole_order ... ok
+test geometry::offset::tests::offset_determinism_near_zero_area_keeps_winding_stable ... ok
+test geometry::pipeline::tests::determinism_case_same_request_same_output ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 6 tests
+test export::output_v2::tests::determinism_hash_view_v1_canonical_json_is_byte_identical ... ok
+test geometry::offset::tests::offset_determinism_canonicalizes_hole_order ... ok
+test export::output_v2::tests::determinism_hash_is_stable ... ok
+test export::output_v2::tests::determinism_full_output_json_is_byte_identical ... ok
+test geometry::offset::tests::offset_determinism_near_zero_area_keeps_winding_stable ... ok
+test geometry::pipeline::tests::determinism_case_same_request_same_output ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted touching_policy_ evidence unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 2 tests
+test feasibility::narrow::tests::touching_policy_bin_boundary_touching_is_infeasible ... ok
+test feasibility::narrow::tests::touching_policy_part_part_touching_is_infeasible ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted offset_determinism_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 2 tests
+test geometry::offset::tests::offset_determinism_near_zero_area_keeps_winding_stable ... ok
+test geometry::offset::tests::offset_determinism_canonicalizes_hole_order ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 2 tests
+test geometry::offset::tests::offset_determinism_near_zero_area_keeps_winding_stable ... ok
+test geometry::offset::tests::offset_determinism_canonicalizes_hole_order ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted pipeline_float_policy_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 3 tests
+test geometry::pipeline::tests::pipeline_float_policy_hole_bbox_near_equal_bounds_are_stable ... ok
+test geometry::pipeline::tests::pipeline_float_policy_stock_hole_obstacle_ring_start_is_canonical ... ok
+test geometry::pipeline::tests::pipeline_float_policy_repeated_request_is_byte_identical ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 3 tests
+test geometry::pipeline::tests::pipeline_float_policy_stock_hole_obstacle_ring_start_is_canonical ... ok
+test geometry::pipeline::tests::pipeline_float_policy_hole_bbox_near_equal_bounds_are_stable ... ok
+test geometry::pipeline::tests::pipeline_float_policy_repeated_request_is_byte_identical ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted narrow_float_policy_ unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 2 tests
+test feasibility::narrow::tests::narrow_float_policy_identical_input_is_stable ... ok
+test feasibility::narrow::tests::narrow_float_policy_mm_rounding_near_touching_is_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Targeted order_policy evidence unit tests
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (rust/nesting_engine/target/debug/deps/nesting_engine-0fb5f14184e8409f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (rust/nesting_engine/target/debug/deps/nesting_engine-c0f218a226293be9)
+
+running 2 tests
+test placement::blf::tests::order_policy_by_input_order_preserves_input_order ... ok
+test placement::nfp_placer::tests::order_policy_by_input_order_preserves_input_order ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nfp_fixture.rs (rust/nesting_engine/target/debug/deps/nfp_fixture-89c79230a1e9f141)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/nfp_no_float_overlay.rs (rust/nesting_engine/target/debug/deps/nfp_no_float_overlay-2ee3e10343710955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/nfp_regression.rs (rust/nesting_engine/target/debug/deps/nfp_regression-5131f86e54918046)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/orbit_next_event_trace_smoke.rs (rust/nesting_engine/target/debug/deps/orbit_next_event_trace_smoke-5826a14285065327)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+[NEST] Baseline nesting_engine smoke
+[NEST][SA] CLI end-to-end smoke
+[OK] SA CLI smoke passed: runs=3, determinism_hash=sha256:7232a5a9eb996e567bf857e832ed0cbeee7d39992503579a959cc72329422cd6, sheets_used=1
+[NEST][F3-2] part-in-part pipeline smoke
+[OK] part-in-part smoke passed: baseline_sheets=2, auto_sheets=1, auto_hash=sha256:90d59df438712f6c5e29071f6c2da7d48f0e108bd9f569486015bb66782b3220
+[NEST][H3-T8] deterministic compaction post-pass smoke
+[OK] T8 compaction smoke passed: slide_hash=sha256:07bbbf55cd68620a0248110a69fe60d7d72c5d81894e190d34b84cc78171901d, moved=2, extent_delta_mm=(w=-1.599998, h=0.000000), remnant_delta_ppm=-6570
+[NEST] hash OK: sha256:4be7b018524e800c128d7da...
+[NEST] determinism OK
+[NEST] placer=nfp fallback smoke (holes/hole_collapsed -> blf)
+warning: --placer nfp fallback to blf (hybrid gating: holes or hole_collapsed)
+[NEST] placer=nfp fallback hash OK
+[NEST] placer=nfp noholes determinism smoke
+[NEST] placer=nfp noholes determinism OK
+[NEST][F0] no-worse-than-BLF basic check
+[NEST][F0] no-worse-than-BLF OK: nfp=2, blf=2
+[NEST][F1] wrapper contract smoke (placed>=1)
+[NEST][F1] wrapper contract OK: placed=1
+[NEST][F2] touching stress smoke (placed>=1)
+[NEST][F2] touching stress OK: placed=3
+[NEST][F3] rotation coverage (critical part must be 90 deg)
+[NEST][F3] rotation coverage OK: critical part rotation=90
+[NEST][F0] placer=nfp determinism gate (3x hash)
+[NEST][F0] determinism 3x OK: sha256:b02aeb912a939c5c495c4f97bd55f13dfae1da0cf66165924059e66053e88d4e
+[NEST][F4] CFR order hardening determinism gate (3x hash)
+[NEST][F4] determinism 3x OK: sha256:18430e4b2122f04c58635031692d77e9e58b08fdeda152c2cbc78164837fb8e5
+[NEST][F2-3] NFP placer stats/perf counter gate
+[CHECK] f0_sanity: PASS (stats <= baseline max)
+[CHECK] f4_cfr_order: PASS (stats <= baseline max)
+[OK] NFP placer stats/perf gate passed
+[NEST] 0 out-of-bounds OK, placed=10
+[NEST] Validator FAIL smoke (expected non-zero on overlap fixture)
+FAIL: overlap detected: sheet=0 rect_100x50#0 vs rect_100x50#1
+[NEST] Validator PASS smoke (baseline output)
+PASS: nesting_engine_v2 solution is valid
+ input=/home/muszy/projects/VRS_nesting/poc/nesting_engine/sample_input_v2.json
+ output=/tmp/nesting_engine_baseline_out_kM30rC.json
+[NEST] CLI smoke (nest-v2)
+[nesting-engine-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260429T202611Z_c7e9aa65
+[nesting-engine-runner] cmd=/home/muszy/projects/VRS_nesting/rust/nesting_engine/target/release/nesting_engine nest
+[NEST] CLI determinism OK
+[NEST] Canonical JSON determinism smoke
+[BUILD] nesting_engine release
+    Finished `release` profile [optimized] target(s) in 0.06s
+[RUN] deterministic smoke (10 runs)
+[OK] determinism smoke passed (10/10 full outputs are byte-identical)
+[OK] determinism smoke hash check passed (python canonical hash == solver meta.determinism_hash)
+[NEST] Float-boundary determinism smoke
+[NEST][FLOAT] Determinism smoke on float-boundary fixture
+[BUILD] nesting_engine release
+    Finished `release` profile [optimized] target(s) in 0.05s
+[RUN] deterministic smoke (10 runs)
+[OK] determinism smoke passed (10/10 full outputs are byte-identical)
+[OK] determinism smoke hash check passed (python canonical hash == solver meta.determinism_hash)
+[DONE] smoketest OK
