@@ -153,6 +153,7 @@ def _latest_preflight_summary_from_row(row: dict[str, Any]) -> dict[str, Any]:
     run_seq_value = int(run_seq) if isinstance(run_seq, int) and not isinstance(run_seq, bool) else None
     run_status = str(row.get("run_status", "")).strip()
     acceptance_outcome = row.get("acceptance_outcome")
+    acceptance_summary_raw = _as_dict(summary_root.get("acceptance_summary"))
     return {
         "preflight_run_id": str(row.get("id", "")),
         "run_seq": run_seq_value,
@@ -170,6 +171,7 @@ def _latest_preflight_summary_from_row(row: dict[str, Any]) -> dict[str, Any]:
             run_status=run_status,
             acceptance_outcome=acceptance_outcome,
         ),
+        "cavity_observability": _build_cavity_observability_from_acceptance_summary(acceptance_summary_raw),
     }
 
 
@@ -253,6 +255,7 @@ def _latest_preflight_diagnostics_from_row(row: dict[str, Any]) -> dict[str, Any
             "blocking_reason_count": _as_non_negative_int(acceptance_summary_raw.get("blocking_reason_count")),
             "review_required_reason_count": _as_non_negative_int(acceptance_summary_raw.get("review_required_reason_count")),
         },
+        "cavity_observability": _build_cavity_observability_from_acceptance_summary(acceptance_summary_raw),
         "artifact_references": [
             {
                 "artifact_kind": str(artifact.get("artifact_kind", "")).strip(),
@@ -262,6 +265,20 @@ def _latest_preflight_diagnostics_from_row(row: dict[str, Any]) -> dict[str, Any
             }
             for artifact in _as_dict_list(summary_root.get("artifact_references"))
         ],
+    }
+
+
+def _build_cavity_observability_from_acceptance_summary(acceptance_summary_raw: dict[str, Any]) -> dict[str, Any]:
+    importer_probe = _as_dict(acceptance_summary_raw.get("importer_probe"))
+    hole_count = _as_non_negative_int(importer_probe.get("hole_count"))
+    importer_pass = bool(importer_probe.get("is_pass"))
+    return {
+        "internal_hole_count": hole_count,
+        "has_internal_holes": hole_count > 0,
+        "usable_cavity_candidate_count": None,
+        "too_small_or_invalid_cavity_count": None,
+        "importer_probe_pass": importer_pass,
+        "estimation_basis": "importer_probe_hole_count_only" if hole_count > 0 else "none",
     }
 
 

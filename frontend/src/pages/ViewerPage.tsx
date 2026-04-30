@@ -197,7 +197,9 @@ export function ViewerPage() {
                     void loadViewerData({ resetSheet: false, silent: true });
                   }}
                   placements={activeSheetPlacements}
+                  sheetHeightMm={activeSheet.height_mm ?? undefined}
                   sheetIndex={activeSheet.sheet_index}
+                  sheetWidthMm={activeSheet.width_mm ?? undefined}
                   svgUrl={activeSheet.svg_url ?? null}
                 />
               </div>

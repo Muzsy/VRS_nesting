@@ -63,9 +63,11 @@ export const INTAKE_COPY = {
     section_issues: "Issues",
     section_repairs: "Repairs",
     section_acceptance: "Acceptance outcome",
+    section_cavity: "Cavity observability",
     section_artifacts: "Artifacts",
     no_issues: "No normalized issues.",
     no_artifacts: "No artifact references.",
+    cavity_not_computed: "Not computed at preflight stage",
   },
   review: {
     overlay_title: "Review required",

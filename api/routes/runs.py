@@ -171,6 +171,7 @@ class ViewerDataResponse(BaseModel):
     strategy_resolution_source: str | None = None
     strategy_field_sources: dict[str, Any] | None = None
     strategy_overrides_applied: list[str] | None = None
+    cavity_prepack_summary: dict[str, Any] | None = None
 
 
 _TERMINAL_STATES = {"done", "failed", "cancelled"}
@@ -1548,6 +1549,8 @@ def get_viewer_data(
         _soa = [_strategy_overrides_applied_raw]
     else:
         _soa = None
+    _cavity_prepack_raw = engine_meta_payload.get("cavity_prepack")
+    _cavity_prepack_summary = _cavity_prepack_raw if isinstance(_cavity_prepack_raw, dict) else None
 
     return ViewerDataResponse(
         run_id=str(run_id),
@@ -1570,6 +1573,7 @@ def get_viewer_data(
         strategy_resolution_source=str(engine_meta_payload.get("strategy_resolution_source") or "").strip() or None,
         strategy_field_sources=_sfs,
         strategy_overrides_applied=_soa,
+        cavity_prepack_summary=_cavity_prepack_summary,
     )
 
 

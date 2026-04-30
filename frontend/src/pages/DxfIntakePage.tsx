@@ -131,6 +131,10 @@ function formatExistsLabel(exists: boolean): string {
   return exists ? "yes" : "no";
 }
 
+function formatOptionalCount(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(Math.max(0, Math.trunc(value))) : INTAKE_COPY.diagnostics.cavity_not_computed;
+}
+
 function canOpenConditionalReviewModal(file: ProjectFile): boolean {
   return file.latest_preflight_summary?.acceptance_outcome === "preflight_review_required" && !!file.latest_preflight_diagnostics;
 }
@@ -518,6 +522,8 @@ export function DxfIntakePage() {
     [files, selectedDiagnosticsFileId]
   );
   const selectedDiagnostics = selectedDiagnosticsFile?.latest_preflight_diagnostics ?? null;
+  const selectedCavityObservability =
+    selectedDiagnostics?.cavity_observability ?? selectedDiagnosticsFile?.latest_preflight_summary?.cavity_observability ?? null;
   const selectedReviewFile = useMemo(
     () => files.find((file) => file.id === selectedReviewFileId) ?? null,
     [files, selectedReviewFileId]
@@ -1294,6 +1300,21 @@ export function DxfIntakePage() {
                   </p>
                 </div>
               </section>
+
+              {selectedCavityObservability && (
+                <section className="rounded-lg border border-mist p-4">
+                  <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_cavity}</h3>
+                  <div className="mt-2 grid gap-2 text-xs text-slate sm:grid-cols-2">
+                    <p>Internal hole count: {selectedCavityObservability.internal_hole_count}</p>
+                    <p>Has internal holes: {selectedCavityObservability.has_internal_holes ? "yes" : "no"}</p>
+                    <p>Usable cavity candidates: {formatOptionalCount(selectedCavityObservability.usable_cavity_candidate_count)}</p>
+                    <p>Too small / invalid cavities: {formatOptionalCount(selectedCavityObservability.too_small_or_invalid_cavity_count)}</p>
+                  </div>
+                  <p className="mt-2 text-xs text-slate">
+                    Basis: {selectedCavityObservability.estimation_basis || INTAKE_COPY.diagnostics.cavity_not_computed}
+                  </p>
+                </section>
+              )}
 
               <section className="rounded-lg border border-mist p-4">
                 <h3 className="text-sm font-semibold text-ink">{INTAKE_COPY.diagnostics.section_artifacts}</h3>

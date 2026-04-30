@@ -143,6 +143,33 @@ function normalizeLatestPreflightSummary(raw: unknown): ProjectFileLatestPreflig
     applied_duplicate_dedupe_count: normalizeNonNegativeInt(obj.applied_duplicate_dedupe_count),
     total_repair_count: normalizeNonNegativeInt(obj.total_repair_count),
     recommended_action: (obj.recommended_action as string | null | undefined) ?? null,
+    cavity_observability: normalizePreflightCavityObservability(obj.cavity_observability),
+  };
+}
+
+function normalizePreflightCavityObservability(raw: unknown): {
+  internal_hole_count: number;
+  has_internal_holes: boolean;
+  usable_cavity_candidate_count?: number | null;
+  too_small_or_invalid_cavity_count?: number | null;
+  importer_probe_pass?: boolean;
+  estimation_basis?: string | null;
+} | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const obj = raw as Record<string, unknown>;
+  const usableRaw = obj.usable_cavity_candidate_count;
+  const invalidRaw = obj.too_small_or_invalid_cavity_count;
+  return {
+    internal_hole_count: normalizeNonNegativeInt(obj.internal_hole_count),
+    has_internal_holes: Boolean(obj.has_internal_holes),
+    usable_cavity_candidate_count:
+      typeof usableRaw === "number" && Number.isFinite(usableRaw) ? normalizeNonNegativeInt(usableRaw) : null,
+    too_small_or_invalid_cavity_count:
+      typeof invalidRaw === "number" && Number.isFinite(invalidRaw) ? normalizeNonNegativeInt(invalidRaw) : null,
+    importer_probe_pass: typeof obj.importer_probe_pass === "boolean" ? obj.importer_probe_pass : undefined,
+    estimation_basis: typeof obj.estimation_basis === "string" ? obj.estimation_basis : null,
   };
 }
 
@@ -230,6 +257,7 @@ function normalizeLatestPreflightDiagnostics(raw: unknown): ProjectFileLatestPre
       blocking_reason_count: normalizeNonNegativeInt(acceptanceSummary.blocking_reason_count),
       review_required_reason_count: normalizeNonNegativeInt(acceptanceSummary.review_required_reason_count),
     },
+    cavity_observability: normalizePreflightCavityObservability(obj.cavity_observability),
     artifact_references: artifactReferences,
   };
 }

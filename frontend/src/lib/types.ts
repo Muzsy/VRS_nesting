@@ -73,6 +73,16 @@ export interface ProjectFileLatestPreflightSummary {
   applied_duplicate_dedupe_count: number;
   total_repair_count: number;
   recommended_action?: string | null;
+  cavity_observability?: PreflightCavityObservability | null;
+}
+
+export interface PreflightCavityObservability {
+  internal_hole_count: number;
+  has_internal_holes: boolean;
+  usable_cavity_candidate_count?: number | null;
+  too_small_or_invalid_cavity_count?: number | null;
+  importer_probe_pass?: boolean;
+  estimation_basis?: string | null;
 }
 
 export interface ProjectFileLatestPreflightDiagnostics {
@@ -130,6 +140,7 @@ export interface ProjectFileLatestPreflightDiagnostics {
     blocking_reason_count: number;
     review_required_reason_count: number;
   };
+  cavity_observability?: PreflightCavityObservability | null;
   artifact_references: Array<{
     artifact_kind: string;
     download_label: string;
@@ -341,6 +352,14 @@ export interface ViewerDataResponse {
   strategy_resolution_source?: string | null;
   strategy_field_sources?: Record<string, string> | null;
   strategy_overrides_applied?: string[] | null;
+  cavity_prepack_summary?: {
+    enabled: boolean;
+    version: string;
+    virtual_parent_count: number;
+    internal_placements_count: number;
+    quantity_reduced_part_count: number;
+    top_level_holes_removed_count: number;
+  } | null;
 }
 
 export interface BundleResponse {

@@ -230,6 +230,31 @@ def _canonical_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _load_enabled_cavity_plan(run_dir: Path) -> dict[str, Any] | None:
+    cavity_plan_path = run_dir / "cavity_plan.json"
+    if not cavity_plan_path.is_file():
+        return None
+    try:
+        payload = json.loads(cavity_plan_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise ResultNormalizerError(f"invalid cavity_plan json: {cavity_plan_path}") from exc
+    plan = _require_dict(payload, field="cavity_plan")
+    enabled = bool(plan.get("enabled"))
+    if not enabled:
+        return None
+    version = str(plan.get("version") or "").strip()
+    if version != "cavity_plan_v1":
+        raise ResultNormalizerError(f"invalid cavity_plan version: {version or '<empty>'}")
+    return plan
+
+
+def _normalize_rotation_deg(value: float) -> float:
+    normalized = float(value) % 360.0
+    if normalized < 0.0:
+        normalized += 360.0
+    return normalized
+
+
 def _build_part_index(snapshot_row: dict[str, Any]) -> dict[str, dict[str, Any]]:
     geometry_manifest = _require_list(snapshot_row.get("geometry_manifest_jsonb"), field="geometry_manifest_jsonb")
     geometry_by_derivative: dict[str, dict[str, Any]] = {}
@@ -549,19 +574,138 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
 
     part_index = _build_part_index(snapshot_row)
     sheet_instances = _build_sheet_instances(snapshot_row)
+    cavity_plan = _load_enabled_cavity_plan(run_dir)
+    cavity_enabled = cavity_plan is not None
+    cavity_plan_version = str(cavity_plan.get("version")) if cavity_enabled else None
+
+    virtual_parts: dict[str, dict[str, Any]] = {}
+    top_level_instance_bases: dict[str, int] = {}
+    if cavity_enabled:
+        virtual_raw = _require_dict(cavity_plan.get("virtual_parts"), field="cavity_plan.virtual_parts")
+        for virtual_id_raw, virtual_item_raw in virtual_raw.items():
+            virtual_id = _require_str(virtual_id_raw, field="cavity_plan.virtual_parts.<key>")
+            virtual_item = _require_dict(virtual_item_raw, field=f"cavity_plan.virtual_parts.{virtual_id}")
+            parent_part_revision_id = _require_str(
+                virtual_item.get("parent_part_revision_id"),
+                field=f"cavity_plan.virtual_parts.{virtual_id}.parent_part_revision_id",
+            )
+            parent_instance = _parse_nonnegative_int(
+                virtual_item.get("parent_instance"),
+                field=f"cavity_plan.virtual_parts.{virtual_id}.parent_instance",
+            )
+            internal_raw = _require_list(
+                virtual_item.get("internal_placements", []),
+                field=f"cavity_plan.virtual_parts.{virtual_id}.internal_placements",
+            )
+            internal_placements: list[dict[str, Any]] = []
+            for internal_idx, internal_raw_item in enumerate(internal_raw):
+                internal_item = _require_dict(
+                    internal_raw_item,
+                    field=f"cavity_plan.virtual_parts.{virtual_id}.internal_placements[{internal_idx}]",
+                )
+                internal_placements.append(
+                    {
+                        "child_part_revision_id": _require_str(
+                            internal_item.get("child_part_revision_id"),
+                            field=(
+                                "cavity_plan.virtual_parts."
+                                f"{virtual_id}.internal_placements[{internal_idx}].child_part_revision_id"
+                            ),
+                        ),
+                        "child_instance": _parse_nonnegative_int(
+                            internal_item.get("child_instance"),
+                            field=(
+                                "cavity_plan.virtual_parts."
+                                f"{virtual_id}.internal_placements[{internal_idx}].child_instance"
+                            ),
+                        ),
+                        "cavity_index": _parse_nonnegative_int(
+                            internal_item.get("cavity_index"),
+                            field=(
+                                "cavity_plan.virtual_parts."
+                                f"{virtual_id}.internal_placements[{internal_idx}].cavity_index"
+                            ),
+                        ),
+                        "x_local_mm": _parse_finite_float(
+                            internal_item.get("x_local_mm"),
+                            field=(
+                                "cavity_plan.virtual_parts."
+                                f"{virtual_id}.internal_placements[{internal_idx}].x_local_mm"
+                            ),
+                        ),
+                        "y_local_mm": _parse_finite_float(
+                            internal_item.get("y_local_mm"),
+                            field=(
+                                "cavity_plan.virtual_parts."
+                                f"{virtual_id}.internal_placements[{internal_idx}].y_local_mm"
+                            ),
+                        ),
+                        "rotation_deg": _parse_finite_float(
+                            internal_item.get("rotation_deg"),
+                            field=(
+                                "cavity_plan.virtual_parts."
+                                f"{virtual_id}.internal_placements[{internal_idx}].rotation_deg"
+                            ),
+                        ),
+                        "placement_origin_ref": str(internal_item.get("placement_origin_ref") or "").strip() or None,
+                    }
+                )
+            virtual_parts[virtual_id] = {
+                "parent_part_revision_id": parent_part_revision_id,
+                "parent_instance": parent_instance,
+                "internal_placements": internal_placements,
+            }
+
+        instance_bases_raw = _require_dict(cavity_plan.get("instance_bases"), field="cavity_plan.instance_bases")
+        for child_part_id_raw, base_item_raw in instance_bases_raw.items():
+            child_part_id = _require_str(child_part_id_raw, field="cavity_plan.instance_bases.<key>")
+            base_item = _require_dict(base_item_raw, field=f"cavity_plan.instance_bases.{child_part_id}")
+            top_level_instance_bases[child_part_id] = _parse_nonnegative_int(
+                base_item.get("top_level_instance_base", 0),
+                field=f"cavity_plan.instance_bases.{child_part_id}.top_level_instance_base",
+            )
 
     placement_rows: list[dict[str, Any]] = []
     sheet_used: set[int] = set()
     per_sheet_counter: dict[int, int] = {}
     per_sheet_placed_area: dict[int, float] = {}
 
+    def _append_placement_row(
+        *,
+        sheet_index: int,
+        part_revision_id: str,
+        instance_id: str,
+        x: float,
+        y: float,
+        rotation_deg: float,
+        part: dict[str, Any],
+        metadata_jsonb: dict[str, Any],
+    ) -> None:
+        placement_index = per_sheet_counter.get(sheet_index, 0)
+        per_sheet_counter[sheet_index] = placement_index + 1
+        per_sheet_placed_area[sheet_index] = per_sheet_placed_area.get(sheet_index, 0.0) + float(part["area_mm2"])
+        transform_jsonb = {
+            "x": _round6(x),
+            "y": _round6(y),
+            "rotation_deg": _round6(rotation_deg),
+            "sheet_index": int(sheet_index),
+            "instance_id": instance_id,
+        }
+        placement_rows.append(
+            {
+                "sheet_index": int(sheet_index),
+                "placement_index": int(placement_index),
+                "part_revision_id": part_revision_id,
+                "quantity": 1,
+                "transform_jsonb": transform_jsonb,
+                "bbox_jsonb": _transform_bbox(bbox=part["bbox"], x=x, y=y, rotation_deg=rotation_deg),
+                "metadata_jsonb": metadata_jsonb,
+            }
+        )
+
     for idx, placement_raw in enumerate(placements_raw):
         placement = _require_dict(placement_raw, field=f"nesting_output.placements[{idx}]")
         part_id = _require_str(placement.get("part_id"), field=f"nesting_output.placements[{idx}].part_id")
-        part = part_index.get(part_id)
-        if part is None:
-            raise ResultNormalizerError(f"unknown part_id in nesting_output: {part_id}")
-
         instance = _parse_nonnegative_int(placement.get("instance"), field=f"nesting_output.placements[{idx}].instance")
         sheet_index = _parse_nonnegative_int(placement.get("sheet"), field=f"nesting_output.placements[{idx}].sheet")
         if sheet_index >= len(sheet_instances):
@@ -575,39 +719,125 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
             field=f"nesting_output.placements[{idx}].rotation_deg",
         )
 
-        placement_index = per_sheet_counter.get(sheet_index, 0)
-        per_sheet_counter[sheet_index] = placement_index + 1
-        per_sheet_placed_area[sheet_index] = per_sheet_placed_area.get(sheet_index, 0.0) + float(part["area_mm2"])
-        instance_id = f"{part_id}:{instance}"
+        virtual = virtual_parts.get(part_id) if cavity_enabled else None
+        if virtual is not None:
+            parent_part_id = str(virtual["parent_part_revision_id"])
+            parent_part = part_index.get(parent_part_id)
+            if parent_part is None:
+                raise ResultNormalizerError(f"missing parent part in cavity plan: {parent_part_id}")
+            parent_instance = int(virtual["parent_instance"])
+            parent_instance_id = f"{parent_part_id}:{parent_instance}"
+            parent_metadata: dict[str, Any] = {
+                "normalizer_scope": "h3_quality_t4_v2_bridge",
+                "engine_backend": "nesting_engine_v2",
+                "part_code": parent_part["part_code"],
+                "part_definition_id": parent_part["part_definition_id"],
+                "source_geometry_revision_id": parent_part["source_geometry_revision_id"],
+                "selected_nesting_derivative_id": parent_part["selected_nesting_derivative_id"],
+                "instance": int(parent_instance),
+            }
+            if cavity_enabled:
+                parent_metadata.update(
+                    {
+                        "placement_scope": "top_level_parent",
+                        "cavity_plan_version": cavity_plan_version,
+                        "solver_instance": int(instance),
+                    }
+                )
+            _append_placement_row(
+                sheet_index=sheet_index,
+                part_revision_id=parent_part_id,
+                instance_id=parent_instance_id,
+                x=x,
+                y=y,
+                rotation_deg=rotation_deg,
+                part=parent_part,
+                metadata_jsonb=parent_metadata,
+            )
 
-        transform_jsonb = {
-            "x": _round6(x),
-            "y": _round6(y),
-            "rotation_deg": _round6(rotation_deg),
-            "sheet_index": int(sheet_index),
-            "instance_id": instance_id,
-        }
-        bbox_jsonb = _transform_bbox(bbox=part["bbox"], x=x, y=y, rotation_deg=rotation_deg)
-        metadata_jsonb = {
+            for internal_idx, internal in enumerate(virtual["internal_placements"]):
+                child_part_id = str(internal["child_part_revision_id"])
+                child_part = part_index.get(child_part_id)
+                if child_part is None:
+                    raise ResultNormalizerError(f"unknown child part in cavity plan: {child_part_id}")
+                child_instance = int(internal["child_instance"])
+                local_x = float(internal["x_local_mm"])
+                local_y = float(internal["y_local_mm"])
+                local_rotation = float(internal["rotation_deg"])
+                abs_x, abs_y = placement_transform_point(
+                    local_x=local_x,
+                    local_y=local_y,
+                    tx=x,
+                    ty=y,
+                    rotation_deg=rotation_deg,
+                )
+                abs_rotation = _normalize_rotation_deg(rotation_deg + local_rotation)
+                child_instance_id = f"{child_part_id}:{child_instance}"
+                child_metadata: dict[str, Any] = {
+                    "normalizer_scope": "h3_quality_t4_v2_bridge",
+                    "engine_backend": "nesting_engine_v2",
+                    "part_code": child_part["part_code"],
+                    "part_definition_id": child_part["part_definition_id"],
+                    "source_geometry_revision_id": child_part["source_geometry_revision_id"],
+                    "selected_nesting_derivative_id": child_part["selected_nesting_derivative_id"],
+                    "instance": int(child_instance),
+                    "placement_scope": "internal_cavity",
+                    "cavity_plan_version": cavity_plan_version,
+                    "parent_part_revision_id": parent_part_id,
+                    "parent_instance": int(parent_instance),
+                    "internal_placement_index": int(internal_idx),
+                    "cavity_index": int(internal["cavity_index"]),
+                    "local_transform": {
+                        "x_local_mm": _round6(local_x),
+                        "y_local_mm": _round6(local_y),
+                        "rotation_deg": _round6(local_rotation),
+                        "placement_origin_ref": internal["placement_origin_ref"],
+                    },
+                }
+                _append_placement_row(
+                    sheet_index=sheet_index,
+                    part_revision_id=child_part_id,
+                    instance_id=child_instance_id,
+                    x=abs_x,
+                    y=abs_y,
+                    rotation_deg=abs_rotation,
+                    part=child_part,
+                    metadata_jsonb=child_metadata,
+                )
+            continue
+
+        part = part_index.get(part_id)
+        if part is None:
+            raise ResultNormalizerError(f"unknown part_id in nesting_output: {part_id}")
+        top_level_instance_base = int(top_level_instance_bases.get(part_id, 0)) if cavity_enabled else 0
+        mapped_instance = instance + top_level_instance_base
+        metadata_jsonb: dict[str, Any] = {
             "normalizer_scope": "h3_quality_t4_v2_bridge",
             "engine_backend": "nesting_engine_v2",
             "part_code": part["part_code"],
             "part_definition_id": part["part_definition_id"],
             "source_geometry_revision_id": part["source_geometry_revision_id"],
             "selected_nesting_derivative_id": part["selected_nesting_derivative_id"],
-            "instance": int(instance),
+            "instance": int(mapped_instance),
         }
-
-        placement_rows.append(
-            {
-                "sheet_index": int(sheet_index),
-                "placement_index": int(placement_index),
-                "part_revision_id": part_id,
-                "quantity": 1,
-                "transform_jsonb": transform_jsonb,
-                "bbox_jsonb": bbox_jsonb,
-                "metadata_jsonb": metadata_jsonb,
-            }
+        if cavity_enabled:
+            metadata_jsonb.update(
+                {
+                    "placement_scope": "top_level",
+                    "cavity_plan_version": cavity_plan_version,
+                    "solver_instance": int(instance),
+                    "top_level_instance_base": int(top_level_instance_base),
+                }
+            )
+        _append_placement_row(
+            sheet_index=sheet_index,
+            part_revision_id=part_id,
+            instance_id=f"{part_id}:{mapped_instance}",
+            x=x,
+            y=y,
+            rotation_deg=rotation_deg,
+            part=part,
+            metadata_jsonb=metadata_jsonb,
         )
 
     placement_rows.sort(key=lambda item: (int(item["sheet_index"]), int(item["placement_index"])))
@@ -660,23 +890,32 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
     for idx, unplaced_item_raw in enumerate(unplaced_raw):
         unplaced_item = _require_dict(unplaced_item_raw, field=f"nesting_output.unplaced[{idx}]")
         part_id = _require_str(unplaced_item.get("part_id"), field=f"nesting_output.unplaced[{idx}].part_id")
-        part = part_index.get(part_id)
-        if part is None:
-            raise ResultNormalizerError(f"unknown part_id in nesting_output unplaced: {part_id}")
         instance = _parse_nonnegative_int(unplaced_item.get("instance"), field=f"nesting_output.unplaced[{idx}].instance")
         reason_raw = str(unplaced_item.get("reason") or "").strip()
         reason_key = reason_raw or ""
-        key = (part_id, reason_key)
+        mapped_part_id = part_id
+        mapped_instance = instance
+        if cavity_enabled:
+            virtual = virtual_parts.get(part_id)
+            if virtual is not None:
+                mapped_part_id = str(virtual["parent_part_revision_id"])
+                mapped_instance = int(virtual["parent_instance"])
+            else:
+                mapped_instance = instance + int(top_level_instance_bases.get(part_id, 0))
+        part = part_index.get(mapped_part_id)
+        if part is None:
+            raise ResultNormalizerError(f"unknown part_id in nesting_output unplaced: {mapped_part_id}")
+        key = (mapped_part_id, reason_key)
         if key not in unplaced_bucket:
             unplaced_bucket[key] = {
-                "part_revision_id": part_id,
+                "part_revision_id": mapped_part_id,
                 "reason": reason_raw or None,
                 "remaining_qty": 0,
                 "instance_ids": [],
                 "part_code": part["part_code"],
             }
         unplaced_bucket[key]["remaining_qty"] = int(unplaced_bucket[key]["remaining_qty"]) + 1
-        unplaced_bucket[key]["instance_ids"].append(f"{part_id}:{instance}")
+        unplaced_bucket[key]["instance_ids"].append(f"{mapped_part_id}:{mapped_instance}")
 
     unplaced_rows: list[dict[str, Any]] = []
     for key in sorted(unplaced_bucket.keys(), key=lambda item: (item[0], item[1])):
@@ -691,6 +930,14 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
                     "engine_backend": "nesting_engine_v2",
                     "part_code": str(bucket["part_code"]),
                     "instance_ids": sorted(str(value) for value in bucket["instance_ids"]),
+                    **(
+                        {
+                            "placement_scope": "unplaced",
+                            "cavity_plan_version": cavity_plan_version,
+                        }
+                        if cavity_enabled
+                        else {}
+                    ),
                 },
             }
         )
@@ -728,6 +975,12 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
         "meta": output.get("meta") if isinstance(output.get("meta"), dict) else {},
         "sheets_used_reported": _parse_nonnegative_int(output.get("sheets_used", 0), field="nesting_output.sheets_used"),
     }
+    if cavity_enabled:
+        metrics_jsonb["cavity_plan"] = {
+            "enabled": True,
+            "version": cavity_plan_version,
+            "virtual_parent_count": len(virtual_parts),
+        }
 
     metrics_row = {
         "placed_count": int(placed_count),

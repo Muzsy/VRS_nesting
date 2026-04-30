@@ -131,6 +131,17 @@ export function RunDetailPage() {
 
   const isTerminal = run ? TERMINAL_STATUSES.has(run.status) : false;
   const hasUnplaced = (run?.metrics?.unplaced_count ?? 0) > 0;
+  const cavityPrepackSummary = viewerData?.cavity_prepack_summary ?? null;
+  const showCavityPrepackSummary = Boolean(
+    cavityPrepackSummary &&
+      (
+        cavityPrepackSummary.enabled ||
+        cavityPrepackSummary.virtual_parent_count > 0 ||
+        cavityPrepackSummary.internal_placements_count > 0 ||
+        cavityPrepackSummary.top_level_holes_removed_count > 0 ||
+        (cavityPrepackSummary.version ?? "").trim().length > 0
+      )
+  );
 
   async function handleDownloadArtifact(artifactId: string) {
     if (!projectId || !runId) {
@@ -395,6 +406,21 @@ export function RunDetailPage() {
                 )}
               </dd>
             </div>
+            {showCavityPrepackSummary && cavityPrepackSummary && (
+              <div className="md:col-span-2">
+                <dt className="text-slate">Cavity prepack summary</dt>
+                <dd className="mt-1 font-medium text-ink">
+                  <ul className="space-y-0.5 font-mono text-xs">
+                    <li>enabled: {cavityPrepackSummary.enabled ? "true" : "false"}</li>
+                    <li>version: {cavityPrepackSummary.version || "-"}</li>
+                    <li>virtual_parent_count: {cavityPrepackSummary.virtual_parent_count}</li>
+                    <li>internal_placements_count: {cavityPrepackSummary.internal_placements_count}</li>
+                    <li>quantity_reduced_part_count: {cavityPrepackSummary.quantity_reduced_part_count}</li>
+                    <li>top_level_holes_removed_count: {cavityPrepackSummary.top_level_holes_removed_count}</li>
+                  </ul>
+                </dd>
+              </div>
+            )}
           </dl>
         )}
       </article>
