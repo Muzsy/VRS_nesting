@@ -99,6 +99,7 @@ def dedupe_dxf_duplicate_contours(
 
     layer_roles = _extract_layer_roles(role_resolution)
     cut_like_layers = {layer: role for layer, role in layer_roles.items() if role in _CUT_LIKE_ROLES}
+    contour_roles = _extract_contour_roles(role_resolution)
 
     review_required_candidates: list[dict[str, Any]] = []
     blocking_conflicts: list[dict[str, Any]] = []
@@ -122,53 +123,109 @@ def dedupe_dxf_duplicate_contours(
                 "message": f"source_path not accessible: {source_path_raw}",
             }
 
-    for layer, canonical_role in sorted(cut_like_layers.items()):
-        if not entities:
-            break
-        probe = probe_layer_rings(entities, layer=layer)
-        hard_error = probe.get("hard_error")
-        if isinstance(hard_error, Mapping):
-            _emit_conflict(
-                review_required_candidates,
-                blocking_conflicts,
-                family="duplicate_topology_not_safe",
-                strict_mode=profile["strict_mode"],
-                interactive_review=profile["interactive_review_on_ambiguity"],
-                payload={
-                    "layer": layer,
-                    "canonical_role": canonical_role,
-                    "source": "importer_probe",
-                    "error_code": str(hard_error.get("code", "UNKNOWN")),
-                    "error_message": str(hard_error.get("message", "")),
-                },
-            )
-            continue
-
-        rings = probe.get("rings")
-        if not isinstance(rings, list):
-            continue
-
-        for ring_index, ring in enumerate(rings):
-            normalized = _normalize_ring_points(ring)
-            if normalized is None:
+    if contour_roles:
+        # Contour-level role truth is available: use it instead of layer-level roles.
+        # Probe each layer that appears in contour_roles.
+        layers_to_probe = sorted({layer for layer, _ in contour_roles})
+        for layer in layers_to_probe:
+            if not entities:
+                break
+            probe = probe_layer_rings(entities, layer=layer)
+            hard_error = probe.get("hard_error")
+            if isinstance(hard_error, Mapping):
+                _emit_conflict(
+                    review_required_candidates,
+                    blocking_conflicts,
+                    family="duplicate_topology_not_safe",
+                    strict_mode=profile["strict_mode"],
+                    interactive_review=profile["interactive_review_on_ambiguity"],
+                    payload={
+                        "layer": layer,
+                        "canonical_role": "contour_level",
+                        "source": "importer_probe",
+                        "error_code": str(hard_error.get("code", "UNKNOWN")),
+                        "error_message": str(hard_error.get("message", "")),
+                    },
+                )
                 continue
-            contour_id = f"orig:{layer}:{ring_index}"
-            original_contours.append(
-                {
-                    "contour_id": contour_id,
-                    "layer": layer,
-                    "canonical_role": canonical_role,
-                    "source": "importer_probe",
-                    "source_detail": "T1_importer_probe",
-                    "origin_index": ring_index,
-                    "source_priority": 0,
-                    "canonical_layer_priority": 0 if layer == canonical_role else 1,
-                    "point_count": len(normalized),
-                    "points": normalized,
-                    "bbox": _bbox_of_points(normalized),
-                    "dedupe_eligible": True,
-                }
-            )
+
+            rings = probe.get("rings")
+            if not isinstance(rings, list):
+                continue
+
+            for ring_index, ring in enumerate(rings):
+                canonical_role = contour_roles.get((layer, ring_index))
+                if canonical_role not in _CUT_LIKE_ROLES:
+                    continue
+                normalized = _normalize_ring_points(ring)
+                if normalized is None:
+                    continue
+                contour_id = f"orig:{layer}:{ring_index}"
+                original_contours.append(
+                    {
+                        "contour_id": contour_id,
+                        "layer": layer,
+                        "canonical_role": canonical_role,
+                        "source": "importer_probe",
+                        "source_detail": "T1_importer_probe",
+                        "origin_index": ring_index,
+                        "source_priority": 0,
+                        "canonical_layer_priority": 0 if layer == canonical_role else 1,
+                        "point_count": len(normalized),
+                        "points": normalized,
+                        "bbox": _bbox_of_points(normalized),
+                        "dedupe_eligible": True,
+                    }
+                )
+    else:
+        # Fallback: use layer-level cut roles (original behaviour).
+        for layer, canonical_role in sorted(cut_like_layers.items()):
+            if not entities:
+                break
+            probe = probe_layer_rings(entities, layer=layer)
+            hard_error = probe.get("hard_error")
+            if isinstance(hard_error, Mapping):
+                _emit_conflict(
+                    review_required_candidates,
+                    blocking_conflicts,
+                    family="duplicate_topology_not_safe",
+                    strict_mode=profile["strict_mode"],
+                    interactive_review=profile["interactive_review_on_ambiguity"],
+                    payload={
+                        "layer": layer,
+                        "canonical_role": canonical_role,
+                        "source": "importer_probe",
+                        "error_code": str(hard_error.get("code", "UNKNOWN")),
+                        "error_message": str(hard_error.get("message", "")),
+                    },
+                )
+                continue
+
+            rings = probe.get("rings")
+            if not isinstance(rings, list):
+                continue
+
+            for ring_index, ring in enumerate(rings):
+                normalized = _normalize_ring_points(ring)
+                if normalized is None:
+                    continue
+                contour_id = f"orig:{layer}:{ring_index}"
+                original_contours.append(
+                    {
+                        "contour_id": contour_id,
+                        "layer": layer,
+                        "canonical_role": canonical_role,
+                        "source": "importer_probe",
+                        "source_detail": "T1_importer_probe",
+                        "origin_index": ring_index,
+                        "source_priority": 0,
+                        "canonical_layer_priority": 0 if layer == canonical_role else 1,
+                        "point_count": len(normalized),
+                        "points": normalized,
+                        "bbox": _bbox_of_points(normalized),
+                        "dedupe_eligible": True,
+                    }
+                )
 
     # Add T3 repaired closed contours to the same inventory.
     repaired_contours: list[dict[str, Any]] = []
@@ -583,6 +640,25 @@ def _extract_layer_roles(role_resolution: Mapping[str, Any]) -> dict[str, str]:
         canonical_role = str(record.get("canonical_role", ""))
         if layer:
             out[layer] = canonical_role
+    return out
+
+
+def _extract_contour_roles(
+    role_resolution: Mapping[str, Any],
+) -> dict[tuple[str, int], str]:
+    """Extract contour-level role assignments as {(layer, ring_index): canonical_role}."""
+    out: dict[tuple[str, int], str] = {}
+    assignments = role_resolution.get("contour_role_assignments")
+    if not isinstance(assignments, list):
+        return out
+    for record in assignments:
+        if not isinstance(record, Mapping):
+            continue
+        layer = str(record.get("layer", ""))
+        ring_index = _as_int(record.get("ring_index"), default=-1)
+        canonical_role = str(record.get("canonical_role", ""))
+        if layer and ring_index >= 0 and canonical_role in _CUT_LIKE_ROLES:
+            out[(layer, ring_index)] = canonical_role
     return out
 
 

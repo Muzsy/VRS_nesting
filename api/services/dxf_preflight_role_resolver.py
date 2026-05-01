@@ -183,6 +183,25 @@ def resolve_dxf_roles(
         review_required_candidates.extend(resolution["review_required"])
         blocking_conflicts.extend(resolution["blocking"])
 
+    contour_role_assignments, contour_resolved_layers = _resolve_contour_roles(
+        contour_candidates=contour_candidates,
+        outer_like=outer_like,
+        inner_like=inner_like,
+        layer_role_assignments=layer_role_assignments,
+        profile=profile,
+        review_required_candidates=review_required_candidates,
+        blocking_conflicts=blocking_conflicts,
+    )
+
+    # Suppress no_signal_layer_with_contour conflicts for layers fully resolved
+    # at contour level; update those layer records' decision_source.
+    _apply_contour_resolution_to_layer_records(
+        layer_role_assignments=layer_role_assignments,
+        review_required_candidates=review_required_candidates,
+        blocking_conflicts=blocking_conflicts,
+        contour_resolved_layers=contour_resolved_layers,
+    )
+
     resolved_role_inventory = _build_resolved_role_inventory(
         layer_role_assignments=layer_role_assignments,
         entity_role_assignments=entity_role_assignments,
@@ -199,6 +218,7 @@ def resolve_dxf_roles(
         "rules_profile_echo": profile["echo"],
         "layer_role_assignments": layer_role_assignments,
         "entity_role_assignments": entity_role_assignments,
+        "contour_role_assignments": contour_role_assignments,
         "resolved_role_inventory": resolved_role_inventory,
         "review_required_candidates": review_required_candidates,
         "blocking_conflicts": blocking_conflicts,
@@ -556,6 +576,254 @@ def _project_entity_assignments(
         )
     out.sort(key=lambda item: int(item["entity_index"]))
     return out
+
+
+def _resolve_contour_roles(
+    *,
+    contour_candidates: list[dict[str, Any]],
+    outer_like: list[dict[str, Any]],
+    inner_like: list[dict[str, Any]],
+    layer_role_assignments: list[dict[str, Any]],
+    profile: dict[str, Any],
+    review_required_candidates: list[dict[str, Any]],
+    blocking_conflicts: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """Classify each closed contour as CUT_OUTER, CUT_INNER, or skip.
+
+    Returns (contour_role_assignments, contour_resolved_layers) where
+    contour_resolved_layers is the set of layers where ALL contours got a
+    contour-level cut role (so the layer-level no_signal conflict can be suppressed).
+    """
+    layer_canonical: dict[str, str] = {
+        str(rec["layer"]): str(rec["canonical_role"])
+        for rec in layer_role_assignments
+    }
+
+    # Build containment index from outer_like/inner_like candidates.
+    # Key: (layer, ring_index) → list of rings it contains
+    contains_map: dict[tuple[str, int], list[tuple[str, int]]] = {}
+    for item in outer_like:
+        key = (str(item["layer"]), int(item["ring_index"]))
+        refs = [
+            (str(r["layer"]), int(r["ring_index"]))
+            for r in _as_dict_list(item.get("contains_ring_references"))
+        ]
+        contains_map[key] = refs
+
+    contained_by_map: dict[tuple[str, int], list[tuple[str, int]]] = {}
+    for item in inner_like:
+        key = (str(item["layer"]), int(item["ring_index"]))
+        refs = [
+            (str(r["layer"]), int(r["ring_index"]))
+            for r in _as_dict_list(item.get("contained_by_ring_references"))
+        ]
+        contained_by_map[key] = refs
+
+    # Separate contour candidates into canonical and non-canonical groups.
+    canonical_contours: list[dict[str, Any]] = []
+    candidate_contours: list[dict[str, Any]] = []  # non-canonical, potential cut
+
+    layer_decision_source: dict[str, str] = {
+        str(rec["layer"]): str(rec.get("decision_source", ""))
+        for rec in layer_role_assignments
+    }
+
+    for c in contour_candidates:
+        layer = str(c.get("layer", ""))
+        role = layer_canonical.get(layer, _UNASSIGNED_ROLE)
+        if role in CANONICAL_LAYER_ROLES:
+            # Explicit canonical layer OR layer already resolved by color/topology signals.
+            canonical_contours.append(c)
+        elif layer_decision_source.get(layer) == "unresolved_no_signal":
+            # No color hint, no explicit layer name → contour-level topology can decide.
+            candidate_contours.append(c)
+        # All other unresolved cases (mixed hints, cut-like but ambiguous topology, etc.)
+        # are left to the layer-level resolver; do not auto-classify at contour level.
+
+    assignments: list[dict[str, Any]] = []
+
+    # 1. Canonical layer contours keep their explicit role.
+    for c in canonical_contours:
+        layer = str(c.get("layer", ""))
+        role = layer_canonical[layer]
+        if role in _CUT_LIKE_ROLES:
+            assignments.append({
+                "contour_id": str(c.get("contour_id", f"orig:{layer}:{c.get('ring_index', 0)}")),
+                "layer": layer,
+                "ring_index": int(c.get("ring_index", 0)),
+                "canonical_role": role,
+                "decision_source": "explicit_canonical_layer",
+                "bbox": c.get("bbox"),
+                "area_abs_mm2": float(c.get("area_abs_mm2", 0.0)),
+            })
+
+    # 2. Non-canonical cut candidates: classify by topology.
+    contour_resolved_layers: set[str] = set()
+    if candidate_contours:
+        # Group all candidate contours together (cross-layer topology is possible)
+        _classify_cut_candidates(
+            candidates=candidate_contours,
+            contains_map=contains_map,
+            contained_by_map=contained_by_map,
+            profile=profile,
+            assignments=assignments,
+            review_required_candidates=review_required_candidates,
+            blocking_conflicts=blocking_conflicts,
+        )
+
+        # Determine which non-canonical layers had ALL contours successfully resolved.
+        candidate_layers: set[str] = {str(c["layer"]) for c in candidate_contours}
+        assigned_ids: set[str] = {
+            str(a["contour_id"]) for a in assignments
+            if str(a.get("decision_source", "")) != "explicit_canonical_layer"
+        }
+        for layer in candidate_layers:
+            layer_candidate_ids = {
+                str(c.get("contour_id", "")) for c in candidate_contours
+                if str(c["layer"]) == layer
+            }
+            if layer_candidate_ids and layer_candidate_ids.issubset(assigned_ids):
+                contour_resolved_layers.add(layer)
+
+    return assignments, contour_resolved_layers
+
+
+def _classify_cut_candidates(
+    *,
+    candidates: list[dict[str, Any]],
+    contains_map: dict[tuple[str, int], list[tuple[str, int]]],
+    contained_by_map: dict[tuple[str, int], list[tuple[str, int]]],
+    profile: dict[str, Any],
+    assignments: list[dict[str, Any]],
+    review_required_candidates: list[dict[str, Any]],
+    blocking_conflicts: list[dict[str, Any]],
+) -> None:
+    """Classify candidate contours as CUT_OUTER or CUT_INNER using bbox containment."""
+    candidate_keys: set[tuple[str, int]] = {
+        (str(c["layer"]), int(c["ring_index"])) for c in candidates
+    }
+    by_key: dict[tuple[str, int], dict[str, Any]] = {
+        (str(c["layer"]), int(c["ring_index"])): c for c in candidates
+    }
+
+    if len(candidates) == 1:
+        c = candidates[0]
+        layer = str(c["layer"])
+        ring_index = int(c["ring_index"])
+        assignments.append({
+            "contour_id": str(c.get("contour_id", f"orig:{layer}:{ring_index}")),
+            "layer": layer,
+            "ring_index": ring_index,
+            "canonical_role": "CUT_OUTER",
+            "decision_source": "single_closed_contour_auto_outer",
+            "bbox": c.get("bbox"),
+            "area_abs_mm2": float(c.get("area_abs_mm2", 0.0)),
+        })
+        return
+
+    # Multiple candidates: find top-level (not contained by any other candidate).
+    top_level: list[dict[str, Any]] = []
+    contained: list[dict[str, Any]] = []
+    for c in candidates:
+        key = (str(c["layer"]), int(c["ring_index"]))
+        # Check if this contour is contained by any other candidate contour
+        outer_refs = contained_by_map.get(key, [])
+        contained_by_candidate = any(ref in candidate_keys for ref in outer_refs)
+        if contained_by_candidate:
+            contained.append(c)
+        else:
+            top_level.append(c)
+
+    if len(top_level) > 1:
+        # Multiple separate outer contours — cannot auto-classify as one part.
+        _emit_conflict(
+            review_required_candidates,
+            blocking_conflicts,
+            family="no_signal_multiple_outer_candidates",
+            strict_mode=profile["strict_mode"],
+            interactive_review=profile["interactive_review_on_ambiguity"],
+            payload={
+                "candidate_count": len(top_level),
+                "layers": sorted({str(c["layer"]) for c in top_level}),
+            },
+        )
+        return
+
+    if len(top_level) == 1:
+        outer_c = top_level[0]
+        outer_key = (str(outer_c["layer"]), int(outer_c["ring_index"]))
+        assignments.append({
+            "contour_id": str(outer_c.get("contour_id", f"orig:{outer_c['layer']}:{outer_c['ring_index']}")),
+            "layer": str(outer_c["layer"]),
+            "ring_index": int(outer_c["ring_index"]),
+            "canonical_role": "CUT_OUTER",
+            "decision_source": "contour_topology_auto",
+            "bbox": outer_c.get("bbox"),
+            "area_abs_mm2": float(outer_c.get("area_abs_mm2", 0.0)),
+        })
+
+    for c in contained:
+        key = (str(c["layer"]), int(c["ring_index"]))
+        # Check for deeply nested (island) contours: contained by a contour that is itself contained
+        outer_refs = contained_by_map.get(key, [])
+        direct_outer_in_candidates = [ref for ref in outer_refs if ref in candidate_keys]
+        # If any of the direct outers is itself in `contained`, this is an island — not supported.
+        is_nested = any(
+            any(ref2 in candidate_keys for ref2 in contained_by_map.get(ref, []))
+            for ref in direct_outer_in_candidates
+        )
+        if is_nested:
+            _emit_conflict(
+                review_required_candidates,
+                blocking_conflicts,
+                family="contour_nested_island_unsupported",
+                strict_mode=profile["strict_mode"],
+                interactive_review=profile["interactive_review_on_ambiguity"],
+                payload={
+                    "layer": str(c["layer"]),
+                    "ring_index": int(c["ring_index"]),
+                    "contour_id": str(c.get("contour_id", "")),
+                },
+            )
+            continue
+        assignments.append({
+            "contour_id": str(c.get("contour_id", f"orig:{c['layer']}:{c['ring_index']}")),
+            "layer": str(c["layer"]),
+            "ring_index": int(c["ring_index"]),
+            "canonical_role": "CUT_INNER",
+            "decision_source": "contour_topology_auto",
+            "bbox": c.get("bbox"),
+            "area_abs_mm2": float(c.get("area_abs_mm2", 0.0)),
+        })
+
+
+def _apply_contour_resolution_to_layer_records(
+    *,
+    layer_role_assignments: list[dict[str, Any]],
+    review_required_candidates: list[dict[str, Any]],
+    blocking_conflicts: list[dict[str, Any]],
+    contour_resolved_layers: set[str],
+) -> None:
+    """Update layer records and remove no_signal conflicts for fully resolved layers."""
+    if not contour_resolved_layers:
+        return
+
+    for rec in layer_role_assignments:
+        if str(rec.get("layer", "")) in contour_resolved_layers:
+            rec["decision_source"] = "resolved_by_contour_roles"
+
+    # Remove no_signal_layer_with_contour conflicts for fully resolved layers.
+    def keep(item: dict[str, Any], resolved: set[str]) -> bool:
+        if str(item.get("family", "")) != "no_signal_layer_with_contour":
+            return True
+        return str(item.get("layer", "")) not in resolved
+
+    review_required_candidates[:] = [
+        item for item in review_required_candidates if keep(item, contour_resolved_layers)
+    ]
+    blocking_conflicts[:] = [
+        item for item in blocking_conflicts if keep(item, contour_resolved_layers)
+    ]
 
 
 def _build_resolved_role_inventory(

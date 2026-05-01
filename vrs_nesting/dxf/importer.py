@@ -787,6 +787,7 @@ def _entity_to_path(entity: dict[str, Any], where: str) -> list[list[float]]:
             end_angle_deg=end_f,
             max_chord_error_mm=CURVE_FLATTEN_TOLERANCE_MM,
             min_segments=ARC_POLYGONIZE_MIN_SEGMENTS,
+            wrap_ccw=True,
         )
         points = _normalize_points(points, f"{where}.arc_points", min_points=2)
         if etype == "CIRCLE" and len(points) >= 2 and _distance(points[0], points[-1]) <= POINT_CLOSE_EPSILON_MM:

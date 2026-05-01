@@ -128,6 +128,7 @@ def write_normalized_dxf(
     cut_write = _write_cut_world(
         msp=msp,
         duplicate_dedupe_result=duplicate_dedupe_result,
+        role_resolution=role_resolution,
     )
     marking_indices = _extract_marking_indices(role_resolution, source_entities)
     source_cut_entity_count = _count_source_cut_entities(role_resolution)
@@ -279,6 +280,7 @@ def _write_cut_world(
     *,
     msp: Any,
     duplicate_dedupe_result: Mapping[str, Any],
+    role_resolution: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     deduped_raw = duplicate_dedupe_result.get("deduped_contour_working_set")
     deduped = deduped_raw if isinstance(deduped_raw, list) else []
@@ -302,10 +304,17 @@ def _write_cut_world(
         layer_counts[role] += 1
         contour_count += 1
 
+    writer_diagnostics: list[str] = []
+    if layer_counts["CUT_OUTER"] == 0:
+        writer_diagnostics.append("DXF_NORMALIZED_WRITER_NO_CUT_OUTER_WRITTEN")
+    if layer_counts["CUT_OUTER"] > 1:
+        writer_diagnostics.append("DXF_NORMALIZED_WRITER_MULTIPLE_CUT_OUTERS_WRITTEN")
+
     return {
         "layer_counts": layer_counts,
         "contour_count": contour_count,
         "invalid_entries": invalid_entries,
+        "writer_diagnostics": writer_diagnostics,
     }
 
 
@@ -564,6 +573,7 @@ def _build_diagnostics(
         "source_cut_entities_not_replayed_count": int(source_cut_entity_count),
         "cut_working_set_invalid_entry_count": int(cut_write["invalid_entries"]),
         "marking_skipped_count": len(_as_dict_list(marking_write.get("skipped_source_entities"))),
+        "writer_diagnostics": list(cut_write.get("writer_diagnostics", [])),
         "notes": notes,
     }
 

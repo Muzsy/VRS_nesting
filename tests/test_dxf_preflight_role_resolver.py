@@ -135,6 +135,7 @@ def test_resolver_output_shape_has_documented_layers_only():
         "rules_profile_echo",
         "layer_role_assignments",
         "entity_role_assignments",
+        "contour_role_assignments",
         "resolved_role_inventory",
         "review_required_candidates",
         "blocking_conflicts",

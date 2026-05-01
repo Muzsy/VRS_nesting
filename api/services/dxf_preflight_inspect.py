@@ -225,10 +225,12 @@ def _build_contour_candidates(
         for ring_index, ring in enumerate(rings):
             out.append(
                 {
+                    "contour_id": f"orig:{layer}:{ring_index}",
                     "layer": layer,
                     "ring_index": ring_index,
                     "point_count": len(ring),
                     "bbox": _bbox_of_ring(ring),
+                    "area_abs_mm2": _ring_area_abs(ring),
                     "fingerprint": _ring_fingerprint(ring),
                 }
             )
@@ -429,6 +431,16 @@ def _safe_source_size_bytes(path: Path) -> int | None:
         return int(path.stat().st_size)
     except OSError:
         return None
+
+
+def _ring_area_abs(ring: list[list[float]]) -> float:
+    area = 0.0
+    n = len(ring)
+    for i in range(n):
+        x1, y1 = float(ring[i][0]), float(ring[i][1])
+        x2, y2 = float(ring[(i + 1) % n][0]), float(ring[(i + 1) % n][1])
+        area += x1 * y2 - x2 * y1
+    return abs(area) / 2.0
 
 
 def _bbox_of_ring(ring: list[list[float]]) -> dict[str, float]:

@@ -110,6 +110,7 @@ def arc_to_points(
     end_angle_deg: float,
     max_chord_error_mm: float = CURVE_FLATTEN_TOLERANCE_MM,
     min_segments: int = ARC_POLYGONIZE_MIN_SEGMENTS,
+    wrap_ccw: bool = False,
 ) -> list[list[float]]:
     if radius <= 0:
         raise ValueError("radius must be > 0")
@@ -118,9 +119,18 @@ def arc_to_points(
     if min_segments < 2:
         raise ValueError("min_segments must be >= 2")
 
-    span_deg = float(end_angle_deg) - float(start_angle_deg)
-    if abs(span_deg) < 1e-9:
-        span_deg = 360.0
+    raw_span_deg = float(end_angle_deg) - float(start_angle_deg)
+    if wrap_ccw:
+        # DXF ARC is always CCW; end < start means wrap around 360°
+        span_deg = raw_span_deg % 360.0
+        if abs(span_deg) < 1e-9:
+            span_deg = 360.0
+        direction = 1.0
+    else:
+        span_deg = raw_span_deg
+        if abs(span_deg) < 1e-9:
+            span_deg = 360.0
+        direction = 1.0 if span_deg >= 0 else -1.0
     span_rad = math.radians(abs(span_deg))
 
     if max_chord_error_mm >= 2 * radius:
@@ -130,7 +140,6 @@ def arc_to_points(
     max_step = max(max_step, 1e-6)
 
     segments = max(min_segments, int(math.ceil(span_rad / max_step)))
-    direction = 1.0 if span_deg >= 0 else -1.0
 
     points: list[list[float]] = []
     start_rad = math.radians(start_angle_deg)
