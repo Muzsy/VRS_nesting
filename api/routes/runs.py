@@ -1099,6 +1099,21 @@ def _artifact_basename(filename: str) -> str:
     return value.split("/")[-1]
 
 
+def _sheet_index_from_sheet_artifact_filename(filename: str) -> int | None:
+    value = str(filename or "").strip()
+    basename = _artifact_basename(value)
+    if not basename.startswith("sheet_"):
+        return None
+    stem = basename.rsplit(".", 1)[0]
+    token = stem.split("_", 1)[1] if "_" in stem else ""
+    if not token.isdigit():
+        return None
+    sheet_number = int(token)
+    if sheet_number <= 0:
+        return None
+    return sheet_number - 1
+
+
 def _stable_sorted_artifacts(artifact_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     indexed = list(enumerate(artifact_rows))
     indexed.sort(
@@ -1271,6 +1286,147 @@ def _parse_solver_input_sheet_sizes(
     return out
 
 
+def _load_viewer_data_from_db(
+    *,
+    supabase: SupabaseClient,
+    access_token: str,
+    run_id: UUID,
+) -> tuple[
+    dict[int, tuple[float, float, float | None]],  # sheet_index → (w, h, utilization_pct)
+    list[ViewerPlacementResponse],
+    list[ViewerUnplacedResponse],
+] | None:
+    """Load viewer data from DB projection tables (primary truth source).
+
+    Returns None when no DB projection rows exist so the caller can fall back
+    to artifact-based parsing.
+    """
+    if not hasattr(supabase, "select_rows"):
+        return None
+
+    try:
+        sheet_rows = supabase.select_rows(
+            table="app.run_layout_sheets",
+            access_token=access_token,
+            params={
+                "select": "id,sheet_index,width_mm,height_mm,utilization_ratio",
+                "run_id": f"eq.{run_id}",
+                "order": "sheet_index.asc",
+            },
+        )
+    except SupabaseHTTPError:
+        return None
+
+    if not sheet_rows:
+        return None
+
+    sheet_sizes: dict[int, tuple[float, float, float | None]] = {}
+    sheet_id_to_index: dict[str, int] = {}
+    for row in sheet_rows:
+        idx = _coerce_nonnegative_int(row.get("sheet_index"))
+        sheet_id = str(row.get("id") or "").strip()
+        if idx is None:
+            continue
+        w = _coerce_float(row.get("width_mm"), default=0.0)
+        h = _coerce_float(row.get("height_mm"), default=0.0)
+        util_raw = row.get("utilization_ratio")
+        util_pct = round(float(util_raw) * 100.0, 3) if util_raw is not None else None
+        if w > 0 and h > 0:
+            sheet_sizes[idx] = (w, h, util_pct)
+        if sheet_id:
+            sheet_id_to_index[sheet_id] = idx
+
+    try:
+        placement_rows = supabase.select_rows(
+            table="app.run_layout_placements",
+            access_token=access_token,
+            params={
+                "select": "sheet_id,placement_index,part_revision_id,transform_jsonb,bbox_jsonb,metadata_jsonb",
+                "run_id": f"eq.{run_id}",
+                "order": "sheet_id.asc,placement_index.asc",
+            },
+        )
+    except SupabaseHTTPError:
+        placement_rows = []
+
+    placements: list[ViewerPlacementResponse] = []
+    for row in placement_rows:
+        transform = row.get("transform_jsonb") or {}
+        bbox = row.get("bbox_jsonb") or {}
+        metadata = row.get("metadata_jsonb") or {}
+
+        sheet_id = str(row.get("sheet_id") or "").strip()
+        sheet_index = sheet_id_to_index.get(sheet_id)
+        if sheet_index is None:
+            sheet_index = _coerce_nonnegative_int(transform.get("sheet_index"))
+        if sheet_index is None:
+            continue
+
+        part_revision_id = str(row.get("part_revision_id") or "").strip()
+        if not part_revision_id:
+            continue
+
+        instance_id = str(transform.get("instance_id") or "").strip()
+        if not instance_id:
+            instance_id = f"{part_revision_id}:{_coerce_int(row.get('placement_index'), default=0)}"
+
+        part_code = str(metadata.get("part_code") or "").strip()
+        part_id = part_code if part_code else part_revision_id
+
+        # bbox_jsonb contains the post-rotation AABB in sheet space — use it directly.
+        x = _coerce_float(bbox.get("min_x"), default=_coerce_float(transform.get("x"), default=0.0))
+        y = _coerce_float(bbox.get("min_y"), default=_coerce_float(transform.get("y"), default=0.0))
+        width_mm = _coerce_float(bbox.get("width"), default=10.0)
+        height_mm = _coerce_float(bbox.get("height"), default=10.0)
+
+        placements.append(
+            ViewerPlacementResponse(
+                instance_id=instance_id,
+                part_id=part_id,
+                sheet_index=sheet_index,
+                x=x,
+                y=y,
+                rotation_deg=0.0,
+                width_mm=max(width_mm, 1.0),
+                height_mm=max(height_mm, 1.0),
+            )
+        )
+
+    try:
+        unplaced_rows = supabase.select_rows(
+            table="app.run_layout_unplaced",
+            access_token=access_token,
+            params={
+                "select": "part_revision_id,remaining_qty,reason,metadata_jsonb",
+                "run_id": f"eq.{run_id}",
+                "order": "part_revision_id.asc",
+            },
+        )
+    except SupabaseHTTPError:
+        unplaced_rows = []
+
+    unplaced: list[ViewerUnplacedResponse] = []
+    for row in unplaced_rows:
+        part_revision_id = str(row.get("part_revision_id") or "").strip()
+        if not part_revision_id:
+            continue
+        remaining_qty = max(1, _coerce_int(row.get("remaining_qty"), default=1))
+        reason = str(row.get("reason") or "").strip() or None
+        metadata = row.get("metadata_jsonb") or {}
+        part_code = str(metadata.get("part_code") or "").strip()
+        part_id = part_code if part_code else part_revision_id
+        for i in range(remaining_qty):
+            unplaced.append(
+                ViewerUnplacedResponse(
+                    instance_id=f"{part_revision_id}:{i}",
+                    part_id=part_id,
+                    reason=reason,
+                )
+            )
+
+    return sheet_sizes, placements, unplaced
+
+
 def _parse_solver_output(
     payload: dict[str, Any],
     *,
@@ -1368,12 +1524,14 @@ def get_viewer_data(
         sheet_index = row.get("sheet_index")
         artifact_type = str(row.get("artifact_type", ""))
 
-        effective_sheet: int | None = int(sheet_index) if sheet_index is not None else None
-        if effective_sheet is None and filename.startswith("out/sheet_"):
-            stem = filename.split("/")[-1].split(".")[0]
-            token = stem.split("_", 1)[1] if "_" in stem else ""
-            if token.isdigit():
-                effective_sheet = int(token) - 1
+        filename_sheet = _sheet_index_from_sheet_artifact_filename(filename)
+        basename = _artifact_basename(filename).lower()
+        if filename_sheet is not None and (basename.endswith(".dxf") or basename.endswith(".svg")):
+            effective_sheet: int | None = filename_sheet
+        elif artifact_type in {"sheet_dxf", "sheet_svg"}:
+            effective_sheet = filename_sheet
+        else:
+            effective_sheet = int(sheet_index) if sheet_index is not None else filename_sheet
 
         if effective_sheet is not None:
             slot = by_sheet.setdefault(
@@ -1437,12 +1595,39 @@ def get_viewer_data(
         except (SupabaseHTTPError, json.JSONDecodeError, Exception):  # noqa: BLE001
             solver_input_payload = {}
 
-    part_sizes = _parse_solver_input_part_sizes(solver_input_payload)
-    placements, unplaced, parsed_sheets_used = _parse_solver_output(solver_payload, part_sizes=part_sizes)
-    sheet_sizes = _parse_solver_input_sheet_sizes(
-        solver_input_payload,
-        sheet_count_hint=max(parsed_sheets_used, 0),
+    # --- Primary truth: DB projection tables ---
+    # The worker writes normalized layout data to run_layout_sheets /
+    # run_layout_placements / run_layout_unplaced via replace_run_projection().
+    # Query these first; fall back to artifact JSON parsing only when the DB
+    # rows are missing (old runs pre-dating the projection write, or partial
+    # failures).
+    db_result = _load_viewer_data_from_db(
+        supabase=supabase,
+        access_token=user.access_token,
+        run_id=run_id,
     )
+
+    if db_result is not None:
+        db_sheet_sizes_full, placements, unplaced = db_result
+        # db_sheet_sizes_full: {sheet_index: (width_mm, height_mm, utilization_pct)}
+        sheet_sizes: dict[int, tuple[float, float]] = {
+            idx: (w, h) for idx, (w, h, _) in db_sheet_sizes_full.items()
+        }
+        sheet_utilization_from_db: dict[int, float | None] = {
+            idx: util for idx, (_, _, util) in db_sheet_sizes_full.items()
+        }
+        input_artifact_source = "db_projection"
+        parsed_sheets_used = (max(db_sheet_sizes_full.keys()) + 1) if db_sheet_sizes_full else 0
+    else:
+        # --- Fallback: reconstruct from artifacts ---
+        part_sizes = _parse_solver_input_part_sizes(solver_input_payload)
+        placements, unplaced, parsed_sheets_used = _parse_solver_output(solver_payload, part_sizes=part_sizes)
+        sheet_sizes = _parse_solver_input_sheet_sizes(
+            solver_input_payload,
+            sheet_count_hint=max(parsed_sheets_used, 0),
+        )
+        sheet_utilization_from_db = {}
+
     placements_per_sheet: dict[int, int] = {}
     area_per_sheet: dict[int, float] = {}
     for item in placements:
@@ -1505,9 +1690,12 @@ def get_viewer_data(
         utilization_pct: float | None = None
         if idx in sheet_sizes:
             width_mm, height_mm = sheet_sizes[idx]
-            sheet_area = width_mm * height_mm
-            if sheet_area > 0:
-                utilization_pct = round((area_per_sheet.get(idx, 0.0) / sheet_area) * 100.0, 3)
+            if idx in sheet_utilization_from_db:
+                utilization_pct = sheet_utilization_from_db[idx]
+            else:
+                sheet_area = width_mm * height_mm
+                if sheet_area > 0:
+                    utilization_pct = round((area_per_sheet.get(idx, 0.0) / sheet_area) * 100.0, 3)
 
         sheets.append(
             ViewerSheetResponse(

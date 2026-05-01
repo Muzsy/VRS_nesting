@@ -85,8 +85,9 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
   const mmW = sheetWidthMm && sheetWidthMm > 0 ? sheetWidthMm : 0;
   const mmH = sheetHeightMm && sheetHeightMm > 0 ? sheetHeightMm : 0;
   const hasSheetDims = mmW > 0 && mmH > 0;
+  const hasSvgArtifact = Boolean(svgUrl);
 
-  const renderMode: "svg" | "canvas" = placements.length > 300 ? "canvas" : "svg";
+  const renderMode: "svg" | "canvas" = hasSvgArtifact || placements.length <= 300 ? "svg" : "canvas";
 
   const geometries: PlacementGeometry[] = placements.map(placementToGeometry);
   const projected: ProjectedPlacement[] = geometries.map((g) => ({
@@ -102,9 +103,9 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
     setSelected(null);
     setDragging(false);
     setDragOrigin(null);
-  }, [sheetIndex]);
+  }, [sheetIndex, svgUrl]);
 
-  // Canvas mode: draw using mm-to-px scaled coordinates
+  // Fallback canvas mode: draw using mm-to-px scaled coordinates when no sheet SVG artifact exists.
   useEffect(() => {
     if (renderMode !== "canvas") return;
     const canvas = canvasRef.current;
@@ -119,20 +120,14 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
     const scaleY = mmH > 0 ? cH / mmH : 1;
 
     ctx.clearRect(0, 0, cW, cH);
-    // Only draw the background when there is no SVG background image to avoid
-    // obscuring the actual part shapes.
-    if (!svgUrl) {
-      ctx.fillStyle = "#f8fafc";
-      ctx.fillRect(0, 0, cW, cH);
-      ctx.strokeStyle = "#0f172a";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(0.5, 0.5, cW - 1, cH - 1);
-    }
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, cW, cH);
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(0.5, 0.5, cW - 1, cH - 1);
 
     for (const item of projected) {
       const isSel = selected?.source.instance_id === item.source.instance_id;
-      // When SVG background is present, only draw selected items.
-      if (svgUrl && !isSel) continue;
       ctx.beginPath();
       for (let i = 0; i < item.corners.length; i += 1) {
         const px = item.corners[i].x * scaleX;
@@ -147,7 +142,7 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
       ctx.fill();
       ctx.stroke();
     }
-  }, [projected, renderMode, selected, mmW, mmH, svgUrl]);
+  }, [projected, renderMode, selected, mmW, mmH]);
 
   function fitToScreen() {
     setZoom(1);
@@ -195,15 +190,18 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
       setPan({ x: dragOrigin.panX + event.clientX - dragOrigin.x, y: dragOrigin.panY + event.clientY - dragOrigin.y });
       return;
     }
+    if (!hasSheetDims || hasSvgArtifact) return;
     setHovered(pickAt(screenToMm(event)));
   }
 
   function handleClick(event: MouseEvent<HTMLDivElement>) {
+    if (!hasSheetDims || hasSvgArtifact) return;
     setSelected(pickAt(screenToMm(event)));
   }
 
-  // Container style: fills available width, height from aspect ratio, capped at 650px
-  const containerStyle: React.CSSProperties = hasSheetDims
+  const containerStyle: React.CSSProperties = hasSvgArtifact
+    ? { width: "100%", height: "min(70vh, 720px)", minHeight: "360px" }
+    : hasSheetDims
     ? { width: `min(100%, ${650 * (mmW / mmH)}px)`, aspectRatio: `${mmW} / ${mmH}` }
     : { width: "100%", height: "480px" };
 
@@ -235,7 +233,7 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
           </div>
         </div>
 
-        {/* Outer container: fills column width, height from sheet aspect ratio */}
+        {/* Outer container */}
         <div
           className="relative overflow-hidden rounded-xl border border-mist bg-slate-200"
           onClick={handleClick}
@@ -256,11 +254,11 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
               transformOrigin: "center center",
             }}
           >
-            {/* SVG background image */}
+            {/* Primary visual truth: final sheet SVG artifact */}
             {svgUrl ? (
               <img
                 alt={`Sheet ${sheetIndex + 1}`}
-                className="absolute inset-0 h-full w-full"
+                className="absolute inset-0 h-full w-full object-contain"
                 draggable={false}
                 onError={onSvgError}
                 src={svgUrl}
@@ -269,15 +267,15 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
               <div className="absolute inset-0 border border-slate-400 bg-slate-50" />
             )}
 
-            {/* Overlay: SVG polygons (mm coordinate space) or canvas */}
-            {renderMode === "canvas" ? (
+            {/* Fallback overlay: only used when the final sheet SVG artifact is absent. */}
+            {!hasSvgArtifact && renderMode === "canvas" ? (
               <canvas
                 className="absolute inset-0 h-full w-full"
                 height={canvasPxH}
                 ref={canvasRef}
                 width={canvasPxW}
               />
-            ) : (
+            ) : !hasSvgArtifact ? (
               <svg
                 className="absolute inset-0 h-full w-full"
                 preserveAspectRatio="none"
@@ -290,19 +288,16 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
                   const isSel = selected?.source.instance_id === item.source.instance_id;
                   const isHov = hovered?.source.instance_id === item.source.instance_id;
                   const pts = item.corners.map((p) => `${p.x},${p.y}`).join(" ");
-                  // When SVG background is present, hide the bounding-box overlay by
-                  // default — it would obscure actual part shapes. Only show on hover/select.
-                  const bgPresent = !!svgUrl;
                   const polyFill = isSel
                     ? "rgba(220,38,38,0.36)"
                     : isHov
                     ? "rgba(2,132,199,0.22)"
-                    : bgPresent ? "rgba(0,0,0,0)" : "rgba(2,132,199,0.28)";
+                    : "rgba(2,132,199,0.28)";
                   const polyStroke = isSel
                     ? "#dc2626"
                     : isHov
                     ? "#0284c7"
-                    : bgPresent ? "rgba(0,0,0,0)" : "#1e293b";
+                    : "#1e293b";
                   return (
                     <polygon
                       fill={polyFill}
@@ -318,7 +313,7 @@ export function ViewerCanvas({ sheetIndex, svgUrl, placements, sheetWidthMm, she
                   );
                 })}
               </svg>
-            )}
+            ) : null}
           </div>
 
           {/* Hover tooltip — stays in screen space (outside the transform wrapper) */}
