@@ -36,7 +36,12 @@ from worker.engine_adapter_input import (
     solver_input_sha256,
     solver_runtime_params,
 )
-from worker.cavity_prepack import CavityPrepackError, build_cavity_prepacked_engine_input
+from worker.cavity_prepack import (
+    CavityPrepackError,
+    build_cavity_prepacked_engine_input_v2,
+    validate_prepack_solver_input_hole_free,
+)
+from worker.cavity_validation import CavityValidationError, validate_cavity_plan_v2
 from worker.queue_lease import claim_next_queue_lease, heartbeat_queue_lease
 from worker.raw_output_artifacts import persist_raw_output_artifacts
 from worker.result_normalizer import assert_projection_within_sheet_bounds, normalize_solver_output_projection
@@ -1433,6 +1438,34 @@ def _summarize_cavity_plan(cavity_plan: dict[str, Any] | None) -> dict[str, Any]
     virtual_parts = virtual_parts_raw if isinstance(virtual_parts_raw, dict) else {}
     quantity_delta_raw = cavity_plan.get("quantity_delta")
     quantity_delta = quantity_delta_raw if isinstance(quantity_delta_raw, dict) else {}
+    summary_raw = cavity_plan.get("summary")
+    summary = summary_raw if isinstance(summary_raw, dict) else {}
+    diagnostics_raw = cavity_plan.get("diagnostics")
+    diagnostics = diagnostics_raw if isinstance(diagnostics_raw, list) else []
+    placement_trees_raw = cavity_plan.get("placement_trees")
+    placement_trees = placement_trees_raw if isinstance(placement_trees_raw, dict) else {}
+    nested_internal_placement_count = 0
+    if placement_trees:
+        def _walk_nested(node: Any, depth: int) -> None:
+            nonlocal nested_internal_placement_count
+            if not isinstance(node, dict):
+                return
+            if depth >= 2:
+                nested_internal_placement_count += 1
+            children = node.get("children")
+            if not isinstance(children, list):
+                return
+            for child in children:
+                _walk_nested(child, depth + 1)
+
+        for root in placement_trees.values():
+            if not isinstance(root, dict):
+                continue
+            children = root.get("children")
+            if not isinstance(children, list):
+                continue
+            for child in children:
+                _walk_nested(child, 1)
 
     internal_placements_count = 0
     top_level_holes_removed_count = 0
@@ -1464,7 +1497,85 @@ def _summarize_cavity_plan(cavity_plan: dict[str, Any] | None) -> dict[str, Any]
         "internal_placements_count": internal_placements_count,
         "quantity_reduced_part_count": quantity_reduced_part_count,
         "top_level_holes_removed_count": top_level_holes_removed_count,
+        "cavity_plan_version": str(cavity_plan.get("version") or "").strip() or None,
+        "internal_placement_count": int(summary.get("internal_placement_count") or internal_placements_count),
+        "nested_internal_placement_count": int(nested_internal_placement_count),
+        "used_cavity_count": int(summary.get("used_cavity_count") or 0),
+        "usable_cavity_count": int(summary.get("usable_cavity_count") or 0),
+        "holed_child_proxy_count": sum(
+            1
+            for item in diagnostics
+            if isinstance(item, dict) and str(item.get("code") or "").strip() == "child_has_holes_outer_proxy_used"
+        ),
+        "total_internal_qty": sum(
+            int(item.get("internal_qty", 0))
+            for item in quantity_delta.values()
+            if isinstance(item, dict)
+        ),
+        "max_cavity_depth": int(
+            (cavity_plan.get("policy") if isinstance(cavity_plan.get("policy"), dict) else {}).get("max_cavity_depth")
+            or 3
+        ),
+        "quantity_delta_summary": {
+            str(part_id): {
+                "original": int(item.get("original_required_qty", 0)),
+                "internal": int(item.get("internal_qty", 0)),
+                "top_level": int(item.get("top_level_qty", 0)),
+            }
+            for part_id, item in quantity_delta.items()
+            if isinstance(item, dict)
+        },
+        "diagnostics_by_code": {
+            code: sum(
+                1
+                for item in diagnostics
+                if isinstance(item, dict) and str(item.get("code") or "").strip() == code
+            )
+            for code in sorted(
+                {
+                    str(item.get("code") or "").strip()
+                    for item in diagnostics
+                    if isinstance(item, dict) and str(item.get("code") or "").strip()
+                }
+            )
+        },
+        "placement_tree_count": len(placement_trees),
     }
+
+
+def _load_nesting_output_virtual_solver_placements(run_dir: Path, virtual_parts: dict[str, Any]) -> list[dict[str, Any]]:
+    path = run_dir / "nesting_output.json"
+    if not path.is_file():
+        synthetic: list[dict[str, Any]] = []
+        for idx, virtual_part_id in enumerate(sorted(virtual_parts.keys())):
+            synthetic.append(
+                {
+                    "part_id": str(virtual_part_id),
+                    "instance": idx,
+                    "sheet": 0,
+                    "x_mm": 0.0,
+                    "y_mm": 0.0,
+                    "rotation_deg": 0.0,
+                }
+            )
+        return synthetic
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise WorkerError(f"invalid nesting_output payload: {path}")
+    placements_raw = payload.get("placements")
+    if not isinstance(placements_raw, list):
+        raise WorkerError(f"invalid nesting_output placements: {path}")
+
+    out: list[dict[str, Any]] = []
+    for item in placements_raw:
+        if not isinstance(item, dict):
+            continue
+        part_id = str(item.get("part_id") or "").strip()
+        if not part_id or part_id not in virtual_parts:
+            continue
+        out.append(item)
+    return out
 
 
 def _register_solver_input_artifact_compat(
@@ -1591,6 +1702,7 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             settings=settings,
             engine_backend=engine_backend,
         )
+        base_engine_input_payload: dict[str, Any] | None = None
         cavity_plan_payload: dict[str, Any] | None = None
         cavity_prepack_summary = _summarize_cavity_plan(None)
         try:
@@ -1601,14 +1713,12 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             elif engine_backend == ENGINE_BACKEND_NESTING_V2:
                 base_engine_input_payload = build_nesting_engine_input_from_snapshot(snapshot_row)
                 if profile_resolution.cavity_prepack_enabled:
-                    solver_input_payload, cavity_plan_payload = build_cavity_prepacked_engine_input(
+                    solver_input_payload, cavity_plan_payload = build_cavity_prepacked_engine_input_v2(
                         snapshot_row=snapshot_row,
                         base_engine_input=base_engine_input_payload,
                         enabled=True,
                     )
                     if profile_resolution.requested_part_in_part_policy == "prepack":
-                        from worker.cavity_prepack import validate_prepack_solver_input_hole_free
-
                         validate_prepack_solver_input_hole_free(solver_input_payload)
                     cavity_prepack_summary = _summarize_cavity_plan(cavity_plan_payload)
                 else:
@@ -1617,7 +1727,7 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
                 engine_contract_version = str(solver_input_payload.get("version", ENGINE_BACKEND_NESTING_V2))
             else:
                 raise WorkerError(f"unsupported worker engine backend: {engine_backend}")
-        except (EngineAdapterInputError, CavityPrepackError) as exc:
+        except (EngineAdapterInputError, CavityPrepackError, CavityValidationError) as exc:
             raise WorkerError(f"run {run_id}: snapshot->solver_input mapping failed: {exc}") from exc
 
         solver_input_blob = (json.dumps(solver_input_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
@@ -1874,6 +1984,27 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
             raise WorkerError(f"run {run_id}: solver runner failed (exit={proc.returncode}): {stderr_text[:2000]}")
         if run_dir is None:
             raise WorkerError(f"run {run_id}: cannot locate run_dir")
+
+        if (
+            engine_backend == ENGINE_BACKEND_NESTING_V2
+            and profile_resolution.cavity_prepack_enabled
+            and isinstance(cavity_plan_payload, dict)
+            and str(cavity_plan_payload.get("version") or "") == "cavity_plan_v2"
+        ):
+            if not isinstance(base_engine_input_payload, dict):
+                raise WorkerError(f"run {run_id}: missing base_engine_input for cavity_plan_v2 validation")
+            base_parts = base_engine_input_payload.get("parts")
+            if not isinstance(base_parts, list):
+                raise WorkerError(f"run {run_id}: invalid base_engine_input.parts for cavity_plan_v2 validation")
+            virtual_parts_raw = cavity_plan_payload.get("virtual_parts")
+            virtual_parts = virtual_parts_raw if isinstance(virtual_parts_raw, dict) else {}
+            solver_virtual_placements = _load_nesting_output_virtual_solver_placements(run_dir, virtual_parts)
+            validate_cavity_plan_v2(
+                cavity_plan=cavity_plan_payload,
+                part_records=base_parts,
+                solver_placements=solver_virtual_placements,
+                strict=True,
+            )
 
         projection = normalize_solver_output_projection(
             run_id=run_id,

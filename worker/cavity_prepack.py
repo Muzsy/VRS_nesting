@@ -851,8 +851,18 @@ def build_cavity_prepacked_engine_input_v2(
     placement_trees: dict[str, dict[str, Any]] = {}
     top_level_qty_by_part: dict[str, int] = {part.part_id: 0 for part in part_records}
     out_parts: list[dict[str, Any]] = []
+    usable_cavity_count = 0
+    used_cavity_count = 0
 
     holed_parents = [part for part in part_records if part.holes_points_mm and part.quantity > 0]
+    holed_parents.sort(
+        key=lambda part: (
+            -float(part.area_mm2),
+            -float(part.bbox_max_dim_mm),
+            str(part.part_code),
+            str(part.part_id),
+        )
+    )
     for parent in holed_parents:
         top_level_qty = int(remaining_qty.get(parent.part_id, 0))
         if top_level_qty <= 0:
@@ -867,6 +877,7 @@ def build_cavity_prepacked_engine_input_v2(
                 min_usable_cavity_area_mm2=min_usable_cavity_area_mm2,
                 diagnostics=diagnostics,
             )
+            usable_cavity_count += len(cavity_records)
 
             root_node: dict[str, Any] = {
                 "node_id": f"node:{parent.part_id}:{parent_instance}",
@@ -896,6 +907,8 @@ def build_cavity_prepacked_engine_input_v2(
                     min_usable_cavity_area_mm2=min_usable_cavity_area_mm2,
                     diagnostics=diagnostics,
                 )
+                if child_nodes:
+                    used_cavity_count += 1
                 root_node["children"].extend(child_nodes)
 
             virtual_parts[virtual_id] = {
@@ -978,6 +991,8 @@ def build_cavity_prepacked_engine_input_v2(
             for metrics in quantity_delta.values()
             if isinstance(metrics, dict)
         ),
+        "usable_cavity_count": int(usable_cavity_count),
+        "used_cavity_count": int(used_cavity_count),
     }
     return out_input, plan
 

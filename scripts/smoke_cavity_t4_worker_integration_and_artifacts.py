@@ -323,7 +323,7 @@ def _assert_prepack_case(client: FakeClient) -> None:
     _assert(all(p.get("holes_points_mm") == [] for p in virtual_parts), "virtual parent must have no holes")
 
     cavity_plan = json.loads(client.uploaded[cavity_plan_key].decode("utf-8"))
-    _assert(cavity_plan.get("version") == "cavity_plan_v1", "invalid cavity plan version")
+    _assert(cavity_plan.get("version") == "cavity_plan_v2", "invalid cavity plan version")
     _assert(cavity_plan.get("enabled") is True, "cavity plan must be enabled")
 
     raw_types = [str(item.get("metadata_json", {}).get("legacy_artifact_type") or "") for item in client.raw_registered]

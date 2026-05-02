@@ -174,6 +174,68 @@ def _choose_auto_fixture() -> Path | None:
     return None
 
 
+def _build_synthetic_fixture_payload() -> dict[str, Any]:
+    def rect(x0: float, y0: float, x1: float, y1: float) -> list[list[float]]:
+        return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+    return {
+        "snapshot_row": {
+            "project_manifest_jsonb": {"project_id": "synthetic", "project_name": "synthetic-cavity-v2-benchmark"},
+            "parts_manifest_jsonb": [
+                {
+                    "part_revision_id": "parent-a",
+                    "part_code": "PARENT_A",
+                    "required_qty": 1,
+                    "source_geometry_revision_id": "geo-parent-a",
+                    "selected_nesting_derivative_id": "drv-parent-a",
+                },
+                {
+                    "part_revision_id": "child-a",
+                    "part_code": "CHILD_A",
+                    "required_qty": 2,
+                    "source_geometry_revision_id": "geo-child-a",
+                    "selected_nesting_derivative_id": "drv-child-a",
+                },
+            ],
+            "geometry_manifest_jsonb": [
+                {
+                    "selected_nesting_derivative_id": "drv-parent-a",
+                    "polygon": {"outer_ring": rect(0.0, 0.0, 40.0, 40.0), "hole_rings": [rect(4.0, 4.0, 30.0, 30.0)]},
+                    "bbox": {"min_x": 0.0, "min_y": 0.0, "max_x": 40.0, "max_y": 40.0, "width": 40.0, "height": 40.0},
+                },
+                {
+                    "selected_nesting_derivative_id": "drv-child-a",
+                    "polygon": {"outer_ring": rect(0.0, 0.0, 6.0, 6.0), "hole_rings": []},
+                    "bbox": {"min_x": 0.0, "min_y": 0.0, "max_x": 6.0, "max_y": 6.0, "width": 6.0, "height": 6.0},
+                },
+            ],
+            "sheets_manifest_jsonb": [],
+        },
+        "base_engine_input": {
+            "version": "nesting_engine_v2",
+            "seed": 0,
+            "time_limit_sec": 10,
+            "sheet": {"width_mm": 1500.0, "height_mm": 3000.0, "kerf_mm": 0.0, "spacing_mm": 0.0, "margin_mm": 0.0},
+            "parts": [
+                {
+                    "id": "parent-a",
+                    "quantity": 1,
+                    "allowed_rotations_deg": [0, 90, 180, 270],
+                    "outer_points_mm": rect(0.0, 0.0, 40.0, 40.0),
+                    "holes_points_mm": [rect(4.0, 4.0, 30.0, 30.0)],
+                },
+                {
+                    "id": "child-a",
+                    "quantity": 2,
+                    "allowed_rotations_deg": [0, 90, 180, 270],
+                    "outer_points_mm": rect(0.0, 0.0, 6.0, 6.0),
+                    "holes_points_mm": [],
+                },
+            ],
+        },
+    }
+
+
 def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, Any], Path]:
     payload = json.loads(fixture_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -330,8 +392,19 @@ def main() -> int:
     if fixture_path is None:
         fixture_path = _choose_auto_fixture()
     if fixture_path is None:
-        print("ERROR: No fixture found. Provide --fixture <path>.", file=sys.stderr)
-        return 1
+        synthetic_payload = _build_synthetic_fixture_payload()
+        output_dir_abs = (REPO_ROOT / args.output_dir).resolve()
+        output_dir_abs.mkdir(parents=True, exist_ok=True)
+        synthetic_fixture_path = output_dir_abs / "synthetic_cavity_v2_fixture.json"
+        synthetic_fixture_path.write_text(
+            json.dumps(synthetic_payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        fixture_path = synthetic_fixture_path
+        print(
+            f"WARNING: No fixture found. Using synthetic fallback fixture: {fixture_path}",
+            file=sys.stderr,
+        )
     if not fixture_path.is_file():
         print(f"ERROR: Fixture not found: {fixture_path}", file=sys.stderr)
         return 1
