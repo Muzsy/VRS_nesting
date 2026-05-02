@@ -354,11 +354,28 @@ export interface ViewerDataResponse {
   strategy_overrides_applied?: string[] | null;
   cavity_prepack_summary?: {
     enabled: boolean;
-    version: string;
+    version?: string;
+    cavity_plan_version?: string;
     virtual_parent_count: number;
     internal_placements_count: number;
     quantity_reduced_part_count: number;
     top_level_holes_removed_count: number;
+    internal_placement_count?: number;
+    nested_internal_placement_count?: number;
+    used_cavity_count?: number;
+    usable_cavity_count?: number;
+    holed_child_proxy_count?: number;
+    total_internal_qty?: number;
+    max_cavity_depth?: number;
+    quantity_delta_summary?: Record<
+      string,
+      {
+        original: number;
+        internal: number;
+        top_level: number;
+      }
+    >;
+    diagnostics_by_code?: Record<string, number>;
   } | null;
 }
 
@@ -369,7 +386,7 @@ export interface BundleResponse {
   expires_at: string;
 }
 
-export type QualityProfileName = "fast_preview" | "quality_default" | "quality_aggressive";
+export type QualityProfileName = "fast_preview" | "quality_default" | "quality_aggressive" | "quality_cavity_prepack";
 export type EngineBackendHint = "sparrow_v1" | "nesting_engine_v2";
 export type EngineBackendHintMode = "auto" | EngineBackendHint;
 

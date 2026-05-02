@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { projectDetailIntakeStatus } from "../lib/dxfIntakePresentation";
 import { getAccessToken } from "../lib/supabase";
@@ -30,6 +30,24 @@ interface RunStrategyRunPayload {
   engine_backend_hint?: EngineBackendHint;
   nesting_engine_runtime_policy?: NestingEngineRuntimePolicy;
   sa_eval_budget_sec?: number;
+}
+
+interface CavityPlanMetricsPreview {
+  enabled?: boolean;
+  version?: string;
+  virtual_parent_count?: number;
+  internal_placement_count?: number;
+  nested_internal_placement_count?: number;
+  top_level_holes_removed_count?: number;
+  holed_child_proxy_count?: number;
+}
+
+interface NewRunLocationState {
+  result?: {
+    metrics_jsonb?: {
+      cavity_plan?: CavityPlanMetricsPreview;
+    };
+  } | null;
 }
 
 function isDxfSourceFile(file: ProjectFile): boolean {
@@ -158,7 +176,9 @@ function resolvePartRevisionIdForFile(
 
 export function NewRunPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
+  const result = (location.state as NewRunLocationState | null)?.result ?? null;
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -794,6 +814,7 @@ export function NewRunPage() {
                         <option value="fast_preview">Fast preview</option>
                         <option value="quality_default">Quality default</option>
                         <option value="quality_aggressive">Quality aggressive</option>
+                        <option value="quality_cavity_prepack">Quality cavity prepack</option>
                       </select>
                     </label>
 
@@ -932,6 +953,19 @@ export function NewRunPage() {
               <strong className="text-ink">Strategy:</strong> {strategySummaryLabel}
             </p>
           </div>
+          {result?.metrics_jsonb?.cavity_plan?.enabled && (
+            <div className="rounded-lg border border-mist bg-slate-50 p-4">
+              <h4 className="text-sm font-semibold text-ink">Cavity prepack összefoglaló</h4>
+              <ul className="mt-2 space-y-1 text-sm text-slate">
+                <li>Verzió: {result.metrics_jsonb.cavity_plan.version ?? "n/a"}</li>
+                <li>Virtuális parentek: {result.metrics_jsonb.cavity_plan.virtual_parent_count ?? 0}</li>
+                <li>Belső elhelyezések: {result.metrics_jsonb.cavity_plan.internal_placement_count ?? 0}</li>
+                <li>Matrjoska (≥2. szint): {result.metrics_jsonb.cavity_plan.nested_internal_placement_count ?? 0}</li>
+                <li>Top-level solver holes eltávolítva: {result.metrics_jsonb.cavity_plan.top_level_holes_removed_count ?? 0}</li>
+                <li>Lyukas child proxy: {result.metrics_jsonb.cavity_plan.holed_child_proxy_count ?? 0}</li>
+              </ul>
+            </div>
+          )}
           <div className="flex justify-between">
             <button className="rounded-md border border-mist px-4 py-2 text-sm text-slate hover:bg-slate-100" onClick={() => setStep(2)} type="button">
               Back

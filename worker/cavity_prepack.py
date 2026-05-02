@@ -9,12 +9,17 @@ from shapely import affinity
 from shapely.geometry import Polygon
 
 _PLAN_VERSION = "cavity_plan_v1"
+_PLAN_VERSION_V2 = "cavity_plan_v2"
 _VIRTUAL_PART_PREFIX = "__cavity_composite__"
 _EPS_AREA = 1e-7
 _EPS_COORD = 1e-9
 
 
 class CavityPrepackError(RuntimeError):
+    pass
+
+
+class CavityPrepackGuardError(CavityPrepackError):
     pass
 
 
@@ -41,6 +46,31 @@ class _CavityPlacement:
     y_local_mm: float
     rotation_deg: int
     placement_origin_ref: str
+
+
+@dataclass(frozen=True)
+class _PlacementTreeNode:
+    node_id: str
+    part_revision_id: str
+    instance: int
+    kind: str
+    parent_node_id: str | None
+    parent_cavity_index: int | None
+    x_local_mm: float
+    y_local_mm: float
+    rotation_deg: int
+    placement_origin_ref: str
+    children: tuple["_PlacementTreeNode", ...]
+
+
+@dataclass(frozen=True)
+class _CavityRecord:
+    parent_part_id: str
+    parent_instance: int
+    cavity_index: int
+    cavity_polygon: Polygon
+    cavity_bounds: tuple[float, float, float, float]
+    usable_area_mm2: float
 
 
 def _require_dict(raw: Any, *, field: str) -> dict[str, Any]:
@@ -111,6 +141,26 @@ def _empty_plan(*, enabled: bool) -> dict[str, Any]:
         "instance_bases": {},
         "quantity_delta": {},
         "diagnostics": [],
+    }
+
+
+def _empty_plan_v2(*, enabled: bool, max_cavity_depth: int = 3) -> dict[str, Any]:
+    return {
+        "version": _PLAN_VERSION_V2,
+        "enabled": bool(enabled),
+        "policy": {
+            "mode": "recursive_cavity_prepack" if enabled else "disabled",
+            "top_level_hole_policy": "solidify_parent_outer",
+            "child_hole_policy": "recursive_outer_proxy_with_exact_export",
+            "quantity_allocation": "internal_first_scored",
+            "max_cavity_depth": int(max_cavity_depth),
+        },
+        "virtual_parts": {},
+        "placement_trees": {},
+        "instance_bases": {},
+        "quantity_delta": {},
+        "diagnostics": [],
+        "summary": {},
     }
 
 
@@ -221,7 +271,7 @@ def _ring_bbox(ring: list[list[float]]) -> tuple[float, float, float, float]:
 
 
 def _rotation_shapes(part: _PartRecord) -> list[tuple[int, Polygon, float, float]]:
-    # v1 intentionally ignores child holes: unsupported and filtered before use.
+    # outer-only proxy: holes excluded from fit geometry; exact holes preserved in part record for export.
     base_poly = _to_polygon(part.outer_points_mm, [])
     out: list[tuple[int, Polygon, float, float]] = []
     for rotation_deg in part.allowed_rotations_deg:
@@ -248,11 +298,11 @@ def _candidate_children(
         if part.holes_points_mm:
             diagnostics.append(
                 {
-                    "code": "child_has_holes_unsupported_v1",
+                    "code": "child_has_holes_outer_proxy_used",
                     "child_part_revision_id": part.part_id,
+                    "hole_count": len(part.holes_points_mm),
                 }
             )
-            continue
         out.append(part)
     out.sort(
         key=lambda item: (
@@ -263,6 +313,247 @@ def _candidate_children(
         )
     )
     return out
+
+
+def _build_usable_cavity_records(
+    *,
+    parent: _PartRecord,
+    parent_instance: int,
+    min_usable_cavity_area_mm2: float,
+    diagnostics: list[dict[str, Any]],
+) -> list[_CavityRecord]:
+    records: list[_CavityRecord] = []
+    for cavity_index, cavity_ring in enumerate(parent.holes_points_mm):
+        try:
+            cavity_poly = _to_polygon(cavity_ring, [])
+        except CavityPrepackError:
+            diagnostics.append(
+                {
+                    "code": "invalid_cavity_polygon",
+                    "parent_part_id": parent.part_id,
+                    "cavity_index": cavity_index,
+                }
+            )
+            continue
+        area = float(cavity_poly.area)
+        if area < float(min_usable_cavity_area_mm2):
+            diagnostics.append(
+                {
+                    "code": "cavity_too_small",
+                    "parent_part_id": parent.part_id,
+                    "cavity_index": cavity_index,
+                    "usable_area_mm2": round(area, 6),
+                }
+            )
+            continue
+        records.append(
+            _CavityRecord(
+                parent_part_id=parent.part_id,
+                parent_instance=int(parent_instance),
+                cavity_index=int(cavity_index),
+                cavity_polygon=cavity_poly,
+                cavity_bounds=_ring_bbox(cavity_ring),
+                usable_area_mm2=round(area, 6),
+            )
+        )
+    return records
+
+
+def _rank_cavity_child_candidates(
+    *,
+    cavity: _CavityRecord,
+    part_records: list[_PartRecord],
+    remaining_qty: dict[str, int],
+    excluded_part_ids: set[str],
+    diagnostics: list[dict[str, Any]],
+) -> list[_PartRecord]:
+    cav_min_x, cav_min_y, cav_max_x, cav_max_y = cavity.cavity_bounds
+    cav_w = float(cav_max_x - cav_min_x)
+    cav_h = float(cav_max_y - cav_min_y)
+    cav_area = float(cavity.usable_area_mm2)
+    max_cavity_dim = max(cav_w, cav_h)
+
+    out: list[_PartRecord] = []
+    for part in part_records:
+        if part.part_id in excluded_part_ids:
+            continue
+        if int(remaining_qty.get(part.part_id, 0)) <= 0:
+            continue
+        if float(part.bbox_max_dim_mm) > max_cavity_dim + _EPS_COORD:
+            continue
+        if part.holes_points_mm:
+            diagnostics.append(
+                {
+                    "code": "child_has_holes_outer_proxy_used",
+                    "child_part_revision_id": part.part_id,
+                    "hole_count": len(part.holes_points_mm),
+                }
+            )
+        out.append(part)
+
+    out.sort(
+        key=lambda part: (
+            -float(part.area_mm2),
+            -(float(part.area_mm2) / cav_area if cav_area > _EPS_AREA else 0.0),
+            float(part.bbox_max_dim_mm),
+            part.part_code,
+            part.part_id,
+        )
+    )
+    return out
+
+
+def _transform_child_ring_for_placement(
+    *,
+    child: _PartRecord,
+    ring: list[list[float]],
+    rotation_deg: int,
+    x_local_mm: float,
+    y_local_mm: float,
+) -> list[list[float]]:
+    rotated_outer = affinity.rotate(
+        _to_polygon(child.outer_points_mm, []),
+        int(rotation_deg),
+        origin=(0.0, 0.0),
+        use_radians=False,
+    )
+    min_x, min_y, _, _ = rotated_outer.bounds
+
+    ring_poly = affinity.rotate(
+        _to_polygon(ring, []),
+        int(rotation_deg),
+        origin=(0.0, 0.0),
+        use_radians=False,
+    )
+    normalized = affinity.translate(ring_poly, xoff=-min_x, yoff=-min_y)
+    placed = affinity.translate(normalized, xoff=float(x_local_mm), yoff=float(y_local_mm))
+
+    coords = list(placed.exterior.coords)
+    if len(coords) >= 2 and coords[0] == coords[-1]:
+        coords = coords[:-1]
+    return [[float(x), float(y)] for x, y in coords]
+
+
+def _fill_cavity_recursive(
+    *,
+    cavity: _CavityRecord,
+    part_records: list[_PartRecord],
+    part_by_id: dict[str, _PartRecord],
+    remaining_qty: dict[str, int],
+    reserved_instance_ids: set[str],
+    ancestor_part_ids: frozenset[str],
+    next_instance: dict[str, int],
+    depth: int,
+    max_depth: int,
+    min_usable_cavity_area_mm2: float,
+    diagnostics: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if depth > max_depth:
+        diagnostics.append(
+            {
+                "code": "max_cavity_depth_reached",
+                "depth": int(depth),
+                "max_cavity_depth": int(max_depth),
+                "parent_part_id": cavity.parent_part_id,
+            }
+        )
+        return []
+
+    excluded_part_ids = set(ancestor_part_ids) | {cavity.parent_part_id}
+    candidates = _rank_cavity_child_candidates(
+        cavity=cavity,
+        part_records=part_records,
+        remaining_qty=remaining_qty,
+        excluded_part_ids=excluded_part_ids,
+        diagnostics=diagnostics,
+    )
+
+    occupied: list[Polygon] = []
+    placement_nodes: list[dict[str, Any]] = []
+    for child in candidates:
+        child_shapes = _rotation_shapes(child)
+        while int(remaining_qty.get(child.part_id, 0)) > 0:
+            placement = _try_place_child_in_cavity(
+                cavity_polygon=cavity.cavity_polygon,
+                cavity_bounds=cavity.cavity_bounds,
+                child_shapes=child_shapes,
+                occupied=occupied,
+            )
+            if placement is None:
+                break
+
+            x_local, y_local, rotation_deg, placed_poly = placement
+            child_instance = int(next_instance.get(child.part_id, 0))
+            instance_key = f"{child.part_id}:{child_instance}"
+            if instance_key in reserved_instance_ids:
+                diagnostics.append(
+                    {
+                        "code": "instance_id_reused",
+                        "instance_key": instance_key,
+                    }
+                )
+                child_instance += 1
+                instance_key = f"{child.part_id}:{child_instance}"
+
+            next_instance[child.part_id] = child_instance + 1
+            reserved_instance_ids.add(instance_key)
+            remaining_qty[child.part_id] = int(remaining_qty[child.part_id]) - 1
+            occupied.append(placed_poly)
+
+            node: dict[str, Any] = {
+                "node_id": f"node:{child.part_id}:{child_instance}",
+                "part_revision_id": child.part_id,
+                "instance": child_instance,
+                "kind": "internal_cavity_child",
+                "parent_node_id": f"node:{cavity.parent_part_id}:{cavity.parent_instance}",
+                "parent_cavity_index": cavity.cavity_index,
+                "x_local_mm": round(float(x_local), 6),
+                "y_local_mm": round(float(y_local), 6),
+                "rotation_deg": int(rotation_deg),
+                "placement_origin_ref": "bbox_min_corner",
+                "children": [],
+            }
+
+            if child.holes_points_mm and depth < max_depth:
+                child_cavity_records = _build_usable_cavity_records(
+                    parent=part_by_id[child.part_id],
+                    parent_instance=child_instance,
+                    min_usable_cavity_area_mm2=min_usable_cavity_area_mm2,
+                    diagnostics=diagnostics,
+                )
+                for child_cavity in child_cavity_records:
+                    transformed_ring = _transform_child_ring_for_placement(
+                        child=child,
+                        ring=child.holes_points_mm[child_cavity.cavity_index],
+                        rotation_deg=int(rotation_deg),
+                        x_local_mm=float(x_local),
+                        y_local_mm=float(y_local),
+                    )
+                    transformed_poly = _to_polygon(transformed_ring, [])
+                    nested_cavity = _CavityRecord(
+                        parent_part_id=child.part_id,
+                        parent_instance=child_instance,
+                        cavity_index=child_cavity.cavity_index,
+                        cavity_polygon=transformed_poly,
+                        cavity_bounds=_ring_bbox(transformed_ring),
+                        usable_area_mm2=float(child_cavity.usable_area_mm2),
+                    )
+                    nested_nodes = _fill_cavity_recursive(
+                        cavity=nested_cavity,
+                        part_records=part_records,
+                        part_by_id=part_by_id,
+                        remaining_qty=remaining_qty,
+                        reserved_instance_ids=reserved_instance_ids,
+                        ancestor_part_ids=frozenset(set(ancestor_part_ids) | {cavity.parent_part_id}),
+                        next_instance=next_instance,
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                        min_usable_cavity_area_mm2=min_usable_cavity_area_mm2,
+                        diagnostics=diagnostics,
+                    )
+                    node["children"].extend(nested_nodes)
+            placement_nodes.append(node)
+    return placement_nodes
 
 
 def _dedupe_anchors(anchors: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -340,6 +631,27 @@ def _try_place_child_in_cavity(
             if _fits_exactly(cavity_polygon=cavity_polygon, candidate_polygon=candidate, occupied=occupied):
                 return (anchor_x, anchor_y, rotation_deg, candidate)
     return None
+
+
+def validate_prepack_solver_input_hole_free(engine_input: dict[str, Any]) -> None:
+    parts_raw = engine_input.get("parts")
+    if not isinstance(parts_raw, list):
+        raise CavityPrepackGuardError("CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN: invalid parts field")
+
+    violations: list[str] = []
+    for idx, part_raw in enumerate(parts_raw):
+        if not isinstance(part_raw, dict):
+            continue
+        holes_points = part_raw.get("holes_points_mm")
+        if isinstance(holes_points, list) and len(holes_points) > 0:
+            part_id = str(part_raw.get("id") or f"idx:{idx}").strip() or f"idx:{idx}"
+            violations.append(part_id)
+
+    if violations:
+        ordered_ids = ", ".join(sorted(set(violations)))
+        raise CavityPrepackGuardError(
+            f"CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN: {len(violations)} part(s) still have holes after prepack: {ordered_ids}"
+        )
 
 
 def build_cavity_prepacked_engine_input(
@@ -513,4 +825,167 @@ def build_cavity_prepacked_engine_input(
     return out_input, plan
 
 
-__all__ = ["CavityPrepackError", "build_cavity_prepacked_engine_input"]
+def build_cavity_prepacked_engine_input_v2(
+    *,
+    snapshot_row: dict[str, Any],
+    base_engine_input: dict[str, Any],
+    enabled: bool,
+    max_cavity_depth: int = 3,
+    min_usable_cavity_area_mm2: float = 100.0,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    base = _require_dict(base_engine_input, field="base_engine_input")
+    _require_str(base.get("version"), field="base_engine_input.version")
+    _require_dict(snapshot_row, field="snapshot_row")
+
+    out_input = deepcopy(base_engine_input)
+    if not enabled:
+        return out_input, _empty_plan_v2(enabled=False, max_cavity_depth=max_cavity_depth)
+
+    part_records = _build_part_records(snapshot_row, base)
+    part_by_id = {part.part_id: part for part in part_records}
+    remaining_qty: dict[str, int] = {part.part_id: int(part.quantity) for part in part_records}
+    next_instance: dict[str, int] = {part.part_id: 0 for part in part_records}
+    reserved_instance_ids: set[str] = set()
+    diagnostics: list[dict[str, Any]] = []
+    virtual_parts: dict[str, dict[str, Any]] = {}
+    placement_trees: dict[str, dict[str, Any]] = {}
+    top_level_qty_by_part: dict[str, int] = {part.part_id: 0 for part in part_records}
+    out_parts: list[dict[str, Any]] = []
+
+    holed_parents = [part for part in part_records if part.holes_points_mm and part.quantity > 0]
+    for parent in holed_parents:
+        top_level_qty = int(remaining_qty.get(parent.part_id, 0))
+        if top_level_qty <= 0:
+            continue
+        top_level_qty_by_part[parent.part_id] = top_level_qty
+        for parent_instance_local in range(top_level_qty):
+            parent_instance = int(next_instance.get(parent.part_id, 0)) + parent_instance_local
+            virtual_id = f"{_VIRTUAL_PART_PREFIX}{parent.part_id}__{parent_instance_local:06d}"
+            cavity_records = _build_usable_cavity_records(
+                parent=parent,
+                parent_instance=parent_instance,
+                min_usable_cavity_area_mm2=min_usable_cavity_area_mm2,
+                diagnostics=diagnostics,
+            )
+
+            root_node: dict[str, Any] = {
+                "node_id": f"node:{parent.part_id}:{parent_instance}",
+                "part_revision_id": parent.part_id,
+                "instance": parent_instance,
+                "kind": "top_level_virtual_parent",
+                "parent_node_id": None,
+                "parent_cavity_index": None,
+                "x_local_mm": 0.0,
+                "y_local_mm": 0.0,
+                "rotation_deg": 0,
+                "placement_origin_ref": "bbox_min_corner",
+                "children": [],
+            }
+
+            for cavity in cavity_records:
+                child_nodes = _fill_cavity_recursive(
+                    cavity=cavity,
+                    part_records=part_records,
+                    part_by_id=part_by_id,
+                    remaining_qty=remaining_qty,
+                    reserved_instance_ids=reserved_instance_ids,
+                    ancestor_part_ids=frozenset({parent.part_id}),
+                    next_instance=next_instance,
+                    depth=1,
+                    max_depth=max_cavity_depth,
+                    min_usable_cavity_area_mm2=min_usable_cavity_area_mm2,
+                    diagnostics=diagnostics,
+                )
+                root_node["children"].extend(child_nodes)
+
+            virtual_parts[virtual_id] = {
+                "kind": "parent_composite",
+                "parent_part_revision_id": parent.part_id,
+                "parent_instance": parent_instance,
+                "source_geometry_revision_id": parent.source_geometry_revision_id,
+                "selected_nesting_derivative_id": parent.selected_nesting_derivative_id,
+            }
+            placement_trees[virtual_id] = root_node
+            out_parts.append(
+                {
+                    "id": virtual_id,
+                    "quantity": 1,
+                    "allowed_rotations_deg": list(parent.allowed_rotations_deg),
+                    "outer_points_mm": deepcopy(parent.outer_points_mm),
+                    "holes_points_mm": [],
+                }
+            )
+        next_instance[parent.part_id] = int(next_instance.get(parent.part_id, 0)) + top_level_qty
+        remaining_qty[parent.part_id] = 0
+
+    for part in part_records:
+        if part.holes_points_mm:
+            continue
+        qty = int(remaining_qty.get(part.part_id, 0))
+        if qty <= 0:
+            continue
+        top_level_qty_by_part[part.part_id] = qty
+        out_parts.append(
+            {
+                "id": part.part_id,
+                "quantity": qty,
+                "allowed_rotations_deg": list(part.allowed_rotations_deg),
+                "outer_points_mm": deepcopy(part.outer_points_mm),
+                "holes_points_mm": [],
+            }
+        )
+
+    quantity_delta: dict[str, dict[str, int]] = {}
+    instance_bases: dict[str, dict[str, int]] = {}
+    for part in part_records:
+        original_qty = int(part.quantity)
+        top_level_qty = int(top_level_qty_by_part.get(part.part_id, 0))
+        internal_qty = int(original_qty - top_level_qty)
+        quantity_delta[part.part_id] = {
+            "original_required_qty": original_qty,
+            "internal_qty": internal_qty,
+            "top_level_qty": top_level_qty,
+        }
+        instance_bases[part.part_id] = {
+            "internal_reserved_count": internal_qty,
+            "top_level_instance_base": internal_qty,
+        }
+
+    def _count_tree_nodes(node: dict[str, Any]) -> int:
+        children_raw = node.get("children")
+        if not isinstance(children_raw, list):
+            return 1
+        return 1 + sum(
+            _count_tree_nodes(child)
+            for child in children_raw
+            if isinstance(child, dict)
+        )
+
+    out_parts.sort(key=lambda item: str(item.get("id") or ""))
+    out_input["parts"] = out_parts
+
+    plan = _empty_plan_v2(enabled=True, max_cavity_depth=max_cavity_depth)
+    plan["virtual_parts"] = virtual_parts
+    plan["placement_trees"] = placement_trees
+    plan["instance_bases"] = instance_bases
+    plan["quantity_delta"] = quantity_delta
+    plan["diagnostics"] = diagnostics
+    plan["summary"] = {
+        "virtual_parent_count": len(virtual_parts),
+        "placement_node_count": sum(_count_tree_nodes(tree) for tree in placement_trees.values()),
+        "internal_placement_count": sum(
+            int(metrics.get("internal_qty", 0))
+            for metrics in quantity_delta.values()
+            if isinstance(metrics, dict)
+        ),
+    }
+    return out_input, plan
+
+
+__all__ = [
+    "CavityPrepackError",
+    "CavityPrepackGuardError",
+    "build_cavity_prepacked_engine_input",
+    "build_cavity_prepacked_engine_input_v2",
+    "validate_prepack_solver_input_hole_free",
+]

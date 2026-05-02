@@ -1606,6 +1606,10 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
                         base_engine_input=base_engine_input_payload,
                         enabled=True,
                     )
+                    if profile_resolution.requested_part_in_part_policy == "prepack":
+                        from worker.cavity_prepack import validate_prepack_solver_input_hole_free
+
+                        validate_prepack_solver_input_hole_free(solver_input_payload)
                     cavity_prepack_summary = _summarize_cavity_plan(cavity_plan_payload)
                 else:
                     solver_input_payload = base_engine_input_payload
