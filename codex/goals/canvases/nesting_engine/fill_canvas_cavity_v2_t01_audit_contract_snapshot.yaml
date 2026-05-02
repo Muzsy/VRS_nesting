@@ -1,0 +1,55 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/cavity_prepack.py, worker/result_normalizer.py,
+      docs/nesting_engine/cavity_prepack_contract_v1.md,
+      tests/worker/test_cavity_prepack.py és
+      tests/worker/test_result_normalizer_cavity_plan.py fájlokat.
+      Rögzítsd az összes public API-t, konstanst, diagnosztika kódot és a
+      normalizer cavity branch-et. Ez read-only felderítési lépés.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t01_audit_contract_snapshot.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t01_audit_contract_snapshot.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t01_audit_contract_snapshot/run.md"
+
+  - name: "Baseline tesztek futtatása"
+    description: >
+      Futtasd le a meglévő cavity tesztkészletet a jelenlegi állapot
+      rögzítéséhez. Minden tesztnek zöldnek kell lennie.
+      Parancsok:
+        python3 -m pytest -q tests/worker/test_cavity_prepack.py
+        python3 -m pytest -q tests/worker/test_result_normalizer_cavity_plan.py
+      Ha bármely teszt piros, azt a reportban rögzíteni kell (de nem javítani
+      ebben a taskban).
+    outputs: []
+
+  - name: "V1 audit dokumentum elkészítése"
+    description: >
+      Hozd létre a docs/nesting_engine/cavity_prepack_v1_audit.md fájlt.
+      Tartalmazza: a public API szignatúrákat, a data flow-t, az összes
+      diagnosztika kódot (child_has_holes_unsupported_v1,
+      invalid_cavity_polygon, not_used_no_child_fit, used), a cavity_plan_v1
+      JSON sémát egy teljes példával, a quantity_delta / instance_bases
+      struktúrát, a normalizer cavity branch működését
+      (_load_enabled_cavity_plan → internal_placements lapos lista),
+      a placement_transform_point() helper leírását és a v1 lapos modell
+      korlátait. Nincs kódmódosítás.
+    outputs:
+      - "docs/nesting_engine/cavity_prepack_v1_audit.md"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot a DoD→Evidence mátrixszal.
+      Bizonyítsd: minden v1 teszt zöld, audit dokumentum létezik, nincs
+      kódmódosítás.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t01_audit_contract_snapshot.md"
+      - "codex/reports/nesting_engine/cavity_v2_t01_audit_contract_snapshot.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést.
+      Parancs: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t01_audit_contract_snapshot.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t01_audit_contract_snapshot.md"
+      - "codex/reports/nesting_engine/cavity_v2_t01_audit_contract_snapshot.verify.log"

@@ -1,0 +1,60 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/result_normalizer.py placement_transform_point() és
+      _normalize_rotation_deg() helpereit, a worker/cavity_prepack.py
+      _fits_exactly() és _to_polygon() függvényeit. Ellenőrizd, hogy
+      T06 (placement_trees) és T07 (flatten) implementálva van-e.
+      Ellenőrizd a requirements-dev.txt-ben, hogy a Shapely elérhető.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t08_exact_nested_validator.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t08_exact_nested_validator.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t08_exact_nested_validator/run.md"
+
+  - name: "worker/cavity_validation.py modul implementálása"
+    description: >
+      Hozd létre a worker/cavity_validation.py modult a canvas spec alapján.
+      Tartalmazzon:
+      (1) CavityValidationError(RuntimeError) — hard fail kivétel,
+      (2) ValidationIssue frozen dataclass (code, message, context),
+      (3) validate_child_within_cavity(...) → ValidationIssue | None,
+      (4) validate_no_child_child_overlap(...) → list[ValidationIssue],
+      (5) validate_placement_tree_node(..., rekurzív) — ellenőrzi child
+          pozíciót, cavity containment-et, gyerekek overlap-jét,
+      (6) validate_cavity_plan_v2(*, cavity_plan, part_records,
+          solver_placements, max_depth=3, strict=True) — teljes validátor,
+          strict=True esetén CavityValidationError-t dob.
+      Error kódok: CAVITY_CHILD_OUTSIDE_PARENT_CAVITY, CAVITY_CHILD_CHILD_OVERLAP,
+      CAVITY_TREE_DEPTH_EXCEEDED, CAVITY_QUANTITY_MISMATCH, CAVITY_TRANSFORM_INVALID.
+      __all__ exportálva.
+    outputs:
+      - "worker/cavity_validation.py"
+
+  - name: "Validátor unit tesztek"
+    description: >
+      Hozd létre a tests/worker/test_cavity_validation.py fájlt:
+      (1) test_valid_single_level_passes — valid elhelyezés nem dob,
+      (2) test_child_outside_cavity_fails — CAVITY_CHILD_OUTSIDE_PARENT_CAVITY,
+      (3) test_child_child_overlap_fails — CAVITY_CHILD_CHILD_OVERLAP,
+      (4) test_quantity_mismatch_fails — CAVITY_QUANTITY_MISMATCH,
+      (5) test_matrjoska_valid_three_level — A→B→C valid esetén passes,
+      (6) test_strict_false_returns_issues — strict=False list-et ad, nem dob.
+      Futtasd: python3 -m pytest -q tests/worker/test_cavity_validation.py
+    outputs:
+      - "tests/worker/test_cavity_validation.py"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot. Bizonyítsd: worker/cavity_validation.py
+      létezik, minden hibakód tesztelt, strict mód dob, nem-strict list-et ad,
+      a modul nem ír fájlt, nem hív DB-t.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t08_exact_nested_validator.md"
+      - "codex/reports/nesting_engine/cavity_v2_t08_exact_nested_validator.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t08_exact_nested_validator.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t08_exact_nested_validator.md"
+      - "codex/reports/nesting_engine/cavity_v2_t08_exact_nested_validator.verify.log"

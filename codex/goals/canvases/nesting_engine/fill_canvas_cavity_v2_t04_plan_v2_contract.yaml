@@ -1,0 +1,76 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/cavity_prepack.py (_PLAN_VERSION, _empty_plan,
+      meglévő dataclass-ok), worker/result_normalizer.py
+      (_load_enabled_cavity_plan, sor ~233-248), és
+      docs/nesting_engine/cavity_prepack_contract_v1.md fájlokat.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t04_plan_v2_contract.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t04_plan_v2_contract.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t04_plan_v2_contract/run.md"
+
+  - name: "worker/cavity_prepack.py v2 konstansok és dataclass"
+    description: >
+      Adj hozzá a worker/cavity_prepack.py-hoz:
+      (1) _PLAN_VERSION_V2 = "cavity_plan_v2" konstanst,
+      (2) _PlacementTreeNode frozen dataclass-t a canvas spec szerint
+          (node_id, part_revision_id, instance, kind, parent_node_id,
+          parent_cavity_index, x_local_mm, y_local_mm, rotation_deg,
+          placement_origin_ref, children tuple),
+      (3) _empty_plan_v2(*, enabled, max_cavity_depth=3) helper függvényt
+          a canvas spec szerinti sémával.
+      Csak belső szimbólumok — __all__ nem bővítendő velük.
+    outputs:
+      - "worker/cavity_prepack.py"
+
+  - name: "worker/result_normalizer.py _load_enabled_cavity_plan frissítése"
+    description: >
+      A _load_enabled_cavity_plan() függvényben (sor ~244-248) módosítsd az
+      egyetlen version check sort:
+        if version != "cavity_plan_v1":
+      helyett:
+        if version not in ("cavity_plan_v1", "cavity_plan_v2"):
+      Semmi más nem változik ebben a függvényben és ebben a lépésben.
+    outputs:
+      - "worker/result_normalizer.py"
+
+  - name: "cavity_prepack_contract_v2.md dokumentum elkészítése"
+    description: >
+      Hozd létre a docs/nesting_engine/cavity_prepack_contract_v2.md fájlt.
+      Tartalmazza: a v2 cavity_plan JSON séma top-level struktúrát, a
+      placement_trees rekurzív node JSON példát (A→B→C matrjoska), a v1 vs v2
+      összehasonlítás táblázatot, a quantity invariáns szabályokat, és a
+      backward compatibility garanciát. A canvas specifikációja az útmutató.
+    outputs:
+      - "docs/nesting_engine/cavity_prepack_contract_v2.md"
+
+  - name: "Unit tesztek a v2 sémára"
+    description: >
+      A tests/worker/test_cavity_prepack.py-ban adj teszteket:
+      (1) _empty_plan_v2(enabled=True) helyes sémát ad,
+      (2) _load_enabled_cavity_plan egy ideiglenes tmp v2 plan JSON fájlból
+          sikeresen betölti (version = "cavity_plan_v2"),
+      (3) _load_enabled_cavity_plan ismeretlen verzióra ResultNormalizerError.
+      Futtasd: python3 -m pytest -q tests/worker/test_cavity_prepack.py
+               python3 -m pytest -q tests/worker/test_result_normalizer_cavity_plan.py
+    outputs:
+      - "tests/worker/test_cavity_prepack.py"
+      - "tests/worker/test_result_normalizer_cavity_plan.py"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot. Bizonyítsd:
+      _PLAN_VERSION_V2 konstans, _PlacementTreeNode dataclass,
+      _empty_plan_v2 helper, _load_enabled_cavity_plan v2 elfogadás,
+      contract doc létezik, v1 tesztek zöldek (fájl + sor referenciák).
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t04_plan_v2_contract.md"
+      - "codex/reports/nesting_engine/cavity_v2_t04_plan_v2_contract.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t04_plan_v2_contract.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t04_plan_v2_contract.md"
+      - "codex/reports/nesting_engine/cavity_v2_t04_plan_v2_contract.verify.log"

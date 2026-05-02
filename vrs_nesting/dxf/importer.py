@@ -974,8 +974,11 @@ def probe_layer_rings(
     """
 
     layer_entities = [entity for entity in entities if entity.get("layer") == layer]
+    # Unsupported entity types (TEXT, MTEXT, …) are annotation-only; skip them
+    # in the probe so they don't abort ring detection on geometry layers.
+    supported_entities = [e for e in layer_entities if not e.get("_unsupported")]
     try:
-        rings, open_path_list = _collect_layer_rings(layer_entities, layer=layer)
+        rings, open_path_list = _collect_layer_rings(supported_entities, layer=layer)
     except DxfImportError as exc:
         return {
             "layer": layer,
@@ -1030,8 +1033,9 @@ def probe_layer_open_paths(
     outcome.
     """
     layer_entities = [entity for entity in entities if entity.get("layer") == layer]
+    supported_entities = [e for e in layer_entities if not e.get("_unsupported")]
     try:
-        _rings, open_path_chains = _collect_layer_rings(layer_entities, layer=layer)
+        _rings, open_path_chains = _collect_layer_rings(supported_entities, layer=layer)
     except DxfImportError as exc:
         return {
             "layer": layer,

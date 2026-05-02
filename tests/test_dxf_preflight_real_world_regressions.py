@@ -97,10 +97,10 @@ def test_real_world_dxf_preflight_accepts_messy_layer_contours(
     dedupe = result["dedupe"]
     importer_probe = gate["importer_probe"]
 
-    # Must not be rejected — accepted or review_required are both OK here.
-    assert gate["acceptance_outcome"] != "preflight_rejected", (
-        f"{fixture_name}: expected not rejected, got 'preflight_rejected'. "
-        f"Blocking reasons: {gate['blocking_reasons']}"
+    # Must be fully accepted — the runtime only forwards to geometry import on accepted_for_import.
+    assert gate["acceptance_outcome"] == "accepted_for_import", (
+        f"{fixture_name}: expected 'accepted_for_import', got {gate['acceptance_outcome']!r}. "
+        f"Blocking: {gate['blocking_reasons']}  Review: {gate['review_required_reasons']}"
     )
 
     # Importer must succeed (normalized DXF is structurally valid).

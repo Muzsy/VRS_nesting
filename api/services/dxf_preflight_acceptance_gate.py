@@ -104,6 +104,7 @@ def evaluate_dxf_prefilter_acceptance_gate(
         role_resolution=role_resolution,
         gap_repair_result=gap_repair_result,
         duplicate_dedupe_result=duplicate_dedupe_result,
+        normalized_dxf_writer_result=normalized_dxf_writer_result,
         importer_probe=importer_probe,
         validator_probe=validator_probe,
     )
@@ -268,11 +269,18 @@ def _build_default_validator_probe() -> dict[str, Any]:
     }
 
 
+_WRITER_BLOCKING_CODES: frozenset[str] = frozenset({
+    "DXF_NORMALIZED_WRITER_NO_CUT_OUTER_WRITTEN",
+    "DXF_NORMALIZED_WRITER_MULTIPLE_CUT_OUTERS_WRITTEN",
+})
+
+
 def _collect_blocking_reasons(
     *,
     role_resolution: Mapping[str, Any],
     gap_repair_result: Mapping[str, Any],
     duplicate_dedupe_result: Mapping[str, Any],
+    normalized_dxf_writer_result: Mapping[str, Any],
     importer_probe: Mapping[str, Any],
     validator_probe: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -295,6 +303,21 @@ def _collect_blocking_reasons(
         family="duplicate_dedupe_blocking_conflict",
         items=_as_dict_list(duplicate_dedupe_result.get("blocking_conflicts")),
     )
+
+    # Writer-level blocking diagnostics: raised before the generic importer failure
+    # so the user gets a specific reason rather than a generic DXF_NO_OUTER_LAYER.
+    writer_diags = _as_str_list(
+        _as_dict(normalized_dxf_writer_result.get("diagnostics")).get("writer_diagnostics")
+    )
+    for code in writer_diags:
+        if code in _WRITER_BLOCKING_CODES:
+            out.append(
+                {
+                    "source": "normalized_writer",
+                    "family": "normalized_writer_cut_outer_error",
+                    "details": {"code": code},
+                }
+            )
 
     if not bool(importer_probe.get("is_pass")):
         out.append(

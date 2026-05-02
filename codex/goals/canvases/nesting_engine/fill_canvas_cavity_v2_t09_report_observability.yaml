@@ -1,0 +1,71 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/result_normalizer.py metrics_jsonb cavity_plan blokkját
+      (~sor 978-983), frontend/src/lib/types.ts cavity_prepack_summary típusát
+      (~sor 355-370), frontend/src/pages/NewRunPage.tsx metrics megjelenítési
+      részét. Ellenőrizd, hogy T07 (normalizer flatten) implementálva van-e,
+      és hogy T02 (QualityProfileName bővítés) is megvan-e.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t09_report_observability.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t09_report_observability.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t09_report_observability/run.md"
+
+  - name: "worker/result_normalizer.py metrics_jsonb cavity_plan bővítése"
+    description: >
+      A _normalize_solver_output_projection_v2() végén a metrics_jsonb["cavity_plan"]
+      blokknál (sor ~978-983): ha cavity_plan_version == "cavity_plan_v2", bővítsd
+      a cp_metrics dict-et a canvas spec szerinti v2 mezőkkel:
+      cavity_plan_version, max_cavity_depth, usable_cavity_count, used_cavity_count,
+      internal_placement_count, nested_internal_placement_count,
+      top_level_holes_removed_count, holed_child_proxy_count, total_internal_qty,
+      quantity_delta_summary, diagnostics_by_code.
+      Implementáld a _count_diagnostics_by_code() helper-t (ha T07-ben nem készült el).
+      V1 plan esetén a metrics_jsonb["cavity_plan"] formátuma változatlan.
+    outputs:
+      - "worker/result_normalizer.py"
+
+  - name: "frontend/src/lib/types.ts cavity_prepack_summary bővítése"
+    description: >
+      A types.ts-ben frissítsd a cavity_prepack_summary típust a canvas spec
+      alapján (ha T02 nem tette meg teljesen): cavity_plan_version, max_cavity_depth,
+      quantity_delta_summary (Record<string, {original, internal, top_level}>),
+      diagnostics_by_code (Record<string, number>) optional mezők hozzáadása.
+    outputs:
+      - "frontend/src/lib/types.ts"
+
+  - name: "frontend/src/pages/NewRunPage.tsx cavity prepack summary panel"
+    description: >
+      A NewRunPage.tsx-ben adj hozzá egy cavity prepack összefoglaló panel
+      komponenst, amely akkor jelenik meg, ha result.metrics_jsonb.cavity_plan.enabled
+      igaz. Tartalma: verzió, virtuális parentek száma, belső elhelyezések,
+      matrjoska (>=2. szint), top-level holes eltávolítva, lyukas child proxy.
+      A canvas spec szerinti TSX snippet alapján.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+
+  - name: "TypeScript build és tesztek"
+    description: >
+      Futtasd:
+        cd frontend && npx tsc --noEmit
+        python3 -m pytest -q tests/worker/test_result_normalizer_cavity_plan.py
+      Adj tesztet: test_v2_metrics_contain_cavity_plan_summary és
+      test_v1_metrics_unchanged.
+    outputs:
+      - "tests/worker/test_result_normalizer_cavity_plan.py"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot. Bizonyítsd: metrics_jsonb.cavity_plan
+      v2 mezői léteznek (fájl + sor), TypeScript build hibátlan, frontend panel
+      guard mögé van téve, v1 metrics formátum változatlan.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t09_report_observability.md"
+      - "codex/reports/nesting_engine/cavity_v2_t09_report_observability.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t09_report_observability.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t09_report_observability.md"
+      - "codex/reports/nesting_engine/cavity_v2_t09_report_observability.verify.log"

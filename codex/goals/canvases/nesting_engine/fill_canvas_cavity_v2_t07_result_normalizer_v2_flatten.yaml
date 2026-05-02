@@ -1,0 +1,83 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/result_normalizer.py teljes tartalmát (különösen
+      placement_transform_point ~sor 137-152, _normalize_rotation_deg ~sor 251,
+      _normalize_solver_output_projection_v2 ~sor 561-1004,
+      _load_enabled_cavity_plan ~sor 233-248). Ellenőrizd, hogy T04
+      (_load_enabled_cavity_plan v2 elfogadása) és T06 (build_cavity_prepacked_engine_input_v2,
+      placement_trees struktúra) implementálva van-e.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t07_result_normalizer_v2_flatten.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t07_result_normalizer_v2_flatten.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t07_result_normalizer_v2_flatten/run.md"
+
+  - name: "_compose_cavity_transform() és _count_diagnostics_by_code() helper implementálása"
+    description: >
+      A worker/result_normalizer.py-ban implementáld:
+      (1) _compose_cavity_transform(*, parent_abs_x, parent_abs_y,
+          parent_abs_rotation_deg, child_local_x, child_local_y,
+          child_local_rotation_deg) → tuple[float, float, float]
+          Ez a placement_transform_point() és _normalize_rotation_deg()
+          segítségével számolja az abszolút koordinátákat.
+      (2) _count_diagnostics_by_code(diagnostics) → dict[str, int]
+          Megszámolja a diagnostics list kódjait.
+      Belső szimbólumok — __all__ nem bővítendő.
+    outputs:
+      - "worker/result_normalizer.py"
+
+  - name: "_flatten_cavity_plan_v2_tree() rekurzív flatten implementálása"
+    description: >
+      A worker/result_normalizer.py-ban implementáld a
+      _flatten_cavity_plan_v2_tree(*, node, parent_abs_x, parent_abs_y,
+      parent_abs_rotation_deg, sheet_index, part_index, cavity_plan_version,
+      per_sheet_counter, per_sheet_placed_area, placement_rows, depth=0)
+      rekurzív függvényt a canvas spec alapján. top_level_virtual_parent
+      kind esetén az abs pozíció a caller által adott; internal_cavity_child
+      esetén _compose_cavity_transform() számolja. Minden node-hoz
+      placement_row generálódik metadata_jsonb-vel (cavity_tree_depth,
+      parent_node_id, local_transform mezőkkel).
+    outputs:
+      - "worker/result_normalizer.py"
+
+  - name: "_normalize_solver_output_projection_v2() v2 ág bővítése"
+    description: >
+      A _normalize_solver_output_projection_v2()-ban a cavity plan betöltése
+      utáni részt bővítsd: ha cavity_plan_version == "cavity_plan_v2", töltsd be
+      a placement_trees dict-et. A placements ciklusban, ha part_id egy virtual
+      part és cavity_plan_version == "cavity_plan_v2", hívd a
+      _flatten_cavity_plan_v2_tree()-t az összes child node-ra. A v1 branch
+      (internal_placements lapos lista) változatlan marad.
+      Quantity check: cavity_plan_v2 esetén ellenőrizd, hogy a placement_rows-ban
+      a belső instance count egyezik a quantity_delta.internal_qty-vel.
+    outputs:
+      - "worker/result_normalizer.py"
+
+  - name: "V2 normalizer tesztek"
+    description: >
+      A tests/worker/test_result_normalizer_cavity_plan.py-ban adj teszteket:
+      (1) test_v2_single_level_flatten_correct_abs_coords,
+      (2) test_v2_matrjoska_flatten_all_three_levels,
+      (3) test_v2_rotated_parent_child_transform,
+      (4) test_v2_quantity_mismatch_raises_ResultNormalizerError,
+      (5) test_v1_cavity_plan_unchanged (meglévő v1 tesztek zöldek).
+      Futtasd: python3 -m pytest -q tests/worker/test_result_normalizer_cavity_plan.py
+    outputs:
+      - "tests/worker/test_result_normalizer_cavity_plan.py"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot. Bizonyítsd: _compose_cavity_transform
+      és _flatten_cavity_plan_v2_tree léteznek (fájl + sor), v2 path
+      aktiválódik cavity_plan_v2 esetén, transform compose helyes,
+      quantity check megvan, v1 tesztek zöldek.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t07_result_normalizer_v2_flatten.md"
+      - "codex/reports/nesting_engine/cavity_v2_t07_result_normalizer_v2_flatten.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t07_result_normalizer_v2_flatten.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t07_result_normalizer_v2_flatten.md"
+      - "codex/reports/nesting_engine/cavity_v2_t07_result_normalizer_v2_flatten.verify.log"

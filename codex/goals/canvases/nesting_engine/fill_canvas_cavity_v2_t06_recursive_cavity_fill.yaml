@@ -1,0 +1,70 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/cavity_prepack.py teljes tartalmát (különösen
+      _CavityPlacement, _PartRecord, _to_polygon, _try_place_child_in_cavity,
+      _ring_bbox, _rotation_shapes, _fits_exactly),
+      a worker/result_normalizer.py placement_transform_point() helperét, és
+      a canvases/nesting_engine/cavity_v2_t06_recursive_cavity_fill.md canvas
+      implementációs lépéseit. Ellenőrizd, hogy T04 (_PLAN_VERSION_V2,
+      _empty_plan_v2) és T05 (outer proxy) már implementálva van-e.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t06_recursive_cavity_fill.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t06_recursive_cavity_fill.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t06_recursive_cavity_fill/run.md"
+
+  - name: "Új helper dataclass és függvények implementálása"
+    description: >
+      A worker/cavity_prepack.py-ban implementáld:
+      (1) _CavityRecord frozen dataclass (parent_part_id, parent_instance,
+          cavity_index, cavity_polygon, cavity_bounds, usable_area_mm2),
+      (2) _build_usable_cavity_records(...) — érvényes cavity-k listája,
+      (3) _rank_cavity_child_candidates(...) — szűrt+rendezett child lista,
+      (4) _fill_cavity_recursive(...) — rekurzív cavity fill, max_depth
+          védelemmel, ciklus védelemmel (excluded_part_ids, ancestor_part_ids),
+          lyukas child saját cavityjeit is rekurzívan tölti.
+      Minden függvény a canvas spec pseudokódja alapján. Belső szimbólumok.
+    outputs:
+      - "worker/cavity_prepack.py"
+
+  - name: "build_cavity_prepacked_engine_input_v2() implementálása"
+    description: >
+      A worker/cavity_prepack.py-ban implementáld a
+      build_cavity_prepacked_engine_input_v2(snapshot_row, base_engine_input,
+      enabled, max_cavity_depth=3, min_usable_cavity_area_mm2=100.0)
+      publikus függvényt. Visszaad (engine_input, cavity_plan_v2) tuple-t.
+      A cavity_plan_v2 tartalmazza: virtual_parts, placement_trees, instance_bases,
+      quantity_delta, diagnostics, summary. A quantity invariáns:
+      internal_qty + top_level_qty == original_required_qty minden partra.
+      Add hozzá __all__-hoz: "build_cavity_prepacked_engine_input_v2".
+    outputs:
+      - "worker/cavity_prepack.py"
+
+  - name: "V2 rekurzív tesztek"
+    description: >
+      A tests/worker/test_cavity_prepack.py-ban adj teszteket:
+      (1) test_v2_matrjoska_three_level: A(lyukas)→B(lyukas)→C(solid),
+          mindhárom szint elhelyezve, top-level holes=0,
+      (2) test_v2_cycle_protection: A parent nem kerülhet saját cavityjébe,
+      (3) test_v2_quantity_invariant: internal+top_level==original minden partra,
+      (4) test_v2_disabled_mode: enabled=False → változatlan input, v2 üres plan,
+      (5) test_v2_max_depth_respected: max_cavity_depth=1 → nem megy mélyebb szintre.
+      Futtasd: python3 -m pytest -q tests/worker/test_cavity_prepack.py
+    outputs:
+      - "tests/worker/test_cavity_prepack.py"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot. Bizonyítsd: build_cavity_prepacked_engine_input_v2
+      létezik és exportálva (fájl + sor), placement_trees tartalmaz rekurzív
+      node-okat, matrjoska teszt zöld, ciklus védelem tesztelt, quantity invariáns.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t06_recursive_cavity_fill.md"
+      - "codex/reports/nesting_engine/cavity_v2_t06_recursive_cavity_fill.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t06_recursive_cavity_fill.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t06_recursive_cavity_fill.md"
+      - "codex/reports/nesting_engine/cavity_v2_t06_recursive_cavity_fill.verify.log"

@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
+
+_EPS = 1e-6
 
 from vrs_nesting.runner.solver_adapter import SolverAdapter, SolverAdapterError, build_sparrow_solver_adapter
 
@@ -208,19 +211,19 @@ def _expand_remaining_items(sparrow_instance: dict[str, Any], stock_sheets: list
 
 
 def _allocate_sheet_budgets(time_limit_s: int, sheet_count: int) -> list[int]:
+    """Allocate Sparrow time budgets per iteration.
+
+    Strategy: maximise the first sheet's utilisation (greedy fill).
+    The first Sparrow run receives the full time budget so it can find the
+    tightest possible layout; subsequent runs only handle the small overflow
+    and therefore need much less time.
+    """
     if sheet_count <= 0 or time_limit_s <= 0:
         return []
 
-    attempts = min(sheet_count, time_limit_s)
-    base = time_limit_s // attempts
-    rem = time_limit_s % attempts
-    budgets: list[int] = []
-    for idx in range(attempts):
-        budget = base + (1 if idx < rem else 0)
-        if budget <= 0:
-            continue
-        budgets.append(int(budget))
-    return budgets
+    follow_up = max(60, time_limit_s // max(sheet_count, 2))
+    budgets = [time_limit_s] + [follow_up] * (sheet_count - 1)
+    return [b for b in budgets if b > 0]
 
 
 def _sheet_instance_payload(name: str, strip_height: float, candidates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -289,6 +292,38 @@ def _stable_float(value: float) -> float:
     return rounded
 
 
+def _rotated_bbox(shape: Any, tx: float, ty: float, rot_deg: float) -> tuple[float, float, float, float]:
+    """Return (x_left, y_bottom, x_right, y_top) of a shape after rotation and translation.
+
+    Sparrow semantics: rotate each vertex around the origin by rot_deg (CCW),
+    then translate by (tx, ty).
+    """
+    if not isinstance(shape, dict) or shape.get("type") != "simple_polygon":
+        return (tx, ty, tx, ty)
+    data = shape.get("data")
+    if not isinstance(data, list) or not data:
+        return (tx, ty, tx, ty)
+    rad = math.radians(rot_deg)
+    cos_r = math.cos(rad)
+    sin_r = math.sin(rad)
+    xs = []
+    ys = []
+    for p in data:
+        if isinstance(p, (list, tuple)) and len(p) >= 2:
+            px, py = float(p[0]), float(p[1])
+            xs.append(px * cos_r - py * sin_r + tx)
+            ys.append(px * sin_r + py * cos_r + ty)
+    if not xs:
+        return (tx, ty, tx, ty)
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _rotated_x_range(shape: Any, tx: float, rot_deg: float) -> tuple[float, float]:
+    x_left, _, x_right, _ = _rotated_bbox(shape, tx, 0.0, rot_deg)
+    return (x_left, x_right)
+
+
+
 def run_multi_sheet_wrapper(
     *,
     run_dir: str | Path,
@@ -316,22 +351,24 @@ def run_multi_sheet_wrapper(
 
     budgets = _allocate_sheet_budgets(time_limit_s, len(stock_sheets))
 
-    for sheet_index, budget in enumerate(budgets):
-        if not remaining:
+    physical_sheet_index = 0  # tracks which physical sheet slot we are on
+    for run_index, budget in enumerate(budgets):
+        if not remaining or physical_sheet_index >= len(stock_sheets):
             break
 
-        sheet_w, sheet_h = stock_sheets[sheet_index]
+        sheet_w, sheet_h = stock_sheets[physical_sheet_index]
         candidates = [item for item in remaining if item.get("pre_reason") is None]
         candidates.sort(key=_remaining_sort_key)
         if not candidates:
+            physical_sheet_index += 1
             continue
 
-        sheet_dir = root / "sheets" / f"sheet_{sheet_index + 1:03d}"
+        sheet_dir = root / "sheets" / f"sheet_{physical_sheet_index + 1:03d}"
         sheet_dir.mkdir(parents=True, exist_ok=True)
 
-        strip_height = max(float(sheet_w), float(sheet_h)) + 1.0
+        strip_height = max(float(sheet_w), float(sheet_h))
         sheet_instance = _sheet_instance_payload(
-            f"{sparrow_instance.get('name', 'dxf')}_sheet_{sheet_index + 1:03d}",
+            f"{sparrow_instance.get('name', 'dxf')}_sheet_{physical_sheet_index + 1:03d}",
             strip_height,
             candidates,
         )
@@ -342,31 +379,62 @@ def run_multi_sheet_wrapper(
             _, meta = active_adapter.run_in_dir(
                 input_path=str(sheet_instance_path),
                 run_dir=sheet_dir,
-                seed=seed + sheet_index,
+                seed=seed + physical_sheet_index,
                 time_limit_s=budget,
                 solver_bin=sparrow_bin,
             )
         except SolverAdapterError as exc:
-            raise MultiSheetWrapperError(f"sparrow run failed on sheet_{sheet_index + 1:03d}: {exc}") from exc
+            raise MultiSheetWrapperError(f"sparrow run failed on sheet_{physical_sheet_index + 1:03d}: {exc}") from exc
 
         final_json_path = Path(str(meta.get("final_json_path", ""))).resolve()
         sheet_placements = _parse_sheet_placements(final_json_path)
 
+        # Multi-sheet split: assign each placement to the physical sheet slot
+        # determined by the rotated bounding box's left x-edge.
+        # Shapes straddling a sheet boundary are deferred to the next Sparrow run
+        # (snapping would displace them from Sparrow's collision-free position).
+        # Shapes with y-overflow (rare with strip_height = sheet_h) are skipped.
         placed_instance_ids: set[str] = set()
+        sheets_consumed = 1
         for placed in sheet_placements:
             item_idx = int(placed["item_id"])
             if item_idx < 0 or item_idx >= len(candidates):
                 continue
+            px = float(placed["x"])
+            py = float(placed["y"])
+            rot = float(placed["rotation_deg"])
             instance = candidates[item_idx]
+
+            x_left, y_bot, x_right, y_top = _rotated_bbox(instance.get("shape"), px, py, rot)
+
+            if y_bot < -_EPS or y_top > sheet_h + _EPS:
+                # Y-overflow — Sparrow should not produce this; defer if it does.
+                continue
+
+            phys_offset = max(0, math.floor(x_left / sheet_w)) if sheet_w > 0 else 0
+            x_right_local = x_right - phys_offset * sheet_w
+
+            if x_right_local > sheet_w + _EPS:
+                # Shape straddles a sheet boundary.  Snapping would move it away
+                # from Sparrow's collision-free position and cause overlaps with
+                # non-snapped neighbours.  Defer to the next Sparrow run instead.
+                continue
+
+            target_sheet = physical_sheet_index + phys_offset
+            if target_sheet >= len(stock_sheets):
+                continue
+
+            sheets_consumed = max(sheets_consumed, phys_offset + 1)
+            x_in_sheet = px - phys_offset * sheet_w
             placed_instance_ids.add(instance["instance_id"])
             all_placements.append(
                 {
                     "instance_id": instance["instance_id"],
                     "part_id": instance["part_id"],
-                    "sheet_index": sheet_index,
-                    "x": _stable_float(float(placed["x"])),
-                    "y": _stable_float(float(placed["y"])),
-                    "rotation_deg": _stable_float(float(placed["rotation_deg"])),
+                    "sheet_index": target_sheet,
+                    "x": _stable_float(x_in_sheet),
+                    "y": _stable_float(py),
+                    "rotation_deg": _stable_float(rot),
                 }
             )
 
@@ -374,7 +442,7 @@ def run_multi_sheet_wrapper(
         runner_meta["time_limit_s"] = int(budget)
         raw_outputs.append(
             {
-                "sheet_index": sheet_index,
+                "sheet_index": physical_sheet_index,
                 "sheet_dir": str(sheet_dir),
                 "runner_meta": runner_meta,
                 "placed_count": len(placed_instance_ids),
@@ -392,7 +460,9 @@ def run_multi_sheet_wrapper(
             remaining = [item for item in remaining if item["instance_id"] not in placed_instance_ids]
             remaining.sort(key=_remaining_sort_key)
 
-    timeout_hit = bool(remaining and len(budgets) < len(stock_sheets))
+        physical_sheet_index += sheets_consumed
+
+    timeout_hit = bool(remaining and physical_sheet_index >= len(stock_sheets))
 
     all_placements.sort(
         key=lambda placement: (

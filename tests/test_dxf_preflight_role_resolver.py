@@ -331,9 +331,12 @@ def test_marking_layer_open_path_is_silent_success():
 
 
 def test_cut_like_topology_ambiguous_is_unassigned_with_review_or_blocking():
+    # Color says cut-like, topology proxy is silent, and NO closed contours exist
+    # → the contour resolver cannot help → conflict must remain.
     inspect_result = _build_inspect_result(
         entities=[_entity(entity_index=0, layer="LASER_GENERIC", color_index=3)],
-        # Color says cut-like, but topology proxy is silent (no outer/inner-like).
+        contour_layers=[],  # no closed rings on this layer
+        open_path_layers={"LASER_GENERIC": 1},
     )
 
     lenient = resolve_dxf_roles(
@@ -359,8 +362,11 @@ def test_cut_like_topology_ambiguous_is_unassigned_with_review_or_blocking():
 def test_interactive_review_flag_promotes_ambiguity_to_blocking():
     """`interactive_review_on_ambiguity=False` blocks even in lenient strict_mode."""
 
+    # No closed contours → contour resolver cannot auto-resolve → conflict remains.
     inspect_result = _build_inspect_result(
         entities=[_entity(entity_index=0, layer="LASER_GENERIC", color_index=3)],
+        contour_layers=[],
+        open_path_layers={"LASER_GENERIC": 1},
     )
 
     no_review = resolve_dxf_roles(
@@ -522,3 +528,196 @@ def test_resolver_rejects_non_mapping_inspect_result():
         resolve_dxf_roles("not-a-mapping")  # type: ignore[arg-type]
 
     assert exc.value.code == "DXF_ROLE_RESOLVER_INVALID_INSPECT_RESULT"
+
+
+# ---------------------------------------------------------------------------
+# Contour-level role resolver tests
+# ---------------------------------------------------------------------------
+
+
+def _build_inspect_result_two_rings_same_layer(
+    *,
+    layer: str,
+    color_index: int | None = None,
+) -> dict[str, Any]:
+    """Build an inspect result with two closed rings on the same layer.
+
+    Ring 0 is the outer (large bbox), ring 1 is the inner (small bbox inside).
+    Topology is pre-computed so bbox containment reflects outer→inner.
+    """
+    entities = [
+        {
+            "entity_index": 0,
+            "layer": layer,
+            "type": "LWPOLYLINE",
+            "closed": True,
+            "color_index": color_index,
+            "linetype_name": "CONTINUOUS",
+            "point_count": 4,
+            "unsupported": False,
+        },
+        {
+            "entity_index": 1,
+            "layer": layer,
+            "type": "LWPOLYLINE",
+            "closed": True,
+            "color_index": color_index,
+            "linetype_name": "CONTINUOUS",
+            "point_count": 4,
+            "unsupported": False,
+        },
+    ]
+    outer_bbox = {"min_x": 0.0, "min_y": 0.0, "max_x": 100.0, "max_y": 100.0}
+    inner_bbox = {"min_x": 20.0, "min_y": 20.0, "max_x": 60.0, "max_y": 60.0}
+    return {
+        "source_path": "in-memory-fixture",
+        "backend": "in-memory",
+        "source_size_bytes": None,
+        "entity_inventory": entities,
+        "layer_inventory": [
+            {
+                "layer": layer,
+                "entity_count": 2,
+                "supported_count": 2,
+                "unsupported_count": 0,
+                "types": ["LWPOLYLINE"],
+            }
+        ],
+        "color_inventory": [],
+        "linetype_inventory": [],
+        "contour_candidates": [
+            {
+                "contour_id": f"orig:{layer}:0",
+                "layer": layer,
+                "ring_index": 0,
+                "point_count": 4,
+                "bbox": outer_bbox,
+                "area_abs_mm2": 10000.0,
+                "fingerprint": f"fp-{layer}-0",
+            },
+            {
+                "contour_id": f"orig:{layer}:1",
+                "layer": layer,
+                "ring_index": 1,
+                "point_count": 4,
+                "bbox": inner_bbox,
+                "area_abs_mm2": 1600.0,
+                "fingerprint": f"fp-{layer}-1",
+            },
+        ],
+        "open_path_candidates": [],
+        "duplicate_contour_candidates": [],
+        "outer_like_candidates": [
+            {
+                "layer": layer,
+                "ring_index": 0,
+                "contains_ring_references": [{"layer": layer, "ring_index": 1}],
+            }
+        ],
+        "inner_like_candidates": [
+            {
+                "layer": layer,
+                "ring_index": 1,
+                "contained_by_ring_references": [{"layer": layer, "ring_index": 0}],
+            }
+        ],
+        "diagnostics": {"probe_errors": [], "notes": []},
+    }
+
+
+def test_contour_resolver_single_no_signal_contour_becomes_cut_outer() -> None:
+    """Single closed contour on a no-signal layer → auto CUT_OUTER."""
+    inspect_result = _build_inspect_result(
+        entities=[_entity(entity_index=0, layer="0")],
+        contour_layers=["0"],
+    )
+
+    result = resolve_dxf_roles(inspect_result)
+
+    assignments = result["contour_role_assignments"]
+    assert len(assignments) == 1
+    assert assignments[0]["canonical_role"] == "CUT_OUTER"
+    assert assignments[0]["decision_source"] == "single_closed_contour_auto_outer"
+    assert assignments[0]["layer"] == "0"
+    # no_signal_layer_with_contour must be suppressed
+    assert result["review_required_candidates"] == []
+    assert result["blocking_conflicts"] == []
+
+
+def test_contour_resolver_same_layer_outer_inner_no_signal() -> None:
+    """Two contours on same no-signal layer → CUT_OUTER + CUT_INNER via containment."""
+    inspect_result = _build_inspect_result_two_rings_same_layer(layer="0")
+
+    result = resolve_dxf_roles(inspect_result)
+
+    assignments = result["contour_role_assignments"]
+    by_role = {a["canonical_role"]: a for a in assignments}
+    assert "CUT_OUTER" in by_role, f"missing CUT_OUTER, got: {assignments}"
+    assert "CUT_INNER" in by_role, f"missing CUT_INNER, got: {assignments}"
+    assert by_role["CUT_OUTER"]["ring_index"] == 0
+    assert by_role["CUT_INNER"]["ring_index"] == 1
+    # no conflicts for a fully resolved layer
+    assert result["review_required_candidates"] == []
+    assert result["blocking_conflicts"] == []
+
+
+def test_contour_resolver_same_layer_outer_inner_with_cut_color_map() -> None:
+    """Same-layer outer+inner with cut_color_map active → still resolved at contour level.
+
+    This is the regression for the reported bug: when cut_color_map=[7] is set,
+    the layer gets decision_source='unresolved_cut_like_topology_ambiguous'
+    because the layer-level topology proxy sees both outer_like and inner_like.
+    The contour resolver must still run and resolve outer/inner correctly.
+    """
+    inspect_result = _build_inspect_result_two_rings_same_layer(layer="0", color_index=7)
+    profile = {"cut_color_map": [7]}
+
+    result = resolve_dxf_roles(inspect_result, rules_profile=profile)
+
+    # Layer-level should be unresolved (both outer_like and inner_like → ambiguous)
+    layer_rec = _layer_record(result, "0")
+    assert layer_rec["signals"]["is_outer_like"] is True
+    assert layer_rec["signals"]["is_inner_like"] is True
+
+    # But contour-level must have resolved it
+    assignments = result["contour_role_assignments"]
+    by_role = {a["canonical_role"]: a for a in assignments}
+    assert "CUT_OUTER" in by_role, (
+        f"cut_color_map case: contour resolver did not assign CUT_OUTER. "
+        f"layer decision_source={layer_rec['decision_source']!r}, assignments={assignments}"
+    )
+    assert "CUT_INNER" in by_role
+    assert by_role["CUT_OUTER"]["ring_index"] == 0
+    assert by_role["CUT_INNER"]["ring_index"] == 1
+
+    # cut_like_topology_ambiguous conflict must be suppressed after contour resolution
+    ambiguous_conflicts = [
+        c for c in result["review_required_candidates"] + result["blocking_conflicts"]
+        if c.get("family") == "cut_like_topology_ambiguous"
+    ]
+    assert ambiguous_conflicts == [], (
+        f"cut_like_topology_ambiguous conflict must be suppressed after contour resolution, "
+        f"got: {ambiguous_conflicts}"
+    )
+
+
+def test_contour_resolver_mixed_color_hints_not_auto_classified() -> None:
+    """Layer with both cut and marking color hints must NOT be auto-classified at contour level."""
+    inspect_result = _build_inspect_result(
+        entities=[
+            _entity(entity_index=0, layer="MIXED", color_index=1),
+            _entity(entity_index=1, layer="MIXED", color_index=2, closed=False, type_="LINE", point_count=2),
+        ],
+        contour_layers=["MIXED"],
+    )
+    profile = {"cut_color_map": [1], "marking_color_map": [2]}
+
+    result = resolve_dxf_roles(inspect_result, rules_profile=profile)
+
+    # contour_role_assignments must be empty for this layer
+    assignments = [
+        a for a in result["contour_role_assignments"] if a["layer"] == "MIXED"
+    ]
+    assert assignments == [], (
+        f"mixed cut+marking layer must not produce contour role assignments, got: {assignments}"
+    )

@@ -634,11 +634,15 @@ def _resolve_contour_roles(
         if role in CANONICAL_LAYER_ROLES:
             # Explicit canonical layer OR layer already resolved by color/topology signals.
             canonical_contours.append(c)
-        elif layer_decision_source.get(layer) == "unresolved_no_signal":
-            # No color hint, no explicit layer name → contour-level topology can decide.
+        elif layer_decision_source.get(layer) in {
+            "unresolved_no_signal",
+            "unresolved_cut_like_topology_ambiguous",
+        }:
+            # No signal, or cut color hint but layer-level topology can't pick outer/inner
+            # → contour-level containment analysis can decide.
+            # Excluded: unresolved_mixed_color_hints (genuinely ambiguous: some cut, some marking).
             candidate_contours.append(c)
-        # All other unresolved cases (mixed hints, cut-like but ambiguous topology, etc.)
-        # are left to the layer-level resolver; do not auto-classify at contour level.
+        # All other cases are left to the layer-level resolver.
 
     assignments: list[dict[str, Any]] = []
 
@@ -679,7 +683,8 @@ def _resolve_contour_roles(
         }
         for layer in candidate_layers:
             layer_candidate_ids = {
-                str(c.get("contour_id", "")) for c in candidate_contours
+                str(c.get("contour_id", f"orig:{c['layer']}:{c.get('ring_index', 0)}"))
+                for c in candidate_contours
                 if str(c["layer"]) == layer
             }
             if layer_candidate_ids and layer_candidate_ids.issubset(assigned_ids):
@@ -812,9 +817,17 @@ def _apply_contour_resolution_to_layer_records(
         if str(rec.get("layer", "")) in contour_resolved_layers:
             rec["decision_source"] = "resolved_by_contour_roles"
 
-    # Remove no_signal_layer_with_contour conflicts for fully resolved layers.
+    # Remove layer-level conflicts for fully resolved layers.
+    # Both no_signal_layer_with_contour and cut_like_topology_ambiguous are
+    # superseded when contour-level classification succeeds.
+    _SUPPRESSIBLE_FAMILIES: frozenset[str] = frozenset({
+        "no_signal_layer_with_contour",
+        "cut_like_topology_ambiguous",
+        "cut_like_open_path_on_color_hint_layer",
+    })
+
     def keep(item: dict[str, Any], resolved: set[str]) -> bool:
-        if str(item.get("family", "")) != "no_signal_layer_with_contour":
+        if str(item.get("family", "")) not in _SUPPRESSIBLE_FAMILIES:
             return True
         return str(item.get("layer", "")) not in resolved
 

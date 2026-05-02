@@ -1,0 +1,55 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/cavity_prepack.py _candidate_children() függvényét
+      (sor ~235-265) és a _rotation_shapes() megjegyzését (sor ~224).
+      Azonosítsd pontosan, hol van a child_has_holes_unsupported_v1 continue.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t05_holed_child_outer_proxy.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t05_holed_child_outer_proxy.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t05_holed_child_outer_proxy/run.md"
+
+  - name: "_candidate_children() módosítása és megjegyzés frissítése"
+    description: >
+      A worker/cavity_prepack.py-ban:
+      (1) A _candidate_children() függvényben távolítsd el a
+          child_has_holes_unsupported_v1 melletti `continue` utasítást,
+          és cseréld le child_has_holes_outer_proxy_used diagnostic kódra
+          (hole_count mezővel), de NE tedd vissza a continue-t — a lyukas
+          child belekerül a candidate listába.
+      (2) A _rotation_shapes() megjegyzését (sor ~224) frissítsd:
+          "v1 intentionally ignores child holes..." → "outer-only proxy:
+          holes excluded from fit geometry; exact holes preserved in part
+          record for export."
+    outputs:
+      - "worker/cavity_prepack.py"
+
+  - name: "Új tesztek lyukas child proxy viselkedésre"
+    description: >
+      A tests/worker/test_cavity_prepack.py-ban adj három tesztet:
+      (1) test_holed_child_enters_candidate_list: lyukas child bekerül
+          internal_placements-be ha geometriailag fér,
+      (2) test_holed_child_diagnostic_is_outer_proxy_used: a diagnostics
+          listában child_has_holes_outer_proxy_used jelenik meg,
+      (3) test_v1_solid_child_behavior_unchanged: meglévő solid child
+          tesztesetek még mindig zöldek.
+      Futtasd: python3 -m pytest -q tests/worker/test_cavity_prepack.py
+    outputs:
+      - "tests/worker/test_cavity_prepack.py"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot. Bizonyítsd: continue eltávolítva
+      (fájl + sor), child_has_holes_outer_proxy_used kód emittálódik,
+      lyukas child bekerülhet internal_placements-be, meglévő solid child
+      tesztek zöldek.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t05_holed_child_outer_proxy.md"
+      - "codex/reports/nesting_engine/cavity_v2_t05_holed_child_outer_proxy.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t05_holed_child_outer_proxy.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t05_holed_child_outer_proxy.md"
+      - "codex/reports/nesting_engine/cavity_v2_t05_holed_child_outer_proxy.verify.log"

@@ -1,0 +1,60 @@
+steps:
+  - name: "Task artefaktok és kontextus olvasása"
+    description: >
+      Olvasd el a worker/cavity_prepack.py (CavityPrepackError, __all__,
+      build_cavity_prepacked_engine_input), worker/main.py (hol hívják a
+      prepacket és az engine CLI-t). Azonosítsd a pontos helyet, ahol a
+      guard-ot be kell illeszteni.
+    outputs:
+      - "canvases/nesting_engine/cavity_v2_t03_prepack_guard_hole_free.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_cavity_v2_t03_prepack_guard_hole_free.yaml"
+      - "codex/prompts/nesting_engine/cavity_v2_t03_prepack_guard_hole_free/run.md"
+
+  - name: "validate_prepack_solver_input_hole_free és CavityPrepackGuardError implementálása"
+    description: >
+      A worker/cavity_prepack.py-ban implementáld a
+      CavityPrepackGuardError(CavityPrepackError) kivétel osztályt és a
+      validate_prepack_solver_input_hole_free(engine_input) függvényt
+      a canvas specifikációja alapján. Az CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN
+      kód legyen az exception message prefixe. Az összes violáló part_id
+      szerepeljen az üzenetben. Add hozzá __all__-hoz: CavityPrepackGuardError,
+      validate_prepack_solver_input_hole_free.
+    outputs:
+      - "worker/cavity_prepack.py"
+
+  - name: "worker/main.py guard bekötése"
+    description: >
+      A worker/main.py-ban a build_cavity_prepacked_engine_input() visszatérése
+      után, de az engine CLI hívás előtt, ha part_in_part == "prepack", hívd meg
+      a validate_prepack_solver_input_hole_free(prepackaged_engine_input)
+      függvényt. Pontosan a canvas specifikációja szerinti helyre.
+    outputs:
+      - "worker/main.py"
+
+  - name: "Guard unit tesztek"
+    description: >
+      A tests/worker/test_cavity_prepack.py-ban adj három tesztet:
+      (1) test_guard_passes_if_no_top_level_holes: nem dob,
+      (2) test_guard_fails_if_holes_remain: CavityPrepackGuardError-t dob,
+          CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN az üzenetben,
+      (3) test_guard_reports_all_violating_parts: multi-violator esetén
+          minden violáló part ID megjelenik.
+      Futtasd: python3 -m pytest -q tests/worker/test_cavity_prepack.py
+    outputs:
+      - "tests/worker/test_cavity_prepack.py"
+
+  - name: "Checklist és report elkészítése"
+    description: >
+      Töltsd ki a checklistet és a reportot. Bizonyítsd: guard funkció
+      létezik (fájl + sor), main.py bekötés megvan (fájl + sor), tesztek
+      zöldek, CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN kód megjelenik.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/cavity_v2_t03_prepack_guard_hole_free.md"
+      - "codex/reports/nesting_engine/cavity_v2_t03_prepack_guard_hole_free.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/nesting_engine/cavity_v2_t03_prepack_guard_hole_free.md
+    outputs:
+      - "codex/reports/nesting_engine/cavity_v2_t03_prepack_guard_hole_free.md"
+      - "codex/reports/nesting_engine/cavity_v2_t03_prepack_guard_hole_free.verify.log"
