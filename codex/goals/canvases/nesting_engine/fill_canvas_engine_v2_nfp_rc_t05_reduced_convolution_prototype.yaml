@@ -79,14 +79,17 @@ verification_commands:
 acceptance_criteria:
   - "cargo check -p nesting_engine hibátlan"
   - "nfp_rc_prototype_benchmark --help fut"
-  - "T01 fixture-n lefut (NOT_IMPLEMENTED is elfogadható)"
+  - "PASS: legalabb 1 LV8 paron verdict=SUCCESS es raw_vertex_count>0 (valodi NFP polygon)"
+  - "NOT_IMPLEMENTED minden paron = INFRA_PASS_BUT_ALGORITHM_NOT_READY — T06/T07/T08/T10 NEM INDITHATO"
   - "RcNfpError::NotImplemented explicit, nem panic"
   - "döntési pont (Rust prototype vs CGAL) dokumentálva a reportban"
   - "concave.rs érintetlen"
+  - "comparison_to_baseline szekció kitöltve a T04 baseline adatokkal ha SUCCESS verdict"
 
 risk_notes:
   - "Ha a teljes Minkowski implementáció meghaladja a scope-ot: NotImplemented explicit return — NEM silent BLF fallback."
   - "CGAL sidecar csak akkor ha CGAL toolchain elérhető."
+  - "KRITIKUS: NOT_IMPLEMENTED verdict minden páronn = CHAIN_BLOCKED. A lánc T05-nél megáll amíg legalább 1 pár SUCCESS nem lesz."
 
 dependencies_on_previous_tasks:
   - "engine_v2_nfp_rc_t01_lv8_pair_extraction"

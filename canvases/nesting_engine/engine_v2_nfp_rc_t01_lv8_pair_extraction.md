@@ -119,10 +119,11 @@ Minden `lv8_pair_NN.json` tartalmazza:
 ### 6. Extraction script
 `scripts/experiments/extract_nfp_pair_fixtures_lv8.py`:
 - Olvassa a ne2_input_lv8jav.json-t
-- Keresi a tervfájlban megnevezett part ID-kat
-- Ha nem találja pontosan, a legnagyobb vertex count alapján választja ki a top 3 pár jelöltet
+- Ha a fixture nem parse-olható vagy üres: **STOP — írj hibajelentést, ne hozz létre fixture-t**
+- Keresi a tervfájlban megnevezett part ID-kat (Lv8_11612, Lv8_07921, Lv8_07920)
+- Ha nem találja exact match alapján: a **legtöbb vertexű** partokból választja a top 3 párt (ez belső fallback — de csak valós geometrián alapulhat)
 - Kimenti a fixture-öket
-- Riportot ír stdout-ra: part ID, vertex count, hole count
+- Riportot ír stdout-ra: part ID, vertex count, hole count, FOUND/WARN jelzéssel
 
 ## Adatmodell / contract változások
 Nincs production kód változás. Csak `scripts/experiments/` és `tests/fixtures/nesting_engine/nfp_pairs/` direktóriák jönnek létre.
@@ -175,9 +176,12 @@ print(f'pair_01 vertex count: A={a_vc} B={b_vc} product={a_vc*b_vc}')
 - [ ] `scripts/experiments/extract_nfp_pair_fixtures_lv8.py` létezik és szintaktikailag helyes
 - [ ] `tests/fixtures/nesting_engine/nfp_pairs/` könyvtár létezik legalább 3 fixture fájllal
 - [ ] Minden fixture JSON-ban van `fixture_version`, `part_a.points_mm`, `part_b.points_mm`
+- [ ] Minden fixture `part_a.points_mm` és `part_b.points_mm` **nem üres** (legalább 3 pont)
 - [ ] Az index fájl tartalmazza mind a 3 fixture referenciát
-- [ ] Legalább egy fixture outer_ring_vertex_count > 50 (ha az LV8 fixture elérhető és tartalmaz nagy alkatrészeket)
+- [ ] Legalább egy fixture outer_ring_vertex_count > 50
 - [ ] Nincs production kód változás
+- [ ] **Tilos placeholder/synthetic geometria** — minden koordináta a `ne2_input_lv8jav.json` valódi adatából származik
+- [ ] Ha a `ne2_input_lv8jav.json` nem elérhető vagy nem parse-olható: a task FAIL státusszal zárul, fixture nem jön létre
 
 ## Rollback / safety notes
 Ez a task kizárólag új fájlokat hoz létre `scripts/experiments/` és

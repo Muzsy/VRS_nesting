@@ -16,7 +16,10 @@ explicit kérés szükséges, a meglévő pipeline nem változik, a fallback exp
 ### Módosítandó (backward compatible):
 - `rust/nesting_engine/src/nfp/mod.rs` — `NfpKernelPolicy` enum hozzáadása
 - `rust/nesting_engine/src/placement/nfp_placer.rs` — kernel policy paraméter és stats bővítés
+- `rust/nesting_engine/src/main.rs` — `--nfp-kernel` CLI argument parse-olása és átadása a placernek
 - `vrs_nesting/config/nesting_quality_profiles.py` — `quality_reduced_convolution_experimental` profil
+- `vrs_nesting/runner/nesting_engine_runner.py` — `nfp_kernel` mező kiolvasása a profil policy-ból és CLI arg-ként való átadása
+- `worker/main.py` — `nfp_kernel` mező átadása a runner-nek az engine input buildelésekor
 - `frontend/src/lib/types.ts` — `QualityProfileName` literal union bővítése
 - `frontend/src/pages/NewRunPage.tsx` — experimental profil megjelenítése (disabled/experimental badge)
 
@@ -119,7 +122,43 @@ Az experimental profil megjelenítésekor:
 - Disabled checkbox opció elfogadható (de ne töröljük ki a profilt)
 A meglévő profilok UI-ja változatlan.
 
-### 6. Silent fallback teszt
+### 6. `rust/nesting_engine/src/main.rs` CLI extension
+
+A Rust engine main binary CLI-jébe hozzáadandó:
+```
+--nfp-kernel <policy>    NFP kernel policy: "concave_default" | "reduced_convolution_v1"
+                         Default: "concave_default"
+```
+
+Implementáció:
+- Parse `--nfp-kernel` arg → `NfpKernelPolicy::from_str()` → ha ismeretlen: fatal error
+- A parsed `NfpKernelPolicy` átadandó a placer-nek
+- Ha `ReducedConvolutionV1` van kérve de a kernel `NotImplemented`-et ad: explicit `degraded` status outputban
+
+**Olvasandó:** A `rust/nesting_engine/src/main.rs` jelenlegi CLI argument parse struktúrája (olvasd el a fájlt mielőtt módosítod).
+
+### 7. `vrs_nesting/runner/nesting_engine_runner.py` extension
+
+**Olvasandó:** A meglévő `nesting_engine_runner.py` fájl teljes struktúrája.
+
+A runner-ben a CLI args build logikájába hozzáadandó:
+```python
+nfp_kernel = policy.get("nfp_kernel")  # None ha a profil nem tartalmazza
+if nfp_kernel is not None:
+    cli_args.extend(["--nfp-kernel", nfp_kernel])
+```
+
+Ha a `nfp_kernel` értéke nem `"concave_default"` és nem `"reduced_convolution_v1"`: explicit `ValueError`.
+
+### 8. `worker/main.py` extension
+
+**Olvasandó:** A meglévő `worker/main.py` engine input és profil kezelési logikája.
+
+A policy dict `nfp_kernel` mezőjét nem szabad elnyelni — a runner-nek kell átadni.
+Ha az `nfp_kernel = "reduced_convolution_v1"` és az engine degraded státuszt ad vissza,
+a worker NEM minősítheti sikernek. Explicit `degraded` státusz kell a run result-ban.
+
+### 9. Silent fallback teszt
 
 ```bash
 # Ellenőrizd, hogy ha RC kernel NotImplemented: a response degraded státuszt tartalmaz,
@@ -133,6 +172,18 @@ assert profile.get('nfp_kernel') == 'reduced_convolution_v1', 'nfp_kernel mező 
 assert profile.get('experimental') == True, 'experimental jelölés hiányzik'
 print('quality profile OK')
 "
+
+# nesting_engine_runner.py nfp_kernel arg építése
+python3 -c "
+import inspect
+from vrs_nesting.runner import nesting_engine_runner
+src = inspect.getsource(nesting_engine_runner)
+assert 'nfp_kernel' in src, 'nfp_kernel mező nem kerül be a CLI args-ba!'
+print('nesting_engine_runner nfp_kernel wiring: OK')
+"
+
+# Rust main.rs --nfp-kernel arg
+grep -n 'nfp.kernel\|nfp_kernel' rust/nesting_engine/src/main.rs
 ```
 
 ## Adatmodell / contract változások
@@ -207,11 +258,15 @@ print('Profile returned:', p)
 ## Elfogadási feltételek
 - [ ] `cargo check -p nesting_engine` hibátlan
 - [ ] `cd frontend && npx tsc --noEmit` hibátlan
-- [ ] `quality_reduced_convolution_experimental` profil a registry-ben, nfp_kernel mező megvan
+- [ ] `quality_reduced_convolution_experimental` profil a registry-ben, `nfp_kernel` mező megvan
 - [ ] `NfpKernelPolicy::default() == ConcaveDefault` (meglévő pipeline nem változik)
-- [ ] `NfpPlacerStatsV1` tartalmazza az új mezőket
+- [ ] `NfpPlacerStatsV1` tartalmazza az új mezőket (`actual_nfp_kernel`, `nfp_kernel_unsupported_count`, `nfp_kernel_explicit_fallback_count`)
+- [ ] `rust/nesting_engine/src/main.rs` fogadja a `--nfp-kernel` CLI argumentet
+- [ ] `vrs_nesting/runner/nesting_engine_runner.py` a profil `nfp_kernel` mezőjét CLI arg-ként adja át
+- [ ] `worker/main.py` nem nyeli el a `nfp_kernel` mezőt, degraded státuszt propagál
 - [ ] Silent BLF fallback tilos — `nfp_kernel_unsupported_count` jelzi, ha az RC kernel nem fut
 - [ ] Meglévő quality profilok mind működnek
+- [ ] `python3 -m pytest -q tests/worker/test_cavity_prepack.py` zöld (meglévő tesztek érintetlenek)
 
 ## Rollback / safety notes
 Az összes változás additive. A meglévő `ConcaveDefault` kernel érintetlen.

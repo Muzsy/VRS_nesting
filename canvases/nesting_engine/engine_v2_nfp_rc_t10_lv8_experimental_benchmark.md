@@ -29,6 +29,9 @@ hogy az RC kernel: (a) egyáltalán fut-e végig LV8 adatokon, (b) jobb-e a runt
 - Tilos a `top_level_holes_after_prepack > 0` esetet sikerként kezelni.
 - Tilos fallback eredményt sikerként jelölni.
 - Tilos invalid NFP-t sikerként elfogadni.
+- **TILOS Sparrow-ra kapcsolni vagy Sparrow eredményt összehasonlítási sikernek tekinteni.**
+  Sparrow strip-packing optimalizáló, nem alkalmas valós 1500×3000 mm fizikai táblaméretű sheet-native nestingre.
+  A T10 célja az Engine v2 RC NFP kernel teljesítményének mérése — Sparrow más problémaosztályt old meg.
 
 ## Részletes implementációs lépések
 

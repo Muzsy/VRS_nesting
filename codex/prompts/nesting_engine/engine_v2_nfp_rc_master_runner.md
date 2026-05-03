@@ -50,6 +50,8 @@ ls tests/fixtures/nesting_engine/ne2_input_lv8jav.json || echo "STOP: LV8 fixtur
 7. **Tilos a meglévő quality profilokat módosítani** — csak új profil adható hozzá
 8. **Tilos timeout-ot sikerként kezelni** — explicit TIMEOUT verdict kötelező
 9. **Tilos a cavity_prepack_v2 hole-free guard-ot kikapcsolni**
+10. **Tilos placeholder/synthetic fixture-t létrehozni** — minden fixture valódi LV8 geometrián alapul, vagy STOP
+11. **SPARROW NEM ALTERNATÍVA EHHEZ A FEJLESZTÉSHEZ** — Sparrow strip-packing optimalizáló, nem alkalmas 1500×3000 mm fizikai táblaméretű sheet-native nestingre. Tilos Sparrow futtatás eredményét az Engine v2 RC NFP fejlesztés sikerének vagy alternatívájának tekinteni. A cél az Engine v2 NFP-képességének fejlesztése valós táblaméretű nestinghez.
 
 ---
 
@@ -218,22 +220,42 @@ git diff HEAD -- rust/nesting_engine/src/nfp/concave.rs  # üresnek kell lennie
 ```bash
 cargo check -p nesting_engine
 cargo run --bin nfp_rc_prototype_benchmark -- --help
-cargo run --bin nfp_rc_prototype_benchmark -- \
-  --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json \
-  --output-json | python3 -c "
-import json,sys; d=json.load(sys.stdin)
-assert d['verdict'] in ('SUCCESS','NOT_IMPLEMENTED','ERROR','TIMEOUT')
-# NotImplemented ≠ panic
-assert d.get('rc_result',{}).get('error') != 'panic', 'PANIC!'
-print('PASS: verdict=', d['verdict'])
+
+# KRITIKUS: legalább 1 páronn SUCCESS verdict kell
+python3 -c "
+import json, subprocess, sys
+success_count = 0
+for pair_id in ['lv8_pair_01','lv8_pair_02','lv8_pair_03']:
+    r = subprocess.run(
+        ['cargo','run','--bin','nfp_rc_prototype_benchmark','--',
+         '--fixture',f'tests/fixtures/nesting_engine/nfp_pairs/{pair_id}.json','--output-json'],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        print(f'{pair_id}: cargo error')
+        continue
+    d = json.loads(r.stdout)
+    v = d.get('verdict')
+    vc = d.get('rc_result',{}).get('raw_vertex_count',0)
+    print(f'{pair_id}: verdict={v} raw_vc={vc}')
+    if v == 'SUCCESS' and vc > 0:
+        success_count += 1
+if success_count == 0:
+    print('CHAIN_BLOCKED: algorithm_not_ready. T06/T07/T08/T10 NEM INDÍTHATÓ.')
+    sys.exit(1)
+print(f'T05 PASS: {success_count}/3 páronn valódi NFP output.')
 "
-grep -n "pub mod reduced_convolution" rust/nesting_engine/src/nfp/mod.rs
+
+grep -n 'pub mod reduced_convolution' rust/nesting_engine/src/nfp/mod.rs
 git diff HEAD -- rust/nesting_engine/src/nfp/concave.rs  # üresnek kell lennie
 ```
 - [ ] cargo check hibátlan
 - [ ] nfp_rc_prototype_benchmark fut
+- [ ] **Legalább 1 páronn SUCCESS és raw_vertex_count > 0** — NOT_IMPLEMENTED minden páronn = CHAIN_BLOCKED
 - [ ] NotImplemented explicit (nem panic)
 - [ ] concave.rs érintetlen
+
+**BLOKKOLÓ:** Ha minden fixture NOT_IMPLEMENTED: **T06/T07/T08/T10 NEM INDÍTHATÓ.** Fixáld az algoritmust.
 
 ---
 
@@ -261,22 +283,42 @@ git diff HEAD -- rust/nesting_engine/src/nfp/boundary_clean.rs  # üresnek kell 
 **Runner:** `codex/prompts/nesting_engine/engine_v2_nfp_rc_t07_nfp_correctness_validator/run.md`
 **Blokkoló dependency:** T01, T05, T06
 
-**CHECKPOINT-T07:**
+**CHECKPOINT-T07 (kétszintű):**
 ```bash
 cargo run --bin nfp_correctness_benchmark -- --help
+
+# SZINT 1 — validator_infra_pass
 cargo run --bin nfp_correctness_benchmark -- \
   --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json \
   --nfp-source mock_exact --output-json | python3 -c "
 import json,sys; d=json.load(sys.stdin)
 assert d['false_positive_rate'] == 0.0, 'mock_exact FP > 0!'
-print('mock_exact PASS: FP=0.0')
+print('validator_infra_pass: mock_exact FP=0.0 PASS')
+"
+
+# SZINT 2 — rc_correctness_pass (T08 indításának feltétele)
+cargo run --bin nfp_correctness_benchmark -- \
+  --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json \
+  --nfp-source reduced_convolution_v1 --output-json | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+v = d.get('correctness_verdict')
+fp = d.get('false_positive_rate', 1.0)
+print(f'RC verdict={v} false_positive_rate={fp}')
+if v == 'NOT_AVAILABLE':
+    print('rc_correctness_pass=false: T05 nem adott output-ot — T05 fixálandó, T08 BLOKKOLVA')
+    sys.exit(1)
+if fp > 0:
+    print('rc_correctness_pass=false: FAIL_FALSE_POSITIVE — T08 BLOKKOLVA')
+    sys.exit(1)
+print('rc_correctness_pass=true: T08 INDÍTHATÓ')
 "
 ```
 - [ ] nfp_correctness_benchmark fut
-- [ ] mock_exact: false_positive_rate=0.0
-- [ ] FAIL_FALSE_POSITIVE ha false_positive_count>0
+- [ ] validator_infra_pass: mock_exact false_positive_rate=0.0
+- [ ] **rc_correctness_pass: tényleges RC NFP-n fut, NOT_AVAILABLE = BLOKK**
+- [ ] **FAIL_FALSE_POSITIVE = T08 BLOKKOLVA**
 
-**BLOKKOLÓ:** Ha a T07 verdict = FAIL_FALSE_POSITIVE a tényleges RC NFP-n: **T08 NEM INDÍTHATÓ**.
+**BLOKKOLÓ:** Ha `rc_correctness_pass = false`: **T08 NEM INDÍTHATÓ.** Cause: NOT_AVAILABLE → T05 fixálandó. Cause: FAIL_FALSE_POSITIVE → T05/T06 fixálandó.
 
 ---
 
@@ -296,12 +338,24 @@ assert p['nfp_kernel'] == 'reduced_convolution_v1'
 assert p['experimental'] == True
 print('profile OK')
 "
-# Meglévő profilok érintetlenek
+# --nfp-kernel CLI arg megvan a Rust main-ben
+grep -n 'nfp.kernel\|nfp_kernel\|NfpKernelPolicy' rust/nesting_engine/src/main.rs || echo "WARN: nfp_kernel CLI arg hiányzik a main.rs-ből"
+# nfp_kernel wiring a runner-ben
+python3 -c "
+import inspect
+from vrs_nesting.runner import nesting_engine_runner
+assert 'nfp_kernel' in inspect.getsource(nesting_engine_runner), 'nfp_kernel wiring hiányzik a runner-ből!'
+print('runner nfp_kernel wiring OK')
+"
+# Meglévő tesztek érintetlenek
 python3 -m pytest -q tests/worker/test_cavity_prepack.py
 ```
 - [ ] cargo check hibátlan
 - [ ] tsc --noEmit hibátlan
 - [ ] RC profil megvan, experimental=True
+- [ ] **rust/nesting_engine/src/main.rs fogadja a --nfp-kernel argumentet**
+- [ ] **vrs_nesting/runner/nesting_engine_runner.py átadja a nfp_kernel-t CLI arg-ként**
+- [ ] **worker/main.py nem nyeli el az nfp_kernel mezőt**
 - [ ] Meglévő cavity tesztek zöldek
 
 ---
@@ -398,6 +452,16 @@ from vrs_nesting.config.nesting_quality_profiles import _QUALITY_PROFILE_REGISTR
 p = _QUALITY_PROFILE_REGISTRY.get('quality_reduced_convolution_experimental')
 print('T08 profile:', 'OK' if p and p.get('nfp_kernel')=='reduced_convolution_v1' else 'MISSING')
 "
+grep -n 'nfp.kernel\|nfp_kernel' rust/nesting_engine/src/main.rs 2>/dev/null && echo "T08 main.rs CLI OK" || echo "WARN: --nfp-kernel CLI arg hiányzik main.rs-ből"
+python3 -c "
+import inspect
+try:
+    from vrs_nesting.runner import nesting_engine_runner
+    src = inspect.getsource(nesting_engine_runner)
+    print('T08 runner wiring:', 'OK' if 'nfp_kernel' in src else 'MISSING')
+except Exception as e:
+    print('T08 runner check error:', e)
+"
 
 echo "--- T09: Cache ---"
 ls rust/nesting_engine/src/geometry/hash.rs && echo "hash.rs OK" || echo "MISSING"
@@ -418,18 +482,18 @@ echo "=== AUDIT COMPLETE ==="
 
 ## Gyors referencia táblázat
 
-| Task | Fő output | Tesztparancs | Blokkoló dependency |
-|------|-----------|--------------|---------------------|
-| T01 | lv8_pair_01..03.json, extraction script | `ls tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json` | — |
-| T02 | geometry_preparation_contract_v1.md | `ls docs/nesting_engine/geometry_preparation_contract_v1.md` | — |
-| T03 | cleanup.rs, simplify.rs, geometry_prepare_benchmark | `cargo check -p nesting_engine` | T01, T02 |
-| T04 | nfp_pair_benchmark, fixture baseline_metrics | `cargo run --bin nfp_pair_benchmark -- --help` | T01 |
-| T05 | reduced_convolution.rs, nfp_rc_prototype_benchmark | `cargo run --bin nfp_rc_prototype_benchmark -- --help` | T01, T03, T04 |
-| T06 | minkowski_cleanup.rs, nfp_validation.rs | `cargo test -- minkowski_cleanup` | T03, T05 |
-| T07 | nfp_correctness_benchmark | `cargo run --bin nfp_correctness_benchmark -- --help` | T01, T05, T06 |
-| T08 | NfpKernelPolicy, RC quality profil, TS literal | `cargo check && tsc --noEmit` | T05, T06, T07 |
-| T09 | bővített NfpCacheKey, hash.rs | `cargo test -p nesting_engine` | T08 |
-| T10 | benchmark_reduced_convolution_lv8.py, riportok | `python3 ... --dry-run` | T01–T09 |
+| Task | Fő output | Tesztparancs | Blokkoló dependency | Blokkolási feltétel |
+|------|-----------|--------------|---------------------|---------------------|
+| T01 | lv8_pair_01..03.json, extraction script | `ls tests/fixtures/.../lv8_pair_01.json` | — | LV8 fixture nem parse-olható → FAIL, ne hozz létre fixture-t |
+| T02 | geometry_preparation_contract_v1.md | `ls docs/nesting_engine/geometry_preparation_contract_v1.md` | — | — |
+| T03 | cleanup.rs, simplify.rs, geometry_prepare_benchmark | `cargo check -p nesting_engine` | T01, T02 | — |
+| T04 | nfp_pair_benchmark, fixture baseline_metrics | `cargo run --bin nfp_pair_benchmark -- --help` | T01 | — |
+| T05 | reduced_convolution.rs, nfp_rc_prototype_benchmark | SUCCESS verdict ≥1 páronn | T01, T03, T04 | NOT_IMPLEMENTED minden páronn = CHAIN_BLOCKED |
+| T06 | minkowski_cleanup.rs, nfp_validation.rs | `cargo test -- minkowski_cleanup` | T03, T05 | T05 CHAIN_BLOCKED → T06 nem fut |
+| T07 | nfp_correctness_benchmark (2 szint) | mock_exact FP=0.0 + rc_correctness_pass | T01, T05, T06 | rc_correctness_pass=false → T08 BLOKKOLVA |
+| T08 | NfpKernelPolicy + main.rs + runner.py + worker.py + profil + TS | `cargo check && tsc --noEmit` + runner wiring | T05, T06, T07 | T07 rc_correctness_pass=false → BLOKKOLVA |
+| T09 | bővített NfpCacheKey, hash.rs | `cargo test -p nesting_engine` | T08 | — |
+| T10 | benchmark_reduced_convolution_lv8.py, riportok | `python3 ... --dry-run` | T01–T09 | fallback/invalid NFP/holes → FAIL |
 
 ---
 

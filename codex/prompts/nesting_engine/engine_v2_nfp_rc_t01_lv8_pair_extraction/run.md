@@ -126,16 +126,22 @@ Magyar nyelvű report. Tartalmazza:
 - PASS/FAIL összegzés
 
 ## Stop conditions
-Ha a `ne2_input_lv8jav.json` üres vagy nem parse-olható:
-1. Rögzítsd a hibát a reportban
-2. Hozz létre placeholder fixture-öket explicit `"data_unavailable": true` jelzéssel
-3. Ne minősítsd sikernek ha a fixture üres geometriát tartalmaz
 
-## Hiba esetén
-Ha a megnevezett part ID-k nem találhatók:
-1. Listázd a top 6 legkomplexebb partot
-2. Hozz létre fixture-öket azokból
+**Ha a `ne2_input_lv8jav.json` nem létezik, üres, vagy nem parse-olható:**
+→ **STOP. FAIL státusz.** Írj hibajelentést. Ne hozz létre fixture-t semilyen formában.
+A fixture hiányában T02–T10 NEM INDÍTHATÓ. A problémát manuálisan kell megoldani.
+
+**Elfogadott belső fallback (csak ha a fixture parse-olható és tartalmaz valódi geometriát):**
+Ha a megnevezett part ID-k (Lv8_11612, Lv8_07921, Lv8_07920) nem találhatók:
+1. Listázd a top 6 legkomplexebb partot (legtöbb vertex)
+2. Hozz létre fixture-öket a top 3 párból
 3. Jelöld explicit: `"WARN: named part IDs not found, using top-complexity fallback"`
+4. Ez elfogadható, mert valódi LV8 geometrián alapul
+
+**Tilos:**
+- Placeholder/synthetic koordinátákat kreálni
+- `"data_unavailable": true` fixture-öket létrehozni és azokra építeni
+- Üres `points_mm` tömböt tartalmazó fixture-t valid-nak tekinteni
 
 ## Tesztparancsok
 ```bash

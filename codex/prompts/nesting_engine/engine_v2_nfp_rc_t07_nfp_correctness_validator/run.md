@@ -124,10 +124,25 @@ ls rust/nesting_engine/src/bin/nfp_correctness_benchmark.rs
 cargo check -p nesting_engine
 ```
 
-## Ellenőrzési pontok
+## Ellenőrzési pontok — kétszintű verdict
+
+**validator_infra_pass (T07 PASS, de nem elegendő T08 indításához):**
 - [ ] nfp_correctness_benchmark --help fut
-- [ ] T01 fixture-n lefut (NOT_AVAILABLE OK ha T05 NotImplemented)
-- [ ] false_positive_rate és false_negative_rate a JSON-ban
-- [ ] FAIL_FALSE_POSITIVE ha false_positive_count>0
+- [ ] false_positive_rate és false_negative_rate a JSON-ban explicit
 - [ ] mock_exact: false_positive_rate=0.0
 - [ ] correctness_verdict értékkészlete dokumentált
+
+**rc_correctness_pass (T08 indításának feltétele — KIZÁRÓLAG ezzel indítható T08):**
+- [ ] T05 `verdict = SUCCESS` volt (valódi RC NFP output létezik)
+- [ ] Tényleges RC NFP outputon fut, `correctness_verdict` nem `NOT_AVAILABLE`
+- [ ] `false_positive_rate = 0.0` (FAIL_FALSE_POSITIVE = T08 BLOKKOLVA)
+- [ ] `false_negative_rate < 0.01`
+- [ ] Report tartalmazza: `validator_infra_pass`, `rc_correctness_pass`, `t08_unblocked`
+
+**Stop condition:**
+Ha `rc_correctness_pass = false` okozója `NOT_AVAILABLE`:
+→ T05 nem adott valódi outputot → T05-öt kell fixálni, nem T07-et.
+
+Ha `rc_correctness_pass = false` okozója `FAIL_FALSE_POSITIVE`:
+→ Az RC kernel hibás → T05/T06 javítandó.
+→ T08 **NEM INDÍTHATÓ** ebben az állapotban.

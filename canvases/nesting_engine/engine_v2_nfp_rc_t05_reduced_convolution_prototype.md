@@ -231,22 +231,42 @@ cargo check -p nesting_engine
 # 2. Bin help fut
 cargo run --bin nfp_rc_prototype_benchmark -- --help
 
-# 3. T01 fixture-n lefut (NotImplemented is elfogadható)
+# 3. T01 összes fixture-n lefut — verdict SUCCESS kell legalább 1 páronn
+for pair in lv8_pair_01 lv8_pair_02 lv8_pair_03; do
+  cargo run --bin nfp_rc_prototype_benchmark -- \
+    --fixture tests/fixtures/nesting_engine/nfp_pairs/${pair}.json \
+    --output-json | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+assert 'rc_result' in d and 'verdict' in d
+assert d.get('rc_result',{}).get('error') != 'panic', 'PANIC detected!'
+print('${pair}: verdict =', d['verdict'])
+"
+done
+
+# 4. SUCCESS feltétel: legalább 1 páronn tényleges NFP output keletkezett
 cargo run --bin nfp_rc_prototype_benchmark -- \
   --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json \
   --output-json | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-assert 'rc_result' in d
-assert 'verdict' in d
-assert d['verdict'] in ('SUCCESS', 'NOT_IMPLEMENTED', 'ERROR', 'TIMEOUT')
-print('PASS: verdict =', d['verdict'])
+v = d.get('verdict')
+if v == 'SUCCESS':
+    rc = d.get('rc_result', {})
+    assert rc.get('polygon') is not None or rc.get('raw_vertex_count', 0) > 0, 'SUCCESS de üres polygon!'
+    print('T05 PASS: legalabb 1 real NFP output keletkezett, verdict=SUCCESS')
+elif v == 'NOT_IMPLEMENTED':
+    print('T05 INFRA_PASS_BUT_ALGORITHM_NOT_READY: NIcs valódi NFP output')
+    sys.exit(1)  # Ez BLOKKOL — T06/T07/T08/T10 nem indítható
+else:
+    print(f'T05 verdict={v}: vizsgálat szükséges')
+    sys.exit(1)
 "
 
-# 4. NotImplemented nem panic (explicit return)
+# 5. NotImplemented nem panic
 cargo run --bin nfp_rc_prototype_benchmark -- \
   --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json \
-  --output-json 2>&1 | grep -v "^error" | python3 -c "
+  --output-json | python3 -c "
 import json, sys; d = json.load(sys.stdin)
 assert d.get('rc_result', {}).get('error') != 'panic', 'PANIC detected!'
 print('No panic: OK')
@@ -254,13 +274,25 @@ print('No panic: OK')
 ```
 
 ## Elfogadási feltételek
+
+**PASS (T06/T07/T08/T10 indítható):**
 - [ ] `cargo check -p nesting_engine` hibátlan
 - [ ] `cargo run --bin nfp_rc_prototype_benchmark -- --help` fut
-- [ ] T01 fixture-ökön lefut (akár `NOT_IMPLEMENTED` verdict-tel is)
+- [ ] **Legalább 1 LV8 pair-en `verdict = SUCCESS` és valódi NFP polygon keletkezett** (nem üres output)
+- [ ] `comparison_to_baseline` szekció tartalmaz valós adatot (fragment count, time)
 - [ ] `RcNfpError::NotImplemented` explicit, nem silent fallback és nem panic
 - [ ] Döntési pont dokumentálva a reportban (Rust prototype vs CGAL sidecar)
 - [ ] A `concave.rs` érintetlen
 - [ ] `nfp/mod.rs`-ben `pub mod reduced_convolution` megjelenik
+
+**INFRA_PASS_BUT_ALGORITHM_NOT_READY (T06/T07/T08/T10 NEM INDÍTHATÓ):**
+- Az infrastruktúra (modulok, bin, compile) megvan, de minden fixture `NOT_IMPLEMENTED` verdiktet ad.
+- Ebben az esetben a fejlesztési lánc megáll T05-nél.
+- A report tartalmazza: `CHAIN_BLOCKED: algorithm_not_ready`.
+- Folytatás feltétele: az algoritmus legalább 1 páronn `SUCCESS` verdiktet ad.
+
+**Nem fogadható el PASS-ként:**
+- `NOT_IMPLEMENTED` verdict akár egyetlen fixture-n sem fogadható el T05 PASS-ként, ha a cél T06–T10 folytatása.
 
 ## Rollback / safety notes
 Additive Rust modul, nem integrálja a placer-be (az T08 feladata).

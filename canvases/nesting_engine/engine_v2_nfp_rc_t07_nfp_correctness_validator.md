@@ -32,10 +32,30 @@ A correctness validator statisztikai mintavételezéssel méri mindkét típust.
 
 ## Nem célok / scope határok
 - Nem kell NFP-t számítani (a meglévő RC NFP-t teszteli, ha van output).
-- Ha T05 még `NOT_IMPLEMENTED`: a validator infrastruktúrát kell elkészíteni,
-  de a mérés csak akkor futtatható, ha van NFP output.
 - Nem kell Python kódot módosítani.
 - Nem kell a nfp_placer.rs-t módosítani.
+
+## Kétszintű verdict — kötelező megkülönböztetés
+
+A T07 task két különböző pass-szintet különböztet meg:
+
+**`validator_infra_pass = true`:**
+- A nfp_correctness_benchmark bin elkészült és fut
+- A mock_exact NFP-n false_positive_rate = 0.0
+- Az infrastruktúra (sampling, exact collision check, JSON output) működik
+- Ez szükséges, de NEM elegendő T08 indításához
+
+**`rc_correctness_pass = true`:**
+- A tényleges RC kernel outputján fut a correctness validator
+- `verdict` nem `NOT_AVAILABLE` (T05 adott valódi NFP outputot)
+- `false_positive_rate = 0.0` (FAIL_FALSE_POSITIVE nem elfogadható)
+- `false_negative_rate < 0.01` (PASS vagy MARGINAL)
+- **Ez szükséges T08 indításához**
+
+**T08 blokkolása:**
+- Ha `validator_infra_pass = true` de `rc_correctness_pass = false`: T08 NEM INDÍTHATÓ
+- Ha `rc_correctness_pass = false` oka `NOT_AVAILABLE` (T05 nem adott outputot): először T05-öt kell fixálni
+- Ha `rc_correctness_pass = false` oka `FAIL_FALSE_POSITIVE`: az RC kernel javítandó (T05/T06 hibája)
 
 ## Részletes implementációs lépések
 
@@ -185,12 +205,24 @@ print('mock_exact: false_positive_rate = 0.0 PASS')
 ```
 
 ## Elfogadási feltételek
+
+**validator_infra_pass (kötelező T07 PASS-hoz, de nem elegendő T08-hoz):**
 - [ ] `cargo run --bin nfp_correctness_benchmark -- --help` fut
-- [ ] T01 fixture-ökön lefut (akár `NOT_AVAILABLE` verdict-tel)
 - [ ] `false_positive_rate` és `false_negative_rate` a JSON output-ban explicit szerepelnek
-- [ ] `correctness_verdict: FAIL_FALSE_POSITIVE` esetén a NFP explicit nem fogadható el
-- [ ] Mock NFP mód: false_positive_rate = 0.0 (referencia mérés)
-- [ ] `correctness_verdict` értékkészlete dokumentált és ellenőrzött
+- [ ] Mock NFP mód (`--nfp-source mock_exact`): `false_positive_rate = 0.0`
+- [ ] `correctness_verdict` értékkészlete dokumentált (PASS / MARGINAL / FAIL_FALSE_POSITIVE / FAIL_FALSE_NEGATIVE / NOT_AVAILABLE)
+
+**rc_correctness_pass (T08 indításának feltétele):**
+- [ ] Tényleges RC NFP outputon fut a validator (T05 `verdict = SUCCESS` szükséges)
+- [ ] `correctness_verdict` nem `NOT_AVAILABLE` — valódi RC NFP mérés történt
+- [ ] `false_positive_rate = 0.0` — FAIL_FALSE_POSITIVE esetén T08 NEM INDÍTHATÓ
+- [ ] `false_negative_rate < 0.01` (PASS vagy MARGINAL elfogadható)
+
+**A report tartalmazza:**
+- `validator_infra_pass: true/false`
+- `rc_correctness_pass: true/false`
+- `t08_unblocked: true/false`
+- Ha `rc_correctness_pass = false`: explicit ok (NOT_AVAILABLE / FAIL_FALSE_POSITIVE / FAIL_FALSE_NEGATIVE)
 
 ## Rollback / safety notes
 Kizárólag új bin. A meglévő placer, concave.rs, convex.rs érintetlen.

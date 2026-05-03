@@ -57,16 +57,19 @@ verification_commands:
   - "cargo check -p nesting_engine"
 
 acceptance_criteria:
-  - "nfp_correctness_benchmark --help fut"
-  - "T01 fixture-n lefut (NOT_AVAILABLE is OK ha T05 NotImplemented)"
-  - "false_positive_rate és false_negative_rate a JSON-ban explicit"
-  - "FAIL_FALSE_POSITIVE ha false_positive_count>0"
-  - "mock_exact: false_positive_rate=0.0"
-  - "correctness_verdict értékkészlete dokumentált"
+  - "SZINT 1 — validator_infra_pass: nfp_correctness_benchmark --help fut"
+  - "SZINT 1 — validator_infra_pass: false_positive_rate és false_negative_rate a JSON-ban explicit"
+  - "SZINT 1 — validator_infra_pass: mock_exact mód false_positive_rate=0.0"
+  - "SZINT 1 — validator_infra_pass: correctness_verdict értékkészlete dokumentált"
+  - "SZINT 2 — rc_correctness_pass (T08 feltétele): tényleges RC NFP outputon fut, verdict nem NOT_AVAILABLE"
+  - "SZINT 2 — rc_correctness_pass: false_positive_rate=0.0 (FAIL_FALSE_POSITIVE = T08 BLOKKOLVA)"
+  - "SZINT 2 — rc_correctness_pass: false_negative_rate < 0.01 (PASS vagy MARGINAL)"
+  - "Report tartalmaz: validator_infra_pass, rc_correctness_pass, t08_unblocked mezőket"
 
 risk_notes:
-  - "Ha T05 NotImplemented: verdict=NOT_AVAILABLE, nem FAIL."
-  - "false_positive_count>0: KRITIKUS — production-ban tilos."
+  - "Ha T05 NOT_IMPLEMENTED: rc_correctness_pass=false, NOT_AVAILABLE verdict. T08 NEM INDÍTHATÓ. T05 fixálandó."
+  - "false_positive_count>0: KRITIKUS — FAIL_FALSE_POSITIVE, T08 NEM INDÍTHATÓ, RC kernel javítandó."
+  - "NOT_AVAILABLE verdict NEM elegendő T08 indításához — ez csak validator_infra_pass szint."
 
 dependencies_on_previous_tasks:
   - "engine_v2_nfp_rc_t01_lv8_pair_extraction"

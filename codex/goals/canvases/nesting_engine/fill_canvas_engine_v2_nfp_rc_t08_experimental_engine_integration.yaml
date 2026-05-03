@@ -9,6 +9,9 @@ source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_
 scope:
   - NfpKernelPolicy enum hozzáadása nfp/mod.rs-be
   - NfpPlacerStatsV1 bővítése (3 új mező)
+  - rust/nesting_engine/src/main.rs CLI --nfp-kernel arg
+  - vrs_nesting/runner/nesting_engine_runner.py nfp_kernel wiring
+  - worker/main.py nfp_kernel propagálás és degraded státusz
   - quality_reduced_convolution_experimental profil hozzáadása
   - TypeScript literal union bővítése
   - Frontend experimental badge megjelenítése
@@ -16,7 +19,10 @@ scope:
 allowed_files:
   - "rust/nesting_engine/src/nfp/mod.rs"
   - "rust/nesting_engine/src/placement/nfp_placer.rs"
+  - "rust/nesting_engine/src/main.rs"
   - "vrs_nesting/config/nesting_quality_profiles.py"
+  - "vrs_nesting/runner/nesting_engine_runner.py"
+  - "worker/main.py"
   - "frontend/src/lib/types.ts"
   - "frontend/src/pages/NewRunPage.tsx"
   - "codex/reports/nesting_engine/engine_v2_nfp_rc_t08_experimental_engine_integration.md"
@@ -29,9 +35,18 @@ expected_file_changes:
   - path: "rust/nesting_engine/src/placement/nfp_placer.rs"
     action: modify
     description: "actual_nfp_kernel, nfp_kernel_unsupported_count, nfp_kernel_explicit_fallback_count mezők"
+  - path: "rust/nesting_engine/src/main.rs"
+    action: modify
+    description: "--nfp-kernel CLI argument parse-olása és NfpKernelPolicy átadása a placernek"
   - path: "vrs_nesting/config/nesting_quality_profiles.py"
     action: modify
     description: "quality_reduced_convolution_experimental profil hozzáadása"
+  - path: "vrs_nesting/runner/nesting_engine_runner.py"
+    action: modify
+    description: "nfp_kernel profil mező CLI arg-ként való átadása az engine binarynek"
+  - path: "worker/main.py"
+    action: modify
+    description: "nfp_kernel mező propagálása runner-nek; degraded státusz nem minősíthető sikernek"
   - path: "frontend/src/lib/types.ts"
     action: modify
     description: "quality_reduced_convolution_experimental literal hozzáadása QualityProfileName-be"
@@ -103,14 +118,19 @@ acceptance_criteria:
   - "cd frontend && npx tsc --noEmit hibátlan"
   - "quality_reduced_convolution_experimental profil megvan, nfp_kernel mező megvan"
   - "NfpKernelPolicy::default()==ConcaveDefault"
-  - "NfpPlacerStatsV1 tartalmazza az új mezőket"
+  - "NfpPlacerStatsV1 tartalmazza az új mezőket (actual_nfp_kernel, nfp_kernel_unsupported_count, nfp_kernel_explicit_fallback_count)"
+  - "rust/nesting_engine/src/main.rs fogadja a --nfp-kernel CLI argumentet"
+  - "vrs_nesting/runner/nesting_engine_runner.py a nfp_kernel profil mezőjét CLI arg-ként adja át"
+  - "worker/main.py nem nyeli el a nfp_kernel mezőt, degraded státuszt propagál"
   - "silent BLF fallback tilos — nfp_kernel_unsupported_count jelzi"
   - "meglévő quality profilok érintetlenek"
+  - "python3 -m pytest -q tests/worker/test_cavity_prepack.py zöld"
 
 risk_notes:
   - "NfpKernelPolicy::default()=ConcaveDefault KRITIKUS — meglévő pipeline nem változhat."
   - "Silent fallback tilos — ha RC kernel fail: nfp_kernel_unsupported_count++ és degraded."
   - "TypeScript strict mode: QualityProfileName bővítése exhaustive type guard-ot törhet."
+  - "KRITIKUS: Az nfp_kernel mező csak akkor hatékony, ha az egész lánc (main.rs → runner.py → worker → placer) átadja."
 
 dependencies_on_previous_tasks:
   - "engine_v2_nfp_rc_t05_reduced_convolution_prototype"
