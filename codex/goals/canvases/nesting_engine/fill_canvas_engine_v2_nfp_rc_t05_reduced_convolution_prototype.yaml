@@ -1,0 +1,105 @@
+task_id: engine_v2_nfp_rc_t05_reduced_convolution_prototype
+title: "Engine v2 NFP RC T05 — Reduced Convolution NFP Prototype"
+intent: >
+  Kipróbálni a reduced convolution / Minkowski irányt a T01 problémás partpárokon.
+  Döntési pont: Rust prototype vagy CGAL sidecar. Ha a teljes algoritmus meghaladja a
+  scope-ot, RcNfpError::NotImplemented explicit — nem silent fallback.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - rust/nesting_engine/src/nfp/reduced_convolution.rs implementálása
+  - rust/nesting_engine/src/bin/nfp_rc_prototype_benchmark.rs implementálása
+  - nfp/mod.rs minimal módosítása (pub mod sor)
+
+allowed_files:
+  - "rust/nesting_engine/src/nfp/reduced_convolution.rs"
+  - "rust/nesting_engine/src/bin/nfp_rc_prototype_benchmark.rs"
+  - "rust/nesting_engine/src/nfp/mod.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t05_reduced_convolution_prototype.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t05_reduced_convolution_prototype.md"
+
+expected_file_changes:
+  - path: "rust/nesting_engine/src/nfp/reduced_convolution.rs"
+    action: create
+    description: "RC NFP modul: ReducedConvolutionOptions, RcNfpResult, RcNfpError, compute_rc_nfp"
+  - path: "rust/nesting_engine/src/bin/nfp_rc_prototype_benchmark.rs"
+    action: create
+    description: "Prototype mérő bin T01 fixture-ökre"
+  - path: "rust/nesting_engine/src/nfp/mod.rs"
+    action: modify
+    description: "pub mod reduced_convolution; sor hozzáadása"
+
+implementation_steps:
+  - name: "Architektúra döntés"
+    description: >
+      Ellenőrizd: tools/nfp_cgal_probe/ létezik-e, cmake és CGAL elérhető-e.
+      Dokumentáld a döntést (Rust prototype vs CGAL sidecar).
+    outputs: []
+
+  - name: "reduced_convolution.rs implementálása"
+    description: >
+      ReducedConvolutionOptions, RcNfpError (beleértve NotImplemented), RcNfpResult,
+      compute_rc_nfp publikus API. Algoritmus: reflection, edge decomposition,
+      convolution, loop closing. Ha nem teljes: NotImplemented explicit return.
+    outputs:
+      - "rust/nesting_engine/src/nfp/reduced_convolution.rs"
+
+  - name: "nfp_rc_prototype_benchmark.rs implementálása"
+    description: >
+      Bin: --fixture, --timeout-ms, --compare-baseline, --output-json paraméterek.
+      verdict: SUCCESS | NOT_IMPLEMENTED | ERROR | TIMEOUT.
+      comparison_to_baseline szekció a T04 baseline adatokkal.
+    outputs:
+      - "rust/nesting_engine/src/bin/nfp_rc_prototype_benchmark.rs"
+
+  - name: "nfp/mod.rs frissítése"
+    description: >
+      pub mod reduced_convolution; sor hozzáadása.
+    outputs:
+      - "rust/nesting_engine/src/nfp/mod.rs"
+
+  - name: "Validálás és report"
+    description: >
+      cargo check, bin help fut, T01 fixture-n lefut, döntési pont dokumentálva.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t05_reduced_convolution_prototype.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t05_reduced_convolution_prototype.md"
+
+tests_to_run:
+  - "cargo check -p nesting_engine"
+  - "cargo run --bin nfp_rc_prototype_benchmark -- --help"
+  - "cargo run --bin nfp_rc_prototype_benchmark -- --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json --output-json"
+
+verification_commands:
+  - "cargo check -p nesting_engine"
+  - "grep -n 'pub mod reduced_convolution' rust/nesting_engine/src/nfp/mod.rs"
+  - "ls rust/nesting_engine/src/nfp/reduced_convolution.rs"
+  - "git diff HEAD -- rust/nesting_engine/src/nfp/concave.rs"
+
+acceptance_criteria:
+  - "cargo check -p nesting_engine hibátlan"
+  - "nfp_rc_prototype_benchmark --help fut"
+  - "T01 fixture-n lefut (NOT_IMPLEMENTED is elfogadható)"
+  - "RcNfpError::NotImplemented explicit, nem panic"
+  - "döntési pont (Rust prototype vs CGAL) dokumentálva a reportban"
+  - "concave.rs érintetlen"
+
+risk_notes:
+  - "Ha a teljes Minkowski implementáció meghaladja a scope-ot: NotImplemented explicit return — NEM silent BLF fallback."
+  - "CGAL sidecar csak akkor ha CGAL toolchain elérhető."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t01_lv8_pair_extraction"
+  - "engine_v2_nfp_rc_t03_geometry_cleanup_pipeline"
+  - "engine_v2_nfp_rc_t04_nfp_baseline_instrumentation"
+
+output_artifacts:
+  - "rust/nesting_engine/src/nfp/reduced_convolution.rs"
+  - "rust/nesting_engine/src/bin/nfp_rc_prototype_benchmark.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t05_reduced_convolution_prototype.md"
+
+explicit_non_goals:
+  - "Tilos concave.rs-t törölni vagy módosítani"
+  - "Tilos silent BLF fallback"
+  - "Tilos a nfp_placer.rs-t módosítani (az T08 feladata)"
+  - "Nem kell production-ready teljes implementáció — prototype elég"

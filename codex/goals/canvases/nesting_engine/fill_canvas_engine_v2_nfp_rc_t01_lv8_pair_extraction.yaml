@@ -1,0 +1,112 @@
+task_id: engine_v2_nfp_rc_t01_lv8_pair_extraction
+title: "Engine v2 NFP RC T01 — LV8 problémás part-pair extraction"
+intent: >
+  Kinyerni a valós LV8 solver inputból azokat az alkatrészpárokat, amelyek a jelenlegi
+  concave NFP-t timeoutba vagy fragment explosion állapotba viszik. A kinyert fixture-ök
+  képezik T02–T10 fejlesztési lánc bemeneti adatait.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - scripts/experiments/ könyvtár létrehozása
+  - tests/fixtures/nesting_engine/nfp_pairs/ könyvtár létrehozása
+  - extraction script megírása
+  - legalább 3 LV8 part-pair JSON fixture létrehozása
+
+allowed_files:
+  - "scripts/experiments/extract_nfp_pair_fixtures_lv8.py"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_index.json"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t01_lv8_pair_extraction.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t01_lv8_pair_extraction.md"
+
+expected_file_changes:
+  - path: "scripts/experiments/extract_nfp_pair_fixtures_lv8.py"
+    action: create
+    description: "Python script: LV8 fixture JSON extraction és mentés"
+  - path: "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+    action: create
+    description: "NFP pair fixture: 1. pár"
+  - path: "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+    action: create
+    description: "NFP pair fixture: 2. pár"
+  - path: "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+    action: create
+    description: "NFP pair fixture: 3. pár"
+  - path: "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_index.json"
+    action: create
+    description: "Fixture index metaadatokkal"
+
+implementation_steps:
+  - name: "Kontextus olvasása"
+    description: >
+      Olvasd el a canvas specifikációt, a ne2_input_lv8jav.json fixture struktúráját,
+      és az export_real_dxf_nfp_pairs.py script mintáját.
+    outputs: []
+
+  - name: "Extraction script megírása"
+    description: >
+      Írj scripts/experiments/extract_nfp_pair_fixtures_lv8.py scriptet, amely:
+      - Olvassa a ne2_input_lv8jav.json-t
+      - Megkeresi a tervfájlban megnevezett part ID-kat (Lv8_11612, Lv8_07921, Lv8_07920)
+      - Ha nem találja pontosan, a legkomplexebb (legtöbb vertex) párokat választja
+      - Kimenti a fixture-öket a canvas specifikált formátumában
+    outputs:
+      - "scripts/experiments/extract_nfp_pair_fixtures_lv8.py"
+
+  - name: "Fixture-ök létrehozása"
+    description: >
+      Futtasd az extraction scriptet, vagy ha nem futtatható (nincs LV8 fixture adat),
+      hozz létre fixture-öket valódi geometry adatokkal a ne2_input_lv8jav.json-ból.
+    outputs:
+      - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+      - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+      - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+      - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_index.json"
+
+  - name: "Validálás és report"
+    description: >
+      Ellenőrizd a JSON struktúrát, futtasd a verify parancsokat, írj report-ot.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t01_lv8_pair_extraction.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t01_lv8_pair_extraction.md"
+
+tests_to_run:
+  - "python3 -c \"import ast; ast.parse(open('scripts/experiments/extract_nfp_pair_fixtures_lv8.py').read()); print('syntax OK')\""
+  - "python3 -c \"import json; from pathlib import Path; [json.loads(f.read_text()) for f in Path('tests/fixtures/nesting_engine/nfp_pairs').glob('*.json')]; print('all JSON valid')\""
+
+verification_commands:
+  - "ls tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+  - "ls tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+  - "ls tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+  - "ls tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_index.json"
+  - "python3 -c \"import json,pathlib; p=json.loads(pathlib.Path('tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json').read_text()); assert p['fixture_version']=='nfp_pair_fixture_v1'; print('schema OK')\""
+
+acceptance_criteria:
+  - "legalább 3 fixture JSON fájl létezik tests/fixtures/nesting_engine/nfp_pairs/-ben"
+  - "minden fixture tartalmazza fixture_version, part_a.points_mm, part_b.points_mm mezőket"
+  - "az index fájl tartalmazza mind a 3 fixture referenciát"
+  - "extraction script szintaktikailag helyes Python"
+  - "nincs production kód változás"
+
+risk_notes:
+  - "Ha a ne2_input_lv8jav.json nem tartalmazza a tervben megnevezett part ID-kat exact match alapján, válassz a legkomplexebb geometriájú párokat."
+  - "Ha a fixture üres geometriát tartalmaz, az explicit placeholder-nek kell lennie, nem silent fallback-nek."
+
+dependencies_on_previous_tasks: []
+
+output_artifacts:
+  - "scripts/experiments/extract_nfp_pair_fixtures_lv8.py"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_index.json"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t01_lv8_pair_extraction.md"
+
+explicit_non_goals:
+  - "Tilos NFP-t számítani ebben a taskban"
+  - "Tilos production kódot módosítani"
+  - "Tilos new Rust kódot írni"
+  - "Tilos cavity_prepack_v2 logikáját módosítani"
+  - "A fixture nem kell hogy hole-t tartalmazzon solver szinten"

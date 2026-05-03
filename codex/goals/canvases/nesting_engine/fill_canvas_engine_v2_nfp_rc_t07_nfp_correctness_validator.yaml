@@ -1,0 +1,83 @@
+task_id: engine_v2_nfp_rc_t07_nfp_correctness_validator
+title: "Engine v2 NFP RC T07 — NFP Correctness Validator"
+intent: >
+  Bizonyítani, hogy az új RC NFP igazat mond az exact collision validatorhoz képest.
+  false_positive és false_negative arány mérése mintavételezéssel.
+  FAIL_FALSE_POSITIVE esetén az NFP production-ban tilos.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - rust/nesting_engine/src/bin/nfp_correctness_benchmark.rs implementálása
+  - exact_collision_check és mintavételező funkciók implementálása
+
+allowed_files:
+  - "rust/nesting_engine/src/bin/nfp_correctness_benchmark.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t07_nfp_correctness_validator.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t07_nfp_correctness_validator.md"
+
+expected_file_changes:
+  - path: "rust/nesting_engine/src/bin/nfp_correctness_benchmark.rs"
+    action: create
+    description: "Correctness validator bin: inside/outside/boundary sampling, false positive/negative mérés"
+
+implementation_steps:
+  - name: "Kontextus olvasása"
+    description: >
+      Olvasd el nfp_validation.rs (T06), reduced_convolution.rs (T05),
+      feasibility/narrow.rs és feasibility/aabb.rs (ha léteznek).
+    outputs: []
+
+  - name: "nfp_correctness_benchmark.rs implementálása"
+    description: >
+      exact_collision_check (AABB prefilter + polygon intersection),
+      sample_points_inside/outside/on_boundary,
+      correctness algoritmus (inside→collision kell, outside→no collision kell),
+      stdout JSON: false_positive_count/rate, false_negative_count/rate,
+      boundary_penetration_max_mm, correctness_verdict.
+      Mock NFP mód (--nfp-source mock_exact) az infrastruktúra tesztelésére.
+    outputs:
+      - "rust/nesting_engine/src/bin/nfp_correctness_benchmark.rs"
+
+  - name: "Validálás és report"
+    description: >
+      bin help fut, T01 fixture-n lefut, mock NFP false_positive_rate=0.0,
+      FAIL_FALSE_POSITIVE verdict ha false_positive_count>0.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t07_nfp_correctness_validator.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t07_nfp_correctness_validator.md"
+
+tests_to_run:
+  - "cargo run --bin nfp_correctness_benchmark -- --help"
+  - "cargo run --bin nfp_correctness_benchmark -- --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json --nfp-source reduced_convolution_v1 --output-json"
+  - "cargo run --bin nfp_correctness_benchmark -- --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json --nfp-source mock_exact --output-json"
+
+verification_commands:
+  - "cargo run --bin nfp_correctness_benchmark -- --help"
+  - "ls rust/nesting_engine/src/bin/nfp_correctness_benchmark.rs"
+  - "cargo check -p nesting_engine"
+
+acceptance_criteria:
+  - "nfp_correctness_benchmark --help fut"
+  - "T01 fixture-n lefut (NOT_AVAILABLE is OK ha T05 NotImplemented)"
+  - "false_positive_rate és false_negative_rate a JSON-ban explicit"
+  - "FAIL_FALSE_POSITIVE ha false_positive_count>0"
+  - "mock_exact: false_positive_rate=0.0"
+  - "correctness_verdict értékkészlete dokumentált"
+
+risk_notes:
+  - "Ha T05 NotImplemented: verdict=NOT_AVAILABLE, nem FAIL."
+  - "false_positive_count>0: KRITIKUS — production-ban tilos."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t01_lv8_pair_extraction"
+  - "engine_v2_nfp_rc_t05_reduced_convolution_prototype"
+  - "engine_v2_nfp_rc_t06_robust_minkowski_cleanup"
+
+output_artifacts:
+  - "rust/nesting_engine/src/bin/nfp_correctness_benchmark.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t07_nfp_correctness_validator.md"
+
+explicit_non_goals:
+  - "Tilos NFP-t számítani (csak meglévő output-ot validálni)"
+  - "Tilos nfp_placer.rs-t módosítani"
+  - "Tilos FAIL_FALSE_POSITIVE-t sikerként elfogadni"

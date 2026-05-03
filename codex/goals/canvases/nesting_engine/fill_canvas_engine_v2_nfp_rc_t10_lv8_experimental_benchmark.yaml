@@ -1,0 +1,98 @@
+task_id: engine_v2_nfp_rc_t10_lv8_experimental_benchmark
+title: "Engine v2 NFP RC T10 — LV8 Experimental Benchmark"
+intent: >
+  Mérni az RC kernel hatását teljes LV8 csomagon. Minden metrika mérése.
+  FAIL feltételek: prepack_guard_violated, silent_fallback_detected, invalid_nfp_accepted,
+  placements_overlap, bounds_violated, wrong_kernel_used.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - scripts/benchmark_reduced_convolution_lv8.py megírása
+  - tmp/reports/engine_v2_nfp_rc_t10/ könyvtár létrehozása
+
+allowed_files:
+  - "scripts/benchmark_reduced_convolution_lv8.py"
+  - "tmp/reports/engine_v2_nfp_rc_t10/README.md"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t10_lv8_experimental_benchmark.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t10_lv8_experimental_benchmark.md"
+
+expected_file_changes:
+  - path: "scripts/benchmark_reduced_convolution_lv8.py"
+    action: create
+    description: "LV8 experimental benchmark: preflight, engine, metrics, comparison, verdict"
+  - path: "tmp/reports/engine_v2_nfp_rc_t10/README.md"
+    action: create
+    description: "Riport könyvtár dokumentációja"
+
+implementation_steps:
+  - name: "Kontextus olvasása"
+    description: >
+      Olvasd el benchmark_cavity_v2_lv8.py első 100 sorát (struktúra reference).
+      Olvasd el ne2_input_lv8jav.json struktúráját.
+    outputs: []
+
+  - name: "benchmark_reduced_convolution_lv8.py implementálása"
+    description: >
+      --fixture, --output-dir, --timeout-minutes, --dry-run paraméterek.
+      Preflight: cavity_prepack_v2 futtatása, top_level_holes=0 ellenőrzés.
+      Engine futtatás: quality_reduced_convolution_experimental profillal.
+      Metrikák: összes NfpPlacerStatsV1 mező.
+      Verdict logika: 6 FAIL feltétel + 3 WARNING.
+      JSON riport mentése tmp/reports/engine_v2_nfp_rc_t10/-ba.
+      Human-readable összefoglaló stdout-ra.
+    outputs:
+      - "scripts/benchmark_reduced_convolution_lv8.py"
+      - "tmp/reports/engine_v2_nfp_rc_t10/README.md"
+
+  - name: "Validálás és report"
+    description: >
+      Script szintaxis OK, dry-run fut, JSON schema valid, FAIL feltételek ellenőrzése.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t10_lv8_experimental_benchmark.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t10_lv8_experimental_benchmark.md"
+
+tests_to_run:
+  - "python3 -c \"import ast; ast.parse(open('scripts/benchmark_reduced_convolution_lv8.py').read()); print('syntax OK')\""
+  - "python3 scripts/benchmark_reduced_convolution_lv8.py --dry-run"
+  - "ls tmp/reports/engine_v2_nfp_rc_t10/"
+
+verification_commands:
+  - "python3 -c \"import ast; ast.parse(open('scripts/benchmark_reduced_convolution_lv8.py').read()); print('syntax OK')\""
+  - "python3 scripts/benchmark_reduced_convolution_lv8.py --dry-run"
+  - "ls tmp/reports/engine_v2_nfp_rc_t10/"
+  - "git diff HEAD -- scripts/benchmark_cavity_v2_lv8.py"
+
+acceptance_criteria:
+  - "scripts/benchmark_reduced_convolution_lv8.py szintaxis OK"
+  - "--dry-run hiba nélkül fut"
+  - "top_level_holes_after_prepack=0 (prepack guard aktív)"
+  - "fallback_occurred=true esetén verdict=FAIL"
+  - "nfp_invalid_count>0 esetén verdict=FAIL"
+  - "JSON riport kimentve tmp/reports/engine_v2_nfp_rc_t10/-ba"
+  - "benchmark_cavity_v2_lv8.py érintetlen"
+
+risk_notes:
+  - "T01–T09 mind szükséges. Ha bármely megelőző task FAIL: T10 nem futtatható sikeresen."
+  - "fallback_occurred=true esetén verdict FAIL — tilos sikerként kezelni."
+  - "top_level_holes>0: prepack guard megsértve — FAIL."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t01_lv8_pair_extraction"
+  - "engine_v2_nfp_rc_t03_geometry_cleanup_pipeline"
+  - "engine_v2_nfp_rc_t04_nfp_baseline_instrumentation"
+  - "engine_v2_nfp_rc_t05_reduced_convolution_prototype"
+  - "engine_v2_nfp_rc_t06_robust_minkowski_cleanup"
+  - "engine_v2_nfp_rc_t07_nfp_correctness_validator"
+  - "engine_v2_nfp_rc_t08_experimental_engine_integration"
+  - "engine_v2_nfp_rc_t09_nfp_cache_geometry_hash"
+
+output_artifacts:
+  - "scripts/benchmark_reduced_convolution_lv8.py"
+  - "tmp/reports/engine_v2_nfp_rc_t10/README.md"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t10_lv8_experimental_benchmark.md"
+
+explicit_non_goals:
+  - "Tilos benchmark_cavity_v2_lv8.py-t módosítani"
+  - "Tilos cavity_prepack_v2 guard-ot kikapcsolni"
+  - "Tilos fallback eredményt sikerként jelölni"
+  - "Tilos invalid NFP-t sikerként elfogadni"

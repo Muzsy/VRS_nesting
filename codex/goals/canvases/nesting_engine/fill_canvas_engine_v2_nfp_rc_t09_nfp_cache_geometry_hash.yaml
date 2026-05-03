@@ -1,0 +1,123 @@
+task_id: engine_v2_nfp_rc_t09_nfp_cache_geometry_hash
+title: "Engine v2 NFP RC T09 — NFP Cache Geometry Hash"
+intent: >
+  Az NFP cache kibővítése az új kernel azonosítóval. Különböző kernelek NFP-jei
+  külön cache entry-kbe kerülnek. solver_geometry_hash cleanup profile-t is tartalmaz.
+  NfpCacheKey struct literal → constructor migrálás az összes hívóban.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - NfpCacheKey bővítése és constructor metódusok hozzáadása
+  - NfpKernelId enum hozzáadása cache.rs-be
+  - geometry/hash.rs létrehozása
+  - nfp_placer.rs struct literal → constructor migrálás
+  - CacheStats bővítése
+
+allowed_files:
+  - "rust/nesting_engine/src/nfp/cache.rs"
+  - "rust/nesting_engine/src/geometry/hash.rs"
+  - "rust/nesting_engine/src/geometry/mod.rs"
+  - "rust/nesting_engine/src/placement/nfp_placer.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t09_nfp_cache_geometry_hash.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t09_nfp_cache_geometry_hash.md"
+
+expected_file_changes:
+  - path: "rust/nesting_engine/src/nfp/cache.rs"
+    action: modify
+    description: "NfpKernelId enum, NfpCacheKey bővítés, constructor metódusok, CacheStats bővítés"
+  - path: "rust/nesting_engine/src/geometry/hash.rs"
+    action: create
+    description: "solver_geometry_hash: determinisztikus hash cleanup profile-lal"
+  - path: "rust/nesting_engine/src/geometry/mod.rs"
+    action: modify
+    description: "pub mod hash; sor hozzáadása"
+  - path: "rust/nesting_engine/src/placement/nfp_placer.rs"
+    action: modify
+    description: "NfpCacheKey struct literal → NfpCacheKey::concave_default(...) constructor migráció"
+
+implementation_steps:
+  - name: "cache.rs és nfp_placer.rs olvasása"
+    description: >
+      Olvasd el cache.rs (NfpCacheKey, shape_id, MAX_ENTRIES) és nfp_placer.rs
+      (ahol NfpCacheKey-t konstruálják). Rögzítsd az összes struct literal helyet.
+    outputs: []
+
+  - name: "NfpKernelId enum és NfpCacheKey bővítése"
+    description: >
+      NfpKernelId: ConcaveDefault=0, ReducedConvolutionV1=1.
+      From<NfpKernelPolicy> impl.
+      NfpCacheKey: nfp_kernel, cleanup_profile, spacing_units mezők hozzáadása.
+      concave_default() és reduced_convolution_v1() constructor metódusok.
+    outputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+
+  - name: "CacheStats bővítése"
+    description: >
+      evictions: u64, hits_by_kernel: HashMap<String, u64> mezők hozzáadása.
+    outputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+
+  - name: "geometry/hash.rs implementálása"
+    description: >
+      solver_geometry_hash(poly, cleanup_profile) → u64.
+      FNV-1a vagy determinisztikus hash, cleanup_profile byte belekerül.
+    outputs:
+      - "rust/nesting_engine/src/geometry/hash.rs"
+
+  - name: "geometry/mod.rs frissítése"
+    description: >
+      pub mod hash; sor hozzáadása.
+    outputs:
+      - "rust/nesting_engine/src/geometry/mod.rs"
+
+  - name: "nfp_placer.rs struct literal migráció"
+    description: >
+      Az összes NfpCacheKey { ... } struct literal cseréje NfpCacheKey::concave_default(...)-ra.
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Validálás és report"
+    description: >
+      cargo test cache, kernel separation teszt, solver_geometry_hash determinisztikus.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t09_nfp_cache_geometry_hash.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t09_nfp_cache_geometry_hash.md"
+
+tests_to_run:
+  - "cargo check -p nesting_engine"
+  - "cargo test -p nesting_engine -- nfp::cache 2>&1 | tail -5"
+  - "cargo test -p nesting_engine -- geometry::hash 2>&1 | tail -5"
+  - "grep -rn 'NfpCacheKey {' rust/nesting_engine/src/ && echo 'WARN: struct literal found' || echo 'OK: no struct literals'"
+
+verification_commands:
+  - "cargo check -p nesting_engine"
+  - "cargo test -p nesting_engine"
+  - "grep -n 'evictions' rust/nesting_engine/src/nfp/cache.rs"
+  - "ls rust/nesting_engine/src/geometry/hash.rs"
+
+acceptance_criteria:
+  - "cargo test -p nesting_engine hibátlan (cache tesztek)"
+  - "azonos pár + azonos kernel → cache hit"
+  - "különböző kernel → különböző cache key (miss)"
+  - "CacheStats tartalmazza evictions és hits_by_kernel mezőket"
+  - "solver_geometry_hash determinisztikus"
+  - "nincs NfpCacheKey { ... } struct literal (csak constructor hívások)"
+  - "shape_id() változatlan"
+
+risk_notes:
+  - "NfpCacheKey struct extension: minden struct literal fordítási hibát ad — mind migrálandó."
+  - "From<NfpKernelPolicy> for NfpKernelId: NfpKernelPolicy T08-ban definiálva."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t08_experimental_engine_integration"
+
+output_artifacts:
+  - "rust/nesting_engine/src/nfp/cache.rs"
+  - "rust/nesting_engine/src/geometry/hash.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t09_nfp_cache_geometry_hash.md"
+
+explicit_non_goals:
+  - "Tilos shape_id() függvényt módosítani"
+  - "Tilos MAX_ENTRIES értékét megváltoztatni"
+  - "Tilos eviction policy-t megváltoztatni"
+  - "Tilos Python kódot módosítani"

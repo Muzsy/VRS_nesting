@@ -1,0 +1,77 @@
+task_id: engine_v2_nfp_rc_t02_geometry_profile_contract
+title: "Engine v2 NFP RC T02 — Geometry Profile Contract dokumentáció"
+intent: >
+  Definiálni és dokumentálni az exact / canonical / solver geometry háromszintű contractot.
+  A contract T03–T10 minden geometriai döntés referenciaalapja. Read-only task — nincs kód változás.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - docs/nesting_engine/ könyvtár (ha nem létezik: létrehozni)
+  - geometry_preparation_contract_v1.md megírása
+
+allowed_files:
+  - "docs/nesting_engine/geometry_preparation_contract_v1.md"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t02_geometry_profile_contract.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t02_geometry_profile_contract.md"
+
+expected_file_changes:
+  - path: "docs/nesting_engine/geometry_preparation_contract_v1.md"
+    action: create
+    description: "Geometry rétegek contract dokumentum (7 kötelező szekció)"
+
+implementation_steps:
+  - name: "Kontextus olvasása"
+    description: >
+      Olvasd el a geometry/types.rs, geometry/pipeline.rs, geometry/scale.rs,
+      geometry/float_policy.rs, nfp/mod.rs, nfp/boundary_clean.rs fájlokat.
+      Rögzítsd: Point64 típus, SCALE konstans, GEOM_EPS_MM, NfpError enum.
+    outputs: []
+
+  - name: "Contract dokumentum megírása"
+    description: >
+      Írj docs/nesting_engine/geometry_preparation_contract_v1.md-t, amely tartalmazza
+      mind a 7 kötelező szekciót: exact geometry, canonical clean, solver/NFP geometry,
+      integer robust layer, GEOM_EPS_MM toleranciák, simplification safety szabályok,
+      final validation elve.
+    outputs:
+      - "docs/nesting_engine/geometry_preparation_contract_v1.md"
+
+  - name: "Validálás és report"
+    description: >
+      Ellenőrizd a kötelező szekciók meglétét, írj report-ot.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t02_geometry_profile_contract.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t02_geometry_profile_contract.md"
+
+tests_to_run:
+  - "ls docs/nesting_engine/geometry_preparation_contract_v1.md"
+  - "python3 -c \"content=open('docs/nesting_engine/geometry_preparation_contract_v1.md').read(); sections=['Exact geometry','Canonical clean','Solver','Integer robust','GEOM_EPS_MM','Simplification safety','Final validation']; [print('OK:', s) for s in sections if s in content]; missing=[s for s in sections if s not in content]; print('MISSING:', missing) if missing else print('All sections present')\""
+
+verification_commands:
+  - "ls docs/nesting_engine/geometry_preparation_contract_v1.md"
+  - "python3 -c \"content=open('docs/nesting_engine/geometry_preparation_contract_v1.md').read(); assert 'solver geometry' in content; assert 'exact geometry' in content; assert 'Point64' in content; print('keywords OK')\""
+  - "git diff --name-only HEAD -- '*.rs' '*.py' '*.ts' '*.tsx'"
+
+acceptance_criteria:
+  - "docs/nesting_engine/geometry_preparation_contract_v1.md létezik"
+  - "mind a 7 kötelező szekció dokumentálva"
+  - "explicit rögzíti: solver geometry ≠ gyártási geometria"
+  - "explicit rögzíti: Point64 az integer robust layer implementációja"
+  - "GEOM_EPS_MM pontos értéke szerepel (vagy explicit TBD)"
+  - "SCALE konstans értéke szerepel (vagy explicit TBD)"
+  - "nincs production kód változás"
+
+risk_notes:
+  - "Ha SCALE konstans nem olvasható a scale.rs-ből, explicit TBD jelölés szükséges."
+  - "Ha GEOM_EPS_MM nem olvasható, explicit TBD jelölés szükséges."
+
+dependencies_on_previous_tasks: []
+
+output_artifacts:
+  - "docs/nesting_engine/geometry_preparation_contract_v1.md"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t02_geometry_profile_contract.md"
+
+explicit_non_goals:
+  - "Tilos bármely .rs, .py, .ts, .tsx fájlt módosítani"
+  - "Tilos v2 feature-t implementálni"
+  - "Tilos nem létező API-t dokumentálni"

@@ -1,0 +1,109 @@
+task_id: engine_v2_nfp_rc_t04_nfp_baseline_instrumentation
+title: "Engine v2 NFP RC T04 — NFP Baseline Instrumentation"
+intent: >
+  A jelenlegi concave.rs algoritmust pontosan mérni a T01 fixture-ökön.
+  Meghatározni: fragment count, pair count, timeout threshold, NfpError variant.
+  A mért adatok T05–T10 összehasonlítási baseline-jai. Fixture baseline_metrics kitöltése.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - rust/nesting_engine/src/bin/nfp_pair_benchmark.rs implementálása
+  - tests/fixtures/nesting_engine/nfp_pairs/*.json baseline_metrics frissítése
+
+allowed_files:
+  - "rust/nesting_engine/src/bin/nfp_pair_benchmark.rs"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t04_nfp_baseline_instrumentation.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t04_nfp_baseline_instrumentation.md"
+
+expected_file_changes:
+  - path: "rust/nesting_engine/src/bin/nfp_pair_benchmark.rs"
+    action: create
+    description: "Mérő bin: fragment count, pair count, timeout, NfpError kind"
+  - path: "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+    action: modify
+    description: "baseline_metrics kitöltése mért értékekkel"
+  - path: "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+    action: modify
+    description: "baseline_metrics kitöltése mért értékekkel"
+  - path: "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+    action: modify
+    description: "baseline_metrics kitöltése mért értékekkel"
+
+implementation_steps:
+  - name: "nfp_fixture.rs minta olvasása"
+    description: >
+      Olvasd el a rust/nesting_engine/src/bin/nfp_fixture.rs fájlt.
+      Értsd meg: JSON interfész, concave NFP hívás, error handling.
+    outputs: []
+
+  - name: "nfp_pair_benchmark.rs implementálása"
+    description: >
+      Implementáld a benchmark bin-t: --fixture, --timeout-ms, --output-json paraméterek.
+      Méri: fragment_count_a/b, pair_count, decomposition_time_ms,
+      fragment_union_time_ms, cleanup_time_ms, total_time_ms, timed_out, nfp_error_kind.
+      verdict: SUCCESS | TIMEOUT | ERROR | DECOMPOSITION_FAILED.
+    outputs:
+      - "rust/nesting_engine/src/bin/nfp_pair_benchmark.rs"
+
+  - name: "Baseline mérések futtatása"
+    description: >
+      Futtasd a benchmark-ot mind a 3 T01 fixture-re --timeout-ms 5000-rel.
+      Rögzítsd az eredményeket.
+    outputs: []
+
+  - name: "Fixture baseline_metrics frissítése"
+    description: >
+      A mért értékek alapján frissítsd minden fixture JSON baseline_metrics mezőjét.
+      fragment_count_a/b, expected_pair_count, current_nfp_timeout_reproduced, verdict.
+    outputs:
+      - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+      - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+      - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+
+  - name: "Validálás és report"
+    description: >
+      bin help fut, fixture baseline_metrics nem null, report elkészítése.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t04_nfp_baseline_instrumentation.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t04_nfp_baseline_instrumentation.md"
+
+tests_to_run:
+  - "cargo run --bin nfp_pair_benchmark -- --help"
+  - "cargo run --bin nfp_pair_benchmark -- --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json --timeout-ms 5000 --output-json"
+  - "python3 -c \"import json; from pathlib import Path; p=json.loads(Path('tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json').read_text()); bm=p['baseline_metrics']; assert bm.get('fragment_count_a') is not None; print('baseline_metrics filled:', bm.get('verdict'))\""
+
+verification_commands:
+  - "cargo run --bin nfp_pair_benchmark -- --help"
+  - "ls rust/nesting_engine/src/bin/nfp_pair_benchmark.rs"
+  - "python3 -c \"import json; p=json.load(open('tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json')); print('fragment_count_a:', p['baseline_metrics'].get('fragment_count_a'))\""
+  - "git diff HEAD -- rust/nesting_engine/src/nfp/concave.rs"
+
+acceptance_criteria:
+  - "cargo run --bin nfp_pair_benchmark -- --help fut"
+  - "T01 összes fixture-n lefut (akár timeout-tal)"
+  - "fragment_count_a, fragment_count_b, pair_count, verdict a JSON-ban"
+  - "fixture baseline_metrics mezők ki vannak töltve (nem null)"
+  - "concave.rs érintetlen"
+
+risk_notes:
+  - "Ha timeout reproduced: current_nfp_timeout_reproduced=true rögzítendő."
+  - "Timeout NEM sikerként kezelendő — explicit TIMEOUT verdict."
+  - "Ha NfpError keletkezett: nfp_error_kind rögzítendő."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t01_lv8_pair_extraction"
+
+output_artifacts:
+  - "rust/nesting_engine/src/bin/nfp_pair_benchmark.rs"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_02.json"
+  - "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_03.json"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t04_nfp_baseline_instrumentation.md"
+
+explicit_non_goals:
+  - "Tilos concave.rs-t módosítani"
+  - "Tilos timeout-ot sikerként kezelni"
+  - "Tilos új NFP algoritmust implementálni"

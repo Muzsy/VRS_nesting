@@ -1,0 +1,120 @@
+task_id: engine_v2_nfp_rc_t03_geometry_cleanup_pipeline
+title: "Engine v2 NFP RC T03 — Geometry Cleanup Pipeline implementáció"
+intent: >
+  Megmérni, mennyire csökkenthető biztonságosan a vertexszám LV8 problémás partokon,
+  és implementálni a cleanup + simplification infrastruktúrát mérési képességgel.
+  A T03 output (cleanup.rs, simplify.rs) T05–T08 által lesz felhasználva.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - rust/nesting_engine/src/geometry/cleanup.rs implementálása
+  - rust/nesting_engine/src/geometry/simplify.rs implementálása
+  - rust/nesting_engine/src/bin/geometry_prepare_benchmark.rs implementálása
+  - geometry/mod.rs minimális módosítása (pub mod sorok)
+
+allowed_files:
+  - "rust/nesting_engine/src/geometry/cleanup.rs"
+  - "rust/nesting_engine/src/geometry/simplify.rs"
+  - "rust/nesting_engine/src/bin/geometry_prepare_benchmark.rs"
+  - "rust/nesting_engine/src/geometry/mod.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t03_geometry_cleanup_pipeline.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t03_geometry_cleanup_pipeline.md"
+
+expected_file_changes:
+  - path: "rust/nesting_engine/src/geometry/cleanup.rs"
+    action: create
+    description: "Cleanup pipeline: duplicate_vertex_removal, null_edge_removal, collinear_merge, normalize_orientation"
+  - path: "rust/nesting_engine/src/geometry/simplify.rs"
+    action: create
+    description: "Topology-preserving RDP simplification, reflex vertex count mérés"
+  - path: "rust/nesting_engine/src/bin/geometry_prepare_benchmark.rs"
+    action: create
+    description: "Mérő bin: cleanup + simplify metrikák T01 fixture-ökön"
+  - path: "rust/nesting_engine/src/geometry/mod.rs"
+    action: modify
+    description: "pub mod cleanup; pub mod simplify; sorok hozzáadása"
+
+implementation_steps:
+  - name: "T01 és T02 output ellenőrzése"
+    description: >
+      Ellenőrizd, hogy lv8_pair_01.json létezik és a geometry contract doc elérhető.
+    outputs: []
+
+  - name: "cleanup.rs implementálása"
+    description: >
+      Implementáld a run_cleanup_pipeline és al-függvényeit (duplicate_vertex_removal,
+      null_edge_removal, merge_collinear_vertices, normalize_orientation).
+      CleanupError és CleanupResult struct-okkal.
+    outputs:
+      - "rust/nesting_engine/src/geometry/cleanup.rs"
+
+  - name: "simplify.rs implementálása"
+    description: >
+      Implementáld a topology_preserving_rdp-t, count_reflex_vertices segédfüggvénnyel.
+      SimplifyResult tartalmazza: vertex_count_before/after, reflex counts,
+      area_delta_mm2, max_deviation_mm, topology_changed bool.
+    outputs:
+      - "rust/nesting_engine/src/geometry/simplify.rs"
+
+  - name: "geometry_prepare_benchmark.rs implementálása"
+    description: >
+      Bin: olvassa a fixture JSON-t, lefuttatja cleanup + simplify pipeline-t,
+      stdout JSON riportot ír az összes metrikával és pair_fragment_count_estimate-tel.
+    outputs:
+      - "rust/nesting_engine/src/bin/geometry_prepare_benchmark.rs"
+
+  - name: "geometry/mod.rs frissítése"
+    description: >
+      pub mod cleanup; pub mod simplify; sorok hozzáadása.
+    outputs:
+      - "rust/nesting_engine/src/geometry/mod.rs"
+
+  - name: "Validálás és report"
+    description: >
+      cargo check, bin help fut, T01 fixture-ökön lefut, topology_changed=false,
+      area_delta<0.5 mm² ellenőrzés.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t03_geometry_cleanup_pipeline.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t03_geometry_cleanup_pipeline.md"
+
+tests_to_run:
+  - "cargo check -p nesting_engine 2>&1 | tail -3"
+  - "cargo run --bin geometry_prepare_benchmark -- --help"
+  - "cargo run --bin geometry_prepare_benchmark -- --fixture tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json --output-json"
+
+verification_commands:
+  - "cargo check -p nesting_engine"
+  - "ls rust/nesting_engine/src/geometry/cleanup.rs"
+  - "ls rust/nesting_engine/src/geometry/simplify.rs"
+  - "ls rust/nesting_engine/src/bin/geometry_prepare_benchmark.rs"
+  - "grep -n 'pub mod cleanup' rust/nesting_engine/src/geometry/mod.rs"
+
+acceptance_criteria:
+  - "cargo check -p nesting_engine hibátlan"
+  - "geometry_prepare_benchmark --help fut"
+  - "T01 összes fixture-n lefut, nincs panic"
+  - "topology_changed = false (0.1 mm epsilon-nal)"
+  - "area_delta_mm2 < 0.5 T01 fixture-ökön"
+  - "SimplifyResult tartalmazza az összes kötelező mezőt"
+  - "boundary_clean.rs érintetlen"
+
+risk_notes:
+  - "Ha a T01 fixture-ök nem léteznek: STOP, T01-et kell előbb elvégezni."
+  - "Topology_changed=true esetén ne fogadd el a simplification eredményét."
+  - "A meglévő boundary_clean.rs törlése vagy módosítása tilos."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t01_lv8_pair_extraction"
+  - "engine_v2_nfp_rc_t02_geometry_profile_contract"
+
+output_artifacts:
+  - "rust/nesting_engine/src/geometry/cleanup.rs"
+  - "rust/nesting_engine/src/geometry/simplify.rs"
+  - "rust/nesting_engine/src/bin/geometry_prepare_benchmark.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t03_geometry_cleanup_pipeline.md"
+
+explicit_non_goals:
+  - "Tilos boundary_clean.rs-t módosítani"
+  - "Tilos destructive simplification (hole elhagyás, reflex vertex elvesztés)"
+  - "Tilos a nfp_placer.rs-t módosítani"
+  - "Tilos NFP-t számítani"

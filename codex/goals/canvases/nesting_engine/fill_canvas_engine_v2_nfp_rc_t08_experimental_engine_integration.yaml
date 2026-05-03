@@ -1,0 +1,132 @@
+task_id: engine_v2_nfp_rc_t08_experimental_engine_integration
+title: "Engine v2 NFP RC T08 — Experimental Engine Integration"
+intent: >
+  Az RC NFP-kernelt választható experimental módként bekötni az Engine v2-be.
+  ConcaveDefault kernel érintetlen és default. ReducedConvolutionV1 explicit opt-in.
+  Silent BLF fallback tilos. nfp_kernel_unsupported_count jelzi a problémákat.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - NfpKernelPolicy enum hozzáadása nfp/mod.rs-be
+  - NfpPlacerStatsV1 bővítése (3 új mező)
+  - quality_reduced_convolution_experimental profil hozzáadása
+  - TypeScript literal union bővítése
+  - Frontend experimental badge megjelenítése
+
+allowed_files:
+  - "rust/nesting_engine/src/nfp/mod.rs"
+  - "rust/nesting_engine/src/placement/nfp_placer.rs"
+  - "vrs_nesting/config/nesting_quality_profiles.py"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/pages/NewRunPage.tsx"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t08_experimental_engine_integration.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t08_experimental_engine_integration.md"
+
+expected_file_changes:
+  - path: "rust/nesting_engine/src/nfp/mod.rs"
+    action: modify
+    description: "NfpKernelPolicy enum hozzáadása"
+  - path: "rust/nesting_engine/src/placement/nfp_placer.rs"
+    action: modify
+    description: "actual_nfp_kernel, nfp_kernel_unsupported_count, nfp_kernel_explicit_fallback_count mezők"
+  - path: "vrs_nesting/config/nesting_quality_profiles.py"
+    action: modify
+    description: "quality_reduced_convolution_experimental profil hozzáadása"
+  - path: "frontend/src/lib/types.ts"
+    action: modify
+    description: "quality_reduced_convolution_experimental literal hozzáadása QualityProfileName-be"
+  - path: "frontend/src/pages/NewRunPage.tsx"
+    action: modify
+    description: "Experimental badge megjelenítése az RC profilnál"
+
+implementation_steps:
+  - name: "Kontextus olvasása"
+    description: >
+      Olvasd el nfp_placer.rs (NfpPlacerStatsV1 jelenlegi mezők), nesting_quality_profiles.py
+      (VALID_PLACERS, meglévő profilok), types.ts (QualityProfileName), NewRunPage.tsx.
+    outputs: []
+
+  - name: "NfpKernelPolicy enum — nfp/mod.rs"
+    description: >
+      NfpKernelPolicy: ConcaveDefault (default), ReducedConvolutionV1.
+      as_str() és from_str() metódusok.
+    outputs:
+      - "rust/nesting_engine/src/nfp/mod.rs"
+
+  - name: "NfpPlacerStatsV1 bővítés — nfp_placer.rs"
+    description: >
+      actual_nfp_kernel: String, nfp_kernel_unsupported_count: u64,
+      nfp_kernel_explicit_fallback_count: u64 mezők hozzáadása.
+      Ha RC kernel NotImplemented: nfp_kernel_unsupported_count++, placement degraded.
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+
+  - name: "Quality profil — nesting_quality_profiles.py"
+    description: >
+      quality_reduced_convolution_experimental: placer=nfp, search=sa,
+      part_in_part=prepack, compaction=slide, nfp_kernel=reduced_convolution_v1, experimental=True.
+    outputs:
+      - "vrs_nesting/config/nesting_quality_profiles.py"
+
+  - name: "TypeScript types.ts bővítés"
+    description: >
+      quality_reduced_convolution_experimental literal hozzáadása QualityProfileName-be.
+    outputs:
+      - "frontend/src/lib/types.ts"
+
+  - name: "NewRunPage.tsx experimental badge"
+    description: >
+      Experimental profil megjelenítésekor EXPERIMENTAL badge + tooltip.
+    outputs:
+      - "frontend/src/pages/NewRunPage.tsx"
+
+  - name: "Validálás és report"
+    description: >
+      cargo check, tsc --noEmit, Python profil ellenőrzés, meglévő profilok érintetlenek.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t08_experimental_engine_integration.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t08_experimental_engine_integration.md"
+
+tests_to_run:
+  - "cargo check -p nesting_engine"
+  - "cd frontend && npx tsc --noEmit"
+  - "python3 -c \"from vrs_nesting.config.nesting_quality_profiles import _QUALITY_PROFILE_REGISTRY; p=_QUALITY_PROFILE_REGISTRY['quality_reduced_convolution_experimental']; assert p['nfp_kernel']=='reduced_convolution_v1'; print('OK')\""
+
+verification_commands:
+  - "cargo check -p nesting_engine"
+  - "cd frontend && npx tsc --noEmit"
+  - "python3 -c \"from vrs_nesting.config.nesting_quality_profiles import _QUALITY_PROFILE_REGISTRY; assert 'quality_reduced_convolution_experimental' in _QUALITY_PROFILE_REGISTRY; print('profile exists')\""
+  - "grep -n 'NfpKernelPolicy' rust/nesting_engine/src/nfp/mod.rs"
+
+acceptance_criteria:
+  - "cargo check -p nesting_engine hibátlan"
+  - "cd frontend && npx tsc --noEmit hibátlan"
+  - "quality_reduced_convolution_experimental profil megvan, nfp_kernel mező megvan"
+  - "NfpKernelPolicy::default()==ConcaveDefault"
+  - "NfpPlacerStatsV1 tartalmazza az új mezőket"
+  - "silent BLF fallback tilos — nfp_kernel_unsupported_count jelzi"
+  - "meglévő quality profilok érintetlenek"
+
+risk_notes:
+  - "NfpKernelPolicy::default()=ConcaveDefault KRITIKUS — meglévő pipeline nem változhat."
+  - "Silent fallback tilos — ha RC kernel fail: nfp_kernel_unsupported_count++ és degraded."
+  - "TypeScript strict mode: QualityProfileName bővítése exhaustive type guard-ot törhet."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t05_reduced_convolution_prototype"
+  - "engine_v2_nfp_rc_t06_robust_minkowski_cleanup"
+  - "engine_v2_nfp_rc_t07_nfp_correctness_validator"
+
+output_artifacts:
+  - "rust/nesting_engine/src/nfp/mod.rs"
+  - "rust/nesting_engine/src/placement/nfp_placer.rs"
+  - "vrs_nesting/config/nesting_quality_profiles.py"
+  - "frontend/src/lib/types.ts"
+  - "frontend/src/pages/NewRunPage.tsx"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t08_experimental_engine_integration.md"
+
+explicit_non_goals:
+  - "Tilos ConcaveDefault kernel-t módosítani"
+  - "Tilos meglévő quality profilokat módosítani"
+  - "Tilos silent BLF fallback"
+  - "Tilos cavity_prepack_v2-t módosítani"

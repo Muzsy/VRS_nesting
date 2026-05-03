@@ -1,0 +1,103 @@
+task_id: engine_v2_nfp_rc_t06_robust_minkowski_cleanup
+title: "Engine v2 NFP RC T06 — Robust Minkowski Cleanup"
+intent: >
+  A reduced convolution nyers outputját nestingre alkalmas NFP-vé tisztítani.
+  9 lépéses cleanup pipeline és polygon validity validator implementálása.
+  is_valid=false esetén polygon=None kötelező — tilos silent continue.
+source_plan: "tmp/plans/engine_v_2_reduced_convolution_nfp_fejlesztesi_irany_es_terv.md"
+
+scope:
+  - rust/nesting_engine/src/nfp/minkowski_cleanup.rs implementálása
+  - rust/nesting_engine/src/nfp/nfp_validation.rs implementálása
+  - nfp/mod.rs minimal módosítása (pub mod sorok)
+
+allowed_files:
+  - "rust/nesting_engine/src/nfp/minkowski_cleanup.rs"
+  - "rust/nesting_engine/src/nfp/nfp_validation.rs"
+  - "rust/nesting_engine/src/nfp/mod.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t06_robust_minkowski_cleanup.md"
+  - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t06_robust_minkowski_cleanup.md"
+
+expected_file_changes:
+  - path: "rust/nesting_engine/src/nfp/minkowski_cleanup.rs"
+    action: create
+    description: "9 lépéses cleanup pipeline, CleanupOptions, CleanupError, CleanupResult"
+  - path: "rust/nesting_engine/src/nfp/nfp_validation.rs"
+    action: create
+    description: "polygon_is_valid, polygon_validation_report, ValidationReport"
+  - path: "rust/nesting_engine/src/nfp/mod.rs"
+    action: modify
+    description: "pub mod minkowski_cleanup; pub mod nfp_validation; sorok hozzáadása"
+
+implementation_steps:
+  - name: "boundary_clean.rs és T05 output olvasása"
+    description: >
+      Olvasd el boundary_clean.rs ring_has_self_intersection-t és a T05 RcNfpResult-ot.
+    outputs: []
+
+  - name: "minkowski_cleanup.rs implementálása"
+    description: >
+      run_minkowski_cleanup: 9 kötelező lépés sorrendben.
+      CleanupOptions, CleanupError (InvalidAfterCleanup, EmptyInput, AllLoopsRemoved),
+      CleanupResult (polygon: Option, is_valid bool, összes counter).
+      Invariáns: is_valid=false → polygon=None.
+    outputs:
+      - "rust/nesting_engine/src/nfp/minkowski_cleanup.rs"
+
+  - name: "nfp_validation.rs implementálása"
+    description: >
+      polygon_is_valid és polygon_validation_report.
+      ValidationReport: is_valid, outer_ring_ccw, area, self_intersection_detected,
+      degenerate_edges_count, reason_if_invalid.
+    outputs:
+      - "rust/nesting_engine/src/nfp/nfp_validation.rs"
+
+  - name: "nfp/mod.rs frissítése"
+    description: >
+      pub mod minkowski_cleanup; pub mod nfp_validation; sorok hozzáadása.
+    outputs:
+      - "rust/nesting_engine/src/nfp/mod.rs"
+
+  - name: "Validálás és report"
+    description: >
+      cargo check, unit tesztek futnak, is_valid=false invariáns ellenőrzés.
+    outputs:
+      - "codex/reports/nesting_engine/engine_v2_nfp_rc_t06_robust_minkowski_cleanup.md"
+      - "codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t06_robust_minkowski_cleanup.md"
+
+tests_to_run:
+  - "cargo check -p nesting_engine"
+  - "cargo test -p nesting_engine -- minkowski_cleanup 2>&1 | tail -5"
+  - "cargo test -p nesting_engine -- nfp_validation 2>&1 | tail -5"
+
+verification_commands:
+  - "cargo check -p nesting_engine"
+  - "grep -n 'pub mod minkowski_cleanup' rust/nesting_engine/src/nfp/mod.rs"
+  - "grep -n 'pub mod nfp_validation' rust/nesting_engine/src/nfp/mod.rs"
+  - "git diff HEAD -- rust/nesting_engine/src/nfp/boundary_clean.rs"
+
+acceptance_criteria:
+  - "cargo check -p nesting_engine hibátlan"
+  - "run_minkowski_cleanup mind a 9 lépéssel implementálva"
+  - "polygon_is_valid és polygon_validation_report implementálva"
+  - "is_valid=false esetén polygon=None (nem silent continue)"
+  - "CleanupError::InvalidAfterCleanup explicit hiba, nem panic"
+  - "boundary_clean.rs érintetlen"
+
+risk_notes:
+  - "is_valid=false + polygon=Some(...) kombináció tilos — explicit invariáns."
+  - "boundary_clean.rs ring_has_self_intersection hívható a nfp_validation.rs-ből."
+
+dependencies_on_previous_tasks:
+  - "engine_v2_nfp_rc_t03_geometry_cleanup_pipeline"
+  - "engine_v2_nfp_rc_t05_reduced_convolution_prototype"
+
+output_artifacts:
+  - "rust/nesting_engine/src/nfp/minkowski_cleanup.rs"
+  - "rust/nesting_engine/src/nfp/nfp_validation.rs"
+  - "codex/reports/nesting_engine/engine_v2_nfp_rc_t06_robust_minkowski_cleanup.md"
+
+explicit_non_goals:
+  - "Tilos boundary_clean.rs-t törölni"
+  - "Tilos a nfp_placer.rs-t módosítani (az T08 feladata)"
+  - "Tilos invalid NFP-t sikerként elfogadni"
