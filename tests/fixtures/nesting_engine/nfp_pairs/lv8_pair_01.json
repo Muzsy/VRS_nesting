@@ -3476,10 +3476,14 @@
     "holes_mm": []
   },
   "baseline_metrics": {
-    "fragment_count_a": null,
-    "fragment_count_b": null,
-    "expected_pair_count": null,
-    "current_nfp_timeout_reproduced": false,
-    "notes": "baseline metrics to be filled in T04"
+    "fragment_count_a": 518,
+    "fragment_count_b": 342,
+    "expected_pair_count": 177156,
+    "current_nfp_timeout_reproduced": true,
+    "decomposition_time_ms": 0,
+    "total_nfp_time_ms_if_not_timeout": null,
+    "nfp_error_kind_if_errored": null,
+    "verdict": "TIMEOUT",
+    "notes": "T04 baseline measurement (timeout-ms=5000): TIMEOUT reproduced; high fragment pair cardinality."
   }
 }
