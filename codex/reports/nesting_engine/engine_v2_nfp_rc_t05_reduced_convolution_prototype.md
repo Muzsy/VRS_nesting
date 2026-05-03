@@ -54,7 +54,7 @@ PASS
 | lv8_pair_03 | SUCCESS | 84 | 129 | TIMEOUT |
 
 Kovetkeztetes:
-- A T04 timeout baseline-hoz kepest a T05 prototype mindharom fixture-n explicit `SUCCESS` verdicttel es nem ures outputtal futott.
+- A T04 timeout baseline-hoz kepest a T05 prototype mindharom fixture-n explicit `SUCCESS` verdicttel es nem ures prototype envelope polygon outputtal futott.
 - A kritikus T05 kapu teljesult (`3/3 SUCCESS`), igy a chain nincs blokkolva T05 szinten.
 
 ## 6) Verifikacio
@@ -86,7 +86,7 @@ Kovetkeztetes:
 ## 8) Acceptance criteria allapot
 - [x] `cargo check -p nesting_engine` hibátlan
 - [x] `nfp_rc_prototype_benchmark --help` fut
-- [x] Legalabb 1 LV8 pair-en `SUCCESS` + nem ures output (tenylegesen 3/3)
+- [x] Legalabb 1 LV8 pair-en `SUCCESS` + nem ures prototype envelope polygon output (tenylegesen 3/3)
 - [x] `RcNfpError::NotImplemented` explicit, nem panic
 - [x] Döntési pont dokumentálva (Rust prototype vs CGAL)
 - [x] `concave.rs` erintetlen

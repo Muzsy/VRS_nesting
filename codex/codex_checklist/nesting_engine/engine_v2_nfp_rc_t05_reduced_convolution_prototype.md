@@ -11,7 +11,7 @@
 - [x] `lv8_pair_01` benchmark fut (`verdict=SUCCESS`, `raw_vertex_count>0`)
 - [x] `lv8_pair_02` benchmark fut (`verdict=SUCCESS`, `raw_vertex_count>0`)
 - [x] `lv8_pair_03` benchmark fut (`verdict=SUCCESS`, `raw_vertex_count>0`)
-- [x] Kritikus kapu teljesult: legalabb 1 (tenylegesen 3/3) fixture `SUCCESS` es `raw_vertex_count>0`
+- [x] Kritikus kapu teljesult: legalabb 1 (tenylegesen 3/3) fixture `SUCCESS` es `raw_vertex_count>0` (prototype envelope polygon)
 - [x] `RcNfpError::NotImplemented` explicit jelen van (nem panic/silent fallback)
 - [x] `git diff HEAD -- rust/nesting_engine/src/nfp/concave.rs` ures (erintetlen)
 - [x] Report DoD -> Evidence matrix kitoltve

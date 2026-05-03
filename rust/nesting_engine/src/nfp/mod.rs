@@ -10,6 +10,8 @@ pub mod cfr;
 pub mod concave;
 pub mod convex;
 pub mod ifp;
+pub mod minkowski_cleanup;
+pub mod nfp_validation;
 pub mod reduced_convolution;
 
 use std::fmt::{Display, Formatter};
