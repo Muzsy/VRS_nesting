@@ -1,0 +1,27 @@
+{
+  "index_version": "v1",
+  "selection_mode": "named_ids",
+  "fixtures": [
+    {
+      "pair_id": "lv8_pair_01",
+      "file": "lv8_pair_01.json",
+      "part_a": "Lv8_11612_6db",
+      "part_b": "Lv8_07921_50db"
+    },
+    {
+      "pair_id": "lv8_pair_02",
+      "file": "lv8_pair_02.json",
+      "part_a": "Lv8_11612_6db",
+      "part_b": "Lv8_07920_50db"
+    },
+    {
+      "pair_id": "lv8_pair_03",
+      "file": "lv8_pair_03.json",
+      "part_a": "Lv8_07921_50db",
+      "part_b": "Lv8_07920_50db"
+    }
+  ],
+  "created_from": "ne2_input_lv8jav.json",
+  "geometry_level": "solver",
+  "hole_status": "hole_free_after_cavity_prepack_v2"
+}
