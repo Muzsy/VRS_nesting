@@ -89,10 +89,11 @@ acceptance_criteria:
   - "az index fájl tartalmazza mind a 3 fixture referenciát"
   - "extraction script szintaktikailag helyes Python"
   - "nincs production kód változás"
+  - "minden fixture part_a.points_mm és part_b.points_mm mezője nem üres, valódi LV8 geometriából származik"
 
 risk_notes:
   - "Ha a ne2_input_lv8jav.json nem tartalmazza a tervben megnevezett part ID-kat exact match alapján, válassz a legkomplexebb geometriájú párokat."
-  - "Ha a fixture üres geometriát tartalmaz, az explicit placeholder-nek kell lennie, nem silent fallback-nek."
+  - "Ha a fixture üres vagy nem tartalmaz valódi points_mm geometriát, a task FAIL státusszal zárul. Placeholder fixture tilos."
 
 dependencies_on_previous_tasks: []
 
