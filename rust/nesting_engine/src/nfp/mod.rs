@@ -10,6 +10,7 @@ pub mod cfr;
 pub mod concave;
 pub mod convex;
 pub mod ifp;
+pub mod reduced_convolution;
 
 use std::fmt::{Display, Formatter};
 
