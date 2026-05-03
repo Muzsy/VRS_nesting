@@ -240,6 +240,13 @@ pub fn run_sa_search_over_specs(
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
     let sa_start = Instant::now();
     let mut eval_count: u64 = 0;
+    eprintln!(
+        "[SEARCH DIAG] SA start parts={} time_limit={}s eval_budget={}s iters={}",
+        base_specs.len(),
+        config.time_limit_sec,
+        config.eval_budget_sec,
+        config.iters
+    );
     let profiling = matches!(
         std::env::var("NESTING_ENGINE_BLF_PROFILE"),
         Ok(v) if v == "1"
@@ -254,6 +261,12 @@ pub fn run_sa_search_over_specs(
         part_in_part_mode,
         compaction_mode,
         || { eval_count += 1; },
+    );
+
+    let sa_elapsed_ms = sa_start.elapsed().as_secs_f64() * 1000.0;
+    eprintln!(
+        "[SEARCH DIAG] SA done elapsed_ms={:.2}",
+        sa_elapsed_ms
     );
 
     if profiling {

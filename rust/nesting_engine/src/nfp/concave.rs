@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::Write as _;
+use std::time::Instant;
 
 use i_overlay::{
     core::{
@@ -221,6 +222,13 @@ pub fn compute_concave_nfp(
 }
 
 pub fn compute_concave_nfp_default(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError> {
+    eprintln!(
+        "[CONCAVE NFP DIAG] ENTRY a.outer={} a.holes={} b.outer={} b.holes={}",
+        a.outer.len(),
+        a.holes.len(),
+        b.outer.len(),
+        b.holes.len()
+    );
     compute_concave_nfp(a, b, ConcaveNfpOptions::default())
 }
 
@@ -263,16 +271,47 @@ fn compute_stable_concave_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64,
     if convex_parts_a.is_empty() || convex_parts_b.is_empty() {
         return Err(NfpError::DecompositionFailed);
     }
+    eprintln!(
+        "[CONCAVE NFP DIAG] decompose_done convex_a={} convex_b={} estimated_nfp_pairs={} a_pts={} b_pts={}",
+        convex_parts_a.len(),
+        convex_parts_b.len(),
+        convex_parts_a.len() * convex_parts_b.len(),
+        a.outer.len(),
+        b.outer.len()
+    );
 
     let mut partial_nfpc: Vec<Polygon64> = Vec::new();
     for part_a in &convex_parts_a {
         for part_b in &convex_parts_b {
+            eprintln!(
+                "[CONCAVE NFP DIAG] partial_nfp [{}/{}][{}/{}] part_a_pts={} part_b_pts={}",
+                part_a.outer.len(),
+                convex_parts_a.len(),
+                part_b.outer.len(),
+                convex_parts_b.len(),
+                part_a.outer.len(),
+                part_b.outer.len()
+            );
+            let nfp_start = Instant::now();
             let nfp = compute_convex_nfp(part_a, part_b)?;
+            eprintln!(
+                "[CONCAVE NFP DIAG] partial_nfp_done [{}/{}][{}/{}] result_pts={} elapsed_ms={:.2}",
+                part_a.outer.len(), convex_parts_a.len(),
+                part_b.outer.len(), convex_parts_b.len(),
+                nfp.outer.len(),
+                nfp_start.elapsed().as_secs_f64() * 1000.0
+            );
             partial_nfpc.push(nfp);
         }
     }
 
+    let union_start = Instant::now();
     let unioned = union_nfp_fragments(&partial_nfpc)?;
+    eprintln!(
+        "[CONCAVE NFP DIAG] union_done elapsed_ms={:.2} union_pts={}",
+        union_start.elapsed().as_secs_f64() * 1000.0,
+        unioned.outer.len()
+    );
     clean_polygon_boundary(&unioned)
 }
 

@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::time::Instant;
 
 use crate::feasibility::{
     aabb::aabb_from_polygon64,
@@ -219,7 +220,27 @@ pub fn nfp_place(
                     stats.nfp_cache_misses = stats.nfp_cache_misses.saturating_add(1);
                     stats.nfp_compute_calls = stats.nfp_compute_calls.saturating_add(1);
 
+                    eprintln!(
+                        "[NFP DIAG] compute_nfp_lib START placed_pts={} placed_convex={} placed_holes={} moving_pts={} moving_convex={} moving_holes={} rotation_deg={}",
+                        placed_normalized.outer.len(),
+                        is_convex(&placed_normalized.outer),
+                        placed_normalized.holes.len(),
+                        moving.outer.len(),
+                        is_convex(&moving.outer),
+                        moving.holes.len(),
+                        rotation_deg
+                    );
+                    let nfp_start = Instant::now();
                     let computed = compute_nfp_lib(&placed_normalized, &moving);
+                    eprintln!(
+                        "[NFP DIAG] compute_nfp_lib END elapsed_ms={:.2} result={}",
+                        nfp_start.elapsed().as_secs_f64() * 1000.0,
+                        if computed.is_some() {
+                            format!("Some({}pts)", computed.as_ref().map(|p| p.outer.len()).unwrap_or(0))
+                        } else {
+                            "None".to_string()
+                        }
+                    );
                     match computed {
                         Some(poly_rel) => {
                             cache.insert(key, poly_rel.clone());
@@ -250,6 +271,13 @@ pub fn nfp_place(
 
                 stats.cfr_calls = stats.cfr_calls.saturating_add(1);
                 let mut cfr_stats = CfrStatsV1::default();
+                eprintln!(
+                    "[CFR DIAG] START nfp_polys={} ifp_pts={} rotation_deg={}",
+                    nfp_polys.len(),
+                    ifp.polygon.outer.len(),
+                    rotation_deg
+                );
+                let cfr_start = Instant::now();
                 let cfr_components: Vec<Polygon64> = compute_cfr_with_stats(
                     &ifp.polygon,
                     &nfp_polys,
@@ -258,6 +286,13 @@ pub fn nfp_place(
                     .iter()
                     .map(from_lib_polygon)
                     .collect();
+                eprintln!(
+                    "[CFR DIAG] END elapsed_ms={:.2} components={} union_calls={} diff_calls={}",
+                    cfr_start.elapsed().as_secs_f64() * 1000.0,
+                    cfr_components.len(),
+                    cfr_stats.cfr_union_calls,
+                    cfr_stats.cfr_diff_calls
+                );
                 stats.cfr_union_calls = stats
                     .cfr_union_calls
                     .saturating_add(cfr_stats.cfr_union_calls);

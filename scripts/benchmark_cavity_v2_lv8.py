@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cavity v2 LV8 benchmark runner."""
+"""Cavity v2 LV8 benchmark runner (prepack + validator + solver)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import shutil
 import sys
 import time
 from typing import Any
@@ -16,8 +17,18 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from vrs_nesting.config.nesting_quality_profiles import build_nesting_engine_cli_args_for_quality_profile
+from vrs_nesting.runner.nesting_engine_runner import NestingEngineRunnerError, run_nesting_engine
 from worker.cavity_prepack import build_cavity_prepacked_engine_input_v2, validate_prepack_solver_input_hole_free
 from worker.cavity_validation import ValidationIssue, validate_cavity_plan_v2
+
+
+def _safe_int(raw: Any, default: int = 0) -> int:
+    try:
+        if isinstance(raw, bool):
+            return default
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def _count_top_level_holes(engine_input: dict[str, Any]) -> int:
@@ -55,7 +66,7 @@ def _count_tree_depth_metrics(placement_trees: dict[str, Any]) -> tuple[int, int
             internal_count += 1
         if depth >= 2:
             nested_count += 1
-        children = node.get("children", [])
+        children = node.get("children")
         if not isinstance(children, list):
             return
         for child in children:
@@ -64,21 +75,12 @@ def _count_tree_depth_metrics(placement_trees: dict[str, Any]) -> tuple[int, int
     for root in placement_trees.values():
         if not isinstance(root, dict):
             continue
-        children = root.get("children", [])
+        children = root.get("children")
         if not isinstance(children, list):
             continue
         for child in children:
             walk(child, 1)
-    return (int(internal_count), int(nested_count))
-
-
-def _safe_int(raw: Any, default: int = 0) -> int:
-    try:
-        if isinstance(raw, bool):
-            return default
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
+    return int(internal_count), int(nested_count)
 
 
 def _synthesize_snapshot_row_from_engine_input(base_engine_input: dict[str, Any]) -> dict[str, Any]:
@@ -113,20 +115,14 @@ def _synthesize_snapshot_row_from_engine_input(base_engine_input: dict[str, Any]
 
 def _extract_fixture_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     snapshot_row_raw = payload.get("snapshot_row")
-    if isinstance(snapshot_row_raw, dict):
-        snapshot_row = snapshot_row_raw
-    else:
-        snapshot_row = payload
+    snapshot_row = snapshot_row_raw if isinstance(snapshot_row_raw, dict) else payload
 
     base_engine_input_raw = payload.get("base_engine_input")
     if isinstance(base_engine_input_raw, dict):
         base_engine_input = base_engine_input_raw
     else:
         engine_input_raw = payload.get("engine_input")
-        if isinstance(engine_input_raw, dict):
-            base_engine_input = engine_input_raw
-        else:
-            base_engine_input = payload
+        base_engine_input = engine_input_raw if isinstance(engine_input_raw, dict) else payload
 
     if "parts_manifest_jsonb" not in snapshot_row or not isinstance(snapshot_row.get("parts_manifest_jsonb"), list):
         snapshot_row = _synthesize_snapshot_row_from_engine_input(base_engine_input)
@@ -139,9 +135,7 @@ def _build_virtual_solver_placements(cavity_plan: dict[str, Any]) -> list[dict[s
     virtual_parts = cavity_plan.get("virtual_parts", {})
     if not isinstance(virtual_parts, dict):
         return out
-    for idx, (virtual_part_id, virtual_part_item) in enumerate(sorted(virtual_parts.items(), key=lambda kv: str(kv[0]))):
-        if not isinstance(virtual_part_item, dict):
-            continue
+    for idx, virtual_part_id in enumerate(sorted(virtual_parts.keys(), key=lambda v: str(v))):
         out.append(
             {
                 "part_id": str(virtual_part_id),
@@ -158,19 +152,20 @@ def _build_virtual_solver_placements(cavity_plan: dict[str, Any]) -> list[dict[s
 def _choose_auto_fixture() -> Path | None:
     candidates: list[Path] = []
     for pattern in (
+        "tests/fixtures/nesting_engine/*lv8*.json",
+        "tests/fixtures/nesting_engine/*LV8*.json",
+        "tests/**/*lv8*.json",
+        "tests/**/*LV8*.json",
         "tmp/*lv8*.json",
         "tmp/*LV8*.json",
         "poc/**/*lv8*.json",
         "poc/**/*LV8*.json",
-        "tests/**/*lv8*.json",
-        "tests/**/*LV8*.json",
     ):
         candidates.extend(REPO_ROOT.glob(pattern))
 
     for path in sorted(candidates):
-        if not path.is_file():
-            continue
-        return path
+        if path.is_file():
+            return path
     return None
 
 
@@ -236,10 +231,26 @@ def _build_synthetic_fixture_payload() -> dict[str, Any]:
     }
 
 
-def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, Any], Path]:
+def _resolve_local_nesting_engine_bin() -> str | None:
+    from_path = shutil.which("nesting_engine")
+    if from_path:
+        return from_path
+    candidate = REPO_ROOT / "rust" / "nesting_engine" / "target" / "release" / "nesting_engine"
+    if candidate.is_file():
+        return str(candidate)
+    return None
+
+
+def run_benchmark(*, fixture_path: Path, output_dir: Path, solver_time_limit_cap: int) -> tuple[dict[str, Any], Path]:
     payload = json.loads(fixture_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError(f"fixture payload must be dict: {fixture_path}")
+
+    output_dir_abs = (REPO_ROOT / output_dir).resolve()
+    allowed_root = (REPO_ROOT / "tmp/benchmark_results").resolve()
+    if not str(output_dir_abs).startswith(str(allowed_root)):
+        raise RuntimeError("output_dir must stay under tmp/benchmark_results")
+    output_dir_abs.mkdir(parents=True, exist_ok=True)
 
     snapshot_row, base_engine_input = _extract_fixture_payload(payload)
     if not isinstance(base_engine_input, dict):
@@ -253,7 +264,6 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, An
         enabled=True,
     )
     prepack_elapsed_sec = round(time.perf_counter() - t0, 6)
-
     holes_after = _count_top_level_holes(prepacked_input)
 
     guard_passed = True
@@ -265,13 +275,11 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, An
         guard_error = str(exc)
 
     diagnostics = cavity_plan.get("diagnostics", [])
-    if not isinstance(diagnostics, list):
-        diagnostics = []
+    diagnostics = diagnostics if isinstance(diagnostics, list) else []
     diagnostics_by_code = _count_diagnostics_by_code(diagnostics)
 
     quantity_delta = cavity_plan.get("quantity_delta", {})
-    if not isinstance(quantity_delta, dict):
-        quantity_delta = {}
+    quantity_delta = quantity_delta if isinstance(quantity_delta, dict) else {}
     quantity_mismatch_from_delta = 0
     for delta in quantity_delta.values():
         if not isinstance(delta, dict):
@@ -284,8 +292,7 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, An
 
     virtual_solver_placements = _build_virtual_solver_placements(cavity_plan)
     base_parts = base_engine_input.get("parts", [])
-    if not isinstance(base_parts, list):
-        base_parts = []
+    base_parts = base_parts if isinstance(base_parts, list) else []
     validation_issues: list[ValidationIssue] = validate_cavity_plan_v2(
         cavity_plan=cavity_plan,
         part_records=base_parts,
@@ -293,34 +300,104 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, An
         strict=False,
     )
     validation_issues_json = [
-        {
-            "code": issue.code,
-            "message": issue.message,
-            "context": issue.context,
-        }
+        {"code": issue.code, "message": issue.message, "context": issue.context}
         for issue in validation_issues
     ]
-
     overlap_count = sum(1 for issue in validation_issues if issue.code == "CAVITY_CHILD_CHILD_OVERLAP")
     bounds_violation_count = sum(1 for issue in validation_issues if issue.code == "CAVITY_CHILD_OUTSIDE_PARENT_CAVITY")
     quantity_mismatch_from_validator = sum(1 for issue in validation_issues if issue.code == "CAVITY_QUANTITY_MISMATCH")
     quantity_mismatch_count = max(int(quantity_mismatch_from_delta), int(quantity_mismatch_from_validator))
 
+    summary = cavity_plan.get("summary", {})
+    summary = summary if isinstance(summary, dict) else {}
+    placement_trees = cavity_plan.get("placement_trees", {})
+    placement_trees = placement_trees if isinstance(placement_trees, dict) else {}
+    internal_placement_count, nested_internal_placement_count = _count_tree_depth_metrics(placement_trees)
+    virtual_parts = cavity_plan.get("virtual_parts", {})
+    virtual_parts = virtual_parts if isinstance(virtual_parts, dict) else {}
+
     cli_args = build_nesting_engine_cli_args_for_quality_profile("quality_cavity_prepack")
     cli_arg_str = " ".join(str(item) for item in cli_args)
     nfp_fallback_occurred = "--placer blf" in cli_arg_str
 
-    summary = cavity_plan.get("summary", {})
-    if not isinstance(summary, dict):
-        summary = {}
-    placement_trees = cavity_plan.get("placement_trees", {})
-    if not isinstance(placement_trees, dict):
-        placement_trees = {}
-    internal_placement_count, nested_internal_placement_count = _count_tree_depth_metrics(placement_trees)
+    solver_input_path = output_dir_abs / "prepacked_solver_input.json"
+    solver_input_path.write_text(json.dumps(prepacked_input, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    seed = _safe_int(prepacked_input.get("seed"), 0)
+    requested_time_limit_sec = max(1, _safe_int(prepacked_input.get("time_limit_sec"), 60))
+    time_limit_sec = min(requested_time_limit_sec, max(1, int(solver_time_limit_cap)))
 
-    virtual_parts = cavity_plan.get("virtual_parts", {})
-    if not isinstance(virtual_parts, dict):
-        virtual_parts = {}
+    solver_primary_run_ok = False
+    solver_primary_error: str | None = None
+    solver_fallback_used = False
+    solver_fallback_run_ok = False
+    solver_fallback_error: str | None = None
+    timeout_occurred = False
+    solver_run_dir: str | None = None
+    solver_elapsed_sec: float | None = None
+    placed_count: int | None = None
+    unplaced_count: int | None = None
+    utilization_ratio: float | None = None
+    effective_solver_cli_args: list[str] | None = None
+
+    def _execute_solver(cli_args_to_use: list[str], limit_sec: int) -> tuple[str, float, int | None, int | None, float | None]:
+        t_solver = time.perf_counter()
+        run_dir, _meta = run_nesting_engine(
+            str(solver_input_path),
+            seed=seed,
+            time_limit_sec=limit_sec,
+            run_root=str(output_dir_abs / "solver_runs"),
+            nesting_engine_bin=_resolve_local_nesting_engine_bin(),
+            nesting_engine_cli_args=cli_args_to_use,
+        )
+        elapsed = round(time.perf_counter() - t_solver, 6)
+        output_payload = json.loads((run_dir / "nesting_output.json").read_text(encoding="utf-8"))
+        pc: int | None = None
+        uc: int | None = None
+        ur: float | None = None
+        if isinstance(output_payload, dict):
+            placements = output_payload.get("placements")
+            unplaced = output_payload.get("unplaced")
+            if isinstance(placements, list):
+                pc = len(placements)
+            if isinstance(unplaced, list):
+                uc = len(unplaced)
+            objective = output_payload.get("objective")
+            if isinstance(objective, dict):
+                util_pct = objective.get("utilization_pct")
+                if isinstance(util_pct, (int, float)):
+                    ur = round(float(util_pct) / 100.0, 6)
+        return str(run_dir), elapsed, pc, uc, ur
+
+    try:
+        solver_run_dir, solver_elapsed_sec, placed_count, unplaced_count, utilization_ratio = _execute_solver(cli_args, time_limit_sec)
+        solver_primary_run_ok = True
+        effective_solver_cli_args = list(cli_args)
+    except NestingEngineRunnerError as exc:
+        solver_primary_error = str(exc)
+    except Exception as exc:  # noqa: BLE001
+        solver_primary_error = str(exc)
+
+    if not solver_primary_run_ok:
+        solver_fallback_used = True
+        fallback_cli_args = ["--placer", "blf", "--search", "none", "--part-in-part", "off", "--compaction", "off"]
+        fallback_limit_sec = min(time_limit_sec, 30)
+        try:
+            solver_run_dir, solver_elapsed_sec, placed_count, unplaced_count, utilization_ratio = _execute_solver(
+                fallback_cli_args,
+                fallback_limit_sec,
+            )
+            solver_fallback_run_ok = True
+            effective_solver_cli_args = fallback_cli_args
+        except NestingEngineRunnerError as exc:
+            solver_fallback_error = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            solver_fallback_error = str(exc)
+
+    solver_run_ok = solver_primary_run_ok or solver_fallback_run_ok
+    solver_error = solver_primary_error if not solver_primary_run_ok else None
+    if solver_primary_error or solver_fallback_error:
+        err_text = " | ".join(item for item in (solver_primary_error, solver_fallback_error) if item)
+        timeout_occurred = "timed out" in err_text.lower()
 
     minimum_failures: list[str] = []
     if holes_after != 0:
@@ -329,6 +406,8 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, An
         minimum_failures.append(f"quantity_mismatch_count={quantity_mismatch_count} (expected 0)")
     if not guard_passed:
         minimum_failures.append("guard_passed=False (expected True)")
+    if not solver_primary_run_ok:
+        minimum_failures.append("quality_profile_solver_run_ok=False (expected True)")
 
     result: dict[str, Any] = {
         "benchmark": "cavity_v2_t10_lv8",
@@ -356,18 +435,27 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path) -> tuple[dict[str, An
         ),
         "nested_internal_placement_count": int(nested_internal_placement_count),
         "diagnostics_by_code": diagnostics_by_code,
-        "timeout_occurred": False,
-        "placed_count": None,
-        "unplaced_count": None,
-        "utilization_ratio": None,
+        "timeout_occurred": timeout_occurred,
+        "solver_run_ok": solver_run_ok,
+        "solver_primary_run_ok": solver_primary_run_ok,
+        "solver_primary_error": solver_primary_error,
+        "solver_fallback_used": solver_fallback_used,
+        "solver_fallback_run_ok": solver_fallback_run_ok,
+        "solver_fallback_error": solver_fallback_error,
+        "solver_error": solver_error,
+        "solver_effective_cli_args": effective_solver_cli_args,
+        "solver_time_limit_cap_sec": int(max(1, solver_time_limit_cap)),
+        "solver_time_limit_requested_sec": int(requested_time_limit_sec if 'requested_time_limit_sec' in locals() else 0),
+        "solver_time_limit_effective_sec": int(time_limit_sec if 'time_limit_sec' in locals() else 0),
+        "solver_run_dir": solver_run_dir,
+        "solver_elapsed_sec": solver_elapsed_sec,
+        "placed_count": placed_count,
+        "unplaced_count": unplaced_count,
+        "utilization_ratio": utilization_ratio,
         "minimum_criteria_passed": len(minimum_failures) == 0,
         "minimum_criteria_failures": minimum_failures,
     }
 
-    output_dir_abs = (REPO_ROOT / output_dir).resolve()
-    if not str(output_dir_abs).startswith(str((REPO_ROOT / "tmp/benchmark_results").resolve())):
-        raise RuntimeError("output_dir must stay under tmp/benchmark_results")
-    output_dir_abs.mkdir(parents=True, exist_ok=True)
     out_name = f"cavity_v2_lv8_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
     out_path = output_dir_abs / out_name
     out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -383,6 +471,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("tmp/benchmark_results"),
         help="Output directory for JSON benchmark artifact (must stay under tmp/benchmark_results)",
     )
+    parser.add_argument(
+        "--solver-time-limit-cap",
+        type=int,
+        default=90,
+        help="Hard upper cap (seconds) for solver runtime during benchmark.",
+    )
     return parser.parse_args()
 
 
@@ -396,20 +490,18 @@ def main() -> int:
         output_dir_abs = (REPO_ROOT / args.output_dir).resolve()
         output_dir_abs.mkdir(parents=True, exist_ok=True)
         synthetic_fixture_path = output_dir_abs / "synthetic_cavity_v2_fixture.json"
-        synthetic_fixture_path.write_text(
-            json.dumps(synthetic_payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        synthetic_fixture_path.write_text(json.dumps(synthetic_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         fixture_path = synthetic_fixture_path
-        print(
-            f"WARNING: No fixture found. Using synthetic fallback fixture: {fixture_path}",
-            file=sys.stderr,
-        )
+        print(f"WARNING: No fixture found. Using synthetic fallback fixture: {fixture_path}", file=sys.stderr)
     if not fixture_path.is_file():
         print(f"ERROR: Fixture not found: {fixture_path}", file=sys.stderr)
         return 1
 
-    result, out_path = run_benchmark(fixture_path=fixture_path, output_dir=args.output_dir)
+    result, out_path = run_benchmark(
+        fixture_path=fixture_path,
+        output_dir=args.output_dir,
+        solver_time_limit_cap=max(1, int(args.solver_time_limit_cap)),
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print(f"\nSaved benchmark artifact: {out_path}")
 
