@@ -3,7 +3,9 @@ use crate::geometry::{
     types::{signed_area2_i128, Point64, Polygon64},
 };
 
-use super::{boundary_clean::ring_has_self_intersection, nfp_validation::polygon_validation_report};
+use super::{
+    boundary_clean::ring_has_self_intersection, nfp_validation::polygon_validation_report,
+};
 
 #[derive(Debug, Clone)]
 pub struct CleanupOptions {
@@ -57,7 +59,8 @@ pub fn run_minkowski_cleanup(raw_nfp: &Polygon64, options: &CleanupOptions) -> C
     poly = poly_after_null;
 
     // 3) micro_edge_removal
-    let (poly_after_micro, micro_removed) = remove_micro_edges_polygon(&poly, options.min_edge_length_units);
+    let (poly_after_micro, micro_removed) =
+        remove_micro_edges_polygon(&poly, options.min_edge_length_units);
     poly = poly_after_micro;
 
     // 4) loop_classification (orientation normalization + coarse self-intersection telemetry)
@@ -74,7 +77,9 @@ pub fn run_minkowski_cleanup(raw_nfp: &Polygon64, options: &CleanupOptions) -> C
         Ok(res) => res.polygon,
         Err(err) => {
             return fail(
-                CleanupError::InvalidAfterCleanup(format!("orientation normalization failed: {err:?}")),
+                CleanupError::InvalidAfterCleanup(format!(
+                    "orientation normalization failed: {err:?}"
+                )),
                 0,
                 null_removed,
                 micro_removed,
@@ -120,24 +125,26 @@ pub fn run_minkowski_cleanup(raw_nfp: &Polygon64, options: &CleanupOptions) -> C
     poly = poly_after_internal;
 
     // 7) collinear_merge
-    let (poly_after_merge, collinear_merged) = match merge_collinear_vertices(&poly, options.collinear_angle_deg_threshold) {
-        Ok(res) => (res.polygon, res.collinear_merged),
-        Err(err) => {
-            return fail(
-                CleanupError::InvalidAfterCleanup(format!("collinear merge failed: {err:?}")),
-                zero_removed_holes,
-                null_removed + internal_removed,
-                micro_removed,
-                0,
-                0,
-                self_intersections_detected,
-            )
-        }
-    };
+    let (poly_after_merge, collinear_merged) =
+        match merge_collinear_vertices(&poly, options.collinear_angle_deg_threshold) {
+            Ok(res) => (res.polygon, res.collinear_merged),
+            Err(err) => {
+                return fail(
+                    CleanupError::InvalidAfterCleanup(format!("collinear merge failed: {err:?}")),
+                    zero_removed_holes,
+                    null_removed + internal_removed,
+                    micro_removed,
+                    0,
+                    0,
+                    self_intersections_detected,
+                )
+            }
+        };
     poly = poly_after_merge;
 
     // 8) sliver_detection
-    let (poly_after_sliver, slivers_detected) = detect_and_remove_sliver_holes(&poly, options.sliver_aspect_ratio_threshold);
+    let (poly_after_sliver, slivers_detected) =
+        detect_and_remove_sliver_holes(&poly, options.sliver_aspect_ratio_threshold);
     poly = poly_after_sliver;
 
     // 9) polygon_validity_check
@@ -338,7 +345,11 @@ fn filter_micro_edges(ring: &[Point64], min_edge_len: i64, removed: &mut usize) 
         out.push(curr);
     }
 
-    if out.len() < 3 { ring.to_vec() } else { out }
+    if out.len() < 3 {
+        ring.to_vec()
+    } else {
+        out
+    }
 }
 
 fn is_sliver(ring: &[Point64], threshold: f64) -> bool {
@@ -387,7 +398,10 @@ mod tests {
         let out = run_minkowski_cleanup(&poly, &CleanupOptions::default());
         assert!(!out.is_valid);
         assert!(out.polygon.is_none());
-        assert!(matches!(out.error, Some(CleanupError::InvalidAfterCleanup(_))));
+        assert!(matches!(
+            out.error,
+            Some(CleanupError::InvalidAfterCleanup(_))
+        ));
     }
 
     #[test]

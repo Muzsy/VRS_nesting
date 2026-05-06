@@ -40,11 +40,7 @@ fn canonicalize_ring(points: &[Point64]) -> Vec<Point64> {
         ring.reverse();
     }
 
-    if let Some((start_idx, _)) = ring
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, p)| (p.x, p.y))
-    {
+    if let Some((start_idx, _)) = ring.iter().enumerate().min_by_key(|(_, p)| (p.x, p.y)) {
         ring.rotate_left(start_idx);
     }
 

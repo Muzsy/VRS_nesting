@@ -1,25 +1,21 @@
 use serde::Serialize;
 use std::time::Instant;
 
-use crate::feasibility::{
-    aabb::aabb_from_polygon64,
-    can_place, PlacedPart,
-    narrow::PlacedIndex,
-};
+use crate::feasibility::{aabb::aabb_from_polygon64, can_place, narrow::PlacedIndex, PlacedPart};
 use crate::geometry::{
     scale::i64_to_mm,
     trig_lut::{normalize_deg, round_div_i128, COS_Q, SIN_Q, TRIG_SCALE_I128},
     types::{is_convex, Point64, Polygon64},
 };
 use crate::multi_bin::greedy::{PartOrderPolicy, StopPolicy};
+use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPolygon64};
 use nesting_engine::nfp::{
-    cache::{NfpCache, NfpCacheKey, shape_id},
-    cfr::{CfrStatsV1, compute_cfr_with_stats},
+    cache::{shape_id, NfpCache, NfpCacheKey},
+    cfr::{compute_cfr_with_stats, CfrStatsV1},
     concave::compute_concave_nfp_default,
     convex::compute_convex_nfp,
-    ifp::{IfpRect, compute_ifp_rect},
+    ifp::{compute_ifp_rect, IfpRect},
 };
-use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPolygon64};
 
 use super::blf::InflatedPartSpec;
 use super::PlacementResult;
@@ -96,10 +92,10 @@ impl Default for NfpPlacerStatsV1 {
 impl NfpPlacerStatsV1 {
     pub fn merge_from(&mut self, other: &Self) {
         self.nfp_cache_hits = self.nfp_cache_hits.saturating_add(other.nfp_cache_hits);
-        self.nfp_cache_misses = self
-            .nfp_cache_misses
-            .saturating_add(other.nfp_cache_misses);
-        self.nfp_compute_calls = self.nfp_compute_calls.saturating_add(other.nfp_compute_calls);
+        self.nfp_cache_misses = self.nfp_cache_misses.saturating_add(other.nfp_cache_misses);
+        self.nfp_compute_calls = self
+            .nfp_compute_calls
+            .saturating_add(other.nfp_compute_calls);
         self.cfr_calls = self.cfr_calls.saturating_add(other.cfr_calls);
         self.cfr_union_calls = self.cfr_union_calls.saturating_add(other.cfr_union_calls);
         self.cfr_diff_calls = self.cfr_diff_calls.saturating_add(other.cfr_diff_calls);
@@ -112,7 +108,9 @@ impl NfpPlacerStatsV1 {
         self.candidates_after_cap_total = self
             .candidates_after_cap_total
             .saturating_add(other.candidates_after_cap_total);
-        self.cap_applied_count = self.cap_applied_count.saturating_add(other.cap_applied_count);
+        self.cap_applied_count = self
+            .cap_applied_count
+            .saturating_add(other.cap_applied_count);
 
         if other.nfp_cache_entries_end > 0 {
             self.nfp_cache_entries_end = other.nfp_cache_entries_end;
@@ -236,7 +234,10 @@ pub fn nfp_place(
                         "[NFP DIAG] compute_nfp_lib END elapsed_ms={:.2} result={}",
                         nfp_start.elapsed().as_secs_f64() * 1000.0,
                         if computed.is_some() {
-                            format!("Some({}pts)", computed.as_ref().map(|p| p.outer.len()).unwrap_or(0))
+                            format!(
+                                "Some({}pts)",
+                                computed.as_ref().map(|p| p.outer.len()).unwrap_or(0)
+                            )
                         } else {
                             "None".to_string()
                         }
@@ -265,7 +266,12 @@ pub fn nfp_place(
                     if !stop.is_timed_out() {
                         stop.mark_timed_out();
                     }
-                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    append_timeout_unplaced_for_remaining(
+                        &ordered,
+                        part_idx,
+                        instance,
+                        &mut unplaced,
+                    );
                     return PlacementResult { placed, unplaced };
                 }
 
@@ -278,14 +284,11 @@ pub fn nfp_place(
                     rotation_deg
                 );
                 let cfr_start = Instant::now();
-                let cfr_components: Vec<Polygon64> = compute_cfr_with_stats(
-                    &ifp.polygon,
-                    &nfp_polys,
-                    &mut cfr_stats,
-                )
-                    .iter()
-                    .map(from_lib_polygon)
-                    .collect();
+                let cfr_components: Vec<Polygon64> =
+                    compute_cfr_with_stats(&ifp.polygon, &nfp_polys, &mut cfr_stats)
+                        .iter()
+                        .map(from_lib_polygon)
+                        .collect();
                 eprintln!(
                     "[CFR DIAG] END elapsed_ms={:.2} components={} union_calls={} diff_calls={}",
                     cfr_start.elapsed().as_secs_f64() * 1000.0,
@@ -296,7 +299,9 @@ pub fn nfp_place(
                 stats.cfr_union_calls = stats
                     .cfr_union_calls
                     .saturating_add(cfr_stats.cfr_union_calls);
-                stats.cfr_diff_calls = stats.cfr_diff_calls.saturating_add(cfr_stats.cfr_diff_calls);
+                stats.cfr_diff_calls = stats
+                    .cfr_diff_calls
+                    .saturating_add(cfr_stats.cfr_diff_calls);
                 if cfr_components.is_empty() {
                     continue;
                 }
@@ -309,12 +314,7 @@ pub fn nfp_place(
                     ifp,
                 });
                 let ctx = &rotation_contexts[rotation_idx];
-                append_candidates(
-                    &mut all_candidates,
-                    rotation_idx,
-                    &cfr_components,
-                    ctx,
-                );
+                append_candidates(&mut all_candidates, rotation_idx, &cfr_components, ctx);
             }
 
             if all_candidates.is_empty() {
@@ -322,7 +322,12 @@ pub fn nfp_place(
                     if !stop.is_timed_out() {
                         stop.mark_timed_out();
                     }
-                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    append_timeout_unplaced_for_remaining(
+                        &ordered,
+                        part_idx,
+                        instance,
+                        &mut unplaced,
+                    );
                     return PlacementResult { placed, unplaced };
                 }
                 unplaced.push(super::blf::UnplacedItem {
@@ -353,11 +358,17 @@ pub fn nfp_place(
                     if !stop.is_timed_out() {
                         stop.mark_timed_out();
                     }
-                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    append_timeout_unplaced_for_remaining(
+                        &ordered,
+                        part_idx,
+                        instance,
+                        &mut unplaced,
+                    );
                     return PlacementResult { placed, unplaced };
                 }
                 let ctx = &rotation_contexts[candidate.rotation_idx];
-                let candidate_poly = translate_polygon(&ctx.moving_polygon, candidate.tx, candidate.ty);
+                let candidate_poly =
+                    translate_polygon(&ctx.moving_polygon, candidate.tx, candidate.ty);
                 if can_place(&candidate_poly, bin_polygon, &placed_state) {
                     let candidate_aabb = aabb_from_polygon64(&candidate_poly);
                     placed_state.insert(PlacedPart {
@@ -386,7 +397,12 @@ pub fn nfp_place(
                     if !stop.is_timed_out() {
                         stop.mark_timed_out();
                     }
-                    append_timeout_unplaced_for_remaining(&ordered, part_idx, instance, &mut unplaced);
+                    append_timeout_unplaced_for_remaining(
+                        &ordered,
+                        part_idx,
+                        instance,
+                        &mut unplaced,
+                    );
                     return PlacementResult { placed, unplaced };
                 }
                 unplaced.push(super::blf::UnplacedItem {
@@ -441,8 +457,7 @@ fn sort_and_dedupe_candidates(
     all_candidates.sort_by(|a, b| {
         let ra = rotation_contexts[a.rotation_idx].rotation_rank;
         let rb = rotation_contexts[b.rotation_idx].rotation_rank;
-        a.ty
-            .cmp(&b.ty)
+        a.ty.cmp(&b.ty)
             .then(a.tx.cmp(&b.tx))
             .then(ra.cmp(&rb))
             .then(a.cfr_component_rank.cmp(&b.cfr_component_rank))
@@ -561,7 +576,11 @@ fn rotate_polygon(poly: &Polygon64, rotation_deg: i32) -> Polygon64 {
         holes: poly
             .holes
             .iter()
-            .map(|hole| hole.iter().map(|p| rotate_point(*p, rotation_deg)).collect())
+            .map(|hole| {
+                hole.iter()
+                    .map(|p| rotate_point(*p, rotation_deg))
+                    .collect()
+            })
             .collect(),
     }
 }
@@ -647,14 +666,13 @@ mod tests {
 
     use crate::multi_bin::greedy::{PartOrderPolicy, StopPolicy};
     use crate::placement::blf::bbox_area;
+    use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPolygon64};
     use nesting_engine::nfp::cache::NfpCache;
     use nesting_engine::nfp::ifp::{IfpRect, TranslationRange};
-    use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPolygon64};
 
     use super::{
-        Candidate, InflatedPartSpec, NfpPlacerStatsV1, RotationContext, nfp_place,
-        order_parts_for_policy,
-        sort_and_dedupe_candidates,
+        nfp_place, order_parts_for_policy, sort_and_dedupe_candidates, Candidate, InflatedPartSpec,
+        NfpPlacerStatsV1, RotationContext,
     };
     use crate::geometry::{
         scale::mm_to_i64,
@@ -734,7 +752,10 @@ mod tests {
     #[test]
     fn wrapper_contract_case_keeps_going_after_unplaceable_first() {
         let bin = rect(60.0, 40.0);
-        let parts = vec![part("big", 1, 120.0, 80.0, &[0]), part("small", 1, 20.0, 20.0, &[0])];
+        let parts = vec![
+            part("big", 1, 120.0, 80.0, &[0]),
+            part("small", 1, 20.0, 20.0, &[0]),
+        ];
         let mut cache = NfpCache::new();
         let mut stats = NfpPlacerStatsV1::default();
         let mut stop = StopPolicy::wall_clock_for_test(30, Instant::now());

@@ -105,7 +105,10 @@ mod tests {
                 Point64 { x: 10, y: 80 },
             ]
         );
-        assert!(signed_area2_i128(&ifp.polygon.outer) > 0, "IFP outer must be CCW");
+        assert!(
+            signed_area2_i128(&ifp.polygon.outer) > 0,
+            "IFP outer must be CCW"
+        );
     }
 
     #[test]

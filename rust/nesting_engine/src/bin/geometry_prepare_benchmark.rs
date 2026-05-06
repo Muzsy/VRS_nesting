@@ -264,10 +264,16 @@ fn run(args: CliArgs) -> Result<(), String> {
     let fixture: PairFixture = serde_json::from_str(&raw)
         .map_err(|err| format!("invalid fixture JSON '{}': {err}", args.fixture.display()))?;
 
-    let (part_a, a_before, a_after_cleanup, a_after_simplify) =
-        process_part(&fixture.part_a, args.collinear_threshold_deg, args.rdp_epsilon_mm)?;
-    let (part_b, b_before, b_after_cleanup, b_after_simplify) =
-        process_part(&fixture.part_b, args.collinear_threshold_deg, args.rdp_epsilon_mm)?;
+    let (part_a, a_before, a_after_cleanup, a_after_simplify) = process_part(
+        &fixture.part_a,
+        args.collinear_threshold_deg,
+        args.rdp_epsilon_mm,
+    )?;
+    let (part_b, b_before, b_after_cleanup, b_after_simplify) = process_part(
+        &fixture.part_b,
+        args.collinear_threshold_deg,
+        args.rdp_epsilon_mm,
+    )?;
 
     let before_cleanup = a_before.saturating_mul(b_before);
     let after_cleanup = a_after_cleanup.saturating_mul(b_after_cleanup);

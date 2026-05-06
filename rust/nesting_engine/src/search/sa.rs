@@ -260,14 +260,13 @@ pub fn run_sa_search_over_specs(
         config,
         part_in_part_mode,
         compaction_mode,
-        || { eval_count += 1; },
+        || {
+            eval_count += 1;
+        },
     );
 
     let sa_elapsed_ms = sa_start.elapsed().as_secs_f64() * 1000.0;
-    eprintln!(
-        "[SEARCH DIAG] SA done elapsed_ms={:.2}",
-        sa_elapsed_ms
-    );
+    eprintln!("[SEARCH DIAG] SA done elapsed_ms={:.2}", sa_elapsed_ms);
 
     if profiling {
         let sa_wall_ms = sa_start.elapsed().as_secs_f64() * 1000.0;
@@ -418,7 +417,12 @@ impl CostEncoding {
         })
     }
 
-    fn encode(self, unplaced_count: u64, sheets_used: u64, remnant_value_ppm: u64) -> Result<i64, String> {
+    fn encode(
+        self,
+        unplaced_count: u64,
+        sheets_used: u64,
+        remnant_value_ppm: u64,
+    ) -> Result<i64, String> {
         let remnant_cap = self.remnant_axis.saturating_sub(1);
         let remnant_value = u128::from(remnant_value_ppm).min(remnant_cap);
         let remnant_penalty = remnant_cap.saturating_sub(remnant_value);
@@ -690,15 +694,15 @@ mod tests {
     use std::cell::Cell;
 
     use super::{
-        CostEncoding, apply_move, clamp_sa_iters_by_time_limit_and_eval_budget, run_sa_core,
+        apply_move, clamp_sa_iters_by_time_limit_and_eval_budget, run_sa_core,
         run_sa_core_with_stop_hook, run_sa_search_over_specs,
-        run_sa_search_over_specs_with_eval_hook, SaConfig, SaSearchConfig, SaState, SplitMix64,
+        run_sa_search_over_specs_with_eval_hook, CostEncoding, SaConfig, SaSearchConfig, SaState,
+        SplitMix64,
     };
     use crate::{
         multi_bin::{
             greedy::CompactionMode, greedy::PartInPartMode, greedy::PartOrderPolicy,
-            greedy::PlacerKind,
-            greedy_multi_sheet,
+            greedy::PlacerKind, greedy_multi_sheet,
         },
         placement::blf::{bbox_area, rect_poly, InflatedPartSpec},
     };
@@ -799,7 +803,7 @@ mod tests {
             PartInPartMode::Off,
             CompactionMode::Off,
         )
-            .expect("run_a must succeed");
+        .expect("run_a must succeed");
         let run_b = run_sa_search_over_specs(
             &specs,
             &bin,
@@ -809,7 +813,7 @@ mod tests {
             PartInPartMode::Off,
             CompactionMode::Off,
         )
-            .expect("run_b must succeed");
+        .expect("run_b must succeed");
 
         assert_eq!(run_a.0, run_b.0);
         assert_eq!(run_a.1, run_b.1);

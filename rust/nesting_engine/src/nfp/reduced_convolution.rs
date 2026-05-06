@@ -97,7 +97,12 @@ pub fn compute_rc_nfp(
     // This gives a bounded, non-panicking baseline for T05 experimentation.
     let reflected_b = reflect_polygon(&cleaned_b);
 
-    let mut summed_points = Vec::with_capacity(cleaned_a.outer.len().saturating_mul(reflected_b.outer.len()));
+    let mut summed_points = Vec::with_capacity(
+        cleaned_a
+            .outer
+            .len()
+            .saturating_mul(reflected_b.outer.len()),
+    );
     for a in &cleaned_a.outer {
         for b in &reflected_b.outer {
             summed_points.push(Point64 {
@@ -108,7 +113,10 @@ pub fn compute_rc_nfp(
     }
 
     if summed_points.len() < 3 {
-        return error_result(RcNfpError::NotImplemented, started.elapsed().as_millis() as u64);
+        return error_result(
+            RcNfpError::NotImplemented,
+            started.elapsed().as_millis() as u64,
+        );
     }
 
     let hull = convex_hull(&summed_points);
@@ -266,7 +274,11 @@ fn filter_short_edges(ring: &[Point64], min_edge_length_units: i64) -> Vec<Point
         out.push(curr);
     }
 
-    if out.len() < 3 { ring.to_vec() } else { out }
+    if out.len() < 3 {
+        ring.to_vec()
+    } else {
+        out
+    }
 }
 
 fn error_result(err: RcNfpError, time_ms: u64) -> RcNfpResult {

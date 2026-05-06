@@ -1,0 +1,36 @@
+{
+  "fixture_version": "nfp_pair_fixture_v1",
+  "pair_id": "lv8_pair_holes_smoke",
+  "description": "Synthetic smoke fixture for holes plumbing — square with square hole vs triangle",
+  "fixture_source": "synthetic_holes_smoke",
+  "part_a": {
+    "part_id": "smoke_square_with_hole",
+    "geometry_level": "synthetic",
+    "outer_ring_vertex_count": 4,
+    "points_mm": [
+      [0.0, 0.0],
+      [100.0, 0.0],
+      [100.0, 100.0],
+      [0.0, 100.0]
+    ],
+    "holes_mm": [
+      [
+        [30.0, 30.0],
+        [70.0, 30.0],
+        [70.0, 70.0],
+        [30.0, 70.0]
+      ]
+    ]
+  },
+  "part_b": {
+    "part_id": "smoke_triangle",
+    "geometry_level": "synthetic",
+    "outer_ring_vertex_count": 3,
+    "points_mm": [
+      [0.0, 0.0],
+      [30.0, 0.0],
+      [15.0, 26.0]
+    ],
+    "holes_mm": []
+  }
+}

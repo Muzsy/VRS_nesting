@@ -9,7 +9,7 @@ use i_overlay::{
 use std::cmp::Ordering;
 
 use crate::geometry::{
-    float_policy::{AREA_EPS_MM2, GEOM_EPS_MM, cmp_eps, eq_eps, is_near_zero},
+    float_policy::{cmp_eps, eq_eps, is_near_zero, AREA_EPS_MM2, GEOM_EPS_MM},
     scale::{i64_to_mm, mm_to_i64},
     types::{PartGeometry, Point64, Polygon64},
 };
@@ -169,9 +169,10 @@ const OFFSET_ROUND_ARC_TOL_MAX_MM: f64 = 1.0;
 fn do_offset(shape: MmShape, delta_mm: f64) -> Result<MmShape, OffsetError> {
     // Round join arc tolerance: `|delta| * 0.1`, clamped to
     // [OFFSET_ROUND_ARC_TOL_MIN_MM, OFFSET_ROUND_ARC_TOL_MAX_MM].
-    let round_tol = (delta_mm.abs() * 0.1_f64)
-        .clamp(OFFSET_ROUND_ARC_TOL_MIN_MM, OFFSET_ROUND_ARC_TOL_MAX_MM);
-    let style: OutlineStyle<f64> = OutlineStyle::new(delta_mm).line_join(LineJoin::Round(round_tol));
+    let round_tol =
+        (delta_mm.abs() * 0.1_f64).clamp(OFFSET_ROUND_ARC_TOL_MIN_MM, OFFSET_ROUND_ARC_TOL_MAX_MM);
+    let style: OutlineStyle<f64> =
+        OutlineStyle::new(delta_mm).line_join(LineJoin::Round(round_tol));
 
     let result = shape.outline(&style);
 

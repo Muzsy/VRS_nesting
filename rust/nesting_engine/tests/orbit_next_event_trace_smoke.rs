@@ -64,39 +64,33 @@ fn orbit_trace_prefix_is_stable_on_concave_fixtures() {
         &[
             ExpectedStep {
                 step_index: 0,
-                touching_group_signature:
-                    "a0:b0@-5,0|a0:b1@0,0|a11:b0@-5,0|a11:b1@0,0|a11:b2@-2,1",
+                touching_group_signature: "a0:b0@-5,0|a0:b1@0,0|a11:b0@-5,0|a11:b1@0,0|a11:b2@-2,1",
                 dx: 1,
                 dy: 0,
                 next_event_kind: "vertex_b_to_edge_a",
                 t_num: 13,
                 t_den: 1,
-                tie_break_reason:
-                    "dir[q0|1,0|src0|a0|b0];event[vertex_b_to_edge_a|v0|e1]",
+                tie_break_reason: "dir[q0|1,0|src0|a0|b0];event[vertex_b_to_edge_a|v0|e1]",
             },
             ExpectedStep {
                 step_index: 1,
-                touching_group_signature:
-                    "a0:b0@0,0|a0:b11@0,0|a1:b0@8,0|a1:b10@8,0|a1:b11@8,0",
+                touching_group_signature: "a0:b0@0,0|a0:b11@0,0|a1:b0@8,0|a1:b10@8,0|a1:b11@8,0",
                 dx: 0,
                 dy: 1,
                 next_event_kind: "vertex_b_to_edge_a",
                 t_num: 1,
                 t_den: 1,
-                tie_break_reason:
-                    "dir[q0|0,1|src0|a1|b0];event[vertex_b_to_edge_a|v11|e2]",
+                tie_break_reason: "dir[q0|0,1|src0|a1|b0];event[vertex_b_to_edge_a|v11|e2]",
             },
             ExpectedStep {
                 step_index: 2,
-                touching_group_signature:
-                    "a1:b0@8,0|a1:b10@8,0|a1:b11@8,0|a2:b10@6,2|a2:b11@6,2",
+                touching_group_signature: "a1:b0@8,0|a1:b10@8,0|a1:b11@8,0|a2:b10@6,2|a2:b11@6,2",
                 dx: 0,
                 dy: 1,
                 next_event_kind: "vertex_b_to_edge_a",
                 t_num: 1,
                 t_den: 1,
-                tie_break_reason:
-                    "dir[q0|0,1|src0|a1|b0];event[vertex_b_to_edge_a|v0|e2]",
+                tie_break_reason: "dir[q0|0,1|src0|a1|b0];event[vertex_b_to_edge_a|v0|e2]",
             },
         ],
     );
@@ -159,7 +153,8 @@ fn assert_trace_prefix(
             (actual.chosen_direction.dx, actual.chosen_direction.dy),
             (expected_step.dx, expected_step.dy),
             "chosen_direction mismatch in {} at step {}",
-            fixture_name, actual.step_index
+            fixture_name,
+            actual.step_index
         );
         assert_eq!(
             actual.next_event_kind, expected_step.next_event_kind,
@@ -170,7 +165,8 @@ fn assert_trace_prefix(
             (actual.next_event_t_num, actual.next_event_t_den),
             (expected_step.t_num, expected_step.t_den),
             "next_event_t mismatch in {} at step {}",
-            fixture_name, actual.step_index
+            fixture_name,
+            actual.step_index
         );
         assert_eq!(
             actual.tie_break_reason, expected_step.tie_break_reason,

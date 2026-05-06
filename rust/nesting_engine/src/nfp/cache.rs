@@ -198,7 +198,7 @@ fn signed_area2(points: &[Point64]) -> i128 {
 mod tests {
     use crate::geometry::types::{Point64, Polygon64};
 
-    use super::{MAX_ENTRIES, NfpCache, NfpCacheKey, shape_id};
+    use super::{shape_id, NfpCache, NfpCacheKey, MAX_ENTRIES};
 
     fn unit_square() -> Polygon64 {
         Polygon64 {

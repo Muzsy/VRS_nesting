@@ -1,9 +1,9 @@
-use rstar::{AABB, RTree, RTreeObject};
+use rstar::{RTree, RTreeObject, AABB};
 
-use crate::feasibility::aabb::{Aabb, aabb_from_polygon64, aabb_inside, aabb_overlaps};
+use crate::feasibility::aabb::{aabb_from_polygon64, aabb_inside, aabb_overlaps, Aabb};
 use crate::geometry::{
     scale::TOUCH_TOL,
-    types::{Point64, Polygon64, cross_product_i128},
+    types::{cross_product_i128, Point64, Polygon64},
 };
 
 #[derive(Debug, Clone)]
@@ -137,7 +137,11 @@ pub struct CanPlaceProfile {
     pub rejected_by_narrow: bool,
 }
 
-pub fn can_place_profiled(candidate: &Polygon64, bin: &Polygon64, placed: &PlacedIndex) -> (bool, CanPlaceProfile) {
+pub fn can_place_profiled(
+    candidate: &Polygon64,
+    bin: &Polygon64,
+    placed: &PlacedIndex,
+) -> (bool, CanPlaceProfile) {
     use std::time::Instant;
     let mut prof = CanPlaceProfile::default();
 
@@ -190,12 +194,25 @@ pub fn can_place_profiled(candidate: &Polygon64, bin: &Polygon64, placed: &Place
         prof.narrow_phase_pairs += 1;
         let cand_rings: usize = 1 + candidate.holes.len();
         let other_rings: usize = 1 + other.inflated_polygon.holes.len();
-        let cand_segs: usize = candidate.outer.len() + candidate.holes.iter().map(|h| h.len()).sum::<usize>();
-        let other_segs: usize = other.inflated_polygon.outer.len() + other.inflated_polygon.holes.iter().map(|h| h.len()).sum::<usize>();
-        prof.segment_pair_checks += (cand_segs as u64) * (other_segs as u64) * (cand_rings as u64).max(1) * (other_rings as u64).max(1) / ((cand_rings as u64).max(1) * (other_rings as u64).max(1));
+        let cand_segs: usize =
+            candidate.outer.len() + candidate.holes.iter().map(|h| h.len()).sum::<usize>();
+        let other_segs: usize = other.inflated_polygon.outer.len()
+            + other
+                .inflated_polygon
+                .holes
+                .iter()
+                .map(|h| h.len())
+                .sum::<usize>();
+        prof.segment_pair_checks += (cand_segs as u64)
+            * (other_segs as u64)
+            * (cand_rings as u64).max(1)
+            * (other_rings as u64).max(1)
+            / ((cand_rings as u64).max(1) * (other_rings as u64).max(1));
         // Simplified: actual worst case is sum of ring_a_len * ring_b_len for all ring pairs
         // More accurate count:
-        prof.segment_pair_checks = prof.segment_pair_checks.wrapping_sub(prof.segment_pair_checks); // reset
+        prof.segment_pair_checks = prof
+            .segment_pair_checks
+            .wrapping_sub(prof.segment_pair_checks); // reset
         for ring_a in polygon_rings(candidate) {
             for ring_b in polygon_rings(&other.inflated_polygon) {
                 prof.segment_pair_checks += (ring_a.len() as u64) * (ring_b.len() as u64);

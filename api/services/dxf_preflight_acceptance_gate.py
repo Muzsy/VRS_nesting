@@ -331,18 +331,6 @@ def _collect_blocking_reasons(
             }
         )
 
-    if str(validator_probe.get("status", "")).strip() == "rejected":
-        out.append(
-            {
-                "source": "validator_probe",
-                "family": "validator_probe_rejected",
-                "details": {
-                    "issue_count": _as_int(validator_probe.get("issue_count"), default=0),
-                    "error_count": _as_int(validator_probe.get("error_count"), default=0),
-                },
-            }
-        )
-
     return out
 
 
@@ -404,6 +392,36 @@ def _resolve_outcome(
         return _REJECTED, "importer_failed"
 
     if str(validator_probe.get("status", "")).strip() == "rejected":
+        # T05j Policy A: demote "Holes are nested" to review_required instead of blocking.
+        # Shapely's Polygon(outer, holes=[...]) accepts nested holes but marks is_valid=False.
+        # This is a shapely limitation for hole-within-hole topology.
+        # Demote ONLY when ALL errors are GEO_TOPOLOGY_INVALID with "Holes are nested".
+        issues = _as_dict_list(validator_probe.get("report_jsonb", {}).get("issues", []))
+        all_errors_are_nested_holes = (
+            all(
+                str(issue.get("code", "")) == "GEO_TOPOLOGY_INVALID"
+                and "Holes are nested" in str(issue.get("message", ""))
+                for issue in issues
+                if issue.get("severity") == "error"
+            )
+            if issues
+            else False
+        )
+        if all_errors_are_nested_holes:
+            # Demote to review_required: add a sentinel so review_required_reasons is non-empty.
+            # The actual outcome will be determined by the review_required_reasons check below.
+            review_required_reasons.append(
+                {
+                    "source": "validator_probe",
+                    "family": "DXF_PREFLIGHT_NESTED_ISLAND_REQUIRES_MANUAL_REVIEW",
+                    "details": {
+                        "issue_count": _as_int(validator_probe.get("issue_count"), default=0),
+                        "error_count": _as_int(validator_probe.get("error_count"), default=0),
+                        "_nested_holes_demoted": True,
+                    },
+                }
+            )
+            return _REVIEW_REQUIRED, "nested_holes_demoted_to_review_required"
         return _REJECTED, "validator_rejected"
 
     if blocking_reasons:

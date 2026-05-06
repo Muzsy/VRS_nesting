@@ -721,3 +721,98 @@ def test_contour_resolver_mixed_color_hints_not_auto_classified() -> None:
     assert assignments == [], (
         f"mixed cut+marking layer must not produce contour role assignments, got: {assignments}"
     )
+
+
+def test_contour_resolver_nested_island_flattened_to_cut_inner() -> None:
+    """Three-level nested island: outer > hole > island → all assigned CUT_INNER (safe flatten).
+
+    Topology:
+      layer "0", ring 0 = outer (depth 0) → CUT_OUTER
+      layer "0", ring 1 = hole  (depth 1) → CUT_INNER
+      layer "0", ring 2 = island in hole (depth 2) → CUT_INNER (flatten policy)
+
+    The nested island is NOT a separate outer; it is unambiguously part of the same
+    part's inner structure. Safe flatten assigns depth>=1 → CUT_INNER so the
+    normalizer+importer can represent it as a cut path (no separate island representation).
+    """
+    layer = "0"
+    inspect_result: dict[str, Any] = {
+        "source_path": "in-memory-nested-island",
+        "backend": "in-memory",
+        "source_size_bytes": None,
+        "entity_inventory": [
+            _entity(entity_index=0, layer=layer),
+            _entity(entity_index=1, layer=layer),
+            _entity(entity_index=2, layer=layer),
+        ],
+        "layer_inventory": [_layer_inv(layer, count=3)],
+        "color_inventory": [],
+        "linetype_inventory": [],
+        "contour_candidates": [
+            {"layer": layer, "ring_index": 0, "point_count": 4, "bbox": {}, "fingerprint": "fp-outer"},
+            {"layer": layer, "ring_index": 1, "point_count": 4, "bbox": {}, "fingerprint": "fp-hole"},
+            {"layer": layer, "ring_index": 2, "point_count": 4, "bbox": {}, "fingerprint": "fp-island"},
+        ],
+        "open_path_candidates": [],
+        "outer_like_candidates": [
+            {
+                "layer": layer,
+                "ring_index": 0,
+                "contains_ring_references": [
+                    {"layer": layer, "ring_index": 1},
+                ],
+            },
+        ],
+        "inner_like_candidates": [
+            {
+                "layer": layer,
+                "ring_index": 1,
+                "contained_by_ring_references": [
+                    {"layer": layer, "ring_index": 0},
+                ],
+            },
+            {
+                "layer": layer,
+                "ring_index": 2,
+                "contained_by_ring_references": [
+                    {"layer": layer, "ring_index": 1},
+                ],
+            },
+        ],
+        "diagnostics": {"probe_errors": [], "notes": []},
+    }
+
+    result = resolve_dxf_roles(inspect_result)
+
+    assignments = result["contour_role_assignments"]
+    by_key = {(str(a["layer"]), int(a["ring_index"])): a for a in assignments}
+
+    # Ring 0 (outer, depth 0) → CUT_OUTER
+    outer_a = by_key.get((layer, 0))
+    assert outer_a is not None, f"ring 0 not assigned, assignments={assignments}"
+    assert outer_a["canonical_role"] == "CUT_OUTER"
+    assert outer_a["decision_source"] == "contour_topology_auto"
+
+    # Ring 1 (hole, depth 1) → CUT_INNER
+    hole_a = by_key.get((layer, 1))
+    assert hole_a is not None, f"ring 1 not assigned, assignments={assignments}"
+    assert hole_a["canonical_role"] == "CUT_INNER"
+    assert hole_a["decision_source"] == "contour_topology_auto_nested_flattened"
+
+    # Ring 2 (island, depth 2) → CUT_INNER (flattened, NOT review_required)
+    island_a = by_key.get((layer, 2))
+    assert island_a is not None, f"ring 2 not assigned, assignments={assignments}"
+    assert island_a["canonical_role"] == "CUT_INNER"
+    assert island_a["decision_source"] == "contour_topology_auto_nested_flattened"
+
+    # No contour_nested_island_unsupported conflict
+    island_conflicts = [
+        c for c in result["review_required_candidates"]
+        if c.get("family") == "contour_nested_island_unsupported"
+    ]
+    assert island_conflicts == [], (
+        f"nested island must not produce conflict after safe flatten, got: {island_conflicts}"
+    )
+
+    # No blocking conflicts
+    assert result["blocking_conflicts"] == []

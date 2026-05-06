@@ -4,7 +4,7 @@ use geo::{
 };
 
 use crate::geometry::{
-    float_policy::{GEOM_EPS_MM, cmp_eps, eq_eps},
+    float_policy::{cmp_eps, eq_eps, GEOM_EPS_MM},
     offset::{deflate_hole, inflate_outer, inflate_part, OffsetError},
     scale::{i64_to_mm, mm_to_i64},
     types::{PartGeometry, Point64, Polygon64},
@@ -195,7 +195,10 @@ fn inflate_single_stock(
                     nominal_hole_bbox_mm: None,
                     preserve_for_export: None,
                     usable_for_nesting: None,
-                    detail: format!("inflate_outer failed for stock outer: {}", offset_error_detail(&err)),
+                    detail: format!(
+                        "inflate_outer failed for stock outer: {}",
+                        offset_error_detail(&err)
+                    ),
                 }],
             };
         }
@@ -282,7 +285,9 @@ fn inflate_stock_hole_obstacle(
             "stock hole obstacle offset produced empty outer".to_string(),
         ));
     }
-    Ok(canonicalize_mm_ring_start(points_to_mm_pairs(&expanded.outer)))
+    Ok(canonicalize_mm_ring_start(points_to_mm_pairs(
+        &expanded.outer,
+    )))
 }
 
 fn handle_hole_collapsed(
@@ -773,7 +778,8 @@ mod tests {
     #[test]
     fn pipeline_float_policy_stock_hole_obstacle_ring_start_is_canonical() {
         let hole = vec![[10.0, 10.0], [30.0, 10.0], [30.0, 30.0], [10.0, 30.0]];
-        let expanded = inflate_stock_hole_obstacle(&hole, 1.0).expect("stock hole inflate must work");
+        let expanded =
+            inflate_stock_hole_obstacle(&hole, 1.0).expect("stock hole inflate must work");
         let first = expanded.first().expect("expanded ring must not be empty");
         let min_pt = expanded
             .iter()
@@ -938,7 +944,10 @@ mod tests {
         );
 
         let (min_x, min_y, max_x, max_y) = bounds_from_points_mm(&stock.usable_outer_points_mm);
-        assert!(min_x < 0.0 && min_y < 0.0, "inflated stock min bounds should be negative");
+        assert!(
+            min_x < 0.0 && min_y < 0.0,
+            "inflated stock min bounds should be negative"
+        );
         assert!(
             max_x > 100.0 && max_y > 60.0,
             "inflated stock max bounds should exceed nominal outer bounds"

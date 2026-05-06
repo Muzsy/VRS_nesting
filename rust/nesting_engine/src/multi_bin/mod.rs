@@ -1,3 +1,3 @@
 pub mod greedy;
 
-pub use greedy::{MultiSheetResult, greedy_multi_sheet};
+pub use greedy::{greedy_multi_sheet, MultiSheetResult};

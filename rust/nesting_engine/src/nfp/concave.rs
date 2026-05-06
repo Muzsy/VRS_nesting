@@ -296,8 +296,10 @@ fn compute_stable_concave_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64,
             let nfp = compute_convex_nfp(part_a, part_b)?;
             eprintln!(
                 "[CONCAVE NFP DIAG] partial_nfp_done [{}/{}][{}/{}] result_pts={} elapsed_ms={:.2}",
-                part_a.outer.len(), convex_parts_a.len(),
-                part_b.outer.len(), convex_parts_b.len(),
+                part_a.outer.len(),
+                convex_parts_a.len(),
+                part_b.outer.len(),
+                convex_parts_b.len(),
                 nfp.outer.len(),
                 nfp_start.elapsed().as_secs_f64() * 1000.0
             );
@@ -389,8 +391,7 @@ fn compute_orbit_exact_outcome_with_trace(
             &touching_group,
             previous,
             &banned_transitions,
-        )
-        else {
+        ) else {
             if let Some(prev) = previous {
                 banned_transitions.insert(transition_key(prev, current));
                 orbit.pop();
@@ -493,7 +494,8 @@ fn choose_next_orbit_step(
 
     for allow_immediate_backtrack in [false, true] {
         for direction in directions.iter().copied() {
-            let Some(next_event) = next_event_translation(a, b, translation, direction.vector) else {
+            let Some(next_event) = next_event_translation(a, b, translation, direction.vector)
+            else {
                 continue;
             };
             if next_event.next_translation == translation {
@@ -505,7 +507,8 @@ fn choose_next_orbit_step(
             {
                 continue;
             }
-            if banned_transitions.contains(&transition_key(translation, next_event.next_translation))
+            if banned_transitions
+                .contains(&transition_key(translation, next_event.next_translation))
             {
                 continue;
             }
@@ -1914,8 +1917,7 @@ mod tests {
                 assert!(
                     matches!(
                         reason,
-                        OrbitFailureReason::DeadEnd
-                            | OrbitFailureReason::MaxStepsReached
+                        OrbitFailureReason::DeadEnd | OrbitFailureReason::MaxStepsReached
                     ),
                     "fallback reason must be explicit"
                 );

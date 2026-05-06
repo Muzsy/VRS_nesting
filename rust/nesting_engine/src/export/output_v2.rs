@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::geometry::scale::{i64_to_mm, mm_to_i64};
@@ -47,7 +47,11 @@ pub fn build_output_v2(
         })
         .collect();
 
-    let status = if result.unplaced.is_empty() { "ok" } else { "partial" };
+    let status = if result.unplaced.is_empty() {
+        "ok"
+    } else {
+        "partial"
+    };
     let determinism_hash = compute_determinism_hash(&placements);
     let compaction_mode = match result.compaction.mode {
         CompactionMode::Off => "off",
@@ -121,12 +125,30 @@ fn hash_view_v1_canonical_json_bytes(placements: &[PlacedItem]) -> String {
         let sb = b.get("sheet_id").and_then(Value::as_str).unwrap_or("");
         let pa = a.get("part_id").and_then(Value::as_str).unwrap_or("");
         let pb = b.get("part_id").and_then(Value::as_str).unwrap_or("");
-        let ra = a.get("rotation_deg").and_then(Value::as_i64).unwrap_or_default();
-        let rb = b.get("rotation_deg").and_then(Value::as_i64).unwrap_or_default();
-        let xa = a.get("x_scaled_i64").and_then(Value::as_i64).unwrap_or_default();
-        let xb = b.get("x_scaled_i64").and_then(Value::as_i64).unwrap_or_default();
-        let ya = a.get("y_scaled_i64").and_then(Value::as_i64).unwrap_or_default();
-        let yb = b.get("y_scaled_i64").and_then(Value::as_i64).unwrap_or_default();
+        let ra = a
+            .get("rotation_deg")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        let rb = b
+            .get("rotation_deg")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        let xa = a
+            .get("x_scaled_i64")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        let xb = b
+            .get("x_scaled_i64")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        let ya = a
+            .get("y_scaled_i64")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        let yb = b
+            .get("y_scaled_i64")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
         sa.cmp(sb)
             .then(pa.cmp(pb))
             .then(ra.cmp(&rb))
@@ -146,10 +168,7 @@ fn hash_view_v1_canonical_json_bytes(placements: &[PlacedItem]) -> String {
         .collect();
 
     let mut hash_view = BTreeMap::new();
-    hash_view.insert(
-        "placements".to_string(),
-        Value::Array(placements_values),
-    );
+    hash_view.insert("placements".to_string(), Value::Array(placements_values));
     hash_view.insert(
         "schema_version".to_string(),
         Value::String("nesting_engine.hash_view.v1".to_string()),
@@ -204,8 +223,7 @@ mod tests {
         let a = build_output_v2(42, 0.1, 12.0, &res);
         let b = build_output_v2(42, 0.1, 12.0, &res);
         assert_eq!(
-            a["meta"]["determinism_hash"],
-            b["meta"]["determinism_hash"],
+            a["meta"]["determinism_hash"], b["meta"]["determinism_hash"],
             "determinism hash changed for identical input"
         );
     }
@@ -360,7 +378,13 @@ mod tests {
         assert_eq!(out["meta"]["compaction"]["mode"], "slide");
         assert_eq!(out["meta"]["compaction"]["applied"], true);
         assert_eq!(out["meta"]["compaction"]["moved_items_count"], 2);
-        assert_eq!(out["meta"]["compaction"]["occupied_extent_before"]["width_mm"], 20.0);
-        assert_eq!(out["meta"]["compaction"]["occupied_extent_after"]["width_mm"], 18.0);
+        assert_eq!(
+            out["meta"]["compaction"]["occupied_extent_before"]["width_mm"],
+            20.0
+        );
+        assert_eq!(
+            out["meta"]["compaction"]["occupied_extent_after"]["width_mm"],
+            18.0
+        );
     }
 }

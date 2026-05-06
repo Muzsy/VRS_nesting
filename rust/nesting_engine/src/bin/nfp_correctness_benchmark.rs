@@ -13,21 +13,23 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_FIXTURE: &str = "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NfpSource {
+    ReducedConvolutionV1,
+    MockExact,
+    ExternalJson,
+}
+
+#[derive(Debug, Clone)]
 struct CliArgs {
     fixture: PathBuf,
     nfp_source: NfpSource,
+    nfp_json: Option<PathBuf>,
     sample_inside: usize,
     sample_outside: usize,
     sample_boundary: usize,
     boundary_perturbation_mm: f64,
     output_json: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NfpSource {
-    ReducedConvolutionV1,
-    MockExact,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +62,20 @@ struct BenchmarkOutput {
     correctness_verdict: String,
     nfp_was_available: bool,
     notes: String,
+    /// True if the NFP polygon has at least one hole ring.
+    boundary_holes_supported: bool,
+    /// Number of boundary samples taken from the outer ring.
+    outer_boundary_samples: usize,
+    /// Number of boundary samples taken from hole rings.
+    hole_boundary_samples: usize,
+    /// Maximum penetration on the outer boundary (mm).
+    outer_boundary_penetration_max_mm: f64,
+    /// Maximum penetration on hole boundaries (mm).
+    hole_boundary_penetration_max_mm: f64,
+    /// Number of hole boundary samples that returned exact collision.
+    hole_boundary_collision_count: usize,
+    /// Number of hole boundary samples that did NOT return collision.
+    hole_boundary_non_collision_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +90,8 @@ struct BoundarySample {
     point: Point64,
     outward_nx: f64,
     outward_ny: f64,
+    /// True if this sample was taken from a hole ring, false if from outer ring.
+    is_hole: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -120,6 +138,7 @@ impl Lcg {
 fn parse_args(raw: &[String]) -> Result<CliArgs, String> {
     let mut fixture = PathBuf::from(DEFAULT_FIXTURE);
     let mut nfp_source = NfpSource::ReducedConvolutionV1;
+    let mut nfp_json: Option<PathBuf> = None;
     let mut sample_inside = 1000usize;
     let mut sample_outside = 1000usize;
     let mut sample_boundary = 200usize;
@@ -163,6 +182,20 @@ fn parse_args(raw: &[String]) -> Result<CliArgs, String> {
         }
         if let Some(v) = arg.strip_prefix("--nfp-source=") {
             nfp_source = parse_nfp_source(v)?;
+            idx += 1;
+            continue;
+        }
+        if arg == "--nfp-json" {
+            idx += 1;
+            if idx >= raw.len() {
+                return Err("missing value for --nfp-json".to_string());
+            }
+            nfp_json = Some(PathBuf::from(&raw[idx]));
+            idx += 1;
+            continue;
+        }
+        if let Some(v) = arg.strip_prefix("--nfp-json=") {
+            nfp_json = Some(PathBuf::from(v));
             idx += 1;
             continue;
         }
@@ -229,6 +262,7 @@ fn parse_args(raw: &[String]) -> Result<CliArgs, String> {
     Ok(CliArgs {
         fixture,
         nfp_source,
+        nfp_json,
         sample_inside,
         sample_outside,
         sample_boundary,
@@ -241,6 +275,7 @@ fn parse_nfp_source(value: &str) -> Result<NfpSource, String> {
     match value {
         "reduced_convolution_v1" => Ok(NfpSource::ReducedConvolutionV1),
         "mock_exact" => Ok(NfpSource::MockExact),
+        "external_json" => Ok(NfpSource::ExternalJson),
         _ => Err(format!("invalid --nfp-source value: '{value}'")),
     }
 }
@@ -262,7 +297,10 @@ fn parse_f64(flag: &str, value: &str) -> Result<f64, String> {
 fn print_help() {
     println!("nfp_correctness_benchmark");
     println!("  --fixture <path>                (default: {DEFAULT_FIXTURE})");
-    println!("  --nfp-source <src>              reduced_convolution_v1 | mock_exact");
+    println!(
+        "  --nfp-source <src>              reduced_convolution_v1 | mock_exact | external_json"
+    );
+    println!("  --nfp-json <path>               (required when --nfp-source=external_json)");
     println!("  --sample-inside <N>             (default: 1000)");
     println!("  --sample-outside <N>            (default: 1000)");
     println!("  --sample-boundary <N>           (default: 200)");
@@ -513,7 +551,11 @@ fn point_on_segment_inclusive(a: Point64, b: Point64, p: Point64) -> bool {
 }
 
 fn aabb_from_polygon64(poly: &Polygon64) -> Aabb {
-    let first = poly.outer.first().copied().unwrap_or(Point64 { x: 0, y: 0 });
+    let first = poly
+        .outer
+        .first()
+        .copied()
+        .unwrap_or(Point64 { x: 0, y: 0 });
     let mut min_x = first.x;
     let mut min_y = first.y;
     let mut max_x = first.x;
@@ -547,7 +589,12 @@ fn sample_points_outside(poly: &Polygon64, n: usize, seed: u64) -> Vec<Point64> 
     sample_points_by_location(poly, n, seed, PointLocation::Outside)
 }
 
-fn sample_points_by_location(poly: &Polygon64, n: usize, seed: u64, target: PointLocation) -> Vec<Point64> {
+fn sample_points_by_location(
+    poly: &Polygon64,
+    n: usize,
+    seed: u64,
+    target: PointLocation,
+) -> Vec<Point64> {
     let bbox = aabb_from_polygon64(poly);
     let expand_x = (bbox.max_x - bbox.min_x).abs().max(mm_to_i64(10.0));
     let expand_y = (bbox.max_y - bbox.min_y).abs().max(mm_to_i64(10.0));
@@ -633,19 +680,34 @@ fn sample_points_by_collision(
     (inside, outside, box_poly)
 }
 
-fn sample_points_on_boundary(poly: &Polygon64, n: usize, seed: u64) -> Vec<BoundarySample> {
-    if poly.outer.len() < 2 {
+/// Sample boundary points from a single ring with a given outward-normal orientation.
+/// For outer rings: outward points away from polygon interior (ccw).
+/// For hole rings: outward points into the hole interior (hole is CW, so inward normal = outward for the hole space).
+fn sample_ring_boundary(
+    ring: &[Point64],
+    is_hole: bool,
+    n: usize,
+    rng: &mut Lcg,
+) -> Vec<BoundarySample> {
+    if ring.len() < 2 {
         return Vec::new();
     }
 
-    let ccw = is_ccw(&poly.outer);
-    let mut rng = Lcg::new(seed);
-    let mut out = Vec::with_capacity(n);
+    // For outer ring (CCW): outward normal = left side of edge direction.
+    // For hole ring (CW): outward normal = right side of edge direction (points into hole interior).
+    // We want the normal that points AWAY from the filled region:
+    //   - outer ring: outward normal points outside the polygon
+    //   - hole ring: outward normal points inside the hole (toward the "outside" of the hole)
+    // For a hole ring (CW), the left-hand normal points into the filled region,
+    // so we flip: use right-hand normal for holes.
+    let _ccw = is_ccw(ring);
+    let flip = is_hole;
 
+    let mut out = Vec::with_capacity(n);
     for _ in 0..n {
-        let edge_idx = (rng.next_u64() as usize) % poly.outer.len();
-        let p0 = poly.outer[edge_idx];
-        let p1 = poly.outer[(edge_idx + 1) % poly.outer.len()];
+        let edge_idx = (rng.next_u64() as usize) % ring.len();
+        let p0 = ring[edge_idx];
+        let p1 = ring[(edge_idx + 1) % ring.len()];
         let t = rng.next_f64();
         let x = p0.x as f64 + (p1.x - p0.x) as f64 * t;
         let y = p0.y as f64 + (p1.y - p0.y) as f64 * t;
@@ -653,12 +715,17 @@ fn sample_points_on_boundary(poly: &Polygon64, n: usize, seed: u64) -> Vec<Bound
         let dx = (p1.x - p0.x) as f64;
         let dy = (p1.y - p0.y) as f64;
         let len = (dx * dx + dy * dy).sqrt();
-        let (out_nx, out_ny) = if len == 0.0 {
+        let (nx, ny) = if len == 0.0 {
             (0.0, 0.0)
-        } else if ccw {
-            (dy / len, -dx / len)
         } else {
-            (-dy / len, dx / len)
+            // Standard outward normal for CCW ring = (dy, -dx)
+            let nx = dy / len;
+            let ny = -dx / len;
+            if flip {
+                (-nx, -ny)
+            } else {
+                (nx, ny)
+            }
         };
 
         out.push(BoundarySample {
@@ -666,12 +733,71 @@ fn sample_points_on_boundary(poly: &Polygon64, n: usize, seed: u64) -> Vec<Bound
                 x: x.round() as i64,
                 y: y.round() as i64,
             },
-            outward_nx: out_nx,
-            outward_ny: out_ny,
+            outward_nx: nx,
+            outward_ny: ny,
+            is_hole,
         });
     }
 
     out
+}
+
+/// Sample boundary points from a polygon, covering both outer ring and all hole rings.
+/// Allocation: at least half of samples from outer ring; remainder split across holes.
+fn sample_polygon_boundary(poly: &Polygon64, total_n: usize, seed: u64) -> Vec<BoundarySample> {
+    if poly.outer.len() < 2 && poly.holes.iter().all(|h| h.len() < 2) {
+        return Vec::new();
+    }
+
+    let mut rng = Lcg::new(seed);
+    let mut out = Vec::with_capacity(total_n);
+
+    let has_holes = !poly.holes.is_empty();
+
+    if has_holes {
+        // Distribute: 50% outer, 50% holes (split evenly across hole rings).
+        let outer_n = total_n / 2;
+        let hole_n = total_n.saturating_sub(outer_n);
+        let per_hole = hole_n / poly.holes.len().max(1);
+
+        // Outer ring samples
+        for s in sample_ring_boundary(&poly.outer, false, outer_n, &mut rng) {
+            out.push(s);
+        }
+
+        // Hole ring samples
+        for hole in &poly.holes {
+            let n_this_hole = per_hole.min(hole.len().saturating_sub(1).max(1));
+            for s in sample_ring_boundary(hole, true, n_this_hole, &mut rng) {
+                out.push(s);
+            }
+        }
+
+        // If we still have room (due to rounding), fill remaining from outer
+        while out.len() < total_n {
+            for s in sample_ring_boundary(&poly.outer, false, 1, &mut rng) {
+                if out.len() >= total_n {
+                    break;
+                }
+                out.push(s);
+            }
+            // Safety break if something went wrong
+            if out.is_empty() {
+                break;
+            }
+        }
+    } else {
+        // No holes: all samples from outer
+        for s in sample_ring_boundary(&poly.outer, false, total_n, &mut rng) {
+            out.push(s);
+        }
+    }
+
+    out
+}
+
+fn sample_points_on_boundary(poly: &Polygon64, n: usize, seed: u64) -> Vec<BoundarySample> {
+    sample_polygon_boundary(poly, n, seed)
 }
 
 fn offset_point(base: Point64, nx: f64, ny: f64, units: i64, sign: f64) -> Point64 {
@@ -716,11 +842,117 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
             nfp_was_available = true;
             None
         }
+        NfpSource::ExternalJson => {
+            let nfp_json_path = args
+                .nfp_json
+                .as_ref()
+                .ok_or_else(|| "--nfp-json required when --nfp-source=external_json".to_string())?;
+
+            let raw_json = fs::read_to_string(nfp_json_path).map_err(|err| {
+                format!(
+                    "failed to read --nfp-json '{}': {err}",
+                    nfp_json_path.display()
+                )
+            })?;
+
+            let probe_result: serde_json::Value = serde_json::from_str(&raw_json)
+                .map_err(|err| format!("invalid JSON in '{}': {err}", nfp_json_path.display()))?;
+
+            // Validate schema
+            if probe_result.get("schema").and_then(|v| v.as_str())
+                != Some("nfp_cgal_probe_result_v1")
+            {
+                notes.push("WARNING: JSON schema mismatch, proceeding anyway".to_string());
+            }
+
+            let status = probe_result
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            if status != "success" {
+                let err_msg = probe_result
+                    .get("error")
+                    .and_then(|v| v.get("message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                return Err(format!("external JSON has status='{status}': {err_msg}"));
+            }
+
+            let scale = probe_result
+                .get("scale")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(1_000_000);
+
+            // Parse outer_i64
+            let outer_i64 = probe_result
+                .get("outer_i64")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| "missing or invalid outer_i64 in external JSON".to_string())?;
+
+            let outer: Vec<Point64> = outer_i64
+                .iter()
+                .map(|pt| {
+                    let arr = pt.as_array().ok_or("outer_i64 point is not array")?;
+                    let x: i64 = arr.get(0).and_then(|v| v.as_i64()).ok_or("invalid x")?;
+                    let y: i64 = arr.get(1).and_then(|v| v.as_i64()).ok_or("invalid y")?;
+                    Ok(Point64 {
+                        x: x * 1_000_000 / scale,
+                        y: y * 1_000_000 / scale,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e: String| format!("failed to parse outer_i64: {e}"))?;
+
+            if outer.len() < 3 {
+                return Err("outer_i64 has fewer than 3 vertices".to_string());
+            }
+
+            // Parse holes_i64 (hole-aware support)
+            let holes: Vec<Vec<Point64>> = probe_result
+                .get("holes_i64")
+                .and_then(|v| v.as_array())
+                .map(|holes_arr| {
+                    holes_arr
+                        .iter()
+                        .filter_map(|hole_ring| {
+                            let ring = hole_ring.as_array()?;
+                            let pts: Vec<Point64> = ring
+                                .iter()
+                                .filter_map(|pt| {
+                                    let arr = pt.as_array()?;
+                                    let x: i64 = arr.get(0).and_then(|v| v.as_i64())?;
+                                    let y: i64 = arr.get(1).and_then(|v| v.as_i64())?;
+                                    Some(Point64 {
+                                        x: x * 1_000_000 / scale,
+                                        y: y * 1_000_000 / scale,
+                                    })
+                                })
+                                .collect();
+                            if pts.len() >= 3 {
+                                Some(pts)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if !holes.is_empty() {
+                notes.push(format!(
+                    "HOLES_AWARE: {} hole(s) parsed from holes_i64, hole-aware containment active",
+                    holes.len()
+                ));
+            }
+
+            nfp_was_available = true;
+            Some(Polygon64 { outer, holes })
+        }
     };
 
     let mut false_positive_count = 0usize;
     let mut false_negative_count = 0usize;
-    let mut boundary_penetration_max_mm = 0.0f64;
+    let _boundary_penetration_max_mm = 0.0f64;
 
     let (inside_samples, outside_samples, boundary_samples) = match args.nfp_source {
         NfpSource::MockExact => {
@@ -748,10 +980,22 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
                 // Fallback sampling when polygon is unavailable (mostly for NOT_AVAILABLE path).
                 let box_poly = Polygon64 {
                     outer: vec![
-                        Point64 { x: mm_to_i64(-50.0), y: mm_to_i64(-50.0) },
-                        Point64 { x: mm_to_i64(50.0), y: mm_to_i64(-50.0) },
-                        Point64 { x: mm_to_i64(50.0), y: mm_to_i64(50.0) },
-                        Point64 { x: mm_to_i64(-50.0), y: mm_to_i64(50.0) },
+                        Point64 {
+                            x: mm_to_i64(-50.0),
+                            y: mm_to_i64(-50.0),
+                        },
+                        Point64 {
+                            x: mm_to_i64(50.0),
+                            y: mm_to_i64(-50.0),
+                        },
+                        Point64 {
+                            x: mm_to_i64(50.0),
+                            y: mm_to_i64(50.0),
+                        },
+                        Point64 {
+                            x: mm_to_i64(-50.0),
+                            y: mm_to_i64(50.0),
+                        },
                     ],
                     holes: Vec::new(),
                 };
@@ -760,6 +1004,21 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
                     sample_points_outside(&box_poly, args.sample_outside, 0xCAFE_BABE_12),
                     sample_points_on_boundary(&box_poly, args.sample_boundary, 0xCAFE_BABE_13),
                 )
+            }
+        }
+        NfpSource::ExternalJson => {
+            // Uses the same sampling as ReducedConvolutionV1 since ExternalJson also populates nfp_polygon
+            if let Some(poly) = &nfp_polygon {
+                (
+                    sample_points_inside(poly, args.sample_inside, 0xCAFE_BABE_31),
+                    sample_points_outside(poly, args.sample_outside, 0xCAFE_BABE_32),
+                    sample_points_on_boundary(poly, args.sample_boundary, 0xCAFE_BABE_33),
+                )
+            } else {
+                return Err(
+                    "ExternalJson: nfp_polygon is None despite setting nfp_was_available=true"
+                        .to_string(),
+                );
             }
         }
     };
@@ -777,6 +1036,11 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
             false_positive_count += 1;
         }
     }
+    let mut boundary_penetration_max_mm = 0.0f64;
+    let mut outer_boundary_penetration_max_mm = 0.0f64;
+    let mut hole_boundary_penetration_max_mm = 0.0f64;
+    let mut hole_boundary_collision_count = 0usize;
+    let mut hole_boundary_non_collision_count = 0usize;
 
     let perturb_units = mm_to_i64(args.boundary_perturbation_mm.max(0.0));
     if perturb_units > 0 {
@@ -800,11 +1064,26 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
             let in_exact = exact_collision_check(&part_a, &part_b, &inside_pt);
 
             if !in_exact || out_exact {
-                boundary_penetration_max_mm = boundary_penetration_max_mm.max(i64_to_mm(perturb_units));
+                let pen_mm = i64_to_mm(perturb_units);
+                boundary_penetration_max_mm = boundary_penetration_max_mm.max(pen_mm);
+                if sample.is_hole {
+                    hole_boundary_penetration_max_mm = hole_boundary_penetration_max_mm.max(pen_mm);
+                } else {
+                    outer_boundary_penetration_max_mm =
+                        outer_boundary_penetration_max_mm.max(pen_mm);
+                }
+            }
+
+            // Count hole boundary collisions for diagnostics
+            if sample.is_hole {
+                if out_exact {
+                    hole_boundary_collision_count += 1;
+                } else {
+                    hole_boundary_non_collision_count += 1;
+                }
             }
         }
     }
-
     let total_samples = inside_samples.len().saturating_add(outside_samples.len());
     let false_positive_rate = if total_samples == 0 {
         0.0
@@ -817,17 +1096,18 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
         false_negative_count as f64 / total_samples as f64
     };
 
-    let correctness_verdict = if args.nfp_source == NfpSource::ReducedConvolutionV1 && !nfp_was_available {
-        "NOT_AVAILABLE".to_string()
-    } else if false_positive_rate > 0.0 {
-        "FAIL_FALSE_POSITIVE".to_string()
-    } else if false_negative_rate > 0.01 {
-        "FAIL_FALSE_NEGATIVE".to_string()
-    } else if false_negative_rate < 0.001 {
-        "PASS".to_string()
-    } else {
-        "MARGINAL".to_string()
-    };
+    let correctness_verdict =
+        if args.nfp_source == NfpSource::ReducedConvolutionV1 && !nfp_was_available {
+            "NOT_AVAILABLE".to_string()
+        } else if false_positive_rate > 0.0 {
+            "FAIL_FALSE_POSITIVE".to_string()
+        } else if false_negative_rate > 0.01 {
+            "FAIL_FALSE_NEGATIVE".to_string()
+        } else if false_negative_rate < 0.001 {
+            "PASS".to_string()
+        } else {
+            "MARGINAL".to_string()
+        };
 
     let notes = if notes.is_empty() {
         if correctness_verdict == "PASS" {
@@ -841,11 +1121,20 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
         notes.join("; ")
     };
 
+    let boundary_holes_supported = nfp_polygon
+        .as_ref()
+        .map(|p| !p.holes.is_empty())
+        .unwrap_or(false);
+
+    let outer_boundary_samples = boundary_samples.iter().filter(|s| !s.is_hole).count();
+    let hole_boundary_samples = boundary_samples.iter().filter(|s| s.is_hole).count();
+
     Ok(BenchmarkOutput {
         benchmark_version: "nfp_correctness_v1",
         nfp_source: match args.nfp_source {
             NfpSource::ReducedConvolutionV1 => "reduced_convolution_v1",
             NfpSource::MockExact => "mock_exact",
+            NfpSource::ExternalJson => "external_json",
         },
         pair_id: fixture.pair_id,
         sample_count_inside: inside_samples.len(),
@@ -859,6 +1148,13 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
         correctness_verdict,
         nfp_was_available,
         notes,
+        boundary_holes_supported,
+        outer_boundary_samples,
+        hole_boundary_samples,
+        outer_boundary_penetration_max_mm,
+        hole_boundary_penetration_max_mm,
+        hole_boundary_collision_count,
+        hole_boundary_non_collision_count,
     })
 }
 

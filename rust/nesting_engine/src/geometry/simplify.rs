@@ -19,8 +19,14 @@ pub struct SimplifyResult {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SimplifyError {
-    EpsilonTooLarge { epsilon_mm: f64, area_delta_mm2: f64 },
-    TopologyChanged { reflex_before: usize, reflex_after: usize },
+    EpsilonTooLarge {
+        epsilon_mm: f64,
+        area_delta_mm2: f64,
+    },
+    TopologyChanged {
+        reflex_before: usize,
+        reflex_after: usize,
+    },
     EmptyResult,
 }
 
@@ -114,7 +120,12 @@ pub fn count_reflex_vertices(ring: &[Point64]) -> usize {
         let prev = ring[(i + n - 1) % n];
         let curr = ring[i];
         let next = ring[(i + 1) % n];
-        let cross = cross_product_i128(curr.x - prev.x, curr.y - prev.y, next.x - curr.x, next.y - curr.y);
+        let cross = cross_product_i128(
+            curr.x - prev.x,
+            curr.y - prev.y,
+            next.x - curr.x,
+            next.y - curr.y,
+        );
         if cross == 0 {
             continue;
         }
@@ -126,7 +137,10 @@ pub fn count_reflex_vertices(ring: &[Point64]) -> usize {
     count
 }
 
-fn simplify_ring_conservative(ring: &[Point64], epsilon_mm: f64) -> Result<Vec<Point64>, SimplifyError> {
+fn simplify_ring_conservative(
+    ring: &[Point64],
+    epsilon_mm: f64,
+) -> Result<Vec<Point64>, SimplifyError> {
     if ring.len() < 3 {
         return Err(SimplifyError::EmptyResult);
     }
@@ -149,7 +163,12 @@ fn simplify_ring_conservative(ring: &[Point64], epsilon_mm: f64) -> Result<Vec<P
             let prev = out[(i + n - 1) % n];
             let curr = out[i];
             let next = out[(i + 1) % n];
-            let cross = cross_product_i128(curr.x - prev.x, curr.y - prev.y, next.x - curr.x, next.y - curr.y);
+            let cross = cross_product_i128(
+                curr.x - prev.x,
+                curr.y - prev.y,
+                next.x - curr.x,
+                next.y - curr.y,
+            );
             if cross != 0 {
                 continue;
             }
@@ -283,7 +302,10 @@ fn polygon_max_deviation_mm(original: &Polygon64, simplified: &Polygon64) -> f64
     let mut max_d = ring_max_deviation_mm(&original.outer, &simplified.outer);
     let hole_count = original.holes.len().min(simplified.holes.len());
     for idx in 0..hole_count {
-        max_d = max_d.max(ring_max_deviation_mm(&original.holes[idx], &simplified.holes[idx]));
+        max_d = max_d.max(ring_max_deviation_mm(
+            &original.holes[idx],
+            &simplified.holes[idx],
+        ));
     }
     max_d
 }
@@ -291,7 +313,10 @@ fn polygon_max_deviation_mm(original: &Polygon64, simplified: &Polygon64) -> f64
 #[cfg(test)]
 mod tests {
     use super::{count_reflex_vertices, topology_preserving_rdp};
-    use crate::geometry::{scale::mm_to_i64, types::{Point64, Polygon64}};
+    use crate::geometry::{
+        scale::mm_to_i64,
+        types::{Point64, Polygon64},
+    };
 
     #[test]
     fn reflex_count_detects_concavity() {
@@ -309,10 +334,22 @@ mod tests {
     fn simplify_keeps_topology_on_rectangle() {
         let poly = Polygon64 {
             outer: vec![
-                Point64 { x: mm_to_i64(0.0), y: mm_to_i64(0.0) },
-                Point64 { x: mm_to_i64(10.0), y: mm_to_i64(0.0) },
-                Point64 { x: mm_to_i64(10.0), y: mm_to_i64(5.0) },
-                Point64 { x: mm_to_i64(0.0), y: mm_to_i64(5.0) },
+                Point64 {
+                    x: mm_to_i64(0.0),
+                    y: mm_to_i64(0.0),
+                },
+                Point64 {
+                    x: mm_to_i64(10.0),
+                    y: mm_to_i64(0.0),
+                },
+                Point64 {
+                    x: mm_to_i64(10.0),
+                    y: mm_to_i64(5.0),
+                },
+                Point64 {
+                    x: mm_to_i64(0.0),
+                    y: mm_to_i64(5.0),
+                },
             ],
             holes: Vec::new(),
         };

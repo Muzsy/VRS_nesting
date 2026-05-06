@@ -402,6 +402,22 @@ def _build_issue_summary(
             message=_default_acceptance_reason_message(reason),
         )
 
+    # Propagate review_required_reasons from the acceptance gate (e.g. nested island
+    # demotion: validator errors that were demoted to review_required rather than blocking).
+    for reason in _as_dict_list(acceptance_gate_result.get("review_required_reasons")):
+        source_raw = str(reason.get("source", ""))
+        if source_raw not in {"importer_probe", "validator_probe"}:
+            continue
+        _append_issue(
+            issues,
+            severity="review_required",
+            source=_map_acceptance_source(source_raw),
+            family=str(reason.get("family", "acceptance_gate_review_required_reason")),
+            details=_as_dict(reason.get("details")),
+            code=str(reason.get("family", "ACCEPTANCE_GATE_REVIEW_REQUIRED_REASON")).upper(),
+            message=_default_acceptance_reason_message(reason),
+        )
+
     inspect_diagnostics = _as_dict(inspect_result.get("diagnostics"))
     for error in _as_dict_list(inspect_diagnostics.get("probe_errors")):
         _append_issue(

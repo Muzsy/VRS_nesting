@@ -2,18 +2,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use crate::feasibility::{
-    aabb::{Aabb, aabb_from_polygon64},
-    can_place, PlacedPart,
+    aabb::{aabb_from_polygon64, Aabb},
+    can_place,
     narrow::PlacedIndex,
+    PlacedPart,
 };
 use crate::geometry::scale::{i64_to_mm, mm_to_i64};
 use crate::geometry::types::Polygon64;
 use crate::placement::blf::{
-    InflatedPartSpec, UnplacedItem, placed_extents_max_xy_i64, placed_polygon_for_state,
-    rotated_inflated_aabb,
+    placed_extents_max_xy_i64, placed_polygon_for_state, rotated_inflated_aabb, InflatedPartSpec,
+    UnplacedItem,
 };
 use crate::placement::nfp_placer::NfpPlacerStatsV1;
-use crate::placement::{PlacedItem, PlacementResult, blf_place, nfp_place};
+use crate::placement::{blf_place, nfp_place, PlacedItem, PlacementResult};
 use nesting_engine::nfp::cache::NfpCache;
 
 const SCORE_PPM_SCALE: u128 = 1_000_000;
@@ -284,10 +285,8 @@ fn compute_sheet_remnant_score(
     let free_proxy_area = right_strip_area.saturating_add(top_strip_area);
 
     let area_score_ppm = ppm_ratio(free_proxy_area, sheet_area);
-    let compactness_score_ppm = ppm_ratio(
-        right_strip_area.max(top_strip_area),
-        free_proxy_area.max(1),
-    );
+    let compactness_score_ppm =
+        ppm_ratio(right_strip_area.max(top_strip_area), free_proxy_area.max(1));
     let min_width_score_ppm = ppm_ratio(
         right_strip_width.max(top_strip_height),
         sheet_width.min(sheet_height).max(1),
@@ -295,7 +294,9 @@ fn compute_sheet_remnant_score(
 
     let weighted_value = REMNANT_AREA_WEIGHT_PPM
         .saturating_mul(area_score_ppm as u128)
-        .saturating_add(REMNANT_COMPACTNESS_WEIGHT_PPM.saturating_mul(compactness_score_ppm as u128))
+        .saturating_add(
+            REMNANT_COMPACTNESS_WEIGHT_PPM.saturating_mul(compactness_score_ppm as u128),
+        )
         .saturating_add(REMNANT_MIN_WIDTH_WEIGHT_PPM.saturating_mul(min_width_score_ppm as u128))
         / SCORE_PPM_SCALE;
 
@@ -347,8 +348,7 @@ fn compute_remnant_proxy_totals(
         let (rot_max_x, rot_max_y) = if let Some(v) = per_rotation_max_cache.get(&cache_key) {
             *v
         } else if let Some(spec) = part_by_id.get(item.part_id.as_str()) {
-            let max_xy =
-                placed_extents_max_xy_i64(&spec.inflated_polygon, item.rotation_deg, 0, 0);
+            let max_xy = placed_extents_max_xy_i64(&spec.inflated_polygon, item.rotation_deg, 0, 0);
             per_rotation_max_cache.insert(cache_key, max_xy);
             max_xy
         } else {
@@ -363,10 +363,12 @@ fn compute_remnant_proxy_totals(
 
     let mut totals = RemnantObjectiveTotals::default();
     for extents in envelope_by_sheet.values() {
-        let envelope_w =
-            (extents.max_x as i128).saturating_sub(sheet_bbox.min_x as i128).clamp(0, sheet_width);
-        let envelope_h =
-            (extents.max_y as i128).saturating_sub(sheet_bbox.min_y as i128).clamp(0, sheet_height);
+        let envelope_w = (extents.max_x as i128)
+            .saturating_sub(sheet_bbox.min_x as i128)
+            .clamp(0, sheet_width);
+        let envelope_h = (extents.max_y as i128)
+            .saturating_sub(sheet_bbox.min_y as i128)
+            .clamp(0, sheet_height);
         let score = compute_sheet_remnant_score(sheet_width, sheet_height, envelope_w, envelope_h);
         totals.value_ppm = totals.value_ppm.saturating_add(score.value_ppm);
         totals.area_score_ppm = totals.area_score_ppm.saturating_add(score.area_score_ppm);
@@ -532,7 +534,8 @@ fn run_slide_compaction_postpass(
             };
             let tx = mm_to_i64(item.x_mm);
             let ty = mm_to_i64(item.y_mm);
-            let polygon = placed_polygon_for_state(&spec.inflated_polygon, item.rotation_deg, tx, ty);
+            let polygon =
+                placed_polygon_for_state(&spec.inflated_polygon, item.rotation_deg, tx, ty);
             states.push(CompactionPlacedState {
                 placed_index,
                 rotation_deg: item.rotation_deg,
@@ -555,12 +558,9 @@ fn run_slide_compaction_postpass(
                 let ty_min = bin_aabb.min_y.saturating_sub(rotated_aabb.min_y);
                 let mut changed = false;
 
-                for candidate_tx in collect_candidate_left_positions(
-                    item_idx,
-                    &states,
-                    rotated_aabb,
-                    tx_min,
-                ) {
+                for candidate_tx in
+                    collect_candidate_left_positions(item_idx, &states, rotated_aabb, tx_min)
+                {
                     if candidate_tx >= states[item_idx].tx {
                         continue;
                     }
@@ -585,12 +585,9 @@ fn run_slide_compaction_postpass(
                     }
                 }
 
-                for candidate_ty in collect_candidate_down_positions(
-                    item_idx,
-                    &states,
-                    rotated_aabb,
-                    ty_min,
-                ) {
+                for candidate_ty in
+                    collect_candidate_down_positions(item_idx, &states, rotated_aabb, ty_min)
+                {
                     if candidate_ty >= states[item_idx].ty {
                         continue;
                     }
@@ -840,7 +837,7 @@ pub fn greedy_multi_sheet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::placement::blf::{InflatedPartSpec, PlacedItem, bbox_area, rect_poly};
+    use crate::placement::blf::{bbox_area, rect_poly, InflatedPartSpec, PlacedItem};
 
     #[test]
     fn basic_greedy_multi_sheet() {
@@ -1059,7 +1056,10 @@ mod tests {
         assert!(slide_result.compaction.applied);
         assert!(slide_result.compaction.moved_items_count > 0);
 
-        let off_after = off_result.compaction.occupied_extent_after.expect("off extent");
+        let off_after = off_result
+            .compaction
+            .occupied_extent_after
+            .expect("off extent");
         let slide_after = slide_result
             .compaction
             .occupied_extent_after

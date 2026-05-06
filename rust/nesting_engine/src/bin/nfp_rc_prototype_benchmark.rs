@@ -332,17 +332,21 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
     };
 
     let baseline = fixture.baseline_metrics;
-    let (baseline_verdict, baseline_fragment_count_a, baseline_fragment_count_b, baseline_pair_count) =
-        if let Some(bm) = baseline {
-            (
-                bm.verdict,
-                bm.fragment_count_a,
-                bm.fragment_count_b,
-                bm.expected_pair_count,
-            )
-        } else {
-            (None, None, None, None)
-        };
+    let (
+        baseline_verdict,
+        baseline_fragment_count_a,
+        baseline_fragment_count_b,
+        baseline_pair_count,
+    ) = if let Some(bm) = baseline {
+        (
+            bm.verdict,
+            bm.fragment_count_a,
+            bm.fragment_count_b,
+            bm.expected_pair_count,
+        )
+    } else {
+        (None, None, None, None)
+    };
 
     let comparison_to_baseline = if args.compare_baseline {
         ComparisonToBaseline {

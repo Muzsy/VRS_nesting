@@ -777,28 +777,17 @@ def _classify_cut_candidates(
             any(ref2 in candidate_keys for ref2 in contained_by_map.get(ref, []))
             for ref in direct_outer_in_candidates
         )
-        if is_nested:
-            _emit_conflict(
-                review_required_candidates,
-                blocking_conflicts,
-                family="contour_nested_island_unsupported",
-                strict_mode=profile["strict_mode"],
-                interactive_review=profile["interactive_review_on_ambiguity"],
-                payload={
-                    "layer": str(c["layer"]),
-                    "ring_index": int(c["ring_index"]),
-                    "contour_id": str(c.get("contour_id", "")),
-                },
-            )
-            continue
         assignments.append({
             "contour_id": str(c.get("contour_id", f"orig:{c['layer']}:{c['ring_index']}")),
             "layer": str(c["layer"]),
             "ring_index": int(c["ring_index"]),
             "canonical_role": "CUT_INNER",
-            "decision_source": "contour_topology_auto",
+            # depth 0 → CUT_OUTER (above), depth >= 1 → CUT_INNER (flatten policy).
+            # "contour_nested_island_unsupported" was raised for depth >= 2 before this fix.
+            "decision_source": "contour_topology_auto_nested_flattened",
             "bbox": c.get("bbox"),
             "area_abs_mm2": float(c.get("area_abs_mm2", 0.0)),
+            "nested_island_original_parent": str(direct_outer_in_candidates[0]) if is_nested else None,
         })
 
 

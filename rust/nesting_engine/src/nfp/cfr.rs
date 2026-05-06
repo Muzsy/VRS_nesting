@@ -551,7 +551,10 @@ mod tests {
         let b = compute_cfr(&ifp, std::slice::from_ref(&blocker));
 
         assert_eq!(a, b, "CFR must be deterministic");
-        assert!(!a.is_empty(), "CFR must keep at least one feasible component");
+        assert!(
+            !a.is_empty(),
+            "CFR must keep at least one feasible component"
+        );
         assert!(
             a.iter().any(|poly| !poly.holes.is_empty()) || a.len() > 1,
             "rect-minus-rect should keep a stable hole/component structure"
@@ -609,7 +612,10 @@ mod tests {
         let ba = compute_cfr(&ifp, &[blocker_b, blocker_a]);
 
         assert_eq!(ab, ba, "component ordering must be stable");
-        assert!(ab.len() >= 2, "fixture must produce multiple CFR components");
+        assert!(
+            ab.len() >= 2,
+            "fixture must produce multiple CFR components"
+        );
     }
 
     #[test]

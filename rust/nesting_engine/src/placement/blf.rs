@@ -3,13 +3,14 @@ use std::time::Instant;
 use serde::Serialize;
 
 use crate::feasibility::{
-    aabb::{Aabb, aabb_from_polygon64},
-    can_place, can_place_profiled, CanPlaceProfile, PlacedPart,
+    aabb::{aabb_from_polygon64, Aabb},
+    can_place, can_place_profiled,
     narrow::PlacedIndex,
+    CanPlaceProfile, PlacedPart,
 };
 use crate::geometry::{
     scale::{i64_to_mm, mm_to_i64},
-    trig_lut::{round_div_i128, normalize_deg, COS_Q, SIN_Q, TRIG_SCALE_I128},
+    trig_lut::{normalize_deg, round_div_i128, COS_Q, SIN_Q, TRIG_SCALE_I128},
     types::{Point64, Polygon64},
 };
 use crate::multi_bin::greedy::{PartInPartMode, PartOrderPolicy, StopPolicy};
@@ -152,7 +153,12 @@ pub fn blf_place(
     let instance_cap = read_env_u64("NESTING_ENGINE_BLF_INSTANCE_CANDIDATE_CAP", 0);
     let cavity_anchor_cap = read_env_u64("NESTING_ENGINE_BLF_CAVITY_ANCHOR_CAP", 0);
 
-    let step = mm_to_i64(if grid_step_mm <= 0.0 { 1.0 } else { grid_step_mm }).max(1);
+    let step = mm_to_i64(if grid_step_mm <= 0.0 {
+        1.0
+    } else {
+        grid_step_mm
+    })
+    .max(1);
     let bin_aabb = aabb_from_polygon64(bin_polygon);
     let mut placed_state = PlacedIndex::new();
     let mut placed_polygons: Vec<Polygon64> = Vec::new();
@@ -172,7 +178,9 @@ pub fn blf_place(
     for part in &ordered {
         'instance_loop: for instance in 0..part.quantity {
             if stop.should_stop() {
-                if profiling { prof.total_stop_budget_hits += 1; }
+                if profiling {
+                    prof.total_stop_budget_hits += 1;
+                }
                 unplaced.push(UnplacedItem {
                     part_id: part.id.clone(),
                     instance,
@@ -210,7 +218,9 @@ pub fn blf_place(
                     instance,
                     reason: "PART_NEVER_FITS_SHEET".to_string(),
                 });
-                if profiling { prof.per_instance.push(inst_prof); }
+                if profiling {
+                    prof.per_instance.push(inst_prof);
+                }
                 continue;
             }
 
@@ -259,12 +269,16 @@ pub fn blf_place(
                     for (tx, ty) in cavity_candidates {
                         if stop.consume(1) {
                             timed_out_current = true;
-                            if profiling { prof.total_stop_budget_hits += 1; }
+                            if profiling {
+                                prof.total_stop_budget_hits += 1;
+                            }
                             break 'cavity_rotation;
                         }
                         instance_candidates_tested += 1;
                         if instance_cap > 0 && instance_candidates_tested >= instance_cap {
-                            if profiling { prof.instance_cap_hits += 1; }
+                            if profiling {
+                                prof.instance_cap_hits += 1;
+                            }
                             instance_capped = true;
                             break 'cavity_rotation;
                         }
@@ -287,7 +301,8 @@ pub fn blf_place(
 
                         let (feasible, cp) = if profiling {
                             let cp_start = Instant::now();
-                            let (ok, cp) = can_place_profiled(&candidate, bin_polygon, &placed_state);
+                            let (ok, cp) =
+                                can_place_profiled(&candidate, bin_polygon, &placed_state);
                             let cp_ms = cp_start.elapsed().as_secs_f64() * 1000.0;
                             prof.wall_ms_in_can_place += cp_ms;
                             inst_prof.wall_ms_can_place += cp_ms;
@@ -295,19 +310,30 @@ pub fn blf_place(
                             prof.can_place_calls += 1;
                             prof.poly_within_calls += cp.poly_within_called as u64;
                             prof.wall_ms_in_poly_within += cp.poly_within_ns as f64 / 1_000_000.0;
-                            prof.wall_ms_in_overlap_query += cp.overlap_query_ns as f64 / 1_000_000.0;
+                            prof.wall_ms_in_overlap_query +=
+                                cp.overlap_query_ns as f64 / 1_000_000.0;
                             prof.overlap_query_calls += 1;
                             prof.placed_overlap_candidates_total += cp.overlap_candidates as u64;
                             prof.wall_ms_in_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
-                            inst_prof.wall_ms_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
+                            inst_prof.wall_ms_narrow_phase +=
+                                cp.narrow_phase_ns as f64 / 1_000_000.0;
                             prof.narrow_phase_calls += cp.narrow_phase_pairs as u64;
                             prof.segment_pair_checks += cp.segment_pair_checks;
-                            if cp.rejected_by_aabb { prof.can_place_rejected_by_aabb += 1; }
-                            if cp.rejected_by_within { prof.can_place_rejected_by_within += 1; }
-                            if cp.rejected_by_narrow { prof.can_place_rejected_by_narrow += 1; }
+                            if cp.rejected_by_aabb {
+                                prof.can_place_rejected_by_aabb += 1;
+                            }
+                            if cp.rejected_by_within {
+                                prof.can_place_rejected_by_within += 1;
+                            }
+                            if cp.rejected_by_narrow {
+                                prof.can_place_rejected_by_narrow += 1;
+                            }
                             (ok, cp)
                         } else {
-                            (can_place(&candidate, bin_polygon, &placed_state), CanPlaceProfile::default())
+                            (
+                                can_place(&candidate, bin_polygon, &placed_state),
+                                CanPlaceProfile::default(),
+                            )
                         };
                         let _ = cp; // suppress unused warning when not profiling
 
@@ -330,7 +356,8 @@ pub fn blf_place(
                             if profiling {
                                 prof.total_candidates_accepted += 1;
                                 prof.total_parts_placed += 1;
-                                prof.last_successful_placement_index = global_candidate_counter as i64;
+                                prof.last_successful_placement_index =
+                                    global_candidate_counter as i64;
                                 last_success_time = Instant::now();
                                 candidates_since_last_success = 0;
                             }
@@ -341,8 +368,9 @@ pub fn blf_place(
                     }
                 }
                 if profiling && !found {
-                    prof.wall_ms_in_cavity_generation += cav_gen_start.elapsed().as_secs_f64() * 1000.0
-                        - prof.wall_ms_in_can_place; // avoid double-counting; approximate
+                    prof.wall_ms_in_cavity_generation +=
+                        cav_gen_start.elapsed().as_secs_f64() * 1000.0 - prof.wall_ms_in_can_place;
+                    // avoid double-counting; approximate
                 }
             }
 
@@ -360,20 +388,26 @@ pub fn blf_place(
             while ty <= global_ty_max && !found && !instance_capped {
                 if stop.consume(1) {
                     timed_out_current = true;
-                    if profiling { prof.total_stop_budget_hits += 1; }
+                    if profiling {
+                        prof.total_stop_budget_hits += 1;
+                    }
                     break;
                 }
                 let mut tx = global_tx_min;
                 while tx <= global_tx_max && !found && !instance_capped {
                     if stop.consume(1) {
                         timed_out_current = true;
-                        if profiling { prof.total_stop_budget_hits += 1; }
+                        if profiling {
+                            prof.total_stop_budget_hits += 1;
+                        }
                         break;
                     }
                     for (rotation, rotated, rotated_aabb) in &rotation_candidates {
                         if stop.consume(1) {
                             timed_out_current = true;
-                            if profiling { prof.total_stop_budget_hits += 1; }
+                            if profiling {
+                                prof.total_stop_budget_hits += 1;
+                            }
                             break;
                         }
                         let tx_min = bin_aabb.min_x - rotated_aabb.min_x;
@@ -385,7 +419,9 @@ pub fn blf_place(
                         }
                         instance_candidates_tested += 1;
                         if instance_cap > 0 && instance_candidates_tested >= instance_cap {
-                            if profiling { prof.instance_cap_hits += 1; }
+                            if profiling {
+                                prof.instance_cap_hits += 1;
+                            }
                             instance_capped = true;
                             break;
                         }
@@ -408,7 +444,8 @@ pub fn blf_place(
 
                         let (feasible, cp) = if profiling {
                             let cp_start = Instant::now();
-                            let (ok, cp) = can_place_profiled(&candidate, bin_polygon, &placed_state);
+                            let (ok, cp) =
+                                can_place_profiled(&candidate, bin_polygon, &placed_state);
                             let cp_ms = cp_start.elapsed().as_secs_f64() * 1000.0;
                             prof.wall_ms_in_can_place += cp_ms;
                             inst_prof.wall_ms_can_place += cp_ms;
@@ -416,19 +453,30 @@ pub fn blf_place(
                             prof.can_place_calls += 1;
                             prof.poly_within_calls += cp.poly_within_called as u64;
                             prof.wall_ms_in_poly_within += cp.poly_within_ns as f64 / 1_000_000.0;
-                            prof.wall_ms_in_overlap_query += cp.overlap_query_ns as f64 / 1_000_000.0;
+                            prof.wall_ms_in_overlap_query +=
+                                cp.overlap_query_ns as f64 / 1_000_000.0;
                             prof.overlap_query_calls += 1;
                             prof.placed_overlap_candidates_total += cp.overlap_candidates as u64;
                             prof.wall_ms_in_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
-                            inst_prof.wall_ms_narrow_phase += cp.narrow_phase_ns as f64 / 1_000_000.0;
+                            inst_prof.wall_ms_narrow_phase +=
+                                cp.narrow_phase_ns as f64 / 1_000_000.0;
                             prof.narrow_phase_calls += cp.narrow_phase_pairs as u64;
                             prof.segment_pair_checks += cp.segment_pair_checks;
-                            if cp.rejected_by_aabb { prof.can_place_rejected_by_aabb += 1; }
-                            if cp.rejected_by_within { prof.can_place_rejected_by_within += 1; }
-                            if cp.rejected_by_narrow { prof.can_place_rejected_by_narrow += 1; }
+                            if cp.rejected_by_aabb {
+                                prof.can_place_rejected_by_aabb += 1;
+                            }
+                            if cp.rejected_by_within {
+                                prof.can_place_rejected_by_within += 1;
+                            }
+                            if cp.rejected_by_narrow {
+                                prof.can_place_rejected_by_narrow += 1;
+                            }
                             (ok, cp)
                         } else {
-                            (can_place(&candidate, bin_polygon, &placed_state), CanPlaceProfile::default())
+                            (
+                                can_place(&candidate, bin_polygon, &placed_state),
+                                CanPlaceProfile::default(),
+                            )
                         };
                         let _ = cp;
 
@@ -451,7 +499,8 @@ pub fn blf_place(
                             if profiling {
                                 prof.total_candidates_accepted += 1;
                                 prof.total_parts_placed += 1;
-                                prof.last_successful_placement_index = global_candidate_counter as i64;
+                                prof.last_successful_placement_index =
+                                    global_candidate_counter as i64;
                                 last_success_time = Instant::now();
                                 candidates_since_last_success = 0;
                             }
@@ -475,7 +524,9 @@ pub fn blf_place(
             }
 
             if timed_out_current {
-                if profiling { inst_prof.timed_out = true; }
+                if profiling {
+                    inst_prof.timed_out = true;
+                }
                 for remaining_instance in instance..part.quantity {
                     unplaced.push(UnplacedItem {
                         part_id: part.id.clone(),
@@ -677,7 +728,11 @@ fn order_parts_for_policy(
 
 fn rotate_polygon(poly: &Polygon64, rotation_deg: i32) -> Polygon64 {
     Polygon64 {
-        outer: poly.outer.iter().map(|p| rotate_point(*p, rotation_deg)).collect(),
+        outer: poly
+            .outer
+            .iter()
+            .map(|p| rotate_point(*p, rotation_deg))
+            .collect(),
         holes: poly
             .holes
             .iter()
@@ -730,11 +785,25 @@ pub(crate) fn rotate_polygon_for_placement(poly: &Polygon64, rotation_deg: i32) 
 
 fn translate_polygon(poly: &Polygon64, tx: i64, ty: i64) -> Polygon64 {
     Polygon64 {
-        outer: poly.outer.iter().map(|p| Point64 { x: p.x + tx, y: p.y + ty }).collect(),
+        outer: poly
+            .outer
+            .iter()
+            .map(|p| Point64 {
+                x: p.x + tx,
+                y: p.y + ty,
+            })
+            .collect(),
         holes: poly
             .holes
             .iter()
-            .map(|h| h.iter().map(|p| Point64 { x: p.x + tx, y: p.y + ty }).collect())
+            .map(|h| {
+                h.iter()
+                    .map(|p| Point64 {
+                        x: p.x + tx,
+                        y: p.y + ty,
+                    })
+                    .collect()
+            })
             .collect(),
     }
 }
@@ -1121,7 +1190,10 @@ mod tests {
             0,
         );
 
-        assert!(bbox_skipped > 0, "should skip the small 5x5 hole for 20x20 part");
+        assert!(
+            bbox_skipped > 0,
+            "should skip the small 5x5 hole for 20x20 part"
+        );
         assert!(candidates.is_empty(), "no candidates from tiny hole");
     }
 
@@ -1149,7 +1221,10 @@ mod tests {
         );
 
         assert_eq!(bbox_skipped, 0, "hole is big enough, no skip");
-        assert!(!candidates.is_empty(), "should generate candidates from 50x50 hole");
+        assert!(
+            !candidates.is_empty(),
+            "should generate candidates from 50x50 hole"
+        );
     }
 
     #[test]

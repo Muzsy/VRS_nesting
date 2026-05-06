@@ -8,7 +8,9 @@ use nesting_engine::geometry::{
     scale::mm_to_i64,
     types::{is_convex, Point64, Polygon64},
 };
-use nesting_engine::nfp::{concave::compute_concave_nfp_default, convex::compute_convex_nfp, NfpError};
+use nesting_engine::nfp::{
+    concave::compute_concave_nfp_default, convex::compute_convex_nfp, NfpError,
+};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_FIXTURE: &str = "tests/fixtures/nesting_engine/nfp_pairs/lv8_pair_01.json";

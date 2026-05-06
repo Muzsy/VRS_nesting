@@ -179,3 +179,56 @@ def test_real_world_gravir_text_does_not_block_cut_acceptance() -> None:
             f"{fixture_name}: importer failed — Gravír TEXT may be blocking: "
             f"{importer_errors}"
         )
+
+
+def test_real_world_lv8_nested_hole_demoted_to_review_required() -> None:
+    """T05j: Lv8_11612_6db has nested hole topology (hole-within-hole).
+
+    The shapely validator emits GEO_TOPOLOGY_INVALID "Holes are nested" but this is
+    a shapely limitation (hole-within-hole is valid GIS geometry but shapely marks it
+    invalid). Policy A: demote to review_required with explicit reason
+    DXF_PREFLIGHT_NESTED_ISLAND_REQUIRES_MANUAL_REVIEW instead of preflight_rejected.
+
+    Expected outcome: preflight_review_required (NOT preflight_rejected).
+    The file must NOT become accepted_for_import because the geometry meaning is ambiguous.
+    """
+    fixture = _FIXTURES_DIR / "Lv8_11612_6db REV3.dxf"
+    if not fixture.is_file():
+        pytest.skip(f"fixture not found: {fixture}")
+
+    result = _run_full_preflight(fixture)
+    gate = result["gate"]
+    roles = result["roles"]
+
+    # T05j: must be review_required, NOT rejected
+    assert gate["acceptance_outcome"] == "preflight_review_required", (
+        f"expected 'preflight_review_required', got {gate['acceptance_outcome']!r}. "
+        f"Blocking: {gate['blocking_reasons']}  Review: {gate['review_required_reasons']}"
+    )
+
+    # Must have explicit nested island review reason
+    review_reasons = gate["review_required_reasons"]
+    nested_island_reasons = [
+        r for r in review_reasons
+        if r.get("family") == "DXF_PREFLIGHT_NESTED_ISLAND_REQUIRES_MANUAL_REVIEW"
+    ]
+    assert len(nested_island_reasons) == 1, (
+        f"expected DXF_PREFLIGHT_NESTED_ISLAND_REQUIRES_MANUAL_REVIEW in review reasons, "
+        f"got: {review_reasons}"
+    )
+
+    # Importer must still pass (normalized DXF is structurally valid)
+    importer_probe = gate["importer_probe"]
+    assert importer_probe["is_pass"], (
+        f"importer probe failed: {importer_probe.get('error_code')} — "
+        f"{importer_probe.get('error_message')}"
+    )
+
+    # Role resolver: no blocking conflicts
+    blocking = roles.get("blocking_conflicts", [])
+    assert len(blocking) == 0, f"role resolver should have no blocking conflicts: {blocking}"
+
+    # Hole count: should be 11 (9 depth-1 + 2 depth-2)
+    assert importer_probe["hole_count"] == 11, (
+        f"expected 11 holes, got {importer_probe['hole_count']}"
+    )
