@@ -90,7 +90,11 @@ impl OverlayBounds {
             shift = shift.checked_add(1)?;
         }
 
-        Some(Self { min_x, min_y, shift })
+        Some(Self {
+            min_x,
+            min_y,
+            shift,
+        })
     }
 
     fn encode_x(self, x: i64) -> Option<i32> {
@@ -157,7 +161,10 @@ fn decode_shape(shape: &IntShape, bounds: OverlayBounds) -> Option<Polygon64> {
         return None;
     }
     let outer = decode_contour(&shape[0], bounds)?;
-    Some(Polygon64 { outer, holes: Vec::new() })
+    Some(Polygon64 {
+        outer,
+        holes: Vec::new(),
+    })
 }
 
 fn polygon_key(poly: &Polygon64) -> String {
@@ -268,11 +275,7 @@ struct StrategyResult {
     error: Option<String>,
 }
 
-fn run_snapshot(
-    ifp: &Polygon64,
-    nfp_polys: &[Polygon64],
-    strat: StrategyName,
-) -> StrategyResult {
+fn run_snapshot(ifp: &Polygon64, nfp_polys: &[Polygon64], strat: StrategyName) -> StrategyResult {
     let overall_start = Instant::now();
 
     let mut all_polys: Vec<&Polygon64> = Vec::with_capacity(1 + nfp_polys.len());
@@ -323,7 +326,12 @@ fn run_snapshot(
 
     // Diff step
     let diff_start = Instant::now();
-    let diff_shapes = run_overlay(&[ifp_shape], &union_shapes, OverlayRule::Difference, strat.to_strategy());
+    let diff_shapes = run_overlay(
+        &[ifp_shape],
+        &union_shapes,
+        OverlayRule::Difference,
+        strat.to_strategy(),
+    );
     let diff_time_ms = diff_start.elapsed().as_secs_f64() * 1000.0;
 
     // Decode output
@@ -361,7 +369,12 @@ fn parse_cli() -> CliArgs {
     let mut snapshot_dir: Option<PathBuf> = None;
     let mut output_path: Option<PathBuf> = None;
     let mut limit: Option<usize> = None;
-    let mut strategies = vec![StrategyName::List, StrategyName::Tree, StrategyName::Auto, StrategyName::Frag];
+    let mut strategies = vec![
+        StrategyName::List,
+        StrategyName::Tree,
+        StrategyName::Auto,
+        StrategyName::Frag,
+    ];
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -391,7 +404,8 @@ fn parse_cli() -> CliArgs {
     }
 
     CliArgs {
-        snapshot_dir: snapshot_dir.unwrap_or_else(|| PathBuf::from("tmp/reports/nfp_cgal_probe/cfr_snapshots")),
+        snapshot_dir: snapshot_dir
+            .unwrap_or_else(|| PathBuf::from("tmp/reports/nfp_cgal_probe/cfr_snapshots")),
         output_path,
         strategies,
         limit,
@@ -456,7 +470,10 @@ fn main() {
         .collect();
 
     if paths.is_empty() {
-        eprintln!("[CFR BENCH] No snapshot JSON files found in {}", args.snapshot_dir.display());
+        eprintln!(
+            "[CFR BENCH] No snapshot JSON files found in {}",
+            args.snapshot_dir.display()
+        );
         std::process::exit(1);
     }
 
@@ -471,7 +488,12 @@ fn main() {
             }
         }
 
-        print!("  [{}/{}] {} ... ", idx + 1, paths.len(), path.file_name().unwrap().to_string_lossy());
+        print!(
+            "  [{}/{}] {} ... ",
+            idx + 1,
+            paths.len(),
+            path.file_name().unwrap().to_string_lossy()
+        );
         std::io::stdout().flush().unwrap();
 
         let (snap, ifp, nfp_polys) = match load_snapshot(path) {
@@ -496,7 +518,8 @@ fn main() {
                 // Re-run with List to get output for comparison
                 let list_polys = decode_all_to_polygons(&ifp, &nfp_polys, StrategyName::List);
                 let strat_polys = decode_all_to_polygons(&ifp, &nfp_polys, strat);
-                result.output_equivalent_to_list = polygons_equivalent(&list_polys[..], &strat_polys[..]);
+                result.output_equivalent_to_list =
+                    polygons_equivalent(&list_polys[..], &strat_polys[..]);
             }
 
             timings.push(StrategyTiming {
@@ -518,10 +541,11 @@ fn main() {
             .map(|t| t.total_time_ms)
             .unwrap_or(0.0);
 
-        let fastest = timings
-            .iter()
-            .filter(|t| !t.crashed)
-            .min_by(|a, b| a.total_time_ms.partial_cmp(&b.total_time_ms).unwrap_or(Ordering::Equal));
+        let fastest = timings.iter().filter(|t| !t.crashed).min_by(|a, b| {
+            a.total_time_ms
+                .partial_cmp(&b.total_time_ms)
+                .unwrap_or(Ordering::Equal)
+        });
 
         let fastest_strategy = fastest.as_ref().map(|f| f.strategy.clone());
         let fastest_vs_list_speedup = fastest
@@ -551,15 +575,23 @@ fn main() {
     }
 
     // Build summary
-    let strategies_tested: Vec<String> = args.strategies.iter().map(|s| s.as_str().to_string()).collect();
+    let strategies_tested: Vec<String> = args
+        .strategies
+        .iter()
+        .map(|s| s.as_str().to_string())
+        .collect();
 
-    let mut avg_time_by_strategy: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    let mut total_by_strategy: std::collections::HashMap<String, (f64, usize)> = std::collections::HashMap::new();
+    let mut avg_time_by_strategy: std::collections::HashMap<String, f64> =
+        std::collections::HashMap::new();
+    let mut total_by_strategy: std::collections::HashMap<String, (f64, usize)> =
+        std::collections::HashMap::new();
 
     for r in &results {
         for t in &r.strategies {
             if !t.crashed {
-                let entry = total_by_strategy.entry(t.strategy.clone()).or_insert((0.0, 0));
+                let entry = total_by_strategy
+                    .entry(t.strategy.clone())
+                    .or_insert((0.0, 0));
                 entry.0 += t.total_time_ms;
                 entry.1 += 1;
             }
@@ -573,14 +605,16 @@ fn main() {
     }
 
     let list_avg = *avg_time_by_strategy.get("List").unwrap_or(&0.0);
-    let mut avg_speedup_vs_list: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut avg_speedup_vs_list: std::collections::HashMap<String, f64> =
+        std::collections::HashMap::new();
     for (name, &avg) in &avg_time_by_strategy {
         if name != "List" && list_avg > 0.0 {
             avg_speedup_vs_list.insert(name.clone(), list_avg / avg);
         }
     }
 
-    let mut total_crashes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut total_crashes: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for r in &results {
         for t in &r.strategies {
             if t.crashed {
@@ -591,12 +625,21 @@ fn main() {
 
     // Recommendation
     let mut recommendation = String::new();
-    if let Some((fastest_name, &fastest_avg)) = avg_time_by_strategy.iter().filter(|(n, _)| *n != "List").max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(Ordering::Equal)) {
+    if let Some((fastest_name, &fastest_avg)) = avg_time_by_strategy
+        .iter()
+        .filter(|(n, _)| *n != "List")
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(Ordering::Equal))
+    {
         let speedup = list_avg / fastest_avg;
         if speedup > 1.1 {
-            let non_equiv = results.iter().filter(|r| {
-                r.strategies.iter().any(|t| t.strategy == *fastest_name && !t.equivalent_to_list)
-            }).count();
+            let non_equiv = results
+                .iter()
+                .filter(|r| {
+                    r.strategies
+                        .iter()
+                        .any(|t| t.strategy == *fastest_name && !t.equivalent_to_list)
+                })
+                .count();
             if non_equiv == 0 {
                 recommendation = format!(
                     "RECOMMEND: Strategy::{} is {:.2}x faster than Strategy::List on average with equivalent output. Safe to use.",
@@ -631,18 +674,25 @@ fn main() {
         },
     };
 
-    let output_path = args.output_path.unwrap_or_else(|| {
-        args.snapshot_dir.join("cfr_benchmark_results.json")
-    });
+    let output_path = args
+        .output_path
+        .unwrap_or_else(|| args.snapshot_dir.join("cfr_benchmark_results.json"));
 
     let json = serde_json::to_string_pretty(&benchmark_results).unwrap();
     fs::write(&output_path, &json).unwrap();
     println!("\n[CFR BENCH] Results written: {}", output_path.display());
-    println!("[CFR BENCH] Recommendation: {}", benchmark_results.summary.recommendation);
+    println!(
+        "[CFR BENCH] Recommendation: {}",
+        benchmark_results.summary.recommendation
+    );
 }
 
 // Helper: decode all outputs for a given strategy (reused for comparison)
-fn decode_all_to_polygons(ifp: &Polygon64, nfp_polys: &[Polygon64], strat: StrategyName) -> Vec<Polygon64> {
+fn decode_all_to_polygons(
+    ifp: &Polygon64,
+    nfp_polys: &[Polygon64],
+    strat: StrategyName,
+) -> Vec<Polygon64> {
     let mut all_polys: Vec<&Polygon64> = Vec::with_capacity(1 + nfp_polys.len());
     all_polys.push(ifp);
     all_polys.extend(nfp_polys.iter());
@@ -663,7 +713,12 @@ fn decode_all_to_polygons(ifp: &Polygon64, nfp_polys: &[Polygon64], strat: Strat
         .collect();
 
     let union_shapes = run_overlay(&nfp_shapes, &[], OverlayRule::Union, strat.to_strategy());
-    let diff_shapes = run_overlay(&[ifp_shape], &union_shapes, OverlayRule::Difference, strat.to_strategy());
+    let diff_shapes = run_overlay(
+        &[ifp_shape],
+        &union_shapes,
+        OverlayRule::Difference,
+        strat.to_strategy(),
+    );
 
     diff_shapes
         .iter()

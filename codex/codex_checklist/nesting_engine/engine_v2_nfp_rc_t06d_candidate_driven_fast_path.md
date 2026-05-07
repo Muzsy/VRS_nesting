@@ -1,0 +1,30 @@
+# T06d Checklist — Candidate-Driven Fast-Path NFP Placement
+
+- [x] T06c report elolvasva
+- [x] default CFR útvonal megőrizve
+- [x] NESTING_ENGINE_CANDIDATE_DRIVEN feature flag implementálva
+- [x] candidate-driven út csak flag alatt fut
+- [x] IFP corner candidate-ek implementálva
+- [x] pairwise NFP vertex candidate-ek implementálva (limitált, MAX_NFP_VERTEX_CANDIDATES_PER_ROTATION=32)
+- [x] pairwise NFP edge midpoint candidate-ek implementálva (limitált, MAX_NFP_EDGE_MIDPOINT_CANDIDATES=16)
+- [x] placed anchor / bbox anchor candidate-ek implementálva (Aabb::corners() + polygon outer pontok)
+- [x] candidate dedup implementálva ((rotation_idx, tx, ty) kulcs)
+- [x] candidate cap implementálva (MAX_CANDIDATES_PER_PART=4096)
+- [x] meglévő can_place() final validator használva
+- [x] nincs gyengébb párhuzamos validator
+- [x] false accept = 0
+- [x] overlap violation = 0
+- [x] bounds violation = 0
+- [x] spacing violation = 0
+- [x] CFR fallback explicit és mérhető (NESTING_ENGINE_CANDIDATE_DRIVEN_FALLBACK=1)
+- [x] nincs silent fallback
+- [x] candidate diag counters implementálva (CandidateDrivenStatsV1)
+- [x] greedy / SA / multi-sheet / compaction nem lett újraírva
+- [x] NFP provider policy nem lett megváltoztatva
+- [x] production Dockerfile nem módosult
+- [x] cargo check PASS
+- [x] cargo test PASS (59 passed; 1 failed pre-existing CFR unit test)
+- [x] benchmark baseline lefutott (3-rect simple: 9 placed, 1 sheet, ok)
+- [x] benchmark candidate-driven lefutott (3-rect simple: 9 placed, 1 sheet, ok, byte-for-byte azonos)
+- [x] report elkészült
+- [x] checklist elkészült

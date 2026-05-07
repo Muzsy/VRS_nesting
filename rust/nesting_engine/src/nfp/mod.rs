@@ -7,9 +7,9 @@
 pub mod boundary_clean;
 pub mod cache;
 pub mod cfr;
+pub mod cgal_reference_provider; // DEV-only CGAL reference provider
 pub mod concave;
 pub mod convex;
-pub mod cgal_reference_provider; // DEV-only CGAL reference provider
 pub mod ifp;
 pub mod minkowski_cleanup;
 pub mod nfp_validation;
@@ -39,7 +39,10 @@ pub enum NfpError {
     /// CGAL subprocess spawn failure.
     CgalSubprocessError(String),
     /// CGAL subprocess exited with non-zero code.
-    CgalNonZeroExit { code: i32, stderr: String },
+    CgalNonZeroExit {
+        code: i32,
+        stderr: String,
+    },
     /// CGAL output JSON could not be parsed.
     CgalParseError(String),
     /// CGAL returned status != "success" with an error message.

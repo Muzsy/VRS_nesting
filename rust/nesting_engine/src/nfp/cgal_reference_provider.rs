@@ -70,13 +70,13 @@ impl NfpProvider for CgalReferenceProvider {
         let input_json = build_cgal_fixture(placed_polygon, moving_polygon)?;
 
         // 3. Write temp input file
-        let input_path = std::env::temp_dir()
-            .join(format!("cgal_probe_input_{}.json", std::process::id()));
+        let input_path =
+            std::env::temp_dir().join(format!("cgal_probe_input_{}.json", std::process::id()));
         std::fs::write(&input_path, &input_json)
             .map_err(|e| NfpError::CgalIoError(format!("failed to write temp input: {e}")))?;
 
-        let output_path = std::env::temp_dir()
-            .join(format!("cgal_probe_output_{}.json", std::process::id()));
+        let output_path =
+            std::env::temp_dir().join(format!("cgal_probe_output_{}.json", std::process::id()));
 
         // 4. Spawn CGAL probe subprocess
         let output = Command::new(&self.binary_path)

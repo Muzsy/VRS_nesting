@@ -348,8 +348,13 @@ fn now_utc_string() -> String {
 }
 
 fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
-    let raw = fs::read_to_string(&args.fixture)
-        .map_err(|err| format!("failed to read fixture '{}': {}", args.fixture.display(), err))?;
+    let raw = fs::read_to_string(&args.fixture).map_err(|err| {
+        format!(
+            "failed to read fixture '{}': {}",
+            args.fixture.display(),
+            err
+        )
+    })?;
     let fixture: PairFixture = serde_json::from_str(&raw)
         .map_err(|err| format!("invalid fixture JSON '{}': {}", args.fixture.display(), err))?;
 
@@ -382,8 +387,8 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
     let provider_name: Option<String> = if let Some(ref kernel_str) = args.nfp_kernel {
         let kernel = parse_kernel(kernel_str)?;
         let config = NfpProviderConfig { kernel };
-        let prov = create_nfp_provider(&config)
-            .map_err(|e| format!("failed to create provider: {e}"))?;
+        let prov =
+            create_nfp_provider(&config).map_err(|e| format!("failed to create provider: {e}"))?;
         // Store provider name for the output record.
         let name = prov.kernel_name().to_string();
         // Leak the provider to keep it alive for the duration of the benchmark.
@@ -399,8 +404,8 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
         // Provider path — create a fresh provider for this thread.
         let kernel = parse_kernel(kernel_str)?;
         let config = NfpProviderConfig { kernel };
-        let provider = create_nfp_provider(&config)
-            .map_err(|e| format!("failed to create provider: {e}"))?;
+        let provider =
+            create_nfp_provider(&config).map_err(|e| format!("failed to create provider: {e}"))?;
         run_nfp_with_provider(provider, bench_a, bench_b, args.timeout_ms)
     } else {
         run_nfp_compute_with_timeout(bench_a, bench_b, args.timeout_ms)

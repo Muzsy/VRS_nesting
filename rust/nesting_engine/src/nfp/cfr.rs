@@ -66,11 +66,17 @@ fn write_cfr_snapshot_if_enabled(
         nfp_poly_count,
         nfp_total_vertices,
         ifp_outer: ifp_rect.outer.iter().map(|p| [p.x, p.y]).collect(),
-        nfp_outer_only: nfp_polys.iter().map(|p| p.outer.iter().map(|pt| [pt.x, pt.y]).collect()).collect(),
+        nfp_outer_only: nfp_polys
+            .iter()
+            .map(|p| p.outer.iter().map(|pt| [pt.x, pt.y]).collect())
+            .collect(),
         ifp_area,
     };
 
-    let file_name = format!("cfr_snap_{:06}_{}nfp_{}v.json", seq, nfp_poly_count, nfp_total_vertices);
+    let file_name = format!(
+        "cfr_snap_{:06}_{}nfp_{}v.json",
+        seq, nfp_poly_count, nfp_total_vertices
+    );
     let file_path = path.join(&file_name);
 
     let json = serde_json::to_string_pretty(&snapshot).ok()?;
@@ -94,11 +100,7 @@ fn total_vertex_count(polys: &[Polygon64]) -> usize {
 
 /// Returns max vertex count of any single polygon (outer only, no holes).
 fn max_polygon_vertices(polys: &[Polygon64]) -> usize {
-    polys
-        .iter()
-        .map(|p| p.outer.len())
-        .max()
-        .unwrap_or(0)
+    polys.iter().map(|p| p.outer.len()).max().unwrap_or(0)
 }
 
 /// Emit CFR_DIAG_V1 structured log line.

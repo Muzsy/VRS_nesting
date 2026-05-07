@@ -270,7 +270,10 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
         if arg == "--nfp-kernel" {
             idx += 1;
             if idx >= args.len() {
-                return Err("missing value for --nfp-kernel (expected: old_concave|cgal_reference)".to_string());
+                return Err(
+                    "missing value for --nfp-kernel (expected: old_concave|cgal_reference)"
+                        .to_string(),
+                );
             }
             nfp_kernel = Some(args[idx].clone());
             idx += 1;
