@@ -1,5 +1,8 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
+
 #[cfg(test)]
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use i_overlay::{
     core::{
@@ -16,10 +19,134 @@ use sha2::{Digest, Sha256};
 
 use crate::geometry::types::{cross_product_i128, Point64, Polygon64};
 
+/// Snapshot data for CFR benchmark replay.
+/// Saved when NESTING_ENGINE_CFR_SNAPSHOT_DIR is set and thresholds are exceeded.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct CfrSnapshot {
+    /// Monotonic counter for ordering.
+    pub seq: u64,
+    /// Number of NFP polygons at snapshot time.
+    pub nfp_poly_count: usize,
+    /// Total vertex count of all NFP polygons.
+    pub nfp_total_vertices: usize,
+    /// IFP polygon vertices (outer only, no holes).
+    pub ifp_outer: Vec<[i64; 2]>,
+    /// NFP polygons (outer only, holes stripped for snapshot portability).
+    pub nfp_outer_only: Vec<Vec<[i64; 2]>>,
+    /// IFP area for filtering.
+    pub ifp_area: i128,
+}
+
+/// Write a snapshot file if snapshotting is enabled.
+/// Returns the snapshot path if written, None otherwise.
+fn write_cfr_snapshot_if_enabled(
+    seq: u64,
+    ifp_rect: &Polygon64,
+    nfp_polys: &[Polygon64],
+    nfp_poly_count: usize,
+    nfp_total_vertices: usize,
+) -> Option<std::path::PathBuf> {
+    let snap_dir = std::env::var("NESTING_ENGINE_CFR_SNAPSHOT_DIR").ok()?;
+    let threshold: usize = std::env::var("NESTING_ENGINE_CFR_SNAPSHOT_THRESHOLD")
+        .unwrap_or_else(|_| "50".to_string())
+        .parse()
+        .unwrap_or(50);
+
+    if nfp_poly_count < threshold {
+        return None;
+    }
+
+    let path = std::path::Path::new(&snap_dir);
+    std::fs::create_dir_all(path).ok()?;
+
+    let ifp_area = signed_area2_i128(&ifp_rect.outer).abs();
+
+    let snapshot = CfrSnapshot {
+        seq,
+        nfp_poly_count,
+        nfp_total_vertices,
+        ifp_outer: ifp_rect.outer.iter().map(|p| [p.x, p.y]).collect(),
+        nfp_outer_only: nfp_polys.iter().map(|p| p.outer.iter().map(|pt| [pt.x, pt.y]).collect()).collect(),
+        ifp_area,
+    };
+
+    let file_name = format!("cfr_snap_{:06}_{}nfp_{}v.json", seq, nfp_poly_count, nfp_total_vertices);
+    let file_path = path.join(&file_name);
+
+    let json = serde_json::to_string_pretty(&snapshot).ok()?;
+    std::fs::write(&file_path, json).ok()?;
+
+    eprintln!(
+        "[CFR SNAP] written {} ({} NFP polys, {} total vertices)",
+        file_name, nfp_poly_count, nfp_total_vertices
+    );
+
+    Some(file_path)
+}
+
+/// Returns total vertex count across all polygons (outer + holes).
+fn total_vertex_count(polys: &[Polygon64]) -> usize {
+    polys
+        .iter()
+        .map(|p| p.outer.len() + p.holes.iter().map(|h| h.len()).sum::<usize>())
+        .sum()
+}
+
+/// Returns max vertex count of any single polygon (outer only, no holes).
+fn max_polygon_vertices(polys: &[Polygon64]) -> usize {
+    polys
+        .iter()
+        .map(|p| p.outer.len())
+        .max()
+        .unwrap_or(0)
+}
+
+/// Emit CFR_DIAG_V1 structured log line.
+/// Only emitted when NESTING_ENGINE_CFR_DIAG=1 or thresholds are exceeded.
+fn emit_cfr_diag(
+    nfp_poly_count: usize,
+    nfp_total_vertices: usize,
+    nfp_max_vertices: usize,
+    ifp_vertices: usize,
+    union_time_ms: f64,
+    diff_time_ms: f64,
+    component_count: usize,
+    component_total_vertices: usize,
+    candidate_count: usize,
+    total_cfr_time_ms: f64,
+) {
+    // Thresholds: log if >= 50 NFP polys OR >= 1000ms total OR env flag set
+    let diag_enabled = std::env::var("NESTING_ENGINE_CFR_DIAG").as_deref() == Ok("1");
+    if !diag_enabled && nfp_poly_count < 50 && total_cfr_time_ms < 1000.0 {
+        return;
+    }
+
+    eprintln!(
+        "CFR_DIAG_V1 nfp_poly_count={} nfp_total_vertices={} nfp_max_vertices={} \
+         ifp_vertices={} union_time_ms={:.2} diff_time_ms={:.2} \
+         component_count={} component_total_vertices={} candidate_count={} \
+         total_cfr_time_ms={:.2}",
+        nfp_poly_count,
+        nfp_total_vertices,
+        nfp_max_vertices,
+        ifp_vertices,
+        union_time_ms,
+        diff_time_ms,
+        component_count,
+        component_total_vertices,
+        candidate_count,
+        total_cfr_time_ms,
+    );
+}
+
 #[cfg(test)]
 static COMPONENT_HASH_CALLS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(test)]
 static COMPONENT_HASH_COUNTING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Global monotonic counter for snapshot sequencing.
+/// Only active when NESTING_ENGINE_CFR_SNAPSHOT_DIR is set.
+static SNAPSHOT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct CfrComponentSortKeyV1 {
@@ -60,6 +187,8 @@ fn compute_cfr_internal(
     nfp_polys: &[Polygon64],
     mut stats: Option<&mut CfrStatsV1>,
 ) -> Vec<Polygon64> {
+    let cfr_overall_start = Instant::now();
+
     let mut ifp_canon = ifp_rect.clone();
     if !canonicalize_polygon64(&mut ifp_canon) {
         return Vec::new();
@@ -88,19 +217,62 @@ fn compute_cfr_internal(
         return vec![ifp_canon];
     }
 
+    let nfp_poly_count = nfp_polys.len();
+    let nfp_total_verts = total_vertex_count(nfp_polys);
+
+    // Snapshot CFR call for benchmark replay (when env flag is set).
+    if std::env::var("NESTING_ENGINE_CFR_SNAPSHOT_DIR").is_ok() {
+        let seq = SNAPSHOT_SEQ.fetch_add(1, Ordering::Relaxed);
+        write_cfr_snapshot_if_enabled(seq, ifp_rect, nfp_polys, nfp_poly_count, nfp_total_verts);
+    }
+
     if let Some(cfr_stats) = stats.as_deref_mut() {
         cfr_stats.cfr_union_calls = cfr_stats.cfr_union_calls.saturating_add(1);
     }
+
+    let union_start = Instant::now();
     let union_shapes = run_overlay(&nfp_shapes, &[], OverlayRule::Union);
+    let union_time_ms = union_start.elapsed().as_secs_f64() * 1000.0;
+
     if union_shapes.is_empty() {
+        let total_ms = cfr_overall_start.elapsed().as_secs_f64() * 1000.0;
+        emit_cfr_diag(
+            nfp_polys.len(),
+            total_vertex_count(nfp_polys),
+            max_polygon_vertices(nfp_polys),
+            ifp_canon.outer.len(),
+            union_time_ms,
+            0.0,
+            0,
+            0,
+            0,
+            total_ms,
+        );
         return vec![ifp_canon];
     }
 
     if let Some(cfr_stats) = stats.as_deref_mut() {
         cfr_stats.cfr_diff_calls = cfr_stats.cfr_diff_calls.saturating_add(1);
     }
+
+    let diff_start = Instant::now();
     let diff_shapes = run_overlay(&[ifp_shape], &union_shapes, OverlayRule::Difference);
+    let diff_time_ms = diff_start.elapsed().as_secs_f64() * 1000.0;
+
     if diff_shapes.is_empty() {
+        let total_ms = cfr_overall_start.elapsed().as_secs_f64() * 1000.0;
+        emit_cfr_diag(
+            nfp_polys.len(),
+            total_vertex_count(nfp_polys),
+            max_polygon_vertices(nfp_polys),
+            ifp_canon.outer.len(),
+            union_time_ms,
+            diff_time_ms,
+            0,
+            0,
+            0,
+            total_ms,
+        );
         return Vec::new();
     }
 
@@ -115,6 +287,24 @@ fn compute_cfr_internal(
             }
         })
         .collect();
+
+    let component_total_vertices = total_vertex_count(&out);
+    let candidate_count = out.len();
+    let total_ms = cfr_overall_start.elapsed().as_secs_f64() * 1000.0;
+
+    emit_cfr_diag(
+        nfp_polys.len(),
+        total_vertex_count(nfp_polys),
+        max_polygon_vertices(nfp_polys),
+        ifp_canon.outer.len(),
+        union_time_ms,
+        diff_time_ms,
+        out.len(),
+        component_total_vertices,
+        candidate_count,
+        total_ms,
+    );
+
     sort_components(out)
 }
 

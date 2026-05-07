@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --part-in-part off|auto, --compaction off|slide, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>";
+const SUPPORTED_NEST_FLAGS: &str = "--placer blf|nfp, --part-in-part off|auto, --compaction off|slide, --search none|sa, --sa-iters <u64>, --sa-temp-start <u64>, --sa-temp-end <u64>, --sa-seed <u64>, --sa-eval-budget-sec <u64>, --nfp-kernel old_concave|cgal_reference";
 const DEFAULT_SA_ITERS: u64 = 256;
 const DEFAULT_SA_TEMP_START: u64 = 10_000;
 const DEFAULT_SA_TEMP_END: u64 = 50;
@@ -60,13 +60,14 @@ impl SaCliArgs {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct NestCliArgs {
     placer: PlacerKind,
     part_in_part_mode: PartInPartMode,
     compaction_mode: CompactionMode,
     search_mode: SearchMode,
     sa: SaCliArgs,
+    nfp_kernel: Option<String>, // T05z: CGAL reference kernel selection
 }
 
 fn main() {
@@ -134,6 +135,7 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
     let mut compaction_mode = CompactionMode::Off;
     let mut search_mode = SearchMode::None;
     let mut sa = SaCliArgs::default();
+    let mut nfp_kernel: Option<String> = None; // T05z
     let mut idx = 0usize;
 
     while idx < args.len() {
@@ -264,6 +266,21 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
             idx += 1;
             continue;
         }
+        // T05z: --nfp-kernel flag
+        if arg == "--nfp-kernel" {
+            idx += 1;
+            if idx >= args.len() {
+                return Err("missing value for --nfp-kernel (expected: old_concave|cgal_reference)".to_string());
+            }
+            nfp_kernel = Some(args[idx].clone());
+            idx += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--nfp-kernel=") {
+            nfp_kernel = Some(value.to_string());
+            idx += 1;
+            continue;
+        }
 
         return Err(format!(
             "unknown nest argument '{arg}' (supported: {SUPPORTED_NEST_FLAGS})"
@@ -280,6 +297,7 @@ fn parse_nest_cli_args(args: &[String]) -> Result<NestCliArgs, String> {
         compaction_mode,
         search_mode,
         sa,
+        nfp_kernel,
     })
 }
 
@@ -397,6 +415,18 @@ struct NestInputPart {
 }
 
 fn run_nest(cli: NestCliArgs) -> Result<(), String> {
+    // T05z: propagate --nfp-kernel CLI arg to NESTING_ENGINE_NFP_KERNEL env.
+    // nfp_placer.rs reads this env to select the provider at runtime.
+    if let Some(ref kernel) = cli.nfp_kernel {
+        std::env::set_var("NESTING_ENGINE_NFP_KERNEL", kernel);
+        eprintln!("[CLI] NESTING_ENGINE_NFP_KERNEL={}", kernel);
+        // T05z: cgal_reference also requires NFP_ENABLE_CGAL_REFERENCE=1.
+        if kernel == "cgal_reference" {
+            std::env::set_var("NFP_ENABLE_CGAL_REFERENCE", "1");
+            eprintln!("[CLI] NFP_ENABLE_CGAL_REFERENCE=1 (auto-set for cgal_reference)");
+        }
+    }
+
     let started = Instant::now();
     let stdin = stdio::stdin();
     let reader = BufReader::new(stdin.lock());
@@ -436,8 +466,16 @@ fn run_nest(cli: NestCliArgs) -> Result<(), String> {
         .parts
         .iter()
         .any(|part| part.status == "hole_collapsed");
+
+    // T05z: if cgal_reference kernel is active, force NFP even for holey inputs.
+    // The CGAL provider handles hole geometry correctly at pair level (T05y proven).
+    // This bypass is for reference/dev only — production path keeps the hybrid gating.
+    let nfp_kernel_env = std::env::var("NESTING_ENGINE_NFP_KERNEL").unwrap_or_default();
+    let force_nfp_for_cgal = nfp_kernel_env == "cgal_reference";
+
     let effective_placer = if cli.placer == PlacerKind::Nfp
         && (has_nominal_holes || has_hole_collapsed)
+        && !force_nfp_for_cgal
     {
         eprintln!("warning: --placer nfp fallback to blf (hybrid gating: holes or hole_collapsed)");
         PlacerKind::Blf

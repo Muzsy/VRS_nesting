@@ -9,7 +9,10 @@ use nesting_engine::geometry::{
     types::{is_convex, Point64, Polygon64},
 };
 use nesting_engine::nfp::{
-    concave::compute_concave_nfp_default, convex::compute_convex_nfp, NfpError,
+    concave::compute_concave_nfp_default,
+    convex::compute_convex_nfp,
+    provider::{create_nfp_provider, NfpKernel, NfpProviderConfig},
+    NfpError,
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +26,7 @@ struct CliArgs {
     part_a_only: bool,
     part_b_only: bool,
     output_json: bool,
+    nfp_kernel: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +50,7 @@ struct BenchmarkOutput {
     fixture: String,
     pair_a_id: String,
     pair_b_id: String,
+    provider_name: Option<String>,
     timestamp_utc: String,
     decomposition: DecompositionMetrics,
     nfp_computation: NfpComputationMetrics,
@@ -87,6 +92,7 @@ fn parse_args(raw: &[String]) -> Result<CliArgs, String> {
     let mut output_json = false;
 
     let mut idx = 0usize;
+    let mut nfp_kernel: Option<String> = None;
     while idx < raw.len() {
         let arg = &raw[idx];
         if arg == "--help" || arg == "-h" {
@@ -105,6 +111,20 @@ fn parse_args(raw: &[String]) -> Result<CliArgs, String> {
         }
         if arg == "--part-b-only" {
             part_b_only = true;
+            idx += 1;
+            continue;
+        }
+        if arg == "--nfp-kernel" {
+            idx += 1;
+            if idx >= raw.len() {
+                return Err("missing value for --nfp-kernel".to_string());
+            }
+            nfp_kernel = Some(raw[idx].clone());
+            idx += 1;
+            continue;
+        }
+        if let Some(val) = arg.strip_prefix("--nfp-kernel=") {
+            nfp_kernel = Some(val.to_string());
             idx += 1;
             continue;
         }
@@ -150,6 +170,7 @@ fn parse_args(raw: &[String]) -> Result<CliArgs, String> {
         part_a_only,
         part_b_only,
         output_json,
+        nfp_kernel,
     })
 }
 
@@ -167,6 +188,7 @@ fn print_help() {
     println!("  --part-a-only");
     println!("  --part-b-only");
     println!("  --output-json        (default output is human-readable)");
+    println!("  --nfp-kernel <name>  (default: old_concave; experimental: cgal_reference)");
 }
 
 fn print_human_summary(output: &BenchmarkOutput) {
@@ -225,18 +247,35 @@ fn fixture_part_to_polygon(part: &FixturePart) -> Result<Polygon64, String> {
     Ok(Polygon64 { outer, holes })
 }
 
-fn nfp_error_kind(err: NfpError) -> String {
+fn nfp_error_kind(err: &NfpError) -> String {
     match err {
-        NfpError::EmptyPolygon => "EmptyPolygon",
-        NfpError::NotConvex => "NotConvex",
-        NfpError::NotSimpleOutput => "NotSimpleOutput",
-        NfpError::OrbitLoopDetected => "OrbitLoopDetected",
-        NfpError::OrbitDeadEnd => "OrbitDeadEnd",
-        NfpError::OrbitMaxStepsReached => "OrbitMaxStepsReached",
-        NfpError::OrbitNotClosed => "OrbitNotClosed",
-        NfpError::DecompositionFailed => "DecompositionFailed",
+        NfpError::EmptyPolygon => "EmptyPolygon".into(),
+        NfpError::NotConvex => "NotConvex".into(),
+        NfpError::NotSimpleOutput => "NotSimpleOutput".into(),
+        NfpError::OrbitLoopDetected => "OrbitLoopDetected".into(),
+        NfpError::OrbitDeadEnd => "OrbitDeadEnd".into(),
+        NfpError::OrbitMaxStepsReached => "OrbitMaxStepsReached".into(),
+        NfpError::OrbitNotClosed => "OrbitNotClosed".into(),
+        NfpError::DecompositionFailed => "DecompositionFailed".into(),
+        NfpError::UnsupportedKernel(name) => (*name).into(),
+        NfpError::CgalBinaryNotFound(path) => format!("CgalBinaryNotFound: {path}"),
+        NfpError::CgalIoError(msg) => format!("CgalIoError: {msg}"),
+        NfpError::CgalSubprocessError(msg) => format!("CgalSubprocessError: {msg}"),
+        NfpError::CgalNonZeroExit { code, stderr } => {
+            format!("CgalNonZeroExit({code}): {stderr}")
+        }
+        NfpError::CgalParseError(msg) => format!("CgalParseError: {msg}"),
+        NfpError::CgalInternalError(msg) => format!("CgalInternalError: {msg}"),
     }
-    .to_string()
+}
+
+fn parse_kernel(kernel_name: &str) -> Result<NfpKernel, String> {
+    match kernel_name {
+        "old_concave" => Ok(NfpKernel::OldConcave),
+        "cgal_reference" => Ok(NfpKernel::CgalReference),
+        "reduced_convolution_experimental" => Ok(NfpKernel::ReducedConvolutionExperimental),
+        other => Err(format!("unknown nfp kernel: '{other}'")),
+    }
 }
 
 fn estimate_fragment_count(poly: &Polygon64) -> usize {
@@ -275,6 +314,32 @@ fn run_nfp_compute_with_timeout(
     }
 }
 
+/// Run NFP using an arbitrary NfpProvider (e.g. CgalReferenceProvider).
+/// The timeout applies to the whole provider.compute() call.
+/// Takes ownership of the provider.
+fn run_nfp_with_provider(
+    provider: Box<dyn nesting_engine::nfp::provider::NfpProvider>,
+    a: Polygon64,
+    b: Polygon64,
+    timeout_ms: u64,
+) -> Result<Result<ComputeOutput, NfpError>, ()> {
+    let (tx, rx) = mpsc::channel();
+    let _handle = thread::spawn(move || {
+        let started = Instant::now();
+        let result = provider.compute(&a, &b).map(|res| ComputeOutput {
+            polygon: res.polygon,
+            elapsed_ms: started.elapsed().as_millis(),
+        });
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
+        Ok(result) => Ok(result),
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(()),
+        Err(mpsc::RecvTimeoutError::Disconnected) => Ok(Err(NfpError::DecompositionFailed)),
+    }
+}
+
 fn now_utc_string() -> String {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(dur) => format!("{}", dur.as_secs()),
@@ -284,9 +349,9 @@ fn now_utc_string() -> String {
 
 fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
     let raw = fs::read_to_string(&args.fixture)
-        .map_err(|err| format!("failed to read fixture '{}': {err}", args.fixture.display()))?;
+        .map_err(|err| format!("failed to read fixture '{}': {}", args.fixture.display(), err))?;
     let fixture: PairFixture = serde_json::from_str(&raw)
-        .map_err(|err| format!("invalid fixture JSON '{}': {err}", args.fixture.display()))?;
+        .map_err(|err| format!("invalid fixture JSON '{}': {}", args.fixture.display(), err))?;
 
     let poly_a = fixture_part_to_polygon(&fixture.part_a)?;
     let poly_b = fixture_part_to_polygon(&fixture.part_b)?;
@@ -313,8 +378,33 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
         (poly_a.clone(), poly_b.clone())
     };
 
+    // Build provider if a non-default kernel was requested.
+    let provider_name: Option<String> = if let Some(ref kernel_str) = args.nfp_kernel {
+        let kernel = parse_kernel(kernel_str)?;
+        let config = NfpProviderConfig { kernel };
+        let prov = create_nfp_provider(&config)
+            .map_err(|e| format!("failed to create provider: {e}"))?;
+        // Store provider name for the output record.
+        let name = prov.kernel_name().to_string();
+        // Leak the provider to keep it alive for the duration of the benchmark.
+        // This is safe because we run sequentially in this binary.
+        Box::leak(prov);
+        Some(name)
+    } else {
+        None
+    };
+
     let total_started = Instant::now();
-    let computed = run_nfp_compute_with_timeout(bench_a, bench_b, args.timeout_ms);
+    let computed = if let Some(ref kernel_str) = args.nfp_kernel {
+        // Provider path — create a fresh provider for this thread.
+        let kernel = parse_kernel(kernel_str)?;
+        let config = NfpProviderConfig { kernel };
+        let provider = create_nfp_provider(&config)
+            .map_err(|e| format!("failed to create provider: {e}"))?;
+        run_nfp_with_provider(provider, bench_a, bench_b, args.timeout_ms)
+    } else {
+        run_nfp_compute_with_timeout(bench_a, bench_b, args.timeout_ms)
+    };
 
     let mut nfp = NfpComputationMetrics {
         fragment_union_time_ms: 0,
@@ -335,9 +425,9 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
             "TIMEOUT".to_string()
         }
         Ok(Err(err)) => {
-            let kind = nfp_error_kind(err);
+            let kind = nfp_error_kind(&err);
             nfp.error = Some(format!("nfp error: {kind}"));
-            nfp.nfp_error_kind = Some(kind.clone());
+            nfp.nfp_error_kind = Some(kind);
             nfp.total_time_ms = total_started.elapsed().as_millis();
             if err == NfpError::DecompositionFailed {
                 "DECOMPOSITION_FAILED".to_string()
@@ -355,10 +445,11 @@ fn run(args: CliArgs) -> Result<BenchmarkOutput, String> {
     };
 
     Ok(BenchmarkOutput {
-        benchmark_version: "nfp_pair_benchmark_v1".to_string(),
+        benchmark_version: "n_fp_pair_benchmark_v2".to_string(),
         fixture: fixture.pair_id,
         pair_a_id: fixture.part_a.part_id,
         pair_b_id: fixture.part_b.part_id,
+        provider_name,
         timestamp_utc: now_utc_string(),
         decomposition,
         nfp_computation: nfp,

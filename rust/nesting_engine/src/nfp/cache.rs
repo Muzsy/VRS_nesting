@@ -9,16 +9,25 @@ use sha2::{Digest, Sha256};
 
 use crate::geometry::types::{Point64, Polygon64};
 
+// Re-export NfpKernel so cache.rs can reference it in NfpCacheKey.
+// Safe: provider.rs does not import anything from cache.rs.
+pub use super::provider::NfpKernel;
+
 pub const MAX_ENTRIES: usize = 10_000;
 
 /// Cache key for NFP(A, B, rotation(B)).
 ///
 /// `rotation_steps_b` is a discrete step index (i16), never an f64 angle.
+/// `nfp_kernel` ensures entries from different NFP kernels cannot alias
+/// each other — critical for future providers (CGAL, reduced_convolution).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NfpCacheKey {
     pub shape_id_a: u64,
     pub shape_id_b: u64,
     pub rotation_steps_b: i16,
+    /// Which NFP kernel produced / is expected for this entry.
+    /// T05w: always `NfpKernel::OldConcave`; future providers will add their own.
+    pub nfp_kernel: NfpKernel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,7 +207,7 @@ fn signed_area2(points: &[Point64]) -> i128 {
 mod tests {
     use crate::geometry::types::{Point64, Polygon64};
 
-    use super::{shape_id, NfpCache, NfpCacheKey, MAX_ENTRIES};
+    use super::{shape_id, NfpCache, NfpCacheKey, NfpKernel, MAX_ENTRIES};
 
     fn unit_square() -> Polygon64 {
         Polygon64 {
@@ -219,6 +228,7 @@ mod tests {
             shape_id_a: 1,
             shape_id_b: 2,
             rotation_steps_b: 0,
+            nfp_kernel: NfpKernel::OldConcave,
         };
 
         assert!(cache.get(&key).is_none());
@@ -238,11 +248,13 @@ mod tests {
             shape_id_a: 10,
             shape_id_b: 20,
             rotation_steps_b: 1,
+            nfp_kernel: NfpKernel::OldConcave,
         };
         let key_ba = NfpCacheKey {
             shape_id_a: 20,
             shape_id_b: 10,
             rotation_steps_b: 1,
+            nfp_kernel: NfpKernel::OldConcave,
         };
 
         cache.insert(key_ab.clone(), unit_square());
@@ -294,6 +306,7 @@ mod tests {
             shape_id_a: 1,
             shape_id_b: 2,
             rotation_steps_b: 0,
+            nfp_kernel: NfpKernel::OldConcave,
         };
         cache.insert(first_key.clone(), value.clone());
         assert!(cache.get(&first_key).is_some());
@@ -311,6 +324,7 @@ mod tests {
                         shape_id_a: idx as u64,
                         shape_id_b: (idx + 1) as u64,
                         rotation_steps_b: 0,
+                        nfp_kernel: NfpKernel::OldConcave,
                     },
                     value.clone(),
                 );
@@ -323,6 +337,7 @@ mod tests {
                     shape_id_a: 999_991,
                     shape_id_b: 999_992,
                     rotation_steps_b: 7,
+                    nfp_kernel: NfpKernel::OldConcave,
                 },
                 value,
             );

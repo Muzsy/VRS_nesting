@@ -1,0 +1,23 @@
+# T05z Checklist — CGAL E2E Run Profile
+
+- [x] CGAL probe build/smoke PASS
+- [x] cargo check PASS
+- [x] cargo test --lib PASS vagy dokumentált pre-existing fail (59/60 passed, 1 pre-existing)
+- [x] end-to-end entrypoint azonosítva
+- [x] --nfp-kernel vagy equivalent provider selection működik end-to-end
+- [x] default kernel továbbra is old_concave
+- [x] cgal_reference csak env guard mögött fut (NFP_ENABLE_CGAL_REFERENCE=1)
+- [x] old_concave baseline lefutott vagy timeout dokumentált
+- [x] cgal_reference teljes nesting run lefutott (subset: SUCCESS; full LV8: TIMEOUT — CFR bottleneck, NEM CGAL)
+- [x] actual_nfp_kernel riportolva (NFP DIAG logban: `provider=cgal_reference kernel=CgalReference`)
+- [x] fallback nem történt vagy explicit dokumentált
+- [x] placed/unplaced riportolva
+- [x] sheet_count riportolva
+- [x] utilization riportolva
+- [x] overlap/bounds/spacing validáció lefutott (0 a sikeres runokon)
+- [x] cache key kernel-aware maradt
+- [x] nincs silent fallback CGAL hibánál
+- [x] nincs production Dockerfile módosítás
+- [x] nincs worker production runtime módosítás
+- [x] nincs új optimalizáló
+- [x] nincs T08 indítás

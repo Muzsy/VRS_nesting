@@ -12,9 +12,8 @@ use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPol
 use nesting_engine::nfp::{
     cache::{shape_id, NfpCache, NfpCacheKey},
     cfr::{compute_cfr_with_stats, CfrStatsV1},
-    concave::compute_concave_nfp_default,
-    convex::compute_convex_nfp,
     ifp::{compute_ifp_rect, IfpRect},
+    provider::{create_nfp_provider, NfpKernel, NfpProvider, NfpProviderConfig},
 };
 
 use super::blf::InflatedPartSpec;
@@ -67,6 +66,7 @@ pub struct NfpPlacerStatsV1 {
     pub cap_applied_count: u64,
     pub effective_placer: String,
     pub sheets_used: u64,
+    pub actual_nfp_kernel: String, // T05z: which NFP kernel was actually used
 }
 
 impl Default for NfpPlacerStatsV1 {
@@ -85,6 +85,7 @@ impl Default for NfpPlacerStatsV1 {
             cap_applied_count: 0,
             effective_placer: String::new(),
             sheets_used: 0,
+            actual_nfp_kernel: resolve_nfp_kernel_name(),
         }
     }
 }
@@ -121,6 +122,9 @@ impl NfpPlacerStatsV1 {
         if other.sheets_used > 0 {
             self.sheets_used = other.sheets_used;
         }
+        if !other.actual_nfp_kernel.is_empty() {
+            self.actual_nfp_kernel = other.actual_nfp_kernel.clone();
+        }
     }
 
     pub fn add_assign(&mut self, other: &Self) {
@@ -145,6 +149,8 @@ pub fn nfp_place(
     order_policy: PartOrderPolicy,
 ) -> PlacementResult {
     let ordered = order_parts_for_policy(parts, order_policy);
+    // T05z: resolve kernel once so cache key matches the provider used in compute_nfp_lib.
+    let nfp_kernel = resolve_nfp_kernel();
 
     let bin_aabb = aabb_from_polygon64(bin_polygon);
     let mut placed_state = PlacedIndex::new();
@@ -204,6 +210,7 @@ pub fn nfp_place(
                         shape_id_a: shape_id(&to_lib_polygon(&placed_normalized)),
                         shape_id_b: moving_shape_id,
                         rotation_steps_b: normalize_deg(rotation_deg) as i16,
+                        nfp_kernel, // T05z: was hardcoded OldConcave, now env-driven
                     };
                     if let Some(cached_rel) = cache.get(&key) {
                         stats.nfp_cache_hits = stats.nfp_cache_hits.saturating_add(1);
@@ -486,13 +493,102 @@ fn sort_and_dedupe_candidates(
     }
 }
 
-fn compute_nfp_lib(placed_polygon: &Polygon64, moving_polygon: &Polygon64) -> Option<LibPolygon64> {
+/// Resolves NFP kernel from NESTING_ENGINE_NFP_KERNEL env variable.
+/// Defaults to OldConcave if not set or invalid.
+fn resolve_nfp_kernel() -> NfpKernel {
+    match std::env::var("NESTING_ENGINE_NFP_KERNEL")
+        .as_deref()
+        .map(str::trim)
+    {
+        Ok("cgal_reference") => NfpKernel::CgalReference,
+        Ok("old_concave") | Ok("") | Err(_) => NfpKernel::OldConcave,
+        Ok(other) => {
+            eprintln!(
+                "[NFP PLACER] warning: unknown NESTING_ENGINE_NFP_KERNEL={}, using old_concave",
+                other
+            );
+            NfpKernel::OldConcave
+        }
+    }
+}
+
+/// Human-readable kernel name from env.
+fn resolve_nfp_kernel_name() -> String {
+    match std::env::var("NESTING_ENGINE_NFP_KERNEL")
+        .as_deref()
+        .map(str::trim)
+    {
+        Ok("cgal_reference") => "cgal_reference".to_string(),
+        Ok("old_concave") | Ok("") | Err(_) => "old_concave".to_string(),
+        Ok(other) => {
+            eprintln!(
+                "[NFP PLACER] warning: unknown NESTING_ENGINE_NFP_KERNEL={}, using old_concave",
+                other
+            );
+            "old_concave".to_string()
+        }
+    }
+}
+
+/// Default NFP computation — kernel selected by NESTING_ENGINE_NFP_KERNEL env.
+/// Behavior is identical to the previous inline dispatch when env is unset.
+/// T05z: kernel is now configurable for CGAL reference provider.
+fn compute_nfp_lib(
+    placed_polygon: &Polygon64,
+    moving_polygon: &Polygon64,
+) -> Option<LibPolygon64> {
     let placed_lib = to_lib_polygon(placed_polygon);
     let moving_lib = to_lib_polygon(moving_polygon);
-    if is_convex(&placed_polygon.outer) && is_convex(&moving_polygon.outer) {
-        compute_convex_nfp(&placed_lib, &moving_lib).ok()
-    } else {
-        compute_concave_nfp_default(&placed_lib, &moving_lib).ok()
+
+    // T05z: resolve kernel from env; create provider dynamically.
+    // This is the ONLY change from the original hardcoded OldConcaveProvider.
+    let kernel = resolve_nfp_kernel();
+    let config = NfpProviderConfig { kernel };
+    let provider = match create_nfp_provider(&config) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "[NFP PLACER] failed to create provider for kernel {:?}: {}. \
+                 Falling back to old_concave.",
+                kernel, e
+            );
+            // Fall back to old_concave if requested kernel unavailable.
+            let fallback_config = NfpProviderConfig {
+                kernel: NfpKernel::OldConcave,
+            };
+            match create_nfp_provider(&fallback_config) {
+                Ok(p) => p,
+                Err(_) => return None,
+            }
+        }
+    };
+
+    let actual_kernel = provider.kernel();
+    match provider.compute(&placed_lib, &moving_lib) {
+        Ok(result) => {
+            eprintln!(
+                "[NFP DIAG] provider={} kernel={:?} elapsed_ms={} result_pts={}",
+                provider.kernel_name(),
+                actual_kernel,
+                result.compute_time_ms,
+                result.polygon.outer.len()
+            );
+            Some(LibPolygon64 {
+                outer: result
+                    .polygon
+                    .outer
+                    .iter()
+                    .map(|p| LibPoint64 { x: p.x, y: p.y })
+                    .collect(),
+                holes: result
+                    .polygon
+                    .holes
+                    .iter()
+                    .map(|hole| hole.iter().map(|p| LibPoint64 { x: p.x, y: p.y }).collect())
+                    .collect(),
+            })
+        }
+        Err(_) => None,
     }
 }
 
