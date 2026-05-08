@@ -204,6 +204,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sa-temp-end", type=int, default=None, help="Optional SA end temperature")
     parser.add_argument("--sa-seed", type=int, default=None, help="Optional SA seed override")
     parser.add_argument("--sa-eval-budget-sec", type=int, default=None, help="Optional SA eval budget seconds")
+    parser.add_argument("--nfp-kernel", choices=["old_concave", "cgal_reference"], default=None,
+                        dest="nfp_kernel",
+                        help="Optional NFP kernel selection (dev/reference profiles only). "
+                             "cgal_reference requires NFP_ENABLE_CGAL_REFERENCE=1 in the environment.")
     return parser
 
 
@@ -229,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
         nesting_engine_cli_args.extend(["--sa-seed", str(int(args.sa_seed))])
     if args.sa_eval_budget_sec is not None:
         nesting_engine_cli_args.extend(["--sa-eval-budget-sec", str(int(args.sa_eval_budget_sec))])
+    if args.nfp_kernel is not None:
+        nesting_engine_cli_args.extend(["--nfp-kernel", str(args.nfp_kernel)])
     try:
         run_dir, _meta = run_nesting_engine(
             args.input,

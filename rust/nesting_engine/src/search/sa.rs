@@ -239,6 +239,7 @@ pub fn run_sa_search_over_specs(
     compaction_mode: CompactionMode,
 ) -> Result<(MultiSheetResult, Option<NfpPlacerStatsV1>), String> {
     let sa_start = Instant::now();
+    let sa_diag = std::env::var("NESTING_ENGINE_SA_DIAG").as_deref() == Ok("1");
     let mut eval_count: u64 = 0;
     eprintln!(
         "[SEARCH DIAG] SA start parts={} time_limit={}s eval_budget={}s iters={}",
@@ -264,6 +265,16 @@ pub fn run_sa_search_over_specs(
             eval_count += 1;
         },
     );
+
+    // Final SA_DIAG summary (printed after SA loop completes)
+    if sa_diag {
+        let sa_elapsed_ms = sa_start.elapsed().as_secs_f64() * 1000.0;
+        // best_cost is encoded in the MultiSheetResult's unplaced/sheets; report eval_count + wall time
+        eprintln!(
+            "[SA_DIAG] SA done total_eval_count={} total_wall_ms={:.1}",
+            eval_count, sa_elapsed_ms
+        );
+    }
 
     let sa_elapsed_ms = sa_start.elapsed().as_secs_f64() * 1000.0;
     eprintln!("[SEARCH DIAG] SA done elapsed_ms={:.2}", sa_elapsed_ms);

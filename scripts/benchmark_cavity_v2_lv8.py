@@ -241,7 +241,11 @@ def _resolve_local_nesting_engine_bin() -> str | None:
     return None
 
 
-def run_benchmark(*, fixture_path: Path, output_dir: Path, solver_time_limit_cap: int) -> tuple[dict[str, Any], Path]:
+def run_benchmark(
+    *, fixture_path: Path, output_dir: Path, solver_time_limit_cap: int,
+    quality_profile: str = "quality_cavity_prepack",
+    skip_solver: bool = False,
+) -> tuple[dict[str, Any], Path]:
     payload = json.loads(fixture_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError(f"fixture payload must be dict: {fixture_path}")
@@ -316,7 +320,7 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path, solver_time_limit_cap
     virtual_parts = cavity_plan.get("virtual_parts", {})
     virtual_parts = virtual_parts if isinstance(virtual_parts, dict) else {}
 
-    cli_args = build_nesting_engine_cli_args_for_quality_profile("quality_cavity_prepack")
+    cli_args = build_nesting_engine_cli_args_for_quality_profile(quality_profile)
     cli_arg_str = " ".join(str(item) for item in cli_args)
     nfp_fallback_occurred = "--placer blf" in cli_arg_str
 
@@ -338,6 +342,8 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path, solver_time_limit_cap
     unplaced_count: int | None = None
     utilization_ratio: float | None = None
     effective_solver_cli_args: list[str] | None = None
+    solver_run_ok = False
+    solver_error: str | None = None
 
     def _execute_solver(cli_args_to_use: list[str], limit_sec: int) -> tuple[str, float, int | None, int | None, float | None]:
         t_solver = time.perf_counter()
@@ -368,36 +374,41 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path, solver_time_limit_cap
                     ur = round(float(util_pct) / 100.0, 6)
         return str(run_dir), elapsed, pc, uc, ur
 
-    try:
-        solver_run_dir, solver_elapsed_sec, placed_count, unplaced_count, utilization_ratio = _execute_solver(cli_args, time_limit_sec)
-        solver_primary_run_ok = True
-        effective_solver_cli_args = list(cli_args)
-    except NestingEngineRunnerError as exc:
-        solver_primary_error = str(exc)
-    except Exception as exc:  # noqa: BLE001
-        solver_primary_error = str(exc)
-
-    if not solver_primary_run_ok:
-        solver_fallback_used = True
-        fallback_cli_args = ["--placer", "blf", "--search", "none", "--part-in-part", "off", "--compaction", "off"]
-        fallback_limit_sec = min(time_limit_sec, 30)
+    if skip_solver:
+        solver_primary_error = "skipped_by_request"
+        solver_error = "skipped_by_request"
+        solver_run_ok = False  # Not applicable when skipped
+    else:
         try:
-            solver_run_dir, solver_elapsed_sec, placed_count, unplaced_count, utilization_ratio = _execute_solver(
-                fallback_cli_args,
-                fallback_limit_sec,
-            )
-            solver_fallback_run_ok = True
-            effective_solver_cli_args = fallback_cli_args
+            solver_run_dir, solver_elapsed_sec, placed_count, unplaced_count, utilization_ratio = _execute_solver(cli_args, time_limit_sec)
+            solver_primary_run_ok = True
+            effective_solver_cli_args = list(cli_args)
         except NestingEngineRunnerError as exc:
-            solver_fallback_error = str(exc)
+            solver_primary_error = str(exc)
         except Exception as exc:  # noqa: BLE001
-            solver_fallback_error = str(exc)
+            solver_primary_error = str(exc)
 
-    solver_run_ok = solver_primary_run_ok or solver_fallback_run_ok
-    solver_error = solver_primary_error if not solver_primary_run_ok else None
-    if solver_primary_error or solver_fallback_error:
-        err_text = " | ".join(item for item in (solver_primary_error, solver_fallback_error) if item)
-        timeout_occurred = "timed out" in err_text.lower()
+        if not solver_primary_run_ok:
+            solver_fallback_used = True
+            fallback_cli_args = ["--placer", "blf", "--search", "none", "--part-in-part", "off", "--compaction", "off"]
+            fallback_limit_sec = min(time_limit_sec, 30)
+            try:
+                solver_run_dir, solver_elapsed_sec, placed_count, unplaced_count, utilization_ratio = _execute_solver(
+                    fallback_cli_args,
+                    fallback_limit_sec,
+                )
+                solver_fallback_run_ok = True
+                effective_solver_cli_args = fallback_cli_args
+            except NestingEngineRunnerError as exc:
+                solver_fallback_error = str(exc)
+            except Exception as exc:  # noqa: BLE001
+                solver_fallback_error = str(exc)
+
+        solver_run_ok = solver_primary_run_ok or solver_fallback_run_ok
+        solver_error = solver_primary_error if not solver_primary_run_ok else None
+        if solver_primary_error or solver_fallback_error:
+            err_text = " | ".join(item for item in (solver_primary_error, solver_fallback_error) if item)
+            timeout_occurred = "timed out" in err_text.lower()
 
     minimum_failures: list[str] = []
     if holes_after != 0:
@@ -406,14 +417,16 @@ def run_benchmark(*, fixture_path: Path, output_dir: Path, solver_time_limit_cap
         minimum_failures.append(f"quantity_mismatch_count={quantity_mismatch_count} (expected 0)")
     if not guard_passed:
         minimum_failures.append("guard_passed=False (expected True)")
-    if not solver_primary_run_ok:
+    # Only require solver success if we actually ran it (skip_solver=False).
+    if not skip_solver and not solver_primary_run_ok:
         minimum_failures.append("quality_profile_solver_run_ok=False (expected True)")
 
     result: dict[str, Any] = {
         "benchmark": "cavity_v2_t10_lv8",
         "fixture_path": str(fixture_path),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "quality_profile": "quality_cavity_prepack",
+        "quality_profile": quality_profile,
+        "nfp_kernel": next((cli_args[i+1] for i, a in enumerate(cli_args) if a == "--nfp-kernel"), None),
         "top_level_holes_count_before_prepack": int(holes_before),
         "top_level_holes_count_after_prepack": int(holes_after),
         "guard_passed": bool(guard_passed),
@@ -477,6 +490,19 @@ def parse_args() -> argparse.Namespace:
         default=90,
         help="Hard upper cap (seconds) for solver runtime during benchmark.",
     )
+    parser.add_argument(
+        "--quality-profile",
+        dest="quality_profile",
+        default="quality_cavity_prepack",
+        help="Quality profile name to use (default: quality_cavity_prepack). "
+             "Use quality_cavity_prepack_cgal_reference for CGAL reference NFP kernel.",
+    )
+    parser.add_argument(
+        "--skip-solver",
+        action="store_true",
+        default=False,
+        help="Skip solver execution. Only run cavity_prepack and validation.",
+    )
     return parser.parse_args()
 
 
@@ -501,6 +527,8 @@ def main() -> int:
         fixture_path=fixture_path,
         output_dir=args.output_dir,
         solver_time_limit_cap=max(1, int(args.solver_time_limit_cap)),
+        quality_profile=args.quality_profile,
+        skip_solver=args.skip_solver,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print(f"\nSaved benchmark artifact: {out_path}")

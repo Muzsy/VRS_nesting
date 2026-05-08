@@ -825,6 +825,24 @@ pub fn greedy_multi_sheet(
         },
     };
 
+    let eval_diag = std::env::var("NESTING_ENGINE_SA_DIAG").as_deref() == Ok("1");
+    let elapsed_ms = started_at.elapsed().as_millis() as u64;
+    if eval_diag {
+        let budget_str = if stop.mode == StopMode::WorkBudget {
+            format!("budget_remaining={:?}", stop.work_budget_remaining)
+        } else {
+            "wall_clock".to_string()
+        };
+        eprintln!(
+            "[GREEDY_EVAL_DONE] placed={} unplaced={} sheets={} elapsed_ms={} stop_mode={}",
+            result.placed.len(),
+            result.unplaced.len(),
+            result.sheets_used,
+            elapsed_ms,
+            budget_str
+        );
+    }
+
     if let Some(stats) = nfp_stats_total.as_mut() {
         stats.nfp_cache_entries_end = nfp_cache.stats().entries as u64;
         stats.effective_placer = "nfp".to_string();

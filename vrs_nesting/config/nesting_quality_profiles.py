@@ -23,7 +23,10 @@ _RUNTIME_POLICY_KEYS = (
     "sa_temp_end",
     "sa_seed",
     "sa_eval_budget_sec",
+    "nfp_kernel",
 )
+
+VALID_NFP_KERNELS = ("old_concave", "cgal_reference")
 
 _QUALITY_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
     "fast_preview": {
@@ -51,6 +54,17 @@ _QUALITY_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
         "search": "sa",
         "part_in_part": "prepack",
         "compaction": "slide",
+    },
+    # T06g: explicit dev/reference profile — cavity_prepack with CGAL reference NFP kernel.
+    # cgal_reference is NOT production. It is used for developmental correctness
+    # benchmarking when the OldConcave kernel times out on LV8-scale concave geometry.
+    # Do NOT promote cgal_reference to production default.
+    "quality_cavity_prepack_cgal_reference": {
+        "placer": "nfp",
+        "search": "sa",
+        "part_in_part": "prepack",
+        "compaction": "slide",
+        "nfp_kernel": "cgal_reference",
     },
 }
 
@@ -122,6 +136,13 @@ def validate_runtime_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
     if search != "sa" and has_sa_overrides:
         raise ValueError("SA runtime flags require search='sa'")
 
+    nfp_kernel_raw = policy.get("nfp_kernel")
+    if nfp_kernel_raw is not None:
+        nfp_kernel_str = str(nfp_kernel_raw or "").strip().lower()
+        if nfp_kernel_str not in VALID_NFP_KERNELS:
+            raise ValueError(f"invalid nfp_kernel: {nfp_kernel_raw!r} (valid: {', '.join(VALID_NFP_KERNELS)})")
+        normalized["nfp_kernel"] = nfp_kernel_str
+
     return normalized
 
 
@@ -169,6 +190,10 @@ def build_nesting_engine_cli_args_from_runtime_policy(policy: Mapping[str, Any])
         if "sa_eval_budget_sec" in normalized:
             args.extend(["--sa-eval-budget-sec", str(normalized["sa_eval_budget_sec"])])
 
+    # T06g: --nfp-kernel for explicit NFP kernel selection (dev/reference profiles only).
+    if "nfp_kernel" in normalized:
+        args.extend(["--nfp-kernel", str(normalized["nfp_kernel"])])
+
     return args
 
 
@@ -196,6 +221,7 @@ def compact_runtime_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
 __all__ = [
     "DEFAULT_QUALITY_PROFILE",
     "VALID_QUALITY_PROFILE_NAMES",
+    "VALID_NFP_KERNELS",
     "build_nesting_engine_cli_args_for_quality_profile",
     "build_nesting_engine_cli_args_from_runtime_policy",
     "compact_runtime_policy",
