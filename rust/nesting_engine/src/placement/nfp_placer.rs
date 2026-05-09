@@ -11,7 +11,7 @@ use crate::multi_bin::greedy::{PartOrderPolicy, StopPolicy};
 use nesting_engine::geometry::types::{Point64 as LibPoint64, Polygon64 as LibPolygon64};
 use nesting_engine::nfp::{
     cache::{shape_id, NfpCache, NfpCacheKey},
-    cfr::{compute_cfr_with_stats, CfrStatsV1},
+    cfr::{compute_cfr, compute_cfr_with_stats, CfrStatsV1},
     ifp::{compute_ifp_rect, IfpRect},
     provider::{create_nfp_provider, NfpKernel, NfpProvider, NfpProviderConfig},
 };
@@ -124,6 +124,15 @@ const NUDGE_DIRS: [(i64, i64); 8] = [
 // Default: 50 — for LV8-scale this covers roughly placements 1..30 (sheet is mostly empty).
 const HYBRID_NFP_COUNT_THRESHOLD: usize = 50;
 
+// T06k: Active-set candidate-first constants
+// Widening levels: scale factor applied to candidate AABB to define active blocker query window
+const ACTIVE_SET_WIDEN_SCALE_L0: i64 = 1;   // level 0: tight
+const ACTIVE_SET_WIDEN_SCALE_L1: i64 = 2;   // level 1: 2x
+const ACTIVE_SET_WIDEN_SCALE_L2: i64 = 4;   // level 2: 4x
+// Level 3 = full set (no spatial filter, use all placed parts)
+const ACTIVE_SET_MAX_BLOCKER_CAP: usize = 64; // cap active blocker query results
+const ACTIVE_SET_MAX_CANDIDATES_PER_LEVEL: usize = 1024;
+
 // T06d: Candidate-driven fast-path limits
 const MAX_NFP_VERTEX_CANDIDATES_PER_ROTATION: usize = 256;
 const MAX_NFP_MIDPOINT_CANDIDATES_PER_ROTATION: usize = 128;
@@ -153,6 +162,31 @@ fn is_hybrid_cfr_enabled() -> bool {
 /// Returns true when NESTING_ENGINE_HYBRID_CFR_DIAG=1
 fn is_hybrid_cfr_diag_enabled() -> bool {
     std::env::var("NESTING_ENGINE_HYBRID_CFR_DIAG").as_deref() == Ok("1")
+}
+
+// T06k: Active-set candidate-first feature flags
+/// Returns true when NESTING_ENGINE_ACTIVE_SET_CANDIDATES=1
+fn is_active_set_candidates_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_ACTIVE_SET_CANDIDATES").as_deref() == Ok("1")
+}
+
+/// Returns true when NESTING_ENGINE_ACTIVE_SET_DIAG=1
+fn is_active_set_diag_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_ACTIVE_SET_DIAG").as_deref() == Ok("1")
+}
+
+/// Returns true when NESTING_ENGINE_ACTIVE_SET_LOCAL_CFR_FALLBACK=1
+fn is_active_set_local_cfr_fallback_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_ACTIVE_SET_LOCAL_CFR_FALLBACK")
+        .as_deref()
+        == Ok("1")
+}
+
+/// Returns true when NESTING_ENGINE_ACTIVE_SET_FULL_CFR_FALLBACK=1
+fn is_active_set_full_cfr_fallback_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_ACTIVE_SET_FULL_CFR_FALLBACK")
+        .as_deref()
+        == Ok("1")
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +231,28 @@ pub struct NfpPlacerStatsV1 {
     pub cfr_calls: u64,
     pub cfr_union_calls: u64,
     pub cfr_diff_calls: u64,
+    // T06k: tracks hybrid path skips (NOT real CFR unions — no i_overlay call)
+    pub cfr_skipped_by_hybrid_count: u64,
+    // T06k: active-set candidate-first counters
+    pub active_set_attempts: u64,
+    pub active_set_blocker_queries: u64,
+    pub active_set_blockers_min: u64,
+    pub active_set_blockers_max: u64,
+    pub active_set_blockers_sum: u64,
+    pub active_set_widening_level_0: u64,
+    pub active_set_widening_level_1: u64,
+    pub active_set_widening_level_2: u64,
+    pub active_set_widening_level_3: u64,
+    pub active_set_candidates_gen: u64,
+    pub active_set_candidates_dedup: u64,
+    pub active_set_can_place_checks: u64,
+    pub active_set_accepted: u64,
+    pub active_set_rejected: u64,
+    pub active_set_no_candidate_count: u64,
+    pub active_set_no_feasible_count: u64,
+    pub active_set_local_cfr_fallback_count: u64,
+    pub active_set_local_cfr_fallback_success: u64,
+    pub active_set_full_cfr_fallback_count: u64,
     pub candidates_before_dedupe_total: u64,
     pub candidates_after_dedupe_total: u64,
     pub candidates_after_cap_total: u64,
@@ -216,6 +272,26 @@ impl Default for NfpPlacerStatsV1 {
             cfr_calls: 0,
             cfr_union_calls: 0,
             cfr_diff_calls: 0,
+            cfr_skipped_by_hybrid_count: 0,
+            active_set_attempts: 0,
+            active_set_blocker_queries: 0,
+            active_set_blockers_min: 0,
+            active_set_blockers_max: 0,
+            active_set_blockers_sum: 0,
+            active_set_widening_level_0: 0,
+            active_set_widening_level_1: 0,
+            active_set_widening_level_2: 0,
+            active_set_widening_level_3: 0,
+            active_set_candidates_gen: 0,
+            active_set_candidates_dedup: 0,
+            active_set_can_place_checks: 0,
+            active_set_accepted: 0,
+            active_set_rejected: 0,
+            active_set_no_candidate_count: 0,
+            active_set_no_feasible_count: 0,
+            active_set_local_cfr_fallback_count: 0,
+            active_set_local_cfr_fallback_success: 0,
+            active_set_full_cfr_fallback_count: 0,
             candidates_before_dedupe_total: 0,
             candidates_after_dedupe_total: 0,
             candidates_after_cap_total: 0,
@@ -237,6 +313,67 @@ impl NfpPlacerStatsV1 {
         self.cfr_calls = self.cfr_calls.saturating_add(other.cfr_calls);
         self.cfr_union_calls = self.cfr_union_calls.saturating_add(other.cfr_union_calls);
         self.cfr_diff_calls = self.cfr_diff_calls.saturating_add(other.cfr_diff_calls);
+        self.cfr_skipped_by_hybrid_count = self
+            .cfr_skipped_by_hybrid_count
+            .saturating_add(other.cfr_skipped_by_hybrid_count);
+        self.active_set_attempts = self
+            .active_set_attempts
+            .saturating_add(other.active_set_attempts);
+        self.active_set_blocker_queries = self
+            .active_set_blocker_queries
+            .saturating_add(other.active_set_blocker_queries);
+        self.active_set_blockers_min = self
+            .active_set_blockers_min
+            .min(other.active_set_blockers_min)
+            .max(0);
+        self.active_set_blockers_max = self
+            .active_set_blockers_max
+            .max(other.active_set_blockers_max);
+        self.active_set_blockers_sum = self
+            .active_set_blockers_sum
+            .saturating_add(other.active_set_blockers_sum);
+        self.active_set_widening_level_0 = self
+            .active_set_widening_level_0
+            .saturating_add(other.active_set_widening_level_0);
+        self.active_set_widening_level_1 = self
+            .active_set_widening_level_1
+            .saturating_add(other.active_set_widening_level_1);
+        self.active_set_widening_level_2 = self
+            .active_set_widening_level_2
+            .saturating_add(other.active_set_widening_level_2);
+        self.active_set_widening_level_3 = self
+            .active_set_widening_level_3
+            .saturating_add(other.active_set_widening_level_3);
+        self.active_set_candidates_gen = self
+            .active_set_candidates_gen
+            .saturating_add(other.active_set_candidates_gen);
+        self.active_set_candidates_dedup = self
+            .active_set_candidates_dedup
+            .saturating_add(other.active_set_candidates_dedup);
+        self.active_set_can_place_checks = self
+            .active_set_can_place_checks
+            .saturating_add(other.active_set_can_place_checks);
+        self.active_set_accepted = self
+            .active_set_accepted
+            .saturating_add(other.active_set_accepted);
+        self.active_set_rejected = self
+            .active_set_rejected
+            .saturating_add(other.active_set_rejected);
+        self.active_set_no_candidate_count = self
+            .active_set_no_candidate_count
+            .saturating_add(other.active_set_no_candidate_count);
+        self.active_set_no_feasible_count = self
+            .active_set_no_feasible_count
+            .saturating_add(other.active_set_no_feasible_count);
+        self.active_set_local_cfr_fallback_count = self
+            .active_set_local_cfr_fallback_count
+            .saturating_add(other.active_set_local_cfr_fallback_count);
+        self.active_set_local_cfr_fallback_success = self
+            .active_set_local_cfr_fallback_success
+            .saturating_add(other.active_set_local_cfr_fallback_success);
+        self.active_set_full_cfr_fallback_count = self
+            .active_set_full_cfr_fallback_count
+            .saturating_add(other.active_set_full_cfr_fallback_count);
         self.candidates_before_dedupe_total = self
             .candidates_before_dedupe_total
             .saturating_add(other.candidates_before_dedupe_total);
@@ -425,7 +562,484 @@ pub fn nfp_place(
                     continue; // skip CFR in candidate-driven path
                 }
 
-                // === DEFAULT CFR PATH (unchanged when NESTING_ENGINE_CANDIDATE_DRIVEN != 1) ===
+                // === T06k: Active-set candidate-first path ===
+                // When NESTING_ENGINE_ACTIVE_SET_CANDIDATES=1, use spatial query + local NFP
+                // instead of full CFR union. Candidates come from IFP corners + placed anchors
+                // + active-blocker NFP vertices/midpoints. can_place() provides exact validation.
+                // This path is COMPLETELY SEPARATE from T06j hybrid (threshold-based) and
+                // T06d candidate-driven (always-on when flag set).
+                let use_active_set_path = is_active_set_candidates_enabled()
+                    && !candidate_driven
+                    && !placed_for_nfp.is_empty();
+
+                if use_active_set_path {
+                    // Push rotation context first (needed for candidate generation)
+                    rotation_contexts.push(RotationContext {
+                        rotation_deg,
+                        rotation_rank,
+                        moving_polygon: moving.clone(),
+                        ifp: ifp.clone(),
+                    });
+                    let rotation_idx = rotation_contexts.len() - 1;
+
+                    if is_active_set_diag_enabled() {
+                        eprintln!(
+                            "[ACTIVE_SET] rotation={} placed_count={} → active-set candidate-first",
+                            rotation_deg,
+                            placed_for_nfp.len()
+                        );
+                    }
+
+                    // Progressive widening: try levels 0, 1, 2, then full CFR fallback
+                    let mut placed_at_widening = false;
+                    // T06k: hoist local_nfp_polys so it's accessible for the local CFR fallback
+                    // after the widening loop. Only populated for use in fallback (not in loop body).
+                    let mut local_nfp_polys: Vec<LibPolygon64> = Vec::new();
+                    let mut local_nfp_failed = false;
+                    for widen_level in 0..=3u32 {
+                        if stop.should_stop() {
+                            break;
+                        }
+
+                        // Get active blocker indices for this widening level
+                        // Note: 'ifp' is in scope from the IFP computation above (lines 502-513)
+                        let active_indices = if widen_level >= 3 {
+                            // Level 3 = full set
+                            (0..placed_for_nfp.len()).collect::<Vec<_>>()
+                        } else {
+                            // Use IFP region as query window for spatial filter
+                            let ifp_aabb = crate::feasibility::aabb::Aabb {
+                                min_x: ifp.polygon.outer.iter().map(|p| p.x).min().unwrap_or(0),
+                                max_x: ifp.polygon.outer.iter().map(|p| p.x).max().unwrap_or(0),
+                                min_y: ifp.polygon.outer.iter().map(|p| p.y).min().unwrap_or(0),
+                                max_y: ifp.polygon.outer.iter().map(|p| p.y).max().unwrap_or(0),
+                            };
+                            let scale = match widen_level {
+                                0 => ACTIVE_SET_WIDEN_SCALE_L0,
+                                1 => ACTIVE_SET_WIDEN_SCALE_L1,
+                                2 => ACTIVE_SET_WIDEN_SCALE_L2,
+                                _ => 1i64,
+                            };
+                            let expanded_min_x = ifp_aabb.min_x.saturating_sub(
+                                (ifp_aabb.max_x - ifp_aabb.min_x) / 2 * (scale - 1),
+                            );
+                            let expanded_max_x = ifp_aabb.max_x.saturating_add(
+                                (ifp_aabb.max_x - ifp_aabb.min_x) / 2 * (scale - 1),
+                            );
+                            let expanded_min_y = ifp_aabb.min_y.saturating_sub(
+                                (ifp_aabb.max_y - ifp_aabb.min_y) / 2 * (scale - 1),
+                            );
+                            let expanded_max_y = ifp_aabb.max_y.saturating_add(
+                                (ifp_aabb.max_y - ifp_aabb.min_y) / 2 * (scale - 1),
+                            );
+                            let query_aabb = crate::feasibility::aabb::Aabb {
+                                min_x: expanded_min_x,
+                                max_x: expanded_max_x,
+                                min_y: expanded_min_y,
+                                max_y: expanded_max_y,
+                            };
+                            let mut ids: Vec<usize> = placed_state
+                                .query_overlaps(&query_aabb)
+                                .into_iter()
+                                .filter(|&idx| {
+                                    let p = placed_state.get(idx);
+                                    p.aabb.max_x.saturating_sub(p.aabb.min_x) > 0
+                                })
+                                .take(ACTIVE_SET_MAX_BLOCKER_CAP)
+                                .collect();
+                            ids.sort();
+                            ids.dedup();
+                            ids
+                        };
+
+                        let blocker_count = active_indices.len();
+                        stats.active_set_blocker_queries = stats
+                            .active_set_blocker_queries
+                            .saturating_add(1);
+                        if blocker_count > 0 {
+                            stats.active_set_blockers_min = stats
+                                .active_set_blockers_min
+                                .min(blocker_count as u64)
+                                .max(0);
+                            stats.active_set_blockers_max = stats
+                                .active_set_blockers_max
+                                .max(blocker_count as u64);
+                            stats.active_set_blockers_sum = stats
+                                .active_set_blockers_sum
+                                .saturating_add(blocker_count as u64);
+                        }
+
+                        match widen_level {
+                            0 => stats.active_set_widening_level_0 = stats.active_set_widening_level_0.saturating_add(1),
+                            1 => stats.active_set_widening_level_1 = stats.active_set_widening_level_1.saturating_add(1),
+                            2 => stats.active_set_widening_level_2 = stats.active_set_widening_level_2.saturating_add(1),
+                            _ => stats.active_set_widening_level_3 = stats.active_set_widening_level_3.saturating_add(1),
+                        }
+
+                        if is_active_set_diag_enabled() {
+                            eprintln!(
+                                "[ACTIVE_SET] widen={} blockers={}",
+                                widen_level,
+                                blocker_count
+                            );
+                        }
+
+                        // Build local NFP set only from active blockers
+                        let moving_shape_id = shape_id(&to_lib_polygon(&moving));
+                        // (local_nfp_polys and local_nfp_failed already in scope from above)
+
+                        for &idx in &active_indices {
+                            if stop.should_stop() {
+                                break;
+                            }
+                            let placed_part = &placed_for_nfp[idx];
+                            let (placed_normalized, placed_anchor_x, placed_anchor_y) =
+                                normalize_polygon_min_xy_with_offset(&placed_part.inflated_polygon);
+                            let key = NfpCacheKey {
+                                shape_id_a: shape_id(&to_lib_polygon(&placed_normalized)),
+                                shape_id_b: moving_shape_id,
+                                rotation_steps_b: normalize_deg(rotation_deg) as i16,
+                                nfp_kernel,
+                            };
+                            if let Some(cached_rel) = cache.get(&key) {
+                                stats.nfp_cache_hits = stats.nfp_cache_hits.saturating_add(1);
+                                let cached_world =
+                                    translate_polygon(&from_lib_polygon(cached_rel), placed_anchor_x, placed_anchor_y);
+                                local_nfp_polys.push(to_lib_polygon(&cached_world));
+                                continue;
+                            }
+                            stats.nfp_cache_misses = stats.nfp_cache_misses.saturating_add(1);
+                            stats.nfp_compute_calls = stats.nfp_compute_calls.saturating_add(1);
+                            let computed = compute_nfp_lib(&placed_normalized, &moving);
+                            match computed {
+                                Some(poly_rel) => {
+                                    cache.insert(key, poly_rel.clone());
+                                    let world_poly = translate_polygon(
+                                        &from_lib_polygon(&poly_rel),
+                                        placed_anchor_x,
+                                        placed_anchor_y,
+                                    );
+                                    local_nfp_polys.push(to_lib_polygon(&world_poly));
+                                }
+                                None => {
+                                    local_nfp_failed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if local_nfp_failed {
+                            continue;
+                        }
+
+                        // Generate active-set candidates
+                        let ctx = &rotation_contexts[rotation_idx];
+                        let nfp_native: Vec<Polygon64> =
+                            local_nfp_polys.iter().map(from_lib_polygon).collect();
+
+                        let candidates = generate_active_set_candidates(
+                            rotation_idx,
+                            ctx,
+                            &placed_state,
+                            &nfp_native,
+                            &active_indices
+                                .iter()
+                                .map(|&i| &placed_for_nfp[i])
+                                .collect::<Vec<_>>(),
+                        );
+
+                        stats.active_set_candidates_gen = stats
+                            .active_set_candidates_gen
+                            .saturating_add(candidates.len() as u64);
+
+                        // Sort and dedup
+                        let deduped = sort_and_dedupe_candidates(candidates, &rotation_contexts);
+                        stats.active_set_candidates_dedup = stats
+                            .active_set_candidates_dedup
+                            .saturating_add(deduped.unique_count as u64);
+
+                        if deduped.after_cap.is_empty() {
+                            // No candidates at this widening level — try next level
+                            if is_active_set_diag_enabled() {
+                                eprintln!(
+                                    "[ACTIVE_SET] widen={} → no candidates, trying next level",
+                                    widen_level
+                                );
+                            }
+                            continue;
+                        }
+
+                        // Validate candidates with exact can_place()
+                        let mut candidates_exhausted = true;
+                        for candidate in deduped.after_cap {
+                            if stop.should_stop() {
+                                break;
+                            }
+                            stats.active_set_can_place_checks = stats
+                                .active_set_can_place_checks
+                                .saturating_add(1);
+
+                            let c_ctx = &rotation_contexts[candidate.rotation_idx];
+                            let candidate_poly =
+                                translate_polygon(&c_ctx.moving_polygon, candidate.tx, candidate.ty);
+
+                            if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                                // ACCEPT — exact validation passed
+                                let candidate_aabb = aabb_from_polygon64(&candidate_poly);
+                                placed_state.insert(PlacedPart {
+                                    inflated_polygon: candidate_poly.clone(),
+                                    aabb: candidate_aabb,
+                                });
+                                placed_for_nfp.push(PlacedPart {
+                                    inflated_polygon: candidate_poly.clone(),
+                                    aabb: candidate_aabb,
+                                });
+                                placed.push(super::blf::PlacedItem {
+                                    part_id: part.id.clone(),
+                                    instance,
+                                    sheet: 0,
+                                    x_mm: i64_to_mm(candidate.tx),
+                                    y_mm: i64_to_mm(candidate.ty),
+                                    rotation_deg: c_ctx.rotation_deg,
+                                });
+                                stats.active_set_accepted = stats.active_set_accepted.saturating_add(1);
+                                placed_at_widening = true;
+
+                                if is_active_set_diag_enabled() {
+                                    eprintln!(
+                                        "[ACTIVE_SET] widen={} placed=({}, {}) src={:?}",
+                                        widen_level,
+                                        candidate.tx,
+                                        candidate.ty,
+                                        candidate.source
+                                    );
+                                }
+                                break;
+                            } else {
+                                stats.active_set_rejected = stats.active_set_rejected.saturating_add(1);
+                            }
+                        }
+
+                        if placed_at_widening {
+                            break;
+                        }
+
+                        // This widening level produced candidates but none were feasible
+                        // Try next level
+                    } // end widening loop
+
+                    if placed_at_widening {
+                        // Placement succeeded at some widening level — skip remaining rotations
+                        break;
+                    }
+
+                    // Active-set path exhausted all widening levels without placement
+                    // → fall back to local CFR or full CFR
+                    stats.active_set_no_feasible_count = stats
+                        .active_set_no_feasible_count
+                        .saturating_add(1);
+
+                    if is_active_set_diag_enabled() {
+                        eprintln!(
+                            "[ACTIVE_SET] no feasible placement at any widening level → fallback",
+                        );
+                    }
+
+                    // Local CFR fallback: compute CFR only with active-blocker NFPs
+                    if is_active_set_local_cfr_fallback_enabled() {
+                        stats.active_set_local_cfr_fallback_count = stats
+                            .active_set_local_cfr_fallback_count
+                            .saturating_add(1);
+
+                        // Use the IFP from current rotation context
+                        let ifp_rect = &rotation_contexts[rotation_idx].ifp;
+                        let cfr_start = Instant::now();
+                        let local_cfr_components: Vec<LibPolygon64> =
+                            compute_cfr(&ifp_rect.polygon, &local_nfp_polys[..]);
+                        let cfr_elapsed_ms = cfr_start.elapsed().as_secs_f64() * 1000.0;
+
+                        if !local_cfr_components.is_empty() {
+                            // Try local CFR candidates
+                            let ctx = &rotation_contexts[rotation_idx];
+                            for comp in &local_cfr_components {
+                                for pt in &comp.outer {
+                                    if stop.should_stop() {
+                                        break;
+                                    }
+                                    stats.active_set_can_place_checks = stats
+                                        .active_set_can_place_checks
+                                        .saturating_add(1);
+
+                                    let candidate_poly =
+                                        translate_polygon(&ctx.moving_polygon, pt.x, pt.y);
+
+                                    if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                                        let candidate_aabb = aabb_from_polygon64(&candidate_poly);
+                                        placed_state.insert(PlacedPart {
+                                            inflated_polygon: candidate_poly.clone(),
+                                            aabb: candidate_aabb,
+                                        });
+                                        placed_for_nfp.push(PlacedPart {
+                                            inflated_polygon: candidate_poly.clone(),
+                                            aabb: candidate_aabb,
+                                        });
+                                        placed.push(super::blf::PlacedItem {
+                                            part_id: part.id.clone(),
+                                            instance,
+                                            sheet: 0,
+                                            x_mm: i64_to_mm(pt.x),
+                                            y_mm: i64_to_mm(pt.y),
+                                            rotation_deg: ctx.rotation_deg,
+                                        });
+                                        stats.active_set_local_cfr_fallback_success = stats
+                                            .active_set_local_cfr_fallback_success
+                                            .saturating_add(1);
+                                        placed_at_widening = true;
+
+                                        if is_active_set_diag_enabled() {
+                                            eprintln!(
+                                                "[ACTIVE_SET] local_cfr_fallback success at ({}, {})",
+                                                pt.x, pt.y
+                                            );
+                                        }
+                                        break;
+                                    } else {
+                                        stats.active_set_rejected = stats
+                                            .active_set_rejected
+                                            .saturating_add(1);
+                                    }
+                                }
+                                if placed_at_widening {
+                                    break;
+                                }
+                            }
+                        }
+
+                        if placed_at_widening {
+                            break;
+                        }
+                    }
+
+                    // Full CFR fallback: compute full CFR with ALL placed parts
+                    if is_active_set_full_cfr_fallback_enabled() {
+                        stats.active_set_full_cfr_fallback_count = stats
+                            .active_set_full_cfr_fallback_count
+                            .saturating_add(1);
+
+                        // Re-collect nfp_polys for ALL placed_for_nfp
+                        let moving_shape_id = shape_id(&to_lib_polygon(&moving));
+                        let mut full_nfp_polys: Vec<LibPolygon64> = Vec::new();
+                        let mut nfp_failed = false;
+                        for placed_part in &placed_for_nfp {
+                            let (placed_normalized, placed_anchor_x, placed_anchor_y) =
+                                normalize_polygon_min_xy_with_offset(&placed_part.inflated_polygon);
+                            let key = NfpCacheKey {
+                                shape_id_a: shape_id(&to_lib_polygon(&placed_normalized)),
+                                shape_id_b: moving_shape_id,
+                                rotation_steps_b: normalize_deg(rotation_deg) as i16,
+                                nfp_kernel,
+                            };
+                            if let Some(cached_rel) = cache.get(&key) {
+                                stats.nfp_cache_hits = stats.nfp_cache_hits.saturating_add(1);
+                                let cached_world = translate_polygon(
+                                    &from_lib_polygon(cached_rel),
+                                    placed_anchor_x,
+                                    placed_anchor_y,
+                                );
+                                full_nfp_polys.push(to_lib_polygon(&cached_world));
+                                continue;
+                            }
+                            stats.nfp_cache_misses = stats.nfp_cache_misses.saturating_add(1);
+                            stats.nfp_compute_calls = stats.nfp_compute_calls.saturating_add(1);
+                            let computed = compute_nfp_lib(&placed_normalized, &moving);
+                            match computed {
+                                Some(poly_rel) => {
+                                    cache.insert(key, poly_rel.clone());
+                                    let world_poly = translate_polygon(
+                                        &from_lib_polygon(&poly_rel),
+                                        placed_anchor_x,
+                                        placed_anchor_y,
+                                    );
+                                    full_nfp_polys.push(to_lib_polygon(&world_poly));
+                                }
+                                None => {
+                                    nfp_failed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if !nfp_failed && !full_nfp_polys.is_empty() {
+                            let ifp_rect = &rotation_contexts[rotation_idx].ifp;
+                            let cfr_start = Instant::now();
+                            let cfr_components: Vec<LibPolygon64> =
+                                compute_cfr(&ifp_rect.polygon, &full_nfp_polys[..]);
+                            let _cfr_elapsed_ms = cfr_start.elapsed().as_secs_f64() * 1000.0;
+                            stats.cfr_union_calls = stats.cfr_union_calls.saturating_add(1);
+
+                            if !cfr_components.is_empty() {
+                                let ctx = &rotation_contexts[rotation_idx];
+                                for comp in &cfr_components {
+                                    for pt in &comp.outer {
+                                        if stop.should_stop() {
+                                            break;
+                                        }
+                                        stats.active_set_can_place_checks = stats
+                                            .active_set_can_place_checks
+                                            .saturating_add(1);
+
+                                        let candidate_poly =
+                                            translate_polygon(&ctx.moving_polygon, pt.x, pt.y);
+
+                                        if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                                            let candidate_aabb =
+                                                aabb_from_polygon64(&candidate_poly);
+                                            placed_state.insert(PlacedPart {
+                                                inflated_polygon: candidate_poly.clone(),
+                                                aabb: candidate_aabb,
+                                            });
+                                            placed_for_nfp.push(PlacedPart {
+                                                inflated_polygon: candidate_poly.clone(),
+                                                aabb: candidate_aabb,
+                                            });
+                                            placed.push(super::blf::PlacedItem {
+                                                part_id: part.id.clone(),
+                                                instance,
+                                                sheet: 0,
+                                                x_mm: i64_to_mm(pt.x),
+                                                y_mm: i64_to_mm(pt.y),
+                                                rotation_deg: ctx.rotation_deg,
+                                            });
+                                            placed_at_widening = true;
+                                            break;
+                                        } else {
+                                            stats.active_set_rejected = stats
+                                                .active_set_rejected
+                                                .saturating_add(1);
+                                        }
+                                    }
+                                    if placed_at_widening {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if placed_at_widening {
+                            break;
+                        }
+                    }
+
+                    // If placement succeeded, skip remaining rotations; otherwise continue to next rotation
+                    if placed_at_widening {
+                        break;
+                    }
+
+                    // No placement — continue to next rotation (don't add to all_candidates)
+                    continue;
+                } // end active-set path
+
+                // === DEFAULT CFR PATH (unchanged when NESTING_ENGINE_ACTIVE_SET_CANDIDATES != 1) ===
                 // Push clone so original `moving` and `ifp` stay available for shape_id/eprintln below
                 rotation_contexts.push(RotationContext {
                     rotation_deg,
@@ -542,9 +1156,12 @@ pub fn nfp_place(
                     && !nfp_polys.is_empty();
 
                 if use_hybrid_path {
+                    // Record that we saved a CFR union call — but THIS IS NOT a real CFR union.
+                    // The hybrid path skips the full overlay union. Don't count it as cfr_union_calls.
+                    // Use a separate counter: cfr_skipped_by_hybrid_count (added in T06k).
                     if is_hybrid_cfr_diag_enabled() {
                         eprintln!(
-                            "[HYBRID_CFR] nfp_polys={} < threshold={} → using fast-path candidate gen (no union)",
+                            "[HYBRID_CFR] nfp_polys={} < threshold={} → using fast-path (no CFR union, cfr_union_calls NOT incremented)",
                             nfp_polys.len(),
                             HYBRID_NFP_COUNT_THRESHOLD
                         );
@@ -557,8 +1174,8 @@ pub fn nfp_place(
                         &nfp_native,
                     );
                     all_candidates.extend(counts.into_candidates());
-                    // Record that we saved a CFR union call
-                    stats.cfr_union_calls = stats.cfr_union_calls.saturating_add(1);
+                    // T06k fix: use dedicated hybrid skip counter instead of cfr_union_calls
+                    stats.cfr_skipped_by_hybrid_count = stats.cfr_skipped_by_hybrid_count.saturating_add(1);
                 } else {
                     let mut cfr_stats = CfrStatsV1::default();
                     eprintln!(
@@ -1042,8 +1659,150 @@ fn append_candidates(
     }
 }
 
+// T06k: Active-set candidate-first candidate generator.
+// Candidates come from IFP corners, placed anchor bbox corners,
+// and active-blocker NFP vertices/midpoints.
+// Unlike generate_hybrid_candidates, this uses ONLY the active-blocker NFP set
+// (not all placed_for_nfp), enabling spatial locality.
+fn generate_active_set_candidates(
+    rotation_idx: usize,
+    ctx: &RotationContext,
+    placed_state: &PlacedIndex,
+    nfp_polys: &[Polygon64],
+    active_placed_parts: &[&PlacedPart],
+) -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+
+    // A) IFP corners — always included, free source
+    for vertex in ctx.ifp.polygon.outer.iter() {
+        if inside_ifp_ctx(vertex.x, vertex.y, ctx) {
+            candidates.push(Candidate {
+                tx: vertex.x,
+                ty: vertex.y,
+                rotation_idx,
+                cfr_component_rank: 0,
+                vertex_rank_within_component: 0,
+                nudge_rank: 0,
+                source: CandidateSource::IfpCorner,
+            });
+        }
+    }
+
+    // B) Placed anchor candidates — bbox corners of nearby placed parts
+    for placed_part in active_placed_parts.iter().take(MAX_PLACED_ANCHOR_CANDIDATES_PER_ROTATION) {
+        for corner in placed_part.aabb.corners() {
+            if inside_ifp_ctx(corner.x, corner.y, ctx) {
+                candidates.push(Candidate {
+                    tx: corner.x,
+                    ty: corner.y,
+                    rotation_idx,
+                    cfr_component_rank: 0,
+                    vertex_rank_within_component: 0,
+                    nudge_rank: 0,
+                    source: CandidateSource::PlacedAnchor,
+                });
+            }
+        }
+    }
+
+    // C) Active-blocker NFP vertices — only from the spatially-filtered active set
+    for (poly_rank, nfp_poly) in nfp_polys.iter().enumerate() {
+        for (vtx_rank, vertex) in nfp_poly
+            .outer
+            .iter()
+            .take(MAX_NFP_VERTEX_CANDIDATES_PER_ROTATION)
+            .enumerate()
+        {
+            if inside_ifp_ctx(vertex.x, vertex.y, ctx) {
+                candidates.push(Candidate {
+                    tx: vertex.x,
+                    ty: vertex.y,
+                    rotation_idx,
+                    cfr_component_rank: poly_rank,
+                    vertex_rank_within_component: vtx_rank,
+                    nudge_rank: 0,
+                    source: CandidateSource::NfpVertex,
+                });
+            }
+        }
+    }
+
+    // D) Active-blocker NFP edge midpoints
+    for (poly_rank, nfp_poly) in nfp_polys.iter().enumerate() {
+        let outer = &nfp_poly.outer;
+        let n = outer.len();
+        let mut edge_lengths: Vec<(i128, usize)> = Vec::new();
+        for i in 0..n {
+            let dx = outer[(i + 1) % n].x as i128 - outer[i].x as i128;
+            let dy = outer[(i + 1) % n].y as i128 - outer[i].y as i128;
+            let len2 = dx * dx + dy * dy;
+            edge_lengths.push((len2, i));
+        }
+        edge_lengths.sort_by(|a, b| b.0.cmp(&a.0));
+        let max_midpoints =
+            MAX_NFP_MIDPOINT_CANDIDATES_PER_ROTATION.min(edge_lengths.len());
+        for &(len2, edge_idx) in edge_lengths.iter().take(max_midpoints) {
+            if len2 == 0 {
+                continue;
+            }
+            let p0 = &outer[edge_idx];
+            let p1 = &outer[(edge_idx + 1) % n];
+            let mx = (p0.x + p1.x) / 2;
+            let my = (p0.y + p1.y) / 2;
+            if inside_ifp_ctx(mx, my, ctx) {
+                candidates.push(Candidate {
+                    tx: mx,
+                    ty: my,
+                    rotation_idx,
+                    cfr_component_rank: poly_rank,
+                    vertex_rank_within_component: edge_idx,
+                    nudge_rank: 0,
+                    source: CandidateSource::NfpMidpoint,
+                });
+            }
+        }
+    }
+
+    // E) Nudge variants — micro-adjustments around IFP corner base candidates only
+    let base_count = candidates.len();
+    for i in 0..base_count {
+        let base = candidates[i];
+        // Only nudge IFP corner candidates
+        if base.source != CandidateSource::IfpCorner {
+            continue;
+        }
+        let mut nudge_rank = 1_usize;
+        for step in NUDGE_STEPS {
+            for (dx, dy) in NUDGE_DIRS {
+                let tx = base.tx.saturating_add(dx.saturating_mul(step));
+                let ty = base.ty.saturating_add(dy.saturating_mul(step));
+                if !inside_ifp_ctx(tx, ty, ctx) {
+                    nudge_rank += 1;
+                    continue;
+                }
+                candidates.push(Candidate {
+                    tx,
+                    ty,
+                    rotation_idx: base.rotation_idx,
+                    cfr_component_rank: base.cfr_component_rank,
+                    vertex_rank_within_component: base.vertex_rank_within_component,
+                    nudge_rank,
+                    source: CandidateSource::Nudge,
+                });
+                nudge_rank += 1;
+            }
+        }
+    }
+
+    candidates
+}
+
 fn inside_ifp(tx: i64, ty: i64, ifp: &IfpRect) -> bool {
     tx >= ifp.tx.min && tx <= ifp.tx.max && ty >= ifp.ty.min && ty <= ifp.ty.max
+}
+
+fn inside_ifp_ctx(tx: i64, ty: i64, ctx: &RotationContext) -> bool {
+    inside_ifp(tx, ty, &ctx.ifp)
 }
 
 // T06d: Collect NFP polygons for a given rotation (used by both default and candidate-driven path)

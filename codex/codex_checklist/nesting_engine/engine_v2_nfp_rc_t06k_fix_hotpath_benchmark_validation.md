@@ -1,0 +1,33 @@
+# T06k-fix Checklist
+
+- [x] T06k report elolvasva
+- [x] T06k jelenlegi diff auditálva
+- [x] cargo check reprodukálva
+- [x] cargo test állapot reprodukálva (59 passed, 1 pre-existing FAILED)
+- [x] cfr.rs visibility auditálva
+- [x] indokolatlan public visibility visszaállítva (`pub fn` → `fn compute_cfr_internal`)
+- [x] benchmark env propagation auditálva (subprocess.run örökli az env-t, nincs whitelist szűrés)
+- [x] NESTING_ENGINE_* env továbbadás — igazolva, hogy alapértelmezetten működik
+- [x] runner env diagnosztika hozzáadva (`NESTING_ENGINE_RUNNER_ENV_DIAG=1`)
+- [x] direct Rust binary active-set smoke futott
+- [x] active-set path entered bizonyított (`[ACTIVE_SET]` log üzenetek)
+- [x] actual kernel cgal_reference bizonyított (`[CLI] NESTING_ENGINE_NFP_KERNEL=cgal_reference`)
+- [x] no BLF fallback smoke alatt
+- [x] LV8 subset benchmark script/elkészült (manuális subset kivonás prepacked inputból)
+- [x] subset-1 (2 part types, 6 qty) full-CFR baseline valid NFP pathon futott (10/10 placed)
+- [x] subset-1 active-set valid NFP pathon futott (10/10 placed)
+- [x] subset-2 benchmark futott (2-part subset, 6 qty)
+- [x] subset-4 benchmark futott (4-part subset, 10 qty) — primary NFP path valid
+- [x] T06j hybrid kontroll futott legalább egy valid subseten (3 sheets, utilization=0.503)
+- [x] active-set local CFR fallback benchmark futott (subset-4, 10/10 placed)
+- [x] full CFR fallback benchmark futott (subset-4, 10/10 placed)
+- [x] fallback-only eredmények külön jelölve (teljes LV8 kontroll: timeout → BLF fallback, valid benchmarkként jelölve)
+- [x] quality/regret mérés elkészült valid NFP benchmarkon (active-set = full-CFR quality, T06j hybrid regresszió)
+- [x] false accept = 0
+- [x] overlap violation = 0
+- [x] bounds violation = 0
+- [x] spacing violation = 0
+- [x] teljes LV8 kontroll futott (timeout, active-set path elindul de CGAL probe túl lassú)
+- [x] report elkészült
+- [x] checklist elkészült
+- [x] T06l javaslat elkészült (D: NFP benchmark harness és primary solver timeout isolation)

@@ -731,6 +731,8 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
 
     virtual_parts: dict[str, dict[str, Any]] = {}
     placement_trees: dict[str, dict[str, Any]] = {}
+    module_variants: dict[str, dict[str, Any]] = {}
+    module_variants_by_solver_id: dict[str, str] = {}
     top_level_instance_bases: dict[str, int] = {}
     cavity_quantity_delta: dict[str, dict[str, int]] = {}
     cavity_diagnostics: list[Any] = []
@@ -817,6 +819,16 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
                 tree_node = _require_dict(tree_raw, field=f"cavity_plan.placement_trees.{virtual_id}")
                 placement_trees[str(virtual_id)] = tree_node
 
+            # Load collapsed module variant mappings (T06h: result normalizer repair)
+            mv_raw = cavity_plan.get("module_variants", {})
+            if isinstance(mv_raw, dict):
+                for vk, vitem in mv_raw.items():
+                    if isinstance(vitem, dict):
+                        module_variants[str(vk)] = dict(vitem)
+            mvb_raw = cavity_plan.get("module_variants_by_solver_id", {})
+            if isinstance(mvb_raw, dict):
+                module_variants_by_solver_id = {str(k): str(v) for k, v in mvb_raw.items()}
+
         instance_bases_raw = _require_dict(cavity_plan.get("instance_bases"), field="cavity_plan.instance_bases")
         for child_part_id_raw, base_item_raw in instance_bases_raw.items():
             child_part_id = _require_str(child_part_id_raw, field="cavity_plan.instance_bases.<key>")
@@ -901,7 +913,47 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
             field=f"nesting_output.placements[{idx}].rotation_deg",
         )
 
-        virtual = virtual_parts.get(part_id) if cavity_enabled else None
+        # T06h: Resolve collapsed module variant IDs first.
+        # The solver returns collapsed module variant IDs (e.g. __cavity_composite__Lv8_11612_6db__empty__<hash>)
+        # which are NOT in virtual_parts (per-instance keys) or placement_trees.
+        # Use the module_variants_by_solver_id reverse mapping to get the representative_virtual_id.
+        # IMPORTANT: Per-instance virtual IDs (e.g. __cavity_composite__parent-a__000000) ARE in
+        # virtual_parts directly - we must NOT raise an error for them. Only raise for
+        # __cavity_composite__ prefix IDs that are truly unresolvable.
+        resolved_part_id: str | None = None
+        if cavity_enabled and cavity_plan_version == "cavity_plan_v2":
+            # First check: is this a per-instance virtual_id already in virtual_parts? (backward compat)
+            direct_virtual = virtual_parts.get(part_id)
+            if direct_virtual is not None:
+                resolved_part_id = part_id
+            else:
+                # Second check: is this a collapsed module variant ID? (T06h new path)
+                variant_key = module_variants_by_solver_id.get(part_id)
+                if variant_key is not None:
+                    mv = module_variants.get(variant_key)
+                    if mv is not None:
+                        rep_id = mv.get("representative_virtual_id")
+                        if rep_id is not None and rep_id in virtual_parts:
+                            resolved_part_id = rep_id
+                        else:
+                            raise ResultNormalizerError(
+                                f"COLLAPSED_MODULE_VARIANT_UNRESOLVABLE: part_id={part_id} "
+                                f"variant_key={variant_key} representative_virtual_id={rep_id} "
+                                f"found_in_virtual_parts={rep_id is not None and rep_id in virtual_parts}"
+                            )
+                    else:
+                        raise ResultNormalizerError(
+                            f"COLLAPSED_MODULE_VARIANT_MISSING: part_id={part_id} variant_key={variant_key} "
+                            f"not found in module_variants"
+                        )
+                elif part_id.startswith("__cavity_composite__"):
+                    # Cavity composite prefix but not in virtual_parts or module_variants - explicit error
+                    raise ResultNormalizerError(
+                        f"CAVITY_COMPOSITE_ID_UNRESOLVABLE: part_id={part_id} "
+                        f"not in virtual_parts, not in module_variants_by_solver_id"
+                    )
+
+        virtual = virtual_parts.get(resolved_part_id or part_id) if cavity_enabled else None
         if virtual is not None:
             parent_part_id = str(virtual["parent_part_revision_id"])
             parent_part = part_index.get(parent_part_id)
@@ -939,9 +991,10 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
             )
 
             if cavity_plan_version == "cavity_plan_v2":
-                tree_node = placement_trees.get(part_id)
+                tree_lookup_id = resolved_part_id or part_id
+                tree_node = placement_trees.get(tree_lookup_id)
                 if tree_node is None:
-                    raise ResultNormalizerError(f"missing placement_tree for virtual part: {part_id}")
+                    raise ResultNormalizerError(f"missing placement_tree for virtual part: {tree_lookup_id}")
                 children_raw = tree_node.get("children")
                 if not isinstance(children_raw, list):
                     raise ResultNormalizerError(f"invalid cavity_plan.placement_trees.{part_id}.children")
@@ -1126,12 +1179,23 @@ def _normalize_solver_output_projection_v2(*, run_id: str, snapshot_row: dict[st
         mapped_part_id = part_id
         mapped_instance = instance
         if cavity_enabled:
-            virtual = virtual_parts.get(part_id)
+            # T06h: resolve collapsed module variant IDs in unplaced (same logic as placements)
+            unplaced_resolved_part_id: str | None = None
+            if cavity_plan_version == "cavity_plan_v2":
+                vk = module_variants_by_solver_id.get(part_id)
+                if vk is not None:
+                    mv = module_variants.get(vk)
+                    if mv is not None:
+                        rep_id = mv.get("representative_virtual_id")
+                        if rep_id is not None:
+                            unplaced_resolved_part_id = rep_id
+            resolved_id = unplaced_resolved_part_id or part_id
+            virtual = virtual_parts.get(resolved_id)
             if virtual is not None:
                 mapped_part_id = str(virtual["parent_part_revision_id"])
                 mapped_instance = int(virtual["parent_instance"])
             else:
-                mapped_instance = instance + int(top_level_instance_bases.get(part_id, 0))
+                mapped_instance = instance + int(top_level_instance_bases.get(resolved_id, 0))
         part = part_index.get(mapped_part_id)
         if part is None:
             raise ResultNormalizerError(f"unknown part_id in nesting_output unplaced: {mapped_part_id}")

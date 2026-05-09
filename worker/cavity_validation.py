@@ -477,10 +477,35 @@ def validate_cavity_plan_v2(
 
     internal_count_by_part: dict[str, int] = {}
 
+    # T06h: Load collapsed module variant mappings for validator resolution
+    module_variants: dict[str, dict[str, Any]] = {}
+    module_variants_by_solver_id: dict[str, str] = {}
+    mv_raw = cavity_plan.get("module_variants", {})
+    if isinstance(mv_raw, dict):
+        for vk, vitem in mv_raw.items():
+            if isinstance(vitem, dict):
+                module_variants[str(vk)] = dict(vitem)
+    mvb_raw = cavity_plan.get("module_variants_by_solver_id", {})
+    if isinstance(mvb_raw, dict):
+        module_variants_by_solver_id = {str(k): str(v) for k, v in mvb_raw.items()}
+
     for solver_item in solver_placements:
         if not isinstance(solver_item, dict):
             continue
-        virtual_part_id = str(solver_item.get("part_id") or "").strip()
+        solver_part_id = str(solver_item.get("part_id") or "").strip()
+
+        # T06h: Resolve collapsed module variant IDs (same as result normalizer)
+        resolved_virtual_id: str | None = None
+        if module_variants_by_solver_id and solver_part_id.startswith("__cavity_composite__"):
+            vk = module_variants_by_solver_id.get(solver_part_id)
+            if vk is not None:
+                mv = module_variants.get(vk)
+                if mv is not None:
+                    rep_id = mv.get("representative_virtual_id")
+                    if rep_id is not None and rep_id in virtual_parts_raw:
+                        resolved_virtual_id = rep_id
+        virtual_part_id = resolved_virtual_id or solver_part_id
+
         if virtual_part_id not in virtual_parts_raw:
             continue
 

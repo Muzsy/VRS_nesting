@@ -117,8 +117,35 @@ def run_nesting_engine(
     bin_path = resolve_nesting_engine_bin(nesting_engine_bin)
     extra_cli_args = [str(item) for item in (nesting_engine_cli_args or []) if str(item).strip()]
     cmd = [bin_path, "nest", *extra_cli_args]
-    _eprint(f"[nesting-engine-runner] run_dir={run_dir}")
-    _eprint(f"[nesting-engine-runner] cmd={' '.join(cmd)}")
+    env_diag = os.environ.get("NESTING_ENGINE_RUNNER_ENV_DIAG") == "1"
+    if env_diag:
+        relevant_keys = [
+            "NESTING_ENGINE_ACTIVE_SET_CANDIDATES",
+            "NESTING_ENGINE_ACTIVE_SET_DIAG",
+            "NESTING_ENGINE_ACTIVE_SET_LOCAL_CFR_FALLBACK",
+            "NESTING_ENGINE_ACTIVE_SET_FULL_CFR_FALLBACK",
+            "NESTING_ENGINE_HYBRID_CFR",
+            "NESTING_ENGINE_HYBRID_CFR_DIAG",
+            "NESTING_ENGINE_CFR_DIAG",
+            "NESTING_ENGINE_NFP_RUNTIME_DIAG",
+            "NESTING_ENGINE_GREEDY_DIAG",
+            "NESTING_ENGINE_SA_DIAG",
+            "NESTING_ENGINE_NFP_KERNEL",
+            "NESTING_ENGINE_BIN",
+            "NFP_ENABLE_CGAL_REFERENCE",
+            "NFP_CGAL_PROBE_BIN",
+            "WORKER_QUALITY_PROFILE",
+        ]
+        _eprint(f"[nesting-engine-runner] run_dir={run_dir}")
+        _eprint(f"[nesting-engine-runner] cmd={' '.join(cmd)}")
+        _eprint(f"[nesting-engine-runner] relevant_env:")
+        for k in relevant_keys:
+            v = os.environ.get(k)
+            if v is not None:
+                _eprint(f"  {k}={v!r}")
+    else:
+        _eprint(f"[nesting-engine-runner] run_dir={run_dir}")
+        _eprint(f"[nesting-engine-runner] cmd={' '.join(cmd)}")
 
     started_at = _utc_now_iso()
     started = monotonic()

@@ -825,6 +825,90 @@ def build_cavity_prepacked_engine_input(
     return out_input, plan
 
 
+def _module_variant_key(
+    *,
+    parent_part_id: str,
+    parent_outer_points_mm: list[list[float]],
+    child_placements: list[dict[str, Any]],
+) -> str:
+    """Stable variant id based on parent shape and child placement set."""
+    import hashlib, json
+    outer_hash = hashlib.sha256(
+        json.dumps(parent_outer_points_mm, separators=(",", ":")).encode()
+    ).hexdigest()[:16]
+    if not child_placements:
+        return f"{parent_part_id}__empty__{outer_hash}"
+    child_sig = []
+    for cp in sorted(child_placements, key=lambda c: (str(c.get("child_part_revision_id","")), c.get("child_instance",0))):
+        child_sig.append(f"{cp.get('child_part_revision_id')}:{cp.get('child_instance')}:{cp.get('x_local_mm')}:{cp.get('y_local_mm')}:{cp.get('rotation_deg')}")
+    child_hash = hashlib.sha256("|".join(child_sig).encode()).hexdigest()[:16]
+    return f"{parent_part_id}__{child_hash}__{outer_hash}"
+
+
+def _group_placement_trees_by_variant(
+    *,
+    placement_trees: dict[str, dict[str, Any]],
+    virtual_parts: dict[str, dict[str, Any]],
+    part_by_id: dict[str, _PartRecord],
+) -> dict[str, dict[str, Any]]:
+    """Collapse placement trees into module variants, summing quantities."""
+    variant_map: dict[str, dict[str, Any]] = {}
+    for virtual_id, tree in placement_trees.items():
+        vp = virtual_parts.get(virtual_id, {})
+        parent_id = vp.get("parent_part_revision_id", "")
+        parent = part_by_id.get(parent_id)
+        if parent is None:
+            continue
+        internal_placements = _collect_placement_leaf_nodes(tree)
+        variant_key = _module_variant_key(
+            parent_part_id=parent_id,
+            parent_outer_points_mm=parent.outer_points_mm,
+            child_placements=internal_placements,
+        )
+        if variant_key not in variant_map:
+            solver_part_id = f"{_VIRTUAL_PART_PREFIX}{variant_key}"
+            variant_map[variant_key] = {
+                "variant_key": variant_key,
+                "solver_part_id": solver_part_id,
+                "parent_part_id": parent_id,
+                "parent_outer_points_mm": deepcopy(parent.outer_points_mm),
+                "allowed_rotations_deg": list(parent.allowed_rotations_deg),
+                "source_geometry_revision_id": parent.source_geometry_revision_id,
+                "selected_nesting_derivative_id": parent.selected_nesting_derivative_id,
+                "quantity": 0,
+                "representative_virtual_id": virtual_id,
+                "member_virtual_ids": [],
+                "placement_trees": [],
+            }
+        variant_map[variant_key]["quantity"] += 1
+        variant_map[variant_key]["member_virtual_ids"].append(virtual_id)
+        variant_map[variant_key]["placement_trees"].append(tree)
+    return variant_map
+
+
+def _collect_placement_leaf_nodes(tree: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect all internal_cavity_child nodes from a placement tree."""
+    result: list[dict[str, Any]] = []
+    children = tree.get("children", [])
+    if not isinstance(children, list):
+        return result
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        kind = str(child.get("kind") or "")
+        if kind == "internal_cavity_child":
+            result.append({
+                "child_part_revision_id": child.get("part_revision_id", ""),
+                "child_instance": child.get("instance", 0),
+                "x_local_mm": child.get("x_local_mm", 0.0),
+                "y_local_mm": child.get("y_local_mm", 0.0),
+                "rotation_deg": child.get("rotation_deg", 0),
+                "parent_cavity_index": child.get("parent_cavity_index"),
+            })
+        result.extend(_collect_placement_leaf_nodes(child))
+    return result
+
+
 def build_cavity_prepacked_engine_input_v2(
     *,
     snapshot_row: dict[str, Any],
@@ -849,6 +933,7 @@ def build_cavity_prepacked_engine_input_v2(
     diagnostics: list[dict[str, Any]] = []
     virtual_parts: dict[str, dict[str, Any]] = {}
     placement_trees: dict[str, dict[str, Any]] = {}
+    variant_map: dict[str, dict[str, Any]] = {}
     top_level_qty_by_part: dict[str, int] = {part.part_id: 0 for part in part_records}
     out_parts: list[dict[str, Any]] = []
     usable_cavity_count = 0
@@ -919,17 +1004,26 @@ def build_cavity_prepacked_engine_input_v2(
                 "selected_nesting_derivative_id": parent.selected_nesting_derivative_id,
             }
             placement_trees[virtual_id] = root_node
+        next_instance[parent.part_id] = int(next_instance.get(parent.part_id, 0)) + top_level_qty
+        remaining_qty[parent.part_id] = 0
+
+    # Group identical module variants (same parent + same child placement set) → collapse per-instance to per-variant
+    if virtual_parts or placement_trees:
+        variant_map = _group_placement_trees_by_variant(
+            placement_trees=placement_trees,
+            virtual_parts=virtual_parts,
+            part_by_id=part_by_id,
+        )
+        for variant in variant_map.values():
             out_parts.append(
                 {
-                    "id": virtual_id,
-                    "quantity": 1,
-                    "allowed_rotations_deg": list(parent.allowed_rotations_deg),
-                    "outer_points_mm": deepcopy(parent.outer_points_mm),
+                    "id": f"{_VIRTUAL_PART_PREFIX}{variant['variant_key']}",
+                    "quantity": variant["quantity"],
+                    "allowed_rotations_deg": variant["allowed_rotations_deg"],
+                    "outer_points_mm": deepcopy(variant["parent_outer_points_mm"]),
                     "holes_points_mm": [],
                 }
             )
-        next_instance[parent.part_id] = int(next_instance.get(parent.part_id, 0)) + top_level_qty
-        remaining_qty[parent.part_id] = 0
 
     for part in part_records:
         if part.holes_points_mm:
@@ -985,6 +1079,7 @@ def build_cavity_prepacked_engine_input_v2(
     plan["diagnostics"] = diagnostics
     plan["summary"] = {
         "virtual_parent_count": len(virtual_parts),
+        "module_variant_count": len(variant_map),
         "placement_node_count": sum(_count_tree_nodes(tree) for tree in placement_trees.values()),
         "internal_placement_count": sum(
             int(metrics.get("internal_qty", 0))
@@ -994,6 +1089,25 @@ def build_cavity_prepacked_engine_input_v2(
         "usable_cavity_count": int(usable_cavity_count),
         "used_cavity_count": int(used_cavity_count),
     }
+    # Include collapsed module variants for result normalizer / validator reference
+    if variant_map:
+        plan["module_variants"] = {
+            vk: {
+                "variant_key": v["variant_key"],
+                "solver_part_id": v["solver_part_id"],
+                "quantity": v["quantity"],
+                "parent_part_revision_id": v["parent_part_id"],
+                "source_geometry_revision_id": v["source_geometry_revision_id"],
+                "selected_nesting_derivative_id": v["selected_nesting_derivative_id"],
+                "representative_virtual_id": v["representative_virtual_id"],
+                "member_virtual_ids": list(v["member_virtual_ids"]),
+            }
+            for vk, v in variant_map.items()
+        }
+        # Reverse mapping: solver_part_id → variant_key (for O(1) lookup in normalizer)
+        plan["module_variants_by_solver_id"] = {
+            v["solver_part_id"]: vk for vk, v in variant_map.items()
+        }
     return out_input, plan
 
 
