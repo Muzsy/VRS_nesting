@@ -208,30 +208,39 @@ impl NfpProvider for OldConcaveProvider {
 
 /// Compute NFP using an arbitrary provider (T05v pilot API).
 /// Both arguments are the lib-internal `crate::geometry::types::Polygon64`.
+///
+/// T06l-a: Per-call `[NFP DIAG]` lines (success and failure) are gated behind
+/// `NESTING_ENGINE_NFP_RUNTIME_DIAG=1`. The cache, the provider call itself,
+/// and the returned polygon are unaffected — only the eprintln is gated.
 pub fn compute_nfp_lib_with_provider(
     placed_polygon: &Polygon64,
     moving_polygon: &Polygon64,
     provider: &dyn NfpProvider,
 ) -> Option<Polygon64> {
+    let runtime_diag = std::env::var("NESTING_ENGINE_NFP_RUNTIME_DIAG").as_deref() == Ok("1");
     match provider.compute(placed_polygon, moving_polygon) {
         Ok(result) => {
-            eprintln!(
-                "[NFP DIAG] provider={} kernel={:?} cache_key_kernel={:?} elapsed_ms={} result_pts={}",
-                provider.kernel_name(),
-                result.kernel,
-                result.kernel,
-                result.compute_time_ms,
-                result.polygon.outer.len()
-            );
+            if runtime_diag {
+                eprintln!(
+                    "[NFP DIAG] provider={} kernel={:?} cache_key_kernel={:?} elapsed_ms={} result_pts={}",
+                    provider.kernel_name(),
+                    result.kernel,
+                    result.kernel,
+                    result.compute_time_ms,
+                    result.polygon.outer.len()
+                );
+            }
             Some(result.polygon)
         }
         Err(err) => {
-            eprintln!(
-                "[NFP DIAG] provider={} kernel={:?} FAILED={}",
-                provider.kernel_name(),
-                provider.kernel(),
-                err
-            );
+            if runtime_diag {
+                eprintln!(
+                    "[NFP DIAG] provider={} kernel={:?} FAILED={}",
+                    provider.kernel_name(),
+                    provider.kernel(),
+                    err
+                );
+            }
             None
         }
     }

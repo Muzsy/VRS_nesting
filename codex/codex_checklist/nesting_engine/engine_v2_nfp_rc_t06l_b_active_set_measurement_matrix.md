@@ -1,0 +1,34 @@
+# Checklist — T06l-b / T06m Active-set measurement matrix
+
+- [x] T06l-a report elolvasva
+- [x] Claude algorithmic speedup audit elolvasva
+- [x] T06-next greedy eval report elolvasva
+- [x] T06i/T06j/T06k/T06d reportok áttekintve
+- [x] repo state dokumentálva
+- [x] CGAL probe elérhető (`tools/nfp_cgal_probe/build/nfp_cgal_probe`)
+- [x] cargo check PASS
+- [x] release build PASS
+- [x] célzott tests PASS vagy pre-existing failure dokumentálva
+- [x] prepack input contract ellenőrizve (12 part types, 276 qty, 0 holes, guard PASSED)
+- [x] baseline CFR search=none profiling off (run_01) lefutott: 276/276, 3 sheet, 49.40%
+- [x] baseline CFR search=none profiling on (run_08) lefutott: 276/276, 3 sheet, 49.40%
+- [x] can_place_profile stats parse-olva (boundary/broad/narrow breakdown)
+- [x] active-set no fallback (run_03) timeout dokumentálva (300s timeout → EXIT 124)
+- [x] active-set local fallback (run_04) lefutott: 27/276, partial, 1 sheet, 52.93%
+- [x] active-set full fallback benchmark (run_05) lefutott: 27/276, partial, 1 sheet, 52.93%
+- [x] candidate-driven kontroll (run_06) lefutott: 4/276, partial, 1 sheet, 29.88%
+- [x] hybrid CFR kontroll (run_07) lefutott: 12/276, partial, 1 sheet, 45.26%
+- [x] compaction off kontroll (run_08) lefutott: 276/276, 3 sheet, 49.40% — identical to baseline
+- [x] SA kontroll kihagyva (baseline már 276/276, nem indokolt)
+- [x] NFP/CFR breakdown táblázat elkészült
+- [x] candidate breakdown táblázat elkészült
+- [x] can_place breakdown táblázat elkészült
+- [x] quality/regret táblázat elkészült
+- [x] correctness gate értékelve — PASS: no overlap/bounds/spacing violation, no silent BLF/OldConcave fallback
+- [x] actual placer/kernel ellenőrizve — mindegyik run: nfp + cgal_reference
+- [x] no silent BLF fallback ellenőrizve
+- [x] no silent OldConcave fallback ellenőrizve
+- [x] nyers logok mentve `tmp/reports/nesting_engine/t06l_b_measurements/`
+- [x] report elkészült: `codex/reports/nesting_engine/engine_v2_nfp_rc_t06l_b_active_set_measurement_matrix.md`
+- [x] checklist elkészült: `codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t06l_b_active_set_measurement_matrix.md`
+- [x] következő implementációs javaslat elkészült: T06l-c (can_place narrow-phase spatial indexing)

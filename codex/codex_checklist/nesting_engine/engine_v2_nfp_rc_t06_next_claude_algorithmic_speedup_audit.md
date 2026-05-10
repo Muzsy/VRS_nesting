@@ -1,0 +1,42 @@
+# Checklist — T06-next Claude Algorithmic Speedup Audit
+
+- [x] T06-next greedy eval report elolvasva
+- [x] T06i benchmark report elolvasva
+- [x] T06i SA budget report elolvasva
+- [x] T06j/T06k/T06d reportok áttekintve
+- [x] T06b/T06c/T06g/T06h reportok áttekintve
+- [x] main.rs auditálva (CLI, default_sa_eval_budget_sec, env propagation)
+- [x] greedy.rs auditálva (greedy_multi_sheet, StopPolicy, run_slide_compaction_postpass)
+- [x] sa.rs auditálva (clamp, run_sa_search_over_specs, eval_state_cost_with_result, ensure_sa_stop_mode)
+- [x] nfp_placer.rs auditálva (default + candidate-driven + active-set ágak, append_candidates, sort_and_dedupe)
+- [x] cfr.rs auditálva (compute_cfr_internal, run_overlay, canonicalize, emit_cfr_diag gate)
+- [x] nfp cache auditálva (HashMap, MAX_ENTRIES=10_000 clear-all, shape_id SHA-256)
+- [x] nfp provider auditálva (OldConcave + CgalReference dispatch, unconditional [NFP DIAG] print)
+- [x] nfp ifp auditálva (rect-bin AABB IFP)
+- [x] feasibility aabb auditálva (TOUCH_TOL inflated)
+- [x] feasibility narrow auditálva (PlacedIndex + RTree, can_place, can_place_profiled NEM hívódik éles ágon, polygons_intersect_or_touch, point_in_polygon)
+- [x] vrs_nesting/config/nesting_quality_profiles.py auditálva (quality_cavity_prepack_cgal_reference profil)
+- [x] vrs_nesting/runner/nesting_engine_runner.py auditálva (--sa-eval-budget-sec plumb)
+- [x] greedy evaluation call graph elkészült (fájl/függvény szintű)
+- [x] cost model komponensenként elkészült (hol/freq/skálázódik/mérés/hiányzó/bottleneck %)
+- [x] candidate explosion elemzés elkészült (11.16M → 1.07M after cap, cap_applied 253×)
+- [x] NFP request pattern elemzés elkészült (cache hit 99.32%, miss-cost domináns a kompozícióban)
+- [x] CFR usage model elemzés elkészült (union+diff arány, hybrid threshold, active-set fallback)
+- [x] can_place bottleneck risk elemzés elkészült (vakfolt, can_place_profiled feature mögött)
+- [x] SA repeated eval elemzés elkészült (default_eval_budget=t/10, clamp logika, current profil 0/1 iter)
+- [x] legalább 8 gyorsítási opció értékelve (13 opció: A–M)
+- [x] correctness risk minden opciónál értékelve
+- [x] quality risk minden opciónál értékelve
+- [x] complexity minden opciónál értékelve
+- [x] expected speedup minden opciónál értékelve
+- [x] required measurements minden opciónál azonosítva
+- [x] rangsorolt ajánlási táblázat elkészült (13 sor)
+- [x] következő implementációs task javasolva (T06l — eprintln gating + can_place_profiled aggregation)
+- [x] nem javasolt irányok listázva (9 pont)
+- [x] open questions felsorolva (8 kérdés)
+- [x] production kód NEM módosult
+- [x] benchmark / próbafutás NEM történt (csak fájlolvasás, statikus elemzés)
+- [x] cargo test / cargo run NEM futott
+- [x] LV8 solver próba NEM történt
+- [x] report elkészült (`codex/reports/nesting_engine/engine_v2_nfp_rc_t06_next_claude_algorithmic_speedup_audit.md`)
+- [x] checklist elkészült (`codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t06_next_claude_algorithmic_speedup_audit.md`)

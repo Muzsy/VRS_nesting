@@ -1,7 +1,10 @@
 use serde::Serialize;
 use std::time::Instant;
 
-use crate::feasibility::{aabb::aabb_from_polygon64, can_place, narrow::PlacedIndex, PlacedPart};
+use crate::feasibility::{
+    aabb::aabb_from_polygon64, can_place, can_place_profiled, narrow::PlacedIndex, CanPlaceProfile,
+    PlacedPart,
+};
 use crate::geometry::{
     scale::i64_to_mm,
     trig_lut::{normalize_deg, round_div_i128, COS_Q, SIN_Q, TRIG_SCALE_I128},
@@ -189,6 +192,110 @@ fn is_active_set_full_cfr_fallback_enabled() -> bool {
         == Ok("1")
 }
 
+// T06l-a: Hot-path diagnostics gating
+// These flags gate per-call eprintln! diagnostics in the NFP/CFR compute hot paths.
+// Default (flag unset / not "1"): the hot path emits NO diagnostic lines.
+// The summary emit (NfpRuntimeDiagV1::emit_summary) and the JSON stats output
+// (NEST_NFP_STATS_V1) remain available regardless of these flags.
+// Numerical / counter behavior MUST NOT depend on these flags — only printing.
+/// Returns true when NESTING_ENGINE_NFP_RUNTIME_DIAG=1
+/// Gates per-call NFP compute / NFP provider eprintln! lines.
+fn is_nfp_runtime_diag_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_NFP_RUNTIME_DIAG").as_deref() == Ok("1")
+}
+
+/// Returns true when NESTING_ENGINE_CFR_DIAG=1
+/// Gates per-call CFR eprintln! lines emitted by nfp_placer.rs.
+fn is_cfr_diag_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_CFR_DIAG").as_deref() == Ok("1")
+}
+
+/// Returns true when NESTING_ENGINE_CAN_PLACE_PROFILE=1
+/// When enabled, the placer routes can_place(...) calls through can_place_profiled(...)
+/// and aggregates the resulting CanPlaceProfile into NfpPlacerStatsV1.
+/// The boolean decision is identical to the default can_place path.
+fn is_can_place_profile_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_CAN_PLACE_PROFILE").as_deref() == Ok("1")
+}
+
+// T06l-a: can_place dispatcher.
+// When `profile_enabled` is true, routes through can_place_profiled and aggregates
+// the profile into `stats`. Returns the same boolean that can_place(...) would.
+// Default path (`profile_enabled == false`) is bit-for-bit identical to the
+// previous direct `can_place(...)` call — no extra work, no allocations.
+#[inline]
+fn can_place_dispatch(
+    candidate: &Polygon64,
+    bin: &Polygon64,
+    placed: &PlacedIndex,
+    stats: &mut NfpPlacerStatsV1,
+    profile_enabled: bool,
+) -> bool {
+    if !profile_enabled {
+        return can_place(candidate, bin, placed);
+    }
+    let outer_start = Instant::now();
+    let (ok, profile) = can_place_profiled(candidate, bin, placed);
+    let total_ns = outer_start.elapsed().as_nanos() as u64;
+    aggregate_can_place_profile(stats, ok, total_ns, &profile);
+    ok
+}
+
+#[inline]
+fn aggregate_can_place_profile(
+    stats: &mut NfpPlacerStatsV1,
+    ok: bool,
+    total_ns: u64,
+    profile: &CanPlaceProfile,
+) {
+    stats.can_place_profile_enabled = true;
+    stats.can_place_profile_calls = stats.can_place_profile_calls.saturating_add(1);
+    stats.can_place_profile_total_ns = stats.can_place_profile_total_ns.saturating_add(total_ns);
+    if ok {
+        stats.can_place_profile_accept_count =
+            stats.can_place_profile_accept_count.saturating_add(1);
+    } else {
+        stats.can_place_profile_reject_count =
+            stats.can_place_profile_reject_count.saturating_add(1);
+    }
+    // boundary = poly_within (sheet boundary / containment check)
+    stats.can_place_profile_boundary_ns_total = stats
+        .can_place_profile_boundary_ns_total
+        .saturating_add(profile.poly_within_ns);
+    // broad-phase = AABB / RTree query
+    stats.can_place_profile_broad_phase_ns_total = stats
+        .can_place_profile_broad_phase_ns_total
+        .saturating_add(profile.overlap_query_ns);
+    // narrow-phase = exact polygon intersection
+    stats.can_place_profile_narrow_phase_ns_total = stats
+        .can_place_profile_narrow_phase_ns_total
+        .saturating_add(profile.narrow_phase_ns);
+    stats.can_place_profile_overlap_query_count_total = stats
+        .can_place_profile_overlap_query_count_total
+        .saturating_add(if profile.poly_within_called { 1 } else { 0 });
+    stats.can_place_profile_overlap_candidate_count_total = stats
+        .can_place_profile_overlap_candidate_count_total
+        .saturating_add(profile.overlap_candidates as u64);
+    stats.can_place_profile_narrow_phase_pair_count_total = stats
+        .can_place_profile_narrow_phase_pair_count_total
+        .saturating_add(profile.narrow_phase_pairs as u64);
+    if profile.rejected_by_aabb {
+        stats.can_place_profile_rejected_by_aabb_count = stats
+            .can_place_profile_rejected_by_aabb_count
+            .saturating_add(1);
+    }
+    if profile.rejected_by_within {
+        stats.can_place_profile_rejected_by_within_count = stats
+            .can_place_profile_rejected_by_within_count
+            .saturating_add(1);
+    }
+    if profile.rejected_by_narrow {
+        stats.can_place_profile_rejected_by_narrow_count = stats
+            .can_place_profile_rejected_by_narrow_count
+            .saturating_add(1);
+    }
+}
+
 #[derive(Debug, Clone)]
 struct RotationContext {
     rotation_deg: i32,
@@ -260,6 +367,22 @@ pub struct NfpPlacerStatsV1 {
     pub effective_placer: String,
     pub sheets_used: u64,
     pub actual_nfp_kernel: String, // T05z: which NFP kernel was actually used
+    // T06l-a: can_place profile aggregation (only nonzero when
+    // NESTING_ENGINE_CAN_PLACE_PROFILE=1). Default behavior is unchanged.
+    pub can_place_profile_enabled: bool,
+    pub can_place_profile_calls: u64,
+    pub can_place_profile_accept_count: u64,
+    pub can_place_profile_reject_count: u64,
+    pub can_place_profile_total_ns: u64,
+    pub can_place_profile_boundary_ns_total: u64,
+    pub can_place_profile_broad_phase_ns_total: u64,
+    pub can_place_profile_narrow_phase_ns_total: u64,
+    pub can_place_profile_overlap_query_count_total: u64,
+    pub can_place_profile_overlap_candidate_count_total: u64,
+    pub can_place_profile_narrow_phase_pair_count_total: u64,
+    pub can_place_profile_rejected_by_aabb_count: u64,
+    pub can_place_profile_rejected_by_within_count: u64,
+    pub can_place_profile_rejected_by_narrow_count: u64,
 }
 
 impl Default for NfpPlacerStatsV1 {
@@ -299,6 +422,20 @@ impl Default for NfpPlacerStatsV1 {
             effective_placer: String::new(),
             sheets_used: 0,
             actual_nfp_kernel: resolve_nfp_kernel_name(),
+            can_place_profile_enabled: false,
+            can_place_profile_calls: 0,
+            can_place_profile_accept_count: 0,
+            can_place_profile_reject_count: 0,
+            can_place_profile_total_ns: 0,
+            can_place_profile_boundary_ns_total: 0,
+            can_place_profile_broad_phase_ns_total: 0,
+            can_place_profile_narrow_phase_ns_total: 0,
+            can_place_profile_overlap_query_count_total: 0,
+            can_place_profile_overlap_candidate_count_total: 0,
+            can_place_profile_narrow_phase_pair_count_total: 0,
+            can_place_profile_rejected_by_aabb_count: 0,
+            can_place_profile_rejected_by_within_count: 0,
+            can_place_profile_rejected_by_narrow_count: 0,
         }
     }
 }
@@ -399,6 +536,49 @@ impl NfpPlacerStatsV1 {
         if !other.actual_nfp_kernel.is_empty() {
             self.actual_nfp_kernel = other.actual_nfp_kernel.clone();
         }
+        // T06l-a: can_place profile aggregation merge.
+        // can_place_profile_enabled becomes true if any merged stats had it enabled.
+        self.can_place_profile_enabled =
+            self.can_place_profile_enabled || other.can_place_profile_enabled;
+        self.can_place_profile_calls = self
+            .can_place_profile_calls
+            .saturating_add(other.can_place_profile_calls);
+        self.can_place_profile_accept_count = self
+            .can_place_profile_accept_count
+            .saturating_add(other.can_place_profile_accept_count);
+        self.can_place_profile_reject_count = self
+            .can_place_profile_reject_count
+            .saturating_add(other.can_place_profile_reject_count);
+        self.can_place_profile_total_ns = self
+            .can_place_profile_total_ns
+            .saturating_add(other.can_place_profile_total_ns);
+        self.can_place_profile_boundary_ns_total = self
+            .can_place_profile_boundary_ns_total
+            .saturating_add(other.can_place_profile_boundary_ns_total);
+        self.can_place_profile_broad_phase_ns_total = self
+            .can_place_profile_broad_phase_ns_total
+            .saturating_add(other.can_place_profile_broad_phase_ns_total);
+        self.can_place_profile_narrow_phase_ns_total = self
+            .can_place_profile_narrow_phase_ns_total
+            .saturating_add(other.can_place_profile_narrow_phase_ns_total);
+        self.can_place_profile_overlap_query_count_total = self
+            .can_place_profile_overlap_query_count_total
+            .saturating_add(other.can_place_profile_overlap_query_count_total);
+        self.can_place_profile_overlap_candidate_count_total = self
+            .can_place_profile_overlap_candidate_count_total
+            .saturating_add(other.can_place_profile_overlap_candidate_count_total);
+        self.can_place_profile_narrow_phase_pair_count_total = self
+            .can_place_profile_narrow_phase_pair_count_total
+            .saturating_add(other.can_place_profile_narrow_phase_pair_count_total);
+        self.can_place_profile_rejected_by_aabb_count = self
+            .can_place_profile_rejected_by_aabb_count
+            .saturating_add(other.can_place_profile_rejected_by_aabb_count);
+        self.can_place_profile_rejected_by_within_count = self
+            .can_place_profile_rejected_by_within_count
+            .saturating_add(other.can_place_profile_rejected_by_within_count);
+        self.can_place_profile_rejected_by_narrow_count = self
+            .can_place_profile_rejected_by_narrow_count
+            .saturating_add(other.can_place_profile_rejected_by_narrow_count);
     }
 
     pub fn add_assign(&mut self, other: &Self) {
@@ -445,6 +625,12 @@ pub fn nfp_place(
     let runtime_diag_enabled = std::env::var("NESTING_ENGINE_NFP_RUNTIME_DIAG").as_deref() == Ok("1");
     let overall_start = if runtime_diag_enabled { Some(Instant::now()) } else { None };
     let mut runtime_diag = NfpRuntimeDiagV1::default();
+    // T06l-a: read can_place profile flag once per nfp_place call.
+    // When false (default), the dispatcher takes the fast path and behavior is unchanged.
+    let can_place_profile_enabled = is_can_place_profile_enabled();
+    if can_place_profile_enabled {
+        stats.can_place_profile_enabled = true;
+    }
 
     let ordered = order_parts_for_policy(parts, order_policy);
     // T05z: resolve kernel once so cache key matches the provider used in compute_nfp_lib.
@@ -783,7 +969,7 @@ pub fn nfp_place(
                             let candidate_poly =
                                 translate_polygon(&c_ctx.moving_polygon, candidate.tx, candidate.ty);
 
-                            if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                            if can_place_dispatch(&candidate_poly, bin_polygon, &placed_state, stats, can_place_profile_enabled) {
                                 // ACCEPT — exact validation passed
                                 let candidate_aabb = aabb_from_polygon64(&candidate_poly);
                                 placed_state.insert(PlacedPart {
@@ -873,7 +1059,7 @@ pub fn nfp_place(
                                     let candidate_poly =
                                         translate_polygon(&ctx.moving_polygon, pt.x, pt.y);
 
-                                    if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                                    if can_place_dispatch(&candidate_poly, bin_polygon, &placed_state, stats, can_place_profile_enabled) {
                                         let candidate_aabb = aabb_from_polygon64(&candidate_poly);
                                         placed_state.insert(PlacedPart {
                                             inflated_polygon: candidate_poly.clone(),
@@ -991,7 +1177,7 @@ pub fn nfp_place(
                                         let candidate_poly =
                                             translate_polygon(&ctx.moving_polygon, pt.x, pt.y);
 
-                                        if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                                        if can_place_dispatch(&candidate_poly, bin_polygon, &placed_state, stats, can_place_profile_enabled) {
                                             let candidate_aabb =
                                                 aabb_from_polygon64(&candidate_poly);
                                             placed_state.insert(PlacedPart {
@@ -1074,30 +1260,36 @@ pub fn nfp_place(
                     stats.nfp_cache_misses = stats.nfp_cache_misses.saturating_add(1);
                     stats.nfp_compute_calls = stats.nfp_compute_calls.saturating_add(1);
 
-                    eprintln!(
-                        "[NFP DIAG] compute_nfp_lib START placed_pts={} placed_convex={} placed_holes={} moving_pts={} moving_convex={} moving_holes={} rotation_deg={}",
-                        placed_normalized.outer.len(),
-                        is_convex(&placed_normalized.outer),
-                        placed_normalized.holes.len(),
-                        moving.outer.len(),
-                        is_convex(&moving.outer),
-                        moving.holes.len(),
-                        rotation_deg
-                    );
+                    // T06l-a: hot-path NFP compute trace lines, gated by NESTING_ENGINE_NFP_RUNTIME_DIAG.
+                    let nfp_diag_on = is_nfp_runtime_diag_enabled();
+                    if nfp_diag_on {
+                        eprintln!(
+                            "[NFP DIAG] compute_nfp_lib START placed_pts={} placed_convex={} placed_holes={} moving_pts={} moving_convex={} moving_holes={} rotation_deg={}",
+                            placed_normalized.outer.len(),
+                            is_convex(&placed_normalized.outer),
+                            placed_normalized.holes.len(),
+                            moving.outer.len(),
+                            is_convex(&moving.outer),
+                            moving.holes.len(),
+                            rotation_deg
+                        );
+                    }
                     let nfp_start = Instant::now();
                     let computed = compute_nfp_lib(&placed_normalized, &moving);
-                    eprintln!(
-                        "[NFP DIAG] compute_nfp_lib END elapsed_ms={:.2} result={}",
-                        nfp_start.elapsed().as_secs_f64() * 1000.0,
-                        if computed.is_some() {
-                            format!(
-                                "Some({}pts)",
-                                computed.as_ref().map(|p| p.outer.len()).unwrap_or(0)
-                            )
-                        } else {
-                            "None".to_string()
-                        }
-                    );
+                    if nfp_diag_on {
+                        eprintln!(
+                            "[NFP DIAG] compute_nfp_lib END elapsed_ms={:.2} result={}",
+                            nfp_start.elapsed().as_secs_f64() * 1000.0,
+                            if computed.is_some() {
+                                format!(
+                                    "Some({}pts)",
+                                    computed.as_ref().map(|p| p.outer.len()).unwrap_or(0)
+                                )
+                            } else {
+                                "None".to_string()
+                            }
+                        );
+                    }
                     match computed {
                         Some(poly_rel) => {
                             cache.insert(key, poly_rel.clone());
@@ -1178,25 +1370,31 @@ pub fn nfp_place(
                     stats.cfr_skipped_by_hybrid_count = stats.cfr_skipped_by_hybrid_count.saturating_add(1);
                 } else {
                     let mut cfr_stats = CfrStatsV1::default();
-                    eprintln!(
-                        "[CFR DIAG] START nfp_polys={} ifp_pts={} rotation_deg={}",
-                        nfp_polys.len(),
-                        ifp.polygon.outer.len(),
-                        rotation_deg
-                    );
+                    // T06l-a: hot-path CFR trace lines, gated by NESTING_ENGINE_CFR_DIAG.
+                    let cfr_diag_on = is_cfr_diag_enabled();
+                    if cfr_diag_on {
+                        eprintln!(
+                            "[CFR DIAG] START nfp_polys={} ifp_pts={} rotation_deg={}",
+                            nfp_polys.len(),
+                            ifp.polygon.outer.len(),
+                            rotation_deg
+                        );
+                    }
                     let cfr_start = Instant::now();
                     let cfr_components: Vec<Polygon64> =
                         compute_cfr_with_stats(&ifp.polygon, &nfp_polys, &mut cfr_stats)
                             .iter()
                             .map(from_lib_polygon)
                             .collect();
-                    eprintln!(
-                        "[CFR DIAG] END elapsed_ms={:.2} components={} union_calls={} diff_calls={}",
-                        cfr_start.elapsed().as_secs_f64() * 1000.0,
-                        cfr_components.len(),
-                        cfr_stats.cfr_union_calls,
-                        cfr_stats.cfr_diff_calls
-                    );
+                    if cfr_diag_on {
+                        eprintln!(
+                            "[CFR DIAG] END elapsed_ms={:.2} components={} union_calls={} diff_calls={}",
+                            cfr_start.elapsed().as_secs_f64() * 1000.0,
+                            cfr_components.len(),
+                            cfr_stats.cfr_union_calls,
+                            cfr_stats.cfr_diff_calls
+                        );
+                    }
                     stats.cfr_union_calls = stats
                         .cfr_union_calls
                         .saturating_add(cfr_stats.cfr_union_calls);
@@ -1290,7 +1488,7 @@ pub fn nfp_place(
                 if candidate_driven {
                     cd_stats.can_place_checks = cd_stats.can_place_checks.saturating_add(1);
                 }
-                if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                if can_place_dispatch(&candidate_poly, bin_polygon, &placed_state, stats, can_place_profile_enabled) {
                     if candidate_driven {
                         cd_stats.accepted = cd_stats.accepted.saturating_add(1);
                         cd_stats.runtime_can_place_ms = cd_stats
@@ -1375,7 +1573,7 @@ pub fn nfp_place(
                         let candidate_poly =
                             translate_polygon(&ctx.moving_polygon, candidate.tx, candidate.ty);
                         cd_stats.can_place_checks = cd_stats.can_place_checks.saturating_add(1);
-                        if can_place(&candidate_poly, bin_polygon, &placed_state) {
+                        if can_place_dispatch(&candidate_poly, bin_polygon, &placed_state, stats, can_place_profile_enabled) {
                             cd_stats.accepted = cd_stats.accepted.saturating_add(1);
                             let candidate_aabb = aabb_from_polygon64(&candidate_poly);
                             placed_state.insert(PlacedPart {
@@ -1582,13 +1780,16 @@ fn compute_nfp_lib(placed_polygon: &Polygon64, moving_polygon: &Polygon64) -> Op
     let actual_kernel = provider.kernel();
     match provider.compute(&placed_lib, &moving_lib) {
         Ok(result) => {
-            eprintln!(
-                "[NFP DIAG] provider={} kernel={:?} elapsed_ms={} result_pts={}",
-                provider.kernel_name(),
-                actual_kernel,
-                result.compute_time_ms,
-                result.polygon.outer.len()
-            );
+            // T06l-a: per-call NFP provider trace, gated by NESTING_ENGINE_NFP_RUNTIME_DIAG.
+            if is_nfp_runtime_diag_enabled() {
+                eprintln!(
+                    "[NFP DIAG] provider={} kernel={:?} elapsed_ms={} result_pts={}",
+                    provider.kernel_name(),
+                    actual_kernel,
+                    result.compute_time_ms,
+                    result.polygon.outer.len()
+                );
+            }
             Some(LibPolygon64 {
                 outer: result
                     .polygon

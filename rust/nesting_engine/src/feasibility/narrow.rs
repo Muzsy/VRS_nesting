@@ -595,6 +595,90 @@ mod tests {
         assert_eq!(first, second);
     }
 
+    /// T06l-a: boolean equivalence — `can_place` and `can_place_profiled.0`
+    /// MUST return the same boolean across the canonical control cases.
+    /// Profiling is opt-in instrumentation; it must never weaken or strengthen
+    /// the placement decision.
+    #[test]
+    fn can_place_and_profiled_return_equal_booleans_across_control_cases() {
+        let bin = rect(0.0, 0.0, 100.0, 100.0);
+
+        // Case 1: empty sheet, valid placement → both true.
+        let candidate_ok = rect(10.0, 10.0, 10.0, 10.0);
+        let placed_empty = PlacedIndex::new();
+        assert_eq!(
+            can_place(&candidate_ok, &bin, &placed_empty),
+            can_place_profiled(&candidate_ok, &bin, &placed_empty).0,
+            "empty sheet valid case must match",
+        );
+
+        // Case 2: bounds violation (containment fails) → both false.
+        let candidate_oob = rect(95.0, 95.0, 10.0, 10.0);
+        assert_eq!(
+            can_place(&candidate_oob, &bin, &placed_empty),
+            can_place_profiled(&candidate_oob, &bin, &placed_empty).0,
+            "bounds violation must match",
+        );
+
+        // Case 3: overlap violation → both false.
+        let overlap_poly = rect(10.0, 10.0, 10.0, 10.0);
+        let mut placed_overlap = PlacedIndex::new();
+        placed_overlap.insert(PlacedPart {
+            aabb: aabb_from_polygon64(&overlap_poly),
+            inflated_polygon: overlap_poly,
+        });
+        assert_eq!(
+            can_place(&candidate_ok, &bin, &placed_overlap),
+            can_place_profiled(&candidate_ok, &bin, &placed_overlap).0,
+            "overlap violation must match",
+        );
+
+        // Case 4: touching → both false (touching is infeasible by policy).
+        let touch_poly = rect(20.0, 10.0, 10.0, 10.0);
+        let mut placed_touch = PlacedIndex::new();
+        placed_touch.insert(PlacedPart {
+            aabb: aabb_from_polygon64(&touch_poly),
+            inflated_polygon: touch_poly,
+        });
+        assert_eq!(
+            can_place(&candidate_ok, &bin, &placed_touch),
+            can_place_profiled(&candidate_ok, &bin, &placed_touch).0,
+            "touching policy decision must match",
+        );
+
+        // Case 5: multiple placed parts via RTree query → both should yield same answer.
+        let other_a_poly = rect(40.0, 40.0, 10.0, 10.0);
+        let other_b_poly = rect(60.0, 60.0, 10.0, 10.0);
+        let other_c_poly = rect(80.0, 80.0, 10.0, 10.0);
+        let mut placed_multi = PlacedIndex::new();
+        placed_multi.insert(PlacedPart {
+            aabb: aabb_from_polygon64(&other_a_poly),
+            inflated_polygon: other_a_poly,
+        });
+        placed_multi.insert(PlacedPart {
+            aabb: aabb_from_polygon64(&other_b_poly),
+            inflated_polygon: other_b_poly,
+        });
+        placed_multi.insert(PlacedPart {
+            aabb: aabb_from_polygon64(&other_c_poly),
+            inflated_polygon: other_c_poly,
+        });
+        // Far-from-anyone candidate → true on both.
+        let candidate_clear = rect(2.0, 2.0, 5.0, 5.0);
+        assert_eq!(
+            can_place(&candidate_clear, &bin, &placed_multi),
+            can_place_profiled(&candidate_clear, &bin, &placed_multi).0,
+            "multi-placed clear case must match",
+        );
+        // Candidate that would overlap one of the placed parts → false on both.
+        let candidate_overlap = rect(42.0, 42.0, 5.0, 5.0);
+        assert_eq!(
+            can_place(&candidate_overlap, &bin, &placed_multi),
+            can_place_profiled(&candidate_overlap, &bin, &placed_multi).0,
+            "multi-placed overlap case must match",
+        );
+    }
+
     #[test]
     fn can_place_is_deterministic_for_identical_aabb_ties() {
         let bin = rect(0.0, 0.0, 100.0, 100.0);

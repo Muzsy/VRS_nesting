@@ -1,0 +1,31 @@
+# Checklist — T06l-a Diagnostics cleanup + can_place profiling
+
+- [x] Claude algorithmic speedup audit elolvasva
+- [x] T06-next greedy eval cost report elolvasva
+- [x] T06i/T06j/T06k/T06d releváns reportok áttekintve
+- [x] nfp_placer.rs hot-path print audit kész
+- [x] provider.rs hot-path print audit kész
+- [x] feasibility/narrow.rs can_place_profiled audit kész
+- [x] default hot-path [NFP DIAG] print flag mögé téve
+- [x] default hot-path [CFR DIAG] print flag mögé téve
+- [x] meglévő diag flagek tiszteletben tartva (NFP_RUNTIME_DIAG, CFR_DIAG, ACTIVE_SET_DIAG, CANDIDATE_DIAG, HYBRID_CFR_DIAG)
+- [x] NESTING_ENGINE_CAN_PLACE_PROFILE implementálva
+- [x] can_place_profiled csak flag alatt fut éles útvonalon
+- [x] normál can_place defaultban változatlan
+- [x] can_place és can_place_profiled boolean ekvivalencia tesztelve (5 kontroll eset)
+- [x] aggregált can_place profile stat mezők hozzáadva (14 új mező)
+- [x] broad-phase idő / count mérhető (overlap_query_ns, overlap_candidate_count)
+- [x] narrow-phase idő / count mérhető (narrow_phase_ns, narrow_phase_pair_count)
+- [x] boundary / containment idő mérhető (boundary_ns_total = poly_strictly_within)
+- [x] accept/reject count mérhető (accept_count, reject_count + per-stage rejected_by_*)
+- [x] default behavior változatlan (stdout byte-identical run A vs run D)
+- [x] nincs placement logic változás
+- [x] nincs candidate ordering változás
+- [x] nincs CFR algorithm változás
+- [x] nincs NFP provider policy változás
+- [x] cargo check futtatva (PASS, 40 warnings, 0 errors)
+- [x] releváns cargo test futtatva (3+6+12 PASS célzottan; full lib 59 PASS, 1 pre-existing FAIL dokumentálva)
+- [x] smoke / measurement futtatva (5 mód: default / NFP_RUNTIME_DIAG / CFR_DIAG / CAN_PLACE_PROFILE / EMIT_NFP_STATS)
+- [x] report elkészült (codex/reports/nesting_engine/engine_v2_nfp_rc_t06l_a_diagnostics_can_place_profiling.md)
+- [x] checklist elkészült (codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t06l_a_diagnostics_can_place_profiling.md)
+- [x] következő task javaslat elkészült (T06l-b / T06m — Active-set candidate-first measured integration with can_place_profile)
