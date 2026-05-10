@@ -3,6 +3,10 @@ name = "nesting_engine"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+geos_narrow_phase = []
+
 [dependencies]
 i_overlay = "=4.4.0"
 serde = { version = "1", features = ["derive"] }

@@ -1,10 +1,230 @@
 use rstar::{RTree, RTreeObject, AABB};
+use std::time::Instant;
 
 use crate::feasibility::aabb::{aabb_from_polygon64, aabb_inside, aabb_overlaps, Aabb};
 use crate::geometry::{
     scale::TOUCH_TOL,
     types::{cross_product_i128, Point64, Polygon64},
 };
+
+// =============================================================================
+// Narrow-phase strategy selection
+// =============================================================================
+
+/// NESTING_ENGINE_NARROW_PHASE values supported by this engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NarrowPhaseStrategy {
+    /// Own hand-rolled polygon intersection (default).
+    Own,
+    /// i_overlay PredicateOverlay-based alternative.
+    IOverlay,
+    /// GEOS PreparedGeometry (optional, compiled only with geos_narrow_phase feature).
+    #[cfg(feature = "geos_narrow_phase")]
+    Geos,
+}
+
+impl Default for NarrowPhaseStrategy {
+    fn default() -> Self {
+        NarrowPhaseStrategy::Own
+    }
+}
+
+impl NarrowPhaseStrategy {
+    /// Parse from NESTING_ENGINE_NARROW_PHASE env var.
+    /// Invalid values return Ok(NarrowPhaseStrategy::Own) with a warning.
+    pub fn from_env() -> Self {
+        match std::env::var("NESTING_ENGINE_NARROW_PHASE")
+            .as_deref()
+            .map(str::trim)
+        {
+            Ok("own") => NarrowPhaseStrategy::Own,
+            Ok("i_overlay") => NarrowPhaseStrategy::IOverlay,
+            #[cfg(feature = "geos_narrow_phase")]
+            Ok("geos") => NarrowPhaseStrategy::Geos,
+            Ok(other) => {
+                eprintln!(
+                    "[NARROW_PHASE] unknown strategy '{}', defaulting to 'own'",
+                    other
+                );
+                NarrowPhaseStrategy::Own
+            }
+            Err(_) => NarrowPhaseStrategy::Own,
+        }
+    }
+
+    /// Human-readable name for stats output.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NarrowPhaseStrategy::Own => "own",
+            NarrowPhaseStrategy::IOverlay => "i_overlay",
+            #[cfg(feature = "geos_narrow_phase")]
+            NarrowPhaseStrategy::Geos => "geos",
+        }
+    }
+}
+
+// =============================================================================
+// GEOS feature gate — stubs when geos_narrow_phase is not compiled
+// =============================================================================
+
+#[cfg(not(feature = "geos_narrow_phase"))]
+mod geos_narrow_phase {
+    use super::Polygon64;
+
+    /// Always returns false — GEOS not compiled.
+    pub fn polygons_intersect_or_touch_geos(
+        _a: &Polygon64,
+        _b: &Polygon64,
+    ) -> bool {
+        false
+    }
+
+    pub fn is_available() -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "geos_narrow_phase")]
+mod geos_narrow_phase {
+    use super::Polygon64;
+
+    pub fn is_available() -> bool {
+        true
+    }
+
+    pub fn polygons_intersect_or_touch_geos(a: &Polygon64, b: &Polygon64) -> bool {
+        // Placeholder — actual GEOS implementation would go here
+        // when geos_narrow_phase feature is enabled
+        let _ = (a, b);
+        false
+    }
+}
+
+// =============================================================================
+// i_overlay narrow-phase implementation
+// =============================================================================
+
+pub mod i_overlay_narrow {
+    use super::*;
+    use i_overlay::core::overlay::ShapeType;
+    use i_overlay::core::relate::PredicateOverlay;
+
+    // ---------------------------------------------------------------------
+    // Coordinate encoding for i_overlay int precision
+    // ---------------------------------------------------------------------
+
+    /// Encode two polygons into shared i32 coordinate space for i_overlay.
+    /// Returns (shape_a, shape_b) in i_overlay format or None on overflow.
+    fn encode_pair(
+        a: &Polygon64,
+        b: &Polygon64,
+    ) -> Option<(
+        i_overlay::i_shape::int::shape::IntShape,
+        i_overlay::i_shape::int::shape::IntShape,
+    )> {
+        
+        use i_overlay::i_shape::int::shape::{IntContour, IntShape};
+
+        // Compute bounding box of both polygons (all rings)
+        let mut min_x = i64::MAX;
+        let mut min_y = i64::MAX;
+        let mut max_x = i64::MIN;
+        let mut max_y = i64::MIN;
+
+        for poly in [a, b] {
+            for &pt in &poly.outer {
+                min_x = min_x.min(pt.x);
+                min_y = min_y.min(pt.y);
+                max_x = max_x.max(pt.x);
+                max_y = max_y.max(pt.y);
+            }
+            for hole in &poly.holes {
+                for &pt in hole {
+                    min_x = min_x.min(pt.x);
+                    min_y = min_y.min(pt.y);
+                    max_x = max_x.max(pt.x);
+                    max_y = max_y.max(pt.y);
+                }
+            }
+        }
+
+        if min_x == i64::MAX {
+            return None;
+        }
+
+        // Compute scale/shift to fit into i32 range.
+        // Allow some headroom; i32::MAX ≈ 2.1e9, and coordinates are in micrometers.
+        // For sheet sizes up to several meters (millions of µm), shift=0 works fine.
+        // For very large coordinates, fall back to conservative collision.
+        let span_x = max_x.checked_sub(min_x)?;
+        let span_y = max_y.checked_sub(min_y)?;
+        let max_span = span_x.max(span_y);
+
+        // If the coordinate range exceeds i32 by too much, fall back conservatively.
+        if max_span > i32::MAX as i64 {
+            return None;
+        }
+
+        let shift = if max_span > i32::MAX as i64 { 1 } else { 0 };
+
+        fn encode_ring(
+            ring: &[Point64],
+            min_x: i64,
+            min_y: i64,
+            shift: u32,
+        ) -> Option<IntContour> {
+            use i_overlay::i_float::int::point::IntPoint;
+            let mut contour = Vec::with_capacity(ring.len());
+            for pt in ring {
+                let tx = (pt.x - min_x) >> shift;
+                let ty = (pt.y - min_y) >> shift;
+                let x = i32::try_from(tx).ok()?;
+                let y = i32::try_from(ty).ok()?;
+                contour.push(IntPoint::new(x, y));
+            }
+            Some(contour)
+        }
+
+        fn encode_poly(poly: &Polygon64, min_x: i64, min_y: i64, shift: u32) -> Option<IntShape> {
+            let mut shape: IntShape = Vec::with_capacity(1 + poly.holes.len());
+            shape.push(encode_ring(&poly.outer, min_x, min_y, shift)?);
+            for hole in &poly.holes {
+                shape.push(encode_ring(hole, min_x, min_y, shift)?);
+            }
+            Some(shape)
+        }
+
+        let shape_a = encode_poly(a, min_x, min_y, shift)?;
+        let shape_b = encode_poly(b, min_x, min_y, shift)?;
+        Some((shape_a, shape_b))
+    }
+
+    /// Returns true if two polygons intersect or touch, using i_overlay PredicateOverlay.
+    /// Falls back conservatively (returns true) on any conversion/encoding error.
+    pub fn polygons_intersect_or_touch_i_overlay(a: &Polygon64, b: &Polygon64) -> bool {
+        // Fast path: try encoding, fall back to own on error
+        let (shape_a, shape_b) = match encode_pair(a, b) {
+            Some(pair) => pair,
+            None => return true, // conservative: treat as collision
+        };
+
+        // predicate_overlay_capacity: number of vertices as rough estimate
+        let cap_a: usize = shape_a.iter().map(|c| c.len()).sum();
+        let cap_b = shape_b.iter().map(|c| c.len()).sum();
+        let capacity = cap_a.max(cap_b).max(16);
+
+        let mut overlay = PredicateOverlay::new(capacity);
+        overlay.add_shape(&shape_a, ShapeType::Subject);
+        overlay.add_shape(&shape_b, ShapeType::Clip);
+
+        // intersects() includes boundary contact = collision in our semantics
+        overlay.intersects()
+    }
+}
+
+// =============================================================================
+// Core narrow-phase functions
+// =============================================================================
 
 #[derive(Debug, Clone)]
 pub struct PlacedPart {
@@ -76,6 +296,37 @@ impl PlacedIndex {
     }
 }
 
+/// Returns true if two polygons intersect or touch.
+/// This is the OWN strategy implementation.
+pub fn own_polygons_intersect_or_touch(a: &Polygon64, b: &Polygon64) -> bool {
+    if !polygon_has_valid_rings(a) || !polygon_has_valid_rings(b) {
+        return true;
+    }
+
+    for ring_a in polygon_rings(a) {
+        for ring_b in polygon_rings(b) {
+            if ring_intersects_ring_or_touch(ring_a, ring_b) {
+                return true;
+            }
+        }
+    }
+
+    point_in_polygon(a.outer[0], b) != PointLocation::Outside
+        || point_in_polygon(b.outer[0], a) != PointLocation::Outside
+}
+
+/// Returns true if two polygons intersect or touch, using the active strategy.
+pub fn polygons_intersect_or_touch(a: &Polygon64, b: &Polygon64) -> bool {
+    match NarrowPhaseStrategy::from_env() {
+        NarrowPhaseStrategy::Own => own_polygons_intersect_or_touch(a, b),
+        NarrowPhaseStrategy::IOverlay => {
+            i_overlay_narrow::polygons_intersect_or_touch_i_overlay(a, b)
+        }
+        #[cfg(feature = "geos_narrow_phase")]
+        NarrowPhaseStrategy::Geos => geos_narrow_phase::polygons_intersect_or_touch_geos(a, b),
+    }
+}
+
 pub fn can_place(candidate: &Polygon64, bin: &Polygon64, placed: &PlacedIndex) -> bool {
     if !polygon_has_valid_rings(candidate) || !polygon_has_valid_rings(bin) {
         return false;
@@ -142,7 +393,6 @@ pub fn can_place_profiled(
     bin: &Polygon64,
     placed: &PlacedIndex,
 ) -> (bool, CanPlaceProfile) {
-    use std::time::Instant;
     let mut prof = CanPlaceProfile::default();
 
     if !polygon_has_valid_rings(candidate) || !polygon_has_valid_rings(bin) {
@@ -192,27 +442,6 @@ pub fn can_place_profiled(
     let t2 = Instant::now();
     for (_, other) in &maybe_overlap {
         prof.narrow_phase_pairs += 1;
-        let cand_rings: usize = 1 + candidate.holes.len();
-        let other_rings: usize = 1 + other.inflated_polygon.holes.len();
-        let cand_segs: usize =
-            candidate.outer.len() + candidate.holes.iter().map(|h| h.len()).sum::<usize>();
-        let other_segs: usize = other.inflated_polygon.outer.len()
-            + other
-                .inflated_polygon
-                .holes
-                .iter()
-                .map(|h| h.len())
-                .sum::<usize>();
-        prof.segment_pair_checks += (cand_segs as u64)
-            * (other_segs as u64)
-            * (cand_rings as u64).max(1)
-            * (other_rings as u64).max(1)
-            / ((cand_rings as u64).max(1) * (other_rings as u64).max(1));
-        // Simplified: actual worst case is sum of ring_a_len * ring_b_len for all ring pairs
-        // More accurate count:
-        prof.segment_pair_checks = prof
-            .segment_pair_checks
-            .wrapping_sub(prof.segment_pair_checks); // reset
         for ring_a in polygon_rings(candidate) {
             for ring_b in polygon_rings(&other.inflated_polygon) {
                 prof.segment_pair_checks += (ring_a.len() as u64) * (ring_b.len() as u64);
@@ -256,23 +485,6 @@ fn poly_strictly_within(candidate: &Polygon64, container: &Polygon64) -> bool {
     }
 
     true
-}
-
-fn polygons_intersect_or_touch(a: &Polygon64, b: &Polygon64) -> bool {
-    if !polygon_has_valid_rings(a) || !polygon_has_valid_rings(b) {
-        return true;
-    }
-
-    for ring_a in polygon_rings(a) {
-        for ring_b in polygon_rings(b) {
-            if ring_intersects_ring_or_touch(ring_a, ring_b) {
-                return true;
-            }
-        }
-    }
-
-    point_in_polygon(a.outer[0], b) != PointLocation::Outside
-        || point_in_polygon(b.outer[0], a) != PointLocation::Outside
 }
 
 fn polygon_rings(poly: &Polygon64) -> impl Iterator<Item = &[Point64]> {
@@ -597,8 +809,6 @@ mod tests {
 
     /// T06l-a: boolean equivalence — `can_place` and `can_place_profiled.0`
     /// MUST return the same boolean across the canonical control cases.
-    /// Profiling is opt-in instrumentation; it must never weaken or strengthen
-    /// the placement decision.
     #[test]
     fn can_place_and_profiled_return_equal_booleans_across_control_cases() {
         let bin = rect(0.0, 0.0, 100.0, 100.0);
@@ -663,14 +873,12 @@ mod tests {
             aabb: aabb_from_polygon64(&other_c_poly),
             inflated_polygon: other_c_poly,
         });
-        // Far-from-anyone candidate → true on both.
         let candidate_clear = rect(2.0, 2.0, 5.0, 5.0);
         assert_eq!(
             can_place(&candidate_clear, &bin, &placed_multi),
             can_place_profiled(&candidate_clear, &bin, &placed_multi).0,
             "multi-placed clear case must match",
         );
-        // Candidate that would overlap one of the placed parts → false on both.
         let candidate_overlap = rect(42.0, 42.0, 5.0, 5.0);
         assert_eq!(
             can_place(&candidate_overlap, &bin, &placed_multi),
@@ -707,5 +915,57 @@ mod tests {
         let res_overlap_first = can_place(&candidate, &bin, &placed_overlap_first);
         let res_clear_first = can_place(&candidate, &bin, &placed_clear_first);
         assert_eq!(res_overlap_first, res_clear_first);
+    }
+
+    // =====================================================================
+    // T06m: strategy correctness equivalence tests
+    // =====================================================================
+
+    /// Verify own_polygons_intersect_or_touch and i_overlay strategy agree
+    /// on a range of geometric cases. Disagreement where own says collision
+    /// but i_overlay says no-collision is a FAIL (false accept risk).
+    #[test]
+    fn i_overlay_strategy_equivalence_basic_cases() {
+        // Only run when i_overlay strategy is enabled
+        if std::env::var("NESTING_ENGINE_NARROW_PHASE") != Ok("i_overlay".into()) {
+            return;
+        }
+
+        fn check_pair(
+            a: Polygon64,
+            b: Polygon64,
+            expected_collision: bool,
+            label: &str,
+        ) -> bool {
+            let own = own_polygons_intersect_or_touch(&a, &b);
+            let iovr = i_overlay_narrow::polygons_intersect_or_touch_i_overlay(&a, &b);
+
+            // i_overlay may be conservative (report collision when own doesn't)
+            // but NOT the reverse (that would be a false accept).
+            if own && !iovr {
+                eprintln!(
+                    "[FAIL i_overlay] {}: own=collision i_overlay=no_collision (false accept!)",
+                    label
+                );
+                return false;
+            }
+            if !own && iovr && expected_collision {
+                // conservative: own says no, i_overlay says yes — ok per spec
+            }
+            true
+        }
+
+        let r = |x0, y0, w, h| rect(x0, y0, w, h);
+
+        // Case 1: no overlap, separated rectangles
+        assert!(check_pair(r(0.,0.,10.,10.), r(20.,0.,10.,10.), false, "separated"));
+        // Case 2: clear overlap
+        assert!(check_pair(r(0.,0.,10.,10.), r(5.,5.,10.,10.), true, "overlap"));
+        // Case 3: edge touch
+        assert!(check_pair(r(0.,0.,10.,10.), r(10.,0.,10.,10.), true, "edge_touch"));
+        // Case 4: point/corner touch
+        assert!(check_pair(r(0.,0.,10.,10.), r(10.,10.,10.,10.), true, "corner_touch"));
+        // Case 5: one fully inside another
+        assert!(check_pair(r(0.,0.,20.,20.), r(5.,5.,5.,5.), true, "containment"));
     }
 }
