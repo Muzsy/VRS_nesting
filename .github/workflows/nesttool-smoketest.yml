@@ -24,6 +24,7 @@ jobs:
       - name: Install Python deps (pinned)
         run: |
           python3 -m pip install --break-system-packages -r requirements-dev.txt
+          python3 -m pip install --break-system-packages -r api/requirements.txt
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
