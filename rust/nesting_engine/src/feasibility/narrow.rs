@@ -2,7 +2,9 @@ use rstar::{RTree, RTreeObject, AABB};
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use crate::feasibility::aabb::{aabb_from_polygon64, aabb_inside, aabb_overlaps, Aabb};
+use crate::feasibility::aabb::{
+    aabb_from_polygon, aabb_from_polygon64, aabb_inside, aabb_overlaps, Aabb,
+};
 use crate::geometry::{
     scale::TOUCH_TOL,
     types::{cross_product_i128, Point64, Polygon64},
@@ -271,9 +273,55 @@ impl RTreeObject for PlacedPartEnvelope {
     }
 }
 
+/// T06p #4: Per-placed-part cached geometry used by the narrow-phase to skip
+/// edge-AABB recomputation and to scan rings of A only against the edges of
+/// ring B whose x-range can possibly overlap (binary search on a sorted
+/// permutation by `min_x`). Built once at insertion; immutable thereafter.
+#[derive(Debug, Clone, Default)]
+pub struct PlacedPartCache {
+    /// Per-ring flat edge AABBs (one entry per edge of that ring).
+    pub edge_aabbs_per_ring: Vec<Vec<Aabb>>,
+    /// Per-ring permutation: edge indices sorted ascending by `min_x`.
+    pub edges_sorted_by_min_x_per_ring: Vec<Vec<u32>>,
+}
+
+impl PlacedPartCache {
+    fn from_polygon(poly: &Polygon64) -> Self {
+        let mut edge_aabbs_per_ring: Vec<Vec<Aabb>> = Vec::with_capacity(1 + poly.holes.len());
+        for ring in polygon_rings(poly) {
+            let n = ring.len();
+            let mut aabbs = Vec::with_capacity(n);
+            for i in 0..n {
+                let a0 = ring[i];
+                let a1 = ring[(i + 1) % n];
+                aabbs.push(Aabb {
+                    min_x: a0.x.min(a1.x),
+                    min_y: a0.y.min(a1.y),
+                    max_x: a0.x.max(a1.x),
+                    max_y: a0.y.max(a1.y),
+                });
+            }
+            edge_aabbs_per_ring.push(aabbs);
+        }
+        let edges_sorted_by_min_x_per_ring: Vec<Vec<u32>> = edge_aabbs_per_ring
+            .iter()
+            .map(|aabbs| {
+                let mut indices: Vec<u32> = (0..aabbs.len() as u32).collect();
+                indices.sort_unstable_by_key(|&i| aabbs[i as usize].min_x);
+                indices
+            })
+            .collect();
+        Self {
+            edge_aabbs_per_ring,
+            edges_sorted_by_min_x_per_ring,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PlacedIndex {
     parts: Vec<PlacedPart>,
+    caches: Vec<PlacedPartCache>,
     tree: RTree<PlacedPartEnvelope>,
 }
 
@@ -285,7 +333,9 @@ impl PlacedIndex {
     pub fn insert(&mut self, part: PlacedPart) {
         let idx = self.parts.len();
         let aabb = part.aabb;
+        let cache = PlacedPartCache::from_polygon(&part.inflated_polygon);
         self.parts.push(part);
+        self.caches.push(cache);
         self.tree.insert(PlacedPartEnvelope { idx, aabb });
     }
 
@@ -309,6 +359,10 @@ impl PlacedIndex {
     pub fn get(&self, idx: usize) -> &PlacedPart {
         &self.parts[idx]
     }
+
+    pub fn get_cache(&self, idx: usize) -> &PlacedPartCache {
+        &self.caches[idx]
+    }
 }
 
 /// T06o: Per-call counters for the own narrow-phase. Tracks budget vs actual
@@ -317,7 +371,8 @@ impl PlacedIndex {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NarrowPhaseCounters {
     /// Upper-bound: sum of ring_a.len() * ring_b.len() for every ring pair
-    /// that the inner loop entered (no early ring-pair short-circuit).
+    /// that the inner loop entered (no early ring-pair short-circuit and no
+    /// ring-level AABB pre-reject — T06p).
     pub segment_pair_budget: u64,
     /// Actual `segments_intersect_or_touch()` invocations — i.e. edge pairs
     /// that survived the AABB pre-reject.
@@ -325,6 +380,10 @@ pub struct NarrowPhaseCounters {
     /// Edge pairs that the AABB pre-reject excluded before any orientation
     /// arithmetic ran.
     pub edge_bbox_rejects: u64,
+    /// T06p: Ring-pairs eliminated by the ring-level AABB pre-reject (never
+    /// entered the inner edge loop). Each entry would otherwise have produced
+    /// `ring_a.len() * ring_b.len()` budget worth of edge-pair work.
+    pub ring_bbox_rejects: u64,
 }
 
 impl NarrowPhaseCounters {
@@ -339,29 +398,42 @@ impl NarrowPhaseCounters {
         self.edge_bbox_rejects = self
             .edge_bbox_rejects
             .saturating_add(other.edge_bbox_rejects);
+        self.ring_bbox_rejects = self
+            .ring_bbox_rejects
+            .saturating_add(other.ring_bbox_rejects);
     }
 }
 
 /// Internal counter sink — the inner narrow-phase routine is generic over this
 /// trait so that the no-counter path monomorphizes to zero overhead.
+///
+/// `COUNTS` is a compile-time flag: when `false`, the inner function may take
+/// fast-paths that bypass per-segment-pair counting (e.g. the T06p #3 convex
+/// SAT short-circuit).
 trait NarrowPhaseCounterSink {
+    const COUNTS: bool;
     fn add_budget(&mut self, n: u64);
     fn add_actual(&mut self, n: u64);
     fn add_bbox_reject(&mut self, n: u64);
+    fn add_ring_bbox_reject(&mut self, n: u64);
 }
 
 struct NoNarrowPhaseCounter;
 
 impl NarrowPhaseCounterSink for NoNarrowPhaseCounter {
+    const COUNTS: bool = false;
     #[inline(always)]
     fn add_budget(&mut self, _n: u64) {}
     #[inline(always)]
     fn add_actual(&mut self, _n: u64) {}
     #[inline(always)]
     fn add_bbox_reject(&mut self, _n: u64) {}
+    #[inline(always)]
+    fn add_ring_bbox_reject(&mut self, _n: u64) {}
 }
 
 impl NarrowPhaseCounterSink for NarrowPhaseCounters {
+    const COUNTS: bool = true;
     #[inline]
     fn add_budget(&mut self, n: u64) {
         self.segment_pair_budget = self.segment_pair_budget.saturating_add(n);
@@ -374,6 +446,134 @@ impl NarrowPhaseCounterSink for NarrowPhaseCounters {
     fn add_bbox_reject(&mut self, n: u64) {
         self.edge_bbox_rejects = self.edge_bbox_rejects.saturating_add(n);
     }
+    #[inline]
+    fn add_ring_bbox_reject(&mut self, n: u64) {
+        self.ring_bbox_rejects = self.ring_bbox_rejects.saturating_add(n);
+    }
+}
+
+/// T06p: Exact integer AABB disjoint test for two rings. Strict `<` (matching
+/// `segment_aabb_disjoint`) — touching AABBs are NOT pre-rejected because the
+/// touch policy treats boundary contact as collision.
+#[inline]
+fn ring_aabb_disjoint(a: &Aabb, b: &Aabb) -> bool {
+    a.max_x < b.min_x || b.max_x < a.min_x || a.max_y < b.min_y || b.max_y < a.min_y
+}
+
+/// T06p #3: Detect whether a closed ring is convex (every interior turn has
+/// the same sign). Collinear triples are skipped. Empty / degenerate rings
+/// return false. Cost is O(N) and integer-only.
+fn is_convex_ring(ring: &[Point64]) -> bool {
+    let n = ring.len();
+    if n < 3 {
+        return false;
+    }
+    let mut sign: i8 = 0;
+    for i in 0..n {
+        let a = ring[i];
+        let b = ring[(i + 1) % n];
+        let c = ring[(i + 2) % n];
+        let cross = cross_product_i128(b.x - a.x, b.y - a.y, c.x - b.x, c.y - b.y);
+        let s = if cross > 0 {
+            1
+        } else if cross < 0 {
+            -1
+        } else {
+            0
+        };
+        if s == 0 {
+            continue; // collinear triple — does not break convexity
+        }
+        if sign == 0 {
+            sign = s;
+        } else if sign != s {
+            return false;
+        }
+    }
+    sign != 0
+}
+
+/// T06p #3: Separating-axis check for two convex rings. Strict-< gap on a
+/// candidate axis is required (matches the touch policy: contact = collision,
+/// so projections that exactly meet must NOT be reported as separating).
+/// Returns `true` if a separating axis is found (i.e. the rings do NOT
+/// collide or touch).
+fn convex_rings_have_separating_axis(a: &[Point64], b: &[Point64]) -> bool {
+    fn project_on_normal(ring: &[Point64], nx: i64, ny: i64) -> (i128, i128) {
+        let p0 = ring[0];
+        let mut min = (p0.x as i128) * (nx as i128) + (p0.y as i128) * (ny as i128);
+        let mut max = min;
+        for p in &ring[1..] {
+            let v = (p.x as i128) * (nx as i128) + (p.y as i128) * (ny as i128);
+            if v < min {
+                min = v;
+            }
+            if v > max {
+                max = v;
+            }
+        }
+        (min, max)
+    }
+    fn check(edges_owner: &[Point64], other: &[Point64]) -> bool {
+        let n = edges_owner.len();
+        for i in 0..n {
+            let p1 = edges_owner[i];
+            let p2 = edges_owner[(i + 1) % n];
+            // Outward normal: (p2 - p1) rotated 90° CW = (dy, -dx).
+            let nx = p2.y - p1.y;
+            let ny = -(p2.x - p1.x);
+            if nx == 0 && ny == 0 {
+                continue;
+            }
+            let (a_min, a_max) = project_on_normal(edges_owner, nx, ny);
+            let (b_min, b_max) = project_on_normal(other, nx, ny);
+            if a_max < b_min || b_max < a_min {
+                return true;
+            }
+        }
+        false
+    }
+    check(a, b) || check(b, a)
+}
+
+/// T06p #2: Flat-storage precomputed edge AABBs for a polygon. One `Vec<Aabb>`
+/// holds every edge AABB across every ring (outer + holes). `offsets` gives
+/// start indices: ring r's edges live in `edges[offsets[r]..offsets[r+1]]`.
+/// This layout has better cache locality than `Vec<Vec<Aabb>>` and only two
+/// allocations per call regardless of the ring count.
+struct PolyEdgeAabbs {
+    edges: Vec<Aabb>,
+    offsets: Vec<usize>,
+}
+
+impl PolyEdgeAabbs {
+    #[inline]
+    fn ring(&self, r: usize) -> &[Aabb] {
+        &self.edges[self.offsets[r]..self.offsets[r + 1]]
+    }
+}
+
+fn precompute_poly_edge_aabbs(poly: &Polygon64) -> PolyEdgeAabbs {
+    let total_edges: usize = polygon_rings(poly).map(|r| r.len()).sum();
+    let ring_count = 1 + poly.holes.len();
+    let mut edges = Vec::with_capacity(total_edges);
+    let mut offsets = Vec::with_capacity(ring_count + 1);
+    offsets.push(0);
+    for ring in polygon_rings(poly) {
+        let n = ring.len();
+        for i in 0..n {
+            let a0 = ring[i];
+            let a1 = ring[(i + 1) % n];
+            edges.push(Aabb {
+                min_x: a0.x.min(a1.x),
+                min_y: a0.y.min(a1.y),
+                max_x: a0.x.max(a1.x),
+                max_y: a0.y.max(a1.y),
+            });
+        }
+        offsets.push(edges.len());
+    }
+    PolyEdgeAabbs { edges, offsets }
 }
 
 /// T06o: Exact integer AABB disjoint test for two segments.
@@ -414,6 +614,108 @@ pub fn own_polygons_intersect_or_touch_counted(
     own_polygons_intersect_or_touch_inner(a, b, counters)
 }
 
+/// T06p #4: Hot-path variant of `own_polygons_intersect_or_touch` that uses
+/// precomputed `PlacedPartCache` for the placed-side polygon `b`. Compared to
+/// the on-the-fly variant this:
+///   - avoids recomputing every b-edge AABB on every can_place call;
+///   - uses a per-ring permutation of b's edges sorted by `min_x` to skip
+///     entire prefixes of edges that cannot overlap a's edge on the x-axis.
+/// Boolean result is bit-for-bit identical to `own_polygons_intersect_or_touch`.
+pub fn own_polygons_intersect_or_touch_against_cached(
+    a: &Polygon64,
+    b: &Polygon64,
+    b_cache: &PlacedPartCache,
+) -> bool {
+    own_polygons_intersect_or_touch_against_cached_inner(
+        a, b, b_cache, &mut NoNarrowPhaseCounter,
+    )
+}
+
+/// Counted variant of `own_polygons_intersect_or_touch_against_cached`.
+pub fn own_polygons_intersect_or_touch_against_cached_counted(
+    a: &Polygon64,
+    b: &Polygon64,
+    b_cache: &PlacedPartCache,
+    counters: &mut NarrowPhaseCounters,
+) -> bool {
+    own_polygons_intersect_or_touch_against_cached_inner(a, b, b_cache, counters)
+}
+
+#[inline(always)]
+fn own_polygons_intersect_or_touch_against_cached_inner<C: NarrowPhaseCounterSink>(
+    a: &Polygon64,
+    b: &Polygon64,
+    b_cache: &PlacedPartCache,
+    counters: &mut C,
+) -> bool {
+    if !polygon_has_valid_rings(a) || !polygon_has_valid_rings(b) {
+        return true;
+    }
+
+    // T06p #3: Convex SAT fast-path (same gating as the non-cached variant).
+    if !C::COUNTS
+        && a.holes.is_empty()
+        && b.holes.is_empty()
+        && is_convex_ring(&a.outer)
+        && is_convex_ring(&b.outer)
+    {
+        return !convex_rings_have_separating_axis(&a.outer, &b.outer);
+    }
+
+    // Ring AABBs (cheap, on-the-fly).
+    let a_ring_aabbs: Vec<Aabb> = polygon_rings(a).map(aabb_from_polygon).collect();
+    let b_ring_aabbs: Vec<Aabb> = polygon_rings(b).map(aabb_from_polygon).collect();
+
+    // For very small polygon-pairs the cache + binary-search overhead loses
+    // to the simple inline AABB loop. Match the same threshold as the
+    // non-cached inner function so behavior stays predictable.
+    let a_total_edges: usize = polygon_rings(a).map(|r| r.len()).sum();
+    let b_total_edges: usize = b_cache
+        .edge_aabbs_per_ring
+        .iter()
+        .map(Vec::len)
+        .sum::<usize>();
+    const EDGE_CACHE_THRESHOLD: usize = 16;
+    let use_cache = a_total_edges + b_total_edges > EDGE_CACHE_THRESHOLD;
+
+    if use_cache {
+        let a_edges = precompute_poly_edge_aabbs(a);
+        for (ri, (ring_a, a_aabb)) in polygon_rings(a).zip(&a_ring_aabbs).enumerate() {
+            for (rj, (ring_b, b_aabb)) in polygon_rings(b).zip(&b_ring_aabbs).enumerate() {
+                if ring_aabb_disjoint(a_aabb, b_aabb) {
+                    counters.add_ring_bbox_reject(1);
+                    continue;
+                }
+                if ring_intersects_ring_or_touch_sorted_b(
+                    ring_a,
+                    a_edges.ring(ri),
+                    ring_b,
+                    &b_cache.edge_aabbs_per_ring[rj],
+                    &b_cache.edges_sorted_by_min_x_per_ring[rj],
+                    counters,
+                ) {
+                    return true;
+                }
+            }
+        }
+    } else {
+        for (ring_a, a_aabb) in polygon_rings(a).zip(&a_ring_aabbs) {
+            for (ring_b, b_aabb) in polygon_rings(b).zip(&b_ring_aabbs) {
+                if ring_aabb_disjoint(a_aabb, b_aabb) {
+                    counters.add_ring_bbox_reject(1);
+                    continue;
+                }
+                if ring_intersects_ring_or_touch_inner(ring_a, ring_b, counters) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    point_in_polygon(a.outer[0], b) != PointLocation::Outside
+        || point_in_polygon(b.outer[0], a) != PointLocation::Outside
+}
+
 #[inline(always)]
 fn own_polygons_intersect_or_touch_inner<C: NarrowPhaseCounterSink>(
     a: &Polygon64,
@@ -424,10 +726,64 @@ fn own_polygons_intersect_or_touch_inner<C: NarrowPhaseCounterSink>(
         return true;
     }
 
-    for ring_a in polygon_rings(a) {
-        for ring_b in polygon_rings(b) {
-            if ring_intersects_ring_or_touch_inner(ring_a, ring_b, counters) {
-                return true;
+    // T06p #3: Convex SAT fast-path. Only fires on the NON-counted hot path
+    // (`C::COUNTS == false`) and only when both polygons are hole-free AND
+    // have a convex outer ring. For convex hole-free polygons under our
+    // touch policy "no strict-< separating axis" is exactly "overlap or
+    // touch", which IS our collision predicate. The counted/profiled path
+    // stays on the edge loop so segment_pair stats remain populated for
+    // audit invariants.
+    if !C::COUNTS
+        && a.holes.is_empty()
+        && b.holes.is_empty()
+        && is_convex_ring(&a.outer)
+        && is_convex_ring(&b.outer)
+    {
+        return !convex_rings_have_separating_axis(&a.outer, &b.outer);
+    }
+
+    // T06p #1: precompute ring AABBs once per polygon-pair invocation.
+    let a_ring_aabbs: Vec<Aabb> = polygon_rings(a).map(aabb_from_polygon).collect();
+    let b_ring_aabbs: Vec<Aabb> = polygon_rings(b).map(aabb_from_polygon).collect();
+
+    // T06p #2: precompute per-edge AABBs only when the polygons are rich
+    // enough that the cache pays back its allocation cost. For ≤16 total
+    // edges (e.g. rectangle-vs-rectangle) the inline AABB path wins.
+    let a_total_edges: usize = polygon_rings(a).map(|r| r.len()).sum();
+    let b_total_edges: usize = polygon_rings(b).map(|r| r.len()).sum();
+    const EDGE_CACHE_THRESHOLD: usize = 16;
+    let use_edge_cache = a_total_edges + b_total_edges > EDGE_CACHE_THRESHOLD;
+
+    if use_edge_cache {
+        let a_edges = precompute_poly_edge_aabbs(a);
+        let b_edges = precompute_poly_edge_aabbs(b);
+        for (ri, (ring_a, a_aabb)) in polygon_rings(a).zip(&a_ring_aabbs).enumerate() {
+            for (rj, (ring_b, b_aabb)) in polygon_rings(b).zip(&b_ring_aabbs).enumerate() {
+                if ring_aabb_disjoint(a_aabb, b_aabb) {
+                    counters.add_ring_bbox_reject(1);
+                    continue;
+                }
+                if ring_intersects_ring_or_touch_with_cached_aabbs(
+                    ring_a,
+                    a_edges.ring(ri),
+                    ring_b,
+                    b_edges.ring(rj),
+                    counters,
+                ) {
+                    return true;
+                }
+            }
+        }
+    } else {
+        for (ring_a, a_aabb) in polygon_rings(a).zip(&a_ring_aabbs) {
+            for (ring_b, b_aabb) in polygon_rings(b).zip(&b_ring_aabbs) {
+                if ring_aabb_disjoint(a_aabb, b_aabb) {
+                    counters.add_ring_bbox_reject(1);
+                    continue;
+                }
+                if ring_intersects_ring_or_touch_inner(ring_a, ring_b, counters) {
+                    return true;
+                }
             }
         }
     }
@@ -484,9 +840,18 @@ pub fn can_place(candidate: &Polygon64, bin: &Polygon64, placed: &PlacedIndex) -
             .then(a.0.cmp(&b.0))
     });
 
-    for (_, other) in maybe_overlap {
-        // Touching is treated as infeasible by policy.
-        if polygons_intersect_or_touch(candidate, &other.inflated_polygon) {
+    // T06p #4: route Own strategy through the cached-b variant for the hot
+    // can_place loop. Other strategies (i_overlay, geos) keep the existing
+    // dispatcher — no caching available for those backends.
+    let strategy = cached_narrow_phase_strategy();
+    for (idx, other) in maybe_overlap {
+        let collides = if strategy == NarrowPhaseStrategy::Own {
+            let cache = placed.get_cache(idx);
+            own_polygons_intersect_or_touch_against_cached(candidate, &other.inflated_polygon, cache)
+        } else {
+            polygons_intersect_or_touch(candidate, &other.inflated_polygon)
+        };
+        if collides {
             return false;
         }
     }
@@ -573,13 +938,14 @@ pub fn can_place_profiled(
             .then(a.0.cmp(&b.0))
     });
 
-    // T06o: when the active strategy is `Own`, route through the counted
-    // variant so we observe actual segment-pair work and edge-AABB rejects.
-    // For other strategies we keep the dispatcher (no per-edge instrumentation
-    // available) and the new counters remain zero — documented in stats output.
+    // T06o + T06p #4: when the active strategy is `Own`, route through the
+    // cached counted variant so we observe actual segment-pair work AND get
+    // the cached b-side + sorted-edge fast path. For other strategies we keep
+    // the dispatcher (no per-edge instrumentation available) and the new
+    // counters remain zero — documented in stats output.
     let strategy = cached_narrow_phase_strategy();
     let t2 = Instant::now();
-    for (_, other) in &maybe_overlap {
+    for (idx, other) in &maybe_overlap {
         prof.narrow_phase_pairs += 1;
         // Budget: upper bound on potential segment-pair tests. Independent of
         // any early-exit; useful as a denominator for actual / bbox-reject.
@@ -591,9 +957,11 @@ pub fn can_place_profiled(
 
         let collision = if strategy == NarrowPhaseStrategy::Own {
             let mut counters = NarrowPhaseCounters::default();
-            let hit = own_polygons_intersect_or_touch_counted(
+            let cache = placed.get_cache(*idx);
+            let hit = own_polygons_intersect_or_touch_against_cached_counted(
                 candidate,
                 &other.inflated_polygon,
+                cache,
                 &mut counters,
             );
             prof.segment_pair_actual_checks = prof
@@ -680,6 +1048,100 @@ fn ring_intersects_ring_or_touch_inner<C: NarrowPhaseCounterSink>(
                 continue;
             }
             counters.add_actual(1);
+            if segments_intersect_or_touch(a0, a1, b0, b1) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// T06p #4: edge-loop variant that uses both precomputed AABBs AND a per-ring
+/// permutation of `b`'s edges sorted by `min_x`. For each edge of A we binary
+/// search B's permutation for the upper bound where `min_x <= a.max_x`, then
+/// iterate only that prefix. Edges with `b.min_x > a.max_x` cannot overlap on
+/// the x-axis, so they would be edge-AABB-rejected anyway — but here we skip
+/// them without paying even the AABB compare. Boolean result is bit-for-bit
+/// identical to the non-sorted variant.
+#[inline(always)]
+fn ring_intersects_ring_or_touch_sorted_b<C: NarrowPhaseCounterSink>(
+    a: &[Point64],
+    a_edge_aabbs: &[Aabb],
+    b: &[Point64],
+    b_edge_aabbs: &[Aabb],
+    b_sorted_by_min_x: &[u32],
+    counters: &mut C,
+) -> bool {
+    let na = a.len();
+    let nb = b.len();
+    if na < 2 || nb < 2 {
+        return false;
+    }
+    debug_assert_eq!(a_edge_aabbs.len(), na);
+    debug_assert_eq!(b_edge_aabbs.len(), nb);
+    debug_assert_eq!(b_sorted_by_min_x.len(), nb);
+
+    for i in 0..na {
+        let a_aabb = &a_edge_aabbs[i];
+        // Upper bound: first index k such that b_edge_aabbs[sorted[k]].min_x > a.max_x.
+        let upper = b_sorted_by_min_x.partition_point(|&j| {
+            b_edge_aabbs[j as usize].min_x <= a_aabb.max_x
+        });
+        for k in 0..upper {
+            let j = b_sorted_by_min_x[k] as usize;
+            counters.add_budget(1);
+            let b_aabb = &b_edge_aabbs[j];
+            if ring_aabb_disjoint(a_aabb, b_aabb) {
+                counters.add_bbox_reject(1);
+                continue;
+            }
+            counters.add_actual(1);
+            let a0 = a[i];
+            let a1 = a[(i + 1) % na];
+            let b0 = b[j];
+            let b1 = b[(j + 1) % nb];
+            if segments_intersect_or_touch(a0, a1, b0, b1) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// T06p #2: edge-loop variant that uses precomputed per-edge AABBs. Each AABB
+/// is loaded once from contiguous storage instead of being recomputed from the
+/// endpoints on every pair. Boolean result is bit-for-bit identical to
+/// `ring_intersects_ring_or_touch_inner` (same predicate, same touch policy).
+#[inline(always)]
+fn ring_intersects_ring_or_touch_with_cached_aabbs<C: NarrowPhaseCounterSink>(
+    a: &[Point64],
+    a_edge_aabbs: &[Aabb],
+    b: &[Point64],
+    b_edge_aabbs: &[Aabb],
+    counters: &mut C,
+) -> bool {
+    let na = a.len();
+    let nb = b.len();
+    if na < 2 || nb < 2 {
+        return false;
+    }
+    debug_assert_eq!(a_edge_aabbs.len(), na);
+    debug_assert_eq!(b_edge_aabbs.len(), nb);
+
+    for i in 0..na {
+        let a_aabb = &a_edge_aabbs[i];
+        for j in 0..nb {
+            counters.add_budget(1);
+            let b_aabb = &b_edge_aabbs[j];
+            if ring_aabb_disjoint(a_aabb, b_aabb) {
+                counters.add_bbox_reject(1);
+                continue;
+            }
+            counters.add_actual(1);
+            let a0 = a[i];
+            let a1 = a[(i + 1) % na];
+            let b0 = b[j];
+            let b1 = b[(j + 1) % nb];
             if segments_intersect_or_touch(a0, a1, b0, b1) {
                 return true;
             }
@@ -1289,7 +1751,10 @@ mod tests {
 
     #[test]
     fn counter_edge_bbox_reject_positive_for_disjoint_edge_rich_pair() {
-        // A clearly-separated edge-rich pair: most edge pairs are AABB-disjoint.
+        // Two edge-rich polygons whose outer AABBs overlap so the ring-level
+        // pre-reject does NOT fire — exercises the inner edge-pair AABB pruning.
+        // (The far-apart variant of this case is now covered by
+        // `ring_bbox_reject_counter_positive_for_polygon_with_disjoint_holes`.)
         let a = poly(&[
             (0.0, 0.0),
             (50.0, 0.0),
@@ -1304,21 +1769,25 @@ mod tests {
             (10.0, 50.0),
             (0.0, 50.0),
         ]);
-        let b = rect(200.0, 200.0, 10.0, 10.0);
+        // B sits in the concave notch of A — outer AABBs overlap, but most
+        // edge pairs (especially around B vs A's far edges) are AABB-disjoint.
+        let b = rect(30.0, 30.0, 18.0, 18.0);
         let mut counters = NarrowPhaseCounters::default();
-        let collided = own_polygons_intersect_or_touch_counted(&a, &b, &mut counters);
-        assert!(!collided, "far-apart polygons must not collide");
+        let _ = own_polygons_intersect_or_touch_counted(&a, &b, &mut counters);
         assert!(
             counters.edge_bbox_rejects > 0,
-            "expected edge_bbox_rejects > 0 for far-apart edge-rich pair, got {}",
+            "expected edge_bbox_rejects > 0 for AABB-overlapping edge-rich pair, got {}",
             counters.edge_bbox_rejects
         );
-        // For a non-colliding pair, every entered edge pair is either rejected
-        // by AABB or actually run; no early ring-pair exit.
-        assert_eq!(
-            counters.segment_pair_actual + counters.edge_bbox_rejects,
-            counters.segment_pair_budget,
-            "for non-colliding pair: actual + rejects == budget"
+        // Invariant: actual + edge_bbox_rejects ≤ budget (early exit may make
+        // it strictly less; ring-level skips reduce budget too).
+        assert!(
+            counters.segment_pair_actual + counters.edge_bbox_rejects
+                <= counters.segment_pair_budget,
+            "actual+rejects ({} + {}) must be <= budget ({})",
+            counters.segment_pair_actual,
+            counters.edge_bbox_rejects,
+            counters.segment_pair_budget
         );
     }
 
@@ -1359,6 +1828,196 @@ mod tests {
                 prof.segment_pair_checks
             );
         }
+    }
+
+    // =====================================================================
+    // T06p: ring-level AABB pre-reject tests
+    // =====================================================================
+
+    #[test]
+    fn ring_aabb_disjoint_rejects_far_rings() {
+        let a = Aabb { min_x: 0, min_y: 0, max_x: 10, max_y: 10 };
+        let b = Aabb { min_x: 20, min_y: 0, max_x: 30, max_y: 10 };
+        assert!(ring_aabb_disjoint(&a, &b));
+    }
+
+    #[test]
+    fn ring_aabb_disjoint_does_not_reject_touching_rings() {
+        // Strict <: touching is NOT pre-rejected.
+        let a = Aabb { min_x: 0, min_y: 0, max_x: 10, max_y: 10 };
+        let b = Aabb { min_x: 10, min_y: 0, max_x: 20, max_y: 10 };
+        assert!(!ring_aabb_disjoint(&a, &b));
+    }
+
+    #[test]
+    fn ring_aabb_disjoint_does_not_reject_overlap() {
+        let a = Aabb { min_x: 0, min_y: 0, max_x: 10, max_y: 10 };
+        let b = Aabb { min_x: 5, min_y: 5, max_x: 15, max_y: 15 };
+        assert!(!ring_aabb_disjoint(&a, &b));
+    }
+
+    #[test]
+    fn ring_aabb_prereject_preserves_collision_cases() {
+        // Same case matrix as edge_bbox_prereject_preserves_polygon_collision_cases.
+        let cases: Vec<(&str, Polygon64, Polygon64, bool)> = vec![
+            ("separated", rect(0.0, 0.0, 10.0, 10.0), rect(20.0, 0.0, 10.0, 10.0), false),
+            ("overlap", rect(0.0, 0.0, 10.0, 10.0), rect(5.0, 5.0, 10.0, 10.0), true),
+            ("edge_touch", rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 0.0, 10.0, 10.0), true),
+            ("corner_touch", rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 10.0, 10.0, 10.0), true),
+            ("containment", rect(0.0, 0.0, 20.0, 20.0), rect(5.0, 5.0, 5.0, 5.0), true),
+            (
+                "concave_actual_overlap",
+                poly(&[
+                    (0.0, 0.0), (20.0, 0.0), (20.0, 10.0), (10.0, 10.0),
+                    (10.0, 20.0), (0.0, 20.0),
+                ]),
+                rect(8.0, 8.0, 5.0, 5.0),
+                true,
+            ),
+            (
+                "high_vertex_near_miss",
+                poly(&[
+                    (0.0, 0.0), (50.0, 0.0), (50.0, 10.0), (40.0, 10.0),
+                    (40.0, 20.0), (30.0, 20.0), (30.0, 30.0), (20.0, 30.0),
+                    (20.0, 40.0), (10.0, 40.0), (10.0, 50.0), (0.0, 50.0),
+                ]),
+                rect(60.0, 60.0, 5.0, 5.0),
+                false,
+            ),
+        ];
+        for (label, a, b, expected) in &cases {
+            let got = own_polygons_intersect_or_touch(a, b);
+            assert_eq!(got, *expected, "case {} expected {} got {}", label, expected, got);
+        }
+    }
+
+    #[test]
+    fn ring_bbox_reject_counter_positive_for_polygon_with_disjoint_holes() {
+        // Polygon A with a hole far from polygon B → ring-level pre-reject must fire
+        // for that hole vs B's outer ring.
+        let outer_a = vec![
+            Point64 { x: mm_to_i64(0.0), y: mm_to_i64(0.0) },
+            Point64 { x: mm_to_i64(100.0), y: mm_to_i64(0.0) },
+            Point64 { x: mm_to_i64(100.0), y: mm_to_i64(100.0) },
+            Point64 { x: mm_to_i64(0.0), y: mm_to_i64(100.0) },
+        ];
+        let hole_a = vec![
+            Point64 { x: mm_to_i64(80.0), y: mm_to_i64(80.0) },
+            Point64 { x: mm_to_i64(90.0), y: mm_to_i64(80.0) },
+            Point64 { x: mm_to_i64(90.0), y: mm_to_i64(90.0) },
+            Point64 { x: mm_to_i64(80.0), y: mm_to_i64(90.0) },
+        ];
+        let a = Polygon64 { outer: outer_a, holes: vec![hole_a] };
+        // B inside A, far from the hole — overlaps A's outer but disjoint from A's hole.
+        let b = rect(5.0, 5.0, 10.0, 10.0);
+        let mut counters = NarrowPhaseCounters::default();
+        let _ = own_polygons_intersect_or_touch_counted(&a, &b, &mut counters);
+        assert!(
+            counters.ring_bbox_rejects > 0,
+            "expected ring_bbox_rejects > 0 for polygon with disjoint hole, got {}",
+            counters.ring_bbox_rejects
+        );
+    }
+
+    #[test]
+    fn counter_invariant_actual_plus_reject_le_budget_after_t06p() {
+        // After T06p the segment_pair_budget reflects only ring-pairs that
+        // entered the inner edge loop. Invariant: actual + edge_bbox_rejects
+        // <= segment_pair_budget still holds.
+        let edge_rich_a = poly(&[
+            (0.0, 0.0), (50.0, 0.0), (50.0, 10.0), (40.0, 10.0),
+            (40.0, 20.0), (30.0, 20.0), (30.0, 30.0), (20.0, 30.0),
+            (20.0, 40.0), (10.0, 40.0), (10.0, 50.0), (0.0, 50.0),
+        ]);
+        let edge_rich_b = rect(60.0, 60.0, 5.0, 5.0);
+        let mut counters = NarrowPhaseCounters::default();
+        let _ = own_polygons_intersect_or_touch_counted(&edge_rich_a, &edge_rich_b, &mut counters);
+        assert!(
+            counters.segment_pair_actual + counters.edge_bbox_rejects
+                <= counters.segment_pair_budget,
+            "actual+reject ({} + {}) must be <= budget ({})",
+            counters.segment_pair_actual,
+            counters.edge_bbox_rejects,
+            counters.segment_pair_budget
+        );
+    }
+
+    // =====================================================================
+    // T06p #3: convex SAT fast-path tests
+    // =====================================================================
+
+    #[test]
+    fn is_convex_ring_true_for_rectangle() {
+        let r = rect(0.0, 0.0, 10.0, 5.0);
+        assert!(is_convex_ring(&r.outer));
+    }
+
+    #[test]
+    fn is_convex_ring_false_for_concave_l_shape() {
+        let l = poly(&[
+            (0.0, 0.0), (20.0, 0.0), (20.0, 10.0),
+            (10.0, 10.0), (10.0, 20.0), (0.0, 20.0),
+        ]);
+        assert!(!is_convex_ring(&l.outer));
+    }
+
+    #[test]
+    fn convex_sat_matches_edge_loop_for_canonical_cases() {
+        // Convex-convex pairs: SAT (via own_polygons_intersect_or_touch) must
+        // agree with the edge-loop (via the counted variant which bypasses SAT).
+        let cases: Vec<(&str, Polygon64, Polygon64, bool)> = vec![
+            ("separated", rect(0.0, 0.0, 10.0, 10.0), rect(20.0, 0.0, 10.0, 10.0), false),
+            ("overlap", rect(0.0, 0.0, 10.0, 10.0), rect(5.0, 5.0, 10.0, 10.0), true),
+            ("edge_touch", rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 0.0, 10.0, 10.0), true),
+            ("corner_touch", rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 10.0, 10.0, 10.0), true),
+            ("containment", rect(0.0, 0.0, 20.0, 20.0), rect(5.0, 5.0, 5.0, 5.0), true),
+        ];
+        for (label, a, b, expected) in &cases {
+            let sat_result = own_polygons_intersect_or_touch(a, b);
+            let mut counters = NarrowPhaseCounters::default();
+            let edge_result = own_polygons_intersect_or_touch_counted(a, b, &mut counters);
+            assert_eq!(sat_result, *expected, "SAT case {} expected {}", label, expected);
+            assert_eq!(edge_result, *expected, "edge case {} expected {}", label, expected);
+            assert_eq!(sat_result, edge_result, "SAT and edge must agree on {}", label);
+        }
+    }
+
+    #[test]
+    fn convex_sat_strict_lt_one_micron_gap_is_separated() {
+        // 1 µm gap on x-axis (matches narrow_float_policy_mm_rounding_near_touching).
+        let a = rect(0.0, 0.0, 10.0, 10.0);
+        let b = rect(10.00000051, 0.0, 10.0, 10.0);
+        assert!(!own_polygons_intersect_or_touch(&a, &b));
+    }
+
+    #[test]
+    fn convex_sat_does_not_fire_when_polygon_has_holes() {
+        // Polygon with a hole should NOT take the SAT path even if outer is convex.
+        let outer = vec![
+            Point64 { x: mm_to_i64(0.0), y: mm_to_i64(0.0) },
+            Point64 { x: mm_to_i64(20.0), y: mm_to_i64(0.0) },
+            Point64 { x: mm_to_i64(20.0), y: mm_to_i64(20.0) },
+            Point64 { x: mm_to_i64(0.0), y: mm_to_i64(20.0) },
+        ];
+        let hole = vec![
+            Point64 { x: mm_to_i64(8.0), y: mm_to_i64(8.0) },
+            Point64 { x: mm_to_i64(12.0), y: mm_to_i64(8.0) },
+            Point64 { x: mm_to_i64(12.0), y: mm_to_i64(12.0) },
+            Point64 { x: mm_to_i64(8.0), y: mm_to_i64(12.0) },
+        ];
+        let a = Polygon64 { outer, holes: vec![hole] };
+        // B sits inside A's hole — for a polygon-with-hole semantics, A and B
+        // do NOT collide (B is in the cavity). SAT on outer rings alone would
+        // say "B inside A's outer = collision" — wrong. Verify the non-SAT
+        // path is taken and the correct answer is returned.
+        let b = rect(9.0, 9.0, 2.0, 2.0);
+        let result = own_polygons_intersect_or_touch(&a, &b);
+        // The correct answer here depends on the touch-policy semantics for
+        // hole interiors. With holes treated as cavities, B inside A's hole
+        // means no collision (false). The edge-loop returns false here.
+        let mut counters = NarrowPhaseCounters::default();
+        let edge_result = own_polygons_intersect_or_touch_counted(&a, &b, &mut counters);
+        assert_eq!(result, edge_result, "SAT-skip must match edge-loop for polygons with holes");
     }
 
     #[test]
