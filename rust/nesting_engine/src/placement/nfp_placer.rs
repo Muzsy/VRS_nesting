@@ -2,8 +2,9 @@ use serde::Serialize;
 use std::time::Instant;
 
 use crate::feasibility::{
-    aabb::aabb_from_polygon64, can_place, can_place_profiled, narrow::PlacedIndex, CanPlaceProfile,
-    PlacedPart,
+    aabb::aabb_from_polygon64, can_place, can_place_profiled,
+    narrow::{NarrowPhaseStrategy, PlacedIndex},
+    CanPlaceProfile, PlacedPart,
 };
 use crate::geometry::{
     scale::i64_to_mm,
@@ -294,6 +295,16 @@ fn aggregate_can_place_profile(
             .can_place_profile_rejected_by_narrow_count
             .saturating_add(1);
     }
+    // T06o: propagate own narrow-phase segment-pair counters.
+    stats.can_place_profile_segment_pair_budget_total = stats
+        .can_place_profile_segment_pair_budget_total
+        .saturating_add(profile.segment_pair_checks);
+    stats.can_place_profile_segment_pair_actual_total = stats
+        .can_place_profile_segment_pair_actual_total
+        .saturating_add(profile.segment_pair_actual_checks);
+    stats.can_place_profile_edge_bbox_reject_total = stats
+        .can_place_profile_edge_bbox_reject_total
+        .saturating_add(profile.edge_bbox_rejects);
 }
 
 #[derive(Debug, Clone)]
@@ -367,6 +378,7 @@ pub struct NfpPlacerStatsV1 {
     pub effective_placer: String,
     pub sheets_used: u64,
     pub actual_nfp_kernel: String, // T05z: which NFP kernel was actually used
+    pub actual_narrow_phase: String, // T06m-b: which narrow-phase strategy was actually used
     // T06l-a: can_place profile aggregation (only nonzero when
     // NESTING_ENGINE_CAN_PLACE_PROFILE=1). Default behavior is unchanged.
     pub can_place_profile_enabled: bool,
@@ -383,6 +395,14 @@ pub struct NfpPlacerStatsV1 {
     pub can_place_profile_rejected_by_aabb_count: u64,
     pub can_place_profile_rejected_by_within_count: u64,
     pub can_place_profile_rejected_by_narrow_count: u64,
+    // T06o: own narrow-phase segment-pair counters.
+    // budget = upper bound (Σ ring_a×ring_b across entered ring-pairs).
+    // actual = real `segments_intersect_or_touch()` invocation count (own only).
+    // edge_bbox_reject = edge pairs eliminated by AABB pre-reject (own only).
+    // For non-own strategies actual/edge_bbox_reject remain 0.
+    pub can_place_profile_segment_pair_budget_total: u64,
+    pub can_place_profile_segment_pair_actual_total: u64,
+    pub can_place_profile_edge_bbox_reject_total: u64,
 }
 
 impl Default for NfpPlacerStatsV1 {
@@ -422,6 +442,7 @@ impl Default for NfpPlacerStatsV1 {
             effective_placer: String::new(),
             sheets_used: 0,
             actual_nfp_kernel: resolve_nfp_kernel_name(),
+            actual_narrow_phase: NarrowPhaseStrategy::from_env().as_str().to_string(),
             can_place_profile_enabled: false,
             can_place_profile_calls: 0,
             can_place_profile_accept_count: 0,
@@ -436,6 +457,9 @@ impl Default for NfpPlacerStatsV1 {
             can_place_profile_rejected_by_aabb_count: 0,
             can_place_profile_rejected_by_within_count: 0,
             can_place_profile_rejected_by_narrow_count: 0,
+            can_place_profile_segment_pair_budget_total: 0,
+            can_place_profile_segment_pair_actual_total: 0,
+            can_place_profile_edge_bbox_reject_total: 0,
         }
     }
 }
@@ -579,6 +603,15 @@ impl NfpPlacerStatsV1 {
         self.can_place_profile_rejected_by_narrow_count = self
             .can_place_profile_rejected_by_narrow_count
             .saturating_add(other.can_place_profile_rejected_by_narrow_count);
+        self.can_place_profile_segment_pair_budget_total = self
+            .can_place_profile_segment_pair_budget_total
+            .saturating_add(other.can_place_profile_segment_pair_budget_total);
+        self.can_place_profile_segment_pair_actual_total = self
+            .can_place_profile_segment_pair_actual_total
+            .saturating_add(other.can_place_profile_segment_pair_actual_total);
+        self.can_place_profile_edge_bbox_reject_total = self
+            .can_place_profile_edge_bbox_reject_total
+            .saturating_add(other.can_place_profile_edge_bbox_reject_total);
     }
 
     pub fn add_assign(&mut self, other: &Self) {

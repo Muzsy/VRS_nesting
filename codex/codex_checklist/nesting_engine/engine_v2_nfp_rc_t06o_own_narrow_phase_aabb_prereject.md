@@ -1,0 +1,34 @@
+# Checklist — T06o Own narrow-phase AABB pre-reject
+
+- [x] T06n audit elolvasva
+- [x] T06m benchmark report elolvasva
+- [x] T06l-a profiling report elolvasva
+- [x] T06l-b measurement report releváns részei elolvasva
+- [x] feasibility/narrow.rs auditálva
+- [x] placement/nfp_placer.rs profile aggregation auditálva
+- [x] current git status dokumentálva
+- [x] cargo check baseline megkísérelve (PASS, csak warning)
+- [x] edge-pair AABB pre-reject helper implementálva (`segment_aabb_disjoint`)
+- [x] strict `<` policy használva, nem `<=` (külön tesztel: `segment_aabb_disjoint_strict_lt_at_axis_boundary`)
+- [x] edge/corner touch policy változatlan (külön tesztel: `*_does_not_reject_touching_endpoint`, `*_collinear_touch`, `*_collinear_overlap`, `corner_touch`)
+- [x] `segments_intersect_or_touch` semantics változatlan (helper csak előtte fut, nem módosítja)
+- [x] segment-pair budget counter implementálva (`NarrowPhaseCounters::segment_pair_budget`)
+- [x] segment-pair actual counter implementálva (`NarrowPhaseCounters::segment_pair_actual`)
+- [x] edge_bbox_reject counter implementálva (`NarrowPhaseCounters::edge_bbox_rejects`)
+- [x] counters aggregálva NFP statsba (`can_place_profile_segment_pair_budget_total`, `_actual_total`, `_edge_bbox_reject_total`)
+- [x] NEST_NFP_STATS_V1 output dokumentálva (default-disabled = 0; profile-on + own = populated; non-own = budget only)
+- [x] `NarrowPhaseStrategy::from_env` cache implementálva (`OnceLock<NarrowPhaseStrategy>` + `cached_narrow_phase_strategy()`)
+- [x] invalid strategy policy nem változott (`from_env` továbbra is warning + fallback `own`)
+- [x] can_place vs can_place_profiled equivalence teszt PASS (`can_place_and_profiled_return_equal_booleans_across_control_cases`)
+- [x] edge bbox disjoint teszt PASS (`segment_aabb_disjoint_rejects_far_segments`)
+- [x] endpoint touch teszt PASS (`segment_aabb_disjoint_does_not_reject_touching_endpoint`)
+- [x] collinear touch teszt PASS (`segment_aabb_disjoint_does_not_reject_collinear_touch`, `_overlap`)
+- [x] containment teszt PASS (`containment_case`, `edge_bbox_prereject_preserves_polygon_collision_cases::containment`)
+- [x] cargo check PASS (csak meglévő warningok, error 0)
+- [x] célzott cargo tests PASS (24 / 24 narrow + 4 / 4 can_place; 84 / 84 lib `--test-threads=1`)
+- [x] microbenchmark futott (random rect 50 000 pair: 623.2 → 273.7 ns/pair, ~2.27× speedup, 0 false accept)
+- [x] no false accept (0 / 50 000 microbench + 0 / counter & equivalence test)
+- [x] default behavior változatlan (`NESTING_ENGINE_NARROW_PHASE` unset → `Own`; `CAN_PLACE_PROFILE` unset → no overhead)
+- [x] report elkészült (`codex/reports/nesting_engine/engine_v2_nfp_rc_t06o_own_narrow_phase_aabb_prereject.md`)
+- [x] checklist elkészült (`codex/codex_checklist/nesting_engine/engine_v2_nfp_rc_t06o_own_narrow_phase_aabb_prereject.md`)
+- [x] következő task javaslat elkészült (`T06o-b — LV8 active-set re-mérés` vagy `T06p — valid_rings cache`)

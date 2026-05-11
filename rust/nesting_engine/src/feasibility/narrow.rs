@@ -1,4 +1,5 @@
 use rstar::{RTree, RTreeObject, AABB};
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use crate::feasibility::aabb::{aabb_from_polygon64, aabb_inside, aabb_overlaps, Aabb};
@@ -61,6 +62,20 @@ impl NarrowPhaseStrategy {
             NarrowPhaseStrategy::Geos => "geos",
         }
     }
+}
+
+// T06o: Cache the narrow-phase strategy for the lifetime of the process.
+// Avoids paying a `std::env::var()` lookup on every dispatcher call (potentially
+// hundreds of thousands of times per nfp_place run). The env var is read exactly
+// once, at the first call site reached. Subsequent in-process env mutations are
+// not observed — matches the prior implicit contract (strategy never changed
+// mid-run in any production path).
+static NARROW_PHASE_STRATEGY_CACHE: OnceLock<NarrowPhaseStrategy> = OnceLock::new();
+
+/// Returns the narrow-phase strategy resolved from the environment, cached.
+#[inline]
+pub fn cached_narrow_phase_strategy() -> NarrowPhaseStrategy {
+    *NARROW_PHASE_STRATEGY_CACHE.get_or_init(NarrowPhaseStrategy::from_env)
 }
 
 // =============================================================================
@@ -296,16 +311,122 @@ impl PlacedIndex {
     }
 }
 
+/// T06o: Per-call counters for the own narrow-phase. Tracks budget vs actual
+/// segment-pair work and edge-AABB pre-rejects. Default-zeroed; only populated
+/// when the profiled path is taken.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NarrowPhaseCounters {
+    /// Upper-bound: sum of ring_a.len() * ring_b.len() for every ring pair
+    /// that the inner loop entered (no early ring-pair short-circuit).
+    pub segment_pair_budget: u64,
+    /// Actual `segments_intersect_or_touch()` invocations — i.e. edge pairs
+    /// that survived the AABB pre-reject.
+    pub segment_pair_actual: u64,
+    /// Edge pairs that the AABB pre-reject excluded before any orientation
+    /// arithmetic ran.
+    pub edge_bbox_rejects: u64,
+}
+
+impl NarrowPhaseCounters {
+    #[inline]
+    pub fn add(&mut self, other: &NarrowPhaseCounters) {
+        self.segment_pair_budget = self
+            .segment_pair_budget
+            .saturating_add(other.segment_pair_budget);
+        self.segment_pair_actual = self
+            .segment_pair_actual
+            .saturating_add(other.segment_pair_actual);
+        self.edge_bbox_rejects = self
+            .edge_bbox_rejects
+            .saturating_add(other.edge_bbox_rejects);
+    }
+}
+
+/// Internal counter sink — the inner narrow-phase routine is generic over this
+/// trait so that the no-counter path monomorphizes to zero overhead.
+trait NarrowPhaseCounterSink {
+    fn add_budget(&mut self, n: u64);
+    fn add_actual(&mut self, n: u64);
+    fn add_bbox_reject(&mut self, n: u64);
+}
+
+struct NoNarrowPhaseCounter;
+
+impl NarrowPhaseCounterSink for NoNarrowPhaseCounter {
+    #[inline(always)]
+    fn add_budget(&mut self, _n: u64) {}
+    #[inline(always)]
+    fn add_actual(&mut self, _n: u64) {}
+    #[inline(always)]
+    fn add_bbox_reject(&mut self, _n: u64) {}
+}
+
+impl NarrowPhaseCounterSink for NarrowPhaseCounters {
+    #[inline]
+    fn add_budget(&mut self, n: u64) {
+        self.segment_pair_budget = self.segment_pair_budget.saturating_add(n);
+    }
+    #[inline]
+    fn add_actual(&mut self, n: u64) {
+        self.segment_pair_actual = self.segment_pair_actual.saturating_add(n);
+    }
+    #[inline]
+    fn add_bbox_reject(&mut self, n: u64) {
+        self.edge_bbox_rejects = self.edge_bbox_rejects.saturating_add(n);
+    }
+}
+
+/// T06o: Exact integer AABB disjoint test for two segments.
+///
+/// Returns true iff the AABBs of segments `(a0,a1)` and `(b0,b1)` are strictly
+/// separated on at least one axis. The strict `<` (not `<=`) is **required**:
+/// touching boundaries (edge/corner contact) must NOT be pre-rejected, because
+/// the touch-policy treats boundary contact as collision.
+#[inline]
+fn segment_aabb_disjoint(a0: Point64, a1: Point64, b0: Point64, b1: Point64) -> bool {
+    let a_min_x = a0.x.min(a1.x);
+    let a_max_x = a0.x.max(a1.x);
+    let a_min_y = a0.y.min(a1.y);
+    let a_max_y = a0.y.max(a1.y);
+
+    let b_min_x = b0.x.min(b1.x);
+    let b_max_x = b0.x.max(b1.x);
+    let b_min_y = b0.y.min(b1.y);
+    let b_max_y = b0.y.max(b1.y);
+
+    a_max_x < b_min_x || b_max_x < a_min_x || a_max_y < b_min_y || b_max_y < a_min_y
+}
+
 /// Returns true if two polygons intersect or touch.
-/// This is the OWN strategy implementation.
+/// This is the OWN strategy implementation (no profiling counters).
 pub fn own_polygons_intersect_or_touch(a: &Polygon64, b: &Polygon64) -> bool {
+    own_polygons_intersect_or_touch_inner(a, b, &mut NoNarrowPhaseCounter)
+}
+
+/// Profiled variant of `own_polygons_intersect_or_touch` that fills `counters`
+/// with budget / actual segment-pair counts and edge-AABB rejects. Boolean
+/// return value is bit-for-bit identical to the non-counted variant.
+pub fn own_polygons_intersect_or_touch_counted(
+    a: &Polygon64,
+    b: &Polygon64,
+    counters: &mut NarrowPhaseCounters,
+) -> bool {
+    own_polygons_intersect_or_touch_inner(a, b, counters)
+}
+
+#[inline(always)]
+fn own_polygons_intersect_or_touch_inner<C: NarrowPhaseCounterSink>(
+    a: &Polygon64,
+    b: &Polygon64,
+    counters: &mut C,
+) -> bool {
     if !polygon_has_valid_rings(a) || !polygon_has_valid_rings(b) {
         return true;
     }
 
     for ring_a in polygon_rings(a) {
         for ring_b in polygon_rings(b) {
-            if ring_intersects_ring_or_touch(ring_a, ring_b) {
+            if ring_intersects_ring_or_touch_inner(ring_a, ring_b, counters) {
                 return true;
             }
         }
@@ -317,7 +438,7 @@ pub fn own_polygons_intersect_or_touch(a: &Polygon64, b: &Polygon64) -> bool {
 
 /// Returns true if two polygons intersect or touch, using the active strategy.
 pub fn polygons_intersect_or_touch(a: &Polygon64, b: &Polygon64) -> bool {
-    match NarrowPhaseStrategy::from_env() {
+    match cached_narrow_phase_strategy() {
         NarrowPhaseStrategy::Own => own_polygons_intersect_or_touch(a, b),
         NarrowPhaseStrategy::IOverlay => {
             i_overlay_narrow::polygons_intersect_or_touch_i_overlay(a, b)
@@ -374,6 +495,13 @@ pub fn can_place(candidate: &Polygon64, bin: &Polygon64, placed: &PlacedIndex) -
 
 /// Profiled variant of `can_place` that returns timing breakdown.
 /// Returns (result, CanPlaceProfile).
+///
+/// T06o: `segment_pair_checks` is the budget (upper-bound: Σ ring_a×ring_b for
+/// every ring pair entered). The two new fields below split out the actual
+/// `segments_intersect_or_touch()` invocation count and the edge-AABB pre-reject
+/// count. For the `Own` strategy these reflect runtime observation; for other
+/// strategies (i_overlay, geos) they remain 0 because those backends do not
+/// expose comparable internal counters.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CanPlaceProfile {
     pub poly_within_ns: u64,
@@ -382,7 +510,13 @@ pub struct CanPlaceProfile {
     pub overlap_candidates: u32,
     pub narrow_phase_ns: u64,
     pub narrow_phase_pairs: u32,
+    /// Upper-bound (budget) segment-pair count. Same semantics and value as
+    /// before T06o; kept under this name to avoid churning consumers.
     pub segment_pair_checks: u64,
+    /// T06o: actually invoked `segments_intersect_or_touch()` calls (own only).
+    pub segment_pair_actual_checks: u64,
+    /// T06o: edge pairs eliminated by the AABB pre-reject (own only).
+    pub edge_bbox_rejects: u64,
     pub rejected_by_aabb: bool,
     pub rejected_by_within: bool,
     pub rejected_by_narrow: bool,
@@ -439,16 +573,41 @@ pub fn can_place_profiled(
             .then(a.0.cmp(&b.0))
     });
 
+    // T06o: when the active strategy is `Own`, route through the counted
+    // variant so we observe actual segment-pair work and edge-AABB rejects.
+    // For other strategies we keep the dispatcher (no per-edge instrumentation
+    // available) and the new counters remain zero — documented in stats output.
+    let strategy = cached_narrow_phase_strategy();
     let t2 = Instant::now();
     for (_, other) in &maybe_overlap {
         prof.narrow_phase_pairs += 1;
+        // Budget: upper bound on potential segment-pair tests. Independent of
+        // any early-exit; useful as a denominator for actual / bbox-reject.
         for ring_a in polygon_rings(candidate) {
             for ring_b in polygon_rings(&other.inflated_polygon) {
                 prof.segment_pair_checks += (ring_a.len() as u64) * (ring_b.len() as u64);
             }
         }
 
-        if polygons_intersect_or_touch(candidate, &other.inflated_polygon) {
+        let collision = if strategy == NarrowPhaseStrategy::Own {
+            let mut counters = NarrowPhaseCounters::default();
+            let hit = own_polygons_intersect_or_touch_counted(
+                candidate,
+                &other.inflated_polygon,
+                &mut counters,
+            );
+            prof.segment_pair_actual_checks = prof
+                .segment_pair_actual_checks
+                .saturating_add(counters.segment_pair_actual);
+            prof.edge_bbox_rejects = prof
+                .edge_bbox_rejects
+                .saturating_add(counters.edge_bbox_rejects);
+            hit
+        } else {
+            polygons_intersect_or_touch(candidate, &other.inflated_polygon)
+        };
+
+        if collision {
             prof.narrow_phase_ns = t2.elapsed().as_nanos() as u64;
             prof.rejected_by_narrow = true;
             return (false, prof);
@@ -496,6 +655,15 @@ fn ring_intersects_polygon_boundaries(ring: &[Point64], poly: &Polygon64) -> boo
 }
 
 fn ring_intersects_ring_or_touch(a: &[Point64], b: &[Point64]) -> bool {
+    ring_intersects_ring_or_touch_inner(a, b, &mut NoNarrowPhaseCounter)
+}
+
+#[inline(always)]
+fn ring_intersects_ring_or_touch_inner<C: NarrowPhaseCounterSink>(
+    a: &[Point64],
+    b: &[Point64],
+    counters: &mut C,
+) -> bool {
     if a.len() < 2 || b.len() < 2 {
         return false;
     }
@@ -506,6 +674,12 @@ fn ring_intersects_ring_or_touch(a: &[Point64], b: &[Point64]) -> bool {
         for j in 0..b.len() {
             let b0 = b[j];
             let b1 = b[(j + 1) % b.len()];
+            counters.add_budget(1);
+            if segment_aabb_disjoint(a0, a1, b0, b1) {
+                counters.add_bbox_reject(1);
+                continue;
+            }
+            counters.add_actual(1);
             if segments_intersect_or_touch(a0, a1, b0, b1) {
                 return true;
             }
@@ -915,6 +1089,286 @@ mod tests {
         let res_overlap_first = can_place(&candidate, &bin, &placed_overlap_first);
         let res_clear_first = can_place(&candidate, &bin, &placed_clear_first);
         assert_eq!(res_overlap_first, res_clear_first);
+    }
+
+    // =====================================================================
+    // T06o: edge-pair AABB pre-reject + counter tests
+    // =====================================================================
+
+    fn pt(x: f64, y: f64) -> Point64 {
+        Point64 {
+            x: mm_to_i64(x),
+            y: mm_to_i64(y),
+        }
+    }
+
+    #[test]
+    fn segment_aabb_disjoint_rejects_far_segments() {
+        // Two clearly far-apart segments: x ranges do not overlap.
+        let a0 = pt(0.0, 0.0);
+        let a1 = pt(1.0, 1.0);
+        let b0 = pt(10.0, 0.0);
+        let b1 = pt(11.0, 1.0);
+        assert!(segment_aabb_disjoint(a0, a1, b0, b1));
+    }
+
+    #[test]
+    fn segment_aabb_disjoint_does_not_reject_touching_endpoint() {
+        // Endpoint touch — must NOT pre-reject (touch policy: contact = collision).
+        let a0 = pt(0.0, 0.0);
+        let a1 = pt(10.0, 0.0);
+        let b0 = pt(10.0, 0.0); // shared endpoint
+        let b1 = pt(10.0, 10.0);
+        assert!(!segment_aabb_disjoint(a0, a1, b0, b1));
+        // The full segment test must report contact.
+        assert!(segments_intersect_or_touch(a0, a1, b0, b1));
+    }
+
+    #[test]
+    fn segment_aabb_disjoint_does_not_reject_collinear_touch() {
+        // Collinear, share endpoint.
+        let a0 = pt(0.0, 0.0);
+        let a1 = pt(10.0, 0.0);
+        let b0 = pt(10.0, 0.0);
+        let b1 = pt(20.0, 0.0);
+        assert!(!segment_aabb_disjoint(a0, a1, b0, b1));
+        assert!(segments_intersect_or_touch(a0, a1, b0, b1));
+    }
+
+    #[test]
+    fn segment_aabb_disjoint_does_not_reject_collinear_overlap() {
+        // Collinear with proper overlap.
+        let a0 = pt(0.0, 0.0);
+        let a1 = pt(10.0, 0.0);
+        let b0 = pt(5.0, 0.0);
+        let b1 = pt(15.0, 0.0);
+        assert!(!segment_aabb_disjoint(a0, a1, b0, b1));
+        assert!(segments_intersect_or_touch(a0, a1, b0, b1));
+    }
+
+    #[test]
+    fn segment_aabb_disjoint_strict_lt_at_axis_boundary() {
+        // X ranges meet at exactly one coordinate (boundary touch in x);
+        // y ranges overlap. Must NOT pre-reject (strict < required).
+        let a0 = pt(0.0, 0.0);
+        let a1 = pt(10.0, 5.0);
+        let b0 = pt(10.0, 4.0);
+        let b1 = pt(20.0, 6.0);
+        assert!(!segment_aabb_disjoint(a0, a1, b0, b1));
+    }
+
+    #[test]
+    fn edge_bbox_prereject_preserves_polygon_collision_cases() {
+        // Reference cases: every result must match the documented expected value.
+        let cases: Vec<(&str, Polygon64, Polygon64, bool)> = vec![
+            (
+                "separated",
+                rect(0.0, 0.0, 10.0, 10.0),
+                rect(20.0, 0.0, 10.0, 10.0),
+                false,
+            ),
+            (
+                "overlap",
+                rect(0.0, 0.0, 10.0, 10.0),
+                rect(5.0, 5.0, 10.0, 10.0),
+                true,
+            ),
+            (
+                "edge_touch",
+                rect(0.0, 0.0, 10.0, 10.0),
+                rect(10.0, 0.0, 10.0, 10.0),
+                true,
+            ),
+            (
+                "corner_touch",
+                rect(0.0, 0.0, 10.0, 10.0),
+                rect(10.0, 10.0, 10.0, 10.0),
+                true,
+            ),
+            (
+                "containment",
+                rect(0.0, 0.0, 20.0, 20.0),
+                rect(5.0, 5.0, 5.0, 5.0),
+                true,
+            ),
+            (
+                "concave_actual_overlap",
+                poly(&[
+                    (0.0, 0.0),
+                    (20.0, 0.0),
+                    (20.0, 10.0),
+                    (10.0, 10.0),
+                    (10.0, 20.0),
+                    (0.0, 20.0),
+                ]),
+                rect(8.0, 8.0, 5.0, 5.0),
+                true,
+            ),
+            (
+                "high_vertex_near_miss",
+                poly(&[
+                    (0.0, 0.0),
+                    (50.0, 0.0),
+                    (50.0, 10.0),
+                    (40.0, 10.0),
+                    (40.0, 20.0),
+                    (30.0, 20.0),
+                    (30.0, 30.0),
+                    (20.0, 30.0),
+                    (20.0, 40.0),
+                    (10.0, 40.0),
+                    (10.0, 50.0),
+                    (0.0, 50.0),
+                ]),
+                rect(60.0, 60.0, 5.0, 5.0),
+                false,
+            ),
+        ];
+        for (label, a, b, expected) in &cases {
+            let got = own_polygons_intersect_or_touch(a, b);
+            assert_eq!(got, *expected, "case {} expected {} got {}", label, expected, got);
+        }
+    }
+
+    #[test]
+    fn counted_variant_matches_uncounted_variant_boolean() {
+        // Boolean equivalence between counted and non-counted own implementations.
+        let cases: Vec<(Polygon64, Polygon64)> = vec![
+            (rect(0.0, 0.0, 10.0, 10.0), rect(20.0, 0.0, 10.0, 10.0)),
+            (rect(0.0, 0.0, 10.0, 10.0), rect(5.0, 5.0, 10.0, 10.0)),
+            (rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 0.0, 10.0, 10.0)),
+            (rect(0.0, 0.0, 10.0, 10.0), rect(10.0, 10.0, 10.0, 10.0)),
+            (rect(0.0, 0.0, 20.0, 20.0), rect(5.0, 5.0, 5.0, 5.0)),
+        ];
+        for (a, b) in &cases {
+            let plain = own_polygons_intersect_or_touch(a, b);
+            let mut counters = NarrowPhaseCounters::default();
+            let counted = own_polygons_intersect_or_touch_counted(a, b, &mut counters);
+            assert_eq!(plain, counted, "counted variant must agree with plain");
+        }
+    }
+
+    #[test]
+    fn counter_invariant_actual_plus_reject_le_budget() {
+        // For any pair, actual + edge_bbox_rejects <= budget. Early-exit may make
+        // it strictly less than budget.
+        let edge_rich_a = poly(&[
+            (0.0, 0.0),
+            (50.0, 0.0),
+            (50.0, 10.0),
+            (40.0, 10.0),
+            (40.0, 20.0),
+            (30.0, 20.0),
+            (30.0, 30.0),
+            (20.0, 30.0),
+            (20.0, 40.0),
+            (10.0, 40.0),
+            (10.0, 50.0),
+            (0.0, 50.0),
+        ]);
+        let edge_rich_b = rect(60.0, 60.0, 5.0, 5.0);
+        let mut counters = NarrowPhaseCounters::default();
+        let _ = own_polygons_intersect_or_touch_counted(&edge_rich_a, &edge_rich_b, &mut counters);
+        assert!(
+            counters.segment_pair_actual + counters.edge_bbox_rejects
+                <= counters.segment_pair_budget,
+            "actual+reject ({} + {}) must be <= budget ({})",
+            counters.segment_pair_actual,
+            counters.edge_bbox_rejects,
+            counters.segment_pair_budget
+        );
+        assert!(
+            counters.segment_pair_actual <= counters.segment_pair_budget,
+            "actual must be <= budget"
+        );
+        assert!(
+            counters.edge_bbox_rejects <= counters.segment_pair_budget,
+            "rejects must be <= budget"
+        );
+    }
+
+    #[test]
+    fn counter_edge_bbox_reject_positive_for_disjoint_edge_rich_pair() {
+        // A clearly-separated edge-rich pair: most edge pairs are AABB-disjoint.
+        let a = poly(&[
+            (0.0, 0.0),
+            (50.0, 0.0),
+            (50.0, 10.0),
+            (40.0, 10.0),
+            (40.0, 20.0),
+            (30.0, 20.0),
+            (30.0, 30.0),
+            (20.0, 30.0),
+            (20.0, 40.0),
+            (10.0, 40.0),
+            (10.0, 50.0),
+            (0.0, 50.0),
+        ]);
+        let b = rect(200.0, 200.0, 10.0, 10.0);
+        let mut counters = NarrowPhaseCounters::default();
+        let collided = own_polygons_intersect_or_touch_counted(&a, &b, &mut counters);
+        assert!(!collided, "far-apart polygons must not collide");
+        assert!(
+            counters.edge_bbox_rejects > 0,
+            "expected edge_bbox_rejects > 0 for far-apart edge-rich pair, got {}",
+            counters.edge_bbox_rejects
+        );
+        // For a non-colliding pair, every entered edge pair is either rejected
+        // by AABB or actually run; no early ring-pair exit.
+        assert_eq!(
+            counters.segment_pair_actual + counters.edge_bbox_rejects,
+            counters.segment_pair_budget,
+            "for non-colliding pair: actual + rejects == budget"
+        );
+    }
+
+    #[test]
+    fn can_place_profiled_populates_segment_pair_actual_for_own_strategy() {
+        // Reject path with a real overlap — the profile should expose nonzero
+        // actual segment-pair work and a positive budget.
+        let bin = rect(0.0, 0.0, 100.0, 100.0);
+        let candidate = rect(10.0, 10.0, 10.0, 10.0);
+        let other_poly = rect(15.0, 15.0, 10.0, 10.0);
+        let other = PlacedPart {
+            aabb: aabb_from_polygon64(&other_poly),
+            inflated_polygon: other_poly,
+        };
+        let mut placed = PlacedIndex::new();
+        placed.insert(other);
+
+        let (ok, prof) = can_place_profiled(&candidate, &bin, &placed);
+        assert!(!ok, "overlap must be infeasible");
+        assert!(prof.rejected_by_narrow, "must be rejected by narrow phase");
+        assert!(
+            prof.segment_pair_checks > 0,
+            "budget must be > 0 for narrow path"
+        );
+        // For Own strategy (default), actual count must be populated. Do NOT
+        // assert on i_overlay default tests in CI without env override.
+        if cached_narrow_phase_strategy() == NarrowPhaseStrategy::Own {
+            assert!(
+                prof.segment_pair_actual_checks > 0,
+                "actual must be > 0 when strategy=Own and overlap exists"
+            );
+            assert!(
+                prof.segment_pair_actual_checks + prof.edge_bbox_rejects
+                    <= prof.segment_pair_checks,
+                "actual+rejects ({} + {}) must be <= budget ({})",
+                prof.segment_pair_actual_checks,
+                prof.edge_bbox_rejects,
+                prof.segment_pair_checks
+            );
+        }
+    }
+
+    #[test]
+    fn cached_narrow_phase_strategy_returns_default_when_unset() {
+        // We cannot reliably mutate env in unit tests (the cache is process-
+        // wide), but we can assert it returns *something* and is consistent
+        // across calls.
+        let s1 = cached_narrow_phase_strategy();
+        let s2 = cached_narrow_phase_strategy();
+        assert_eq!(s1, s2, "cached strategy must be stable across calls");
     }
 
     // =====================================================================

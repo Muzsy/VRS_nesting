@@ -1,0 +1,39 @@
+# Checklist — T06n Own narrow-phase speedup audit
+
+- [x] T06m narrow-phase strategy benchmark elolvasva
+- [x] T06l-a can_place profiling report elolvasva
+- [x] T06l-b active-set measurement matrix elolvasva
+- [x] T06-next greedy eval cost decomposition elolvasva (releváns részek)
+- [x] T06-next claude algorithmic speedup audit elolvasva (jelölve a forrásokban)
+- [x] T06k fix hotpath benchmark validation hivatkozva
+- [x] feasibility/narrow.rs auditálva (971 LOC)
+- [x] feasibility/aabb.rs auditálva (54 LOC)
+- [x] feasibility/mod.rs auditálva (11 LOC)
+- [x] placement/nfp_placer.rs can_place usage auditálva (call site-ok 975, 1065, 1183, 1494, 1579 + dispatcher 228)
+- [x] geometry/types.rs auditálva (Point64, Polygon64, cross_product_i128, is_convex)
+- [x] can_place call graph elkészült (lásd report 4. fejezet)
+- [x] polygons_intersect_or_touch audit kész (own + i_overlay dispatcher, from_env hot-path lookup azonosítva)
+- [x] ring_intersects_ring_or_touch audit kész (no edge-bbox prune azonosítva)
+- [x] segments_intersect_or_touch audit kész (4 i128 cross product up-front)
+- [x] point_in_polygon / point_in_ring audit kész (két-pass O(2n))
+- [x] poly_strictly_within / container holes audit kész (holes-empty fast path lehetőség)
+- [x] PlacedIndex / broad-phase interaction audit kész (RTree query + AABB filter, 2× allocation)
+- [x] can_place_profiled accuracy audit kész (timing pontosság ok, segment_pair_checks gyanús)
+- [x] segment_pair_checks audit kész (upper-bound, nem propagálódik a stats-ba — JAVÍTANDÓ)
+- [x] ring-level bbox pruning értékelve (#8 — LV8 hole-free inputon kicsi)
+- [x] edge-level bbox pruning értékelve (#1 — top recommendation)
+- [x] precomputed ring/edge data értékelve (#6 bin geometry, #4 valid_rings)
+- [x] valid-ring caching értékelve (#4)
+- [x] containment fast path értékelve (#7 outer-AABB quick reject)
+- [x] holes-empty fast path értékelve (#9)
+- [x] rectangle/simple polygon fast path értékelve (összevonva a 8.10 SAT-tal — defer)
+- [x] segment index/sweep-line alternatíva értékelve (#12 — defer)
+- [x] from_env() hot-path lookup azonosítva (#2)
+- [x] allocation/clone audit a hot pathon (#7 #12 alapja)
+- [x] legalább 8 gyorsítási opció dokumentálva (12 opció dokumentálva)
+- [x] rangsorolt ajánlási tábla elkészült (report 9. fejezet)
+- [x] első implementációs task javaslat elkészült (T06o, report 10. fejezet)
+- [x] false accept kockázatok minden javaslatnál külön értékelve
+- [x] report elkészült (`codex/reports/nesting_engine/engine_v2_nfp_rc_t06n_own_narrow_phase_speedup_audit.md`)
+- [x] checklist elkészült (jelen fájl)
+- [x] production kód NEM módosult ezen audit során
