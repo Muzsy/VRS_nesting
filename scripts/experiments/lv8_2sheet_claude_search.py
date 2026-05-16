@@ -27,10 +27,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+_EXPERIMENTS_DIR = Path(__file__).resolve().parent
+if str(_EXPERIMENTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXPERIMENTS_DIR))
+
 from vrs_nesting.config.nesting_quality_profiles import (
     build_nesting_engine_cli_args_for_quality_profile,
 )
 from worker.cavity_prepack import build_cavity_prepacked_engine_input_v2
+from lv8_polygon_validator import validate as _polygon_validate
 
 
 def _utc_ts() -> str:
@@ -294,15 +299,30 @@ def run_one(
     placed_types = len({p.get("part_id") for p in placements}) if placements else 0
     # If virtual_parts mapping is empty (no prepack happened), placed_instances == placed_virtual_count.
 
-    # Valid? Conservative check: solver completed, no timeout, no unplaced, sheets_used <= 2.
-    valid = (
+    # T05: decompose valid into explicit sub-gates for polygon-aware validation.
+    completion_gate = (
         not timed_out
         and return_code == 0
         and sheets_used > 0
         and sheets_used <= 2
-        and len(unplaced) == 0
-        and placed_instances == required_instances
     )
+    quantity_gate = len(unplaced) == 0 and placed_instances == required_instances
+
+    # T05: polygon-aware validation gate (binding).
+    polygon_validation = _polygon_validate(
+        fixture=fixture,
+        prepacked_input=prepacked_input,
+        solver_output=solver_output,
+        cavity_plan=cavity_plan,
+        required_instances=required_instances,
+        spacing_mm=spacing_mm,
+        margin_mm=margin_mm,
+    )
+    (out_dir / "polygon_validation.json").write_text(
+        json.dumps(polygon_validation, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    valid = completion_gate and quantity_gate and polygon_validation.get("valid_polygon_gate") is True
 
     summary = {
         "label": label,
@@ -337,6 +357,9 @@ def run_one(
         "out_dir": str(out_dir.relative_to(REPO_ROOT)),
         "wall_clock_utc": datetime.now(timezone.utc).isoformat(),
         "engine_stats": engine_stats,
+        "valid_quantity_gate": quantity_gate,
+        "valid_polygon_gate": polygon_validation.get("valid_polygon_gate"),
+        "polygon_validation": polygon_validation,
     }
 
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

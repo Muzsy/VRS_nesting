@@ -1,0 +1,124 @@
+steps:
+  - name: "Repo szabályok és előfeltételek ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md szabályait. Ellenőrizd, hogy a T00 index,
+      T00 master runner, T01 report, T02 report, T03 report és T04 report létezik,
+      és a T04 státusza PASS vagy PASS_WITH_NOTES. Ha bármely kötelező előfeltétel
+      hiányzik, a T05 report státusza legyen FAIL/BLOCKED, és ne módosíts
+      production kódot.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "codex/reports/nesting_engine/development_plan_packing_density_20260515.md"
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+      - "canvases/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_lv8_density_t05_phase0_polygon_validation_gate.yaml"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+
+  - name: "Meglévő validációs útvonalak auditálása"
+    description: >
+      Auditáld a jelenlegi validációs útvonalakat. Rögzítsd a reportban, hogy
+      scripts/experiments/lv8_2sheet_claude_validate.py legacy AABB-konservatív
+      diagnosztikai validátor, nem binding CAM-grade gate. Auditáld a
+      worker/cavity_validation.py validate_cavity_plan_v2 függvényét és a
+      scripts/benchmark_cavity_v2_lv8.py hívási mintáját. Döntsd el, hogy T05-ben
+      új scripts/experiments/lv8_polygon_validator.py scriptet hozol létre vagy
+      drop-in helper implementációt használsz. Production kódot ebben a lépésben
+      ne módosíts.
+    inputs:
+      - "scripts/experiments/lv8_2sheet_claude_validate.py"
+      - "worker/cavity_validation.py"
+      - "scripts/benchmark_cavity_v2_lv8.py"
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+
+  - name: "Polygon-aware validator script implementálása"
+    description: >
+      Hozd létre a scripts/experiments/lv8_polygon_validator.py scriptet. A script
+      CLI-ból kapja meg a fixture, prepacked solver input, solver stdout, optional
+      cavity plan, required instances, spacing, margin és output path értékeket.
+      A script Shapely-alapú polygon validationt végezzen a top-level solver
+      placementsre: missing part geometry, boundary/margin, polygon overlap,
+      polygon clearance/spacing és quantity gate. Ha cavity_plan.json cavity_plan_v2,
+      hívd meg a worker.cavity_validation.validate_cavity_plan_v2 függvényt, és az
+      issue-kat add hozzá a JSON outputhoz. A validator output stabil JSON legyen
+      polygon_validation.json célra, valid_polygon_gate mezővel. Ne módosítsd a
+      worker/cavity_validation.py fájlt.
+    inputs:
+      - "worker/cavity_validation.py"
+      - "scripts/benchmark_cavity_v2_lv8.py"
+    outputs:
+      - "scripts/experiments/lv8_polygon_validator.py"
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+
+  - name: "Harness summary gate bekötése"
+    description: >
+      A scripts/experiments/lv8_2sheet_claude_search.py run_one() flow-ban kösd be
+      a polygon-aware validátort. A run könyvtárba íródjon polygon_validation.json.
+      A summary dict kapjon polygon_validation, valid_quantity_gate és
+      valid_polygon_gate mezőket. A végső summary["valid"] csak akkor lehet true,
+      ha a solver completion gate, a quantity gate és a polygon gate is true. A
+      legacy AABB validator nem lehet binding valid gate. Ne futtass hosszú LV8
+      benchmarkot.
+    inputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "scripts/experiments/lv8_polygon_validator.py"
+    outputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+
+  - name: "Validator és summary unit tesztek hozzáadása"
+    description: >
+      Adj hozzá célzott pytesteket. A validator tesztek fedjék legalább: valid
+      non-overlap, polygon overlap, boundary violation és clearance violation.
+      A summary teszt fedje, hogy summary valid false lesz, ha valid_polygon_gate
+      false, akkor is, ha quantity/completion gate true lenne. A tesztek ne
+      indítsanak hosszú LV8 benchmarkot és ne igényeljenek Rust buildet.
+    outputs:
+      - "tests/test_lv8_density_polygon_validator.py"
+      - "tests/test_lv8_density_polygon_validation_summary.py"
+
+  - name: "Célzott ellenőrzések futtatása"
+    description: >
+      Futtasd legalább: python3 -m py_compile scripts/experiments/lv8_polygon_validator.py,
+      python3 -m pytest tests/test_lv8_density_polygon_validator.py -q, és
+      python3 -m pytest tests/test_lv8_density_polygon_validation_summary.py -q.
+      Ha a teszteket egy fájlba vontad össze, a reportban indokold, és futtasd a
+      tényleges tesztfájlt. Rust fájl módosítása T05-ben tilos; ha mégis szükségesnek
+      látszik, állj meg és FAIL/BLOCKED reportot írj.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+
+  - name: "Checklist és report lezárása"
+    description: >
+      Hozd létre a T05 checklistet és frissítsd a T05 reportot a Report Standard v2
+      szerint. A report elején legyen PASS, FAIL vagy PASS_WITH_NOTES. A DoD →
+      Evidence Matrix 1:1-ben tartalmazza a canvas Definition of Done pontjait.
+      Külön jelöld, hogy a legacy AABB validator nem binding gate, és hogy a T05
+      nem futtatott hosszú LV8 benchmark mátrixot.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md .
+      A verify log kerüljön a report mellé. Ha a gate bukik, a report státusza FAIL
+      legyen, és a DoD matrixban jelöld pontosan, mi bukott. Siker esetén PASS vagy
+      PASS_WITH_NOTES státusz szerepeljen.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.md"
+      - "codex/reports/nesting_engine/lv8_density_t05_phase0_polygon_validation_gate.verify.log"
