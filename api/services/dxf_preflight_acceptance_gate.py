@@ -422,6 +422,18 @@ def _resolve_outcome(
                 }
             )
             return _REVIEW_REQUIRED, "nested_holes_demoted_to_review_required"
+        blocking_reasons.append(
+            {
+                "source": "validator_probe",
+                "family": "validator_probe_rejected",
+                "details": {
+                    "issue_count": _as_int(validator_probe.get("issue_count"), default=0),
+                    "error_count": _as_int(validator_probe.get("error_count"), default=0),
+                    "warning_count": _as_int(validator_probe.get("warning_count"), default=0),
+                    "validator_version": str(validator_probe.get("validator_version", "")),
+                },
+            }
+        )
         return _REJECTED, "validator_rejected"
 
     if blocking_reasons:

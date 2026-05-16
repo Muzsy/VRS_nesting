@@ -1,0 +1,106 @@
+steps:
+  - name: "Repo szabályok és minták ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md fájlokat. Ellenőrizd a meglévő nesting_engine
+      canvas/YAML/runner mintákat, különösen az engine_v2_nfp_rc T04 és master
+      runner fájlokat. Rögzítsd a reportban, mely mintákat használtad.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/nesting_engine/engine_v2_nfp_rc_t04_nfp_baseline_instrumentation.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_engine_v2_nfp_rc_t04_nfp_baseline_instrumentation.yaml"
+      - "codex/prompts/nesting_engine/engine_v2_nfp_rc_t04_nfp_baseline_instrumentation/run.md"
+      - "codex/prompts/nesting_engine/engine_v2_nfp_rc_master_runner.md"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Valós repo anchorok auditálása"
+    description: >
+      Ellenőrizd a T00 canvasban felsorolt valós repo anchorokat. Minimum ellenőrizd:
+      NfpCache, nfp_placer, multi_bin greedy, quality profile registry, concave diag,
+      LV8 276 fixture, kis-synthetic SA guard fixture, legacy validator és
+      worker cavity validation meglétét. A tényeket rövid táblázatban rögzítsd a
+      reportban. Ha bármely kritikus anchor hiányzik, ne találj ki pótlást: STOP
+      státuszt írj a reportba.
+    inputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "vrs_nesting/config/nesting_quality_profiles.py"
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "scripts/experiments/lv8_2sheet_claude_validate.py"
+      - "worker/cavity_validation.py"
+      - "tests/fixtures/nesting_engine/ne2_input_lv8jav.json"
+      - "poc/nesting_engine/f2_4_sa_quality_fixture_v2.json"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md"
+
+  - name: "LV8 density task index létrehozása"
+    description: >
+      Hozd létre a canvases/nesting_engine/lv8_density_task_index.md fájlt.
+      A fájl tartalmazza a T00-T22 taskokat, mindegyiknél: task_id, phase,
+      rövid cél, fő érintett fájlok, függőségek, kötelező outputok és acceptance gate.
+      Tartalmazzon Source of truth, Global invariants, Real repo anchors, Task list,
+      Dependency graph, Critical path, Parallelization notes, First package batch és
+      Stop conditions szekciókat. Ne hozz létre T01-T22 canvas/YAML/runner fájlokat.
+    outputs:
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+
+  - name: "LV8 density master runner létrehozása"
+    description: >
+      Hozd létre a codex/prompts/nesting_engine/lv8_density_master_runner.md fájlt.
+      A master runner legyen önállóan használható futtatási dokumentum. Tartalmazza:
+      cél, kötelező olvasnivaló, baseline preflight, global hard rules,
+      files and fixtures to verify before start, execution order, checkpoints,
+      per-task runner references, phase gates, final benchmark matrix, rollback rules
+      és reporting rules szekciókat. A per-task runner reference résznél jelezd,
+      hogy T01-T22 runner fájljai expected pathok, de még későbbi taskok hozzák létre.
+    outputs:
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+
+  - name: "Checklist létrehozása"
+    description: >
+      Hozd létre a codex/codex_checklist/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md
+      checklistet. Legyen pipálható, és tartalmazza legalább a canvas DoD pontjait:
+      szabályfájlok olvasása, repo anchorok ellenőrzése, task index létrehozása,
+      master runner létrehozása, production kód érintetlensége, verify futtatás,
+      report Evidence Matrix kitöltése.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Report létrehozása és DoD evidence előkészítése"
+    description: >
+      Hozd létre/frissítsd a codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md
+      reportot a docs/codex/report_standard.md szerint. A report elején legyen PASS,
+      FAIL vagy PASS_WITH_NOTES. Tartalmazzon DoD → Evidence Matrix táblát, amelyben
+      a canvas DoD pontjai 1:1-ben szerepelnek, útvonal + sorsáv bizonyítékkal.
+      A verify.sh AUTO_VERIFY blokkot hagyd a script számára.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md"
+
+  - name: "T00 sanity ellenőrzések futtatása"
+    description: >
+      Futtasd a T00-specifikus sanity ellenőrzéseket: ellenőrizd, hogy a task index
+      tartalmazza T00, T01 és T22 tokeneket, Dependency graph és Critical path részt;
+      a master runner tartalmazza Baseline preflight, Global hard rules, Execution order
+      és Rollback rules részt; továbbá nincs production Rust/Python/TS diff a T00 taskban.
+      Az eredményt rögzítsd a reportban.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md"
+      - "codex/codex_checklist/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md .
+      A verify logot a report mellé kell menteni. Ha a verify piros, a report státusza
+      FAIL legyen, és írd le a konkrét hibát. A verify log fájl outputként szerepel.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.md"
+      - "codex/reports/nesting_engine/lv8_density_t00_task_scaffold_and_master_runner.verify.log"
