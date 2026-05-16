@@ -1,0 +1,118 @@
+steps:
+  - name: "Repo szabályok és T06 előfeltétel ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md szabályait. Ellenőrizd, hogy a T06 report
+      és a Phase0 checkpoint alias létezik, és státusza PASS vagy PASS_WITH_NOTES.
+      A T06 hard_cut_decision=DEFER_HARD_CUT nem blokkoló T07-hez. Ha T06 hiányzik
+      vagy FAIL/BLOCKED, ne végezz cache auditot, hanem készíts T07 BLOCKED reportot.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+      - "canvases/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_lv8_density_t07_phase1_0_cache_path_discovery_spike.yaml"
+      - "codex/reports/nesting_engine/lv8_density_t06_phase0_shadow_run_baseline_report.md"
+      - "codex/reports/nesting_engine/lv8_density_phase0_shadow_baseline.md"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+
+  - name: "NFP cache érintett fájlok és szimbólumok feltérképezése"
+    description: >
+      Futtass célzott grep / ripgrep szimbólum scaneket a cache és NFP compute
+      útvonalakra. Minimum keresendő minták: compute_nfp_lib,
+      compute_stable_concave_nfp, compute_nfp_lib_with_provider, NfpCache,
+      NfpCacheKey, shape_id, cache.get és cache.insert. A scan eredményéből
+      készíts NFP call graphot. A task read-only audit: production Rust/Python
+      fájlt ne módosíts.
+    inputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/nfp/provider.rs"
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "rust/nesting_engine/src/nfp/cgal_reference_provider.rs"
+    outputs:
+      - "tmp/phase1_spike_cache_path_discovery.md"
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+
+  - name: "Per-kernel cache usage audit elkészítése"
+    description: >
+      A feltérképezett hívási utak alapján dokumentáld, hogy az OldConcave,
+      cgal_reference és minden aktív reduced_convolution vagy egyéb NFP provider
+      cache-en keresztül fut-e. Minden állításhoz adj file:line bizonyítékot,
+      vagy jelöld inactive / unknown-with-reason státusszal. Ha cache-bypass
+      útvonalat találsz, ne javítsd T07-ben, hanem írd a T07 reportba T10
+      follow-upként.
+    inputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/nfp/provider.rs"
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "rust/nesting_engine/src/nfp/cgal_reference_provider.rs"
+    outputs:
+      - "tmp/phase1_spike_cache_path_discovery.md"
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+
+  - name: "shape_id origin és cache-key kockázatok auditálása"
+    description: >
+      Vizsgáld meg, hogy a shape_id() milyen Polygon64 bemenetből készül a
+      tényleges placement útvonalakon: inflated vagy nominal geometriából. Ne
+      írj új tesztet T07-ben, de dokumentáld, hogy kódbizonyíték alapján eldönthető-e
+      a spacing-változás cache-key szeparációja. Döntsd el vagy jelöld T09
+      follow-upként: kell-e explicit spacing/pipeline_version mező a későbbi
+      cache-key tesztekhez.
+    inputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/geometry/"
+    outputs:
+      - "tmp/phase1_spike_cache_path_discovery.md"
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+
+  - name: "LRU vs clear_all döntési input rögzítése"
+    description: >
+      Dokumentáld a jelenlegi NfpCache kapacitás- és clear viselkedést:
+      MAX_ENTRIES érték, clear_all() hatása, CacheStats mezői, hit/miss reset
+      viselkedés. Ha T06/T04 summary vagy elérhető tmp artefakt tartalmaz cache
+      entries/hits/misses adatot, használd döntési inputként; ha nem, jelöld
+      explicit módon, hogy a clear_all_events és peak_entries T08 scope. Ne
+      implementálj LRU-t T07-ben.
+    inputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+      - "codex/reports/nesting_engine/lv8_density_t06_phase0_shadow_run_baseline_report.md"
+    outputs:
+      - "tmp/phase1_spike_cache_path_discovery.md"
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+
+  - name: "Spike report és T08-T10 scope átadás elkészítése"
+    description: >
+      Hozd létre a tmp/phase1_spike_cache_path_discovery.md fix struktúrájú
+      spike reportot a canvasban megadott hat fő szekcióval. Emellett készítsd el
+      a T07 task reportot és checklistet Report Standard v2 szerint, DoD ->
+      Evidence Matrix-szal. A reportban szerepeljen: T08-ra átadott stats/LRU
+      scope, T09-re átadott shape_id/cache-key teszt scope, T10-re átadott
+      cache usage benchmark scope. A státusz PASS, PASS_WITH_NOTES, FAIL vagy
+      BLOCKED legyen; PASS_WITH_NOTES elfogadható UNPROVEN elemekkel, ha konkrét
+      follow-up van.
+    outputs:
+      - "tmp/phase1_spike_cache_path_discovery.md"
+      - "codex/codex_checklist/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md .
+      A verify log kerüljön a report mellé. Ha a gate bukik, a report státusza
+      FAIL legyen. Siker esetén PASS vagy PASS_WITH_NOTES státusz szerepeljen.
+      A verify előtt és után ellenőrizd, hogy production kód nem módosult T07-ben.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.verify.log"
