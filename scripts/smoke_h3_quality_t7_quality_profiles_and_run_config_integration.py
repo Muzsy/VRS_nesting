@@ -73,6 +73,28 @@ def _assert_registry_presets() -> None:
     _assert(qa.get("part_in_part") == "auto", "quality_aggressive part_in_part mismatch")
     _assert(int(qa.get("sa_iters") or 0) > 0, "quality_aggressive sa_iters missing")
 
+    # lv8_density T02: explicit assertions for the no-SA Phase 0 shadow profiles.
+    # They must coexist with the legacy SA profiles (no hard-cut in T02).
+    qd_shadow = registry["quality_default_no_sa_shadow"]
+    _assert(qd_shadow.get("placer") == "nfp", "quality_default_no_sa_shadow placer mismatch")
+    _assert(qd_shadow.get("search") == "none", "quality_default_no_sa_shadow search mismatch")
+    _assert(qd_shadow.get("part_in_part") == "auto", "quality_default_no_sa_shadow part_in_part mismatch")
+    _assert(qd_shadow.get("compaction") == "slide", "quality_default_no_sa_shadow compaction mismatch")
+    _assert(
+        not any(k.startswith("sa_") for k in qd_shadow.keys()),
+        "quality_default_no_sa_shadow must not carry sa_* overrides",
+    )
+
+    qa_shadow = registry["quality_aggressive_no_sa_shadow"]
+    _assert(qa_shadow.get("placer") == "nfp", "quality_aggressive_no_sa_shadow placer mismatch")
+    _assert(qa_shadow.get("search") == "none", "quality_aggressive_no_sa_shadow search mismatch")
+    _assert(qa_shadow.get("part_in_part") == "auto", "quality_aggressive_no_sa_shadow part_in_part mismatch")
+    _assert(qa_shadow.get("compaction") == "slide", "quality_aggressive_no_sa_shadow compaction mismatch")
+    _assert(
+        not any(k.startswith("sa_") for k in qa_shadow.keys()),
+        "quality_aggressive_no_sa_shadow must not carry sa_* overrides",
+    )
+
     print("  PASS registry_presets")
 
 
@@ -307,7 +329,11 @@ def _assert_benchmark_profile_matrix_plan_only() -> None:
         _assert(isinstance(entries, list), "entries must be list")
         from scripts.gen_h3_quality_benchmark_fixtures import CASE_SPECS
 
-        expected_count = len(CASE_SPECS) * 3
+        # lv8_density T02: derive expected_count from the actual profile list
+        # rather than a hardcoded "3", so adding shadow profiles to the registry
+        # without changing the plan-only CLI invocation does not flip this gate.
+        profile_count = len(payload.get("quality_profiles") or [])
+        expected_count = len(CASE_SPECS) * profile_count
         _assert(len(entries) == expected_count, f"expected {expected_count} entries, got {len(entries)}")
 
         for entry in entries:

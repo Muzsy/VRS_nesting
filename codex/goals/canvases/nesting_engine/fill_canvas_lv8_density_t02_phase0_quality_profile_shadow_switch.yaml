@@ -1,0 +1,103 @@
+steps:
+  - name: "Repo szabályok és előfeltételek ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md szabályait. Ellenőrizd, hogy a T00 index,
+      T00 master runner és a T01 report létezik, és a T01 státusza PASS vagy
+      PASS_WITH_NOTES. Ha bármely kötelező előfeltétel hiányzik, a T02 report
+      státusza legyen FAIL/BLOCKED, és ne módosíts production kódot.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "codex/reports/nesting_engine/development_plan_packing_density_20260515.md"
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "canvases/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_lv8_density_t02_phase0_quality_profile_shadow_switch.yaml"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+
+  - name: "Quality profile registry audit rögzítése"
+    description: >
+      Auditáld a vrs_nesting/config/nesting_quality_profiles.py aktuális állapotát:
+      quality_default és quality_aggressive jelenlegi search módja, SA override mezők,
+      VALID_QUALITY_PROFILE_NAMES képzése, build_nesting_engine_cli_args_for_quality_profile
+      viselkedése, valamint a registryt ellenőrző smoke tesztek. Rögzítsd a T02 reportban,
+      hogy mely meglévő tesztek fognak frissítést igényelni az új shadow profilok miatt.
+    inputs:
+      - "vrs_nesting/config/nesting_quality_profiles.py"
+      - "scripts/smoke_h3_quality_t7_quality_profiles_and_run_config_integration.py"
+      - "scripts/smoke_cavity_t2_runtime_profile_prepack_mode.py"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+
+  - name: "No-SA shadow profilok bekötése"
+    description: >
+      Egészítsd ki a quality profile registryt a quality_default_no_sa_shadow és
+      quality_aggressive_no_sa_shadow profilokkal. Mindkettő placer=nfp, search=none,
+      part_in_part=auto, compaction=slide legyen, és egyik se tartalmazzon sa_* override
+      mezőt. A régi quality_default és quality_aggressive profilok T02 végén maradjanak
+      SA-alapúak; hard-cutot ebben a taskban tilos végrehajtani. Adj hozzá gépileg
+      olvasható shadow pair mappinget, például get_phase0_shadow_profile_pairs() helperrel.
+    outputs:
+      - "vrs_nesting/config/nesting_quality_profiles.py"
+
+  - name: "Smoke/profile-list tesztek célzott frissítése"
+    description: >
+      Frissítsd csak azokat a smoke teszteket, amelyek az új shadow profilok registrybe
+      kerülése miatt jogosan törnének. A tesztek továbbra is ellenőrizzék, hogy a régi
+      quality_default és quality_aggressive profilok SA-alapúak maradtak, és külön
+      ellenőrizzék az új no-SA shadow profilokat. Ne lazítsd túl a teszteket; a registry
+      kulcsok, CLI argok és no-SA shadow invariánsok legyenek explicit módon ellenőrizve.
+    outputs:
+      - "scripts/smoke_h3_quality_t7_quality_profiles_and_run_config_integration.py"
+      - "scripts/smoke_cavity_t2_runtime_profile_prepack_mode.py"
+
+  - name: "Shadow profile matrix artefaktok létrehozása"
+    description: >
+      Hozd létre a T06 számára gépileg olvasható és emberileg olvasható shadow profile
+      matrixot. A JSON tartalmazza a legacy_profile -> shadow_profile párokat, a régi és
+      új search módokat, a shadow CLI argokat, és hard_cut_allowed_in_t02=false mezőt.
+      A Markdown párja röviden magyarázza, hogy a T02 csak előkészítés; a hosszú shadow
+      run és hard-cut döntés T06 feladata.
+    outputs:
+      - "tmp/lv8_density_phase0_shadow_profile_matrix.json"
+      - "tmp/lv8_density_phase0_shadow_profile_matrix.md"
+
+  - name: "T02 sanity ellenőrzések futtatása"
+    description: >
+      Futtasd a canvasban megadott profile sanity, shadow matrix sanity és production
+      diff guard ellenőrzéseket. Ezen felül futtasd legalább: python3 -m py_compile
+      vrs_nesting/config/nesting_quality_profiles.py, és ha módosult, a célzott smoke
+      script(ek)et. Az eredményeket rögzítsd a reportban és checklistben.
+    outputs:
+      - "tmp/lv8_density_phase0_shadow_profile_matrix.json"
+      - "codex/codex_checklist/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+
+  - name: "Checklist és report lezárása"
+    description: >
+      Hozd létre a T02 checklistet és frissítsd a T02 reportot a Report Standard v2
+      szerint. A report elején legyen PASS, FAIL vagy PASS_WITH_NOTES. A DoD → Evidence
+      Matrix 1:1-ben tartalmazza a canvas Definition of Done pontjait. A reportban külön
+      jelöld, hogy nem történt hard-cut, a régi profilok SA-alapúak maradtak, és a no-SA
+      shadow profilok T06 mérés-előkészítéshez készültek.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md .
+      A verify logot a report mellé kell menteni. Ha a verify piros, a report státusza
+      FAIL legyen, kivéve ha kizárólag dokumentált környezeti vagy pre-existing ok áll fenn;
+      ebben az esetben PASS_WITH_NOTES csak akkor adható, ha minden T02 DoD teljesült.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.verify.log"

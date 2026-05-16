@@ -66,6 +66,31 @@ _QUALITY_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
         "compaction": "slide",
         "nfp_kernel": "cgal_reference",
     },
+    # lv8_density T02: Phase 0 shadow profiles. NOT production defaults.
+    # These exist to pair with quality_default / quality_aggressive in the T06
+    # shadow run for measuring the no-SA path before any hard-cut decision.
+    # Hard-cut is explicitly deferred to T06 evidence; T02 must keep the legacy
+    # SA-based profiles untouched.
+    "quality_default_no_sa_shadow": {
+        "placer": "nfp",
+        "search": "none",
+        "part_in_part": "auto",
+        "compaction": "slide",
+    },
+    "quality_aggressive_no_sa_shadow": {
+        "placer": "nfp",
+        "search": "none",
+        "part_in_part": "auto",
+        "compaction": "slide",
+    },
+}
+
+# lv8_density T02: machine-readable shadow-pair mapping consumed by T06.
+# Maps the legacy SA-based profile to its no-SA shadow counterpart. Both
+# entries must be present in _QUALITY_PROFILE_REGISTRY.
+PHASE0_SHADOW_PROFILE_PAIRS: dict[str, str] = {
+    "quality_default": "quality_default_no_sa_shadow",
+    "quality_aggressive": "quality_aggressive_no_sa_shadow",
 }
 
 VALID_QUALITY_PROFILE_NAMES = tuple(sorted(_QUALITY_PROFILE_REGISTRY.keys()))
@@ -202,6 +227,10 @@ def build_nesting_engine_cli_args_for_quality_profile(name: str | None) -> list[
     return build_nesting_engine_cli_args_from_runtime_policy(policy)
 
 
+def get_phase0_shadow_profile_pairs() -> dict[str, str]:
+    return dict(PHASE0_SHADOW_PROFILE_PAIRS)
+
+
 def compact_runtime_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
     normalized = validate_runtime_policy(policy)
     out = {
@@ -220,11 +249,13 @@ def compact_runtime_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "DEFAULT_QUALITY_PROFILE",
+    "PHASE0_SHADOW_PROFILE_PAIRS",
     "VALID_QUALITY_PROFILE_NAMES",
     "VALID_NFP_KERNELS",
     "build_nesting_engine_cli_args_for_quality_profile",
     "build_nesting_engine_cli_args_from_runtime_policy",
     "compact_runtime_policy",
+    "get_phase0_shadow_profile_pairs",
     "get_quality_profile_policy",
     "get_quality_profile_registry",
     "normalize_quality_profile_name",
