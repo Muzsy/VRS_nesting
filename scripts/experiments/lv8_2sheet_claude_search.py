@@ -103,6 +103,68 @@ def _instance_count_from_placements(
     return total, per_real
 
 
+STAT_PREFIX = "NEST_NFP_STATS_V1 "
+
+
+def _normalize_engine_stats(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "nfp_cache_hit_count": raw.get("nfp_cache_hits"),
+        "nfp_cache_miss_count": raw.get("nfp_cache_misses"),
+        "nfp_cache_entries_end": raw.get("nfp_cache_entries_end"),
+        "nfp_compute_count": raw.get("nfp_compute_calls"),
+        "candidate_generate_count": raw.get("candidates_before_dedupe_total"),
+        "candidate_dedup_count": raw.get("candidates_after_dedupe_total"),
+        "candidate_after_cap_count": raw.get("candidates_after_cap_total"),
+        "can_place_call_count": raw.get("can_place_profile_calls"),
+        "can_place_call_count_source": "can_place_profile_calls",
+        "sheet_spillover_count": max(0, int(raw.get("sheets_used") or 0) - 1),
+        "effective_placer": raw.get("effective_placer"),
+        "actual_nfp_kernel": raw.get("actual_nfp_kernel"),
+        "actual_narrow_phase": raw.get("actual_narrow_phase"),
+    }
+
+
+def _parse_engine_stats_from_stderr(stderr_text: str) -> dict[str, Any]:
+    matches = [line for line in stderr_text.splitlines() if line.startswith(STAT_PREFIX)]
+    if not matches:
+        return {
+            "source": "NEST_NFP_STATS_V1",
+            "available": False,
+            "parse_error": "missing_stats_line",
+            "raw": None,
+            "normalized": None,
+            "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+        }
+    if len(matches) != 1:
+        return {
+            "source": "NEST_NFP_STATS_V1",
+            "available": False,
+            "parse_error": f"expected_1_stats_line_got_{len(matches)}",
+            "raw": None,
+            "normalized": None,
+            "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+        }
+    try:
+        raw = json.loads(matches[0][len(STAT_PREFIX):])
+    except json.JSONDecodeError as exc:
+        return {
+            "source": "NEST_NFP_STATS_V1",
+            "available": False,
+            "parse_error": f"invalid_json:{exc}",
+            "raw": None,
+            "normalized": None,
+            "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+        }
+    return {
+        "source": "NEST_NFP_STATS_V1",
+        "available": True,
+        "parse_error": None,
+        "raw": raw,
+        "normalized": _normalize_engine_stats(raw),
+        "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+    }
+
+
 def run_one(
     fixture_path: Path,
     out_dir: Path,
@@ -164,14 +226,22 @@ def run_one(
     # CGAL kernel env hint when profile asks for it
     if "cgal_reference" in quality_profile:
         env["NESTING_ENGINE_NFP_KERNEL"] = "cgal_reference"
+    # T04: engine stats capture — always on for Phase 0 measurement path.
+    env["NESTING_ENGINE_EMIT_NFP_STATS"] = "1"
+    # T04: can_place profiling harness-controlled; default 1 for Phase 0 mérési pipeline.
+    if os.environ.get("LV8_HARNESS_CAN_PLACE_PROFILE", "1") == "1":
+        env["NESTING_ENGINE_CAN_PLACE_PROFILE"] = "1"
+    else:
+        env.pop("NESTING_ENGINE_CAN_PLACE_PROFILE", None)
 
     quiet = os.environ.get("LV8_HARNESS_QUIET", "1") == "1"
+    capture_engine_stats = True
     t_solver_start = time.perf_counter()
     timed_out = False
     return_code = None
     try:
         with prepacked_solver_input_path.open("rb") as fin, stdout_path.open("wb") as fout:
-            if quiet:
+            if quiet and not capture_engine_stats:
                 # lv8_density T03: [CONCAVE NFP DIAG] is now opt-in via
                 # NESTING_ENGINE_NFP_DIAG=1 (concave.rs), so default runs no longer
                 # emit megabyte-scale diag spam. The quiet policy stays conservative
@@ -188,6 +258,8 @@ def run_one(
                         env=env, timeout=time_limit_sec + 60, check=False,
                     )
             else:
+                # T04: stats capture active — stderr always goes to file for NEST_NFP_STATS_V1
+                # parsing; not printed to console (log-size guard preserved).
                 with stderr_path.open("wb") as ferr:
                     proc = subprocess.run(
                         cmd, stdin=fin, stdout=fout, stderr=ferr,
@@ -197,6 +269,9 @@ def run_one(
     except subprocess.TimeoutExpired:
         timed_out = True
     solver_elapsed = round(time.perf_counter() - t_solver_start, 6)
+
+    stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
+    engine_stats = _parse_engine_stats_from_stderr(stderr_text)
 
     solver_output: dict[str, Any] = {}
     try:
@@ -261,6 +336,7 @@ def run_one(
         "prepacked_input_path": str(prepacked_solver_input_path.relative_to(REPO_ROOT)),
         "out_dir": str(out_dir.relative_to(REPO_ROOT)),
         "wall_clock_utc": datetime.now(timezone.utc).isoformat(),
+        "engine_stats": engine_stats,
     }
 
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

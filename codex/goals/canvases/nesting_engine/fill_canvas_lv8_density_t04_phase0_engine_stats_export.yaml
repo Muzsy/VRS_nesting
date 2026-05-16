@@ -1,0 +1,116 @@
+steps:
+  - name: "Repo szabályok és előfeltételek ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md szabályait. Ellenőrizd, hogy a T00 index,
+      T00 master runner, T01 report, T02 report és T03 report létezik, és a T03
+      státusza PASS vagy PASS_WITH_NOTES. Ha bármely kötelező előfeltétel hiányzik,
+      a T04 report státusza legyen FAIL/BLOCKED, és ne módosíts production kódot.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "codex/reports/nesting_engine/development_plan_packing_density_20260515.md"
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+      - "canvases/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_lv8_density_t04_phase0_engine_stats_export.yaml"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+
+  - name: "Meglévő engine stats flow auditálása"
+    description: >
+      Auditáld a meglévő stats flow-t: NfpPlacerStatsV1 mezők a
+      rust/nesting_engine/src/placement/nfp_placer.rs fájlban, NEST_NFP_STATS_V1
+      emission a rust/nesting_engine/src/main.rs fájlban, multi-sheet aggregáció a
+      rust/nesting_engine/src/multi_bin/greedy.rs fájlban, és CacheStats jelenlegi
+      mezői a rust/nesting_engine/src/nfp/cache.rs fájlban. A reportban rögzítsd,
+      mely mezők már léteznek, melyek érhetők el raw statsban, és melyek maradnak
+      Phase 1 / T08 scope-ra. E step production kódot ne módosítson.
+    inputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/main.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/nfp/cache.rs"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+
+  - name: "LV8 harness engine stats capture bekötése"
+    description: >
+      A scripts/experiments/lv8_2sheet_claude_search.py scriptben kösd be az engine
+      stats capture-t. A T04/T06 mérési pathon az engine futás kapjon
+      NESTING_ENGINE_EMIT_NFP_STATS=1 env-et. A can_place profiling legyen harness
+      szinten kontrollált LV8_HARNESS_CAN_PLACE_PROFILE=1|0 env-vel; Phase 0
+      mérési defaultként javasolt az 1, de a reportban indokold a választott defaultot.
+      A quiet mód nem dobhatja el a NEST_NFP_STATS_V1 sort, ha stats capture aktív:
+      stderr menjen solver_stderr.log fájlba parsing céljából, ne /dev/null-ba.
+      Ne futtass hosszú LV8 benchmarkot.
+    inputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+    outputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+
+  - name: "Stats parser és normalized summary séma implementálása"
+    description: >
+      Adj hozzá helper függvényt a NEST_NFP_STATS_V1 prefixű stderr sor parse-olására
+      és normalizálására. A summary.json kapjon engine_stats blokkot source,
+      available, parse_error, raw, normalized és pending_phase1_fields mezőkkel.
+      A raw blokk a változatlan stats JSON legyen; a normalized blokk stabil Phase 0
+      neveket tartalmazzon: nfp_cache_hit_count, nfp_cache_miss_count,
+      nfp_cache_entries_end, nfp_compute_count, candidate_generate_count,
+      candidate_dedup_count, candidate_after_cap_count, can_place_call_count,
+      sheet_spillover_count, effective_placer, actual_nfp_kernel, actual_narrow_phase.
+      A nfp_cache_clear_all_events és nfp_cache_peak_entries mezők maradjanak
+      pending_phase1_fields alatt, ne hamis 0-ként.
+    outputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+
+  - name: "Parser unit teszt hozzáadása"
+    description: >
+      Hozz létre tests/test_lv8_density_engine_stats_export.py néven célzott pytestet,
+      amely importálja a harness parser / normalizer helperét, és ellenőrzi a következő
+      eseteket: pontosan 1 stats sor, hiányzó stats sor, duplikált stats sor, invalid
+      JSON, és helyes normalized mezőmapping. A teszt ne indítson hosszú benchmarkot
+      és ne igényeljen Rust buildet.
+    outputs:
+      - "tests/test_lv8_density_engine_stats_export.py"
+
+  - name: "Célzott ellenőrzések futtatása"
+    description: >
+      Futtasd legalább: python3 -m pytest tests/test_lv8_density_engine_stats_export.py -q.
+      Ha Rust fájlt módosítottál, futtasd a cargo check -p nesting_engine parancsot is;
+      ha Rust fájl nem módosult, rögzítsd a reportban, hogy a T04 csak Python harness
+      és test módosítás volt. Ha lehet, futtass rövid kis-fixture smoke-ot
+      NESTING_ENGINE_EMIT_NFP_STATS=1 mellett a NEST_NFP_STATS_V1 sor bizonyítására,
+      de hosszú LV8 benchmark futtatása tilos.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+
+  - name: "Checklist és report lezárása"
+    description: >
+      Hozd létre a T04 checklistet és frissítsd a T04 reportot a Report Standard v2
+      szerint. A report elején legyen PASS, FAIL vagy PASS_WITH_NOTES. A DoD → Evidence
+      Matrix 1:1-ben tartalmazza a canvas Definition of Done pontjait. Külön jelöld,
+      hogy a T04 nem módosította a cache belső struktúráját és nem implementált Phase 2+
+      algoritmust.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md .
+      A verify logot a report mellé kell menteni. Ha a verify piros, a report státusza
+      FAIL legyen, kivéve ha kizárólag dokumentált környezeti vagy pre-existing ok áll fenn;
+      ebben az esetben PASS_WITH_NOTES csak akkor adható, ha minden T04 DoD teljesült.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.md"
+      - "codex/reports/nesting_engine/lv8_density_t04_phase0_engine_stats_export.verify.log"
