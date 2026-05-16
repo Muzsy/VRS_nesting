@@ -22,12 +22,14 @@ spec.loader.exec_module(_harness)  # type: ignore[arg-type]
 _parse = _harness._parse_engine_stats_from_stderr
 _normalize = _harness._normalize_engine_stats
 STAT_PREFIX = _harness.STAT_PREFIX
-PENDING_PHASE1 = ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"]
+PENDING_PHASE1_DONE: list[str] = []
 
 _VALID_RAW: dict[str, Any] = {
     "nfp_cache_hits": 12,
     "nfp_cache_misses": 34,
     "nfp_cache_entries_end": 34,
+    "nfp_cache_clear_all_events": 3,
+    "nfp_cache_peak_entries": 777,
     "nfp_compute_calls": 34,
     "candidates_before_dedupe_total": 100,
     "candidates_after_dedupe_total": 80,
@@ -54,7 +56,7 @@ class TestParseEngineStatsFromStderr:
         assert result["source"] == "NEST_NFP_STATS_V1"
         assert result["raw"] == _VALID_RAW
         assert result["normalized"] is not None
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
     def test_missing_stats_line(self) -> None:
         result = _parse("no stats here\njust some other output\n")
@@ -62,7 +64,7 @@ class TestParseEngineStatsFromStderr:
         assert result["parse_error"] == "missing_stats_line"
         assert result["raw"] is None
         assert result["normalized"] is None
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
     def test_empty_stderr(self) -> None:
         result = _parse("")
@@ -76,7 +78,7 @@ class TestParseEngineStatsFromStderr:
         assert "expected_1_stats_line_got_2" in result["parse_error"]
         assert result["raw"] is None
         assert result["normalized"] is None
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
     def test_invalid_json(self) -> None:
         stderr = STAT_PREFIX + "{not valid json"
@@ -85,7 +87,7 @@ class TestParseEngineStatsFromStderr:
         assert "invalid_json" in result["parse_error"]
         assert result["raw"] is None
         assert result["normalized"] is None
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
     def test_stats_line_mixed_with_other_output(self) -> None:
         stderr = "some preamble\n" + _make_stats_line() + "\nsome trailer\n"
@@ -100,6 +102,8 @@ class TestNormalizeEngineStats:
         assert norm["nfp_cache_hit_count"] == 12
         assert norm["nfp_cache_miss_count"] == 34
         assert norm["nfp_cache_entries_end"] == 34
+        assert norm["nfp_cache_clear_all_events"] == 3
+        assert norm["nfp_cache_peak_entries"] == 777
         assert norm["nfp_compute_count"] == 34
         assert norm["candidate_generate_count"] == 100
         assert norm["candidate_dedup_count"] == 80
@@ -123,6 +127,8 @@ class TestNormalizeEngineStats:
         norm = _normalize({})
         assert norm["nfp_cache_hit_count"] is None
         assert norm["nfp_cache_miss_count"] is None
+        assert norm["nfp_cache_clear_all_events"] is None
+        assert norm["nfp_cache_peak_entries"] is None
         assert norm["nfp_compute_count"] is None
         assert norm["effective_placer"] is None
         assert norm["actual_nfp_kernel"] is None
@@ -142,25 +148,25 @@ class TestNormalizeEngineStats:
 class TestPendingPhase1Fields:
     def test_pending_fields_present_on_success(self) -> None:
         result = _parse(_make_stats_line())
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
     def test_pending_fields_present_on_missing(self) -> None:
         result = _parse("")
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
     def test_pending_fields_present_on_multi_line(self) -> None:
         stderr = _make_stats_line() + "\n" + _make_stats_line()
         result = _parse(stderr)
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
     def test_pending_fields_present_on_invalid_json(self) -> None:
         result = _parse(STAT_PREFIX + "bad")
-        assert result["pending_phase1_fields"] == PENDING_PHASE1
+        assert result["pending_phase1_fields"] == PENDING_PHASE1_DONE
 
-    def test_pending_fields_contain_nfp_cache_clear_all_events(self) -> None:
+    def test_pending_fields_no_longer_contains_nfp_cache_clear_all_events(self) -> None:
         result = _parse(_make_stats_line())
-        assert "nfp_cache_clear_all_events" in result["pending_phase1_fields"]
+        assert "nfp_cache_clear_all_events" not in result["pending_phase1_fields"]
 
-    def test_pending_fields_contain_nfp_cache_peak_entries(self) -> None:
+    def test_pending_fields_no_longer_contains_nfp_cache_peak_entries(self) -> None:
         result = _parse(_make_stats_line())
-        assert "nfp_cache_peak_entries" in result["pending_phase1_fields"]
+        assert "nfp_cache_peak_entries" not in result["pending_phase1_fields"]

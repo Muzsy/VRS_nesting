@@ -1,0 +1,106 @@
+steps:
+  - name: "Repo szabályok és T07 előfeltétel ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md szabályait. Ellenőrizd, hogy a T07 report
+      létezik és státusza PASS vagy PASS_WITH_NOTES. A tmp/phase1_spike_cache_path_discovery.md
+      hiánya nem blocker, ha a T07 report tartalmazza a spike eredményeket.
+      Ha T07 hiányzik vagy FAIL/BLOCKED, ne módosíts Rust/Python kódot, hanem
+      készíts T08 BLOCKED reportot.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+      - "canvases/nesting_engine/lv8_density_t08_phase1_cache_stats_hardening.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_lv8_density_t08_phase1_cache_stats_hardening.yaml"
+      - "codex/reports/nesting_engine/lv8_density_t07_phase1_0_cache_path_discovery_spike.md"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t08_phase1_cache_stats_hardening.md"
+
+  - name: "NfpCache statisztika bővítése"
+    description: >
+      Módosítsd a rust/nesting_engine/src/nfp/cache.rs fájlt. Bővítsd a
+      CacheStats struktúrát clear_all_events és peak_entries mezőkkel. A NfpCache
+      tárolja és frissítse ezeket. A hits/misses maradjon kumulatív run-szintű
+      számláló, vagyis clear_all() után se nullázódjon. A clear_all() csak a store-t
+      törölje, növelje clear_all_events-t, és őrizze meg a peak_entries értéket.
+      Ne implementálj LRU-t és ne módosíts cache-key szemantikát.
+    inputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+    outputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+
+  - name: "Placement stats és multi-bin export bekötése"
+    description: >
+      Bővítsd a rust/nesting_engine/src/placement/nfp_placer.rs NfpPlacerStatsV1
+      struktúráját nfp_cache_clear_all_events és nfp_cache_peak_entries mezőkkel.
+      Frissítsd a Default és merge_from implementációkat. A multi-bin futás végén
+      a rust/nesting_engine/src/multi_bin/greedy.rs olvassa ki a NfpCache::stats()
+      eredményét, és töltse be a nfp_cache_entries_end, nfp_cache_clear_all_events
+      és nfp_cache_peak_entries mezőket. Ne változtasd meg a nfp_place publikus
+      aláírását és ne módosíts placement algoritmust.
+    inputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+      - "rust/nesting_engine/src/nfp/cache.rs"
+    outputs:
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+      - "rust/nesting_engine/src/multi_bin/greedy.rs"
+
+  - name: "Harness normalizáció és Python tesztek frissítése"
+    description: >
+      Frissítsd a scripts/experiments/lv8_2sheet_claude_search.py engine_stats
+      normalizációját úgy, hogy a raw nfp_cache_clear_all_events és
+      nfp_cache_peak_entries mezőket a normalized engine_stats blokkba írja.
+      A T04 pending_phase1_fields listából ezek kerüljenek ki vagy váljanak üres
+      listává, ha nincs további pending mező. Frissítsd a
+      tests/test_lv8_density_engine_stats_export.py teszteket ennek megfelelően,
+      backward compatibilityt megtartva régi raw stats sorokra is.
+    inputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "tests/test_lv8_density_engine_stats_export.py"
+    outputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "tests/test_lv8_density_engine_stats_export.py"
+
+  - name: "Rust cache stats teszt hozzáadása"
+    description: >
+      Adj hozzá célzott Rust tesztet rust/nesting_engine/tests/nfp_cache_stats_hardening.rs
+      néven. A teszt bizonyítsa: peak_entries nő insert után; hit/miss számlálók
+      kumulatívak; clear_all() után entries=0, clear_all_events=1, hit/miss és
+      peak_entries megmarad. Ha MAX_ENTRIES telítési tesztet adsz, ügyelj arra,
+      hogy determinisztikus és gyors maradjon. Ne vezess be LRU-t.
+    inputs:
+      - "rust/nesting_engine/src/nfp/cache.rs"
+    outputs:
+      - "rust/nesting_engine/tests/nfp_cache_stats_hardening.rs"
+
+  - name: "T08 report és checklist elkészítése"
+    description: >
+      Készíts T08 reportot és checklistet Report Standard v2 szerint. A report
+      tartalmazza: T07 handoff összefoglaló, implementált mezők, nem-célok
+      megerősítése (nincs LRU, nincs cache-key módosítás), teszteredmények,
+      DoD -> Evidence Matrix. Ha bármely acceptance pont nem teljesül, a státusz
+      legyen FAIL vagy BLOCKED, ne PASS.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t08_phase1_cache_stats_hardening.md"
+      - "codex/reports/nesting_engine/lv8_density_t08_phase1_cache_stats_hardening.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t08_phase1_cache_stats_hardening.md .
+      A verify log kerüljön a report mellé. A report státusza csak akkor lehet
+      PASS vagy PASS_WITH_NOTES, ha a verify zöld és a T08 acceptance gate teljesül.
+      Siker előtt külön futtasd legalább: cargo check -p nesting_engine,
+      cargo test -p nesting_engine nfp_cache_stats_hardening, és pytest a
+      tests/test_lv8_density_engine_stats_export.py fájlra, ha a wrapper nem fedné
+      őket egyértelműen.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t08_phase1_cache_stats_hardening.md"
+      - "codex/reports/nesting_engine/lv8_density_t08_phase1_cache_stats_hardening.verify.log"

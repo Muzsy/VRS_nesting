@@ -116,6 +116,8 @@ def _normalize_engine_stats(raw: dict[str, Any]) -> dict[str, Any]:
         "nfp_cache_hit_count": raw.get("nfp_cache_hits"),
         "nfp_cache_miss_count": raw.get("nfp_cache_misses"),
         "nfp_cache_entries_end": raw.get("nfp_cache_entries_end"),
+        "nfp_cache_clear_all_events": raw.get("nfp_cache_clear_all_events"),
+        "nfp_cache_peak_entries": raw.get("nfp_cache_peak_entries"),
         "nfp_compute_count": raw.get("nfp_compute_calls"),
         "candidate_generate_count": raw.get("candidates_before_dedupe_total"),
         "candidate_dedup_count": raw.get("candidates_after_dedupe_total"),
@@ -138,7 +140,7 @@ def _parse_engine_stats_from_stderr(stderr_text: str) -> dict[str, Any]:
             "parse_error": "missing_stats_line",
             "raw": None,
             "normalized": None,
-            "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+            "pending_phase1_fields": [],
         }
     if len(matches) != 1:
         return {
@@ -147,7 +149,7 @@ def _parse_engine_stats_from_stderr(stderr_text: str) -> dict[str, Any]:
             "parse_error": f"expected_1_stats_line_got_{len(matches)}",
             "raw": None,
             "normalized": None,
-            "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+            "pending_phase1_fields": [],
         }
     try:
         raw = json.loads(matches[0][len(STAT_PREFIX):])
@@ -158,7 +160,7 @@ def _parse_engine_stats_from_stderr(stderr_text: str) -> dict[str, Any]:
             "parse_error": f"invalid_json:{exc}",
             "raw": None,
             "normalized": None,
-            "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+            "pending_phase1_fields": [],
         }
     return {
         "source": "NEST_NFP_STATS_V1",
@@ -166,7 +168,7 @@ def _parse_engine_stats_from_stderr(stderr_text: str) -> dict[str, Any]:
         "parse_error": None,
         "raw": raw,
         "normalized": _normalize_engine_stats(raw),
-        "pending_phase1_fields": ["nfp_cache_clear_all_events", "nfp_cache_peak_entries"],
+        "pending_phase1_fields": [],
     }
 
 

@@ -35,6 +35,8 @@ pub struct CacheStats {
     pub hits: u64,
     pub misses: u64,
     pub entries: usize,
+    pub clear_all_events: u64,
+    pub peak_entries: usize,
 }
 
 #[derive(Debug, Default)]
@@ -42,6 +44,8 @@ pub struct NfpCache {
     store: HashMap<NfpCacheKey, Polygon64>,
     hits: u64,
     misses: u64,
+    clear_all_events: u64,
+    peak_entries: usize,
 }
 
 impl NfpCache {
@@ -66,13 +70,13 @@ impl NfpCache {
             self.clear_all();
         }
         self.store.insert(key, nfp);
+        self.peak_entries = self.peak_entries.max(self.store.len());
         self.debug_log_stats("insert");
     }
 
     pub fn clear_all(&mut self) {
         self.store.clear();
-        self.hits = 0;
-        self.misses = 0;
+        self.clear_all_events = self.clear_all_events.saturating_add(1);
         self.debug_log_stats("clear_all");
     }
 
@@ -81,16 +85,20 @@ impl NfpCache {
             hits: self.hits,
             misses: self.misses,
             entries: self.store.len(),
+            clear_all_events: self.clear_all_events,
+            peak_entries: self.peak_entries,
         }
     }
 
     #[cfg(debug_assertions)]
     fn debug_log_stats(&self, event: &str) {
         eprintln!(
-            "[nfp::cache][debug] event={event} hits={} misses={} entries={}",
+            "[nfp::cache][debug] event={event} hits={} misses={} entries={} clear_all_events={} peak_entries={}",
             self.hits,
             self.misses,
-            self.store.len()
+            self.store.len(),
+            self.clear_all_events,
+            self.peak_entries
         );
     }
 
@@ -239,6 +247,8 @@ mod tests {
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.hits, 1);
         assert_eq!(stats.entries, 1);
+        assert_eq!(stats.clear_all_events, 0);
+        assert_eq!(stats.peak_entries, 1);
     }
 
     #[test]
@@ -314,8 +324,10 @@ mod tests {
 
         cache.clear_all();
         assert_eq!(cache.stats().entries, 0);
-        assert_eq!(cache.stats().hits, 0);
+        assert_eq!(cache.stats().hits, 1);
         assert_eq!(cache.stats().misses, 0);
+        assert_eq!(cache.stats().clear_all_events, 1);
+        assert_eq!(cache.stats().peak_entries, 1);
 
         if MAX_ENTRIES > 1 {
             for idx in 0..MAX_ENTRIES {
@@ -343,8 +355,10 @@ mod tests {
             );
             let stats_after = cache.stats();
             assert_eq!(stats_after.entries, 1);
-            assert_eq!(stats_after.hits, 0);
+            assert_eq!(stats_after.hits, 1);
             assert_eq!(stats_after.misses, 0);
+            assert!(stats_after.clear_all_events >= 2);
+            assert_eq!(stats_after.peak_entries, MAX_ENTRIES);
         }
     }
 }

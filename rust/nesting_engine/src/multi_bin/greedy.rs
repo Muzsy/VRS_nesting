@@ -844,7 +844,10 @@ pub fn greedy_multi_sheet(
     }
 
     if let Some(stats) = nfp_stats_total.as_mut() {
-        stats.nfp_cache_entries_end = nfp_cache.stats().entries as u64;
+        let cache_stats = nfp_cache.stats();
+        stats.nfp_cache_entries_end = cache_stats.entries as u64;
+        stats.nfp_cache_clear_all_events = cache_stats.clear_all_events;
+        stats.nfp_cache_peak_entries = cache_stats.peak_entries as u64;
         stats.effective_placer = "nfp".to_string();
         stats.sheets_used = result.sheets_used as u64;
     }

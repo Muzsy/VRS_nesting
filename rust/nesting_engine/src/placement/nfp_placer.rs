@@ -345,6 +345,8 @@ pub struct NfpPlacerStatsV1 {
     pub nfp_cache_hits: u64,
     pub nfp_cache_misses: u64,
     pub nfp_cache_entries_end: u64,
+    pub nfp_cache_clear_all_events: u64,
+    pub nfp_cache_peak_entries: u64,
     pub nfp_compute_calls: u64,
     pub cfr_calls: u64,
     pub cfr_union_calls: u64,
@@ -411,6 +413,8 @@ impl Default for NfpPlacerStatsV1 {
             nfp_cache_hits: 0,
             nfp_cache_misses: 0,
             nfp_cache_entries_end: 0,
+            nfp_cache_clear_all_events: 0,
+            nfp_cache_peak_entries: 0,
             nfp_compute_calls: 0,
             cfr_calls: 0,
             cfr_union_calls: 0,
@@ -551,6 +555,12 @@ impl NfpPlacerStatsV1 {
         if other.nfp_cache_entries_end > 0 {
             self.nfp_cache_entries_end = other.nfp_cache_entries_end;
         }
+        self.nfp_cache_clear_all_events = self
+            .nfp_cache_clear_all_events
+            .max(other.nfp_cache_clear_all_events);
+        self.nfp_cache_peak_entries = self
+            .nfp_cache_peak_entries
+            .max(other.nfp_cache_peak_entries);
         if !other.effective_placer.is_empty() {
             self.effective_placer = other.effective_placer.clone();
         }
