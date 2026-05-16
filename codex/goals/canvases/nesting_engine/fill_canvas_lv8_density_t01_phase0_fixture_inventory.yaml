@@ -1,0 +1,106 @@
+steps:
+  - name: "Repo szabályok és T00 kimenetek ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md szabályait. Ellenőrizd, hogy a T00 task index
+      és master runner létezik. Rögzítsd a reportban, mely szabályfájlokat és T00
+      outputokat használtad. Ha bármely kötelező szabályfájl vagy T00 output hiányzik,
+      a report státusza legyen FAIL.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+      - "canvases/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_lv8_density_t01_phase0_fixture_inventory.yaml"
+      - "codex/prompts/nesting_engine/lv8_density_t01_phase0_fixture_inventory/run.md"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+
+  - name: "Fixture keresések futtatása"
+    description: >
+      Futtasd a canvasban megadott find/ls/json sanity kereséseket. Ellenőrizd a
+      LV8 276 fixture-t, a kis-synthetic SA guard fixture-t, a LV8 179 single-sheet
+      jelölteket, valamint a web_platform / contract_freeze anchorokat. Ne hozz létre
+      placeholder fixture-t. A nyers találatokat és hiányokat rögzítsd a reportban.
+    inputs:
+      - "tests/fixtures/nesting_engine/ne2_input_lv8jav.json"
+      - "poc/nesting_engine/f2_4_sa_quality_fixture_v2.json"
+      - "codex/reports/nesting_engine/lv8_singlesheet_etalon_179_20260514.md"
+      - "canvases/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+      - "codex/reports/web_platform/dxf_prefilter_e1_t1_product_scope_and_contract_freeze.md"
+      - "canvases/web_platform_phase0_contract_freeze.md"
+      - "codex/reports/web_platform_phase0_contract_freeze.md"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+
+  - name: "Inventory dokumentum és JSON létrehozása"
+    description: >
+      Hozd létre a tmp/lv8_density_fixture_inventory.md és
+      tmp/lv8_density_fixture_inventory.json fájlokat. Minden fixture-jelölthöz add meg:
+      family_id, fixture id, path, status, exists, json_parse_ok ha releváns,
+      file_type, notes, blocking hatás. A státusz kizárólag a canvasban engedélyezett
+      értékek egyike lehet: PRESENT, MISSING, RESTORED, REGENERATABLE, BLOCKED,
+      NOT_APPLICABLE. Ha a LV8 179 fixture hiányzik, ne pótold kézzel: jelöld MISSING
+      vagy REGENERATABLE státusszal pontos indoklással.
+    outputs:
+      - "tmp/lv8_density_fixture_inventory.md"
+      - "tmp/lv8_density_fixture_inventory.json"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+
+  - name: "LV8 179 helyreállítási döntés dokumentálása"
+    description: >
+      Ha a LV8 179 fixture nem található, vizsgáld meg a repo meglévő riportjai és
+      scriptjei alapján, hogy reprodukálható-e. Ha reprodukálható, dokumentáld a pontos
+      parancsot és output útvonalat a tmp/lv8_density_fixture_restore_notes.md fájlban.
+      Csak akkor hozd létre a tmp/lv8_singlesheet_etalon_20260514/inputs/lv8_sheet1_179.json
+      fájlt, ha a repo meglévő forrásaiból determinisztikusan generálható. Ha nem,
+      jelöld BLOCKED/MISSING státusszal; placeholder létrehozása tilos.
+    inputs:
+      - "codex/reports/nesting_engine/lv8_singlesheet_etalon_179_20260514.md"
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "tests/fixtures/nesting_engine/ne2_input_lv8jav.json"
+    outputs:
+      - "tmp/lv8_density_fixture_inventory.md"
+      - "tmp/lv8_density_fixture_inventory.json"
+      - "tmp/lv8_density_fixture_restore_notes.md"
+      - "tmp/lv8_singlesheet_etalon_20260514/inputs/lv8_sheet1_179.json"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+
+  - name: "Checklist és report lezárása"
+    description: >
+      Hozd létre a T01 checklistet és frissítsd a T01 reportot a Report Standard v2
+      szerint. A report elején legyen PASS, FAIL vagy PASS_WITH_NOTES. A DoD → Evidence
+      Matrix 1:1-ben tartalmazza a canvas Definition of Done pontjait. Minden ponthoz
+      adj path + line bizonyítékot, ahol lehetséges. A report tartalmazza az inventory
+      összefoglalót és a T02-T06 blokkereket.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+
+  - name: "T01 sanity ellenőrzések futtatása"
+    description: >
+      Futtass T01-specifikus sanity ellenőrzést: a JSON inventory parse-olható legyen;
+      tartalmazza a family_id értékeket: lv8, web_platform_contract_freeze,
+      small_synthetic_sa_guard; tartalmazza a lv8_276_full és f2_4_sa_quality_fixture_v2
+      fixture id-ket; és ne legyen production Rust/Python/TS diff. Az eredményt rögzítsd
+      a reportban és checklistben.
+    outputs:
+      - "tmp/lv8_density_fixture_inventory.json"
+      - "codex/codex_checklist/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md .
+      A verify logot a report mellé kell menteni. Ha a verify piros, a report státusza
+      FAIL legyen, kivéve ha kizárólag dokumentált környezeti / pre-existing ok áll fenn;
+      ebben az esetben PASS_WITH_NOTES csak akkor adható, ha minden T01 DoD teljesült.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.verify.log"
