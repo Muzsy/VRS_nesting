@@ -22,6 +22,14 @@ use crate::nfp::boundary_clean::{clean_polygon_boundary, ring_has_self_intersect
 
 use super::{convex::compute_convex_nfp, NfpError};
 
+/// Returns true when `NESTING_ENGINE_NFP_DIAG=1`. Default off so long LV8 runs
+/// do not flood stderr with `[CONCAVE NFP DIAG]` lines. Opt-in keeps the same
+/// diagnostic output available for debugging.
+#[inline]
+fn is_concave_nfp_diag_enabled() -> bool {
+    std::env::var("NESTING_ENGINE_NFP_DIAG").as_deref() == Ok("1")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConcaveNfpMode {
     StableDefault,
@@ -222,13 +230,15 @@ pub fn compute_concave_nfp(
 }
 
 pub fn compute_concave_nfp_default(a: &Polygon64, b: &Polygon64) -> Result<Polygon64, NfpError> {
-    eprintln!(
-        "[CONCAVE NFP DIAG] ENTRY a.outer={} a.holes={} b.outer={} b.holes={}",
-        a.outer.len(),
-        a.holes.len(),
-        b.outer.len(),
-        b.holes.len()
-    );
+    if is_concave_nfp_diag_enabled() {
+        eprintln!(
+            "[CONCAVE NFP DIAG] ENTRY a.outer={} a.holes={} b.outer={} b.holes={}",
+            a.outer.len(),
+            a.holes.len(),
+            b.outer.len(),
+            b.holes.len()
+        );
+    }
     compute_concave_nfp(a, b, ConcaveNfpOptions::default())
 }
 
@@ -271,49 +281,59 @@ fn compute_stable_concave_nfp(a: &Polygon64, b: &Polygon64) -> Result<Polygon64,
     if convex_parts_a.is_empty() || convex_parts_b.is_empty() {
         return Err(NfpError::DecompositionFailed);
     }
-    eprintln!(
-        "[CONCAVE NFP DIAG] decompose_done convex_a={} convex_b={} estimated_nfp_pairs={} a_pts={} b_pts={}",
-        convex_parts_a.len(),
-        convex_parts_b.len(),
-        convex_parts_a.len() * convex_parts_b.len(),
-        a.outer.len(),
-        b.outer.len()
-    );
+    // T03: hoist env read out of the nested loop hot path.
+    let diag_enabled = is_concave_nfp_diag_enabled();
+    if diag_enabled {
+        eprintln!(
+            "[CONCAVE NFP DIAG] decompose_done convex_a={} convex_b={} estimated_nfp_pairs={} a_pts={} b_pts={}",
+            convex_parts_a.len(),
+            convex_parts_b.len(),
+            convex_parts_a.len() * convex_parts_b.len(),
+            a.outer.len(),
+            b.outer.len()
+        );
+    }
 
     let mut partial_nfpc: Vec<Polygon64> = Vec::new();
     for part_a in &convex_parts_a {
         for part_b in &convex_parts_b {
-            eprintln!(
-                "[CONCAVE NFP DIAG] partial_nfp [{}/{}][{}/{}] part_a_pts={} part_b_pts={}",
-                part_a.outer.len(),
-                convex_parts_a.len(),
-                part_b.outer.len(),
-                convex_parts_b.len(),
-                part_a.outer.len(),
-                part_b.outer.len()
-            );
+            if diag_enabled {
+                eprintln!(
+                    "[CONCAVE NFP DIAG] partial_nfp [{}/{}][{}/{}] part_a_pts={} part_b_pts={}",
+                    part_a.outer.len(),
+                    convex_parts_a.len(),
+                    part_b.outer.len(),
+                    convex_parts_b.len(),
+                    part_a.outer.len(),
+                    part_b.outer.len()
+                );
+            }
             let nfp_start = Instant::now();
             let nfp = compute_convex_nfp(part_a, part_b)?;
-            eprintln!(
-                "[CONCAVE NFP DIAG] partial_nfp_done [{}/{}][{}/{}] result_pts={} elapsed_ms={:.2}",
-                part_a.outer.len(),
-                convex_parts_a.len(),
-                part_b.outer.len(),
-                convex_parts_b.len(),
-                nfp.outer.len(),
-                nfp_start.elapsed().as_secs_f64() * 1000.0
-            );
+            if diag_enabled {
+                eprintln!(
+                    "[CONCAVE NFP DIAG] partial_nfp_done [{}/{}][{}/{}] result_pts={} elapsed_ms={:.2}",
+                    part_a.outer.len(),
+                    convex_parts_a.len(),
+                    part_b.outer.len(),
+                    convex_parts_b.len(),
+                    nfp.outer.len(),
+                    nfp_start.elapsed().as_secs_f64() * 1000.0
+                );
+            }
             partial_nfpc.push(nfp);
         }
     }
 
     let union_start = Instant::now();
     let unioned = union_nfp_fragments(&partial_nfpc)?;
-    eprintln!(
-        "[CONCAVE NFP DIAG] union_done elapsed_ms={:.2} union_pts={}",
-        union_start.elapsed().as_secs_f64() * 1000.0,
-        unioned.outer.len()
-    );
+    if diag_enabled {
+        eprintln!(
+            "[CONCAVE NFP DIAG] union_done elapsed_ms={:.2} union_pts={}",
+            union_start.elapsed().as_secs_f64() * 1000.0,
+            unioned.outer.len()
+        );
+    }
     clean_polygon_boundary(&unioned)
 }
 
@@ -1786,12 +1806,65 @@ mod tests {
 
     use super::{
         compute_concave_nfp, compute_concave_nfp_default, compute_orbit_exact_outcome,
-        decompose_to_convex_parts, ConcaveNfpMode, ConcaveNfpOptions, OrbitFailureReason,
-        OrbitOutcome,
+        decompose_to_convex_parts, is_concave_nfp_diag_enabled, ConcaveNfpMode, ConcaveNfpOptions,
+        OrbitFailureReason, OrbitOutcome,
     };
     use crate::geometry::types::Polygon64;
     use crate::nfp::boundary_clean::ring_has_self_intersection;
     use crate::nfp::NfpError;
+    use std::sync::Mutex;
+
+    /// Serializes env-touching tests so cargo's parallel test runner does not
+    /// race on the process-global `NESTING_ENGINE_NFP_DIAG` variable.
+    static DIAG_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn concave_nfp_diag_env_gate() {
+        let _guard = DIAG_ENV_LOCK.lock().expect("diag env mutex poisoned");
+        let original = std::env::var("NESTING_ENGINE_NFP_DIAG").ok();
+
+        // SAFETY: tests are serialized by DIAG_ENV_LOCK; no other thread can
+        // read NESTING_ENGINE_NFP_DIAG while we mutate it.
+        unsafe {
+            std::env::remove_var("NESTING_ENGINE_NFP_DIAG");
+        }
+        assert!(
+            !is_concave_nfp_diag_enabled(),
+            "unset env must yield diag=false"
+        );
+
+        unsafe {
+            std::env::set_var("NESTING_ENGINE_NFP_DIAG", "0");
+        }
+        assert!(
+            !is_concave_nfp_diag_enabled(),
+            "value '0' must yield diag=false"
+        );
+
+        unsafe {
+            std::env::set_var("NESTING_ENGINE_NFP_DIAG", "1");
+        }
+        assert!(
+            is_concave_nfp_diag_enabled(),
+            "value '1' must yield diag=true"
+        );
+
+        unsafe {
+            std::env::set_var("NESTING_ENGINE_NFP_DIAG", "true");
+        }
+        assert!(
+            !is_concave_nfp_diag_enabled(),
+            "non-'1' truthy strings must not enable diag"
+        );
+
+        // Restore original state so neighbouring tests are not affected.
+        unsafe {
+            match original {
+                Some(v) => std::env::set_var("NESTING_ENGINE_NFP_DIAG", v),
+                None => std::env::remove_var("NESTING_ENGINE_NFP_DIAG"),
+            }
+        }
+    }
 
     fn poly(points: &[[i64; 2]]) -> Polygon64 {
         Polygon64 {

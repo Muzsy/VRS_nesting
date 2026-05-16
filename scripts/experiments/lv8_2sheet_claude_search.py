@@ -172,10 +172,14 @@ def run_one(
     try:
         with prepacked_solver_input_path.open("rb") as fin, stdout_path.open("wb") as fout:
             if quiet:
-                # Stderr is dominated by [CONCAVE NFP DIAG] spam which blocks the engine
-                # (megabytes per NFP query). Drop it; keep a marker file noting the policy.
+                # lv8_density T03: [CONCAVE NFP DIAG] is now opt-in via
+                # NESTING_ENGINE_NFP_DIAG=1 (concave.rs), so default runs no longer
+                # emit megabyte-scale diag spam. The quiet policy stays conservative
+                # as a general log-size guard for any other stderr source; T06 may
+                # revisit relaxing it once the shadow run baseline measures stderr
+                # volume under no-SA.
                 stderr_path.write_text(
-                    "[harness] stderr discarded to avoid CONCAVE NFP DIAG bottleneck\n",
+                    "[harness] stderr discarded under LV8_HARNESS_QUIET=1 (log-size guard)\n",
                     encoding="utf-8",
                 )
                 with open(os.devnull, "wb") as devnull:

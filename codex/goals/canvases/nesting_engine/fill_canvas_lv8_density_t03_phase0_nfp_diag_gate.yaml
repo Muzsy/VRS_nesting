@@ -1,0 +1,106 @@
+steps:
+  - name: "Repo szabályok és előfeltételek ellenőrzése"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md szabályait. Ellenőrizd, hogy a T00 index,
+      T00 master runner, T01 report és T02 report létezik, és a T02 státusza PASS
+      vagy PASS_WITH_NOTES. Ha bármely kötelező előfeltétel hiányzik, a T03 report
+      státusza legyen FAIL/BLOCKED, és ne módosíts production kódot.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "codex/reports/nesting_engine/development_plan_packing_density_20260515.md"
+      - "canvases/nesting_engine/lv8_density_task_index.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+      - "codex/reports/nesting_engine/lv8_density_t01_phase0_fixture_inventory.md"
+      - "codex/reports/nesting_engine/lv8_density_t02_phase0_quality_profile_shadow_switch.md"
+      - "canvases/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+      - "codex/goals/canvases/nesting_engine/fill_canvas_lv8_density_t03_phase0_nfp_diag_gate.yaml"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+
+  - name: "Jelenlegi diagnosztikai útvonalak auditja"
+    description: >
+      Auditáld a rust/nesting_engine/src/nfp/concave.rs fájl összes
+      [CONCAVE NFP DIAG] eprintln sorát, valamint a rust/nesting_engine/src/placement/nfp_placer.rs
+      meglévő hot-path diag gate-jeit. Rögzítsd a reportban, hogy a T03 csak a
+      concave.rs CONCAVE NFP DIAG sorait gate-eli NESTING_ENGINE_NFP_DIAG mögé,
+      és nem módosítja a már létező NESTING_ENGINE_NFP_RUNTIME_DIAG,
+      NESTING_ENGINE_CFR_DIAG, CANDIDATE_DIAG, HYBRID_CFR_DIAG flag-eket.
+    inputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "rust/nesting_engine/src/placement/nfp_placer.rs"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+
+  - name: "CONCAVE NFP DIAG env-gate implementálása"
+    description: >
+      A rust/nesting_engine/src/nfp/concave.rs fájlban adj hozzá egy helper függvényt,
+      amely csak akkor ad true értéket, ha NESTING_ENGINE_NFP_DIAG=1. Minden
+      [CONCAVE NFP DIAG] eprintln sort tegyél e flag mögé. Ciklusban futó diag
+      soroknál a flag értékét lokális boolként számold ki a ciklus előtt, hogy
+      default off állapotban ne legyen felesleges env read vagy formázási overhead.
+      A változás nem befolyásolhat NFP eredményt, cache-t, geometriát vagy placement
+      döntést.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+
+  - name: "Célzott diag teszt és grep sanity"
+    description: >
+      Adj hozzá minimális célzott tesztet a diag flag parserre, lehetőleg
+      #[cfg(test)] unit tesztként a concave.rs fájlban. A teszt ellenőrizze:
+      env unset -> false, NESTING_ENGINE_NFP_DIAG=0 -> false,
+      NESTING_ENGINE_NFP_DIAG=1 -> true, és állítsa vissza az env állapotot.
+      Futtasd a canvasban megadott grep sanity checket is, hogy ne maradjon
+      nyers, gate nélküli [CONCAVE NFP DIAG] sor.
+    outputs:
+      - "rust/nesting_engine/src/nfp/concave.rs"
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+
+  - name: "LV8 harness stderr policy audit"
+    description: >
+      Auditáld a scripts/experiments/lv8_2sheet_claude_search.py stderr kezelését.
+      Ha a komment vagy marker szöveg még azt állítja, hogy a CONCAVE NFP DIAG
+      spam mindig aktív, pontosítsd úgy, hogy a diag mostantól opt-in, a quiet
+      policy pedig általános log-size védelem. Ne változtasd meg a quiet defaultot,
+      ne írj át hosszú benchmark policy-t, és ne futtass hosszú LV8 benchmarkot.
+      Ha nem szükséges módosítás, rögzítsd ezt a reportban.
+    inputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+    outputs:
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+
+  - name: "Célzott build/test ellenőrzések futtatása"
+    description: >
+      Futtasd legalább: cargo check -p nesting_engine; a célzott diag helper
+      tesztet cargo test -p nesting_engine <tesztnév> -- --nocapture formában;
+      valamint a canvasban megadott grep sanity Python blokkot. Az eredményeket
+      rögzítsd a reportban. Hosszú LV8 benchmark futtatása tilos ebben a taskban.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+
+  - name: "Checklist és report lezárása"
+    description: >
+      Hozd létre a T03 checklistet és frissítsd a T03 reportot a Report Standard v2
+      szerint. A report elején legyen PASS, FAIL vagy PASS_WITH_NOTES. A DoD → Evidence
+      Matrix 1:1-ben tartalmazza a canvas Definition of Done pontjait. Külön jelöld,
+      hogy csak diagnosztikai nyomtatás változott, algoritmus vagy output-kontraktus nem.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et wrapperrel: ./scripts/verify.sh --report
+      codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md .
+      A verify logot a report mellé kell menteni. Ha a verify piros, a report státusza
+      FAIL legyen, kivéve ha kizárólag dokumentált környezeti vagy pre-existing ok áll fenn;
+      ebben az esetben PASS_WITH_NOTES csak akkor adható, ha minden T03 DoD teljesült.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.md"
+      - "codex/reports/nesting_engine/lv8_density_t03_phase0_nfp_diag_gate.verify.log"
