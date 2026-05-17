@@ -15,6 +15,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 DEFAULT_PROFILES = ["quality_default_no_sa_shadow", "quality_aggressive_no_sa_shadow"]
+# Families whose fixture IDs start with this prefix get lv8_time_limit_sec.
+LV8_FAMILY_PREFIX = "lv8_"
 
 
 @dataclass(frozen=True)
@@ -200,26 +202,83 @@ def _row_from_summary(family_id: str, fixture_path: Path, quality_profile: str, 
     }
 
 
-def compute_decision(rows: list[dict[str, Any]], required_families: set[str], blocked_reason: str | None) -> dict[str, Any]:
+def compute_decision(
+    rows: list[dict[str, Any]],
+    required_families: set[str],
+    blocked_reason: str | None,
+    stats_required_families: set[str] | None = None,
+    allow_lv8_timeout_without_stats: bool = False,
+) -> dict[str, Any]:
+    """Compute phase2a readiness decision.
+
+    stats_required_families: subset of required_families whose stats are required
+        for the advisory path (smoke_stats_plus_lv8_advisory). Default: all required
+        families — same as full required stats, making the advisory path unreachable
+        unless explicitly narrowed (e.g. {"sa_guard"}).
+    allow_lv8_timeout_without_stats: if True, enables the advisory path when
+        stats_required_families families have stats but LV8 families do not.
+    """
+    if stats_required_families is None:
+        stats_required_families = set(required_families)
+
     required_rows = [
         r
         for r in rows
         if r.get("row_type") == "engine_run" and str(r.get("family_id")) in required_families
     ]
+    lv8_rows = [
+        r for r in rows
+        if r.get("row_type") == "engine_run"
+        and str(r.get("family_id", "")).startswith(LV8_FAMILY_PREFIX)
+    ]
+    sa_guard_rows = [
+        r for r in rows
+        if r.get("row_type") == "engine_run" and r.get("family_id") == "sa_guard"
+    ]
+
     cache_stats_available_all_required_runs = all(r.get("engine_stats_available") is True for r in required_rows)
     polygon_gate_available_all_required_runs = all(r.get("valid_polygon_gate") is True for r in required_rows)
     lru_followup_required = any((_safe_int(r.get("nfp_cache_clear_all_events")) or 0) > 0 for r in required_rows)
 
-    blocking_conditions = [
-        blocked_reason is not None,
-        not required_rows,
-        not cache_stats_available_all_required_runs,
-        not polygon_gate_available_all_required_runs,
-    ]
-    phase2a_ready = not any(blocking_conditions) and not lru_followup_required
+    # Family-group specific stats availability for explicit reporting.
+    lv8_stats_available = bool(lv8_rows) and all(r.get("engine_stats_available") is True for r in lv8_rows)
+    sa_guard_stats_available = bool(sa_guard_rows) and all(r.get("engine_stats_available") is True for r in sa_guard_rows)
+
+    # Advisory path check: only stats_required_families must have stats.
+    advisory_rows = [r for r in required_rows if str(r.get("family_id")) in stats_required_families]
+    advisory_stats_ok = bool(advisory_rows) and all(r.get("engine_stats_available") is True for r in advisory_rows)
+
+    polygon_ok = polygon_gate_available_all_required_runs
+    no_lru = not lru_followup_required
+
+    # Three-path decision.
+    if blocked_reason is not None or not required_rows:
+        phase2a_unblocked = False
+        phase2a_ready_source = "blocked"
+    elif cache_stats_available_all_required_runs and polygon_ok and no_lru:
+        # Strong path: all required families have stats.
+        phase2a_unblocked = True
+        phase2a_ready_source = "full_required_stats"
+    elif (
+        advisory_stats_ok
+        and allow_lv8_timeout_without_stats
+        and polygon_ok
+        and no_lru
+        and not cache_stats_available_all_required_runs
+    ):
+        # Advisory path: stats_required_families have stats; LV8 timeout allowed.
+        phase2a_unblocked = True
+        phase2a_ready_source = "smoke_stats_plus_lv8_advisory"
+    else:
+        phase2a_unblocked = False
+        phase2a_ready_source = "blocked"
 
     return {
-        "phase2a_ready": phase2a_ready,
+        "phase2a_ready": phase2a_unblocked,  # backward-compat alias (T10 consumers)
+        "phase2a_unblocked": phase2a_unblocked,
+        "phase2a_ready_source": phase2a_ready_source,
+        "lv8_stats_available": lv8_stats_available,
+        "sa_guard_stats_available": sa_guard_stats_available,
         "lru_followup_required": lru_followup_required,
         "cache_stats_available_all_required_runs": cache_stats_available_all_required_runs,
         "polygon_gate_available_all_required_runs": polygon_gate_available_all_required_runs,
@@ -233,20 +292,24 @@ def _matrix_md(rows: list[dict[str, Any]], decision: dict[str, Any]) -> str:
         "# LV8 Phase1 Cache Usage Matrix",
         "",
         f"- generated_at_utc: {_now_iso()}",
-        f"- phase2a_ready: {decision.get('phase2a_ready')}",
+        f"- phase2a_unblocked: {decision.get('phase2a_unblocked')}",
+        f"- phase2a_ready_source: {decision.get('phase2a_ready_source')}",
+        f"- lv8_stats_available: {decision.get('lv8_stats_available')}",
+        f"- sa_guard_stats_available: {decision.get('sa_guard_stats_available')}",
         f"- lru_followup_required: {decision.get('lru_followup_required')}",
         f"- cache_stats_available_all_required_runs: {decision.get('cache_stats_available_all_required_runs')}",
         f"- polygon_gate_available_all_required_runs: {decision.get('polygon_gate_available_all_required_runs')}",
         f"- blocked_reason: {decision.get('blocked_reason')}",
         "",
-        "| row_type | family_id | quality_profile | engine_stats_available | hit_rate | clear_all_events | valid_polygon_gate | valid |",
+        "| family | profile | timed_out | engine_stats_available | hit_rate | clear_all_events | valid_polygon_gate | valid |",
         "|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
-            f"| {row.get('row_type','')} | {row.get('family_id','')} | {row.get('quality_profile','')} | "
-            f"{row.get('engine_stats_available','')} | {row.get('cache_hit_rate','')} | "
-            f"{row.get('nfp_cache_clear_all_events','')} | {row.get('valid_polygon_gate','')} | {row.get('valid','')} |"
+            f"| {row.get('family_id', '')} | {row.get('quality_profile', '')} | "
+            f"{row.get('timed_out', '')} | {row.get('engine_stats_available', '')} | "
+            f"{row.get('cache_hit_rate', '')} | {row.get('nfp_cache_clear_all_events', '')} | "
+            f"{row.get('valid_polygon_gate', '')} | {row.get('valid', '')} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -257,8 +320,24 @@ def run_matrix(
     seed: int,
     include_lv8_179: str,
     profiles: list[str],
+    lv8_time_limit_sec: int | None = None,
+    stats_required_families: set[str] | None = None,
+    allow_lv8_timeout_without_stats: bool = False,
 ) -> tuple[dict[str, Any], int]:
+    """Run the cache usage matrix.
+
+    lv8_time_limit_sec: time limit for families whose ID starts with "lv8_".
+        Defaults to time_limit_sec if not set. Use a longer value so that
+        the LV8 276-part fixture has enough time to emit NEST_NFP_STATS_V1.
+    stats_required_families: families that must have stats for the advisory path.
+        Defaults to all required families (making advisory path unreachable unless
+        narrowed, e.g. {"sa_guard"}).
+    allow_lv8_timeout_without_stats: if True and stats_required_families families
+        have stats, phase2a_unblocked=True via smoke_stats_plus_lv8_advisory path.
+    """
     out_root.mkdir(parents=True, exist_ok=True)
+
+    effective_lv8_tl = lv8_time_limit_sec if lv8_time_limit_sec is not None else time_limit_sec
 
     specs = build_fixture_specs(include_lv8_179)
     required_families = {spec.family_id for spec in specs if spec.required}
@@ -283,13 +362,15 @@ def run_matrix(
         for spec in specs:
             if not spec.enabled:
                 continue
+            # LV8 families get the dedicated (potentially longer) time limit.
+            tl = effective_lv8_tl if spec.family_id.startswith(LV8_FAMILY_PREFIX) else time_limit_sec
             for profile in profiles:
                 run_dir = out_root / spec.family_id / profile
                 summary, return_code = _run_harness(
                     fixture=spec.fixture_path,
                     out_dir=run_dir,
                     quality_profile=profile,
-                    time_limit_sec=time_limit_sec,
+                    time_limit_sec=tl,
                     seed=seed,
                     label=f"{spec.family_id}:{profile}",
                 )
@@ -297,12 +378,21 @@ def run_matrix(
                 row["return_code"] = return_code if row.get("return_code") is None else row.get("return_code")
                 rows.append(row)
 
-    decision = compute_decision(rows, required_families=required_families, blocked_reason=blocked_reason)
+    decision = compute_decision(
+        rows,
+        required_families=required_families,
+        blocked_reason=blocked_reason,
+        stats_required_families=stats_required_families,
+        allow_lv8_timeout_without_stats=allow_lv8_timeout_without_stats,
+    )
 
     matrix = {
         "generated_at_utc": _now_iso(),
         "include_lv8_179": include_lv8_179,
         "profiles": profiles,
+        "time_limit_sec": time_limit_sec,
+        "lv8_time_limit_sec": effective_lv8_tl,
+        "allow_lv8_timeout_without_stats": allow_lv8_timeout_without_stats,
         "fixture_inventory": build_fixture_inventory(include_lv8_179, profiles),
         "rows": rows,
         **decision,
@@ -330,9 +420,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-root", required=True)
     parser.add_argument("--time-limit-sec", type=int, default=60)
+    parser.add_argument("--lv8-time-limit-sec", type=int, default=None,
+                        help="Time limit for lv8_* families (default: same as --time-limit-sec). "
+                             "Set higher to allow the 276-part LV8 fixture to emit NEST_NFP_STATS_V1.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--include-lv8-179", choices=["auto", "0", "1"], default="auto")
     parser.add_argument("--profiles", default=",".join(DEFAULT_PROFILES))
+    parser.add_argument("--stats-required-families", default=None,
+                        help="Comma-separated families required to have stats for the advisory path. "
+                             "Default: all required families. Set to 'sa_guard' to enable advisory "
+                             "path when combined with --allow-lv8-timeout-without-stats 1.")
+    parser.add_argument("--allow-lv8-timeout-without-stats", type=int, default=0,
+                        help="If 1 and stats_required_families families have stats, "
+                             "phase2a_unblocked=True via smoke_stats_plus_lv8_advisory path.")
     args = parser.parse_args(argv)
 
     out_root = Path(args.out_root)
@@ -343,17 +443,28 @@ def main(argv: list[str] | None = None) -> int:
     if not profiles:
         profiles = list(DEFAULT_PROFILES)
 
+    stats_required_families: set[str] | None = None
+    if args.stats_required_families:
+        stats_required_families = {f.strip() for f in args.stats_required_families.split(",") if f.strip()}
+
     matrix, exit_code = run_matrix(
         out_root=out_root,
         time_limit_sec=args.time_limit_sec,
         seed=args.seed,
         include_lv8_179=args.include_lv8_179,
         profiles=profiles,
+        lv8_time_limit_sec=args.lv8_time_limit_sec,
+        stats_required_families=stats_required_families,
+        allow_lv8_timeout_without_stats=bool(args.allow_lv8_timeout_without_stats),
     )
 
     summary = {
         "rows": len(matrix.get("rows") or []),
         "phase2a_ready": matrix.get("phase2a_ready"),
+        "phase2a_unblocked": matrix.get("phase2a_unblocked"),
+        "phase2a_ready_source": matrix.get("phase2a_ready_source"),
+        "lv8_stats_available": matrix.get("lv8_stats_available"),
+        "sa_guard_stats_available": matrix.get("sa_guard_stats_available"),
         "lru_followup_required": matrix.get("lru_followup_required"),
         "cache_stats_available_all_required_runs": matrix.get("cache_stats_available_all_required_runs"),
         "polygon_gate_available_all_required_runs": matrix.get("polygon_gate_available_all_required_runs"),

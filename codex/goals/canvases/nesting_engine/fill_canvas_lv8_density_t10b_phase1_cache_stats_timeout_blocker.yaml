@@ -1,0 +1,88 @@
+steps:
+  - name: "T10 blocker reprodukálása és előfeltételek ellenőrzése"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md és docs/qa/testing_guidelines.md szabályokat.
+      Ellenőrizd a T10 reportokat. A T10B csak akkor futtatható, ha a T10 státusz
+      PASS_WITH_NOTES, a phase2a_ready: NO, a cache_stats_available_all_required_runs: NO,
+      és a next_task_recommendation: benchmark blocker javítandó. Ha ezek nem állnak fenn,
+      készíts BLOCKED reportot és ne módosíts benchmark scriptet.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "codex/reports/nesting_engine/lv8_density_t10_phase1_cache_usage_audit_and_benchmark.md"
+      - "codex/reports/nesting_engine/lv8_phase1_cache_usage_result.md"
+      - "canvases/nesting_engine/lv8_density_t10b_phase1_cache_stats_timeout_blocker.md"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t10b_phase1_cache_stats_timeout_blocker.md"
+
+  - name: "Cache usage matrix timeout/readiness logika javítása"
+    description: >
+      Frissítsd a scripts/experiments/lv8_phase1_cache_usage_matrix.py scriptet úgy,
+      hogy explicit kezelje a timeout miatt hiányzó engine_stats esetet. Adj hozzá
+      konfigurálható LV8 time-limit vagy külön stats-required-family logikát, és írasd
+      ki a döntési mezőket: phase2a_unblocked, phase2a_ready_source,
+      lv8_stats_available, sa_guard_stats_available, cache_stats_available_all_required_runs.
+      A script ne gyártson fake stats eredményt és ne tekintse némán sikeresnek a
+      missing_stats_line esetet.
+    inputs:
+      - "scripts/experiments/lv8_phase1_cache_usage_matrix.py"
+      - "scripts/experiments/lv8_2sheet_claude_search.py"
+    outputs:
+      - "scripts/experiments/lv8_phase1_cache_usage_matrix.py"
+
+  - name: "Matrix unit tesztek bővítése"
+    description: >
+      Bővítsd a tests/test_lv8_phase1_cache_usage_matrix.py tesztet az új CLI és
+      readiness logikára. A tesztek mockolt summary/matrix inputokkal fussanak, ne
+      indítsanak hosszú engine benchmarkot. Kötelező lefedni: külön LV8 time-limit,
+      stats_required_families döntés, timeoutos LV8 row megőrzése, phase2a_unblocked
+      false missing stats esetén, és a korábbi hit-rate/clear_all/fixture_missing
+      regressziók változatlan működése.
+    inputs:
+      - "scripts/experiments/lv8_phase1_cache_usage_matrix.py"
+      - "tests/test_lv8_phase1_cache_usage_matrix.py"
+    outputs:
+      - "tests/test_lv8_phase1_cache_usage_matrix.py"
+
+  - name: "T10B smoke matrix futtatása és Phase 1 report frissítése"
+    description: >
+      Futtass egy gyors T10B smoke matrixot tmp/lv8_density_phase1_cache_usage_t10b
+      out-root alá. Használj rövid alap time-limitet és külön, hosszabb LV8 time-limitet,
+      ha az implementált CLI ezt támogatja. Frissítsd a codex/reports/nesting_engine/
+      lv8_phase1_cache_usage_result.md reportot a T10B döntési mezőkkel. Ha LV8 továbbra
+      sem ad stats sort, ne jelöld teljes readynek a Phase 2a-t; írd le, hogy long LV8
+      benchmark vagy további harness javítás szükséges.
+    inputs:
+      - "scripts/experiments/lv8_phase1_cache_usage_matrix.py"
+      - "tests/fixtures/nesting_engine/ne2_input_lv8jav.json"
+      - "poc/nesting_engine/f2_4_sa_quality_fixture_v2.json"
+    outputs:
+      - "codex/reports/nesting_engine/lv8_phase1_cache_usage_result.md"
+
+  - name: "T10B report és checklist elkészítése"
+    description: >
+      Készítsd el a T10B checklistet és reportot. A report tartalmazzon DoD → Evidence
+      Matrix táblázatot, a T10 blocker reprodukcióját, az új matrix döntési logikát,
+      a smoke futás eredményét és explicit next-task ajánlást. A report végén szerepeljen:
+      phase2a_unblocked: YES | NO; phase2a_ready_source: ...; lv8_stats_available:
+      YES | NO; sa_guard_stats_available: YES | NO; next_task_recommendation: T11 indulhat
+      | T10B tovább javítandó | long LV8 benchmark szükséges.
+    outputs:
+      - "codex/codex_checklist/nesting_engine/lv8_density_t10b_phase1_cache_stats_timeout_blocker.md"
+      - "codex/reports/nesting_engine/lv8_density_t10b_phase1_cache_stats_timeout_blocker.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a célzott ellenőrzéseket és a standard repo gate-et. Kötelező célzott
+      parancsok: python3 -m py_compile scripts/experiments/lv8_phase1_cache_usage_matrix.py;
+      python3 -m pytest tests/test_lv8_phase1_cache_usage_matrix.py. Végül futtasd:
+      ./scripts/verify.sh --report codex/reports/nesting_engine/lv8_density_t10b_phase1_cache_stats_timeout_blocker.md.
+      A verify logot a report mellé kell menteni, és a report AUTO_VERIFY blokkja
+      frissüljön.
+    outputs:
+      - "codex/reports/nesting_engine/lv8_density_t10b_phase1_cache_stats_timeout_blocker.md"
+      - "codex/reports/nesting_engine/lv8_density_t10b_phase1_cache_stats_timeout_blocker.verify.log"
