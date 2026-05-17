@@ -16,6 +16,7 @@ use crate::{
     geometry::pipeline::run_inflate_pipeline,
     geometry::{
         scale::mm_to_i64,
+        simplify::{count_reflex_vertices, rdp_simplify_polygon_preserve_extremes, rdp_simplify_to_reflex_budget},
         types::{Point64, Polygon64},
     },
     io::pipeline_io::{PartRequest, PipelineRequest},
@@ -486,6 +487,28 @@ fn run_nest(cli: NestCliArgs) -> Result<(), String> {
         cli.placer
     };
 
+    let simplify_tol_mm: f64 = std::env::var("NESTING_ENGINE_SIMPLIFY_TOLERANCE_MM")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.1_f64);
+    // Reflex vertex budget: caps ear-clip triangulation cost.
+    // R reflex vertices produce ~R triangles via ear-clip → O(R²) NFP pairs.
+    // Decomp cache eliminates re-computation across pairs sharing the same polygon,
+    // but the FIRST call for each unique shape still runs ear-clip.
+    // Keeping R ≤ 12 limits triangles to ~12, pairs to ~144, and ear-clip to <100ms.
+    // Set to 0 to disable adaptive budget and use only the fixed tolerance.
+    let simplify_max_reflex: usize = std::env::var("NESTING_ENGINE_SIMPLIFY_MAX_REFLEX")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(12_usize);
+    // Maximum epsilon the adaptive budget is allowed to use (mm).
+    // Large parts (e.g. 2500mm wide) may need up to 100mm epsilon to reach the
+    // reflex budget while keeping shape deviation below 4% of part width.
+    let simplify_max_epsilon_mm: f64 = std::env::var("NESTING_ENGINE_SIMPLIFY_MAX_EPSILON_MM")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100.0_f64);
+
     let mut specs: Vec<InflatedPartSpec> = Vec::new();
     let mut forced_unplaced: Vec<UnplacedItem> = Vec::new();
 
@@ -514,7 +537,7 @@ fn run_nest(cli: NestCliArgs) -> Result<(), String> {
                     })
                     .collect()
             };
-            let inflated = Polygon64 {
+            let inflated_raw = Polygon64 {
                 outer: resp
                     .inflated_outer_points_mm
                     .iter()
@@ -524,6 +547,36 @@ fn run_nest(cli: NestCliArgs) -> Result<(), String> {
                     })
                     .collect(),
                 holes,
+            };
+            let inflated = if simplify_tol_mm > 0.0 {
+                // Phase 1: fixed-epsilon simplification (extremes protected to avoid bbox shrinkage)
+                let after_fixed =
+                    rdp_simplify_polygon_preserve_extremes(&inflated_raw, simplify_tol_mm).unwrap_or_else(|| inflated_raw.clone());
+                // Phase 2: adaptive budget to cap reflex vertex count
+                let (after_budget, budget_eps) = if simplify_max_reflex > 0
+                    && count_reflex_vertices(&after_fixed.outer) > simplify_max_reflex
+                {
+                    rdp_simplify_to_reflex_budget(
+                        &inflated_raw,
+                        simplify_tol_mm,
+                        simplify_max_reflex,
+                        simplify_max_epsilon_mm,
+                    )
+                } else {
+                    (after_fixed, simplify_tol_mm)
+                };
+                let n_before = inflated_raw.outer.len();
+                let n_after = after_budget.outer.len();
+                if n_after < n_before {
+                    let reflex = count_reflex_vertices(&after_budget.outer);
+                    eprintln!(
+                        "[SIMPLIFY] {} outer {} → {} vertices, {} reflex (eps={:.3}mm)",
+                        part.id, n_before, n_after, reflex, budget_eps,
+                    );
+                }
+                after_budget
+            } else {
+                inflated_raw
             };
             let nominal_outer: Vec<Point64> = part
                 .outer_points_mm

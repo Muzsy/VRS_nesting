@@ -137,6 +137,163 @@ pub fn count_reflex_vertices(ring: &[Point64]) -> usize {
     count
 }
 
+/// Distance-based polygon simplification that removes vertices whose perpendicular
+/// distance to the segment between their neighbors is within `epsilon_mm`.
+/// Returns `None` if no simplification was achieved. Safe fallback: caller keeps original.
+/// Adjacent vertices are never removed in the same pass, preventing degenerate collapses.
+/// The epsilon tolerance is the only geometric constraint — it bounds the maximum boundary
+/// error introduced by simplification, making it safe for nesting within that tolerance.
+pub fn rdp_simplify_polygon(poly: &Polygon64, epsilon_mm: f64) -> Option<Polygon64> {
+    if epsilon_mm <= 0.0 || poly.outer.len() < 4 {
+        return None;
+    }
+    let simplified_outer = simplify_ring_by_distance(&poly.outer, epsilon_mm);
+    if simplified_outer.len() >= poly.outer.len() || simplified_outer.len() < 3 {
+        return None;
+    }
+    Some(Polygon64 {
+        outer: simplified_outer,
+        holes: poly.holes.clone(),
+    })
+}
+
+/// Same as `rdp_simplify_polygon` but never removes the 4 axis-aligned extreme
+/// vertices (min_x, max_x, min_y, max_y). Preserving these ensures the polygon's
+/// bounding box — and thus its spatial extent after any 90°-multiple rotation — is
+/// unchanged, preventing NFP placement errors caused by an artificially shrunk
+/// simplified outline.
+pub fn rdp_simplify_polygon_preserve_extremes(poly: &Polygon64, epsilon_mm: f64) -> Option<Polygon64> {
+    if epsilon_mm <= 0.0 || poly.outer.len() < 4 {
+        return None;
+    }
+    let protected = extreme_vertex_mask(&poly.outer);
+    let simplified_outer = simplify_ring_by_distance_protected(&poly.outer, epsilon_mm, &protected);
+    if simplified_outer.len() >= poly.outer.len() || simplified_outer.len() < 3 {
+        return None;
+    }
+    Some(Polygon64 {
+        outer: simplified_outer,
+        holes: poly.holes.clone(),
+    })
+}
+
+/// Returns a boolean mask (same length as `ring`) marking the axis-aligned extreme
+/// vertices: those achieving the global min_x, max_x, min_y, or max_y.
+fn extreme_vertex_mask(ring: &[Point64]) -> Vec<bool> {
+    if ring.is_empty() {
+        return Vec::new();
+    }
+    let min_x = ring.iter().map(|p| p.x).min().unwrap();
+    let max_x = ring.iter().map(|p| p.x).max().unwrap();
+    let min_y = ring.iter().map(|p| p.y).min().unwrap();
+    let max_y = ring.iter().map(|p| p.y).max().unwrap();
+    ring.iter()
+        .map(|p| p.x == min_x || p.x == max_x || p.y == min_y || p.y == max_y)
+        .collect()
+}
+
+/// Adaptive simplification that doubles epsilon until the polygon's reflex vertex
+/// count is at most `max_reflex`. Starting epsilon is `initial_epsilon_mm`.
+/// Returns the (possibly simplified) polygon and the epsilon that was finally used.
+/// Never exceeds `max_epsilon_mm` — returns the best result achieved if the budget
+/// cannot be met within the epsilon bound.
+///
+/// Extreme vertices (min/max x/y) are always preserved so the bounding box stays
+/// intact for all 90°-multiple rotations. Without this, aggressive simplification
+/// can shrink the polygon's extent, making the IFP too permissive and causing
+/// nominal-polygon overlaps in the placed result.
+pub fn rdp_simplify_to_reflex_budget(
+    poly: &Polygon64,
+    initial_epsilon_mm: f64,
+    max_reflex: usize,
+    max_epsilon_mm: f64,
+) -> (Polygon64, f64) {
+    let mut result = poly.clone();
+    let mut used_eps = 0.0_f64;
+    let mut eps = if initial_epsilon_mm > 0.0 { initial_epsilon_mm } else { return (poly.clone(), 0.0) };
+
+    loop {
+        let reflex = count_reflex_vertices(&result.outer);
+        if reflex <= max_reflex {
+            break;
+        }
+        if eps > max_epsilon_mm {
+            break;
+        }
+        // Apply extent-preserving simplification on the ORIGINAL polygon to avoid
+        // accumulated epsilon stacking across iterations.
+        if let Some(simplified) = rdp_simplify_polygon_preserve_extremes(poly, eps) {
+            result = simplified;
+            used_eps = eps;
+        }
+        eps *= 2.0;
+    }
+    (result, used_eps)
+}
+
+/// Iteratively removes vertices whose perpendicular distance to the chord formed
+/// by their two neighbors is at most `epsilon_mm`. Adjacent vertices are never
+/// removed in the same pass to preserve local shape accuracy.
+fn simplify_ring_by_distance(ring: &[Point64], epsilon_mm: f64) -> Vec<Point64> {
+    let protected = vec![false; ring.len()];
+    simplify_ring_by_distance_protected(ring, epsilon_mm, &protected)
+}
+
+/// Same as `simplify_ring_by_distance` but never removes vertices marked as
+/// protected. The `protected` slice must have the same length as `ring`.
+fn simplify_ring_by_distance_protected(
+    ring: &[Point64],
+    epsilon_mm: f64,
+    protected: &[bool],
+) -> Vec<Point64> {
+    debug_assert_eq!(ring.len(), protected.len());
+    let mut out = ring.to_vec();
+    let mut prot = protected.to_vec();
+    loop {
+        let n = out.len();
+        if n < 4 {
+            break;
+        }
+        let mut keep = vec![true; n];
+        let mut changed = false;
+        for i in 0..n {
+            if prot[i] {
+                continue; // never remove extreme / protected vertices
+            }
+            let prev_i = (i + n - 1) % n;
+            let next_i = (i + 1) % n;
+            if !keep[prev_i] || !keep[next_i] {
+                continue;
+            }
+            let prev = out[prev_i];
+            let curr = out[i];
+            let next = out[next_i];
+            let dist = point_to_segment_distance_mm(curr, prev, next);
+            if dist <= epsilon_mm {
+                keep[i] = false;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+        let mut new_out = Vec::with_capacity(n);
+        let mut new_prot = Vec::with_capacity(n);
+        for i in 0..n {
+            if keep[i] {
+                new_out.push(out[i]);
+                new_prot.push(prot[i]);
+            }
+        }
+        if new_out.len() < 3 {
+            break;
+        }
+        out = new_out;
+        prot = new_prot;
+    }
+    out
+}
+
 fn simplify_ring_conservative(
     ring: &[Point64],
     epsilon_mm: f64,

@@ -1,9 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-#[cfg(test)]
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-
 use i_overlay::{
     core::{
         fill_rule::FillRule,
@@ -141,10 +138,14 @@ fn emit_cfr_diag(
     );
 }
 
+// Thread-local counters so parallel test threads don't interfere with each other.
 #[cfg(test)]
-static COMPONENT_HASH_CALLS: AtomicUsize = AtomicUsize::new(0);
-#[cfg(test)]
-static COMPONENT_HASH_COUNTING_ENABLED: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    static TL_COMPONENT_HASH_CALLS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+    static TL_COMPONENT_HASH_COUNTING_ENABLED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
 
 /// Global monotonic counter for snapshot sequencing.
 /// Only active when NESTING_ENGINE_CFR_SNAPSHOT_DIR is set.
@@ -233,7 +234,7 @@ fn compute_cfr_internal(
     }
 
     let union_start = Instant::now();
-    let union_shapes = run_overlay(&nfp_shapes, &[], OverlayRule::Union);
+    let union_shapes = batched_union(&nfp_shapes);
     let union_time_ms = union_start.elapsed().as_secs_f64() * 1000.0;
 
     if union_shapes.is_empty() {
@@ -308,6 +309,28 @@ fn compute_cfr_internal(
     );
 
     sort_components(out)
+}
+
+/// Maximum number of shapes passed to a single `run_overlay` union call.
+/// When the NFP list exceeds this, `batched_union` splits into chunks and
+/// unions them hierarchically, keeping peak i_overlay memory bounded regardless
+/// of how many parts are on the sheet.
+const BATCH_UNION_SIZE: usize = 32;
+
+/// Union `shapes` using a hierarchical tree-reduce so that each individual
+/// `run_overlay` call receives at most `BATCH_UNION_SIZE` input shapes.
+///
+/// Union is associative: the result is identical to a single flat union up to
+/// integer rounding in the intermediate steps.
+fn batched_union(shapes: &[IntShape]) -> Vec<IntShape> {
+    if shapes.len() <= BATCH_UNION_SIZE {
+        return run_overlay(shapes, &[], OverlayRule::Union);
+    }
+    let batch_results: Vec<IntShape> = shapes
+        .chunks(BATCH_UNION_SIZE)
+        .flat_map(|batch| run_overlay(batch, &[], OverlayRule::Union))
+        .collect();
+    batched_union(&batch_results)
 }
 
 fn run_overlay(subject: &[IntShape], clip: &[IntShape], rule: OverlayRule) -> Vec<IntShape> {
@@ -521,8 +544,8 @@ fn build_sort_key_precomputed(poly: &Polygon64) -> CfrComponentSortKeyV1 {
 fn component_tiebreak_hash_u64(poly: &Polygon64) -> u64 {
     #[cfg(test)]
     {
-        if COMPONENT_HASH_COUNTING_ENABLED.load(Ordering::Relaxed) {
-            COMPONENT_HASH_CALLS.fetch_add(1, Ordering::Relaxed);
+        if TL_COMPONENT_HASH_COUNTING_ENABLED.with(|c| c.get()) {
+            TL_COMPONENT_HASH_CALLS.with(|c| c.set(c.get() + 1));
         }
     }
 
@@ -598,17 +621,17 @@ fn signed_area2_i128(points: &[Point64]) -> i128 {
 
 #[cfg(test)]
 fn reset_component_tiebreak_hash_call_count() {
-    COMPONENT_HASH_CALLS.store(0, Ordering::Relaxed);
+    TL_COMPONENT_HASH_CALLS.with(|c| c.set(0));
 }
 
 #[cfg(test)]
 fn component_tiebreak_hash_call_count() -> usize {
-    COMPONENT_HASH_CALLS.load(Ordering::Relaxed)
+    TL_COMPONENT_HASH_CALLS.with(|c| c.get())
 }
 
 #[cfg(test)]
 fn set_component_tiebreak_hash_counting(enabled: bool) {
-    COMPONENT_HASH_COUNTING_ENABLED.store(enabled, Ordering::Relaxed);
+    TL_COMPONENT_HASH_COUNTING_ENABLED.with(|c| c.set(enabled));
 }
 
 #[derive(Debug, Clone, Copy)]

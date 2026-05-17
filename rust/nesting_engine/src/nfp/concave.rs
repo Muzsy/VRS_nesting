@@ -1,6 +1,9 @@
+use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
+use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 use i_overlay::{
@@ -928,7 +931,37 @@ fn compare_positive_ratios(
     }
 }
 
+thread_local! {
+    static CONVEX_DECOMP_CACHE: RefCell<HashMap<u64, Vec<Polygon64>>> =
+        RefCell::new(HashMap::new());
+}
+
+fn ring_decomp_hash(ring: &[Point64]) -> u64 {
+    let mut h = DefaultHasher::new();
+    ring.len().hash(&mut h);
+    for p in ring {
+        p.x.hash(&mut h);
+        p.y.hash(&mut h);
+    }
+    h.finish()
+}
+
 fn decompose_to_convex_parts(ring: &[Point64]) -> Result<Vec<Polygon64>, NfpError> {
+    let key = ring_decomp_hash(ring);
+
+    let cached = CONVEX_DECOMP_CACHE.with(|c| c.borrow().get(&key).cloned());
+    if let Some(parts) = cached {
+        return Ok(parts);
+    }
+
+    let parts = decompose_to_convex_parts_inner(ring)?;
+
+    CONVEX_DECOMP_CACHE.with(|c| c.borrow_mut().insert(key, parts.clone()));
+
+    Ok(parts)
+}
+
+fn decompose_to_convex_parts_inner(ring: &[Point64]) -> Result<Vec<Polygon64>, NfpError> {
     let ring = normalize_simple_ring(ring)?;
     if ring.len() < 3 {
         return Err(NfpError::DecompositionFailed);
@@ -1074,6 +1107,40 @@ fn orient(a: Point64, b: Point64, c: Point64) -> i8 {
     }
 }
 
+/// Maximum fragment count passed to a single i_overlay union call inside
+/// `union_nfp_fragments`. Larger inputs are split recursively so that peak
+/// i_overlay memory is bounded regardless of convex-decomposition pair count.
+const NFP_FRAGMENT_BATCH_SIZE: usize = 32;
+
+/// Hierarchical tree-reduce union of IntShape slices.
+/// Each recursive call processes at most `NFP_FRAGMENT_BATCH_SIZE` shapes.
+fn batched_nfp_fragment_union(shapes: Vec<IntShape>) -> Vec<IntShape> {
+    if shapes.len() <= NFP_FRAGMENT_BATCH_SIZE {
+        let empty: [IntShape; 0] = [];
+        let mut overlay = Overlay::with_shapes_options(
+            &shapes,
+            &empty,
+            IntOverlayOptions::keep_all_points(),
+            Solver::with_strategy_and_precision(Strategy::List, Precision::ABSOLUTE),
+        );
+        return overlay.overlay(OverlayRule::Union, FillRule::NonZero);
+    }
+    let batch_results: Vec<IntShape> = shapes
+        .chunks(NFP_FRAGMENT_BATCH_SIZE)
+        .flat_map(|batch| {
+            let empty: [IntShape; 0] = [];
+            let mut overlay = Overlay::with_shapes_options(
+                batch,
+                &empty,
+                IntOverlayOptions::keep_all_points(),
+                Solver::with_strategy_and_precision(Strategy::List, Precision::ABSOLUTE),
+            );
+            overlay.overlay(OverlayRule::Union, FillRule::NonZero)
+        })
+        .collect();
+    batched_nfp_fragment_union(batch_results)
+}
+
 fn union_nfp_fragments(fragments: &[Polygon64]) -> Result<Polygon64, NfpError> {
     if fragments.is_empty() {
         return Err(NfpError::DecompositionFailed);
@@ -1085,14 +1152,7 @@ fn union_nfp_fragments(fragments: &[Polygon64]) -> Result<Polygon64, NfpError> {
         .map(|poly| encode_overlay_contour(&poly.outer, bounds).map(|contour| vec![contour]))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let empty_shapes: [IntShape; 0] = [];
-    let mut overlay = Overlay::with_shapes_options(
-        &subject_shapes,
-        &empty_shapes,
-        IntOverlayOptions::keep_all_points(),
-        Solver::with_strategy_and_precision(Strategy::List, Precision::ABSOLUTE),
-    );
-    let unioned = overlay.overlay(OverlayRule::Union, FillRule::NonZero);
+    let unioned = batched_nfp_fragment_union(subject_shapes);
 
     let mut best: Option<(i128, Vec<Point64>, Polygon64)> = None;
     for shape in unioned {

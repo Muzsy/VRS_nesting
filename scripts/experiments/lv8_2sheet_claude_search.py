@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import resource
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,28 @@ from lv8_polygon_validator import validate as _polygon_validate
 
 def _utc_ts() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _engine_memory_preexec_fn():
+    """Return a preexec_fn that caps the child process virtual memory.
+
+    Reads NESTING_ENGINE_MEMORY_LIMIT_GB from the environment (default: 8.0).
+    Setting RLIMIT_AS prevents the nesting engine from exhausting system RAM
+    and freezing the machine; the engine dies with a Rust OOM panic instead.
+    Set to 0 to disable the limit entirely.
+    """
+    try:
+        limit_gb = float(os.environ.get("NESTING_ENGINE_MEMORY_LIMIT_GB", "12.0"))
+    except ValueError:
+        limit_gb = 12.0
+    if limit_gb <= 0:
+        return None
+    limit_bytes = int(limit_gb * 1024 ** 3)
+
+    def _set_limit():
+        resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+
+    return _set_limit
 
 
 def _resolve_bin() -> str:
@@ -243,6 +266,7 @@ def run_one(
 
     quiet = os.environ.get("LV8_HARNESS_QUIET", "1") == "1"
     capture_engine_stats = True
+    mem_preexec = _engine_memory_preexec_fn()
     t_solver_start = time.perf_counter()
     timed_out = False
     return_code = None
@@ -263,6 +287,7 @@ def run_one(
                     proc = subprocess.run(
                         cmd, stdin=fin, stdout=fout, stderr=devnull,
                         env=env, timeout=time_limit_sec + 60, check=False,
+                        preexec_fn=mem_preexec,
                     )
             else:
                 # T04: stats capture active — stderr always goes to file for NEST_NFP_STATS_V1
@@ -271,6 +296,7 @@ def run_one(
                     proc = subprocess.run(
                         cmd, stdin=fin, stdout=fout, stderr=ferr,
                         env=env, timeout=time_limit_sec + 60, check=False,
+                        preexec_fn=mem_preexec,
                     )
             return_code = proc.returncode
     except subprocess.TimeoutExpired:
