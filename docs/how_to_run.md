@@ -14,6 +14,17 @@ This guide describes the current, supported commands for local execution.
 - Codex/report wrapper:
   - `./scripts/verify.sh --report codex/reports/<path>/<task>.md`
 
+## CodeGraph RAG quality gate
+- Rebuild + automatic quality gate (recommended after every index/config change):
+  - `scripts/codegraph/rebuild_and_gate.sh prod`
+- Gate-only mode (no rebuild):
+  - `SKIP_INDEX=true scripts/codegraph/rebuild_and_gate.sh prod`
+- Logs:
+  - `/home/muszy/codex-hermes-loop/evals/YYYYMMDD_HHMM_health_check.log`
+  - `/home/muszy/codex-hermes-loop/evals/YYYYMMDD_HHMM_rag_smoke.log`
+- Detailed runbook:
+  - `docs/codegraph/rag_layers_setup.md`
+
 ## Web platform (API + worker + frontend)
 
 ### Additional prerequisites

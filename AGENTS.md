@@ -34,6 +34,11 @@ Ez a fájl az AI agent futás közbeni **elsődleges szabálygyűjteménye**. Mi
 
 * `docs/qa/testing_guidelines.md` – tesztelési minimum + parancsok
 
+### CodeGraph / RAG quality gate
+
+* `docs/codegraph/rag_layers_setup.md` – CodeGraph + Artifact RAG architektúra és futtatási runbook
+* `scripts/codegraph/README.md` – scriptcsomag használat, routing rule, PASS/FAIL értelmezés
+
 ---
 
 ## Repo gyors térkép
@@ -67,6 +72,7 @@ Kötelező sorrend:
 5. Repo gate futtatása (automatikus verify + log + report frissítés)
 
    * Kötelező parancs: `./scripts/verify.sh --report codex/reports/[<AREA>/]<TASK_SLUG>.md`
+   * Ha CodeGraph index/config változik, kötelező parancs: `scripts/codegraph/rebuild_and_gate.sh prod`
 6. Checklist + report kitöltése
 
 Részletek: `docs/codex/overview.md`
