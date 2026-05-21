@@ -1,0 +1,125 @@
+# CodeGraph Health Check
+timestamp=20260521_210936
+repo=/home/muszy/projects/VRS_nesting
+
+[PASS] cgc is available: /home/muszy/.local/bin/cgc
+[PASS] neo4j container running: codegraph-neo4j
+[PASS] CodeGraphContext MCP block present in ~/.codex/config.toml
+
+## Query smoke
+[PASS] find pattern can_place returned expected token
+[PASS] find content cavity_prepack returned relevant hits
+[PASS] find content BLF fallback returned fallback/blf hits
+
+## Samples
+Loaded configuration from: /home/muszy/.codegraphcontext/.env, 
+/home/muszy/projects/VRS_nesting/.codegraphcontext/.env
+Using database: neo4j (source: runtime-env (CGC_RUNTIME_DB_TYPE))
+Resolving context...
+Context: Per-repo local mode (Database: falkordb)
+Initializing services and database connection...
+Services initialized.
+Found 11 matches for pattern 'can_place':
+╭───────────────────────────┬──────────┬──────────────────────────┬────────────╮
+│ Name                      │ Type     │ Location                 │ Source     │
+├───────────────────────────┼──────────┼──────────────────────────┼────────────┤
+│ test_missing_can_place_c… │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+│                           │          │ _nesting/tests/test_lv8_ │            │
+│                           │          │ density_engine_stats_exp │            │
+│                           │          │ ort.py:137               │            │
+│ aggregate_can_place_prof… │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+│                           │          │ _nesting/rust/nesting_en │            │
+│                           │          │ gine/src/placement/nfp_p │            │
+│                           │          │ lacer.rs:246             │            │
+│ can_place                 │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+│                           │          │ _nesting/rust/nesting_en │            │
+│                           │          │ gine/src/feasibility/nar │            │
+│                           │          │ row.rs:807               │            │
+│ can_place_and_profiled_r… │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+│                           │          │ _nesting/rust/nesting_en │            │
+│                           │          │ gine/src/feasibility/nar │            │
+│                           │          │ row.rs:1449              │            │
+│ can_place_dispatch        │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+│                           │          │ _nesting/rust/nesting_en │            │
+│                           │          │ gine/src/placement/nfp_p │            │
+│                           │          │ lacer.rs:228             │            │
+│ can_place_is_determinist… │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+│                           │          │ _nesting/rust/nesting_en │            │
+│                           │          │ gine/src/feasibility/nar │            │
+│                           │          │ row.rs:1527              │            │
+│ can_place_profiled        │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+│                           │          │ _nesting/rust/nesting_en │            │
+│                           │          │ gine/src/feasibility/nar │            │
+│                           │          │ row.rs:890               │            │
+│ can_place_profiled_popul… │ Function │ /home/muszy/projects/VRS │ 📝 Project │
+Loaded configuration from: /home/muszy/.codegraphcontext/.env, 
+/home/muszy/projects/VRS_nesting/.codegraphcontext/.env
+Using database: neo4j (source: runtime-env (CGC_RUNTIME_DB_TYPE))
+Resolving context...
+Context: Per-repo local mode (Database: falkordb)
+Initializing services and database connection...
+Services initialized.
+Found 7 content match(es) for 'cavity_prepack':
+╭────────────────────────────┬──────────┬──────────────────────────────────────╮
+│ Name                       │ Type     │ Location                             │
+├────────────────────────────┼──────────┼──────────────────────────────────────┤
+│ make_fixture               │ function │ /home/muszy/projects/VRS_nesting/scr │
+│                            │          │ ipts/experiments/extract_lv8_prefill │
+│                            │          │ _holes_nfp_pairs.py:59               │
+│ _assert_prepack_case       │ function │ /home/muszy/projects/VRS_nesting/scr │
+│                            │          │ ipts/smoke_cavity_t4_worker_integrat │
+│                            │          │ ion_and_artifacts.py:312             │
+│ parse_args                 │ function │ /home/muszy/projects/VRS_nesting/scr │
+│                            │          │ ipts/benchmark_cavity_v2_lv8.py:478  │
+│ _build_engine_meta_payload │ function │ /home/muszy/projects/VRS_nesting/wor │
+│                            │          │ ker/main.py:1366                     │
+│ <module>                   │ function │ /home/muszy/projects/VRS_nesting/scr │
+│                            │          │ ipts/experiments/extract_lv8_prefill │
+│                            │          │ _holes_nfp_pairs.py:1                │
+│ <module>                   │ function │ /home/muszy/projects/VRS_nesting/vrs │
+│                            │          │ _nesting/config/nesting_quality_prof │
+│                            │          │ iles.py:1                            │
+│ <module>                   │ function │ /home/muszy/projects/VRS_nesting/scr │
+│                            │          │ ipts/experiments/lv8_2sheet_claude_v │
+│                            │          │ alidate.py:1                         │
+╰────────────────────────────┴──────────┴──────────────────────────────────────╯
+Loaded configuration from: /home/muszy/.codegraphcontext/.env, 
+/home/muszy/projects/VRS_nesting/.codegraphcontext/.env
+Using database: neo4j (source: runtime-env (CGC_RUNTIME_DB_TYPE))
+Resolving context...
+Context: Per-repo local mode (Database: falkordb)
+Initializing services and database connection...
+Services initialized.
+Found 20 content match(es) for 'BLF fallback':
+╭─────────────────────────────────┬──────────┬─────────────────────────────────╮
+│ Name                            │ Type     │ Location                        │
+├─────────────────────────────────┼──────────┼─────────────────────────────────┤
+│ main                            │ function │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/scripts/smoke_cavity_t8_produ │
+│                                 │          │ ction_regression_benchmark.py:2 │
+│                                 │          │ 08                              │
+│ fallback                        │ variable │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/frontend/src/pages/NewRunPage │
+│                                 │          │ .tsx:173                        │
+│ fallback                        │ variable │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/vrs_nesting/dxf/exporter.py:3 │
+│                                 │          │ 99                              │
+│ fallback                        │ variable │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/scripts/smoke_cavity_t8_produ │
+│                                 │          │ ction_regression_benchmark.py:1 │
+│                                 │          │ 86                              │
+│ parse_placer_value              │ function │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/rust/nesting_engine/src/main. │
+│                                 │          │ rs:307                          │
+│ _load_source_geometry_map       │ function │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/vrs_nesting/dxf/exporter.py:3 │
+│                                 │          │ 98                              │
+│ normalize_eps                   │ function │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/rust/nesting_engine/src/geome │
+│                                 │          │ try/float_policy.rs:9           │
+│ _safe_filename                  │ function │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/scripts/trial_run_tool_core.p │
+│                                 │          │ y:381                           │
+│ resolvePartRevisionIdForFile    │ function │ /home/muszy/projects/VRS_nestin │
+│                                 │          │ g/frontend/src/pages/NewRunPage │
+│                                 │          │ .tsx:165                        │

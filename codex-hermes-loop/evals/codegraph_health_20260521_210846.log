@@ -1,0 +1,26 @@
+# CodeGraph Health Check
+timestamp=20260521_210846
+repo=/home/muszy/projects/VRS_nesting
+
+[PASS] cgc is available: /home/muszy/.local/bin/cgc
+[PASS] neo4j container running: codegraph-neo4j
+[PASS] CodeGraphContext MCP block present in ~/.codex/config.toml
+
+## Query smoke
+[FAIL] find pattern can_place returned no expected token
+[FAIL] find content cavity_prepack returned no relevant hits
+[FAIL] find content BLF fallback returned no fallback/blf hits
+
+## Samples
+Resolving context...
+Context: Per-repo local mode (Database: falkordb)
+Initializing services and database connection...
+Services initialized.
+Resolving context...
+Context: Per-repo local mode (Database: falkordb)
+Initializing services and database connection...
+Services initialized.
+Resolving context...
+Context: Per-repo local mode (Database: falkordb)
+Initializing services and database connection...
+Services initialized.
