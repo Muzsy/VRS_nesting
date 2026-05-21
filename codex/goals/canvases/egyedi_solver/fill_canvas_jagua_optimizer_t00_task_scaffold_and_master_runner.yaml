@@ -1,0 +1,103 @@
+steps:
+  - name: "Repo szabályok és JG tervdokumentáció olvasása"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját
+      optimizer tervdokumentációit is: deep-research-report.md,
+      jagua_rs_sajat_optimizer_fejlesztesi_terv.md,
+      jagua_optimizer_canvas_yaml_runner_task_bontas.md,
+      jagua_optimizer_task_progress_checklist.md és jagua_optimizer_master_plan.md.
+      Rögzítsd a reportban, mely szabályfájlokat és tervdokumentumokat használtad.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md"
+      - "canvases/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Task index létrehozása"
+    description: >
+      Hozd létre a canvases/egyedi_solver/jagua_optimizer_task_index.md fájlt.
+      A task-indexet a jagua_optimizer_canvas_yaml_runner_task_bontas.md és a
+      jagua_optimizer_master_plan.md alapján írd meg. Tartalmazza a JG-00...JG-27
+      teljes task listát sluggal, phase-szel, célokkal, függőségekkel, expected
+      canvas/YAML/runner/checklist/report pathokkal és acceptance gate-ekkel.
+      Tartalmazza a dependency graphot, critical pathokat, phase gate-eket,
+      parallelization notes szekciót, first package batch javaslatot és stop
+      conditionöket. Ne találj ki nem létező taskot vagy pathot; ha eltérést
+      találsz a tervdokumentumok között, jelöld REQUIRES_DECISION blokkban.
+    inputs:
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+    outputs:
+      - "canvases/egyedi_solver/jagua_optimizer_task_index.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Master runner létrehozása"
+    description: >
+      Hozd létre a codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+      fájlt. A master runner legyen önállóan futtatható ügynökprompt: tartalmazzon
+      kötelező olvasnivalókat, baseline preflightot, global hard rules szekciót,
+      valós repo anchor ellenőrzést, execution ordert, checkpointokat, phase
+      gate-eket, benchmark/validation policyt, rollback szabályokat és reporting
+      szabályokat. A JG-01...JG-27 runner fájlokat csak expected pathként jelöld,
+      "to be created by its own package task" státusszal.
+    inputs:
+      - "canvases/egyedi_solver/jagua_optimizer_task_index.md"
+      - "codex/prompts/task_runner_prompt_template.md"
+      - "codex/prompts/nesting_engine/lv8_density_master_runner.md"
+    outputs:
+      - "codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Checklist és report frissítése"
+    description: >
+      Frissítsd a task-specifikus checklistet és reportot. A checklist legyen
+      pipálható DoD lista a JG-00 canvas alapján. A report kövesse a
+      docs/codex/report_standard.md szerkezetét: scope, változások, verifikáció,
+      DoD -> Evidence Matrix, advisory notes. Rögzítsd benne a tervdokumentációs
+      eltérést: a régebbi fejlesztési terv JG-00 auditként hivatkozik a taskra,
+      míg a hivatalos task_bontas/checklist/master_plan szerint JG-00 scaffold.
+      A progress checklistet csak akkor pipáld készre, ha a DoD bizonyítékokkal
+      teljesült; különben BLOCKED/DEVIATION megjegyzést írj.
+    inputs:
+      - "docs/codex/report_standard.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "canvases/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Sanity check és production diff guard"
+    description: >
+      Ellenőrizd, hogy a létrehozott task-index és master runner tartalmazza a
+      kötelező tokeneket: JG-00, JG-01, JG-27, Source of truth, Global invariants,
+      Dependency graph, Critical path, Phase gates, Stop conditions, Baseline
+      preflight, Execution order, Rollback rules és Reporting rules. Validáld,
+      hogy a goal YAML a docs/codex/yaml_schema.md szerinti root steps sémát
+      követi. Ellenőrizd, hogy nem módosult production runtime/solver kód:
+      rust/**, worker/**, api/**, vrs_nesting/config/nesting_quality_profiles.py.
+      Ha ilyen módosítás történt, rollback vagy STATUS: REVISE.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md
+      A verify.sh hozza létre/frissítse a verify logot és a report AUTO_VERIFY
+      blokkját. Ha a gate piros, a report státusza nem lehet PASS.
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t00_task_scaffold_and_master_runner.verify.log"
