@@ -1,0 +1,216 @@
+{
+  "version": "1.0",
+  "generated_from": "repo_and_artifact_survey_2026-05-21",
+  "notes": "Derived from observed symbols/files/logs in VRS_nesting and local artifacts; not a copied seed list.",
+  "queries": [
+    {
+      "id": "CGQ_CAN_PLACE_CALLERS",
+      "query_text": "Who calls can_place in narrow feasibility?",
+      "layer": "code_graph",
+      "why_included": "Core feasibility routing regression detector.",
+      "checks": [
+        {
+          "label": "code_graph",
+          "command": "~/.local/bin/cgc --database neo4j analyze callers can_place --file rust/nesting_engine/src/feasibility/narrow.rs",
+          "expected_all": [
+            "Functions that call 'can_place'"
+          ],
+          "expected_any": [
+            "can_place_dispatch",
+            "blf_place"
+          ],
+          "minimum_evidence_required": 2,
+          "acceptable_aliases": [
+            "can_place_dispatch",
+            "blf_place",
+            "can_place_with_current_sheet"
+          ]
+        }
+      ],
+      "pass_criteria": "Callers list exists and includes expected routing symbols.",
+      "fail_criteria": "No caller graph or missing all expected routing symbols.",
+      "ranking_matters": false,
+      "critical": true
+    },
+    {
+      "id": "CGQ_CAVITY_PREPACK_RESTORE",
+      "query_text": "Where is cavity_prepack summary propagated back to API/result payload?",
+      "layer": "code_graph",
+      "why_included": "Detects regressions in prepack->result restoration chain.",
+      "checks": [
+        {
+          "label": "code_graph",
+          "command": "~/.local/bin/cgc --database neo4j find content cavity_prepack_summary",
+          "expected_any": [
+            "_build_engine_meta_payload",
+            "cavity_prepack_summary",
+            "ViewerDataResponse"
+          ],
+          "minimum_evidence_required": 2,
+          "acceptable_aliases": [
+            "cavity_prepack_summary",
+            "ViewerDataResponse"
+          ]
+        }
+      ],
+      "pass_criteria": "Finds at least two restore-path anchors across worker/api.",
+      "fail_criteria": "No evidence of summary propagation.",
+      "ranking_matters": false,
+      "critical": true
+    },
+    {
+      "id": "CGQ_NFP_STRATEGY_FILES",
+      "query_text": "Which files expose NFP placement strategy entry points?",
+      "layer": "code_graph",
+      "why_included": "Guards strategy routing and candidate generation entrypoints.",
+      "checks": [
+        {
+          "label": "code_graph",
+          "command": "~/.local/bin/cgc --database neo4j find content parse_placer_value",
+          "expected_any": [
+            "rust/nesting_engine/src/main.rs:307",
+            "parse_nest_cli_args"
+          ],
+          "minimum_evidence_required": 1,
+          "acceptable_aliases": [
+            "parse_placer_value",
+            "main.rs"
+          ]
+        },
+        {
+          "label": "code_graph",
+          "command": "~/.local/bin/cgc --database neo4j find content generate_hybrid_candidates",
+          "expected_any": [
+            "rust/nesting_engine/src/placement/nfp_placer.rs:2281",
+            "generate_hybrid_candidates"
+          ],
+          "minimum_evidence_required": 1,
+          "acceptable_aliases": [
+            "nfp_placer.rs",
+            "generate_hybrid_candidates"
+          ]
+        }
+      ],
+      "pass_criteria": "Both strategy parser and hybrid generator are discoverable.",
+      "fail_criteria": "Either strategy parser or candidate generator missing.",
+      "ranking_matters": false,
+      "critical": true
+    },
+    {
+      "id": "CGQ_BLF_FALLBACK_PATHS",
+      "query_text": "Find BLF fallback-related code paths.",
+      "layer": "code_graph",
+      "why_included": "Catches regressions in fallback visibility and path discoverability.",
+      "checks": [
+        {
+          "label": "code_graph",
+          "command": "~/.local/bin/cgc --database neo4j find content \"BLF fallback\"",
+          "expected_any": [
+            "parse_placer_value",
+            "blf_part_in_part_offgrid_hole_",
+            "fallback"
+          ],
+          "minimum_evidence_required": 1,
+          "acceptable_aliases": [
+            "fallback",
+            "blf"
+          ]
+        }
+      ],
+      "pass_criteria": "Returns multiple fallback anchors including Rust placement paths.",
+      "fail_criteria": "No fallback anchors or only unrelated hits.",
+      "ranking_matters": true,
+      "critical": true
+    },
+    {
+      "id": "ARQ_LV8_BENCHMARK_REPORT",
+      "query_text": "Retrieve the LV8 276-part baseline benchmark report evidence.",
+      "layer": "artifact",
+      "why_included": "Artifact layer must retrieve benchmark evidence independently from code graph.",
+      "checks": [
+        {
+          "label": "artifact",
+          "command": "scripts/codegraph/artifact_rag_v0_rg.sh \"LV8 276-Part Full Nesting Baseline Benchmark|276 / 276|Runtime\"",
+          "expected_any": [
+            "codex/reports/nesting_engine/lv8_276part_baseline_benchmark.md",
+            "Parts placed | **276 / 276**",
+            "Runtime | **~65 seconds**"
+          ],
+          "minimum_evidence_required": 2,
+          "acceptable_aliases": [
+            "lv8_276part_baseline_benchmark.md",
+            "276 / 276"
+          ]
+        }
+      ],
+      "pass_criteria": "Benchmark report path and key KPI lines are retrievable.",
+      "fail_criteria": "No benchmark report evidence from artifact search.",
+      "ranking_matters": true,
+      "critical": true
+    },
+    {
+      "id": "ARQ_LV8_RUN_LOG_PLACEMENTS",
+      "query_text": "Retrieve LV8 run log line proving 276 placements.",
+      "layer": "artifact",
+      "why_included": "Checks run-log evidence retrieval in artifact layer.",
+      "checks": [
+        {
+          "label": "artifact",
+          "command": "scripts/codegraph/artifact_rag_v0_rg.sh \"DXF_SPARROW_DONE placements=276|\\\"placed_count\\\": 276\"",
+          "expected_any": [
+            "tmp/runs/20260502T075833Z_03b34f89/run.log",
+            "DXF_SPARROW_DONE placements=276",
+            "tmp/runs/20260501T161816Z_c4817f24/sparrow_output.json",
+            "\"placed_count\": 276"
+          ],
+          "minimum_evidence_required": 2,
+          "acceptable_aliases": [
+            "placements=276",
+            "placed_count"
+          ]
+        }
+      ],
+      "pass_criteria": "Run log or run output contains 276-placement evidence.",
+      "fail_criteria": "No run evidence for 276 placements.",
+      "ranking_matters": false,
+      "critical": true
+    },
+    {
+      "id": "MXQ_PREPACK_WITH_BENCHMARK_EVIDENCE",
+      "query_text": "Combine prepack restore code evidence with LV8 benchmark artifact evidence.",
+      "layer": "mixed",
+      "why_included": "Ensures mixed routing produces separately labeled code and artifact evidence.",
+      "checks": [
+        {
+          "label": "code_graph",
+          "command": "~/.local/bin/cgc --database neo4j find content cavity_prepack_summary",
+          "expected_any": [
+            "_build_engine_meta_payload",
+            "cavity_prepack_summary"
+          ],
+          "minimum_evidence_required": 1,
+          "acceptable_aliases": [
+            "cavity_prepack_summary"
+          ]
+        },
+        {
+          "label": "artifact",
+          "command": "scripts/codegraph/artifact_rag_v0_rg.sh \"lv8_276part_baseline_benchmark|276 / 276|Runtime\"",
+          "expected_any": [
+            "codex/reports/nesting_engine/lv8_276part_baseline_benchmark.md",
+            "276 / 276"
+          ],
+          "minimum_evidence_required": 1,
+          "acceptable_aliases": [
+            "lv8_276part_baseline_benchmark",
+            "276 / 276"
+          ]
+        }
+      ],
+      "pass_criteria": "Both evidence layers present and separable.",
+      "fail_criteria": "Any layer missing evidence.",
+      "ranking_matters": false,
+      "critical": true
+    }
+  ]
+}
