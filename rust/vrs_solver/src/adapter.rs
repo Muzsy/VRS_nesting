@@ -1,9 +1,33 @@
 use crate::io::{Metrics, Placement, SolverInput, SolverOutput, Unplaced};
-use crate::item::{can_fit_any_stock, expand_instances};
+use crate::item::{can_fit_any_stock, expand_instances, part_has_holes};
 use crate::optimizer::{try_place_on_sheet, SheetCursor};
 use crate::sheet::expand_sheets;
 
+const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
+
 pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
+    if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
+        for part in &input.parts {
+            if part_has_holes(part) {
+                return Ok(SolverOutput {
+                    contract_version: "v1".to_string(),
+                    status: "unsupported".to_string(),
+                    unsupported_reason: Some("UNSUPPORTED_PART_HOLES_PHASE1".to_string()),
+                    placements: vec![],
+                    unplaced: vec![],
+                    metrics: Metrics {
+                        placed_count: 0,
+                        unplaced_count: input.parts.iter().map(|p| p.quantity as usize).sum(),
+                        sheet_count_used: 0,
+                        seed: input.seed,
+                        time_limit_s: input.time_limit_s,
+                        project_name: input.project_name.clone(),
+                    },
+                });
+            }
+        }
+    }
+
     let sheets = expand_sheets(&input.stocks)?;
     let instances = expand_instances(&input.parts)?;
     let mut placements: Vec<Placement> = Vec::new();
@@ -69,6 +93,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     Ok(SolverOutput {
         contract_version: "v1".to_string(),
         status,
+        unsupported_reason: None,
         placements,
         unplaced,
         metrics: Metrics {

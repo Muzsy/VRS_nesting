@@ -39,7 +39,7 @@
 - [ ] JG-00 elkészült.
 - [x] JG-01 elkészült.
 - [x] JG-02 elkészült.
-- [ ] JG-03 előfeltételei tiszták.
+- [x] JG-03 előfeltételei tiszták.
 - [ ] Nincs build/licenc/API showstopper.
 - [ ] Döntés: Phase 1 indítható.
 
@@ -197,29 +197,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Phase 1 capability policy dokumentálva: rectangular multi-sheet, hole nélkül.
-- [ ] Input contract bővítés rögzítve: `solver_profile`, `capabilities`, `unsupported_reason`.
-- [ ] Hole-os part detektálása implementálva vagy explicit tervezve a megfelelő boundaryn.
-- [ ] Hole-os input Phase 1-ben determinisztikus unsupported/error státuszt ad.
-- [ ] Nincs silent geometry loss: hole kontúrok nem tűnnek el észrevétlenül.
-- [ ] Container hole/remnant kezelés nincs véletlenül engedélyezve.
-- [ ] Python runner/validator oldali státuszkezelés ellenőrizve.
-- [ ] Rectangle-only korábbi smoke nem törik.
-- [ ] Unsupported státusz reportban és/vagy output metában megjelenik.
-- [ ] Negatív fixture készült hole-os parttal.
-- [ ] Pozitív fixture készült outer-only parttal.
-- [ ] Repo verify PASS és log mentve.
+- [x] Phase 1 capability policy dokumentálva: rectangular multi-sheet, hole nélkül.
+- [x] Input contract bővítés rögzítve: `solver_profile`, `capabilities`, `unsupported_reason`.
+- [x] Hole-os part detektálása implementálva vagy explicit tervezve a megfelelő boundaryn.
+- [x] Hole-os input Phase 1-ben determinisztikus unsupported/error státuszt ad.
+- [x] Nincs silent geometry loss: hole kontúrok nem tűnnek el észrevétlenül.
+- [x] Container hole/remnant kezelés nincs véletlenül engedélyezve.
+- [x] Python runner/validator oldali státuszkezelés ellenőrizve.
+- [x] Rectangle-only korábbi smoke nem törik.
+- [x] Unsupported státusz reportban és/vagy output metában megjelenik.
+- [x] Negatív fixture készült hole-os parttal.
+- [x] Pozitív fixture készült outer-only parttal.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 

@@ -1,0 +1,128 @@
+steps:
+- name: Repo szabályok, JG tervdokumentáció és JG-03 taskforrások olvasása
+  description: Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md
+    és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját optimizer tervdokumentációit, a JG task indexet,
+    a JG-02 reportot és ezt a JG-03 canvast. Nyerd ki a JG-03 pontos taskdefinícióját a task bontásból és progress checklistből.
+    Ha JG-02 nem PASS vagy nem tartalmaz JG-03_STATUS = READY jelzést, állj meg BLOCKED státusszal.
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t02_solver_module_scaffold.md
+  - canvases/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Valós code-boundary audit és contract döntési keret rögzítése
+  description: 'Auditáld a JG-02 utáni valós kódot: rust/vrs_solver/src/io.rs, item.rs, sheet.rs, adapter.rs, main.rs, vrs_nesting/runner/vrs_solver_runner.py,
+    vrs_nesting/nesting/instances.py, scripts/check.sh és docs/solver_io_contract.md. Dokumentáld a reportban, hogy a task
+    bontás Rust outputs listája JG-02 után hiányos: Part az item.rs-ben, solve az adapter.rs-ben van. Rögzítsd a kiválasztott
+    unsupported policyt: output status + reason vagy non-zero controlled error. Ne implementálj optimizer algoritmust.'
+  inputs:
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/main.rs
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  - scripts/check.sh
+  - docs/solver_io_contract.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Solver IO contract dokumentáció frissítése
+  description: Frissítsd a docs/solver_io_contract.md fájlt a Phase 1 outer-only szabályokkal. Dokumentáld a solver_profile
+    mezőt, a capability policyt, a part holes unsupported szabályát, az unsupported_reason mezőt vagy controlled error policyt,
+    és azt, hogy exact layout validation csak ok/partial layout státuszokra vonatkozik. A régi v1 kötelező mezők maradjanak
+    kompatibilisek.
+  inputs:
+  - docs/solver_io_contract.md
+  - canvases/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+  outputs:
+  - docs/solver_io_contract.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Rust outer-only DTO és hole gate implementáció
+  description: Implementáld a Rust oldali explicit no-silent-geometry-loss gate-et. A Part DTO vagy egy raw input preflight
+    legyen képes észlelni a part outer_points/prepared_outer_points és holes_points/prepared_holes_points mezőket. Hole-os
+    part Phase 1 jagua profile alatt adjon determinisztikus UNSUPPORTED_PART_HOLES_PHASE1 státuszt vagy controlled error-t.
+    Ha stock holes/remnant policyt kell érinteni, csak profilhoz kötötten tedd, hogy a default legacy check.sh smoke ne törjön.
+    Ne írj új optimizer algoritmust, JaguaAdapter PoC-t, cavity-prepackot vagy irregular nestinget.
+  inputs:
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/main.rs
+  outputs:
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/main.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Python runner és validator unsupported státuszkezelés
+  description: Frissítsd a Python boundary-t úgy, hogy az unsupported non-layout állapot ne legyen valid layout PASS. Ha output-alapú
+    unsupported státusz készült, vrs_solver_runner.py külön kezelje, mentse a metaadatba az unsupported okot, és ne hívja
+    rá a layout-only exact validátort. Ha controlled non-zero error készült, a runner/report bizonyítsa a stabil reason stringet.
+    A validate_multi_sheet_output továbbra is szigorú maradjon ok/partial layoutokra.
+  inputs:
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  - docs/solver_io_contract.md
+  outputs:
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Outer-only contract smoke script hozzáadása
+  description: Hozd létre a scripts/smoke_jagua_optimizer_outer_only_contract.py scriptet. A script tartalmazzon pozitív outer-only
+    fixture-t, negatív hole-os part fixture-t, és reason-string ellenőrzést. A pozitív layoutot futtasd át az exact validator
+    útvonalon. A negatív fixture ne legyen sikeres layoutként elfogadva. Használj valós repo parancsokat és létező runner/binary
+    feloldást.
+  inputs:
+  - scripts/check.sh
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  - rust/vrs_solver/Cargo.toml
+  - docs/solver_io_contract.md
+  outputs:
+  - scripts/smoke_jagua_optimizer_outer_only_contract.py
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Célzott build, teszt és smoke verifikáció
+  description: 'Futtasd és dokumentáld legalább ezeket: cargo build --release --manifest-path rust/vrs_solver/Cargo.toml;
+    cargo test --manifest-path rust/vrs_solver/Cargo.toml; python3 scripts/smoke_jagua_optimizer_outer_only_contract.py. A
+    reportban legyen külön táblázat: positive outer-only PASS, negative holed part unsupported/error PASS, legacy/default
+    rectangle smoke not broken, exact validation on accepted layouts PASS.'
+  inputs:
+  - rust/vrs_solver/Cargo.toml
+  - scripts/smoke_jagua_optimizer_outer_only_contract.py
+  - scripts/validate_nesting_solution.py
+  - vrs_nesting/runner/vrs_solver_runner.py
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Checklist, progress checklist és report véglegesítése
+  description: Frissítsd a task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-03 szakaszát
+    kizárólag bizonyíték alapján. A report tartalmazza a diff összefoglalót, contract döntést, unsupported evidence-t, smoke
+    outputot, és JG-04 indíthatóságát. PASS csak akkor adható, ha minden acceptance gate teljesült és a checklist pontok pipálva
+    vagy explicit DEVIATION/BLOCKED megjegyzéssel ellátva vannak.
+  inputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot. Parancs: ./scripts/verify.sh --report
+    codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md. A verify logot a wrapper a megfelelő
+    .verify.log útvonalra menti. PASS csak zöld verify esetén adható; környezeti blocker esetén REVISE vagy BLOCKED.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t03_outer_only_contract_and_hole_gate.verify.log

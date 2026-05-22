@@ -11,12 +11,16 @@ pub struct SolverInput {
     pub time_limit_s: i64,
     pub stocks: Vec<Stock>,
     pub parts: Vec<Part>,
+    #[serde(default)]
+    pub solver_profile: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct SolverOutput {
     pub contract_version: String,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsupported_reason: Option<String>,
     pub placements: Vec<Placement>,
     pub unplaced: Vec<Unplaced>,
     pub metrics: Metrics,

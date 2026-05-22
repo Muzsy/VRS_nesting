@@ -218,8 +218,17 @@ def _run_solver_with_paths(
         _write_json(meta_path, meta)
         raise VrsSolverOutputNotFoundError(f"Missing solver output: {output_path}")
 
-    _validate_contract_fields(snapshot_path, output_path)
     output_data = _read_json(output_path)
+
+    if output_data.get("status") == "unsupported":
+        meta["solver_status"] = "unsupported"
+        meta["unsupported_reason"] = output_data.get("unsupported_reason")
+        meta["output_sha256"] = _sha256_file(output_path)
+        _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
+        _write_json(meta_path, meta)
+        return run_dir, meta
+
+    _validate_contract_fields(snapshot_path, output_path)
     meta["output_sha256"] = _sha256_file(output_path)
     placements = output_data.get("placements")
     unplaced = output_data.get("unplaced")

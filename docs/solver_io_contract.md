@@ -21,6 +21,10 @@ Required top-level fields:
 - `stocks` (array, non-empty)
 - `parts` (array, non-empty)
 
+Optional top-level fields:
+- `solver_profile` (string): capability profile selector. If omitted, defaults to legacy rectangular behavior.
+  - `jagua_optimizer_phase1_outer_only`: Phase 1 profile — rectangular multi-sheet, no item holes, no irregular stock.
+
 Stock item fields:
 - `id` (string)
 - `quantity` (integer, `> 0`)
@@ -51,9 +55,12 @@ The solver must produce `runs/<run_id>/solver_output.json`.
 
 Required top-level fields:
 - `contract_version` (string): must be `v1`
-- `status` (string): `ok` or `partial`
+- `status` (string): `ok`, `partial`, or `unsupported`
 - `placements` (array)
 - `unplaced` (array)
+
+Optional top-level fields:
+- `unsupported_reason` (string): present only when `status == "unsupported"`, e.g. `UNSUPPORTED_PART_HOLES_PHASE1`
 
 Placement item fields:
 - `instance_id` (string)
@@ -93,8 +100,36 @@ The Python runner records:
 2. Environment variable `VRS_SOLVER_BIN`
 3. `PATH` lookup for `vrs_solver`
 
+## Phase 1 outer-only capability policy (`jagua_optimizer_phase1_outer_only`)
+
+When `solver_profile == "jagua_optimizer_phase1_outer_only"`:
+- Supported: rectangular or shaped `stocks`, multi-sheet, 0/90/180/270 rotation.
+- Unsupported: parts with `holes_points` or `prepared_holes_points` (non-empty).
+- Unsupported: part-in-hole cavity, irregular/remnant nesting.
+
+Unsupported part output:
+```json
+{
+  "contract_version": "v1",
+  "status": "unsupported",
+  "unsupported_reason": "UNSUPPORTED_PART_HOLES_PHASE1",
+  "placements": [],
+  "unplaced": []
+}
+```
+
+Runner behavior on `status == "unsupported"`:
+- Does NOT call `validate_multi_sheet_output()` (not a layout response).
+- Writes `runner_meta.json` with `solver_status: "unsupported"` and `unsupported_reason`.
+- Returns `run_dir` normally; caller must check `solver_status` in meta.
+
+Backward compatibility:
+- If `solver_profile` is absent, the solver runs legacy rectangular mode regardless of part geometry fields.
+- `validate_multi_sheet_output()` only validates `ok`/`partial` layouts; `unsupported` is not a valid layout status.
+
 ## Failure modes
 - Missing binary -> deterministic runner error
 - Non-zero solver exit -> runner writes `runner_meta.json` and exits error
 - Missing or invalid output JSON -> deterministic runner error with path context
 - Invalid shape geometry (outer/holes) -> deterministic runner or validator error
+- Part holes with Phase 1 profile -> deterministic `unsupported` output, no layout placement

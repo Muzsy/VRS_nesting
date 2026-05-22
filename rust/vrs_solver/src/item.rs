@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde_json::Value as JsonValue;
 
 use crate::geometry::EPS;
 use crate::sheet::SheetShape;
@@ -11,6 +12,27 @@ pub struct Part {
     pub quantity: i64,
     #[serde(default)]
     pub allowed_rotations_deg: Vec<i64>,
+    #[serde(default)]
+    pub holes_points: Option<JsonValue>,
+    #[serde(default)]
+    pub prepared_holes_points: Option<JsonValue>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub outer_points: Option<JsonValue>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub prepared_outer_points: Option<JsonValue>,
+}
+
+pub fn part_has_holes(part: &Part) -> bool {
+    fn is_non_empty(v: &Option<JsonValue>) -> bool {
+        match v {
+            None | Some(JsonValue::Null) => false,
+            Some(JsonValue::Array(arr)) => !arr.is_empty(),
+            Some(_) => true,
+        }
+    }
+    is_non_empty(&part.holes_points) || is_non_empty(&part.prepared_holes_points)
 }
 
 #[derive(Debug)]
