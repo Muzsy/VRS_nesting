@@ -1,0 +1,106 @@
+steps:
+  - name: "Repo szabályok és JG-01 taskforrások olvasása"
+    description: >
+      Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md és
+      docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját optimizer
+      tervdokumentációit, a JG task indexet és a master runnert. Nyerd ki a JG-01
+      pontos taskdefinícióját a task bontásból és a progress checklistből. Ha
+      bármely kötelező forrás hiányzik, állj meg BLOCKED státusszal.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md"
+      - "canvases/egyedi_solver/jagua_optimizer_task_index.md"
+      - "codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md"
+      - "canvases/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+
+  - name: "Valós repo anchorok és solver boundary audit"
+    description: >
+      Auditáld kódszinten a jelenlegi vrs_solver állapotát, a jagua-rs dependencyt
+      és használatot, a solver IO contractot, a Python runner/adapter boundaryt,
+      valamint az exact/multi-sheet validációs anchorokat. Minden állításhoz adj
+      path + line bizonyítékot. Ne módosíts production runtime kódot.
+    inputs:
+      - "rust/vrs_solver/Cargo.toml"
+      - "rust/vrs_solver/Cargo.lock"
+      - "rust/vrs_solver/src/main.rs"
+      - "docs/solver_io_contract.md"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "vrs_nesting/runner/solver_adapter.py"
+      - "vrs_nesting/nesting/instances.py"
+      - "scripts/validate_nesting_solution.py"
+    outputs:
+      - "docs/egyedi_solver/jagua_optimizer_source_audit.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+
+  - name: "Cavity pipeline és Sparrow minták auditja"
+    description: >
+      Auditáld a meglévő cavity-prepack / validation / result-normalizer réteget,
+      valamint a Sparrow runner, vendor/fallback és smoketest mintákat. Külön
+      táblákban rögzítsd, mi használható újra, mi csak referencia, és mi kockázat
+      a rectangular, irregular/remnant és hole/cavity fázisokban. Külső repo vagy
+      web letöltése tilos; csak a helyi repo állapotából dolgozz.
+    inputs:
+      - "worker/cavity_prepack.py"
+      - "worker/cavity_validation.py"
+      - "worker/result_normalizer.py"
+      - "scripts/ensure_sparrow.sh"
+      - "scripts/run_sparrow_smoketest.sh"
+      - "vrs_nesting/runner/sparrow_runner.py"
+      - "poc/sparrow_io/sparrow_commit.txt"
+      - "canvases/egyedi_solver/jagua_rs_feasibility_integration.md"
+      - "codex/reports/egyedi_solver/jagua_rs_feasibility_integration.md"
+    outputs:
+      - "docs/egyedi_solver/jagua_optimizer_source_audit.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+
+  - name: "JG-01 source audit report és döntési javaslat"
+    description: >
+      Hozd létre vagy véglegesítsd a docs/egyedi_solver/jagua_optimizer_source_audit.md
+      fájlt. Tartalmazza a használható repo anchorokat, jagua-rs képességeket és
+      hiányokat, Sparrowból átvehető mintákat, rectangular/irregular/hole kockázatokat,
+      licenc/dependency/build megjegyzéseket, blokkolókat és explicit JG-02 indítható
+      vagy blokkolt döntést. A reportban rögzítsd az audit összefoglalóját.
+    inputs:
+      - "docs/egyedi_solver/jagua_optimizer_source_audit.md"
+      - "canvases/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+    outputs:
+      - "docs/egyedi_solver/jagua_optimizer_source_audit.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+
+  - name: "Checklist, sanity check és progress frissítés"
+    description: >
+      Frissítsd a task-specifikus checklistet a JG-01 DoD alapján. Frissítsd a
+      globális jagua_optimizer_task_progress_checklist.md JG-01 státuszát csak akkor,
+      ha az audit bizonyítékai ezt alátámasztják; ellenkező esetben használj explicit
+      BLOCKED/DEVIATION megjegyzést. Validáld a goal YAML steps root sémáját és
+      ellenőrizd, hogy nincs sandbox-specifikus útvonal. Futtasd a task-specifikus
+      sanity parancsokat, ha a helyi környezet engedi.
+    inputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t01_repo_and_source_audit.yaml"
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést wrapperrel. Parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md
+      A verify.sh hozza létre/frissítse a verify logot és a report AUTO_VERIFY
+      blokkját. Ha a gate piros, a report státusza nem lehet PASS.
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.verify.log"
