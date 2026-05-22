@@ -51,7 +51,7 @@ Bizonyítékforrás:
 - [x] Létrejött/frissült: `docs/egyedi_solver/jagua_optimizer_source_audit.md`.
 - [x] Létrejött/frissült: `codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md`.
 - [x] Létrejött/frissült: `codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.verify.log` (verify.sh gate lefutott).
-- [ ] A globális progress checklist JG-01 státusza frissült — DEVIATION: a progress checklist canvas-fájl módosítása a task scope határán van. A report explicit JG-02 READY döntést tartalmaz.
+- [x] A globális progress checklist JG-01 státusza frissült (`canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md`).
 
 ## Sanity check és verify
 
@@ -61,11 +61,11 @@ Bizonyítékforrás:
   - `cargo metadata --manifest-path rust/vrs_solver/Cargo.toml --no-deps` — PASS
   - `python3 -m pytest -q tests/test_solver_adapter_contract.py tests/worker/test_cavity_prepack.py tests/worker/test_cavity_validation.py tests/worker/test_result_normalizer_cavity_plan.py` — **38 passed in 1.05s**
 - [x] Lefutott: `./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t01_repo_and_source_audit.md`.
-- [x] Repo gate eredmény dokumentálva (REVISE — ezdxf environment blocker, nem tartalmi hiba).
+- [x] Repo gate eredmény dokumentálva (PASS — EXIT_CODE=0, 366 pytest, mypy OK).
 
 ## Záró mezők
 
-- [x] Reportban szerepel a végső státusz: REVISE (ezdxf environment blocker, tartalmilag PASS).
+- [x] Reportban szerepel a végső státusz: PASS.
 - [x] Eltérések explicit módon dokumentálva.
 - [x] JG-02 indíthatósága egyértelműen jelölve: **READY**.
 

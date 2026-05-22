@@ -37,7 +37,7 @@
 ### Gate 0 — Integrációs döntés
 
 - [ ] JG-00 elkészült.
-- [ ] JG-01 elkészült.
+- [x] JG-01 elkészült.
 - [ ] JG-02 elkészült.
 - [ ] JG-03 előfeltételei tiszták.
 - [ ] Nincs build/licenc/API showstopper.
@@ -127,29 +127,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Repo szabályfájlok újraolvasva a task elején.
-- [ ] `rust/vrs_solver` jelenlegi állapota auditálva.
-- [ ] `docs/solver_io_contract.md` releváns szerződései auditálva.
-- [ ] Python runner/adapter boundary auditálva: `vrs_solver_runner.py`, `solver_adapter.py`.
-- [ ] Meglévő cavity pipeline auditálva: `worker/cavity_prepack.py`, `worker/cavity_validation.py`, `worker/result_normalizer.py`.
-- [ ] `jagua-rs` dependency és használhatóság ellenőrizve a valós Cargo/workspace alapján.
-- [ ] Sparrowból átvehető optimizer/search minták külön táblában rögzítve.
-- [ ] Rectangular, irregular/remnant és hole/cavity kockázatok külön bontva.
-- [ ] Licenc/dependency/build kockázatok dokumentálva.
-- [ ] A report konkrét fájl- és kód-anchorokat tartalmaz, nem csak általánosságokat.
-- [ ] Blokkolók és döntési javaslatok külön szakaszban szerepelnek.
-- [ ] Repo gate / verify lefuttatva és logolva.
+- [x] Repo szabályfájlok újraolvasva a task elején.
+- [x] `rust/vrs_solver` jelenlegi állapota auditálva.
+- [x] `docs/solver_io_contract.md` releváns szerződései auditálva.
+- [x] Python runner/adapter boundary auditálva: `vrs_solver_runner.py`, `solver_adapter.py`.
+- [x] Meglévő cavity pipeline auditálva: `worker/cavity_prepack.py`, `worker/cavity_validation.py`, `worker/result_normalizer.py`.
+- [x] `jagua-rs` dependency és használhatóság ellenőrizve a valós Cargo/workspace alapján.
+- [x] Sparrowból átvehető optimizer/search minták külön táblában rögzítve.
+- [x] Rectangular, irregular/remnant és hole/cavity kockázatok külön bontva.
+- [x] Licenc/dependency/build kockázatok dokumentálva.
+- [x] A report konkrét fájl- és kód-anchorokat tartalmaz, nem csak általánosságokat.
+- [x] Blokkolók és döntési javaslatok külön szakaszban szerepelnek.
+- [x] Repo gate / verify lefuttatva és logolva.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
