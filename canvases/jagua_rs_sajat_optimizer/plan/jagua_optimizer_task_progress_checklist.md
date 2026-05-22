@@ -38,7 +38,7 @@
 
 - [ ] JG-00 elkészült.
 - [x] JG-01 elkészült.
-- [ ] JG-02 elkészült.
+- [x] JG-02 elkészült.
 - [ ] JG-03 előfeltételei tiszták.
 - [ ] Nincs build/licenc/API showstopper.
 - [ ] Döntés: Phase 1 indítható.
@@ -162,29 +162,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Repo szabályfájlok újraolvasva.
-- [ ] A jelenlegi `main.rs` viselkedése baseline-ként dokumentálva.
-- [ ] Modulstruktúra terv rögzítve: io, geometry, sheet, item, adapter, optimizer, validation.
-- [ ] Refaktor csak a YAML outputs listában engedélyezett fájlokat érintette.
-- [ ] `main.rs` CLI/orchestration szerepre szűkítve, ha a task ezt engedi.
-- [ ] A meglévő input/output contract nem változott kompatibilitást törően.
-- [ ] Smoke inputokon a régi output szemantikailag változatlan.
-- [ ] `cargo build --release --manifest-path rust/vrs_solver/Cargo.toml` PASS.
-- [ ] Unit/smoke tesztek PASS, ahol vannak.
-- [ ] Minden viselkedésváltozás explicit NO/YES táblában dokumentált.
-- [ ] Report tartalmaz diff összefoglalót.
-- [ ] Repo verify lefuttatva és log mentve.
+- [x] Repo szabályfájlok újraolvasva.
+- [x] A jelenlegi `main.rs` viselkedése baseline-ként dokumentálva.
+- [x] Modulstruktúra terv rögzítve: io, geometry, sheet, item, adapter, optimizer, validation.
+- [x] Refaktor csak a YAML outputs listában engedélyezett fájlokat érintette.
+- [x] `main.rs` CLI/orchestration szerepre szűkítve, ha a task ezt engedi.
+- [x] A meglévő input/output contract nem változott kompatibilitást törően.
+- [x] Smoke inputokon a régi output szemantikailag változatlan (BYTE_IDENTICAL).
+- [x] `cargo build --release --manifest-path rust/vrs_solver/Cargo.toml` PASS.
+- [x] Unit/smoke tesztek PASS, ahol vannak (cargo test 2/2, validator PASS).
+- [x] Minden viselkedésváltozás explicit NO/YES táblában dokumentált.
+- [x] Report tartalmaz diff összefoglalót.
+- [x] Repo verify lefuttatva és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van (DISCOVERED_MISMATCH: validation.rs).
+- [x] Következő task indíthatósága egyértelműen jelölve van: JG-03 READY.
 
 ---
 
