@@ -118,6 +118,53 @@ pub fn expand_sheets(stocks: &[Stock]) -> Result<Vec<SheetShape>, String> {
     Ok(out)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect_stock(id: &str, qty: i64, w: f64, h: f64) -> Stock {
+        Stock {
+            id: id.to_string(),
+            quantity: qty,
+            width: Some(w),
+            height: Some(h),
+            outer_points: None,
+            holes_points: None,
+        }
+    }
+
+    #[test]
+    fn expand_sheets_stable_order_and_quantity() {
+        // Stock A (qty=2) then Stock B (qty=1) → 3 sheets: [A#0, A#1, B#0]
+        let stocks = vec![
+            rect_stock("A", 2, 100.0, 50.0),
+            rect_stock("B", 1, 200.0, 80.0),
+        ];
+        let sheets = expand_sheets(&stocks).expect("expand_sheets");
+        assert_eq!(sheets.len(), 3, "total expanded sheets must equal sum of quantities");
+        // First 2 sheets come from stock A (100×50)
+        for i in 0..2 {
+            assert!((sheets[i].width - 100.0).abs() < 1e-9, "sheets[{i}] width");
+            assert!((sheets[i].height - 50.0).abs() < 1e-9, "sheets[{i}] height");
+        }
+        // Third sheet comes from stock B (200×80)
+        assert!((sheets[2].width - 200.0).abs() < 1e-9, "sheets[2] width");
+        assert!((sheets[2].height - 80.0).abs() < 1e-9, "sheets[2] height");
+    }
+
+    #[test]
+    fn expand_sheets_zero_quantity_skipped() {
+        // Stock X (qty=0) is silently skipped; stock Y (qty=1) produces one sheet
+        let stocks = vec![
+            rect_stock("X", 0, 100.0, 100.0),
+            rect_stock("Y", 1, 50.0, 50.0),
+        ];
+        let sheets = expand_sheets(&stocks).expect("expand_sheets");
+        assert_eq!(sheets.len(), 1);
+        assert!((sheets[0].width - 50.0).abs() < 1e-9);
+    }
+}
+
 pub fn rect_inside_sheet_shape(rect: Rect, sheet: &SheetShape) -> bool {
     if rect.x1 < sheet.min_x - EPS
         || rect.y1 < sheet.min_y - EPS

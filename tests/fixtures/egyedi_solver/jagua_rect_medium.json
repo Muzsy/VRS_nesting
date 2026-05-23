@@ -1,0 +1,37 @@
+{
+  "contract_version": "v1",
+  "project_name": "jg05_medium",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "seed": 42,
+  "time_limit_s": 30,
+  "stocks": [
+    {
+      "id": "SHEET_A",
+      "quantity": 2,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "id": "SHEET_B",
+      "quantity": 1,
+      "width": 200,
+      "height": 150
+    }
+  ],
+  "parts": [
+    {
+      "id": "PART_A",
+      "width": 90,
+      "height": 90,
+      "quantity": 2,
+      "allowed_rotations_deg": [0]
+    },
+    {
+      "id": "PART_B",
+      "width": 180,
+      "height": 130,
+      "quantity": 1,
+      "allowed_rotations_deg": [0]
+    }
+  ]
+}

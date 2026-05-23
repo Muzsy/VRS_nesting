@@ -267,29 +267,31 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Rectangular sheet provider szerződése dokumentált.
-- [ ] Stock quantity → expanded sheet lista determinisztikus.
-- [ ] Stable `sheet_index` mapping ellenőrizve.
-- [ ] Margin/gap alapmezők fixture-ben szerepelnek.
-- [ ] Smoke fixture outer-only, kicsi és gyors.
-- [ ] Small realistic fixture outer-only, több quantity-vel.
-- [ ] Medium fixture előkészítve vagy placeholderrel dokumentálva.
-- [ ] Fixture-ök a solver IO contract szerint validak.
-- [ ] Validator PASS a valid fixture-ökre.
-- [ ] Invalid fixture-ek nem mennek át PASS-ként.
-- [ ] Reportban szerepel a fixture lista és futtatási parancs.
-- [ ] Repo verify PASS és log mentve.
+- [x] Rectangular sheet provider szerződése dokumentált.
+- [x] Stock quantity → expanded sheet lista determinisztikus.
+- [x] Stable `sheet_index` mapping ellenőrizve.
+- [x] Margin/gap alapmezők státusza dokumentált. DEVIATION: validator-only, nem Rust runtime mező.
+- [x] Smoke fixture outer-only, kicsi és gyors.
+- [x] Small realistic fixture outer-only, több quantity-vel.
+- [x] Medium fixture létrejött: 2 stock type, 3 expanded sheet slot, 3-sheet mapping bizonyítva.
+- [x] Fixture-ök a solver IO contract szerint validak.
+- [x] Validator PASS a valid fixture-ökre (11/11 smoke ellenőrzés).
+- [x] Invalid fixture-ek nem mennek át PASS-ként (index=9999 ValueError igazolva).
+- [x] Reportban szerepel a fixture lista és futtatási parancs.
+- [x] cargo build/test PASS (4/4 unit teszt).
+- [x] python3 scripts/smoke_jagua_rectangular_sheet_provider.py PASS (11/11).
+- [x] Repo verify PASS és log mentve. Exit 0, check.sh PASS.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van. (2 DEVIATION rögzítve)
+- [x] Következő task indíthatósága egyértelműen jelölve van: JG-06_STATUS: READY.
 
 ---
 

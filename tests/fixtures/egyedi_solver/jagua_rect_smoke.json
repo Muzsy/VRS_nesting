@@ -1,0 +1,31 @@
+{
+  "contract_version": "v1",
+  "project_name": "jg05_smoke",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "seed": 42,
+  "time_limit_s": 10,
+  "stocks": [
+    {
+      "id": "SHEET_A",
+      "quantity": 1,
+      "width": 200,
+      "height": 200
+    }
+  ],
+  "parts": [
+    {
+      "id": "PART_A",
+      "width": 50,
+      "height": 50,
+      "quantity": 2,
+      "allowed_rotations_deg": [0]
+    },
+    {
+      "id": "PART_B",
+      "width": 80,
+      "height": 30,
+      "quantity": 1,
+      "allowed_rotations_deg": [0, 90]
+    }
+  ]
+}

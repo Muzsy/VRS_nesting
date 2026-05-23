@@ -127,6 +127,20 @@ Backward compatibility:
 - If `solver_profile` is absent, the solver runs legacy rectangular mode regardless of part geometry fields.
 - `validate_multi_sheet_output()` only validates `ok`/`partial` layouts; `unsupported` is not a valid layout status.
 
+## margin_mm / spacing_mm field status (JG-05 DEVIATION)
+
+`margin_mm` and `spacing_mm` are **validator-only** fields read by `vrs_nesting/nesting/instances.py`
+`validate_multi_sheet_output()`. They affect sheet-boundary and spacing checks in Python validation.
+
+They are **NOT** fields in the Rust `SolverInput` struct and are silently ignored at solve time.
+The Rust solver does not apply any margin or spacing offset during placement.
+
+Status: **DEVIATION — validator-only; not a Rust runtime contract field in v1.**
+
+Fixtures must not claim runtime margin/spacing behaviour the solver does not implement.
+When margin/gap enforcement is needed, these fields should be promoted to v1 Rust fields with
+explicit solver behaviour, accompanied by a dedicated task and updated contract version.
+
 ## Failure modes
 - Missing binary -> deterministic runner error
 - Non-zero solver exit -> runner writes `runner_meta.json` and exits error
