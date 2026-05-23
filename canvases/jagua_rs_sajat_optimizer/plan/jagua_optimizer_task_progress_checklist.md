@@ -374,29 +374,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Initial item ordering dokumentálva: area/bbox/egyéb tie-breaker.
-- [ ] Rectangular candidate point generálás V1 implementálva.
-- [ ] Jagua collision check minden candidate próbánál használva.
-- [ ] Elhelyezhetetlen item unplaced státuszba kerül, nem tűnik el.
-- [ ] Small fixture minden partja validan elhelyezhető vagy explicit okkal unplaced.
-- [ ] Medium fixture legalább részleges, de valid layoutot ad.
-- [ ] Invalid layout soha nem kap successful PASS státuszt.
-- [ ] Exact validator PASS az elfogadott placementekre.
-- [ ] Runtime/time limit nem végtelen ciklusos.
-- [ ] Candidate count / rejection reason legalább részben reportolva.
-- [ ] Report tartalmaz példafuttatást.
-- [ ] Repo verify PASS és log mentve.
+- [x] Initial item ordering dokumentálva: area/bbox/egyéb tie-breaker.
+- [x] Rectangular candidate point generálás V1 implementálva.
+- [x] Jagua collision check minden candidate próbánál használva.
+- [x] Elhelyezhetetlen item unplaced státuszba kerül, nem tűnik el.
+- [x] Small fixture minden partja validan elhelyezhető vagy explicit okkal unplaced.
+- [x] Medium fixture legalább részleges, de valid layoutot ad.
+- [x] Invalid layout soha nem kap successful PASS státuszt.
+- [x] Exact validator PASS az elfogadott placementekre.
+- [x] Runtime/time limit nem végtelen ciklusos.
+- [x] Candidate count / rejection reason legalább részben reportolva.
+- [x] Report tartalmaz példafuttatást.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 

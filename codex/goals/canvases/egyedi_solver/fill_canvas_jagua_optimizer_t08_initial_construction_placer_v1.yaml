@@ -1,0 +1,115 @@
+steps:
+- name: Repo szabályok, JG tervdokumentáció és JG-08 taskforrások olvasása
+  description: >
+    Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+    docs/codex/report_standard.md és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját
+    optimizer tervdokumentációit, a JG task indexet, a JG-04 és JG-07 dependency reportokat, valamint ezt
+    a JG-08 canvast. Nyerd ki a JG-08 pontos taskdefinícióját a task bontásból és progress checklistből.
+    Ha JG-04 vagy JG-07 nem PASS, vagy JG-07 nem tartalmaz JG-08_STATUS: READY jelzést, állj meg BLOCKED
+    státusszal.
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+  - canvases/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t08_initial_construction_placer_v1.yaml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md
+
+- name: Valós kód audit és dependency boundary ellenőrzés
+  description: >
+    Vizsgáld meg az aktuális rust/vrs_solver modulstruktúrát, különösen az adapter, optimizer, item, sheet,
+    geometry és io modulokat. Ellenőrizd, hogy JG-07 után létezik-e layout-state és candidate model skeleton
+    vagy dokumentált ekvivalens. Dokumentáld, hogy az existing row/cursor baseline hogyan kapcsolódik a
+    leendő initializer/candidates modulokhoz. Ne hivatkozz nem létező modulra; hiány esetén BLOCKED vagy
+    DISCOVERED_MISMATCH blokkot írj.
+  inputs:
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/lib.rs
+  - rust/vrs_solver/src/main.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/sheet.rs
+  - docs/solver_io_contract.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md
+
+- name: Initial construction module scaffold és candidate model V1
+  description: >
+    Hozd létre vagy frissítsd az optimizer initializer/candidates modulokat a JG-07 state modellre építve.
+    Implementálj deterministic item orderinget, rectangular candidate-point generálást, candidate dedupe-ot,
+    rejection reason gyűjtést és olyan internal API-t, amely nem szivárogtat jagua-rs típusokat a VRS publikus
+    output contractba. A candidate generation ne fogadjon el hole-os inputot Phase 1-ben.
+  outputs:
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+
+- name: Jagua-backed placement próbák bekötése a solver útvonalba
+  description: >
+    Kösd be az initial construction placer V1-et a Phase 1 jagua optimizer útvonalba úgy, hogy minden candidate
+    boundary ellenőrzése a JaguaAdapter check_rect_in_sheet vagy dokumentált ekvivalens függvényén át fusson,
+    és minden collision ellenőrzés a JaguaAdapter check_polygon_collision vagy dokumentált rect-polygon adapter
+    útvonalán történjen. A meglévő v1 input/output JSON contract maradjon kompatibilis. Elhelyezhetetlen item
+    explicit unplaced reasonnel kerüljön outputba.
+  outputs:
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/main.rs
+  - rust/vrs_solver/src/io.rs
+
+- name: Rust unit tesztek és construction smoke script
+  description: >
+    Adj Rust unit teszteket az item ordering, candidate point generation, collision/boundary rejection és
+    deterministic placement minimum eseteire. Hozd létre a scripts/smoke_jagua_initial_construction.py scriptet,
+    amely small és medium fixture-ön futtatja a solver binárist, validate_multi_sheet_output ellenőrzést végez,
+    determinismet ellenőriz, és negatív invalid outputot is elutasíttat a validatorral.
+  inputs:
+  - vrs_nesting/nesting/instances.py
+  - scripts/smoke_jagua_rectangular_sheet_provider.py
+  - scripts/smoke_jagua_item_geometry_store.py
+  outputs:
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - scripts/smoke_jagua_initial_construction.py
+
+- name: Task checklist és globális progress checklist frissítése
+  description: >
+    Frissítsd a JG-08 task-specifikus checklistet és a globális jagua optimizer progress checklist JG-08 szakaszát.
+    Csak bizonyítottan teljesült pontot pipálj ki. Ha dependency, környezeti vagy implementációs okból valami nem
+    teljesült, jelöld BLOCKED/DEVIATION megjegyzéssel, ne pipáld ki hamisan.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+
+- name: Task report kitöltése és JG-09 gate döntés
+  description: >
+    Töltsd ki a JG-08 reportot a repo report standard szerint. A reportban legyen dependency evidence, valós kód
+    audit, candidate model döntés, implemented files, smoke/test eredmények, validator evidence, git diff/status,
+    és pontos végső státusz. Csak akkor írd a végére, hogy JG-09_STATUS: READY, ha JG-08 PASS, exact validation
+    bizonyított, és repo verify zöld.
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md
+
+- name: Repo gate (automatikus verify)
+  description: >
+    Futtasd a standard repo ellenőrzést és mentsd a logot: ./scripts/verify.sh --report
+    codex/reports/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md. Emellett dokumentáld a
+    task-specifikus parancsokat: cargo build --manifest-path rust/vrs_solver/Cargo.toml; cargo test --manifest-path
+    rust/vrs_solver/Cargo.toml; python3 scripts/smoke_jagua_initial_construction.py. Ha bármelyik környezeti okból
+    elakad, a report legyen REVISE/BLOCKED, ne PASS.
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.verify.log
