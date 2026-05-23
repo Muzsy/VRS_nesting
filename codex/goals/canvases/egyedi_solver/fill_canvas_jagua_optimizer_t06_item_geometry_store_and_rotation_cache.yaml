@@ -1,0 +1,119 @@
+steps:
+- name: Repo szabályok, JG tervdokumentáció és JG-06 taskforrások olvasása
+  description: 'Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md
+    és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját optimizer tervdokumentációit, a JG task indexet,
+    a JG-05 reportot és ezt a JG-06 canvast. Nyerd ki a JG-06 pontos taskdefinícióját a task bontásból és progress checklistből.
+    Ha JG-05 nem PASS vagy nem tartalmaz JG-06_STATUS: READY jelzést, állj meg BLOCKED státusszal.'
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t05_rectangular_sheet_provider_and_fixtures.md
+  - canvases/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t06_item_geometry_store_and_rotation_cache.yaml
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: Goal YAML sanity és dependency preflight
+  description: 'Validáld a goal YAML-t, ellenőrizd a nem üres steps listát, a sandbox-specifikus útvonalak hiányát, majd ellenőrizd
+    a JG-05 dependency reportot. JG-06 implementáció csak akkor indulhat, ha JG-05 report létezik, első sora PASS, és tartalmazza
+    a JG-06_STATUS: READY jelzést. Hiány esetén BLOCKED report, production módosítás nélkül.'
+  inputs:
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t06_item_geometry_store_and_rotation_cache.yaml
+  - codex/reports/egyedi_solver/jagua_optimizer_t05_rectangular_sheet_provider_and_fixtures.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: Valós item/geometry code-boundary audit
+  description: Olvasd el és dokumentáld a reportban a jelenlegi Part, Instance, expand_instances, normalize_allowed_rotations,
+    bbox/rotation helper, adapter és optimizer kapcsolódásokat. Ne találj ki nem létező modult vagy API-t. Ha új modul szükséges,
+    indokold és csak a YAML outputs bővítése után dolgozz rajta.
+  inputs:
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/sheet.rs
+  - docs/solver_io_contract.md
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: ItemGeometryStore és rotation cache implementáció
+  description: Implementálj stabil belső item geometry store-t vagy ekvivalens modellt. Tartalmazzon item identityt, quantity
+    expansiont, area/bbox számítást, exact/proxy geometry separationt, stable allowed rotation policyt és per-rotation cache
+    entryket 0/90/180/270 fokhoz. Unsupported rotáció explicit hibát adjon, ne silent dropot. Ne implementálj új placement
+    algoritmust.
+  inputs:
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/src/io.rs
+  outputs:
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/src/io.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: Adapter/optimizer kompatibilitási igazítás csak szükség esetén
+  description: Ha az új store/cache miatt minimális adapter vagy optimizer igazítás kell, végezd el visszafelé kompatibilisen.
+    A row/cursor baseline viselkedése rectangle-only inputokon ne romoljon. Ne vezess be JG-07/JG-08 state/placer funkciókat.
+  inputs:
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/item.rs
+  outputs:
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: Item geometry store smoke script és unit tesztek
+  description: Hozd létre a scripts/smoke_jagua_item_geometry_store.py scriptet és/vagy Rust unit teszteket. A smoke ellenőrizze
+    a quantity expansiont, stable instance summaryt, allowed rotation dedupe/order policyt, 0/90/180/270 rotation cache bboxokat,
+    unsupported rotation explicit failuret, és determinisztikus ismételt futást.
+  inputs:
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/Cargo.toml
+  - scripts/verify.sh
+  outputs:
+  - scripts/smoke_jagua_item_geometry_store.py
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: Célzott build, teszt és smoke verifikáció
+  description: 'Futtasd és dokumentáld: cargo build --manifest-path rust/vrs_solver/Cargo.toml; cargo test --manifest-path
+    rust/vrs_solver/Cargo.toml; python3 scripts/smoke_jagua_item_geometry_store.py. A reportban legyen külön evidence az instance
+    determinismre, rotation cache correctnessre, unsupported rotation hibára és legacy rectangle regressziómentességre.'
+  inputs:
+  - rust/vrs_solver/Cargo.toml
+  - scripts/smoke_jagua_item_geometry_store.py
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: Checklist, progress checklist és report véglegesítése
+  description: Frissítsd a task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-06 szakaszát
+    kizárólag bizonyíték alapján. PASS csak akkor adható, ha JG-05 dependency igazolt, minden acceptance gate teljesült, a
+    smoke/unit tesztek PASS, repo verify PASS, és a checklist pontok pipálva vagy explicit DEVIATION/BLOCKED megjegyzéssel
+    ellátva vannak.
+  inputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot. Parancs: ./scripts/verify.sh --report
+    codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md. A verify logot a wrapper a
+    megfelelő .verify.log útvonalra menti. PASS csak zöld verify esetén adható; környezeti blocker esetén REVISE vagy BLOCKED.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.verify.log

@@ -69,6 +69,10 @@ pub fn jag_edge_from_points(a: Point, b: Point) -> Option<JagEdge> {
     JagEdge::try_new(to_jag_point(a), to_jag_point(b)).ok()
 }
 
+pub fn rect_area(width: f64, height: f64) -> f64 {
+    width * height
+}
+
 pub fn rect_corners(rect: Rect) -> [Point; 4] {
     [
         Point {

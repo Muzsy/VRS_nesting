@@ -126,9 +126,189 @@ pub fn expand_instances(parts: &[Part]) -> Result<Vec<Instance>, String> {
     Ok(instances)
 }
 
+// ---------------------------------------------------------------------------
+// ItemGeometryStore — stable per-part geometry cache (JG-06)
+//
+// Phase 1 proxy model: bbox-based rotation cache only.
+// Exact outer polygon is preserved in Part.outer_points / Part.prepared_outer_points
+// (serde_json::Value) for later phases; not expanded here to avoid premature coupling.
+// ---------------------------------------------------------------------------
+
+/// Pre-computed geometry for one rotation of a part.
+/// Phase 1: proxy bbox dimensions and anchor offset only (no full polygon rotation).
+#[derive(Debug, Clone)]
+pub struct RotationCacheEntry {
+    pub rotation_deg: i64,
+    /// Rotated bounding-box width (swapped from base for 90°/270°).
+    pub width: f64,
+    /// Rotated bounding-box height.
+    pub height: f64,
+    /// x-offset of the rotated bbox min-corner from the placement anchor.
+    pub bbox_min_offset_x: f64,
+    /// y-offset of the rotated bbox min-corner from the placement anchor.
+    pub bbox_min_offset_y: f64,
+}
+
+/// Pre-computed geometry record for a single Part.
+#[derive(Debug, Clone)]
+pub struct ItemGeometryRecord {
+    pub part_id: String,
+    pub quantity: i64,
+    pub base_width: f64,
+    pub base_height: f64,
+    /// Proxy area = base_width × base_height (Phase 1 rectangular assumption).
+    pub area: f64,
+    /// Normalized, deduped allowed rotations in input-occurrence order.
+    pub allowed_rotations: Vec<i64>,
+    /// Pre-computed cache entries, one per entry in allowed_rotations.
+    pub rotation_cache: Vec<RotationCacheEntry>,
+}
+
+/// Store of pre-computed item geometry records, one per Part.
+#[derive(Debug)]
+pub struct ItemGeometryStore {
+    pub records: Vec<ItemGeometryRecord>,
+}
+
+/// Build an `ItemGeometryStore` from a slice of `Part`s.
+///
+/// Returns `Err` if any part has an unsupported or empty rotation list.
+pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, String> {
+    let mut records = Vec::new();
+    for part in parts {
+        let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg)?;
+        let area = crate::geometry::rect_area(part.width, part.height);
+        let mut rotation_cache = Vec::new();
+        for &rot in &allowed_rotations {
+            let (w, h) = dims_for_rotation(part.width, part.height, rot)
+                .ok_or_else(|| format!("internal: unsupported rotation {rot} for part {}", part.id))?;
+            let (bx, by) = rotated_bbox_min_offset(part.width, part.height, rot)
+                .ok_or_else(|| format!("internal: no bbox offset for rotation {rot}, part {}", part.id))?;
+            rotation_cache.push(RotationCacheEntry {
+                rotation_deg: rot,
+                width: w,
+                height: h,
+                bbox_min_offset_x: bx,
+                bbox_min_offset_y: by,
+            });
+        }
+        records.push(ItemGeometryRecord {
+            part_id: part.id.clone(),
+            quantity: part.quantity,
+            base_width: part.width,
+            base_height: part.height,
+            area,
+            allowed_rotations,
+            rotation_cache,
+        });
+    }
+    Ok(ItemGeometryStore { records })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{dims_for_rotation, placement_anchor_from_rect_min, rotated_bbox_min_offset};
+    use super::{
+        build_item_geometry_store, dims_for_rotation, placement_anchor_from_rect_min,
+        rotated_bbox_min_offset, Part,
+    };
+    fn make_part(id: &str, w: f64, h: f64, qty: i64, rotations: Vec<i64>) -> Part {
+        Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: qty,
+            allowed_rotations_deg: rotations,
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+        }
+    }
+
+    #[test]
+    fn item_geometry_store_rotation_cache_dims() {
+        let parts = vec![make_part("A", 100.0, 50.0, 1, vec![0, 90])];
+        let store = build_item_geometry_store(&parts).expect("store build");
+        assert_eq!(store.records.len(), 1);
+        let rec = &store.records[0];
+        assert_eq!(rec.rotation_cache.len(), 2);
+        // rot=0: 100×50
+        let e0 = &rec.rotation_cache[0];
+        assert_eq!(e0.rotation_deg, 0);
+        assert!((e0.width - 100.0).abs() < 1e-9);
+        assert!((e0.height - 50.0).abs() < 1e-9);
+        // rot=90: 50×100
+        let e90 = &rec.rotation_cache[1];
+        assert_eq!(e90.rotation_deg, 90);
+        assert!((e90.width - 50.0).abs() < 1e-9);
+        assert!((e90.height - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn item_geometry_store_area() {
+        let parts = vec![make_part("B", 80.0, 60.0, 3, vec![0])];
+        let store = build_item_geometry_store(&parts).expect("store build");
+        assert!((store.records[0].area - 4800.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn item_geometry_store_duplicate_rotation_deduped() {
+        let parts = vec![make_part("C", 50.0, 30.0, 1, vec![0, 0, 90, 90, 0])];
+        let store = build_item_geometry_store(&parts).expect("store build");
+        let rec = &store.records[0];
+        assert_eq!(rec.allowed_rotations, vec![0, 90], "duplicates deduped");
+        assert_eq!(rec.rotation_cache.len(), 2);
+    }
+
+    #[test]
+    fn item_geometry_store_unsupported_rotation_error() {
+        let parts = vec![make_part("D", 50.0, 50.0, 1, vec![45])];
+        let result = build_item_geometry_store(&parts);
+        assert!(result.is_err(), "unsupported rotation must return Err");
+        let msg = result.unwrap_err();
+        assert!(msg.contains("45"), "error message should mention the bad rotation");
+    }
+
+    #[test]
+    fn item_geometry_store_deterministic() {
+        let parts = vec![
+            make_part("X", 120.0, 80.0, 2, vec![0, 90, 180, 270]),
+            make_part("Y", 60.0, 40.0, 1, vec![0]),
+        ];
+        let store1 = build_item_geometry_store(&parts).expect("store1");
+        let store2 = build_item_geometry_store(&parts).expect("store2");
+        assert_eq!(store1.records.len(), store2.records.len());
+        for (r1, r2) in store1.records.iter().zip(store2.records.iter()) {
+            assert_eq!(r1.part_id, r2.part_id);
+            assert_eq!(r1.allowed_rotations, r2.allowed_rotations);
+            assert_eq!(r1.rotation_cache.len(), r2.rotation_cache.len());
+            for (e1, e2) in r1.rotation_cache.iter().zip(r2.rotation_cache.iter()) {
+                assert_eq!(e1.rotation_deg, e2.rotation_deg);
+                assert!((e1.width - e2.width).abs() < 1e-9);
+                assert!((e1.height - e2.height).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn item_geometry_store_all_four_rotations() {
+        let parts = vec![make_part("E", 100.0, 40.0, 1, vec![0, 90, 180, 270])];
+        let store = build_item_geometry_store(&parts).expect("store build");
+        let cache = &store.records[0].rotation_cache;
+        assert_eq!(cache.len(), 4);
+        // rot=0  → 100×40
+        assert!((cache[0].width - 100.0).abs() < 1e-9);
+        assert!((cache[0].height - 40.0).abs() < 1e-9);
+        // rot=90 → 40×100
+        assert!((cache[1].width - 40.0).abs() < 1e-9);
+        assert!((cache[1].height - 100.0).abs() < 1e-9);
+        // rot=180 → 100×40
+        assert!((cache[2].width - 100.0).abs() < 1e-9);
+        assert!((cache[2].height - 40.0).abs() < 1e-9);
+        // rot=270 → 40×100
+        assert!((cache[3].width - 40.0).abs() < 1e-9);
+        assert!((cache[3].height - 100.0).abs() < 1e-9);
+    }
 
     fn approx_eq(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-9

@@ -304,29 +304,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Item instance id szabály dokumentálva.
-- [ ] Quantity expansion determinisztikus és tesztelt.
-- [ ] Area/bbox számítás rögzítve.
-- [ ] Allowed rotations ordering stabil.
-- [ ] 0/90/180/270 rotációk regresszió nélkül működnek.
-- [ ] Unsupported rotáció explicit hibát vagy unsupported státuszt ad.
-- [ ] Rotated proxy geometry cache működik.
-- [ ] Exact geometry külön megőrzése dokumentálva.
-- [ ] Azonos input + seed azonos instance listát ad.
-- [ ] Unit tesztek vagy smoke tesztek PASS.
-- [ ] Report tartalmaz cache és determinism megjegyzést.
-- [ ] Repo verify PASS és log mentve.
+- [x] Item instance id szabály dokumentálva. (`part_id__0001`, lexikografikus sorrend)
+- [x] Quantity expansion determinisztikus és tesztelt.
+- [x] Area/bbox számítás rögzítve. (`rect_area(w,h)` in geometry.rs; `ItemGeometryRecord.area`)
+- [x] Allowed rotations ordering stabil. (input-occurrence-order, dokumentálva)
+- [x] 0/90/180/270 rotációk regresszió nélkül működnek. (unit teszt + smoke PASS)
+- [x] Unsupported rotáció explicit hibát vagy unsupported státuszt ad. (unit teszt 45°→Err; smoke exit=1)
+- [x] Rotated proxy geometry cache működik. (`RotationCacheEntry` per rotation)
+- [x] Exact geometry külön megőrzése dokumentálva. (Part.outer_points megmarad, nem vész el)
+- [x] Azonos input + seed azonos instance listát ad. (smoke determinism PASS)
+- [x] Unit tesztek vagy smoke tesztek PASS. (10/10 Rust + 8/8 Python)
+- [x] Report tartalmaz cache és determinism megjegyzést.
+- [x] Repo verify PASS és log mentve. Exit 0.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van. (nincs DEVIATION)
+- [x] Következő task indíthatósága egyértelműen jelölve van: JG-07_STATUS: READY.
 
 ---
 
