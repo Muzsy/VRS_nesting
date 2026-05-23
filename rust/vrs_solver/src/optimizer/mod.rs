@@ -1,3 +1,7 @@
+pub mod moves;
+pub mod score;
+pub mod state;
+
 use crate::geometry::{EPS, Rect};
 use crate::io::Placement;
 use crate::item::{dims_for_rotation, placement_anchor_from_rect_min, Instance};

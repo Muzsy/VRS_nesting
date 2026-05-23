@@ -1,0 +1,117 @@
+steps:
+- name: Repo szabályok, JG tervdokumentáció és JG-07 taskforrások olvasása
+  description: 'Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md
+    és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját optimizer tervdokumentációit, a JG task indexet,
+    a JG-06 reportot és ezt a JG-07 canvast. Nyerd ki a JG-07 pontos taskdefinícióját a task bontásból és progress checklistből.
+    Ha JG-06 nem PASS vagy nem tartalmaz JG-07_STATUS: READY jelzést, állj meg BLOCKED státusszal.'
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+  - canvases/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t07_layout_state_and_candidate_model.yaml
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: Goal YAML sanity és dependency preflight
+  description: 'Validáld a goal YAML-t, ellenőrizd a nem üres steps listát és a sandbox-specifikus útvonalak hiányát. Ellenőrizd,
+    hogy a JG-06 report létezik, első sora PASS, és tartalmazza a JG-07_STATUS: READY jelzést. Hiány esetén BLOCKED report,
+    production módosítás nélkül.'
+  inputs:
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t07_layout_state_and_candidate_model.yaml
+  - codex/reports/egyedi_solver/jagua_optimizer_t06_item_geometry_store_and_rotation_cache.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: Valós optimizer/item/io code-boundary audit
+  description: Olvasd el és dokumentáld a reportban a jelenlegi optimizer baseline-t, a SheetCursor/try_place_on_sheet útvonalat,
+    a JG-06 ItemGeometryStore-t, a v1 Placement/Unplaced contractot és a SheetShape/sheet_index kezelést. Ne találj ki nem
+    létező modult vagy API-t.
+  inputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/sheet.rs
+  - docs/solver_io_contract.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: Optimizer state/moves/score modulstruktúra létrehozása
+  description: Hozd létre a rust/vrs_solver/src/optimizer/state.rs, moves.rs és score.rs modulokat. Frissítsd az optimizer/mod.rs
+    fájlt úgy, hogy az új modulok exportálva legyenek, miközben a meglévő SheetCursor és try_place_on_sheet baseline változatlanul
+    fordul és működik. Nagy refaktort ne végezz.
+  inputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: LayoutState és PlacementTransform implementáció
+  description: Implementálj placed/unplaced szeparált LayoutState modellt, PlacementTransformot translation + rotation adattal,
+    stable sheet_index és seed/determinism előkészítéssel. A modell legyen diagnosztikába szerializálható, és ne törje a v1
+    Placement/Unplaced output contractot.
+  inputs:
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/sheet.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/state.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: CandidateMove és ObjectiveBreakdown skeleton implementáció
+  description: Implementálj CandidateMove skeleton-t legalább place/move/reinsert/rotate alapokkal és ObjectiveBreakdown skeleton-t
+    placed_count, unplaced_count, sheet_count_used és későbbi penalty mezők előkészítésével. Ne implementálj candidate generationt,
+    score optimalizálást vagy collision próbálgatást.
+  inputs:
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: State unit tesztek és regressziós ellenőrzések
+  description: Adj Rust unit teszteket a state/moves/score modulokhoz. Fedjék a placed/unplaced szeparációt, transform adatmegőrzést,
+    CandidateMove variantokat, ObjectiveBreakdown countokat, JSON diagnosztikát és deterministic state orderinget. Futtasd
+    a cargo build/test parancsokat, valamint a meglévő JG-05/JG-06 smoke script regressziókat.
+  inputs:
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - scripts/smoke_jagua_item_geometry_store.py
+  - scripts/smoke_jagua_rectangular_sheet_provider.py
+  outputs:
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: Checklist, progress checklist és report véglegesítése
+  description: Frissítsd a task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-07 szakaszát
+    kizárólag bizonyíték alapján. PASS csak akkor adható, ha JG-06 dependency igazolt, minden acceptance gate teljesült, a
+    state/unit/smoke tesztek PASS, repo verify PASS, és a checklist pontok pipálva vagy explicit DEVIATION/BLOCKED megjegyzéssel
+    ellátva vannak.
+  inputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot. Parancs: ./scripts/verify.sh --report
+    codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md. A verify logot a wrapper a megfelelő
+    .verify.log útvonalra menti. PASS csak zöld verify esetén adható; környezeti blocker esetén REVISE vagy BLOCKED.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t07_layout_state_and_candidate_model.verify.log

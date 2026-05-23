@@ -339,29 +339,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] LayoutState modell létrejött vagy részletesen definiálva.
-- [ ] Placed/unplaced állapot külön kezelve.
-- [ ] PlacementTransform modell tartalmaz translation + rotation adatot.
-- [ ] CandidateMove modell tartalmaz legalább move/reinsert/rotate alapot.
-- [ ] ObjectiveBreakdown skeleton létrejött.
-- [ ] State diagnosztikába szerializálható.
-- [ ] Output contract v1 kompatibilis maradt.
-- [ ] State unit tesztek PASS.
-- [ ] Invalid/partial state nem jelenik meg sikeres final layoutként.
-- [ ] Determinism mezők / seed kezelés előkészítve.
-- [ ] Report tartalmaz állapotdiagramot vagy rövid modellt.
-- [ ] Repo verify PASS és log mentve.
+- [x] LayoutState modell létrejött vagy részletesen definiálva.
+- [x] Placed/unplaced állapot külön kezelve.
+- [x] PlacementTransform modell tartalmaz translation + rotation adatot.
+- [x] CandidateMove modell tartalmaz legalább move/reinsert/rotate alapot.
+- [x] ObjectiveBreakdown skeleton létrejött.
+- [x] State diagnosztikába szerializálható.
+- [x] Output contract v1 kompatibilis maradt.
+- [x] State unit tesztek PASS.
+- [x] Invalid/partial state nem jelenik meg sikeres final layoutként.
+- [x] Determinism mezők / seed kezelés előkészítve.
+- [x] Report tartalmaz állapotdiagramot vagy rövid modellt.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
