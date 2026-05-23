@@ -479,29 +479,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Score komponensek dokumentálva: placed area, unplaced penalty, sheet count, overlap/boundary penalty, compactness proxy.
-- [ ] ObjectiveBreakdown outputban auditálható.
-- [ ] Score weight defaultok dokumentálva.
-- [ ] Invalid layout score-ja mindig rosszabb valid alternatívánál az erre készített tesztben.
-- [ ] Unplaced penalty érdemben büntet.
-- [ ] Sheet count penalty működik.
-- [ ] Boundary/overlap penalty nagy súlyú.
-- [ ] Compactness proxy nem írja felül a validitást.
-- [ ] Score determinisztikus azonos állapotra.
-- [ ] Profile default reportban szerepel.
-- [ ] Score smoke tesztek PASS.
-- [ ] Repo verify PASS és log mentve.
+- [x] Score komponensek dokumentálva: placed area, unplaced penalty, sheet count, overlap/boundary penalty, compactness proxy.
+- [x] ObjectiveBreakdown outputban auditálható.
+- [x] Score weight defaultok dokumentálva.
+- [x] Invalid layout score-ja mindig rosszabb valid alternatívánál az erre készített tesztben.
+- [x] Unplaced penalty érdemben büntet.
+- [x] Sheet count penalty működik.
+- [x] Boundary/overlap penalty nagy súlyú.
+- [x] Compactness proxy nem írja felül a validitást.
+- [x] Score determinisztikus azonos állapotra.
+- [x] Profile default reportban szerepel.
+- [x] Score smoke tesztek PASS.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 

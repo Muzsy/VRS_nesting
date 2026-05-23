@@ -1,0 +1,95 @@
+steps:
+- name: Repo szabályok, JG tervdokumentáció és JG-11 taskforrások olvasása
+  description: 'Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md
+    és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját optimizer tervdokumentációit, a JG task indexet,
+    a JG-10 dependency reportot, valamint ezt a JG-11 canvast. Nyerd ki a JG-11 pontos taskdefinícióját a task bontásból és
+    progress checklistből. Ha JG-10 nem PASS vagy nem tartalmaz JG-11_STATUS: READY jelzést, állj meg BLOCKED státusszal.'
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+  - canvases/egyedi_solver/jagua_optimizer_t11_score_model_v1.md
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t11_score_model_v1.yaml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t11_score_model_v1.md
+- name: ScoreModel aktuális kódbázis audit
+  description: Vizsgáld meg a Phase 1 optimizer aktuális score, state, repair, initializer, candidates, item, sheet és IO
+    moduljait. Dokumentáld, hogy a meglévő score.rs skeleton milyen mezőket tartalmaz, és milyen döntéssel bővíted ScoreModel
+    V1-re. Ne hozz létre duplikált score modult.
+  inputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/stopping.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/Cargo.toml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t11_score_model_v1.md
+- name: ScoreWeights és ScoreModel V1 implementáció
+  description: Bővítsd a meglévő rust/vrs_solver/src/optimizer/score.rs modult ScoreModel V1-re. Vezess be dokumentált ScoreWeights
+    vagy repo-konform ekvivalens default profile-t, explicit score irányt és összehasonlítható total_score/total_cost értéket.
+    A súlyokat egy helyen tartsd, ne szétszórt magic numberként.
+  outputs:
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+- name: ObjectiveBreakdown és invalid-layout penalty komponensek
+  description: 'Bővítsd az ObjectiveBreakdownt auditálható komponensekkel: placed area, unplaced penalty, sheet count penalty,
+    overlap penalty, boundary penalty, compactness proxy és total score/cost. Használd a meglévő bbox_from_placement, PlacedBbox::overlaps,
+    rect_inside_sheet_shape és Part/ItemGeometryStore helperöket, ha a valós signature illeszkedik. Bizonyítsd unit tesztekkel,
+    hogy invalid layout rosszabb valid alternatívánál.'
+  inputs:
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/item.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/score.rs
+- name: ScoreModel V1 dokumentáció
+  description: Hozd létre a docs/egyedi_solver/jagua_optimizer_score_model_v1.md dokumentumot. Tartalmazza a score irányát,
+    a default weight profilt, a komponensek definícióját, az invalid layout policyt, a determinisztikussági elvet, ismert
+    korlátokat, valamint a JG-12/JG-13/JG-14 felé vezető kapcsolatot.
+  outputs:
+  - docs/egyedi_solver/jagua_optimizer_score_model_v1.md
+- name: JG-11 score smoke script
+  description: Hozd létre a scripts/smoke_jagua_score_model_v1.py scriptet. A smoke bizonyítsa, hogy a score unit tesztek
+    PASS, invalid layout score-ja rosszabb valid alternatívánál, unplaced penalty és sheet count penalty működik, overlap/boundary
+    penalty nagy súlyú, compactness proxy nem írja felül a validitást, és azonos állapotra a score determinisztikus. Ha lehetséges,
+    futtasd JG-10 repair smoke regressziót is.
+  inputs:
+  - scripts/smoke_jagua_repair_search_v1.py
+  outputs:
+  - scripts/smoke_jagua_score_model_v1.py
+- name: Task checklist, progress checklist és report frissítése
+  description: 'Frissítsd a JG-11 task-specifikus checklistet és a globális jagua optimizer progress checklist JG-11 szakaszát.
+    Csak bizonyítottan teljesült pontot pipálj ki. Töltsd ki a reportot dependency evidence-szel, real code audittal, score
+    API döntéssel, score weight default táblázattal, objective breakdown példával, invalid vs valid evidence-szel és teszteredményekkel.
+    Csak akkor írd a report végére, hogy JG-12_STATUS: READY, ha minden gate PASS.'
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t11_score_model_v1.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t11_score_model_v1.md
+- name: Repo gate automatikus verify
+  description: 'Futtasd a standard repo ellenőrzést és mentsd a logot: ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t11_score_model_v1.md.
+    Emellett dokumentáld a task-specifikus parancsokat: cargo build --manifest-path rust/vrs_solver/Cargo.toml; cargo test
+    --manifest-path rust/vrs_solver/Cargo.toml; cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::score; python3
+    scripts/smoke_jagua_repair_search_v1.py; python3 scripts/smoke_jagua_score_model_v1.py. Ha bármelyik környezeti okból
+    elakad, a report legyen REVISE/BLOCKED, ne PASS.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t11_score_model_v1.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t11_score_model_v1.verify.log
