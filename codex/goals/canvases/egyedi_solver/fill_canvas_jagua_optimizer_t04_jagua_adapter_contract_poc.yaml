@@ -1,0 +1,69 @@
+steps:
+- name: Task és dependency ellenőrzés
+  description: 'Olvasd el a repo szabályfájlokat, projektterveket, JG-04 task-bontást, master runner-t, JG-02/JG-03 reportokat
+    és a JG-04 canvas/checklist fájlokat. Ellenőrizd, hogy JG-02 és JG-03 PASS, valamint JG-03 reportban szerepel a JG-04_STATUS:
+    READY. Dokumentáld a régi fejlesztési terv és aktuális task-bontás közti DISCOVERED_MISMATCH-et.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: Valós code-boundary audit
+  description: 'Auditáld a jelenlegi Rust crate és Python smoke boundary-t: Cargo.toml jagua-rs verzió, main.rs modulstruktúra,
+    adapter.rs solve orchestration, geometry.rs jagua conversion helperek, sheet.rs CollidesWith használat, item.rs Part/Instance,
+    optimizer/mod.rs baseline és a JG-03 smoke script. Ne hivatkozz nem létező modulra vagy parancsra.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: JaguaAdapter contract és Rust PoC
+  description: Implementálj vékony VRS-owned JaguaAdapter contractot vagy struct/trait PoC-t a valós modulhatárok szerint.
+    A jagua-rs típusok ne szivárogjanak át publikus optimizer modellbe. Különítsd el az unsupported, conversion_error és backend_error
+    kategóriákat. A meglévő solve(input) és JG-03 hole gate behavior nem sérülhet.
+  outputs:
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/src/main.rs
+  - rust/vrs_solver/src/lib.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: Smoke bináris
+  description: Hozd létre a rust/vrs_solver/src/bin/jagua_adapter_smoke.rs binárist. A bináris stabil, géppel ellenőrizhető
+    outputtal bizonyítsa az item-item non-overlap, item-item overlap és lehetőség szerint item-sheet/boundary eseteket, valamint
+    dokumentálja a f64→f32 conversion note-ot. Ha lib.rs vagy új modul szükséges, azt csak builddel igazoltan és reportban
+    dokumentálva add hozzá.
+  outputs:
+  - rust/vrs_solver/src/bin/jagua_adapter_smoke.rs
+  - rust/vrs_solver/src/lib.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/geometry.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: Python smoke script
+  description: Hozd létre a scripts/smoke_jagua_adapter_contract.py scriptet. A script repo rootból fusson, buildelje vagy
+    futtassa a jagua_adapter_smoke binárist, parse-olja/stabilan ellenőrizze a kimenetet, és explicit assertionökkel validálja
+    a smoke eseteket. Exit 0 csak teljes PASS esetén lehet.
+  outputs:
+  - scripts/smoke_jagua_adapter_contract.py
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: Célzott build és smoke ellenőrzések
+  description: 'Futtasd: cargo build --release --manifest-path rust/vrs_solver/Cargo.toml; cargo test --manifest-path rust/vrs_solver/Cargo.toml;
+    python3 scripts/smoke_jagua_adapter_contract.py; python3 scripts/smoke_jagua_optimizer_outer_only_contract.py. Eredményt
+    és releváns outputot rögzítsd a reportban. Környezeti hiba esetén ne adj PASS-t.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: Checklist és globális progress frissítés
+  description: Frissítsd a task-specifikus checklistet és a canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+    JG-04 szakaszát. PASS csak akkor adható, ha minden releváns JG-04 pont pipált vagy explicit BLOCKED/DEVIATION bizonyítékkal
+    jelölt.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: Report lezárás és next-task readiness
+  description: 'Zárd le a reportot DoD→Evidence mátrixszal, adapter döntéssel, API megfigyelésekkel, ismert korlátokkal, smoke
+    evidence-szel és final státusszal. Csak teljes PASS esetén írd bele: JG-05_STATUS: READY és JG-08_DEPENDENCY_JG04: READY.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot. Parancs: ./scripts/verify.sh --report
+    codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md. A verify logot a wrapper a megfelelő .verify.log
+    útvonalra menti. PASS csak zöld verify esetén adható; környezeti blocker esetén REVISE vagy BLOCKED.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t04_jagua_adapter_contract_poc.verify.log

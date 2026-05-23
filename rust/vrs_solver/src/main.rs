@@ -1,9 +1,4 @@
-mod adapter;
-mod geometry;
-mod io;
-mod item;
-mod optimizer;
-mod sheet;
+use vrs_solver::{adapter, io};
 
 use std::collections::HashMap;
 use std::fs;

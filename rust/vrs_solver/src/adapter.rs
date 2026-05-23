@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::io::{Metrics, Placement, SolverInput, SolverOutput, Unplaced};
 use crate::item::{can_fit_any_stock, expand_instances, part_has_holes};
 use crate::optimizer::{try_place_on_sheet, SheetCursor};
@@ -105,4 +107,96 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
             project_name: input.project_name,
         },
     })
+}
+
+// ---------------------------------------------------------------------------
+// JaguaAdapter contract — VRS-owned PoC boundary (JG-04)
+// Jagua-rs types stay internal; only VRS geometry types cross the public API.
+// ---------------------------------------------------------------------------
+
+/// VRS-owned error categories for the jagua backend boundary.
+/// No jagua-rs types appear here.
+#[derive(Debug)]
+pub enum JaguaAdapterError {
+    /// Input geometry could not be converted to jagua internal representation.
+    ConversionError(String),
+    /// A jagua backend operation returned an unexpected runtime error.
+    BackendError(String),
+    /// The requested operation is not yet supported by the adapter PoC.
+    Unsupported(String),
+}
+
+impl fmt::Display for JaguaAdapterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ConversionError(s) => write!(f, "conversion_error: {s}"),
+            Self::BackendError(s) => write!(f, "backend_error: {s}"),
+            Self::Unsupported(s) => write!(f, "unsupported: {s}"),
+        }
+    }
+}
+
+/// Thin VRS adapter to the jagua-rs collision/geometry backend.
+/// Accepts VRS-owned point slices; jagua types never appear in the public API.
+/// Precision note: f64 VRS coordinates are narrowed to f32 for jagua (documented).
+pub struct JaguaAdapter;
+
+impl JaguaAdapter {
+    /// Returns `true` if the two polygons (given as VRS Point slices) collide.
+    ///
+    /// Detection strategy (composing known jagua primitives):
+    /// 1. Any corner of poly_b inside poly_a → collision.
+    /// 2. Any corner of poly_a inside poly_b → collision.
+    /// 3. Any edge of poly_a intersects any edge of poly_b → collision.
+    pub fn check_polygon_collision(
+        poly_a: &[crate::geometry::Point],
+        poly_b: &[crate::geometry::Point],
+    ) -> Result<bool, JaguaAdapterError> {
+        use jagua_rs::geometry::geo_traits::CollidesWith;
+        use crate::geometry::{jag_edge_from_points, to_jag_point, to_jag_polygon};
+
+        let spoly_a = to_jag_polygon(poly_a, "poly_a")
+            .map_err(JaguaAdapterError::ConversionError)?;
+        let spoly_b = to_jag_polygon(poly_b, "poly_b")
+            .map_err(JaguaAdapterError::ConversionError)?;
+
+        // Point containment: any corner of B inside A?
+        for p in poly_b {
+            if spoly_a.collides_with(&to_jag_point(*p)) {
+                return Ok(true);
+            }
+        }
+        // Point containment: any corner of A inside B?
+        for p in poly_a {
+            if spoly_b.collides_with(&to_jag_point(*p)) {
+                return Ok(true);
+            }
+        }
+        // Edge-edge intersection
+        let n_a = poly_a.len();
+        let n_b = poly_b.len();
+        for i in 0..n_a {
+            let Some(edge_a) = jag_edge_from_points(poly_a[i], poly_a[(i + 1) % n_a]) else {
+                continue;
+            };
+            for j in 0..n_b {
+                let Some(edge_b) = jag_edge_from_points(poly_b[j], poly_b[(j + 1) % n_b]) else {
+                    continue;
+                };
+                if edge_a.collides_with(&edge_b) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns `true` if the rectangular item fits entirely inside the sheet shape
+    /// (boundary check using the existing rect_inside_sheet_shape helper).
+    pub fn check_rect_in_sheet(
+        item_rect: crate::geometry::Rect,
+        sheet: &crate::sheet::SheetShape,
+    ) -> bool {
+        crate::sheet::rect_inside_sheet_shape(item_rect, sheet)
+    }
 }

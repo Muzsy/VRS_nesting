@@ -232,29 +232,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Adapter trait/contract leírva saját publikus modellben.
-- [ ] Jagua-specifikus típusok nem szivárognak át az optimizer publikus modelljébe.
-- [ ] VRS polygon → jagua geometry konverzió első verziója elkészült vagy spike-olva.
-- [ ] Egyszerű item-item collision smoke valid esetet felismer.
-- [ ] Egyszerű item-item collision smoke invalid/overlap esetet felismer.
-- [ ] Item-sheet / boundary jellegű smoke lefut, ha a jagua API támogatja.
-- [ ] f32/f64 vagy unit konverziós kockázat dokumentálva.
-- [ ] Adapter hibakezelés explicit: unsupported, conversion_error, backend_error.
-- [ ] A POC nem köt be még teljes optimizer-loopot.
-- [ ] Cargo build PASS.
-- [ ] Report tartalmaz API-megfigyeléseket és ismert korlátokat.
-- [ ] Repo verify PASS és log mentve.
+- [x] Adapter trait/contract leírva saját publikus modellben.
+- [x] Jagua-specifikus típusok nem szivárognak át az optimizer publikus modelljébe.
+- [x] VRS polygon → jagua geometry konverzió első verziója elkészült vagy spike-olva.
+- [x] Egyszerű item-item collision smoke valid esetet felismer.
+- [x] Egyszerű item-item collision smoke invalid/overlap esetet felismer.
+- [x] Item-sheet / boundary jellegű smoke lefut, ha a jagua API támogatja.
+- [x] f32/f64 vagy unit konverziós kockázat dokumentálva.
+- [x] Adapter hibakezelés explicit: unsupported, conversion_error, backend_error.
+- [x] A POC nem köt be még teljes optimizer-loopot.
+- [x] Cargo build PASS.
+- [x] Report tartalmaz API-megfigyeléseket és ismert korlátokat.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
