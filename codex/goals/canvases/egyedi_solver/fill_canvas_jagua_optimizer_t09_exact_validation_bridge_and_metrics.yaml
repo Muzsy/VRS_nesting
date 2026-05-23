@@ -1,0 +1,88 @@
+steps:
+- name: Repo szabályok, JG tervdokumentáció és JG-09 taskforrások olvasása
+  description: 'Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md
+    és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját optimizer tervdokumentációit, a JG task indexet,
+    a JG-08 dependency reportot, valamint ezt a JG-09 canvast. Nyerd ki a JG-09 pontos taskdefinícióját a task bontásból és
+    progress checklistből. Ha JG-08 nem PASS vagy nem tartalmaz JG-09_STATUS: READY jelzést, állj meg BLOCKED státusszal.'
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t08_initial_construction_placer_v1.md
+  - canvases/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t09_exact_validation_bridge_and_metrics.yaml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md
+- name: Exact validator bridge és output contract audit
+  description: Vizsgáld meg a vrs_solver_runner.py exact validation útvonalát, a validate_multi_sheet_output helper negatív/pozitív
+    viselkedését, valamint a Rust io.rs/main.rs/adapter.rs output contractot. Dokumentáld, hogy valid, invalid, unsupported,
+    timeout és solver_failed ágaknál milyen runner/report státusz készül. Ne hivatkozz nem létező helperre; ha új helper kell,
+    ezt a következő lépésben add hozzá.
+  inputs:
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/main.rs
+  - rust/vrs_solver/src/adapter.rs
+  - docs/solver_io_contract.md
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md
+- name: Runner validation status és metrics hardening
+  description: 'Frissítsd a Python runner exact validation bridge-ét úgy, hogy valid ok/partial outputnál validation_status=pass
+    jellegű bizonyíték és metrics kerüljön runner_meta.json-ba, invalid outputnál validation_status=fail és validation_error
+    mentés után a runner hibával térjen vissza, unsupported outputnál pedig explicit skipped_unsupported vagy dokumentált
+    ekvivalens status legyen. A meta/report tartalmazza legalább: duration/runtime, placed, unplaced, sheet_count_used vagy
+    used_sheets, utilization. A validátort tilos kikapcsolni vagy gyengíteni.'
+  outputs:
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+- name: Rust output metrics audit vagy backward-compatible bővítés
+  description: Ellenőrizd, hogy a Rust SolverOutput/Metrics mezők elegendők-e a JG-09 report elvárásaihoz. Ha szükséges, backward-compatible
+    módon bővítsd a Metrics struktúrát runtime/used_sheets/utilization jellegű mezőkkel, vagy dokumentáld, hogy ezek kizárólag
+    Python runner meta/report szinten készülnek. A contract_version/status/placements/unplaced/metrics mezők nem sérülhetnek.
+  outputs:
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/main.rs
+  - rust/vrs_solver/src/adapter.rs
+- name: Exact validation bridge smoke script
+  description: Hozd létre a scripts/smoke_jagua_exact_validation_bridge.py scriptet. A smoke valid Phase 1 fixture-t futtasson
+    runneren keresztül, ellenőrizze a validation_status és metrics jelenlétét, majd fake vagy mutált invalid outputokkal bizonyítsa,
+    hogy overlap és out-of-sheet/invalid sheet-index esetben invalid ok/partial layout nem lehet successful. Ellenőrizze az
+    unsupported hole-os Phase 1 ágat is explicit unsupported/skip státuszként.
+  inputs:
+  - scripts/smoke_jagua_initial_construction.py
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  outputs:
+  - scripts/smoke_jagua_exact_validation_bridge.py
+- name: Task checklist és globális progress checklist frissítése
+  description: Frissítsd a JG-09 task-specifikus checklistet és a globális jagua optimizer progress checklist JG-09 szakaszát.
+    Csak bizonyítottan teljesült pontot pipálj ki. Ha dependency, környezeti vagy implementációs okból valami nem teljesült,
+    jelöld BLOCKED/DEVIATION megjegyzéssel, ne pipáld ki hamisan.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+- name: Task report kitöltése és JG-10 gate döntés
+  description: 'Töltsd ki a JG-09 reportot a repo report standard szerint. A reportban legyen dependency evidence, valós kód
+    audit, validation bridge döntés, implemented files, smoke/test eredmények, exact validation evidence, metrics példa, git
+    diff/status és pontos végső státusz. Csak akkor írd a végére, hogy JG-10_STATUS: READY, ha JG-09 PASS, invalid output
+    rejection bizonyított, és repo verify zöld.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard repo ellenőrzést és mentsd a logot: ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md.
+    Emellett dokumentáld a task-specifikus parancsokat: cargo build --manifest-path rust/vrs_solver/Cargo.toml; cargo test
+    --manifest-path rust/vrs_solver/Cargo.toml; python3 scripts/smoke_jagua_initial_construction.py; python3 scripts/smoke_jagua_exact_validation_bridge.py.
+    Ha bármelyik környezeti okból elakad, a report legyen REVISE/BLOCKED, ne PASS.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.verify.log

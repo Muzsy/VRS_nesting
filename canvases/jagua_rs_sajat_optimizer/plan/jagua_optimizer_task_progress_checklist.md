@@ -409,29 +409,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Rust output tartalmazza a szükséges layout mezőket.
-- [ ] Python exact validator bekötés vagy bridge ellenőrizve.
-- [ ] Valid fixture PASS státuszt ad.
-- [ ] Overlap fixture FAIL státuszt ad.
-- [ ] Out-of-sheet fixture FAIL státuszt ad.
-- [ ] Invalid layout nem lehet successful.
-- [ ] Report metrikák szerepelnek: runtime, placed, unplaced, used_sheets, utilization.
-- [ ] Validation status outputban és reportban is látható.
-- [ ] Partial success fogalma egyértelműen elkülönül a valid successtől.
-- [ ] Regression smoke futtatva.
-- [ ] Report tartalmaz parancsokat és kimenet-részleteket.
-- [ ] Repo verify PASS és log mentve.
+- [x] Rust output tartalmazza a szükséges layout mezőket.
+- [x] Python exact validator bekötés vagy bridge ellenőrizve.
+- [x] Valid fixture PASS státuszt ad.
+- [x] Overlap fixture FAIL státuszt ad.
+- [x] Out-of-sheet fixture FAIL státuszt ad.
+- [x] Invalid layout nem lehet successful.
+- [x] Report metrikák szerepelnek: runtime, placed, unplaced, used_sheets, utilization.
+- [x] Validation status outputban és reportban is látható.
+- [x] Partial success fogalma egyértelműen elkülönül a valid successtől.
+- [x] Regression smoke futtatva.
+- [x] Report tartalmaz parancsokat és kimenet-részleteket.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 

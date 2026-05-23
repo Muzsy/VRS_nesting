@@ -120,6 +120,65 @@ def _validate_contract_fields(input_json: Path, output_json: Path) -> None:
     validate_multi_sheet_output(inp, out)
 
 
+def _compute_utilization(inp: dict[str, Any], out: dict[str, Any]) -> float | None:
+    """placed_area / used_sheet_area for rectangular Phase 1 layouts.
+
+    Uses width*height for rectangular items and stocks (exact for axis-aligned
+    rectangles; returns None if any geometry is non-rectangular or data missing).
+    """
+    try:
+        placements = out.get("placements", [])
+        if not isinstance(placements, list) or not placements:
+            return 0.0
+
+        part_dims: dict[str, tuple[float, float]] = {}
+        for part in inp.get("parts", []):
+            if not isinstance(part, dict):
+                continue
+            pid = str(part.get("id", ""))
+            w = part.get("width")
+            h = part.get("height")
+            if pid and isinstance(w, (int, float)) and isinstance(h, (int, float)) and w > 0 and h > 0:
+                part_dims[pid] = (float(w), float(h))
+
+        sheet_areas: dict[int, float] = {}
+        idx = 0
+        for stock in inp.get("stocks", []):
+            if not isinstance(stock, dict):
+                continue
+            qty = stock.get("quantity", 0)
+            if not isinstance(qty, int) or qty <= 0:
+                continue
+            w = stock.get("width")
+            h = stock.get("height")
+            if not isinstance(w, (int, float)) or not isinstance(h, (int, float)):
+                return None
+            area = float(w) * float(h)
+            for _ in range(qty):
+                sheet_areas[idx] = area
+                idx += 1
+
+        placed_area = 0.0
+        used_sheet_indices: set[int] = set()
+        for p in placements:
+            if not isinstance(p, dict):
+                continue
+            pid = str(p.get("part_id", ""))
+            sidx = p.get("sheet_index")
+            if pid in part_dims:
+                pw, ph = part_dims[pid]
+                placed_area += pw * ph
+            if isinstance(sidx, int):
+                used_sheet_indices.add(sidx)
+
+        used_sheet_area = sum(sheet_areas.get(i, 0.0) for i in used_sheet_indices)
+        if used_sheet_area <= 0:
+            return None
+        return round(placed_area / used_sheet_area, 6)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _run_solver_with_paths(
     *,
     run_dir: Path,
@@ -193,6 +252,9 @@ def _run_solver_with_paths(
         "placements_count": None,
         "unplaced_count": None,
         "sheet_count_used": None,
+        "utilization": None,
+        "validation_status": None,
+        "validation_error": None,
         "started_at_utc": started,
         "ended_at_utc": ended,
         "duration_sec": duration_sec,
@@ -223,15 +285,29 @@ def _run_solver_with_paths(
     if output_data.get("status") == "unsupported":
         meta["solver_status"] = "unsupported"
         meta["unsupported_reason"] = output_data.get("unsupported_reason")
+        meta["validation_status"] = "skipped_unsupported"
+        meta["validation_error"] = None
         meta["output_sha256"] = _sha256_file(output_path)
         _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
         _write_json(meta_path, meta)
         return run_dir, meta
 
-    _validate_contract_fields(snapshot_path, output_path)
+    try:
+        _validate_contract_fields(snapshot_path, output_path)
+    except Exception as exc:
+        meta["validation_status"] = "fail"
+        meta["validation_error"] = str(exc)
+        meta["output_sha256"] = _sha256_file(output_path)
+        _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
+        _write_json(meta_path, meta)
+        raise
+
+    meta["validation_status"] = "pass"
+    meta["validation_error"] = None
     meta["output_sha256"] = _sha256_file(output_path)
     placements = output_data.get("placements")
     unplaced = output_data.get("unplaced")
+    inp_data = _read_json(snapshot_path)
     if isinstance(placements, list):
         meta["placements_count"] = len(placements)
         sheet_ids = [p.get("sheet_index") for p in placements if isinstance(p, dict)]
@@ -239,6 +315,7 @@ def _run_solver_with_paths(
         meta["sheet_count_used"] = (max(numeric_sheet_ids) + 1) if numeric_sheet_ids else 0
     if isinstance(unplaced, list):
         meta["unplaced_count"] = len(unplaced)
+    meta["utilization"] = _compute_utilization(inp_data, output_data)
 
     _write_run_log(run_log, cmd=cmd, started=started, ended=ended, duration_sec=duration_sec, return_code=return_code)
     _write_json(meta_path, meta)
