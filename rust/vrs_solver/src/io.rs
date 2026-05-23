@@ -26,7 +26,7 @@ pub struct SolverOutput {
     pub metrics: Metrics,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Placement {
     pub instance_id: String,
     pub part_id: String,
@@ -36,7 +36,7 @@ pub struct Placement {
     pub rotation_deg: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Unplaced {
     pub instance_id: String,
     pub part_id: String,

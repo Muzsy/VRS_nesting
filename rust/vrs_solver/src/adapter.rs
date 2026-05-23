@@ -2,7 +2,12 @@ use std::fmt;
 
 use crate::io::{Metrics, Placement, SolverInput, SolverOutput, Unplaced};
 use crate::item::{can_fit_any_stock, expand_instances, part_has_holes};
-use crate::optimizer::{initializer::build_initial_layout, try_place_on_sheet, SheetCursor};
+use crate::optimizer::{
+    initializer::build_initial_layout,
+    repair::run_repair,
+    stopping::StoppingPolicy,
+    try_place_on_sheet, SheetCursor,
+};
 use crate::sheet::expand_sheets;
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
@@ -33,7 +38,10 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     let sheets = expand_sheets(&input.stocks)?;
     let instances = expand_instances(&input.parts)?;
     let (placements, unplaced, diag) = if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
-        let (p, u, d) = build_initial_layout(&instances, &input.parts, &sheets);
+        let (init_p, init_u, d) = build_initial_layout(&instances, &input.parts, &sheets);
+        let repair_time_s = (input.time_limit_s as f64).max(1.0);
+        let mut policy = StoppingPolicy::new(256, repair_time_s);
+        let (p, u, _rd) = run_repair(init_p, init_u, &input.parts, &sheets, &mut policy);
         (p, u, Some(d))
     } else {
         // Row/cursor fallback for non-Phase1 profiles.

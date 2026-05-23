@@ -1,0 +1,125 @@
+steps:
+- name: Repo szabályok, JG tervdokumentáció és JG-10 taskforrások olvasása
+  description: >-
+    Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+    docs/codex/report_standard.md és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját optimizer
+    tervdokumentációit, a JG task indexet, a JG-09 dependency reportot, valamint ezt a JG-10 canvast. Nyerd ki a JG-10
+    pontos taskdefinícióját a task bontásból és progress checklistből. Ha JG-09 nem PASS vagy nem tartalmaz
+    JG-10_STATUS: READY jelzést, állj meg BLOCKED státusszal.
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t09_exact_validation_bridge_and_metrics.md
+  - canvases/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t10_repair_search_loop_v1.yaml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+- name: Repair-search aktuális kódbázis audit
+  description: >-
+    Vizsgáld meg a Phase 1 optimizer aktuális moduljait: LayoutState, CandidateMove, ObjectiveBreakdown,
+    build_initial_layout, generate_candidates, bbox_from_placement, rect_inside_sheet_shape és a JG-09 exact validation
+    runner bridge. Dokumentáld, hogy a RepairEngine V1 milyen belső állapottal dolgozik, és mely meglévő helperöket használja.
+    Ha a várt repair/stopping modul már létezik vagy más néven van, ne írj duplikált modult vakon; dokumentáld az eltérést.
+  inputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/io.rs
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+- name: StoppingPolicy V1 létrehozása
+  description: >-
+    Hozd létre a rust/vrs_solver/src/optimizer/stopping.rs modult. Tartalmazzon time limitet és iterációs vagy stagnálási
+    limitet, determinisztikus stop reasont, valamint unit teszteket. A repair belső időbudget nem lépheti túl az input
+    time_limit_s értelmét; a zéró/negatív limitet biztonságosan kezeld vagy validáltan utasítsd el.
+  outputs:
+  - rust/vrs_solver/src/optimizer/stopping.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+- name: MoveGenerator V1 és move application hardening
+  description: >-
+    Bővítsd a rust/vrs_solver/src/optimizer/moves.rs modult vagy repo-konform kapcsolódó helperét úgy, hogy legyen legalább
+    translate/move, reinsert és rotate jellegű próbákhoz stabil candidate sorrend. A move generation ne legyen véletlenszerű;
+    azonos input és seed azonos move sorrendet és eredményt adjon. Tartsd meg a CandidateMove meglévő serializálható skeletonját,
+    hacsak a valós kód nem követel kompatibilis módosítást.
+  outputs:
+  - rust/vrs_solver/src/optimizer/moves.rs
+- name: RepairEngine V1 implementáció
+  description: >-
+    Hozd létre a rust/vrs_solver/src/optimizer/repair.rs modult. A repair engine Phase 1 rectangular/outer-only layouton dolgozzon.
+    Külön diagnosztizálja az overlap és boundary hibákat. Legalább egy hibás placement eltávolítás/reinsert/move/rotate
+    útvonalat kezeljen. Ha javítható az állapot, valid layout felé mozduljon; ha nem, rollback, explicit fail vagy unplaced
+    reason történjen. Silent geometry loss tilos: minden instance identity/quantity/transform auditálható maradjon.
+  inputs:
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/sheet.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+- name: Phase 1 adapter integráció és metrics
+  description: >-
+    Integráld a RepairEngine V1-et a Phase 1 solver branchbe úgy, hogy a publikus SolverOutput v1 contract ne sérüljön.
+    A build_initial_layout után futó repair loop csak rectangular outer-only Phase 1 scope-ban működjön. A report vagy solver
+    diagnostics tartalmazzon repair attempt/success/fail metrikát. Exact validation továbbra is a Python runner bridge végső igazsága.
+  outputs:
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/io.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+- name: JG-10 repair smoke script
+  description: >-
+    Hozd létre a scripts/smoke_jagua_repair_search_v1.py scriptet. A smoke bizonyítsa, hogy mesterségesen hibás kezdőállapotból
+    legalább egy repair scenario valid állapotot ad, overlap és boundary hiba külön diagnosztikában látszik, azonos seed determinisztikus,
+    a time limit betartott, és invalid layout nem lehet successful. A script futtassa vagy dokumentáltan hívja a releváns cargo unit
+    teszteket és exact validator regressiont.
+  inputs:
+  - scripts/smoke_jagua_initial_construction.py
+  - scripts/smoke_jagua_exact_validation_bridge.py
+  outputs:
+  - scripts/smoke_jagua_repair_search_v1.py
+- name: Task checklist és globális progress checklist frissítése
+  description: >-
+    Frissítsd a JG-10 task-specifikus checklistet és a globális jagua optimizer progress checklist JG-10 szakaszát. Csak bizonyítottan
+    teljesült pontot pipálj ki. Ha dependency, környezeti vagy implementációs okból valami nem teljesült, jelöld BLOCKED/DEVIATION
+    megjegyzéssel, ne pipáld ki hamisan.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+- name: Task report kitöltése és JG-11 gate döntés
+  description: >-
+    Töltsd ki a JG-10 reportot a repo report standard szerint. A reportban legyen dependency evidence, valós kód audit, repair
+    design döntés, implemented files, smoke/test eredmények, exact validation evidence, repair attempt/success/fail metrics, git
+    diff/status és pontos végső státusz. Csak akkor írd a végére, hogy JG-11_STATUS: READY, ha JG-10 PASS, repair smoke PASS,
+    exact validator evidence PASS és repo verify zöld.
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+- name: Repo gate automatikus verify
+  description: >-
+    Futtasd a standard repo ellenőrzést és mentsd a logot: ./scripts/verify.sh --report
+    codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md. Emellett dokumentáld a task-specifikus parancsokat:
+    cargo build --manifest-path rust/vrs_solver/Cargo.toml; cargo test --manifest-path rust/vrs_solver/Cargo.toml; python3
+    scripts/smoke_jagua_initial_construction.py; python3 scripts/smoke_jagua_exact_validation_bridge.py; python3
+    scripts/smoke_jagua_repair_search_v1.py. Ha bármelyik környezeti okból elakad, a report legyen REVISE/BLOCKED, ne PASS.
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t10_repair_search_loop_v1.verify.log

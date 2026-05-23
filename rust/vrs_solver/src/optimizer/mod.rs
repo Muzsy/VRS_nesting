@@ -1,8 +1,10 @@
 pub mod candidates;
 pub mod initializer;
 pub mod moves;
+pub mod repair;
 pub mod score;
 pub mod state;
+pub mod stopping;
 
 use crate::geometry::{EPS, Rect};
 use crate::io::Placement;

@@ -444,29 +444,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] MoveGenerator V1 elkészült: translate/reinsert/rotate legalább részben.
-- [ ] RepairEngine V1 elkészült vagy világosan behatárolt.
-- [ ] StoppingPolicy tartalmaz time limitet.
-- [ ] StoppingPolicy tartalmaz iterációs vagy stagnálási limitet.
-- [ ] Mesterségesen hibás kezdőállapotból legalább egy repair smoke valid állapotot ad.
-- [ ] Ha repair sikertelen, rollback vagy explicit fail történik.
-- [ ] Azonos seed determinisztikus eredményt ad.
-- [ ] Time limit betartott.
-- [ ] Boundary és overlap hibák külön diagnosztikában látszanak.
-- [ ] Invalid layout nem mehet át successként.
-- [ ] Report tartalmaz repair attempt/success/fail metrikát.
-- [ ] Repo verify PASS és log mentve.
+- [x] MoveGenerator V1 elkészült: translate/reinsert/rotate legalább részben.
+- [x] RepairEngine V1 elkészült vagy világosan behatárolt.
+- [x] StoppingPolicy tartalmaz time limitet.
+- [x] StoppingPolicy tartalmaz iterációs vagy stagnálási limitet.
+- [x] Mesterségesen hibás kezdőállapotból legalább egy repair smoke valid állapotot ad.
+- [x] Ha repair sikertelen, rollback vagy explicit fail történik.
+- [x] Azonos seed determinisztikus eredményt ad.
+- [x] Time limit betartott.
+- [x] Boundary és overlap hibák külön diagnosztikában látszanak.
+- [x] Invalid layout nem mehet át successként.
+- [x] Report tartalmaz repair attempt/success/fail metrikát.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
