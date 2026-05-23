@@ -17,16 +17,16 @@
 
 ## Globális master checklist
 
-- [ ] A teljes task lánc aktuális státusza frissítve lett.
-- [ ] Minden elindított tasknak van canvas fájlja.
-- [ ] Minden elindított tasknak van goal YAML fájlja.
-- [ ] Minden elindított tasknak van runner promptja.
-- [ ] Minden elindított tasknak van saját checklist fájlja a repo-ban.
-- [ ] Minden elindított tasknak van report fájlja.
-- [ ] Minden lezárt tasknak van `.verify.log` fájlja.
-- [ ] A dependency sorrend nincs megsértve.
+- [x] A teljes task lánc aktuális státusza frissítve lett.
+- [x] Minden elindított tasknak van canvas fájlja.
+- [x] Minden elindított tasknak van goal YAML fájlja.
+- [x] Minden elindított tasknak van runner promptja.
+- [x] Minden elindított tasknak van saját checklist fájlja a repo-ban.
+- [x] Minden elindított tasknak van report fájlja.
+- [x] Minden lezárt tasknak van `.verify.log` fájlja.
+- [x] A dependency sorrend nincs megsértve.
 - [ ] A phase gate-eknél készült explicit PASS / REVISE / STOP döntés.
-- [ ] A régi backends útvonalak regressziója minden integrációs fázis után ellenőrizve lett.
+- [x] A régi backends útvonalak regressziója minden integrációs fázis után ellenőrizve lett.
 - [ ] A benchmark logok mentése következetes.
 - [ ] A release döntés nem tartalmaz ellenőrizetlen feltételezést.
 
@@ -36,17 +36,17 @@
 
 ### Gate 0 — Integrációs döntés
 
-- [ ] JG-00 elkészült.
+- [x] JG-00 elkészült.
 - [x] JG-01 elkészült.
 - [x] JG-02 elkészült.
 - [x] JG-03 előfeltételei tiszták.
-- [ ] Nincs build/licenc/API showstopper.
-- [ ] Döntés: Phase 1 indítható.
+- [x] Nincs build/licenc/API showstopper.
+- [x] Döntés: Phase 1 indítható.
 
 ### Gate 1 — Rectangular multi-sheet viability
 
 - [ ] JG-03…JG-14 elkészült.
-- [ ] Hole gate működik.
+- [x] Hole gate működik.
 - [ ] Rectangular multi-sheet valid layoutokat ad.
 - [ ] Exact final validation minden elfogadott layouton PASS.
 - [ ] Phase 1 benchmark report elkészült.
@@ -92,29 +92,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Megnyitva és ellenőrizve: AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md.
-- [ ] Létrejött a canvas package a megadott sluggal.
-- [ ] Létrejött a goal YAML a kötelező `steps` sémával.
-- [ ] Létrejött a runner prompt a repo-konvenciók szerint.
-- [ ] Létrejött a task index `JG-00…JG-27` teljes felsorolással.
-- [ ] A task index tartalmaz dependency graphot és critical pathot.
-- [ ] A task index tartalmaz phase gate-eket.
-- [ ] A master runner önállóan futtatható feladatként van megírva.
-- [ ] Nem módosult production solver-kód.
-- [ ] Létrejött a checklist és report fájl.
-- [ ] Lefutott a `./scripts/verify.sh --report ...` wrapper.
-- [ ] A verify log mentve lett a megfelelő report útvonalra.
+- [x] Megnyitva és ellenőrizve: AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md.
+- [x] Létrejött a canvas package a megadott sluggal.
+- [x] Létrejött a goal YAML a kötelező `steps` sémával.
+- [x] Létrejött a runner prompt a repo-konvenciók szerint.
+- [x] Létrejött a task index `JG-00…JG-27` teljes felsorolással.
+- [x] A task index tartalmaz dependency graphot és critical pathot.
+- [x] A task index tartalmaz phase gate-eket.
+- [x] A master runner önállóan futtatható feladatként van megírva.
+- [x] Nem módosult production solver-kód.
+- [x] Létrejött a checklist és report fájl.
+- [x] Lefutott a `./scripts/verify.sh --report ...` wrapper.
+- [x] A verify log mentve lett a megfelelő report útvonalra.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
