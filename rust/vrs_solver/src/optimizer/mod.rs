@@ -1,6 +1,7 @@
 pub mod candidates;
 pub mod initializer;
 pub mod moves;
+pub mod multisheet;
 pub mod repair;
 pub mod score;
 pub mod state;

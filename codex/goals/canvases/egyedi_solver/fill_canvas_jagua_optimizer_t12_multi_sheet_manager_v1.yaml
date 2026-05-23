@@ -1,0 +1,130 @@
+steps:
+- name: JG-12 dependency, szabályok és taskforrások olvasása
+  description: >
+    Olvasd el és tartsd be az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+    docs/codex/report_standard.md és docs/qa/testing_guidelines.md fájlokat. Olvasd el a jagua-rs saját
+    optimizer tervdokumentációit, a JG task indexet, a JG-11 dependency reportot, valamint ezt a JG-12 canvast.
+    Nyerd ki a JG-12 pontos taskdefinícióját a task bontásból és progress checklistből. Ha JG-11 nem PASS vagy
+    nem tartalmaz JG-12_STATUS: READY jelzést, állj meg BLOCKED státusszal és ne módosíts implementációs kódot.
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/prompts/egyedi_solver/jagua_optimizer_master_runner.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t11_score_model_v1.md
+  - canvases/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.md
+  - codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t12_multi_sheet_manager_v1.yaml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.md
+- name: Multi-sheet aktuális kódbázis audit
+  description: >
+    Vizsgáld meg a Phase 1 construction, repair, score, candidate, state, IO és adapter modulokat. Dokumentáld,
+    hogy a több sheet kezelés jelenleg hol történik, hol számolódik a sheet_count_used, és miért kell külön
+    optimizer/multisheet.rs koordinációs modul. Külön jelöld a régi fejlesztési terv JG-12 cavity extraction
+    eltérését DISCOVERED_MISMATCH-ként, de az aktuális task-bontást kövesd.
+  inputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/stopping.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/main.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/Cargo.toml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.md
+- name: MultiSheetManager V1 modul létrehozása
+  description: >
+    Hozd létre a rust/vrs_solver/src/optimizer/multisheet.rs modult. Vezess be MultiSheetManager vagy repo-konform
+    ekvivalens koordinációs réteget, amely determinisztikus sheet orderinget, sheet assignment contractot,
+    used_sheets/sheet_count_used helpert, és sheetenkénti diagnostics summaryt ad. Ne implementálj sheet eliminációt,
+    remnant supportot vagy cavity extractiont.
+  outputs:
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+- name: Optimizer export és Phase 1 adapter wiring
+  description: >
+    Exportáld az új multisheet modult az optimizer/mod.rs alatt. A jagua_optimizer_phase1_outer_only adapter pathban
+    cseréld a közvetlen build_initial_layout + run_repair orchestrationt MultiSheetManager hívásra. A SolverOutput v1
+    meglévő mezőit és jelentését őrizd meg. main.rs csak akkor módosítható, ha a valós CLI boundary tényleg igényli.
+  inputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/main.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/main.rs
+- name: Metrics contract és sheet_count_used stabilizálás
+  description: >
+    Stabilizáld és teszteld a used sheet számítást. A meglévő Metrics mezők nem törhetők. Ha per-sheet metrics JSON
+    output szükséges, csak additív és visszafelé kompatibilis bővítést készíts az io.rs-ben; ha ez nem bizonyíthatóan
+    biztonságos, hagyd diagnosztikai/report szinten és dokumentáld REQUIRES_DECISION nélkül, ha nem kell contract change.
+  inputs:
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  outputs:
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+- name: Multi-sheet unit és regression tesztek
+  description: >
+    Adj Rust unit teszteket a MultiSheetManagerhez: no placements, single sheet, two sheets, invalid/out-of-range sheet_index,
+    deterministic ordering, placed+unplaced count invariant, construction+repair több sheet mellett, és single-sheet regresszió.
+    Ha exact validation helper elérhető a Python smoke-on keresztül, a végső layout validitást ott bizonyítsd.
+  inputs:
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+- name: JG-12 multi-sheet smoke script
+  description: >
+    Hozd létre a scripts/smoke_jagua_multisheet_manager_v1.py scriptet. A smoke bizonyítsa, hogy több rectangular sheet
+    fixture valid, sheet_index contract sértetlen, sheet_count_used pontos, unplaced kezelés helyes, azonos seed azonos
+    sheet assignmentet ad, és single-sheet fixture nem regresszál. A smoke futtassa vagy ellenőrizze az exact validation
+    bridge-et, ha a repo meglévő scriptjeivel elérhető.
+  inputs:
+  - scripts/smoke_jagua_initial_construction.py
+  - scripts/smoke_jagua_repair_search_v1.py
+  - scripts/smoke_jagua_score_model_v1.py
+  - scripts/smoke_jagua_exact_validation_bridge.py
+  - vrs_nesting/runner/vrs_solver_runner.py
+  outputs:
+  - scripts/smoke_jagua_multisheet_manager_v1.py
+- name: Task checklist, progress checklist és report frissítése
+  description: >
+    Frissítsd a JG-12 task-specifikus checklistet és a globális jagua optimizer progress checklist JG-12 szakaszát.
+    Csak bizonyítottan teljesült pontot pipálj ki. Töltsd ki a reportot dependency evidence-szel, real code audittal,
+    MultiSheetManager API döntéssel, sheet_count_used példákkal, multi-sheet smoke evidence-szel és teszteredményekkel.
+    Csak akkor írd a report végére, hogy JG-13_STATUS: READY, ha minden gate PASS.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.md
+- name: Repo gate automatikus verify
+  description: >
+    Futtasd a standard repo ellenőrzést és mentsd a logot: ./scripts/verify.sh --report
+    codex/reports/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.md. Emellett dokumentáld a task-specifikus
+    parancsokat: cargo build --manifest-path rust/vrs_solver/Cargo.toml; cargo test --manifest-path rust/vrs_solver/Cargo.toml;
+    cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::multisheet; python3 scripts/smoke_jagua_initial_construction.py;
+    python3 scripts/smoke_jagua_repair_search_v1.py; python3 scripts/smoke_jagua_score_model_v1.py; python3
+    scripts/smoke_jagua_multisheet_manager_v1.py. Ha bármelyik környezeti okból elakad, a report legyen REVISE/BLOCKED,
+    ne PASS.
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t12_multi_sheet_manager_v1.verify.log

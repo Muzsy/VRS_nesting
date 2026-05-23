@@ -514,29 +514,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Több rectangular sheet kezelése implementálva.
-- [ ] Sheet assignment determinisztikus.
-- [ ] Used sheets számítása pontos.
-- [ ] `sheet_index` contract nem törik.
-- [ ] Unplaced kezelés több sheet mellett is helyes.
-- [ ] Multi-sheet fixture valid.
-- [ ] Azonos seed azonos sheet assignmentet ad.
-- [ ] Sheetenkénti metrics reportolva.
-- [ ] Construction/repair sheetenkénti működése ellenőrizve.
-- [ ] Nincs regresszió single-sheet fixture-ön.
-- [ ] Report tartalmaz multi-sheet példát.
-- [ ] Repo verify PASS és log mentve.
+- [x] Több rectangular sheet kezelése implementálva.
+- [x] Sheet assignment determinisztikus.
+- [x] Used sheets számítása pontos.
+- [x] `sheet_index` contract nem törik.
+- [x] Unplaced kezelés több sheet mellett is helyes.
+- [x] Multi-sheet fixture valid.
+- [x] Azonos seed azonos sheet assignmentet ad.
+- [x] Sheetenkénti metrics reportolva.
+- [x] Construction/repair sheetenkénti működése ellenőrizve.
+- [x] Nincs regresszió single-sheet fixture-ön.
+- [x] Report tartalmaz multi-sheet példát.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
