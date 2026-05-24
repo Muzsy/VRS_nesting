@@ -10,6 +10,7 @@ use crate::item::{Instance, Part};
 use crate::sheet::SheetShape;
 use super::initializer::{bbox_from_placement, build_initial_layout, ConstructionDiagnostics};
 use super::repair::{run_repair, RepairDiagnostics};
+use super::sheet_elimination::{SheetEliminationDiagnostics, SheetEliminationEngine};
 use super::stopping::StoppingPolicy;
 
 // ---------------------------------------------------------------------------
@@ -53,28 +54,31 @@ pub struct SheetSummary {
 pub struct MultiSheetDiagnostics {
     /// Total sheet slots available (from `expand_sheets`).
     pub sheet_count_available: usize,
-    /// Used sheet slots: `max(sheet_index) + 1`, or 0 if nothing placed.
+    /// Used sheet slots after all passes: `max(sheet_index) + 1`, or 0 if nothing placed.
     pub sheet_count_used: usize,
     /// Total instances placed.
     pub total_placed: usize,
     /// Total instances left unplaced.
     pub total_unplaced: usize,
-    /// Per-sheet summaries for used slots.
+    /// Per-sheet summaries for used slots (reflects post-elimination state).
     pub per_sheet: Vec<SheetSummary>,
     /// Diagnostics from the initial construction pass.
     pub construction_diag: ConstructionDiagnostics,
     /// Diagnostics from the repair pass.
     pub repair_diag: RepairDiagnostics,
+    /// Diagnostics from the sheet elimination pass (JG-13).
+    pub elim_diag: SheetEliminationDiagnostics,
 }
 
 impl MultiSheetDiagnostics {
     pub fn summary(&self) -> String {
         format!(
-            "sheets_avail={} sheets_used={} placed={} unplaced={}",
+            "sheets_avail={} sheets_used={} placed={} unplaced={} elim={}",
             self.sheet_count_available,
             self.sheet_count_used,
             self.total_placed,
             self.total_unplaced,
+            self.elim_diag.summary(),
         )
     }
 }
@@ -116,10 +120,15 @@ impl<'a> MultiSheetManager<'a> {
             build_initial_layout(instances, self.parts, self.sheets);
 
         // Phase 2: repair pass — tries to fix violations and reinsert unplaced items.
-        let (placements, unplaced, repair_diag) =
+        let (rep_placements, rep_unplaced, repair_diag) =
             run_repair(init_p, init_u, self.parts, self.sheets, policy);
 
-        // Build per-sheet summaries.
+        // Phase 3: sheet elimination pass — tries to reduce sheet_count_used by one.
+        let engine = SheetEliminationEngine::new(self.parts, self.sheets);
+        let (placements, unplaced, elim_diag) =
+            engine.run(rep_placements, rep_unplaced, policy);
+
+        // Build per-sheet summaries from the final post-elimination layout.
         let sheet_count_used = compute_sheet_count_used(&placements);
         let mut per_sheet: Vec<SheetSummary> = (0..sheet_count_used)
             .map(|i| SheetSummary {
@@ -151,6 +160,7 @@ impl<'a> MultiSheetManager<'a> {
             per_sheet,
             construction_diag,
             repair_diag,
+            elim_diag,
         };
 
         (placements, unplaced, diag)

@@ -549,29 +549,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Weakest sheet kiválasztási szabály dokumentálva.
-- [ ] Sheet ürítési próbák implementálva.
-- [ ] Reinsert order determinisztikus.
-- [ ] Sikeres elimináció esetén used_sheet_count csökken.
-- [ ] Sikertelen elimináció rollbackel.
-- [ ] Rollback után a valid layout nem romlik.
-- [ ] Mesterséges fixture-ben legalább egy sheet eliminálható.
-- [ ] Reportban attempt/success/fail metrikák szerepelnek.
-- [ ] Invalid layout nem lehet eliminációs siker.
-- [ ] Time limit/stopping policy figyelembe véve.
-- [ ] Regression futott JG-12 fixture-ökre.
-- [ ] Repo verify PASS és log mentve.
+- [x] Weakest sheet kiválasztási szabály dokumentálva.
+- [x] Sheet ürítési próbák implementálva.
+- [x] Reinsert order determinisztikus.
+- [x] Sikeres elimináció esetén used_sheet_count csökken.
+- [x] Sikertelen elimináció rollbackel.
+- [x] Rollback után a valid layout nem romlik.
+- [x] Mesterséges fixture-ben legalább egy sheet eliminálható.
+- [x] Reportban attempt/success/fail metrikák szerepelnek.
+- [x] Invalid layout nem lehet eliminációs siker.
+- [x] Time limit/stopping policy figyelembe véve.
+- [x] Regression futott JG-12 fixture-ökre.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
