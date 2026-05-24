@@ -1,0 +1,97 @@
+steps:
+- name: Dependency gate és repo szabályok ellenőrzése
+  description: 'Ellenőrizd a JG-20 dependency gate-et: JG-20 report létezik, első sora PASS vagy PASS_WITH_NOTES, tartalmazza
+    a PHASE2_GATE_DECISION: PASS sort, és nincs unresolved STOP/NO-GO blocker. Olvasd el az AGENTS.md, docs/codex/*, docs/qa/testing_guidelines.md
+    és a jagua optimizer tervdokumentumokat. Ha a gate nem zöld, zárj BLOCKED státusszal, és csak a SGH-00 reportot/checklistet
+    frissítsd dependency evidence-szel.'
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/egyedi_solver/jagua_optimizer_task_index.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md
+  outputs:
+  - codex/reports/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md
+  - codex/codex_checklist/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md
+- name: Külső Sparrow és SparrowGH források beszerzése audit célra
+  description: Audit célra, a repón kívüli ideiglenes könyvtárba szerezd be vagy olvasd a JeroenGar/sparrow, coroush/sparrow
+    és ha elérhető, coroush/sparrow-grasshopper forrásokat. Ne vendorold, ne commitold és ne kösd be dependencyként. Rögzítsd
+    a használt URL-eket, commit/ref értékeket, elérhetőségi státuszt és licenc fájlokat az audit dokumentumban. Ha valamelyik
+    source nem elérhető, NOT_FOUND/BLOCKED részben dokumentáld, ne találj ki fájlokat.
+  outputs:
+  - docs/egyedi_solver/sparrow_sparrowgh_code_audit.md
+  - codex/reports/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md
+- name: Sparrow és SparrowGH optimizer fájlok auditálása
+  description: 'Készíts file-by-file auditot a megtalált külső források releváns optimizer fájljairól. SparrowGH/coroush esetén
+    külön keresd a bp_optimizer modulokat: mod.rs, bp_lbf.rs, bp_separator.rs, bp_explore.rs, bp_moves.rs. Eredeti Sparrow
+    esetén keresd az optimizer/separator, explore/compress/worker, sample/search, evaluator és collision tracker modulokat.
+    Minden fájlhoz írd le a releváns típusokat, függvényeket, működést, VRS relevanciát és porting risket.'
+  outputs:
+  - docs/egyedi_solver/sparrow_sparrowgh_code_audit.md
+- name: VRS jagua_optimizer jelenlegi kód audit és mapping
+  description: Auditáld a jelenlegi VRS optimizer modult és kapcsolódó runner/validator fájlokat. Térképezd fel, hogy az initializer,
+    repair, sheet_elimination, moves, state, stopping, candidates, boundary, score, multisheet modulok közül melyikhez melyik
+    Sparrow/SparrowGH algoritmikus komponens kapcsolódik. Rögzítsd, hol kell új state representation, hol lehet meglévő modult
+    bővíteni, és hol tilos direkt másolni.
+  inputs:
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/geometry.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+  - rust/vrs_solver/src/optimizer/boundary.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/state.rs
+  - rust/vrs_solver/src/optimizer/stopping.rs
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - vrs_nesting/nesting/instances.py
+  outputs:
+  - docs/egyedi_solver/sparrow_sparrowgh_code_audit.md
+  - docs/egyedi_solver/sparrowgh_vrs_migration_plan.md
+- name: Migrációs terv kidolgozása saját VRS optimizerbe
+  description: 'Készíts konkrét migrációs tervet, amely nem külső benchmark backendre épít, hanem a Sparrow/SparrowGH algoritmikus
+    komponensek VRS saját optimizerbe portolására vagy repo-kompatibilis újraimplementálására. A terv kötelezően kezelje:
+    infeasible working state, per-sheet separator, LBF+separator fallback construction, sheet elimination/bin reduction, transfer/swap/reinsert
+    moves, solution pool/perturbation, stopping/time budget, score/exact validation integráció, irregular/remnant kezelés,
+    allowed rotations policy.'
+  outputs:
+  - docs/egyedi_solver/sparrowgh_vrs_migration_plan.md
+- name: SGH implementációs tasklánc és acceptance gate-ek rögzítése
+  description: 'A migrációs tervben bontsd következő, repo-kompatibilis SGH taskokra a munkát. Minimum javasolt lánc: SGH-01
+    working layout/infeasible search state, SGH-02 per-sheet separator V1, SGH-03 LBF+separator fallback construction, SGH-04
+    sheet elimination/bin reduction V1, SGH-05 move operators, SGH-06 solution pool/perturbation, SGH-07 quality benchmark
+    suite, SGH-08 irregular/remnant hardening. Minden taskhoz adj célokat, outputs javaslatot, dependency-t és acceptance
+    gate-et.'
+  outputs:
+  - docs/egyedi_solver/sparrowgh_vrs_migration_plan.md
+- name: Checklist és SGH-00 report kitöltése
+  description: 'Frissítsd a SGH-00 task-specifikus checklistet és töltsd ki a reportot a docs/codex/report_standard.md elvei
+    szerint. A report tartalmazzon dependency evidence-t, source/ref/license táblát, DoD → Evidence mátrixot, audit összefoglalót,
+    migrációs döntést, riskeket és a következő task státuszát. Csak valós bizonyítékkal pipálj checklist pontot. Siker esetén
+    a report végére kerüljön: SGH-01_STATUS: READY.'
+  inputs:
+  - docs/egyedi_solver/sparrow_sparrowgh_code_audit.md
+  - docs/egyedi_solver/sparrowgh_vrs_migration_plan.md
+  - codex/codex_checklist/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md
+  outputs:
+  - codex/codex_checklist/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md
+  - codex/reports/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard repo ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs: ./scripts/verify.sh
+    --report codex/reports/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md. A verify logot mentsd
+    a report mellé. Ha environment vagy külső network blocker miatt fail, ne rejtsd el: különítsd el, hogy audit hiány, kódhiba
+    vagy környezeti blocker.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.md
+  - codex/reports/egyedi_solver/sgh_00_sparrow_sparrowgh_code_audit_and_vrs_migration_plan.verify.log
