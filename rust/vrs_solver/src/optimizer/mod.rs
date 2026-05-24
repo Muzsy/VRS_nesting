@@ -5,6 +5,7 @@ pub mod moves;
 pub mod multisheet;
 pub mod repair;
 pub mod score;
+pub mod separator;
 pub mod sheet_elimination;
 pub mod state;
 pub mod stopping;

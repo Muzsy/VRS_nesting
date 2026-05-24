@@ -1,0 +1,84 @@
+steps:
+  - name: "Dependency gate és repo szabályok ellenőrzése"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md és docs/qa/testing_guidelines.md fájlokat. Ellenőrizd,
+      hogy az SGH-01 report létezik, első sora PASS vagy PASS_WITH_NOTES, és tartalmazza
+      az SGH-02_STATUS: READY jelölést. Ha ez nem teljesül, állj meg BLOCKED státusszal,
+      és csak a report/checklist dependency evidence részét frissítsd.
+    outputs:
+      - "canvases/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+      - "codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+
+  - name: "VRS és SGH migrációs anchorok auditálása"
+    description: >
+      Auditáld a valós SGH-00/SGH-01 doksikat és a Rust optimizer anchorokat:
+      working.rs, repair.rs, candidates.rs, initializer.rs, boundary.rs, stopping.rs,
+      mod.rs, io.rs, item.rs és sheet.rs. A reportban rögzítsd: WorkingLayout létezik;
+      find_violations commit gate, de nem loss tracker; PlacedBbox bool overlapos;
+      generate_candidates_with_sheets és bbox_from_placement újrahasználható; rect_within_boundary
+      a kanonikus boundary check; IO contract nem változhat.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+      - "docs/egyedi_solver/sgh_02_vrs_separator_contract.md"
+
+  - name: "VrsCollisionTracker és VrsSeparator V1 implementálása"
+    description: >
+      Hozd létre a rust/vrs_solver/src/optimizer/separator.rs modult és exportáld a mod.rs-ben.
+      Implementálj bbox-alapú VrsCollisionTracker vagy ekvivalens trackert pair-loss és boundary-loss
+      számítással, weighted total loss-szal, colliding/violating index listával és GLS-like
+      update_weights logikával. Implementálj VrsSeparator vagy ekvivalens separator API-t, amely
+      WorkingLayout bemenetet kap, WorkingLayout + diagnostics kimenetet ad, determinisztikus
+      candidate relocation ciklussal csökkenti a loss-t, snapshot/rollback mintát használ, és nem
+      épít LayoutState-et vagy SolverOutputot közvetlenül. A separator V1 használja a valós
+      bbox_from_placement, generate_candidates_with_sheets, dims_for_rotation,
+      placement_anchor_from_rect_min és rect_within_boundary függvényeket.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "docs/egyedi_solver/sgh_02_vrs_separator_contract.md"
+
+  - name: "Separator unit tesztek hozzáadása"
+    description: >
+      Adj Rust unit teszteket a separator.rs modulhoz. Kötelezően teszteld: nulla loss valid
+      layouton; pozitív pair loss overlap esetén; pozitív boundary loss out-of-sheet esetén;
+      egyszerű két-elem overlap fixture javítása valid layouttá; validate_for_commit siker
+      javítható fixture után; item count invariant; determinisztikus két futás; nem javítható
+      fixture nem panicel és diagnostics szerint nem konvergál. A tesztek valós Part, Stock,
+      SheetShape, Placement, WorkingLayout és find_violations struktúrákat használjanak.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "Dokumentáció, checklist és report kitöltése"
+    description: >
+      Töltsd ki a docs/egyedi_solver/sgh_02_vrs_separator_contract.md dokumentumot, a checklistet
+      és a reportot. Dokumentáld a separator kapcsolatát a WorkingLayouttal, a loss modellt, a
+      boundary loss proxy döntéseket, a GLS-like weight update-et, a rollback/commit szabályokat,
+      és hogy SGH-03/SGH-04 mit kap ebből. Dokumentáld a scope safety-t: nincs initializer,
+      sheet_elimination, moves, IO contract, Python runner, external backend vagy vendor módosítás.
+      A report tartalmazzon DoD -> Evidence Matrixot konkrét fájl/funkció bizonyítékokkal.
+    outputs:
+      - "docs/egyedi_solver/sgh_02_vrs_separator_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+      - "codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+
+  - name: "Focused Rust teszt és scope safety ellenőrzés"
+    description: >
+      Futtasd legalább a focused Rust tesztet: cargo test optimizer::separator optimizer::working
+      vagy a helyi cargo által elfogadott ekvivalens célzott tesztparancsot. A reportban rögzítsd
+      a pontos parancsot és eredményt. Ellenőrizd, hogy io.rs, adapter.rs, initializer.rs,
+      sheet_elimination.rs és moves.rs nem módosult; ha bármelyik módosult, csak akkor maradhat
+      PASS, ha a YAML outputs és a canvas scope explicit engedte — jelen taskban nem engedi.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md
+      Ha a verify fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát.
+      Ha zöld, a report végén szerepeljen: SGH-03_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md"
+      - "codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.verify.log"
