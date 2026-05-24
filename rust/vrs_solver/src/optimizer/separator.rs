@@ -182,6 +182,9 @@ pub struct VrsSeparatorConfig {
     pub max_inner_iterations: usize,
     pub gls_weight_decay: f64,
     pub gls_weight_max: f64,
+    /// Optional relocation candidate filter. When set, separator can only place
+    /// moved items onto these sheet indices.
+    pub allowed_sheet_indices: Option<Vec<usize>>,
 }
 
 impl Default for VrsSeparatorConfig {
@@ -191,6 +194,7 @@ impl Default for VrsSeparatorConfig {
             max_inner_iterations: 200,
             gls_weight_decay: 0.01,
             gls_weight_max: 100.0,
+            allowed_sheet_indices: None,
         }
     }
 }
@@ -228,6 +232,12 @@ impl VrsSeparator {
         parts: &[Part],
         sheets: &[SheetShape],
     ) -> (WorkingLayout, VrsSeparatorDiagnostics) {
+        let allowed_sheet_filter: Option<HashSet<usize>> = self
+            .config
+            .allowed_sheet_indices
+            .as_ref()
+            .map(|v| v.iter().copied().collect());
+
         let mut tracker = VrsCollisionTracker::build(&layout, parts, sheets);
         let initial_loss = tracker.total_loss();
 
@@ -304,6 +314,11 @@ impl VrsSeparator {
 
             'cand: for cand in &candidates {
                 if cand.sheet_index >= sheets.len() { continue; }
+                if let Some(filter) = &allowed_sheet_filter {
+                    if !filter.contains(&cand.sheet_index) {
+                        continue;
+                    }
+                }
                 let sheet = &sheets[cand.sheet_index];
                 for &rot in &allowed_rotations {
                     let Some((rw, rh)) = dims_for_rotation(part.width, part.height, rot) else { continue; };
@@ -401,7 +416,7 @@ impl VrsSeparator {
 mod tests {
     use super::*;
     use crate::io::{Placement, Unplaced};
-    use crate::item::{expand_instances, Part};
+    use crate::item::Part;
     use crate::optimizer::repair::find_violations;
     use crate::optimizer::working::WorkingLayout;
     use crate::sheet::{expand_sheets, Stock};
@@ -606,5 +621,65 @@ mod tests {
         // Must not panic, and must indicate non-convergence or residual loss.
         assert!(!diag.converged || diag.best_loss > 0.0,
             "non-fixable fixture: converged={} best_loss={}", diag.converged, diag.best_loss);
+    }
+
+    // Test 9: allowed sheet filter excludes disallowed relocation target sheets.
+    #[test]
+    fn separator_allowed_sheet_filter_excludes_disallowed_sheets() {
+        let parts = vec![make_part("A", 60.0, 60.0, 2, vec![0])];
+        let stocks = vec![
+            make_stock("S0", 80.0, 60.0, 1),
+            make_stock("S1", 80.0, 60.0, 1),
+        ];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements.clone(), vec![], 2, 0);
+
+        let sep_unfiltered = VrsSeparator::new(VrsSeparatorConfig::default());
+        let (result_unfiltered, diag_unfiltered) = sep_unfiltered.run(layout.snapshot(), &parts, &sheets);
+        assert!(
+            diag_unfiltered.best_loss == 0.0 || diag_unfiltered.converged,
+            "without filter separator should be able to use sheet 1 and resolve overlap"
+        );
+        assert!(
+            result_unfiltered.placements.iter().any(|p| p.sheet_index == 1),
+            "without filter at least one placement should move to sheet 1"
+        );
+
+        let sep_filtered = VrsSeparator::new(VrsSeparatorConfig {
+            allowed_sheet_indices: Some(vec![0]),
+            ..VrsSeparatorConfig::default()
+        });
+        let (result_filtered, diag_filtered) = sep_filtered.run(layout, &parts, &sheets);
+        assert!(
+            !diag_filtered.converged || diag_filtered.best_loss > 0.0,
+            "with filter=only sheet 0, overlap should remain non-fixable"
+        );
+        assert!(
+            result_filtered.placements.iter().all(|p| p.sheet_index == 0),
+            "filtered run must not place items on disallowed sheet 1"
+        );
+    }
+
+    // Test 10: default filter None keeps baseline behavior.
+    #[test]
+    fn separator_default_filter_none_is_backward_compatible() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let sep = VrsSeparator::new(VrsSeparatorConfig::default());
+        let (result, diag) = sep.run(layout, &parts, &sheets);
+        assert_eq!(diag.best_loss, 0.0, "default None filter should keep old behavior");
+        let violations = find_violations(&result.placements, &parts, &sheets);
+        assert!(violations.is_empty(), "default None filter result must remain valid");
     }
 }

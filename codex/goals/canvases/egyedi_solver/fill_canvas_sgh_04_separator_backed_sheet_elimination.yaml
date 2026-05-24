@@ -1,0 +1,80 @@
+steps:
+- name: Dependency gate és repo anchor audit
+  description: 'Ellenőrizd az SGH-03 dependency gate-et: a codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.md
+    létezzen, első sora PASS vagy PASS_WITH_NOTES legyen, és tartalmazza az SGH-04_STATUS: READY markert. Olvasd el az AGENTS.md,
+    codex szabálydoksikat, QA guideline-t, Sparrow/SparrowGH audit és migrációs doksikat, valamint az SGH-01/02/03 contractokat.
+    Ha a gate nem teljesül, állj meg BLOCKED státusszal, és csak report/checklist dependency evidence részt frissíts.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+  - codex/codex_checklist/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+- name: Sheet elimination V1 kódaudit és V2 gap rögzítés
+  description: 'Auditáld a valós kódot: sheet_elimination.rs, separator.rs, working.rs, initializer.rs, candidates.rs, repair.rs,
+    boundary.rs, multisheet.rs, stopping.rs, io.rs, item.rs és sheet.rs. A reportban rögzítsd a jelenlegi V1 korlátait, a
+    compute_sheet_count_used max+1 contractját, a highest-used target szükségességét, a receiving sheet restrictiont, valamint
+    azt, hogy a VrsSeparator alapból minden sheetre generál candidate-et.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+- name: Optional separator allowed-sheet filter bevezetése
+  description: Ha biztonságosan megoldható, bővítsd a VrsSeparatorConfig-ot backward-compatible optional allowed-sheet filterrel,
+    default None értékkel. A VrsSeparator candidate generálásakor aktív filter esetén csak engedélyezett sheetekre adhat relocation
+    candidate-et. Adj unit tesztet arra, hogy a filter kizárja a tiltott sheeteket, és hogy default None mellett a korábbi
+    separator tesztek zöldek maradnak. Ha nem ezt a megoldást választod, reportban indokold, és a sheet_elimination commit
+    gate-ben kötelező target/higher sheet reuse rejectet implementálni.
+  outputs:
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+- name: SheetEliminationDiagnostics és target selection V2
+  description: Bővítsd a SheetEliminationDiagnostics-ot displaced/LBF/separator/reject/receiving-sheet mezőkkel, és frissítsd
+    a summary()-t. Módosítsd vagy válaszd szét a target selectiont úgy, hogy SGH-04-ben sheet-count reducing módon a highest
+    used sheet legyen a target. Dokumentáld, hogy ez VRS-specifikus adaptáció a SparrowGH least-loaded bin választásához képest.
+  outputs:
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+- name: LBF clear redistribution lower-index receiving sheetekre
+  description: 'Fejleszd tovább a try_eliminate redisztribúciót: a target sheet itemjei largest-first sorrendben kerüljenek
+    queue-ba, és először LBF clear reinsertet próbáljon csak sheet_index < target sheetekre. Használd a valós VRS candidate,
+    boundary, rotation és bbox helperöket. A target sheet és target feletti unused sheet semmilyen clear reinsertion útvonalon
+    nem használható.'
+  outputs:
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+- name: Separator-backed redistribution fallback
+  description: 'Ha LBF clear reinsert nem talál helyet, próbálj separator-backed fallbacket: deterministic receiving sheet
+    választás, seed placement, WorkingLayout, VrsSeparator::run(), majd szigorú commit gate. Elfogadás csak best_loss==0 vagy
+    converged, validate_for_commit Ok, find_violations üres, target/higher sheet reuse nélkül és sheet_count_used csökkentésre
+    alkalmas állapot esetén. Sikertelenség esetén teljes rollback az attempt előtti snapshotra.'
+  outputs:
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+- name: Unit tesztek és regressziós lefedés
+  description: 'Adj/frissíts Rust unit teszteket: meglévő sheet_elimination tesztek zöldek; target selection highest used;
+    redistribution nem használ target vagy target feletti sheetet; egyszerű 2->1 elimináció PASS; impossible elimination rollback-safe
+    byte-identical; separator-backed fallback célzott helper/fixture tesztben aktiválható; target/higher sheet reuse reject;
+    diagnostics summary új mezők; final committed output find_violations szerint valid.'
+  outputs:
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+  - rust/vrs_solver/src/optimizer/separator.rs
+- name: SGH-04 contract dokumentáció elkészítése
+  description: Hozd létre a docs/egyedi_solver/sgh_04_separator_backed_sheet_elimination_contract.md dokumentumot a canvasban
+    megadott kötelező szekciókkal. Írd le a SparrowGH bin-reduction mappinget, a VRS max+1 sheet_count_used constraintet,
+    a receiving sheet restrictiont, az LBF és separator fallback szabályokat, valamint a commit/rollback gate-eket.
+  outputs:
+  - docs/egyedi_solver/sgh_04_separator_backed_sheet_elimination_contract.md
+- name: Checklist, report és evidence matrix kitöltése
+  description: Töltsd ki a checklistet és a reportot. A report tartalmazzon dependency evidence-t, current-state auditot,
+    change summaryt, implementation summaryt, tests részt, scope safety részt és DoD -> Evidence Matrixot konkrét fájl/funkció
+    bizonyítékokkal. Dokumentáld külön, hogy io.rs, adapter.rs, Python runner, exact validator, külső backend/vendor, score.rs,
+    moves.rs, solution pool és perturbáció nem módosult.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+  - codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+- name: Focused Rust tesztek és scope safety ellenőrzés
+  description: 'Futtasd legalább: cargo test -p vrs_solver sheet_elimination separator vagy helyi ekvivalens. Ha szükséges,
+    futtasd cargo test -p vrs_solver teljes suite-et is. Git diff/status alapján ellenőrizd, hogy csak az engedélyezett production
+    fájlok módosultak. Ha tiltott fájl módosult vagy focused teszt fail, a report első sora nem lehet PASS.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard ellenőrzést: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md.
+    Ha fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát. Ha zöld, a report végén szerepeljen: SGH-05_STATUS:
+    READY.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.md
+  - codex/reports/egyedi_solver/sgh_04_separator_backed_sheet_elimination.verify.log
