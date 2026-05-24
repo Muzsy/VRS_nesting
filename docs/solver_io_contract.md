@@ -23,7 +23,8 @@ Required top-level fields:
 
 Optional top-level fields:
 - `solver_profile` (string): capability profile selector. If omitted, defaults to legacy rectangular behavior.
-  - `jagua_optimizer_phase1_outer_only`: Phase 1 profile — rectangular multi-sheet, no item holes, no irregular stock.
+  - `jagua_optimizer_phase1_outer_only`: Phase 1 profile — rectangular or irregular (outer-only) multi-sheet, no item holes, no stock holes, no runtime margin shrink.
+- `margin_mm` (number, `>= 0`): parsed and stored in `SolverInput` but **not applied at Rust runtime** (see margin policy section below). Non-zero `margin_mm` with Phase 1 profile returns `UNSUPPORTED_MARGIN_MM_RUNTIME`.
 
 Stock item fields:
 - `id` (string)
@@ -103,11 +104,16 @@ The Python runner records:
 ## Phase 1 outer-only capability policy (`jagua_optimizer_phase1_outer_only`)
 
 When `solver_profile == "jagua_optimizer_phase1_outer_only"`:
-- Supported: rectangular or shaped `stocks`, multi-sheet, 0/90/180/270 rotation.
-- Unsupported: parts with `holes_points` or `prepared_holes_points` (non-empty).
-- Unsupported: part-in-hole cavity, irregular/remnant nesting.
+- Supported: rectangular or irregular (concave outer_points) `stocks`, multi-sheet, 0/90/180/270 rotation.
+- Supported: `Stock.outer_points` L-shape/remnant stocks (hole-free). The `SheetShape` stores `has_irregular_outer=true` and uses `_outer_poly` for boundary containment checks in `rect_inside_sheet_shape()`.
+- Unsupported: parts with `holes_points` or `prepared_holes_points` (non-empty) → `UNSUPPORTED_PART_HOLES_PHASE1`.
+- Unsupported: stocks with non-empty `holes_points` (container holes) → `UNSUPPORTED_STOCK_HOLES_PHASE1`.
+- Unsupported: `margin_mm > 0` → `UNSUPPORTED_MARGIN_MM_RUNTIME` (margin not applied at Rust runtime).
+- Unsupported: part-in-hole cavity nesting.
 
-Unsupported part output:
+Parts that cannot fit any stock dimension are pre-filtered before optimization; they appear in `unplaced` with reason `PART_NEVER_FITS_STOCK`.
+
+Unsupported output format:
 ```json
 {
   "contract_version": "v1",
@@ -127,19 +133,36 @@ Backward compatibility:
 - If `solver_profile` is absent, the solver runs legacy rectangular mode regardless of part geometry fields.
 - `validate_multi_sheet_output()` only validates `ok`/`partial` layouts; `unsupported` is not a valid layout status.
 
-## margin_mm / spacing_mm field status (JG-05 DEVIATION)
+## Irregular sheet boundary policy (JG-16)
 
-`margin_mm` and `spacing_mm` are **validator-only** fields read by `vrs_nesting/nesting/instances.py`
-`validate_multi_sheet_output()`. They affect sheet-boundary and spacing checks in Python validation.
+`SheetShape` fields added in JG-16:
+- `has_irregular_outer: bool` — true when stock was defined via explicit `outer_points`.
+- `area: f64` — outer polygon area in input units² (shoelace formula).
 
-They are **NOT** fields in the Rust `SolverInput` struct and are silently ignored at solve time.
-The Rust solver does not apply any margin or spacing offset during placement.
+When `has_irregular_outer == true`:
+- `rect_inside_sheet_shape()` checks all 4 rect corners against `_outer_poly` using
+  `SPolygon.collides_with(JagPoint)` (corner must be inside polygon).
+- All rect edges are checked against outer polygon edges using `Edge.collides_with(Edge)`
+  (no crossing allowed).
+- This replaces the previous bbox-only outer boundary check for concave stocks.
 
-Status: **DEVIATION — validator-only; not a Rust runtime contract field in v1.**
+When `has_irregular_outer == false` (rectangular stocks):
+- Only bbox bounds check is applied; behaviour unchanged from pre-JG-16.
 
-Fixtures must not claim runtime margin/spacing behaviour the solver does not implement.
-When margin/gap enforcement is needed, these fields should be promoted to v1 Rust fields with
-explicit solver behaviour, accompanied by a dedicated task and updated contract version.
+## margin_mm / spacing_mm field status (JG-16 update)
+
+**`margin_mm`** is now a parsed field in the Rust `SolverInput` struct (added in JG-16):
+- `margin_mm: Option<f64>` with `#[serde(default)]`.
+- It is **parsed** from JSON input but **not applied at Rust runtime** during placement.
+- With Phase 1 profile: if `margin_mm > 0`, the solver returns `UNSUPPORTED_MARGIN_MM_RUNTIME` (explicit unsupported, not silent ignore).
+- With legacy profile (no solver_profile): `margin_mm` is parsed and stored but has no effect on placement.
+- `vrs_nesting/nesting/instances.py` `validate_multi_sheet_output()` continues to apply `margin_mm` via Shapely `buffer(-margin_mm)` during Python exact validation.
+
+**`spacing_mm`** remains a validator-only field — not parsed by the Rust solver.
+
+Status: **PARTIAL PROMOTION — `margin_mm` is now a v1 SolverInput field but runtime shrink is deferred (JG-17 or later). Non-zero margin with Phase 1 → explicit unsupported.**
+
+Fixtures must not claim runtime margin/spacing enforcement the Rust solver does not implement.
 
 ## Failure modes
 - Missing binary -> deterministic runner error

@@ -13,6 +13,11 @@ pub struct SolverInput {
     pub parts: Vec<Part>,
     #[serde(default)]
     pub solver_profile: Option<String>,
+    /// Parsed but not applied at runtime: Rust solver does not shrink placements by margin.
+    /// Non-zero margin_mm with Phase 1 profile returns UNSUPPORTED_MARGIN_MM_RUNTIME.
+    /// Python exact validator applies margin_mm independently (JG-05 deviation).
+    #[serde(default)]
+    pub margin_mm: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]

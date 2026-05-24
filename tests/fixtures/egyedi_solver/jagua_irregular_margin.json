@@ -1,0 +1,39 @@
+{
+  "contract_version": "v1",
+  "project_name": "jagua_irregular_margin_test",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "seed": 42,
+  "time_limit_s": 5,
+  "margin_mm": 5.0,
+  "_fixture_notes": {
+    "purpose": "JG-16 margin policy test fixture",
+    "expected_behavior": "margin_mm=5.0 > 0 with Phase1 profile → UNSUPPORTED_MARGIN_MM_RUNTIME",
+    "stock_shape": "L-shape 100x100 bbox, notch at top-right 50x50",
+    "stock_area_mm2": 7500,
+    "stock_bbox": [100, 100],
+    "has_holes": false
+  },
+  "stocks": [
+    {
+      "id": "L_remnant",
+      "quantity": 2,
+      "outer_points": [
+        [0, 0],
+        [100, 0],
+        [100, 50],
+        [50, 50],
+        [50, 100],
+        [0, 100]
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "small_part",
+      "width": 30.0,
+      "height": 20.0,
+      "quantity": 3,
+      "allowed_rotations_deg": [0, 90]
+    }
+  ]
+}

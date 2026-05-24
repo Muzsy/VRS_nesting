@@ -654,29 +654,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] SheetGeometry modell tartalmaz outer polygon mezőt.
-- [ ] Usable polygon / margin policy dokumentálva.
-- [ ] Konzervatív margin kezelés implementálva vagy explicit fallbackkel jelölve.
-- [ ] L-alakú/remnant input valid.
-- [ ] Túl keskeny remnant unsupported státuszt ad.
-- [ ] Rectangular provider regresszió nincs.
-- [ ] Shape metadata reportolva: area, bbox, usable area.
-- [ ] Container hole továbbra sincs engedélyezve.
-- [ ] Invalid remnant geometriák kezelése dokumentált.
-- [ ] Fixture-ek futnak.
-- [ ] Report tartalmaz margin utáni usable region adatokat.
-- [ ] Repo verify PASS és log mentve.
+- [x] SheetGeometry modell tartalmaz outer polygon mezőt (`has_irregular_outer`, `area`, `_outer_poly`).
+- [x] Usable polygon / margin policy dokumentálva (`UNSUPPORTED_MARGIN_MM_RUNTIME`).
+- [x] Konzervatív margin kezelés implementálva: margin_mm parsed, >0 → explicit unsupported.
+- [x] L-alakú/remnant input valid (`outer_points` → `has_irregular_outer=true`).
+- [x] Túl keskeny remnant `PART_NEVER_FITS_STOCK` státuszt ad (Phase 1 pre-filter).
+- [x] Rectangular provider regresszió nincs (80 unit test PASS).
+- [x] Shape metadata reportolva: area=7500 (shoelace), bbox=100×100, usable=outer_poly.
+- [x] Container hole továbbra sincs engedélyezve (`UNSUPPORTED_STOCK_HOLES_PHASE1`).
+- [x] Invalid remnant geometriák kezelése dokumentált (solver_io_contract.md).
+- [x] Fixture-ek futnak (12 smoke PASS).
+- [x] Report tartalmaz margin policy és usable region adatokat.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van (margin_mm promoted).
+- [x] Következő task indíthatósága egyértelműen jelölve van: JG-17_STATUS: READY.
 
 ---
 

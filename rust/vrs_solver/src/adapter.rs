@@ -7,40 +7,71 @@ use crate::optimizer::{
     stopping::StoppingPolicy,
     try_place_on_sheet, SheetCursor,
 };
-use crate::sheet::expand_sheets;
+use crate::sheet::{expand_sheets, stock_has_holes};
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
+
+fn _unsupported_output(reason: &str, input: &SolverInput) -> SolverOutput {
+    SolverOutput {
+        contract_version: "v1".to_string(),
+        status: "unsupported".to_string(),
+        unsupported_reason: Some(reason.to_string()),
+        placements: vec![],
+        unplaced: vec![],
+        metrics: Metrics {
+            placed_count: 0,
+            unplaced_count: input.parts.iter().map(|p| p.quantity as usize).sum(),
+            sheet_count_used: 0,
+            seed: input.seed,
+            time_limit_s: input.time_limit_s,
+            project_name: input.project_name.clone(),
+        },
+    }
+}
 
 pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
         for part in &input.parts {
             if part_has_holes(part) {
-                return Ok(SolverOutput {
-                    contract_version: "v1".to_string(),
-                    status: "unsupported".to_string(),
-                    unsupported_reason: Some("UNSUPPORTED_PART_HOLES_PHASE1".to_string()),
-                    placements: vec![],
-                    unplaced: vec![],
-                    metrics: Metrics {
-                        placed_count: 0,
-                        unplaced_count: input.parts.iter().map(|p| p.quantity as usize).sum(),
-                        sheet_count_used: 0,
-                        seed: input.seed,
-                        time_limit_s: input.time_limit_s,
-                        project_name: input.project_name.clone(),
-                    },
-                });
+                return Ok(_unsupported_output("UNSUPPORTED_PART_HOLES_PHASE1", &input));
+            }
+        }
+        for stock in &input.stocks {
+            if stock_has_holes(stock) {
+                return Ok(_unsupported_output("UNSUPPORTED_STOCK_HOLES_PHASE1", &input));
+            }
+        }
+        if let Some(margin_mm) = input.margin_mm {
+            if margin_mm > 0.0 {
+                return Ok(_unsupported_output("UNSUPPORTED_MARGIN_MM_RUNTIME", &input));
             }
         }
     }
 
     let sheets = expand_sheets(&input.stocks)?;
-    let instances = expand_instances(&input.parts)?;
+    let all_instances = expand_instances(&input.parts)?;
     let (placements, unplaced, diag) = if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
+        // Pre-filter: instances whose part cannot fit any sheet get PART_NEVER_FITS_STOCK.
+        let mut pre_unplaced: Vec<Unplaced> = Vec::new();
+        let mut instances: Vec<_> = Vec::new();
+        for inst in all_instances {
+            let part = input.parts.iter().find(|p| p.id == inst.part_id)
+                .ok_or_else(|| format!("internal error: part not found: {}", inst.part_id))?;
+            if !can_fit_any_stock(part, &sheets)? {
+                pre_unplaced.push(Unplaced {
+                    instance_id: inst.instance_id,
+                    part_id: inst.part_id,
+                    reason: "PART_NEVER_FITS_STOCK".to_string(),
+                });
+            } else {
+                instances.push(inst);
+            }
+        }
         let repair_time_s = (input.time_limit_s as f64).max(1.0);
         let mut policy = StoppingPolicy::new(256, repair_time_s);
         let manager = MultiSheetManager::new(&input.parts, &sheets);
-        let (p, u, ms_diag) = manager.run(&instances, &mut policy);
+        let (p, mut u, ms_diag) = manager.run(&instances, &mut policy);
+        u.extend(pre_unplaced);
         (p, u, Some(ms_diag))
     } else {
         // Row/cursor fallback for non-Phase1 profiles.
@@ -50,7 +81,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
             .iter()
             .map(|_| SheetCursor { x: 0.0, y: 0.0, row_h: 0.0 })
             .collect();
-        for instance in &instances {
+        for instance in &all_instances {
             let part = input
                 .parts
                 .iter()

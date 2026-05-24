@@ -98,3 +98,18 @@ pub fn rect_edges(rect: Rect) -> [(Point, Point); 4] {
     let c = rect_corners(rect);
     [(c[0], c[1]), (c[1], c[2]), (c[2], c[3]), (c[3], c[0])]
 }
+
+/// Signed shoelace area; returns the absolute value (always non-negative).
+pub fn polygon_area(points: &[Point]) -> f64 {
+    let n = points.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut signed = 0.0f64;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        signed += points[i].x * points[j].y;
+        signed -= points[j].x * points[i].y;
+    }
+    (signed / 2.0).abs()
+}
