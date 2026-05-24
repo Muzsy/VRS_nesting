@@ -1,0 +1,30 @@
+{
+  "contract_version": "v1",
+  "project_name": "jg15_irregular_l_shape_spike",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "seed": 42,
+  "time_limit_s": 5,
+  "stocks": [
+    {
+      "id": "L1",
+      "quantity": 1,
+      "outer_points": [
+        [0, 0], [100, 0], [100, 50], [50, 50], [50, 100], [0, 100]
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "A",
+      "width": 20,
+      "height": 20,
+      "quantity": 1,
+      "allowed_rotations_deg": [0]
+    }
+  ],
+  "_spike_notes": {
+    "l_shape_description": "L-shape: 100x100 bbox with 50x50 notch in top-right corner. Outer: (0,0)→(100,0)→(100,50)→(50,50)→(50,100)→(0,100).",
+    "positive_control": "Item 20x20 at (10,10): corners (10,10),(30,10),(30,30),(10,30) all inside L-shape. Both bbox-check and L-shape check pass.",
+    "negative_control": "Item 20x20 at (60,60): corners (60,60),(80,60),(80,80),(60,80) all in notch (outside L-shape). Bbox-check PASSES (60-80 inside 0-100 bbox) but L-shape check FAILS."
+  }
+}

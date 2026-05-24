@@ -1,0 +1,107 @@
+steps:
+  - name: "JG-15 dependency, szabályok és taskforrások olvasása"
+    description: >
+      Ellenőrizd a JG-14 dependency gate-et: JG-14 report létezik, első sora PASS, tartalmazza a
+      PHASE1_GATE_DECISION: PASS és JG-15_STATUS: READY sorokat, valamint a Phase 1 benchmark artifactok léteznek.
+      Olvasd el az AGENTS.md, docs/codex/*, docs/qa/testing_guidelines.md és a jagua optimizer tervdokumentumokat.
+      Ha bármely dependency hiányzik, zárj BLOCKED státusszal.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.md"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+
+  - name: "Valós boundary és jagua adapter kód auditálása"
+    description: >
+      Auditáld a Rust és Python boundary/validation kódot. Külön rögzítsd, hogy Stock.outer_points parse-olható,
+      SheetShape._outer_poly létezik, rect_inside_sheet_shape jelenleg bbox+hole alapú-e, a Python exact validator
+      outer_points alapján képes-e sheet polygon validationre, és van-e meglévő natív jagua irregular container wrapper.
+      Dokumentáld a JG-15 névütközést a régi terv és az aktuális task-bontás között.
+    inputs:
+      - "rust/vrs_solver/src/sheet.rs"
+      - "rust/vrs_solver/src/geometry.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/multisheet.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/Cargo.toml"
+      - "vrs_nesting/nesting/instances.py"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+      - "scripts/smoke_jagua_exact_validation_bridge.py"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+      - "docs/egyedi_solver/jagua_irregular_sheet_spike_decision.md"
+
+  - name: "L-shape irregular/remnant fixture létrehozása"
+    description: >
+      Hozz létre egy hole-free L-alakú/konkáv remnant sheet fixture-t stock.outer_points mezővel.
+      A fixture tartalmazzon pozitív kontrollt és olyan negatív boundary kontrollhelyzetet, amely bbox szerint belül lenne,
+      de a konkáv L-shape hiányzó régiójába lógna. Item hole és stock hole nem szerepelhet benne.
+    outputs:
+      - "tests/fixtures/egyedi_solver/jagua_irregular_l_shape.json"
+
+  - name: "Rust irregular sheet spike bin létrehozása"
+    description: >
+      Hozd létre a jagua_irregular_sheet_spike bin-t. A bin vizsgálja a current SheetShape/JaguaAdapter boundary viselkedést,
+      és bizonyítsa vagy cáfolja, hogy a repo jelenlegi jagua-rs API használatával van-e natív irregular sheet boundary support.
+      A kimenet tartalmazzon grep-elhető döntési sorokat: NATIVE_BOUNDARY_SUPPORT, OWN_BOUNDARY_VALIDATOR_REQUIRED,
+      L_SHAPE_BOUNDARY_VIOLATION_DETECTED, CURRENT_BBOX_ONLY_RISK_DETECTED és DECISION.
+    outputs:
+      - "rust/vrs_solver/src/bin/jagua_irregular_sheet_spike.rs"
+
+  - name: "Python smoke script létrehozása"
+    description: >
+      Hozd létre a smoke_jagua_irregular_sheet_spike.py scriptet. Ellenőrizze a fixture JSON-t, a hole-free követelményt,
+      a konkáv outer_points meglétét, buildelje/futtassa a Rust spike bin-t, ellenőrizze a döntési sorokat,
+      bizonyítsa az exact validation boundary violation felismerését, és PASS/FAIL összegzést írjon.
+    outputs:
+      - "scripts/smoke_jagua_irregular_sheet_spike.py"
+
+  - name: "Döntési report elkészítése"
+    description: >
+      Készítsd el a docs/egyedi_solver/jagua_irregular_sheet_spike_decision.md döntési reportot.
+      A report zárjon JG-15_DECISION: NATIVE_JAGUA_BOUNDARY | OWN_BOUNDARY_VALIDATOR_PLUS_JAGUA_COLLISION | REVISE | STOP sorral,
+      és egyértelműen jelölje, hogy JG-16 milyen irányban indulhat.
+    outputs:
+      - "docs/egyedi_solver/jagua_irregular_sheet_spike_decision.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+
+  - name: "Task-specifikus ellenőrzések futtatása és riportolása"
+    description: >
+      Futtasd a task-specifikus ellenőrzéseket: cargo build --manifest-path rust/vrs_solver/Cargo.toml --bin jagua_irregular_sheet_spike,
+      cargo run --manifest-path rust/vrs_solver/Cargo.toml --bin jagua_irregular_sheet_spike,
+      python3 scripts/smoke_jagua_irregular_sheet_spike.py, python3 scripts/bench_jagua_optimizer_phase1_rectangular.py,
+      python3 scripts/smoke_jagua_exact_validation_bridge.py és cargo test --manifest-path rust/vrs_solver/Cargo.toml.
+      Dokumentáld a pontos parancsokat, eredményeket és blocker/deviation pontokat.
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+
+  - name: "Checklist és progress dokumentum frissítése"
+    description: >
+      Frissítsd a task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-15 szakaszát.
+      PASS csak akkor adható, ha a releváns pontok pipálva vannak, vagy explicit BLOCKED/DEVIATION bizonyíték szerepel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo gate-et: ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md.
+      A verify wrapper frissítse az AUTO_VERIFY blokkot és mentse a logot a report mellé.
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t15_irregular_sheet_capability_spike.verify.log"

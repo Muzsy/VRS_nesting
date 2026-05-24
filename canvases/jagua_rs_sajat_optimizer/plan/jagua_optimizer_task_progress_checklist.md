@@ -619,29 +619,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Phase 2 scope dokumentálva: irregular/remnant sheet, hole nélkül.
-- [ ] L-shape / konkáv remnant spike fixture elkészült.
-- [ ] Megvizsgálva, hogy jagua natívan tud-e irregular boundaryt.
-- [ ] Boundary violation felismerése tesztelve.
-- [ ] Item-item collision továbbra is működik.
-- [ ] Nincs item hole vagy container hole bekeverve.
-- [ ] Döntési ág rögzítve: natív jagua boundary vagy saját boundary validator + jagua item-item collision.
-- [ ] Performance/kockázat röviden dokumentálva.
-- [ ] NO-GO esetén alternatív terv szerepel.
-- [ ] Report konkrét PASS/NO-GO döntéssel zár.
-- [ ] Cargo/build/smoke PASS, ahol releváns.
-- [ ] Repo verify PASS és log mentve.
+- [x] Phase 2 scope dokumentálva: irregular/remnant sheet, hole nélkül.
+- [x] L-shape / konkáv remnant spike fixture elkészült.
+- [x] Megvizsgálva, hogy jagua natívan tud-e irregular boundaryt.
+- [x] Boundary violation felismerése tesztelve.
+- [x] Item-item collision továbbra is működik.
+- [x] Nincs item hole vagy container hole bekeverve.
+- [x] Döntési ág rögzítve: natív jagua boundary vagy saját boundary validator + jagua item-item collision.
+- [x] Performance/kockázat röviden dokumentálva.
+- [x] NO-GO esetén alternatív terv szerepel.
+- [x] Report konkrét PASS/NO-GO döntéssel zár.
+- [x] Cargo/build/smoke PASS, ahol releváns.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
