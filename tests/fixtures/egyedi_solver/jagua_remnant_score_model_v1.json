@@ -1,0 +1,63 @@
+{
+  "contract_version": "v1",
+  "project_name": "jagua_remnant_score_model_v1_test",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "seed": 42,
+  "time_limit_s": 5,
+  "_fixture_notes": {
+    "purpose": "JG-19 mixed rectangular + remnant sheet-cost score model fixture",
+    "stock_types": {
+      "regular_sheet": {
+        "id": "regular_200x200",
+        "cost_per_use": 1.0,
+        "description": "Full new sheet — standard cost"
+      },
+      "remnant_sheet": {
+        "id": "remnant_200x200",
+        "cost_per_use": 0.2,
+        "description": "Remnant (already opened) sheet — 80% cheaper per use"
+      }
+    },
+    "score_model": {
+      "sheet_count_penalty_per_sheet": 10000.0,
+      "remnant_cost_per_use": 0.2,
+      "regular_cost_per_use": 1.0,
+      "contribution_regular": "1.0 * 10000 = 10000 per regular sheet used",
+      "contribution_remnant": "0.2 * 10000 = 2000 per remnant sheet used",
+      "expected": "score model prefers remnant — lower total cost when items placed on remnant"
+    },
+    "items": "3 x 50x50 parts — fit on either sheet type",
+    "expected_status": "ok",
+    "expected_placed_count": 3,
+    "score_breakdown_expected": {
+      "usable_area_utilization_description": "placed_area / sheet.area for used sheets",
+      "sheet_cost_total_description": "sum of cost_per_use for used sheet slots",
+      "remnant_preference_evidence": "see smoke_jagua_remnant_score_model_v1.py checks 7 and 8"
+    }
+  },
+  "stocks": [
+    {
+      "id": "regular_200x200",
+      "quantity": 1,
+      "width": 200,
+      "height": 200,
+      "cost_per_use": 1.0
+    },
+    {
+      "id": "remnant_200x200",
+      "quantity": 1,
+      "width": 200,
+      "height": 200,
+      "cost_per_use": 0.2
+    }
+  ],
+  "parts": [
+    {
+      "id": "square_50",
+      "width": 50.0,
+      "height": 50.0,
+      "quantity": 3,
+      "allowed_rotations_deg": [0]
+    }
+  ]
+}

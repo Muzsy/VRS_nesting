@@ -72,6 +72,7 @@ mod tests {
             height: Some(h),
             outer_points: None,
             holes_points: None,
+            cost_per_use: None,
         }
     }
 
@@ -90,6 +91,7 @@ mod tests {
                 PointInput::Pair([0.0, 100.0]),
             ]),
             holes_points: None,
+            cost_per_use: None,
         }
     }
 

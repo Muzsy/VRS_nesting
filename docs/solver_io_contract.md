@@ -265,6 +265,69 @@ All three construction paths use `generate_candidates_with_sheets`:
 `total_candidates_generated`, `candidates_from_vertex`, `candidates_from_edge`,
 `candidates_from_interior`.
 
+## Sheet-cost score model (JG-19)
+
+### Stock.cost_per_use field
+
+Optional field on `Stock` (backward-compatible via `#[serde(default)]`):
+
+```json
+{ "id": "remnant_A3", "width": 297, "height": 420, "quantity": 1, "cost_per_use": 0.2 }
+```
+
+- Absent or `null` → defaults to `1.0` (identical behavior to pre-JG-19).
+- Clamped to `>= 0.0` in `stock_to_shape`.
+- Propagated to `SheetShape.cost_per_use: f64`.
+
+### score_breakdown output (Phase1 only)
+
+`SolverOutput` now includes an optional `score_breakdown` for `jagua_optimizer_phase1_outer_only`:
+
+```json
+{
+  "score_breakdown": {
+    "total_cost": -3000.0,
+    "placed_area_contribution": -7500.0,
+    "unplaced_contribution": 0.0,
+    "sheet_cost_contribution": 2000.0,
+    "sheet_cost_total": 0.2,
+    "usable_area_utilization": 0.1875,
+    "overlap_contribution": 0.0,
+    "boundary_contribution": 0.0,
+    "compactness_contribution": 4500.0
+  }
+}
+```
+
+Absent for legacy profiles (`skip_serializing_if = "Option::is_none"`) — no breaking change.
+
+### sheet_count_contribution semantics (JG-19 update)
+
+`sheet_count_contribution = sheet_cost_total * sheet_count_penalty_per_sheet`
+
+where `sheet_cost_total = sum(cost_per_use for each used sheet slot)`.
+
+For all-default-cost fixtures (`cost_per_use` absent) this equals the pre-JG-19
+formula `sheet_count_used * sheet_count_penalty_per_sheet` — backward-compatible.
+
+### usable_area_utilization
+
+`placed_area / total usable area of used sheets`. Range [0, 1]. For irregular sheets,
+`sheet.area` is the polygon area (shoelace), not the bbox area.
+
+### Penalty hierarchy (unchanged)
+
+`overlap/boundary (1e9) >> unplaced (1e6) >> sheet_cost (1e4 * cost) >> placed_area (1.0) >> compactness (0.001)`
+
+An invalid layout always scores worse than any valid layout, regardless of cost savings.
+
+### V1 limitations
+
+- `cost_per_use` is a V1 nesting optimization proxy; not a final inventory/costing field.
+- Phase 1 construction places items on the lowest-index fitting sheet (BLF/greedy).
+  Sheet cost preference is expressed in the score model for evaluation and SA search guidance.
+- See `docs/egyedi_solver/jagua_remnant_score_model_v1.md` for decision examples and design rationale.
+
 ## Failure modes
 - Missing binary -> deterministic runner error
 - Non-zero solver exit -> runner writes `runner_meta.json` and exits error

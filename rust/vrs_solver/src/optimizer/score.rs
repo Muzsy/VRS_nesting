@@ -76,6 +76,12 @@ impl Default for ScoreWeights {
 /// - `placed_area_contribution` is **negative** (reward).
 /// - All other contributions are **non-negative** (penalties).
 /// - `total_cost = sum of all contributions`.
+///
+/// JG-19 additions:
+/// - `sheet_cost_total`: sum of `cost_per_use` for each used sheet slot (1.0 per sheet by default).
+/// - `sheet_count_contribution`: now equals `sheet_cost_total * sheet_count_penalty_per_sheet`
+///   (backward-compat: default cost_per_use=1.0 → identical to old `sheet_count_used * weight`).
+/// - `usable_area_utilization`: `placed_area / total usable area of used sheets` in [0, 1].
 #[derive(Debug, Clone)]
 pub struct ObjectiveBreakdown {
     pub placed_count: usize,
@@ -85,8 +91,13 @@ pub struct ObjectiveBreakdown {
     pub overlap_violations: usize,
     pub boundary_violations: usize,
     pub compactness_proxy: f64,
+    /// Sum of cost_per_use for each used sheet slot (JG-19). Default: sheet_count_used * 1.0.
+    pub sheet_cost_total: f64,
+    /// placed_area / total usable area of used sheets (JG-19). 0.0 if no sheets used.
+    pub usable_area_utilization: f64,
     pub placed_area_contribution: f64,
     pub unplaced_contribution: f64,
+    /// Cost from sheet usage: sheet_cost_total * sheet_count_penalty_per_sheet (JG-19).
     pub sheet_count_contribution: f64,
     pub overlap_contribution: f64,
     pub boundary_contribution: f64,
@@ -174,13 +185,23 @@ pub fn score_layout(
         }
     }
 
-    // --- Sheet count ---
+    // --- Sheet count + sheet-cost (JG-19) ---
     let sheet_count_used = placements
         .iter()
         .map(|p| p.sheet_index)
         .max()
         .map(|v| v + 1)
         .unwrap_or(0);
+
+    // Sum cost_per_use for each used sheet slot; also accumulate total usable area.
+    let mut sheet_cost_total = 0.0_f64;
+    let mut total_used_sheet_area = 0.0_f64;
+    for sheet_idx in 0..sheet_count_used {
+        if sheet_idx < sheets.len() {
+            sheet_cost_total += sheets[sheet_idx].cost_per_use;
+            total_used_sheet_area += sheets[sheet_idx].area;
+        }
+    }
 
     // --- Violations (overlap + boundary) via repair helper ---
     let violations = find_violations(placements, parts, sheets);
@@ -215,10 +236,19 @@ pub fn score_layout(
         compactness_proxy += (bounding_area - item_area).max(0.0);
     }
 
+    // --- Usable-area utilization (JG-19) ---
+    let usable_area_utilization = if total_used_sheet_area > 0.0 {
+        (placed_area / total_used_sheet_area).min(1.0)
+    } else {
+        0.0
+    };
+
     // --- Contributions (all non-negative except placed_area which is a reward) ---
     let placed_area_contribution = -(placed_area * weights.placed_area_reward);
     let unplaced_contribution = unplaced.len() as f64 * weights.unplaced_penalty_per_item;
-    let sheet_count_contribution = sheet_count_used as f64 * weights.sheet_count_penalty_per_sheet;
+    // JG-19: sheet_count_contribution = sheet_cost_total * weight (not raw count * weight).
+    // Backward-compat: default cost_per_use=1.0 → sheet_cost_total == sheet_count_used → same value.
+    let sheet_count_contribution = sheet_cost_total * weights.sheet_count_penalty_per_sheet;
     let overlap_contribution = overlap_violations as f64 * weights.overlap_penalty_per_pair;
     let boundary_contribution = boundary_violations as f64 * weights.boundary_penalty_per_item;
     let compactness_contribution = compactness_proxy * weights.compactness_weight;
@@ -240,6 +270,8 @@ pub fn score_layout(
             overlap_violations,
             boundary_violations,
             compactness_proxy,
+            sheet_cost_total,
+            usable_area_utilization,
             placed_area_contribution,
             unplaced_contribution,
             sheet_count_contribution,
@@ -284,6 +316,7 @@ mod tests {
                 height: Some(h),
                 outer_points: None,
                 holes_points: None,
+                cost_per_use: None,
             })
             .collect();
         expand_sheets(&stocks).expect("sheets")
@@ -462,6 +495,8 @@ mod tests {
                 overlap_violations: 0,
                 boundary_violations: 0,
                 compactness_proxy: 0.0,
+                sheet_cost_total: 1.0,
+                usable_area_utilization: 0.0,
                 placed_area_contribution: -500.0,
                 unplaced_contribution: 0.0,
                 sheet_count_contribution: 0.0,
@@ -481,6 +516,8 @@ mod tests {
                 overlap_violations: 0,
                 boundary_violations: 0,
                 compactness_proxy: 0.0,
+                sheet_cost_total: 1.0,
+                usable_area_utilization: 0.0,
                 placed_area_contribution: -250.0,
                 unplaced_contribution: 1_000_000.0,
                 sheet_count_contribution: 0.0,
@@ -492,5 +529,109 @@ mod tests {
         };
         assert!(model.is_better(&better, &worse), "lower cost must be better");
         assert!(!model.is_better(&worse, &better), "higher cost must not be better");
+    }
+
+    // --- JG-19: remnant preference and usable-area utilization ---
+
+    fn make_sheets_with_cost(w: f64, h: f64, costs: &[f64]) -> Vec<SheetShape> {
+        let stocks: Vec<Stock> = costs
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| Stock {
+                id: format!("S{i}"),
+                quantity: 1,
+                width: Some(w),
+                height: Some(h),
+                outer_points: None,
+                holes_points: None,
+                cost_per_use: Some(c),
+            })
+            .collect();
+        expand_sheets(&stocks).expect("sheets")
+    }
+
+    #[test]
+    fn test_remnant_preference_lower_cost_wins() {
+        let parts = vec![make_part("A", 50.0, 50.0)];
+        // Regular sheet: cost_per_use=1.0; remnant: cost_per_use=0.2
+        let regular_sheets = make_sheets_with_cost(200.0, 200.0, &[1.0]);
+        let remnant_sheets = make_sheets_with_cost(200.0, 200.0, &[0.2]);
+        let placements = vec![p("A__0001", "A", 0, 0.0, 0.0)];
+        let model = ScoreModel::default();
+        let r_regular = model.score(&placements, &[], &parts, &regular_sheets);
+        let r_remnant = model.score(&placements, &[], &parts, &remnant_sheets);
+        assert!(
+            r_remnant.total_cost < r_regular.total_cost,
+            "remnant (cost=0.2) must score better than regular (cost=1.0): remnant={} regular={}",
+            r_remnant.total_cost, r_regular.total_cost
+        );
+        assert!(
+            (r_regular.breakdown.sheet_cost_total - 1.0).abs() < 1e-9,
+            "regular sheet_cost_total must be 1.0"
+        );
+        assert!(
+            (r_remnant.breakdown.sheet_cost_total - 0.2).abs() < 1e-9,
+            "remnant sheet_cost_total must be 0.2"
+        );
+    }
+
+    #[test]
+    fn test_usable_area_utilization_computed() {
+        let parts = vec![make_part("A", 50.0, 50.0)]; // area = 2500
+        // Single 100×100 sheet (area=10000); place one 50×50 item → utilization = 2500/10000 = 0.25
+        let sheets = make_sheets(100.0, 100.0, 1);
+        let placements = vec![p("A__0001", "A", 0, 0.0, 0.0)];
+        let model = ScoreModel::default();
+        let r = model.score(&placements, &[], &parts, &sheets);
+        assert!(
+            (r.breakdown.usable_area_utilization - 0.25).abs() < 1e-9,
+            "utilization must be 0.25 (2500/10000): got {}",
+            r.breakdown.usable_area_utilization
+        );
+    }
+
+    #[test]
+    fn test_invalid_layout_dominates_over_remnant_benefit() {
+        let parts = vec![make_part("A", 50.0, 50.0)];
+        // Remnant sheet with very low cost; but placement is overlapping → overlap penalty dominates
+        let remnant_sheets = make_sheets_with_cost(200.0, 200.0, &[0.001]);
+        let valid_regular = vec![p("A__0001", "A", 0, 0.0, 0.0)];
+        let overlapping_remnant = vec![
+            p("A__0001", "A", 0, 0.0, 0.0),
+            p("A__0002", "A", 0, 10.0, 10.0), // overlaps A__0001
+        ];
+        let regular_sheets = make_sheets_with_cost(200.0, 200.0, &[1.0]);
+        let model = ScoreModel::default();
+        let r_valid = model.score(&valid_regular, &[], &parts, &regular_sheets);
+        let r_overlap = model.score(&overlapping_remnant, &[], &parts, &remnant_sheets);
+        assert!(
+            r_valid.total_cost < r_overlap.total_cost,
+            "valid regular layout must beat overlapping remnant layout: valid={} overlap={}",
+            r_valid.total_cost, r_overlap.total_cost
+        );
+        assert!(r_overlap.breakdown.overlap_violations > 0, "overlap must be detected");
+    }
+
+    #[test]
+    fn test_backward_compat_default_cost_equals_sheet_count() {
+        // Default cost_per_use=None (→1.0): sheet_cost_total must equal sheet_count_used.
+        let parts = vec![make_part("A", 50.0, 50.0)];
+        let sheets = make_sheets(200.0, 200.0, 2);
+        let two_sheet_layout = vec![
+            p("A__0001", "A", 0, 0.0, 0.0),
+            p("A__0002", "A", 1, 0.0, 0.0),
+        ];
+        let model = ScoreModel::default();
+        let r = model.score(&two_sheet_layout, &[], &parts, &sheets);
+        assert_eq!(r.breakdown.sheet_count_used, 2);
+        assert!(
+            (r.breakdown.sheet_cost_total - 2.0).abs() < 1e-9,
+            "default cost_per_use=1.0 → sheet_cost_total must equal sheet_count_used=2"
+        );
+        // Verify contribution is same as old formula: 2 * 10_000 = 20_000
+        assert!(
+            (r.breakdown.sheet_count_contribution - 2.0 * 10_000.0).abs() < 1e-9,
+            "sheet_count_contribution backward compat"
+        );
     }
 }

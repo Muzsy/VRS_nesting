@@ -29,6 +29,28 @@ pub struct SolverOutput {
     pub placements: Vec<Placement>,
     pub unplaced: Vec<Unplaced>,
     pub metrics: Metrics,
+    /// Score breakdown for Phase1 profile (JG-19). Absent for legacy profiles.
+    /// Adding this optional field is non-breaking: existing callers ignore unknown keys.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_breakdown: Option<ScoreBreakdownOutput>,
+}
+
+/// Auditálható score breakdown in the JSON output (JG-19).
+/// Only present when solver_profile=jagua_optimizer_phase1_outer_only.
+#[derive(Debug, Serialize)]
+pub struct ScoreBreakdownOutput {
+    pub total_cost: f64,
+    pub placed_area_contribution: f64,
+    pub unplaced_contribution: f64,
+    /// Sheet cost contribution = sheet_cost_total * sheet_count_penalty_per_sheet.
+    pub sheet_cost_contribution: f64,
+    /// Sum of cost_per_use for all used sheet slots (default 1.0/sheet).
+    pub sheet_cost_total: f64,
+    /// placed_area / total usable area of used sheets. 0.0 if no sheets used.
+    pub usable_area_utilization: f64,
+    pub overlap_contribution: f64,
+    pub boundary_contribution: f64,
+    pub compactness_contribution: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]

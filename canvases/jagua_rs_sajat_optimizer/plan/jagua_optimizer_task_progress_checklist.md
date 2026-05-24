@@ -759,29 +759,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Sheet cost metadata modell dokumentálva.
-- [ ] Remnant preferencia súly dokumentálva.
-- [ ] Új teljes tábla nyitási büntetés dokumentálva.
-- [ ] Usable-area utilization számítás működik.
-- [ ] Vegyes rectangular + remnant fixture fut.
-- [ ] Score breakdown magyarázható sheet választást ad.
-- [ ] Invalid boundary/overlap nem lehet jó score-ral sikeres.
-- [ ] Score weight defaultok reportolva.
-- [ ] Rectangular-only score regresszió nincs.
-- [ ] Döntési példák szerepelnek a reportban.
-- [ ] Smoke/benchmark PASS.
-- [ ] Repo verify PASS és log mentve.
+- [x] Sheet cost metadata modell dokumentálva.
+- [x] Remnant preferencia súly dokumentálva.
+- [x] Új teljes tábla nyitási büntetés dokumentálva.
+- [x] Usable-area utilization számítás működik.
+- [x] Vegyes rectangular + remnant fixture fut.
+- [x] Score breakdown magyarázható sheet választást ad.
+- [x] Invalid boundary/overlap nem lehet jó score-ral sikeres.
+- [x] Score weight defaultok reportolva.
+- [x] Rectangular-only score regresszió nincs.
+- [x] Döntési példák szerepelnek a reportban.
+- [x] Smoke/benchmark PASS.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 

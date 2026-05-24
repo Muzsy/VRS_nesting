@@ -79,6 +79,7 @@ fn main() {
         height: Some(200.0),
         outer_points: None,
         holes_points: None,
+        cost_per_use: None,
     };
     match stock_to_shape(&stock) {
         Ok(sheet) => {

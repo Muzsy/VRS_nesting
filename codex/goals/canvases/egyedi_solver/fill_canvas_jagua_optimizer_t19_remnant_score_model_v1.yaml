@@ -1,0 +1,129 @@
+steps:
+- name: JG-19 dependency és szabályok ellenőrzése
+  description: 'Ellenőrizd a JG-18 dependency gate-et: a JG-18 report létezik, első sora PASS vagy PASS_WITH_NOTES, tartalmazza
+    a JG-19_STATUS: READY sort, létezik az irregular-aware candidate generation útvonal, és nincs unresolved irregular blocker.
+    Olvasd el az AGENTS.md, docs/codex/*, docs/qa/testing_guidelines.md és a jagua optimizer tervdokumentumokat. Ha bármely
+    dependency hiányzik, zárj BLOCKED státusszal, és ne módosíts score runtime kódot.'
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - scripts/smoke_jagua_irregular_candidate_generation.py
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+- name: Score és sheet metadata útvonal auditálása
+  description: 'Auditáld a meglévő score és sheet metadata útvonalat: score.rs, sheet.rs, multisheet.rs, adapter.rs és io.rs.
+    Rögzítsd a reportban a jelenlegi ScoreWeights/ObjectiveBreakdown mezőket, a SheetShape area/irregular metadata állapotát,
+    az explicit remnant/inventory-cost schema hiányát vagy meglétét, és azt, hogy a diagnostics/output boundary hol bővíthető
+    breaking change nélkül.'
+  inputs:
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/io.rs
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+- name: Sheet cost metadata vagy V1 proxy döntés dokumentálása
+  description: Hozz létre dokumentált sheet-cost metadata stratégiát. Ha explicit optional Stock metadata backward-compatible
+    módon biztonságosan bevezethető, dokumentáld és implementáld. Ha a valós kód alapján nincs kész input schema, használj
+    dokumentált V1 proxy/inference policy-t, de jelöld egyértelműen, hogy ez nem végleges inventory/costing modell.
+  inputs:
+  - rust/vrs_solver/src/sheet.rs
+  - docs/solver_io_contract.md
+  - canvases/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+  outputs:
+  - rust/vrs_solver/src/sheet.rs
+  - docs/egyedi_solver/jagua_remnant_score_model_v1.md
+  - docs/solver_io_contract.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+- name: ScoreModel V1 remnant/sheet-cost komponensek bevezetése
+  description: 'Bővítsd a ScoreWeights és ObjectiveBreakdown struktúrákat remnant preference, new full sheet opening penalty,
+    usable-area utilization és sheet-cost contribution mezőkkel. Őrizd meg a ScoreModel lower-is-better irányát és a validity
+    dominanciát: overlap/boundary penalty továbbra is minden remnant preference felett álljon.'
+  inputs:
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/optimizer/boundary.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/score.rs
+- name: Diagnostics/output integráció auditálható módon
+  description: Kösd be a score breakdown bizonyíthatóságát backward-compatible módon. Auditáld, hogy a MultiSheetDiagnostics
+    és Metrics bővítése szükséges-e. Ha output JSON bővül, az legyen nem-breaking/opcionális vagy jól dokumentált v1-compatible
+    változtatás. Ne lazítsd az exact validationt.
+  inputs:
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/optimizer/score.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/multisheet.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/io.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+- name: Vegyes rectangular + remnant fixture és smoke script létrehozása
+  description: Hozz létre hole-free vegyes rectangular + remnant fixture-t és smoke scriptet. A smoke bizonyítsa a score breakdown
+    elérhetőségét, usable-area utilizationt, magyarázható sheet választást, invalid-vs-valid score dominanciát, default weight
+    reportot, rectangular-only regressziót és JG-18 irregular candidate regressziót.
+  inputs:
+  - tests/fixtures/egyedi_solver
+  - scripts
+  - rust/vrs_solver/Cargo.toml
+  - vrs_nesting/nesting/instances.py
+  - vrs_nesting/runner/vrs_solver_runner.py
+  outputs:
+  - tests/fixtures/egyedi_solver/jagua_remnant_score_model_v1.json
+  - scripts/smoke_jagua_remnant_score_model_v1.py
+- name: Contract dokumentáció és döntési példák frissítése
+  description: Frissítsd a docs/solver_io_contract.md dokumentumot a JG-19 remnant score contracttal, és hozz létre docs/egyedi_solver/jagua_remnant_score_model_v1.md
+    dokumentumot. Tartalmazza a metadata/proxy döntést, default weight profile-t, sheet_cost/utilization breakdownot, invalid-dominancia
+    szabályt, rectangular regression elvárást és döntési példákat.
+  inputs:
+  - docs/solver_io_contract.md
+  - rust/vrs_solver/src/optimizer/score.rs
+  - rust/vrs_solver/src/sheet.rs
+  outputs:
+  - docs/solver_io_contract.md
+  - docs/egyedi_solver/jagua_remnant_score_model_v1.md
+- name: Checklist és report frissítése
+  description: 'Frissítsd a task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-19 szakaszát.
+    Csak olyan pontot pipálj ki, amelyre konkrét bizonyíték van. A report tartalmazza dependency evidence-t, code auditot,
+    metadata/proxy döntést, weight defaultokat, sheet choice példákat, tesztparancsokat, risks/blockers mezőt, és csak valódi
+    PASS esetén JG-20_STATUS: READY sort.'
+  inputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+- name: Célzott tesztek futtatása
+  description: 'Futtasd a JG-19 célzott ellenőrzéseket: cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::score,
+    python3 scripts/smoke_jagua_remnant_score_model_v1.py, python3 scripts/smoke_jagua_score_model_v1.py és python3 scripts/smoke_jagua_irregular_candidate_generation.py.
+    Dokumentáld a pontos parancsokat, eredményeket, sheet_cost/utilization breakdownot, invalid-vs-valid evidence-t és rectangular/JG-18
+    regression evidence-t.'
+  inputs:
+  - scripts/smoke_jagua_remnant_score_model_v1.py
+  - scripts/smoke_jagua_score_model_v1.py
+  - scripts/smoke_jagua_irregular_candidate_generation.py
+  - rust/vrs_solver/Cargo.toml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard repo ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs: ./scripts/verify.sh
+    --report codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md. A verify logot mentsd a report mellé.
+    Ha dependency vagy környezeti hiba miatt fail, ne rejtsd el: különítsd el, hogy kódhiba, package/import hiba vagy environment
+    blocker.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.verify.log

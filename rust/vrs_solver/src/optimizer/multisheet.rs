@@ -43,6 +43,8 @@ pub struct SheetSummary {
     pub placed_count: usize,
     /// Sum of (rotated_w * rotated_h) for items placed on this sheet.
     pub placed_area: f64,
+    /// Usable area of the sheet (polygon area; JG-19).
+    pub sheet_usable_area: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +137,7 @@ impl<'a> MultiSheetManager<'a> {
                 sheet_index: i,
                 placed_count: 0,
                 placed_area: 0.0,
+                sheet_usable_area: if i < self.sheets.len() { self.sheets[i].area } else { 0.0 },
             })
             .collect();
 
@@ -201,6 +204,7 @@ mod tests {
             height: Some(h),
             outer_points: None,
             holes_points: None,
+            cost_per_use: None,
         }
     }
 

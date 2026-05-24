@@ -15,6 +15,12 @@ pub struct Stock {
     pub height: Option<f64>,
     pub outer_points: Option<Vec<PointInput>>,
     pub holes_points: Option<Vec<Vec<PointInput>>>,
+    /// Per-use cost for sheet-choice scoring (JG-19 V1 proxy).
+    /// Default (None) → 1.0. Remnant stocks should be assigned a value < 1.0
+    /// so the score model prefers them over full new sheets.
+    /// This is a V1 nesting proxy; it is not a final inventory/costing field.
+    #[serde(default)]
+    pub cost_per_use: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +39,9 @@ pub struct SheetShape {
     /// Original polygon vertices in input order. Non-empty only when has_irregular_outer=true.
     /// Used by candidate generation for vertex-near, edge-near, and interior sampling.
     pub outer_vertices: Vec<Point>,
+    /// Per-use cost for sheet-choice scoring (JG-19 V1 proxy). Default 1.0.
+    /// Set from Stock.cost_per_use; clamped to >= 0.0.
+    pub cost_per_use: f64,
     pub _outer_poly: SPolygon,
     pub hole_polys: Vec<SPolygon>,
 }
@@ -112,6 +121,7 @@ pub fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
     }
 
     let outer_vertices = if has_irregular_outer { outer.clone() } else { Vec::new() };
+    let cost_per_use = stock.cost_per_use.unwrap_or(1.0).max(0.0);
 
     Ok(SheetShape {
         min_x,
@@ -123,6 +133,7 @@ pub fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
         has_irregular_outer,
         area,
         outer_vertices,
+        cost_per_use,
         _outer_poly: outer_poly,
         hole_polys,
     })
@@ -155,6 +166,7 @@ mod tests {
             height: Some(h),
             outer_points: None,
             holes_points: None,
+            cost_per_use: None,
         }
     }
 
@@ -176,6 +188,7 @@ mod tests {
             height: None,
             outer_points: Some(pts),
             holes_points: None,
+            cost_per_use: None,
         }
     }
 
@@ -289,6 +302,7 @@ mod tests {
                 PointInput::Pair([20.0, 10.0]),
                 PointInput::Pair([20.0, 20.0]),
             ]]),
+            cost_per_use: None,
         };
         assert!(stock_has_holes(&with_holes));
     }

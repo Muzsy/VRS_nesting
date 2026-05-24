@@ -336,6 +336,7 @@ mod tests {
             height: Some(h),
             outer_points: None,
             holes_points: None,
+            cost_per_use: None,
         }
     }
 

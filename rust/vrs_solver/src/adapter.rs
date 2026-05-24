@@ -1,6 +1,7 @@
 use std::fmt;
 
-use crate::io::{Metrics, Placement, SolverInput, SolverOutput, Unplaced};
+use crate::io::{Metrics, Placement, ScoreBreakdownOutput, SolverInput, SolverOutput, Unplaced};
+use crate::optimizer::score::ScoreModel;
 use crate::item::{can_fit_any_stock, expand_instances, part_has_holes};
 use crate::optimizer::{
     multisheet::MultiSheetManager,
@@ -26,6 +27,7 @@ fn _unsupported_output(reason: &str, input: &SolverInput) -> SolverOutput {
             time_limit_s: input.time_limit_s,
             project_name: input.project_name.clone(),
         },
+        score_breakdown: None,
     }
 }
 
@@ -114,6 +116,25 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
         }
         (placements, unplaced, None)
     };
+    // Compute score breakdown for Phase1 profile (JG-19 — backward-compatible optional output field).
+    let score_breakdown = if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
+        let model = ScoreModel::default();
+        let result = model.score(&placements, &unplaced, &input.parts, &sheets);
+        let bd = &result.breakdown;
+        Some(ScoreBreakdownOutput {
+            total_cost: bd.total_cost,
+            placed_area_contribution: bd.placed_area_contribution,
+            unplaced_contribution: bd.unplaced_contribution,
+            sheet_cost_contribution: bd.sheet_count_contribution,
+            sheet_cost_total: bd.sheet_cost_total,
+            usable_area_utilization: bd.usable_area_utilization,
+            overlap_contribution: bd.overlap_contribution,
+            boundary_contribution: bd.boundary_contribution,
+            compactness_contribution: bd.compactness_contribution,
+        })
+    } else {
+        None
+    };
     let _ = diag; // diagnostics available for future use; suppress unused warning
     let status = if unplaced.is_empty() { "ok" } else { "partial" }.to_string();
     let sheet_count_used = placements
@@ -140,6 +161,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
             time_limit_s: input.time_limit_s,
             project_name: input.project_name,
         },
+        score_breakdown,
     })
 }
 

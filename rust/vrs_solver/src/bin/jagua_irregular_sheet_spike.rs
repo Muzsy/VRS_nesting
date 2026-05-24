@@ -36,6 +36,7 @@ fn make_l_shape_stock() -> Stock {
             vrs_solver::geometry::PointInput::Pair([0.0, 100.0]),
         ]),
         holes_points: None,
+        cost_per_use: None,
     }
 }
 

@@ -209,7 +209,7 @@ mod tests {
     }
 
     fn make_stock(id: &str, w: f64, h: f64, qty: i64) -> Stock {
-        Stock { id: id.to_string(), quantity: qty, width: Some(w), height: Some(h), outer_points: None, holes_points: None }
+        Stock { id: id.to_string(), quantity: qty, width: Some(w), height: Some(h), outer_points: None, holes_points: None, cost_per_use: None }
     }
 
     #[test]
