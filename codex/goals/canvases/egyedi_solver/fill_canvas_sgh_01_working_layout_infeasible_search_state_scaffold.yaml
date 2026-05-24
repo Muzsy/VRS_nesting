@@ -1,0 +1,69 @@
+steps:
+  - name: "Dependency gate és repo szabályok ellenőrzése"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md és docs/qa/testing_guidelines.md fájlokat. Ellenőrizd,
+      hogy az SGH-00 report létezik, első sora PASS vagy PASS_WITH_NOTES, és tartalmazza
+      az SGH-01_STATUS: READY jelölést. Ha ez nem teljesül, állj meg BLOCKED státusszal,
+      és csak a report/checklist dependency evidence részét frissítsd.
+    outputs:
+      - "canvases/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md"
+      - "codex/reports/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md"
+
+  - name: "Jelenlegi VRS állapotmodell auditálása"
+    description: >
+      Auditáld a valós rust/vrs_solver/src/optimizer/state.rs, repair.rs, candidates.rs,
+      initializer.rs, mod.rs, io.rs, item.rs és sheet.rs fájlokat. Rögzítsd a reportban,
+      hogy jelenleg nincs explicit infeasible/colliding working layout, a repair::find_violations
+      a commit gate alapja, és a solver JSON output schema nem változhat.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md"
+      - "docs/egyedi_solver/sgh_01_working_layout_state_contract.md"
+
+  - name: "WorkingLayout scaffold implementálása"
+    description: >
+      Implementálj egy külön WorkingLayout típust a VRS optimizerben. Preferált út:
+      hozz létre rust/vrs_solver/src/optimizer/working.rs fájlt és exportáld a mod.rs-ben.
+      A WorkingLayout tároljon Vec<Placement>, Vec<Unplaced>, sheet_count és seed mezőket,
+      legyen Clone snapshot/rollback célra, de ne legyen validáció nélküli implicit
+      konverzió elfogadott LayoutState/output irányba. Adj validate_for_commit és
+      validate_and_commit jellegű explicit commit gate API-t, amely a repair::find_violations
+      eredményére épít és invalid layout esetén hibát/diagnosztikát ad vissza.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/working.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "docs/egyedi_solver/sgh_01_working_layout_state_contract.md"
+
+  - name: "WorkingLayout unit tesztek hozzáadása"
+    description: >
+      Adj unit teszteket a WorkingLayout modulhoz. Kötelezően teszteld: overlapes working
+      layout tárolható, de validate_and_commit hibát ad; boundary/sheet violation hibát ad;
+      valid layout commitolható; clone/snapshot/restore determinisztikus; a diagnosztika
+      külön számolja az overlap és boundary violationöket. A tesztek használjanak valós
+      Part/Stock/SheetShape helper struktúrákat, ne mockold ki a find_violations logikát.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/working.rs"
+
+  - name: "Scope safety, dokumentáció, checklist és report kitöltése"
+    description: >
+      Töltsd ki a docs/egyedi_solver/sgh_01_working_layout_state_contract.md dokumentumot,
+      a checklistet és a reportot. Dokumentáld, hogy nem történt separator, repair,
+      sheet_elimination, initializer, IO contract, Python runner vagy külső backend módosítás.
+      A report tartalmazzon DoD -> Evidence Matrixot konkrét fájl/funkció bizonyítékokkal.
+      Ha a megvalósítás bármiben eltért a preferált working.rs modulos útvonaltól, azt
+      explicit indokold.
+    outputs:
+      - "docs/egyedi_solver/sgh_01_working_layout_state_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md"
+      - "codex/reports/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md
+      Ha a verify fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát.
+      Ha zöld, a report végén szerepeljen: SGH-02_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.md"
+      - "codex/reports/egyedi_solver/sgh_01_working_layout_infeasible_search_state_scaffold.verify.log"

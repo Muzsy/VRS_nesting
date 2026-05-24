@@ -8,6 +8,7 @@ pub mod score;
 pub mod sheet_elimination;
 pub mod state;
 pub mod stopping;
+pub mod working;
 
 use crate::geometry::{EPS, Rect};
 use crate::io::Placement;
