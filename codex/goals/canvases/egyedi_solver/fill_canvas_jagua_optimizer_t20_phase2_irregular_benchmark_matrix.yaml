@@ -1,0 +1,128 @@
+steps:
+  - name: "JG-20 dependency és szabályok ellenőrzése"
+    description: >
+      Ellenőrizd a JG-19 dependency gate-et: a JG-19 report létezik, első sora PASS vagy PASS_WITH_NOTES, tartalmazza
+      a JG-20_STATUS: READY sort, létezik a remnant score smoke, és nincs unresolved remnant/irregular blocker. Olvasd el
+      az AGENTS.md, docs/codex/*, docs/qa/testing_guidelines.md és a jagua optimizer tervdokumentumokat. Ha bármely
+      dependency hiányzik, zárj BLOCKED státusszal, és ne készíts Phase 2 gate döntést.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t19_remnant_score_model_v1.md"
+      - "scripts/smoke_jagua_remnant_score_model_v1.py"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+
+  - name: "Benchmark és irregular/remnant boundary valós kód audit"
+    description: >
+      Auditáld a Phase 2 benchmarkhoz releváns valós kódot: a Phase 1 benchmark mintát, a JG-16/JG-17/JG-18/JG-19 smoke-okat,
+      a runner exact validation boundary-t, a SheetShape irregular/remnant metadata mezőit, a boundary façade-t, a candidate source
+      stats útvonalat és a score_breakdown mezőket. Rögzítsd a reportban, hogy mely metrikák közvetlenül elérhetők, és melyeknél
+      kell unavailable_reason mezőt használni.
+    inputs:
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+      - "scripts/smoke_jagua_irregular_sheet_provider.py"
+      - "scripts/smoke_jagua_irregular_boundary_validation.py"
+      - "scripts/smoke_jagua_irregular_candidate_generation.py"
+      - "scripts/smoke_jagua_remnant_score_model_v1.py"
+      - "rust/vrs_solver/src/sheet.rs"
+      - "rust/vrs_solver/src/optimizer/boundary.rs"
+      - "rust/vrs_solver/src/optimizer/candidates.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "vrs_nesting/nesting/instances.py"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+
+  - name: "Phase 2 irregular benchmark script implementálása"
+    description: >
+      Hozd létre a scripts/bench_jagua_optimizer_phase2_irregular.py scriptet. A script a meglévő run_solver_in_dir runner boundary-t
+      használja, ne implementáljon külön exact validator vagy solver process kezelést, ha a runner már biztosítja. Legyen determinisztikus,
+      offline-barát, és tartalmazzon legalább l_shape, concave_remnant, mixed_rectangular_remnant és rectangular_phase1_regression case-t.
+      Minden fixture legyen outer-only/no-hole.
+    inputs:
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+      - "scripts/smoke_jagua_irregular_boundary_validation.py"
+      - "scripts/smoke_jagua_irregular_candidate_generation.py"
+      - "scripts/smoke_jagua_remnant_score_model_v1.py"
+    outputs:
+      - "scripts/bench_jagua_optimizer_phase2_irregular.py"
+
+  - name: "Benchmark summary JSON és MD report generálása"
+    description: >
+      A benchmark script írja ki a codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.json és
+      codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.md fájlokat. A JSON legyen géppel olvasható,
+      tartalmazza az összes case eredményét, a regression eredményeket, a validation_status értékeket, a boundary reject vagy
+      unavailable_reason mezőket, és a PHASE2_GATE_DECISION döntést. Az MD tartalmazzon táblázatos összefoglalót, exact validation
+      bizonyítékot, invalid boundary fail evidence-t, rectangular regression státuszt és Gate 2 döntést.
+    inputs:
+      - "scripts/bench_jagua_optimizer_phase2_irregular.py"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.json"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.md"
+
+  - name: "Invalid-layout fail policy és Gate 2 döntés bekötése"
+    description: >
+      Biztosítsd, hogy validation_status != pass ne jelenhessen successful benchmarkként. Az invalid boundary layout evidence lehet
+      explicit benchmark case vagy JG-17 smoke regression, de a reportban géppel és emberrel olvashatóan szerepeljen. A Gate 2 döntés
+      legyen PHASE2_GATE_DECISION: PASS | REVISE | STOP. Csak PASS esetén készítsd elő a JG-21_STATUS: READY sort.
+    inputs:
+      - "scripts/bench_jagua_optimizer_phase2_irregular.py"
+      - "scripts/smoke_jagua_irregular_boundary_validation.py"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+    outputs:
+      - "scripts/bench_jagua_optimizer_phase2_irregular.py"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.json"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+
+  - name: "Benchmark és regressziós smokes futtatása"
+    description: >
+      Futtasd a Phase 2 benchmark scriptet, majd legalább a Phase 1 benchmark/regression, irregular sheet provider, irregular boundary,
+      irregular candidate generation, remnant score smoke és cargo test ellenőrzéseket. Dokumentáld a pontos parancsokat, eredményeket,
+      környezeti akadályokat, exact validation evidence-t, rectangular regression evidence-t és invalid boundary fail evidence-t.
+    inputs:
+      - "scripts/bench_jagua_optimizer_phase2_irregular.py"
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+      - "scripts/smoke_jagua_irregular_sheet_provider.py"
+      - "scripts/smoke_jagua_irregular_boundary_validation.py"
+      - "scripts/smoke_jagua_irregular_candidate_generation.py"
+      - "scripts/smoke_jagua_remnant_score_model_v1.py"
+      - "rust/vrs_solver/Cargo.toml"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.json"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+
+  - name: "Checklist és Phase 2 gate dokumentálása"
+    description: >
+      Frissítsd a JG-20 task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-20 és Gate 2 szakaszait.
+      Csak akkor pipáld készre a pontokat, ha bizonyíték van rájuk. Dokumentáld a PHASE2_GATE_DECISION értéket. Csak PASS gate esetén
+      írd bele a JG-20 reportba: JG-21_STATUS: READY. REVISE vagy STOP esetén a következő lépés legyen explicit revise/stop, ne Phase 3 indítás.
+    inputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase2_irregular_benchmark.json"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md. A verify logot mentsd a report mellé. Ha dependency vagy
+      környezeti hiba miatt fail, ne rejtsd el: különítsd el, hogy benchmark hiba, kódhiba vagy environment blocker.
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t20_phase2_irregular_benchmark_matrix.verify.log"

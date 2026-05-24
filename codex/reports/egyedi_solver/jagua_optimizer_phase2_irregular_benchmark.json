@@ -1,0 +1,171 @@
+{
+  "meta": {
+    "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+    "seed": 42,
+    "phase2_profile": "jagua_optimizer_phase1_outer_only",
+    "phase2_gate_decision": "PASS",
+    "date": "2026-05-24"
+  },
+  "cases": [
+    {
+      "case_id": "l_shape",
+      "description": "L-shaped stock 150x150 bbox (notch top-right 75x75), 4 parts 25x20, rotations [0,90]",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 8,
+      "stock_summary": {
+        "type": "irregular",
+        "has_irregular_outer": true,
+        "cost_per_use": 1.0
+      },
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed": 4,
+      "unplaced": 0,
+      "used_sheets": 1,
+      "utilization": 0.11851851851851852,
+      "runtime_sec": 0.002,
+      "validation_status": "pass",
+      "validation_error": null,
+      "boundary_rejects": null,
+      "boundary_rejects_status": "unavailable",
+      "boundary_rejects_unavailable_reason": "not exposed in solver_output.json v1",
+      "score_breakdown": {
+        "total_cost": 8000.0,
+        "placed_area_contribution": -2000.0,
+        "unplaced_contribution": 0.0,
+        "sheet_cost_contribution": 10000.0,
+        "sheet_cost_total": 1.0,
+        "usable_area_utilization": 0.11851851851851852,
+        "overlap_contribution": 0.0,
+        "boundary_contribution": 0.0,
+        "compactness_contribution": 0.0
+      },
+      "status": "pass",
+      "error": null
+    },
+    {
+      "case_id": "concave_remnant",
+      "description": "L-shaped remnant (cost=0.2), 4 parts 25x20, JG-19 score model active",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 8,
+      "stock_summary": {
+        "type": "irregular",
+        "has_irregular_outer": true,
+        "cost_per_use": 0.2
+      },
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed": 4,
+      "unplaced": 0,
+      "used_sheets": 1,
+      "utilization": 0.11851851851851852,
+      "runtime_sec": 0.002,
+      "validation_status": "pass",
+      "validation_error": null,
+      "boundary_rejects": null,
+      "boundary_rejects_status": "unavailable",
+      "boundary_rejects_unavailable_reason": "not exposed in solver_output.json v1",
+      "score_breakdown": {
+        "total_cost": 0.0,
+        "placed_area_contribution": -2000.0,
+        "unplaced_contribution": 0.0,
+        "sheet_cost_contribution": 2000.0,
+        "sheet_cost_total": 0.2,
+        "usable_area_utilization": 0.11851851851851852,
+        "overlap_contribution": 0.0,
+        "boundary_contribution": 0.0,
+        "compactness_contribution": 0.0
+      },
+      "status": "pass",
+      "error": null
+    },
+    {
+      "case_id": "mixed_rectangular_remnant",
+      "description": "1 rectangular stock (cost=1.0) + 1 L-shape remnant (cost=0.2), 3 parts 50x50",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 10,
+      "stock_summary": {
+        "type": "mixed",
+        "stocks": [
+          {
+            "id": "regular_200x200",
+            "has_irregular_outer": false,
+            "cost_per_use": 1.0
+          },
+          {
+            "id": "L_remnant_200",
+            "has_irregular_outer": true,
+            "cost_per_use": 0.2
+          }
+        ]
+      },
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed": 3,
+      "unplaced": 0,
+      "used_sheets": 1,
+      "utilization": 0.1875,
+      "runtime_sec": 0.002,
+      "validation_status": "pass",
+      "validation_error": null,
+      "boundary_rejects": null,
+      "boundary_rejects_status": "unavailable",
+      "boundary_rejects_unavailable_reason": "not exposed in solver_output.json v1",
+      "score_breakdown": {
+        "total_cost": 2500.0,
+        "placed_area_contribution": -7500.0,
+        "unplaced_contribution": 0.0,
+        "sheet_cost_contribution": 10000.0,
+        "sheet_cost_total": 1.0,
+        "usable_area_utilization": 0.1875,
+        "overlap_contribution": 0.0,
+        "boundary_contribution": 0.0,
+        "compactness_contribution": 0.0
+      },
+      "status": "pass",
+      "error": null
+    },
+    {
+      "case_id": "rectangular_phase1_regression",
+      "description": "JG-14 'small' rectangular case: 3 part types, 0/90 rotations, 1 sheet (regression)",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 10,
+      "stock_summary": {
+        "type": "rectangular",
+        "has_irregular_outer": false,
+        "cost_per_use": 1.0
+      },
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed": 9,
+      "unplaced": 0,
+      "used_sheets": 1,
+      "utilization": 0.37333333333333335,
+      "runtime_sec": 0.004,
+      "validation_status": "pass",
+      "validation_error": null,
+      "boundary_rejects": null,
+      "boundary_rejects_status": "unavailable",
+      "boundary_rejects_unavailable_reason": "not exposed in solver_output.json v1",
+      "score_breakdown": {
+        "total_cost": -1191.2,
+        "placed_area_contribution": -11200.0,
+        "unplaced_contribution": 0.0,
+        "sheet_cost_contribution": 10000.0,
+        "sheet_cost_total": 1.0,
+        "usable_area_utilization": 0.37333333333333335,
+        "overlap_contribution": 0.0,
+        "boundary_contribution": 0.0,
+        "compactness_contribution": 8.8
+      },
+      "status": "pass",
+      "error": null
+    }
+  ],
+  "boundary_fail_evidence": {
+    "status": "pass",
+    "returncode": 0,
+    "tail": "  PASS: cargo test PASS (97 tests)\n\n[Check 10: JG-16 smoke regression (smoke_jagua_irregular_sheet_provider.py)]\n  PASS: JG-16 smoke PASS (smoke_jagua_irregular_sheet_provider.py)\n\n[Check 11: Exact validation bridge regression (smoke_jagua_exact_validation_bridge.py)]\n  PASS: exact validation bridge PASS\n\n=== RESULTS: 11 PASS, 0 FAIL ===\nOVERALL: PASS",
+    "source": "smoke_jagua_irregular_boundary_validation.py (JG-17 boundary policy)"
+  }
+}

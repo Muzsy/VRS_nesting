@@ -54,12 +54,12 @@
 
 ### Gate 2 — Irregular/remnant viability
 
-- [ ] JG-15…JG-20 elkészült.
-- [ ] Irregular boundary validation működik.
-- [ ] Margin kezelés konzervatív és dokumentált.
-- [ ] Rectangular regresszió nincs.
-- [ ] Phase 2 benchmark report elkészült.
-- [ ] Döntés: Phase 3 indítható vagy Phase 2 revise szükséges.
+- [x] JG-15…JG-20 elkészült.
+- [x] Irregular boundary validation működik.
+- [x] Margin kezelés konzervatív és dokumentált.
+- [x] Rectangular regresszió nincs.
+- [x] Phase 2 benchmark report elkészült.
+- [x] Döntés: Phase 3 indítható vagy Phase 2 revise szükséges. → PASS, Phase 3 indítható.
 
 ### Gate 3 — Cavity-prepack viability
 
@@ -794,29 +794,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] L-shape benchmark fut.
-- [ ] Konkáv remnant benchmark fut.
-- [ ] Vegyes rectangular + remnant benchmark fut.
-- [ ] Rectangular Phase 1 regressziós benchmark fut.
-- [ ] Minden elfogadott irregular layout exact validator PASS.
-- [ ] Invalid boundary layout automatikus FAIL.
-- [ ] Metrikák rögzítve: placed, unplaced, used_sheets, utilization, runtime, boundary rejects.
-- [ ] Seed/profile/backend meta rögzítve.
-- [ ] Summary JSON létrejött.
-- [ ] Summary MD report létrejött.
-- [ ] Phase 2 gate döntés: PASS / REVISE / STOP dokumentálva.
-- [ ] Repo verify PASS és log mentve.
+- [x] L-shape benchmark fut.
+- [x] Konkáv remnant benchmark fut.
+- [x] Vegyes rectangular + remnant benchmark fut.
+- [x] Rectangular Phase 1 regressziós benchmark fut.
+- [x] Minden elfogadott irregular layout exact validator PASS.
+- [x] Invalid boundary layout automatikus FAIL.
+- [x] Metrikák rögzítve: placed, unplaced, used_sheets, utilization, runtime, boundary rejects.
+- [x] Seed/profile/backend meta rögzítve.
+- [x] Summary JSON létrejött.
+- [x] Summary MD report létrejött.
+- [x] Phase 2 gate döntés: PASS / REVISE / STOP dokumentálva.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
