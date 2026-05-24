@@ -1,3 +1,4 @@
+pub mod boundary;
 pub mod candidates;
 pub mod initializer;
 pub mod moves;
@@ -11,7 +12,7 @@ pub mod stopping;
 use crate::geometry::{EPS, Rect};
 use crate::io::Placement;
 use crate::item::{dims_for_rotation, placement_anchor_from_rect_min, Instance};
-use crate::sheet::{rect_inside_sheet_shape, SheetShape};
+use crate::sheet::SheetShape;
 
 #[derive(Debug)]
 pub struct SheetCursor {
@@ -51,7 +52,7 @@ pub fn try_place_on_sheet(
             y2: y + h,
         };
 
-        if !rect_inside_sheet_shape(rect, sheet) {
+        if !boundary::rect_within_boundary(rect, sheet) {
             continue;
         }
 

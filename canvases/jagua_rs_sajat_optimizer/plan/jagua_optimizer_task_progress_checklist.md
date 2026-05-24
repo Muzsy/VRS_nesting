@@ -689,29 +689,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Boundary validation policy dokumentálva.
-- [ ] Boundary-touch policy dokumentálva.
-- [ ] Sheeten belüli item PASS.
-- [ ] Konkáv sheetből kilógó item FAIL.
-- [ ] Margin-zónába lógó item FAIL vagy explicit policy szerinti státuszt ad.
-- [ ] Validator smoke lefut irregular fixture-ön.
-- [ ] Rectangular boundary validation regresszió nincs.
-- [ ] Proxy és exact boundary check viszonya dokumentált.
-- [ ] Invalid boundary layout nem lehet successful.
-- [ ] Report tartalmaz negatív és pozitív példát.
-- [ ] Automatikus benchmark/gate beépítve, ha releváns.
-- [ ] Repo verify PASS és log mentve.
+- [x] Boundary validation policy dokumentálva.
+- [x] Boundary-touch policy dokumentálva.
+- [x] Sheeten belüli item PASS.
+- [x] Konkáv sheetből kilógó item FAIL.
+- [x] Margin-zónába lógó item FAIL vagy explicit policy szerinti státuszt ad.
+- [x] Validator smoke lefut irregular fixture-ön.
+- [x] Rectangular boundary validation regresszió nincs.
+- [x] Proxy és exact boundary check viszonya dokumentált.
+- [x] Invalid boundary layout nem lehet successful.
+- [x] Report tartalmaz negatív és pozitív példát.
+- [x] Automatikus benchmark/gate beépítve, ha releváns.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 

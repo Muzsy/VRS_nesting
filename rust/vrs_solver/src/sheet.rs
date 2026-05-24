@@ -236,6 +236,17 @@ mod tests {
     }
 
     #[test]
+    fn l_shape_origin_placement_accepted() {
+        // Item at (0,0)→(20,15): corner (0,0) is exactly on the polygon vertex.
+        // Must be accepted — the interior of the rect is inside the L-shape.
+        let stocks = vec![l_shape_stock("L", 1)];
+        let sheets = expand_sheets(&stocks).expect("expand_sheets");
+        let rect = make_rect(0.0, 0.0, 20.0, 15.0);
+        assert!(rect_inside_sheet_shape(rect, &sheets[0]),
+            "origin placement with corner on poly vertex must be accepted");
+    }
+
+    #[test]
     fn l_shape_negative_control_notch() {
         // Item 20×20 at (60,60)→(80,80): in the notch (top-right) — bbox passes but outer poly must reject
         let stocks = vec![l_shape_stock("L", 1)];
@@ -293,12 +304,27 @@ pub fn rect_inside_sheet_shape(rect: Rect, sheet: &SheetShape) -> bool {
     // Irregular outer boundary check: all corners must be inside _outer_poly,
     // and no rect edge may cross an outer polygon edge.
     if sheet.has_irregular_outer {
-        for c in corners {
-            if !sheet._outer_poly.collides_with(&to_jag_point(c)) {
+        // jagua SPolygon.collides_with semantics for points exactly on the polygon
+        // boundary (vertex or edge) are undefined and empirically return false.
+        // JagEdge.collides_with also triggers for collinear overlap (touching edges).
+        // Both are handled by using a slightly inset rect for all irregular checks:
+        // we test whether the *interior* of the rect is inside the polygon.
+        // INSET must survive f64→f32 narrowing in to_jag_point: 1e-6 >> f32 eps (~1.2e-7).
+        const INSET: f64 = 1e-6;
+        let ir = Rect {
+            x1: rect.x1 + INSET,
+            y1: rect.y1 + INSET,
+            x2: rect.x2 - INSET,
+            y2: rect.y2 - INSET,
+        };
+        let inset_corners = rect_corners(ir);
+        let inset_edges = rect_edges(ir);
+        for ic in inset_corners {
+            if !sheet._outer_poly.collides_with(&to_jag_point(ic)) {
                 return false;
             }
         }
-        for re in rect_edges_arr {
+        for re in inset_edges {
             let Some(rect_edge) = jag_edge_from_points(re.0, re.1) else {
                 continue;
             };

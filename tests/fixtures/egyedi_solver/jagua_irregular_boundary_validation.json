@@ -1,0 +1,49 @@
+{
+  "contract_version": "v1",
+  "project_name": "jagua_irregular_boundary_validation_test",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "seed": 42,
+  "time_limit_s": 5,
+  "_fixture_notes": {
+    "purpose": "JG-17 boundary validation positive and negative control fixture",
+    "stock_shape": "L-shape 100x100 bbox, notch at top-right 50x50",
+    "stock_area_mm2": 7500,
+    "stock_bbox": [100, 100],
+    "has_holes": false,
+    "positive_control": {
+      "description": "Item 20x20 at (10,10): fully inside L-shape bottom-left region",
+      "x": 10, "y": 10, "w": 20, "h": 20,
+      "expected": "PASS — rect_within_boundary returns true"
+    },
+    "negative_control": {
+      "description": "Item 20x20 at (60,60): in notch (top-right), bbox passes but outer_poly fails",
+      "x": 60, "y": 60, "w": 20, "h": 20,
+      "expected": "FAIL — rect_within_boundary returns false via _outer_poly check"
+    },
+    "boundary_policy": "OWN_BOUNDARY_VALIDATOR_PLUS_JAGUA_COLLISION (JG-15 decision)",
+    "margin_policy": "no margin_mm — margin_mm>0 would return UNSUPPORTED_MARGIN_MM_RUNTIME"
+  },
+  "stocks": [
+    {
+      "id": "L_stock",
+      "quantity": 2,
+      "outer_points": [
+        [0, 0],
+        [100, 0],
+        [100, 50],
+        [50, 50],
+        [50, 100],
+        [0, 100]
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "small_inside",
+      "width": 20.0,
+      "height": 15.0,
+      "quantity": 3,
+      "allowed_rotations_deg": [0, 90]
+    }
+  ]
+}

@@ -133,21 +133,61 @@ Backward compatibility:
 - If `solver_profile` is absent, the solver runs legacy rectangular mode regardless of part geometry fields.
 - `validate_multi_sheet_output()` only validates `ok`/`partial` layouts; `unsupported` is not a valid layout status.
 
-## Irregular sheet boundary policy (JG-16)
+## Irregular sheet boundary policy (JG-16 / JG-17)
 
 `SheetShape` fields added in JG-16:
 - `has_irregular_outer: bool` — true when stock was defined via explicit `outer_points`.
 - `area: f64` — outer polygon area in input units² (shoelace formula).
 
-When `has_irregular_outer == true`:
-- `rect_inside_sheet_shape()` checks all 4 rect corners against `_outer_poly` using
-  `SPolygon.collides_with(JagPoint)` (corner must be inside polygon).
-- All rect edges are checked against outer polygon edges using `Edge.collides_with(Edge)`
-  (no crossing allowed).
-- This replaces the previous bbox-only outer boundary check for concave stocks.
+When `has_irregular_outer == true` (irregular stocks — JG-17 inset semantics):
+- `rect_inside_sheet_shape()` uses an inset rect (INSET = 1e-6 per axis, inward) for all
+  irregular boundary checks. This handles jagua-rs `SPolygon.collides_with` returning false
+  for points exactly on the polygon boundary (vertex or collinear edge overlap). The inset
+  test asks: "is the interior of the rect inside the polygon?" — the correct geometric predicate.
+- All 4 inset corners are checked against `_outer_poly` using `SPolygon.collides_with(JagPoint)`.
+- All 4 inset edges are checked against outer polygon edges using `Edge.collides_with(Edge)`.
 
 When `has_irregular_outer == false` (rectangular stocks):
-- Only bbox bounds check is applied; behaviour unchanged from pre-JG-16.
+- Only bbox bounds check with EPS=1e-9 tolerance is applied; behaviour unchanged from pre-JG-16.
+- A rect edge exactly touching the sheet boundary is accepted (within EPS).
+
+## Boundary validation policy facade (JG-17)
+
+`rust/vrs_solver/src/optimizer/boundary.rs` is the single auditable point for all placement
+boundary decisions. All construction (initializer), repair, scoring, and adapter paths delegate
+boundary checks through this module.
+
+Public API:
+- `rect_within_boundary(rect, sheet)` — canonical proxy check; delegates to `rect_inside_sheet_shape`.
+- `sheet_index_valid(sheet_index, sheets)` — validates sheet index bounds.
+- `is_placement_boundary_valid(rect, sheet_index, sheets)` — combined check for validation paths.
+
+### Boundary-touch policy
+
+**Rectangular stocks** (`has_irregular_outer = false`):
+- Boundary check is bbox-only with EPS = 1e-9 tolerance.
+- A rect edge exactly touching the sheet boundary is **accepted** (within EPS).
+
+**Irregular stocks** (`has_irregular_outer = true`):
+- An inset rect (1e-6 inward per axis) is used for all containment and edge-crossing checks.
+- A rect placed exactly at the polygon boundary (corner on vertex, edge collinear with poly edge)
+  is **accepted** if the interior of the rect is inside the polygon.
+- A rect that straddles the boundary or has any corner in a concave notch is **rejected**.
+
+### Proxy vs exact boundary
+
+- **Proxy (Rust):** `rect_within_boundary()` — fast, used during construction, repair, scoring.
+  For rectangular stocks this is exact (bbox). For irregular stocks it is a correct containment
+  check via jagua SPolygon primitives with inset semantics.
+- **Exact (Python):** `vrs_nesting.nesting.instances.validate_multi_sheet_output()` — uses
+  Shapely `sheet_poly.covers(placement_poly)` for full polygon containment. This is the
+  authoritative validation gate. The Python validator also applies `margin_mm` via
+  `buffer(-margin_mm)` if specified, which the Rust runtime does not (JG-16).
+
+### Container holes
+
+Container holes (`Stock.holes_points`) remain unsupported in Phase 1 and are rejected at the
+adapter level before construction begins (`UNSUPPORTED_STOCK_HOLES_PHASE1`).
 
 ## margin_mm / spacing_mm field status (JG-16 update)
 

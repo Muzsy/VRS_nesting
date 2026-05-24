@@ -225,12 +225,13 @@ impl JaguaAdapter {
         Ok(false)
     }
 
-    /// Returns `true` if the rectangular item fits entirely inside the sheet shape
-    /// (boundary check using the existing rect_inside_sheet_shape helper).
+    /// Returns `true` if the rectangular item fits entirely inside the sheet shape.
+    /// Delegates to `optimizer::boundary::rect_within_boundary` — the canonical
+    /// boundary policy point for all construction, repair, and scoring paths.
     pub fn check_rect_in_sheet(
         item_rect: crate::geometry::Rect,
         sheet: &crate::sheet::SheetShape,
     ) -> bool {
-        crate::sheet::rect_inside_sheet_shape(item_rect, sheet)
+        crate::optimizer::boundary::rect_within_boundary(item_rect, sheet)
     }
 }

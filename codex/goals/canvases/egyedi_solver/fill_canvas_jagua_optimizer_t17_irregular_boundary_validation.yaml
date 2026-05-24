@@ -1,0 +1,141 @@
+steps:
+  - name: "JG-17 dependency és szabályok ellenőrzése"
+    description: >
+      Ellenőrizd a JG-16 dependency gate-et: a JG-16 report létezik, első sora PASS vagy PASS_WITH_NOTES,
+      tartalmazza a JG-17_STATUS: READY sort, a JG-15 decision report továbbra is OWN_BOUNDARY_VALIDATOR_PLUS_JAGUA_COLLISION,
+      és a docs/solver_io_contract.md dokumentálja a JG-16 irregular sheet boundary policy-t. Olvasd el az AGENTS.md,
+      docs/codex/*, docs/qa/testing_guidelines.md és a jagua optimizer tervdokumentumokat. Ha bármely dependency hiányzik,
+      zárj BLOCKED státusszal, és ne módosíts boundary runtime kódot.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t16_irregular_sheet_provider_and_margin.md"
+      - "docs/egyedi_solver/jagua_irregular_sheet_spike_decision.md"
+      - "docs/solver_io_contract.md"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md"
+
+  - name: "Valós boundary útvonal auditálása"
+    description: >
+      Auditáld a Rust és Python boundary/validation útvonalakat. Rögzítsd, hogy SheetShape.has_irregular_outer, area és
+      _outer_poly már létezik, rect_inside_sheet_shape milyen corner/edge policy-t használ, repair.find_violations és
+      score hogyan számol boundary hibát, a Python exact validator hogyan kezeli outer_points és margin_mm inputot,
+      valamint a runner hogyan kezeli a validation_status=fail esetet. Dokumentáld, hogy optimizer/boundary.rs még nem létezik.
+    inputs:
+      - "rust/vrs_solver/src/sheet.rs"
+      - "rust/vrs_solver/src/geometry.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/optimizer/multisheet.rs"
+      - "vrs_nesting/nesting/instances.py"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "docs/solver_io_contract.md"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md"
+
+  - name: "Boundary validation policy modul bevezetése"
+    description: >
+      Hozd létre az optimizer/boundary.rs modult VRS-owned boundary validation façade-ként. A modul dokumentálja és lehetőleg
+      kódban is központosítsa a boundary policy-t: rectangular bbox, irregular outer polygon containment/crossing, invalid sheet_index,
+      és boundary-touch policy. Kösd be az optimizer/mod.rs-be. Ne törd a SolverOutput v1 contractot és ne lazítsd a Python exact validatort.
+    inputs:
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "rust/vrs_solver/src/sheet.rs"
+      - "rust/vrs_solver/src/geometry.rs"
+    outputs:
+      - "rust/vrs_solver/src/optimizer/boundary.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "rust/vrs_solver/src/sheet.rs"
+
+  - name: "Construction, repair és score boundary útvonal összehangolása"
+    description: >
+      Kösd rá vagy delegáld a construction placer, repair.find_violations és ScoreModel boundary detection útvonalait az új boundary
+      policy layerre. Ha valamelyik útvonal már ugyanazt a helper logikát használja, a kódban minimális wrapper vagy dokumentált delegáció
+      is elég. Invalid boundary placement továbbra is BoundaryOrSheet violation legyen, és boundary penalty dominálja a score-t.
+    inputs:
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/optimizer/boundary.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+    outputs:
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/boundary.rs"
+
+  - name: "Irregular boundary fixture és smoke script létrehozása"
+    description: >
+      Hozz létre egy hole-free L-shape/remnant boundary fixture-t pozitív és negatív kontrollal. Készíts smoke scriptet, amely bizonyítja:
+      sheeten belüli item PASS, konkáv notch/outside item FAIL, rectangular boundary regresszió nincs, margin_mm > 0 nem silent success,
+      invalid boundary layout nem successful, és az exact validator/runner fail státusza dokumentáltan működik.
+    inputs:
+      - "tests/fixtures/egyedi_solver"
+      - "scripts"
+      - "vrs_nesting/nesting/instances.py"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "rust/vrs_solver/Cargo.toml"
+    outputs:
+      - "tests/fixtures/egyedi_solver/jagua_irregular_boundary_validation.json"
+      - "scripts/smoke_jagua_irregular_boundary_validation.py"
+
+  - name: "Solver IO contract és boundary policy dokumentáció frissítése"
+    description: >
+      Frissítsd a docs/solver_io_contract.md dokumentumot a JG-17 valós boundary validation contracttal: proxy Rust check,
+      Python exact check, boundary-touch policy, margin policy, invalid layout fail semantics, unsupported vs invalid layout különbség,
+      és a safe-side validator elv. Ne állíts runtime margin supportot, ha a kód nem bizonyítja.
+    inputs:
+      - "docs/solver_io_contract.md"
+      - "rust/vrs_solver/src/optimizer/boundary.rs"
+      - "vrs_nesting/nesting/instances.py"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+    outputs:
+      - "docs/solver_io_contract.md"
+
+  - name: "Célzott tesztek futtatása és report frissítése"
+    description: >
+      Futtasd a JG-17 célzott ellenőrzéseket: python3 scripts/smoke_jagua_irregular_boundary_validation.py,
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml, és ha releváns, python3 scripts/smoke_jagua_irregular_sheet_provider.py.
+      Dokumentáld a pontos parancsokat, eredményeket, fixture pozitív/negatív példákat, exact validation evidence-t, és minden blocker/deviation pontot.
+    inputs:
+      - "scripts/smoke_jagua_irregular_boundary_validation.py"
+      - "scripts/smoke_jagua_irregular_sheet_provider.py"
+      - "rust/vrs_solver/Cargo.toml"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md"
+
+  - name: "Checklist frissítése"
+    description: >
+      Frissítsd a task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-17 szakaszát.
+      Csak olyan pontot pipálj ki, amelyre konkrét bizonyíték van. Ha boundary-touch vagy margin policy eltérés van,
+      jelöld BLOCKED/DEVIATION megjegyzéssel, ne pipáld készre hamisan.
+    inputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md.
+      A verify logot mentsd a report mellé. Ha dependency vagy környezeti hiba miatt fail, ne rejtsd el: különítsd el,
+      hogy kódhiba, package/import hiba vagy environment blocker.
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.verify.log"

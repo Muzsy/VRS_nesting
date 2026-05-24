@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use crate::geometry::Rect;
 use crate::io::{Placement, Unplaced};
 use crate::item::{dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min, Part};
-use crate::sheet::{rect_inside_sheet_shape, SheetShape};
+use crate::sheet::SheetShape;
+use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates, PlacedBbox};
 use super::initializer::bbox_from_placement;
 use super::stopping::StoppingPolicy;
@@ -94,7 +95,7 @@ pub fn find_violations(
         }
         let sheet = &sheets[p.sheet_index];
         let rect = Rect { x1: bbox.x1, y1: bbox.y1, x2: bbox.x2, y2: bbox.y2 };
-        if !rect_inside_sheet_shape(rect, sheet) {
+        if !rect_within_boundary(rect, sheet) {
             violations.push((idx, ViolationType::BoundaryOrSheet));
             continue;
         }
@@ -248,7 +249,7 @@ pub fn run_repair(
                     x2: candidate.x + rw,
                     y2: candidate.y + rh,
                 };
-                if !rect_inside_sheet_shape(rect, sheet) {
+                if !rect_within_boundary(rect, sheet) {
                     continue;
                 }
                 let candidate_bbox = PlacedBbox {

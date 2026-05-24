@@ -4,7 +4,8 @@ use crate::item::{
     dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min,
     rotated_bbox_min_offset, Instance, Part,
 };
-use crate::sheet::{rect_inside_sheet_shape, SheetShape};
+use crate::sheet::SheetShape;
+use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates, PlacedBbox};
 
 /// Diagnostics collected during a single construction run.
@@ -120,7 +121,7 @@ pub fn build_initial_layout(
                     x2: candidate.x + rw,
                     y2: candidate.y + rh,
                 };
-                if !rect_inside_sheet_shape(rect, sheet) {
+                if !rect_within_boundary(rect, sheet) {
                     diag.rejected_out_of_sheet += 1;
                     continue;
                 }
