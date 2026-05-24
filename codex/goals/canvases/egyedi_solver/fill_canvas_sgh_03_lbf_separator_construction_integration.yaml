@@ -1,0 +1,99 @@
+steps:
+  - name: "Dependency gate és repo anchor audit"
+    description: >
+      Ellenőrizd az SGH-02 dependency gate-et: a
+      codex/reports/egyedi_solver/sgh_02_vrs_separator_collision_tracker_v1.md fájl létezzen,
+      első sora PASS vagy PASS_WITH_NOTES legyen, és tartalmazza az SGH-03_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md, a Sparrow/SparrowGH audit és
+      migrációs doksikat, valamint az SGH-01/SGH-02 contract doksikat. Ha a dependency gate nem
+      teljesül, állj meg BLOCKED státusszal, és csak a report/checklist dependency evidence részét
+      frissítsd.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_03_lbf_separator_construction_integration.md"
+
+  - name: "Initial construction kódaudit és gap rögzítés"
+    description: >
+      Auditáld a valós kódot: initializer.rs, candidates.rs, separator.rs, working.rs, repair.rs,
+      boundary.rs, score.rs, state.rs, io.rs, item.rs és sheet.rs. A reportban rögzítsd, hogy a
+      jelenlegi build_initial_layout első-valid jellegű candidate elfogadást használ, hogy a
+      generate_candidates_with_sheets determinisztikus candidate forrás, hogy ConstructionDiagnostics
+      nem tartalmaz LBF/separator fallback metrikákat, és hogy VrsSeparator/WorkingLayout commit gate
+      már készen áll SGH-03-hoz. Ne módosíts production kódot ebben a lépésben.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.md"
+
+  - name: "ConstructionDiagnostics és LBF scoring helper implementálása"
+    description: >
+      Bővítsd a rust/vrs_solver/src/optimizer/initializer.rs ConstructionDiagnostics típusát LBF és
+      separator fallback diagnosztikával, és frissítsd a summary() kimenetet. Implementálj privát
+      helper(eke)t az explicit LBF-scored clear candidate selectionhöz. A scorer determinisztikusan
+      válasszon: használt sheet előnyben unused sheet előtt, majd kisebb y, kisebb x, kisebb
+      sheet_index és stabil rotation order. A helper a valós generate_candidates_with_sheets,
+      rect_within_boundary, dims_for_rotation és placement_anchor_from_rect_min logikát használja.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+
+  - name: "Separator fallback bekötése build_initial_layout konstrukcióba"
+    description: >
+      Módosítsd a build_initial_layout belső logikáját úgy, hogy ha nincs collision-free LBF candidate,
+      kontrollált separator fallbacket próbáljon. A fallback WorkingLayoutot épít az eddigi placementekből
+      és az aktuális item determinisztikus seed placementjéből, majd VrsSeparator::run() után csak akkor
+      fogadja el az eredményt, ha best_loss nulla vagy converged igaz, és WorkingLayout.validate_for_commit()
+      sikeres. Siker esetén a teljes placement listát a commitolható separator eredményre cserélheted,
+      majd építsd újra a placed_bboxes cache-t. Sikertelenség esetén rollback-safe maradjon az előző
+      placements/unplaced/placed_bboxes állapot, az aktuális item pedig unplaced legyen. A build_initial_layout
+      publikus aláírását alapesetben ne változtasd meg.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+
+  - name: "Initializer unit tesztek bővítése"
+    description: >
+      Adj vagy frissíts Rust unit teszteket az initializer.rs modulban. Minimum: meglévő tesztek maradjanak
+      zöldek; LBF scorer használt sheetet preferál unused sheet előtt; build_initial_layout determinisztikus;
+      placed+unplaced == expanded instances; separator fallback helper sikeres egy kényszerített colliding
+      seedből; fallback failure rollback-safe; successful construction output find_violations szerint valid;
+      diagnostics summary tartalmazza az új LBF/separator mezőket. A tesztek valós Part, Stock, SheetShape,
+      Placement, WorkingLayout, VrsSeparator és find_violations logikát használjanak, ne mockolt commit gate-et.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+
+  - name: "SGH-03 contract dokumentáció elkészítése"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_03_lbf_separator_construction_contract.md dokumentumot. Írd le:
+      Purpose, Current initializer gap, LBF candidate scoring V1, Separator fallback V1, Commit/rollback rules,
+      Diagnostics, Scope exclusions, Preparation for SGH-04. A doksi mondja ki explicit módon, hogy a separator
+      fallback belsőleg használhat infeasible WorkingLayoutot, de accepted output csak validate_for_commit után
+      lehet violation-free.
+    outputs:
+      - "docs/egyedi_solver/sgh_03_lbf_separator_construction_contract.md"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Töltsd ki a checklistet és a reportot. A report tartalmazzon dependency evidence-t, current-state audit
+      findings részt, change summaryt, implementation summaryt, tests részt, scope safety részt és DoD -> Evidence
+      Matrixot konkrét fájl/funkció bizonyítékokkal. Dokumentáld külön, hogy io.rs, adapter.rs, sheet_elimination.rs,
+      moves.rs, Python runner, exact validator, külső backend és vendor nem módosult.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_03_lbf_separator_construction_integration.md"
+      - "codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.md"
+
+  - name: "Focused Rust tesztek és scope safety ellenőrzés"
+    description: >
+      Futtasd legalább a focused Rust teszteket: cargo test initializer separator working vagy a helyi cargo által
+      elfogadott ekvivalens célzott parancsot. Ha szükséges, futtasd cargo test-et is a rust/vrs_solver crate-ben.
+      A reportban rögzítsd a pontos parancsokat és eredményeket. Ellenőrizd git diff/status alapján, hogy a tiltott
+      fájlok nem módosultak. Ha bármely tiltott fájl módosult, a report első sora nem lehet PASS.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.md
+      Ha a verify fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát. Ha zöld, a report végén
+      szerepeljen: SGH-04_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.md"
+      - "codex/reports/egyedi_solver/sgh_03_lbf_separator_construction_integration.verify.log"
