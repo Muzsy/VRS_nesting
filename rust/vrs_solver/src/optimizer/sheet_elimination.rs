@@ -22,8 +22,9 @@
 use crate::geometry::Rect;
 use crate::io::{Placement, Unplaced};
 use crate::item::{dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min, Part};
-use crate::sheet::{rect_inside_sheet_shape, SheetShape};
-use super::candidates::{generate_candidates, PlacedBbox};
+use crate::sheet::SheetShape;
+use super::boundary::rect_within_boundary;
+use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::initializer::bbox_from_placement;
 use super::multisheet::compute_sheet_count_used;
 use super::repair::find_violations;
@@ -261,7 +262,7 @@ impl<'a> SheetEliminationEngine<'a> {
             }
 
             // Generate candidates across all sheets, then exclude the target.
-            let all_candidates = generate_candidates(self.sheets.len(), &placed_bboxes);
+            let (all_candidates, _) = generate_candidates_with_sheets(self.sheets, &placed_bboxes);
             let candidates: Vec<_> = all_candidates
                 .into_iter()
                 .filter(|c| c.sheet_index != target)
@@ -280,7 +281,7 @@ impl<'a> SheetEliminationEngine<'a> {
                         x2: candidate.x + rw,
                         y2: candidate.y + rh,
                     };
-                    if !rect_inside_sheet_shape(rect, sheet) {
+                    if !rect_within_boundary(rect, sheet) {
                         continue;
                     }
                     let candidate_bbox = PlacedBbox {

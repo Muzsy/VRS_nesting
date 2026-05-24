@@ -6,7 +6,7 @@ use crate::item::{
 };
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
-use super::candidates::{generate_candidates, PlacedBbox};
+use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 
 /// Diagnostics collected during a single construction run.
 #[derive(Debug, Default, Clone)]
@@ -16,17 +16,29 @@ pub struct ConstructionDiagnostics {
     pub rejected_collision: usize,
     pub rejected_unsupported_rotation: usize,
     pub items_unplaced_no_candidate: usize,
+    /// Total candidate points generated across all per-item generations (JG-18).
+    pub total_candidates_generated: usize,
+    /// Candidates from irregular sheet vertex-near sources (JG-18).
+    pub candidates_from_vertex: usize,
+    /// Candidates from irregular sheet edge-near sources (JG-18).
+    pub candidates_from_edge: usize,
+    /// Candidates from irregular sheet interior sampling (JG-18).
+    pub candidates_from_interior: usize,
 }
 
 impl ConstructionDiagnostics {
     pub fn summary(&self) -> String {
         format!(
-            "candidates_tried={} out_of_sheet={} collision={} unsupported_rot={} no_candidate={}",
+            "candidates_tried={} out_of_sheet={} collision={} unsupported_rot={} no_candidate={} total_gen={} vertex={} edge={} interior={}",
             self.candidates_tried,
             self.rejected_out_of_sheet,
             self.rejected_collision,
             self.rejected_unsupported_rotation,
             self.items_unplaced_no_candidate,
+            self.total_candidates_generated,
+            self.candidates_from_vertex,
+            self.candidates_from_edge,
+            self.candidates_from_interior,
         )
     }
 }
@@ -104,7 +116,11 @@ pub fn build_initial_layout(
             }
         };
 
-        let candidates = generate_candidates(sheets.len(), &placed_bboxes);
+        let (candidates, cgen) = generate_candidates_with_sheets(sheets, &placed_bboxes);
+        diag.total_candidates_generated += cgen.total;
+        diag.candidates_from_vertex += cgen.from_vertex;
+        diag.candidates_from_edge += cgen.from_edge;
+        diag.candidates_from_interior += cgen.from_interior;
         let mut result = None;
 
         'outer: for candidate in &candidates {

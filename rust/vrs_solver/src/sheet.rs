@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::geometry::{
     jag_edge_from_points, point_from_input, polygon_area, polygon_bbox, rect_corners, rect_edges,
-    to_jag_point, to_jag_polygon, EPS, PointInput, Rect,
+    to_jag_point, to_jag_polygon, EPS, Point, PointInput, Rect,
 };
 
 #[derive(Debug, Deserialize, Clone)]
@@ -30,6 +30,9 @@ pub struct SheetShape {
     pub has_irregular_outer: bool,
     /// Outer polygon area in input units² (shoelace formula; equals width*height for rectangles).
     pub area: f64,
+    /// Original polygon vertices in input order. Non-empty only when has_irregular_outer=true.
+    /// Used by candidate generation for vertex-near, edge-near, and interior sampling.
+    pub outer_vertices: Vec<Point>,
     pub _outer_poly: SPolygon,
     pub hole_polys: Vec<SPolygon>,
 }
@@ -108,6 +111,8 @@ pub fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
         )?);
     }
 
+    let outer_vertices = if has_irregular_outer { outer.clone() } else { Vec::new() };
+
     Ok(SheetShape {
         min_x,
         min_y,
@@ -117,6 +122,7 @@ pub fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
         height: bbox_h,
         has_irregular_outer,
         area,
+        outer_vertices,
         _outer_poly: outer_poly,
         hole_polys,
     })

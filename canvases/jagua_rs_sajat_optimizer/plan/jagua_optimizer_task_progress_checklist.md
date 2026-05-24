@@ -722,31 +722,31 @@
 **Függőség:** JG-17  
 
 **Státusz:**  
-- [ ] Nem indult
-- [ ] Folyamatban
-- [ ] Kész
+- [x] Nem indult
+- [x] Folyamatban
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Interior sampling determinisztikus seed alapján.
-- [ ] Edge-near candidate generálás implementálva.
-- [ ] Vertex-near candidate generálás implementálva.
-- [ ] Neighbor-near candidate generálás implementálva vagy dokumentált fallbackkel jelölve.
-- [ ] Candidate rejection reason reportolva.
-- [ ] Irregular fixture legalább részleges valid elhelyezést ad.
-- [ ] Invalid candidate nem kerül final layoutba.
-- [ ] Candidate count metrika szerepel.
-- [ ] Azonos seed determinisztikus candidate sorrendet ad.
-- [ ] Rectangular candidate generation regresszió nincs.
-- [ ] Report tartalmaz irregular elhelyezési példát.
-- [ ] Repo verify PASS és log mentve.
+- [x] Interior sampling determinisztikus seed alapján.
+- [x] Edge-near candidate generálás implementálva.
+- [x] Vertex-near candidate generálás implementálva.
+- [x] Neighbor-near candidate generálás implementálva vagy dokumentált fallbackkel jelölve.
+- [x] Candidate rejection reason reportolva.
+- [x] Irregular fixture legalább részleges valid elhelyezést ad.
+- [x] Invalid candidate nem kerül final layoutba.
+- [x] Candidate count metrika szerepel.
+- [x] Azonos seed determinisztikus candidate sorrendet ad.
+- [x] Rectangular candidate generation regresszió nincs.
+- [x] Report tartalmaz irregular elhelyezési példát.
+- [x] Repo verify PASS és log mentve.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 

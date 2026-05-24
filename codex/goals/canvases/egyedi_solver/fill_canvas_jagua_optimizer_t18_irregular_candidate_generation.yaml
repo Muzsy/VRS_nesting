@@ -1,0 +1,126 @@
+steps:
+- name: JG-18 dependency és szabályok ellenőrzése
+  description: 'Ellenőrizd a JG-17 dependency gate-et: a JG-17 report létezik, első sora PASS vagy PASS_WITH_NOTES, tartalmazza
+    a JG-18_STATUS: READY sort, létezik az optimizer/boundary.rs modul, és nincs unresolved boundary blocker. Olvasd el az
+    AGENTS.md, docs/codex/*, docs/qa/testing_guidelines.md és a jagua optimizer tervdokumentumokat. Ha bármely dependency
+    hiányzik, zárj BLOCKED státusszal, és ne módosíts candidate runtime kódot.'
+  inputs:
+  - AGENTS.md
+  - docs/codex/overview.md
+  - docs/codex/yaml_schema.md
+  - docs/codex/report_standard.md
+  - docs/qa/testing_guidelines.md
+  - canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t17_irregular_boundary_validation.md
+  - rust/vrs_solver/src/optimizer/boundary.rs
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+- name: Candidate útvonal és diagnostics auditálása
+  description: 'Auditáld a meglévő candidate generation call site-okat: candidates.rs, initializer.rs, repair.rs és sheet_elimination.rs.
+    Rögzítsd a reportban a jelenlegi legacy candidate forrásokat, sort/dedup policy-t, diagnostics mezőket, és azt, hol kell
+    irregular SheetShape kontextust bevezetni. Ne találj ki nem létező API-t: a reportban válaszd szét a meglévő állapotot
+    és a tervezett módosítást.'
+  inputs:
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+  - rust/vrs_solver/src/optimizer/boundary.rs
+  - rust/vrs_solver/src/sheet.rs
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+- name: Irregular-aware candidate API implementálása
+  description: Bővítsd a candidate generator modult irregular-aware API-val. Őrizd meg a legacy rectangular behavior-t wrapperként
+    vagy regressziós kompatibilitással. Vezess be auditálható candidate source/reason struktúrát, determinisztikus sort/dedup
+    policy-t, és olyan options/context modellt, amely képes SheetShape irregular boundary adatokat figyelembe venni.
+  inputs:
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/sheet.rs
+  - rust/vrs_solver/src/optimizer/boundary.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/candidates.rs
+- name: Interior, edge-near, vertex-near és neighbor-near candidate források bevezetése
+  description: 'Implementáld a JG-18 candidate source-okat: determinisztikus interior sampling, usable boundary edge-near
+    pontok, vertex-near pontok, és neighbor-near pontok meglévő placed bboxok alapján. Ha neighbor-near teljes implementációja
+    a valós kód alapján nem biztonságos, dokumentált fallback és REVISE/BLOCKED evidence szükséges; hamis PASS tilos.'
+  inputs:
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/boundary.rs
+  - rust/vrs_solver/src/sheet.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/candidates.rs
+- name: Initializer, repair és sheet-elimination call site-ok frissítése
+  description: Frissítsd a build_initial_layout, repair reinsertion és sheet_elimination reinsertion candidate hívásokat az
+    új API-ra vagy kompatibilis wrapperre. Minden új candidate-et boundary::rect_within_boundary és overlap check szűrjön.
+    Rejection reason/candidate count metrika legalább construction és repair diagnostics/report szinten legyen látható.
+  inputs:
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/boundary.rs
+  outputs:
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/optimizer/sheet_elimination.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+- name: Irregular candidate fixture és smoke script létrehozása
+  description: Hozz létre egy hole-free irregular/L-shape fixture-t, amelyen a legacy rectangular candidates nem elégségesek
+    vagy legalább gyengék, az új candidate source-ok viszont legalább részleges valid elhelyezést adnak. Készíts smoke scriptet,
+    amely riportolja candidate countot, source breakdown-t, rejection reasonöket, determinisztikus kétfutásos egyezést, irregular
+    partial placementet, invalid candidate filteringet és rectangular regressziót.
+  inputs:
+  - tests/fixtures/egyedi_solver
+  - scripts
+  - vrs_nesting/nesting/instances.py
+  - vrs_nesting/runner/vrs_solver_runner.py
+  - rust/vrs_solver/Cargo.toml
+  outputs:
+  - tests/fixtures/egyedi_solver/jagua_irregular_candidate_generation.json
+  - scripts/smoke_jagua_irregular_candidate_generation.py
+- name: Contract dokumentáció és report frissítése
+  description: 'Frissítsd a docs/solver_io_contract.md dokumentumot a JG-18 candidate generation contracttal: candidate source-ok,
+    determinisztikus sorrend, rejection reason semantics, irregular boundary filter és exact validation kapcsolat. Frissítsd
+    a reportot dependency evidence, implementation summary, candidate-source metrics, futtatott parancsok, risks/blockers
+    és final status mezőkkel. Csak valódi PASS esetén írd be: JG-19_STATUS: READY.'
+  inputs:
+  - docs/solver_io_contract.md
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+  outputs:
+  - docs/solver_io_contract.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+- name: Checklist frissítése
+  description: Frissítsd a task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-18 szakaszát.
+    Csak olyan pontot pipálj ki, amelyre konkrét bizonyíték van. Ha candidate source, determinism vagy irregular fixture eltérés
+    van, jelöld BLOCKED/DEVIATION megjegyzéssel, ne pipáld készre hamisan.
+  inputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  outputs:
+  - codex/codex_checklist/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+  - canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+- name: Célzott tesztek futtatása
+  description: 'Futtasd a JG-18 célzott ellenőrzéseket: python3 scripts/smoke_jagua_irregular_candidate_generation.py, python3
+    scripts/smoke_jagua_irregular_boundary_validation.py és cargo test --manifest-path rust/vrs_solver/Cargo.toml. Dokumentáld
+    a pontos parancsokat, eredményeket, candidate count/source/rejection evidence-t, determinism evidence-t, irregular partial
+    placementet és rectangular regression evidence-t.'
+  inputs:
+  - scripts/smoke_jagua_irregular_candidate_generation.py
+  - scripts/smoke_jagua_irregular_boundary_validation.py
+  - rust/vrs_solver/Cargo.toml
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+- name: Repo gate (automatikus verify)
+  description: 'Futtasd a standard repo ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs: ./scripts/verify.sh
+    --report codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md. A verify logot mentsd a report
+    mellé. Ha dependency vagy környezeti hiba miatt fail, ne rejtsd el: különítsd el, hogy kódhiba, package/import hiba vagy
+    environment blocker.'
+  outputs:
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.md
+  - codex/reports/egyedi_solver/jagua_optimizer_t18_irregular_candidate_generation.verify.log

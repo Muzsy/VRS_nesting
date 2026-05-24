@@ -5,7 +5,7 @@ use crate::io::{Placement, Unplaced};
 use crate::item::{dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min, Part};
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
-use super::candidates::{generate_candidates, PlacedBbox};
+use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::initializer::bbox_from_placement;
 use super::stopping::StoppingPolicy;
 
@@ -234,7 +234,7 @@ pub fn run_repair(
             continue;
         }
 
-        let candidates = generate_candidates(sheets.len(), &placed_bboxes);
+        let (candidates, _) = generate_candidates_with_sheets(sheets, &placed_bboxes);
         let mut placed_this = false;
 
         'cand: for candidate in &candidates {

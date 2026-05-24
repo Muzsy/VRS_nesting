@@ -1,0 +1,49 @@
+{
+  "contract_version": "v1",
+  "project_name": "jagua_irregular_candidate_generation_test",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "seed": 42,
+  "time_limit_s": 5,
+  "_fixture_notes": {
+    "purpose": "JG-18 irregular candidate generation fixture",
+    "stock_shape": "L-shape 100x100 bbox, notch at top-right 50x50",
+    "stock_area_mm2": 7500,
+    "stock_bbox": [100, 100],
+    "has_holes": false,
+    "candidate_generation": {
+      "legacy_sources": ["origin(0,0)", "placed_bbox right/top/top-right corners"],
+      "irregular_sources": ["vertex_near: 6 polygon vertices", "edge_near: 6 edge midpoints", "interior_sample: INTERIOR_GRID_STEPS=5 grid"],
+      "expected": "irregular-aware generator produces more candidates than legacy for L-shape"
+    },
+    "placement_expectation": {
+      "description": "3 parts 20x15 (qty 3) must all place in the bottom-left region of L-shape",
+      "min_placed": 3,
+      "expected_status": "ok"
+    },
+    "boundary_policy": "OWN_BOUNDARY_VALIDATOR_PLUS_JAGUA_COLLISION (JG-17 inset semantics)",
+    "margin_policy": "no margin_mm"
+  },
+  "stocks": [
+    {
+      "id": "L_stock",
+      "quantity": 1,
+      "outer_points": [
+        [0, 0],
+        [100, 0],
+        [100, 50],
+        [50, 50],
+        [50, 100],
+        [0, 100]
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "small_part",
+      "width": 20.0,
+      "height": 15.0,
+      "quantity": 3,
+      "allowed_rotations_deg": [0, 90]
+    }
+  ]
+}

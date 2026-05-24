@@ -204,6 +204,67 @@ Status: **PARTIAL PROMOTION — `margin_mm` is now a v1 SolverInput field but ru
 
 Fixtures must not claim runtime margin/spacing enforcement the Rust solver does not implement.
 
+## Candidate generation policy (JG-18)
+
+`rust/vrs_solver/src/optimizer/candidates.rs` provides two APIs:
+
+### Legacy API (rectangular stocks)
+
+```rust
+generate_candidates(sheet_count: usize, placed: &[PlacedBbox]) -> Vec<CandidatePoint>
+```
+
+Generates one origin `(0.0, 0.0)` per sheet plus three points per placed bbox
+(right-side, top-side, top-right corner). Sorted by `(sheet_index ASC, y ASC, x ASC)`,
+deduplicated by EPS proximity.
+
+### Irregular-aware API (JG-18, all stocks)
+
+```rust
+generate_candidates_with_sheets(
+    sheets: &[SheetShape],
+    placed: &[PlacedBbox],
+) -> (Vec<CandidatePoint>, CandidateGenerationStats)
+```
+
+For rectangular stocks (`has_irregular_outer = false`): identical output to legacy API.
+
+For irregular stocks (`has_irregular_outer = true`), adds:
+- **VertexNear**: each outer polygon vertex as a bbox-min candidate point.
+- **EdgeNear**: midpoint of each outer polygon edge.
+- **InteriorSample**: deterministic grid across the sheet bbox with step = `bbox / INTERIOR_GRID_STEPS` (default 5), minimum step 1.0. Generates up to `(INTERIOR_GRID_STEPS-1)²` = 16 interior points per sheet.
+
+All candidate points are bbox-min positions. Boundary validity is enforced in construction
+and repair loops via `boundary::rect_within_boundary`. Candidates failing the boundary
+check or collision check are discarded silently (counted in `ConstructionDiagnostics`).
+
+### CandidateSource enum
+
+| Variant | Source |
+|---|---|
+| `Origin` | Sheet origin `(0, 0)` |
+| `PlacedNeighbor` | Right/top/top-right of placed bbox |
+| `VertexNear` | Outer polygon vertex |
+| `EdgeNear` | Midpoint of outer polygon edge |
+| `InteriorSample` | Grid interior point |
+
+### Candidate ordering and dedup
+
+Result sorted by `(sheet_index ASC, y ASC, x ASC)`. Adjacent candidates within EPS
+proximity on the same sheet are deduplicated (last-wins after sort). Deterministic for
+identical `(sheets, placed)` input — no random sampling.
+
+### Integration call sites (JG-18)
+
+All three construction paths use `generate_candidates_with_sheets`:
+- `optimizer/initializer.rs` — `build_initial_layout()`
+- `optimizer/repair.rs` — repair reinsertion loop
+- `optimizer/sheet_elimination.rs` — sheet elimination reinsertion
+
+`ConstructionDiagnostics` (in `initializer.rs`) accumulates per-run candidate counts:
+`total_candidates_generated`, `candidates_from_vertex`, `candidates_from_edge`,
+`candidates_from_interior`.
+
 ## Failure modes
 - Missing binary -> deterministic runner error
 - Non-zero solver exit -> runner writes `runner_meta.json` and exits error
