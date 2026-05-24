@@ -1,0 +1,115 @@
+{
+  "meta": {
+    "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+    "seed": 42,
+    "phase1_profile": "jagua_optimizer_phase1_outer_only",
+    "phase1_gate_decision": "PASS",
+    "baseline_compare": "row_cursor_fallback (no solver_profile)"
+  },
+  "cases": [
+    {
+      "label": "phase1_smoke",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 5,
+      "allowed_rotations_summary": "(0,)",
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed_count": 2,
+      "unplaced_count": 0,
+      "sheet_count_used": 1,
+      "utilization": 0.18,
+      "duration_sec": 0.002,
+      "validation_status": "pass",
+      "validation_error": null,
+      "status": "pass",
+      "error": null,
+      "case_id": "smoke",
+      "baseline_status": "available",
+      "baseline_metrics_or_reason": {
+        "placed_count": 2,
+        "unplaced_count": 0,
+        "sheet_count_used": 1,
+        "utilization": 0.18,
+        "duration_sec": 0.004
+      }
+    },
+    {
+      "label": "phase1_small",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 10,
+      "allowed_rotations_summary": "[0]; [0, 90]",
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed_count": 9,
+      "unplaced_count": 0,
+      "sheet_count_used": 1,
+      "utilization": 0.373333,
+      "duration_sec": 0.004,
+      "validation_status": "pass",
+      "validation_error": null,
+      "status": "pass",
+      "error": null,
+      "case_id": "small",
+      "baseline_status": "available",
+      "baseline_metrics_or_reason": {
+        "placed_count": 9,
+        "unplaced_count": 0,
+        "sheet_count_used": 1,
+        "utilization": 0.373333,
+        "duration_sec": 0.004
+      }
+    },
+    {
+      "label": "phase1_medium",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 10,
+      "allowed_rotations_summary": "(0,)",
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed_count": 3,
+      "unplaced_count": 3,
+      "sheet_count_used": 3,
+      "utilization": 0.49,
+      "duration_sec": 0.002,
+      "validation_status": "pass",
+      "validation_error": null,
+      "status": "pass",
+      "error": null,
+      "case_id": "medium",
+      "baseline_status": "available",
+      "baseline_metrics_or_reason": {
+        "placed_count": 3,
+        "unplaced_count": 3,
+        "sheet_count_used": 3,
+        "utilization": 0.49,
+        "duration_sec": 0.002
+      }
+    },
+    {
+      "label": "phase1_realistic_no_hole",
+      "solver_profile": "jagua_optimizer_phase1_outer_only",
+      "seed": 42,
+      "time_limit_s": 15,
+      "allowed_rotations_summary": "[0]; [0, 90]",
+      "solver_bin": "/home/muszy/projects/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+      "placed_count": 26,
+      "unplaced_count": 0,
+      "sheet_count_used": 2,
+      "utilization": 0.831667,
+      "duration_sec": 0.004,
+      "validation_status": "pass",
+      "validation_error": null,
+      "status": "pass",
+      "error": null,
+      "case_id": "realistic_no_hole",
+      "baseline_status": "available",
+      "baseline_metrics_or_reason": {
+        "placed_count": 26,
+        "unplaced_count": 0,
+        "sheet_count_used": 2,
+        "utilization": 0.831667,
+        "duration_sec": 0.004
+      }
+    }
+  ]
+}

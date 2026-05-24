@@ -1,0 +1,133 @@
+steps:
+  - name: "JG-14 dependency, szabályok és taskforrások olvasása"
+    description: >
+      Ellenőrizd a JG-13 dependency gate-et: a JG-13 report létezik, első sora PASS, tartalmazza a JG-14_STATUS: READY jelzést,
+      létezik a sheet elimination modul és smoke script, és a JG-13 report bizonyítja a PASS gate-et. Olvasd el a repo szabályfájlokat,
+      a JG tervdokumentációkat, a task indexet, a JG-14 canvast, ezt a YAML-t és a task-specifikus checklistet. Ha a dependency nem
+      PASS, állj meg BLOCKED státusszal, ne futtass benchmark döntést, és ne jelöld JG-15-öt ready állapotúra.
+    inputs:
+      - "AGENTS.md"
+      - "docs/codex/overview.md"
+      - "docs/codex/yaml_schema.md"
+      - "docs/codex/report_standard.md"
+      - "docs/qa/testing_guidelines.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/deep-research-report.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_rs_sajat_optimizer_fejlesztesi_terv.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_canvas_yaml_runner_task_bontas.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_master_plan.md"
+      - "canvases/egyedi_solver/jagua_optimizer_task_index.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t13_sheet_elimination_v1.md"
+      - "canvases/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_jagua_optimizer_t14_phase1_benchmark_matrix.yaml"
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+
+  - name: "Benchmark és validation boundary valós kód audit"
+    description: >
+      Auditáld a JG-14-hez releváns valós kódot. Külön ellenőrizd a Phase 1 adapter profile dispatch-et, a SolverInput/SolverOutput
+      v1 contractot, a runner_meta mezőit, az exact validator bridge-t, a sheet_count_used max+1 contractot, a utilization számítást,
+      a meglévő smoke benchmark mintákat és a verify wrapper működését. Ne hivatkozz nem létező API-ra; ha egy várt mező vagy parancs
+      hiányzik, dokumentáld mismatch/blocker-ként.
+    inputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/item.rs"
+      - "rust/vrs_solver/src/sheet.rs"
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/optimizer/multisheet.rs"
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "vrs_nesting/nesting/instances.py"
+      - "scripts/smoke_jagua_exact_validation_bridge.py"
+      - "scripts/smoke_jagua_sheet_elimination_v1.py"
+      - "scripts/check.sh"
+      - "scripts/verify.sh"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+
+  - name: "Phase 1 rectangular benchmark script implementálása"
+    description: >
+      Hozd létre a scripts/bench_jagua_optimizer_phase1_rectangular.py scriptet. A script a meglévő run_solver_in_dir runner boundary-t
+      használja, ne implementáljon külön solver process kezelést, ha a runner már biztosítja. Legyen determinisztikus, offline-barát,
+      és tartalmazzon legalább smoke, small, medium és realistic_no_hole rectangular/no-hole fixture-t vagy explicit blocker kezelést
+      a realistic fixture-re. Minden futásnál rögzíts seed/profile/rotations/backend meta adatokat, placed/unplaced/used_sheets/utilization/runtime
+      metrikákat és validation_status értéket.
+    inputs:
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+      - "vrs_nesting/nesting/instances.py"
+      - "scripts/smoke_jagua_sheet_elimination_v1.py"
+      - "scripts/smoke_jagua_multisheet_manager_v1.py"
+      - "scripts/smoke_jagua_exact_validation_bridge.py"
+    outputs:
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+
+  - name: "Benchmark summary JSON és MD report generálása"
+    description: >
+      A benchmark script írja ki a codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.json és
+      codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.md fájlokat. A JSON legyen géppel olvasható,
+      tartalmazza az összes case és baseline eredményét. Az MD tartalmazzon táblázatos összefoglalót, failure részleteket,
+      exact validation bizonyítékot, baseline compare státuszt és PHASE1_GATE_DECISION mezőt.
+    inputs:
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.json"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.md"
+
+  - name: "Baseline compare és invalid-layout fail policy bekötése"
+    description: >
+      Kösd be a baseline compare-t csak akkor, ha a repo valós kódja alapján értelmes baseline létezik. Ha nincs, a benchmark JSON/MD
+      tartalmazzon baseline_status=unavailable és baseline_reason mezőket. Biztosítsd, hogy validation_status != pass ne jelenhessen
+      successful benchmarkként. Egy invalid, failed vagy unsupported run legyen külön státusszal rögzítve, és befolyásolja a Phase 1
+      gate döntést.
+    inputs:
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "vrs_nesting/runner/vrs_solver_runner.py"
+    outputs:
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.json"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.md"
+
+  - name: "Benchmark és regressziós smokes futtatása"
+    description: >
+      Futtasd a Phase 1 benchmark scriptet, majd legalább a sheet elimination és exact validation regression smoke-okat. Ajánlott parancsok:
+      python3 scripts/bench_jagua_optimizer_phase1_rectangular.py; python3 scripts/smoke_jagua_sheet_elimination_v1.py; python3
+      scripts/smoke_jagua_exact_validation_bridge.py; cargo test --manifest-path rust/vrs_solver/Cargo.toml. A futási eredményeket
+      és esetleges környezeti akadályokat rögzítsd a JG-14 reportban.
+    inputs:
+      - "scripts/bench_jagua_optimizer_phase1_rectangular.py"
+      - "scripts/smoke_jagua_sheet_elimination_v1.py"
+      - "scripts/smoke_jagua_exact_validation_bridge.py"
+      - "rust/vrs_solver/Cargo.toml"
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.json"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+
+  - name: "Checklist és Phase 1 gate dokumentálása"
+    description: >
+      Frissítsd a JG-14 task-specifikus checklistet és a globális jagua_optimizer_task_progress_checklist.md JG-14 szakaszát. Csak akkor
+      pipáld készre a pontokat, ha bizonyíték van rájuk. Dokumentáld a PHASE1_GATE_DECISION értéket. Csak PASS gate esetén írd bele
+      a JG-14 reportba: JG-15_STATUS: READY. REVISE vagy STOP esetén a következő lépés legyen explicit revise/stop, ne Phase 2 indítás.
+    inputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_phase1_rectangular_benchmark.json"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+      - "canvases/jagua_rs_sajat_optimizer/plan/jagua_optimizer_task_progress_checklist.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard repo ellenőrzést és frissítsd automatikusan a reportot. Kötelező parancs:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md. A verify logot mentsd a report mellé. Ha dependency vagy
+      környezeti hiba miatt fail, ne rejtsd el: különítsd el, hogy benchmark hiba, kódhiba vagy environment blocker.
+    outputs:
+      - "codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.md"
+      - "codex/reports/egyedi_solver/jagua_optimizer_t14_phase1_benchmark_matrix.verify.log"

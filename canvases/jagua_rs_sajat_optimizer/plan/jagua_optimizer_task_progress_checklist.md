@@ -584,29 +584,29 @@
 **Státusz:**  
 - [ ] Nem indult
 - [ ] Folyamatban
-- [ ] Kész
+- [x] Kész
 - [ ] Blocked
 
 **Ellenőrző lista:**
 
-- [ ] Smoke benchmark fixture fut.
-- [ ] Small benchmark fixture fut.
-- [ ] Medium benchmark fixture fut.
-- [ ] Realistic no-hole fixture fut vagy explicit blockerrel dokumentált.
-- [ ] Baseline compare lefut, ahol van értelmes baseline.
-- [ ] Minden elfogadott layout exact validator PASS.
-- [ ] Invalid layout automatikus FAIL.
-- [ ] Metrikák rögzítve: placed, unplaced, used_sheets, utilization, runtime.
-- [ ] Seed/profile/rotations/backend meta rögzítve.
-- [ ] Summary JSON létrejött.
-- [ ] Summary MD report létrejött.
-- [ ] Phase 1 gate döntés: PASS / REVISE / STOP dokumentálva.
+- [x] Smoke benchmark fixture fut.
+- [x] Small benchmark fixture fut.
+- [x] Medium benchmark fixture fut.
+- [x] Realistic no-hole fixture fut vagy explicit blockerrel dokumentált.
+- [x] Baseline compare lefut, ahol van értelmes baseline.
+- [x] Minden elfogadott layout exact validator PASS.
+- [x] Invalid layout automatikus FAIL.
+- [x] Metrikák rögzítve: placed, unplaced, used_sheets, utilization, runtime.
+- [x] Seed/profile/rotations/backend meta rögzítve.
+- [x] Summary JSON létrejött.
+- [x] Summary MD report létrejött.
+- [x] Phase 1 gate döntés: PASS / REVISE / STOP dokumentálva.
 
 **Záró mezők:**
 
-- [ ] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
-- [ ] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
-- [ ] Következő task indíthatósága egyértelműen jelölve van.
+- [x] Reportban szerepel a végső státusz: PASS / REVISE / STOP / BLOCKED.
+- [x] Ha volt eltérés a tervtől, az explicit módon dokumentálva van.
+- [x] Következő task indíthatósága egyértelműen jelölve van.
 
 ---
 
