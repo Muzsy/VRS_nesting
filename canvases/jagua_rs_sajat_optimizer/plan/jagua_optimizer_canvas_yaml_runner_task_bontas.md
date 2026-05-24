@@ -620,7 +620,7 @@ Minden taskban szerepeljen canvas szinten:
 
 **Megjegyzés:** Gate 1: Phase 2 csak akkor induljon, ha Phase 1 stabilan valid.
 
-### JG-15 — `jagua_optimizer_t15_irregular_sheet_capability_spike`
+### 
 
 **Phase:** 2 / irregular spike  
 **Cél:** Kideríteni, hogy a jagua-rs natívan mennyire alkalmas irregular/remnant sheet boundary kezelésre, hole nélkül.  
