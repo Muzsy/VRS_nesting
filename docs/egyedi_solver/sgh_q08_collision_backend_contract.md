@@ -56,18 +56,26 @@ Status: **PASS** — default backend.
 
 ### JaguaPolygonExactBackend
 
-Status: **PASS** — exact polygon backend.
+Status: **PARTIAL/PASS** — exact for the supported outer-boundary rectangle/polygon scope.
 
 - `placement_overlaps`:
-  - Both parts have `outer_points`: world-transformed polygon-polygon via edge-edge intersection (`Edge: CollidesWith<Edge>`) + point-in-polygon (`SPolygon: CollidesWith<Point>`).
-  - One part rect: rect bbox corners treated as polygon.
-  - Both rect: bbox overlap (exact for axis-aligned rectangles).
+  - `outer_points` / `prepared_outer_points` extraction is three-state: `Absent`, `Invalid`, `Valid`.
+  - `Absent`: the part is treated as a rectangle and converted to a rotation-aware world polygon.
+  - `Invalid`: returns `Unsupported`, never bbox fallback and never `NoCollision`.
+  - `Valid`: local polygon is transformed by placement anchor + `rotation_deg`.
+  - Rect-vs-rect, rect-vs-polygon, and polygon-vs-polygon all use polygon geometry in the exact backend.
 - `placement_within_sheet`:
-  - Part has `outer_points`: all world polygon vertices checked against `sheet._outer_poly`, all item edges checked against sheet boundary edges.
-  - Part rect: `rect_within_boundary` (same as BboxCollisionBackend).
-- Returns `Unsupported` (not `NoCollision`) when polygon data is unavailable or degenerate.
+  - Rect item: rotation-aware world rectangle polygon.
+  - Irregular item: transformed world polygon.
+  - The same polygon-within-sheet policy is used for both.
+- Touching policy:
+  - Shared edge -> `NoCollision`.
+  - Shared point -> `NoCollision`.
+  - Boundary touch while fully inside -> `NoCollision`.
+  - Positive-area overlap or true boundary crossing -> `Collision`.
+- Returns `Unsupported` for malformed, too-short, zero-area, degenerate, or jagua-unbuildable polygon data.
 
-**Key difference from bbox**: for an L-shaped item, the exact backend detects that a rect placed in the notch region does NOT collide with the L-shape, while bbox would report a false positive.
+**Key difference from bbox**: for an L-shaped item, the exact backend detects that a rect placed in the notch region does NOT collide with the L-shape, while bbox would report a false positive. For rotated rectangles, the exact backend uses the true rotated rectangle polygon, not the rotated AABB.
 
 ### CdeCollisionBackend
 
@@ -87,7 +95,7 @@ pub fn find_violations_with_backend(
 ```
 
 - Semantically equivalent to `find_violations` when using `BboxCollisionBackend`.
-- On `Unsupported`: falls back to bbox check (conservative, transparent, not silent).
+- On `Unsupported`: falls back to bbox check in the wrapper only (conservative, explicit, not backend-silent). Exact backend methods themselves must return `Unsupported` for invalid exact geometry.
 - `find_violations` remains the default backward-compatible wrapper.
 
 ## GeometryPreprocessing
@@ -121,6 +129,15 @@ pub fn preprocess_rect(w: f64, h: f64) -> Result<PreparedShape, String>;
 ## No-downgrade policy
 
 Production default remains `BboxCollisionBackend` (via `find_violations`). Switching the production default to `JaguaPolygonExactBackend` requires a no-downgrade gate (regression verification on the full benchmark matrix). This is deferred to a future task.
+
+## SGH-Q08R clarifications
+
+- `JaguaPolygonExactBackend` is not full CDE parity.
+- `JaguaPolygonExactBackend` is not hole-aware; hole/cavity semantics remain out of scope.
+- Invalid exact geometry must not silently downgrade to bbox behavior inside the backend.
+- Invalid exact geometry must not become `NoCollision`.
+- The exact rectangle path is rotation-aware.
+- No-positive-area touching is `NoCollision`.
 
 ## Out of scope (Q08)
 

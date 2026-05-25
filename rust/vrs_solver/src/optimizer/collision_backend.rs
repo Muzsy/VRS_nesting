@@ -1,11 +1,8 @@
-use jagua_rs::geometry::geo_traits::CollidesWith;
-
-use crate::geometry::{jag_edge_from_points, to_jag_point, to_jag_polygon, Point, Rect};
+use crate::geometry::{polygon_area, to_jag_polygon, Point, Rect, EPS};
 use crate::io::Placement;
 use crate::item::Part;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
-use super::candidates::PlacedBbox;
 use super::initializer::bbox_from_placement;
 
 // ---------------------------------------------------------------------------
@@ -176,67 +173,19 @@ impl CollisionBackend for JaguaPolygonExactBackend {
             return CollisionDecision::NoCollision;
         }
 
-        let a_local = extract_polygon_from_part(a_part);
-        let b_local = extract_polygon_from_part(b_part);
+        let a_world = match polygon_for_placement(a, a_part) {
+            Ok(poly) => poly,
+            Err(reason) => return CollisionDecision::Unsupported { reason },
+        };
+        let b_world = match polygon_for_placement(b, b_part) {
+            Ok(poly) => poly,
+            Err(reason) => return CollisionDecision::Unsupported { reason },
+        };
 
-        match (a_local, b_local) {
-            (Some(al), Some(bl)) => {
-                // Both irregular: exact polygon-polygon.
-                let a_world = transform_polygon(&al, a.x, a.y, a.rotation_deg);
-                let b_world = transform_polygon(&bl, b.x, b.y, b.rotation_deg);
-                if polygons_collide(&a_world, &b_world) {
-                    CollisionDecision::Collision
-                } else {
-                    CollisionDecision::NoCollision
-                }
-            }
-            (Some(al), None) => {
-                // A irregular, B rect: check B bbox as polygon against A.
-                let a_world = transform_polygon(&al, a.x, a.y, a.rotation_deg);
-                let Some(bb) = bbox_from_placement(b, b_part.width, b_part.height) else {
-                    return CollisionDecision::Unsupported {
-                        reason: "bbox_from_placement failed for rect part B",
-                    };
-                };
-                let b_pts = bbox_to_rect_pts(&bb);
-                if polygons_collide(&a_world, &b_pts) {
-                    CollisionDecision::Collision
-                } else {
-                    CollisionDecision::NoCollision
-                }
-            }
-            (None, Some(bl)) => {
-                // A rect, B irregular: check A bbox as polygon against B.
-                let b_world = transform_polygon(&bl, b.x, b.y, b.rotation_deg);
-                let Some(ba) = bbox_from_placement(a, a_part.width, a_part.height) else {
-                    return CollisionDecision::Unsupported {
-                        reason: "bbox_from_placement failed for rect part A",
-                    };
-                };
-                let a_pts = bbox_to_rect_pts(&ba);
-                if polygons_collide(&a_pts, &b_world) {
-                    CollisionDecision::Collision
-                } else {
-                    CollisionDecision::NoCollision
-                }
-            }
-            (None, None) => {
-                // Both rect: bbox is exact for axis-aligned rectangles.
-                let bbox_a = bbox_from_placement(a, a_part.width, a_part.height);
-                let bbox_b = bbox_from_placement(b, b_part.width, b_part.height);
-                match (bbox_a, bbox_b) {
-                    (Some(ba), Some(bb)) => {
-                        if ba.overlaps(&bb) {
-                            CollisionDecision::Collision
-                        } else {
-                            CollisionDecision::NoCollision
-                        }
-                    }
-                    _ => CollisionDecision::Unsupported {
-                        reason: "bbox_from_placement failed for rect-rect pair",
-                    },
-                }
-            }
+        match polygons_collide(&a_world, &b_world) {
+            Ok(true) => CollisionDecision::Collision,
+            Ok(false) => CollisionDecision::NoCollision,
+            Err(reason) => CollisionDecision::Unsupported { reason },
         }
     }
 
@@ -246,64 +195,15 @@ impl CollisionBackend for JaguaPolygonExactBackend {
         part: &Part,
         sheet: &SheetShape,
     ) -> CollisionDecision {
-        let local_poly = extract_polygon_from_part(part);
-        match local_poly {
-            None => {
-                // No outer polygon: bbox boundary check (same as BboxCollisionBackend).
-                match bbox_from_placement(placement, part.width, part.height) {
-                    Some(bbox) => {
-                        let rect = Rect {
-                            x1: bbox.x1,
-                            y1: bbox.y1,
-                            x2: bbox.x2,
-                            y2: bbox.y2,
-                        };
-                        if rect_within_boundary(rect, sheet) {
-                            CollisionDecision::NoCollision
-                        } else {
-                            CollisionDecision::Collision
-                        }
-                    }
-                    None => CollisionDecision::Unsupported {
-                        reason: "bbox_from_placement failed",
-                    },
-                }
-            }
-            Some(local_pts) => {
-                // Irregular item: check each world vertex is inside sheet polygon,
-                // and no item edge crosses the sheet boundary.
-                let world_pts =
-                    transform_polygon(&local_pts, placement.x, placement.y, placement.rotation_deg);
+        let world_pts = match polygon_for_placement(placement, part) {
+            Ok(poly) => poly,
+            Err(reason) => return CollisionDecision::Unsupported { reason },
+        };
 
-                // All vertices must be inside the sheet polygon.
-                for &wp in &world_pts {
-                    if !sheet._outer_poly.collides_with(&to_jag_point(wp)) {
-                        return CollisionDecision::Collision;
-                    }
-                }
-
-                // No item edge may cross any sheet boundary edge.
-                let n_item = world_pts.len();
-                let sheet_verts = &sheet.outer_vertices;
-                let n_sheet = sheet_verts.len();
-                for i in 0..n_item {
-                    let p0 = world_pts[i];
-                    let p1 = world_pts[(i + 1) % n_item];
-                    if let Some(item_edge) = jag_edge_from_points(p0, p1) {
-                        for j in 0..n_sheet {
-                            let s0 = sheet_verts[j];
-                            let s1 = sheet_verts[(j + 1) % n_sheet];
-                            if let Some(sheet_edge) = jag_edge_from_points(s0, s1) {
-                                if item_edge.collides_with(&sheet_edge) {
-                                    return CollisionDecision::Collision;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                CollisionDecision::NoCollision
-            }
+        match polygon_within_sheet(&world_pts, sheet) {
+            Ok(true) => CollisionDecision::NoCollision,
+            Ok(false) => CollisionDecision::Collision,
+            Err(reason) => CollisionDecision::Unsupported { reason },
         }
     }
 }
@@ -355,18 +255,36 @@ impl CollisionBackend for CdeCollisionBackend {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Try to extract a polygon from Part.outer_points (then prepared_outer_points).
-///
-/// Returns None if neither field is present or parseable.
-/// Does NOT fall back silently — returns None so callers can choose behavior.
-pub(crate) fn extract_polygon_from_part(part: &Part) -> Option<Vec<Point>> {
-    let json = part.outer_points.as_ref().or(part.prepared_outer_points.as_ref())?;
-    parse_points_json(json)
+#[derive(Debug, Clone)]
+pub(crate) enum PolygonExtraction {
+    Absent,
+    Invalid { reason: &'static str },
+    Valid(Vec<Point>),
+}
+
+/// Extract polygon data without merging absent and invalid states.
+pub(crate) fn extract_polygon_from_part(part: &Part) -> PolygonExtraction {
+    let Some(json) = part
+        .prepared_outer_points
+        .as_ref()
+        .or(part.outer_points.as_ref())
+    else {
+        return PolygonExtraction::Absent;
+    };
+
+    let pts = match parse_points_json(json) {
+        Ok(pts) => pts,
+        Err(reason) => return PolygonExtraction::Invalid { reason },
+    };
+    match clean_valid_polygon(&pts) {
+        Ok(cleaned) => PolygonExtraction::Valid(cleaned),
+        Err(reason) => PolygonExtraction::Invalid { reason },
+    }
 }
 
 /// Parse a serde_json::Value as an array of [x, y] or {x, y} points.
-fn parse_points_json(v: &serde_json::Value) -> Option<Vec<Point>> {
-    let arr = v.as_array()?;
+fn parse_points_json(v: &serde_json::Value) -> Result<Vec<Point>, &'static str> {
+    let arr = v.as_array().ok_or("outer_points must be an array")?;
     let pts: Option<Vec<Point>> = arr
         .iter()
         .map(|item| {
@@ -383,12 +301,74 @@ fn parse_points_json(v: &serde_json::Value) -> Option<Vec<Point>> {
             }
         })
         .collect();
-    let pts = pts?;
-    if pts.len() >= 3 {
-        Some(pts)
-    } else {
-        None
+    pts.ok_or("outer_points contains malformed point")
+}
+
+fn clean_valid_polygon(points: &[Point]) -> Result<Vec<Point>, &'static str> {
+    if points.len() < 3 {
+        return Err("polygon must have at least 3 points");
     }
+    let mut out = Vec::with_capacity(points.len());
+    for &p in points {
+        if !p.x.is_finite() || !p.y.is_finite() {
+            return Err("polygon point must be finite");
+        }
+        if out
+            .last()
+            .map_or(true, |prev: &Point| !points_equal(*prev, p))
+        {
+            out.push(p);
+        }
+    }
+    if out.len() >= 2 && points_equal(out[0], out[out.len() - 1]) {
+        out.pop();
+    }
+    if out.len() < 3 {
+        return Err("polygon became degenerate after deduplication");
+    }
+    if polygon_area(&out) <= EPS {
+        return Err("polygon has zero or near-zero area");
+    }
+    to_jag_polygon(&out, "exact_backend_polygon").map_err(|_| "SPolygon build failed")?;
+    Ok(out)
+}
+
+fn polygon_for_placement(
+    placement: &Placement,
+    part: &Part,
+) -> Result<Vec<Point>, &'static str> {
+    match extract_polygon_from_part(part) {
+        PolygonExtraction::Absent => rect_polygon_from_placement(placement, part.width, part.height),
+        PolygonExtraction::Invalid { reason } => Err(reason),
+        PolygonExtraction::Valid(local) => Ok(transform_polygon(
+            &local,
+            placement.x,
+            placement.y,
+            placement.rotation_deg,
+        )),
+    }
+}
+
+fn rect_polygon_from_placement(
+    placement: &Placement,
+    width: f64,
+    height: f64,
+) -> Result<Vec<Point>, &'static str> {
+    if width <= 0.0 || height <= 0.0 || !width.is_finite() || !height.is_finite() {
+        return Err("rect dimensions must be positive and finite");
+    }
+    let local = [
+        Point { x: 0.0, y: 0.0 },
+        Point { x: width, y: 0.0 },
+        Point { x: width, y: height },
+        Point { x: 0.0, y: height },
+    ];
+    Ok(transform_polygon(
+        &local,
+        placement.x,
+        placement.y,
+        placement.rotation_deg,
+    ))
 }
 
 /// Apply rotation (degrees) around local origin, then translate by (anchor_x, anchor_y).
@@ -413,61 +393,157 @@ fn transform_polygon(
         .collect()
 }
 
-/// Convert a PlacedBbox (world coordinates) to an array of 4 corner Points.
-fn bbox_to_rect_pts(bbox: &PlacedBbox) -> [Point; 4] {
-    [
-        Point { x: bbox.x1, y: bbox.y1 },
-        Point { x: bbox.x2, y: bbox.y1 },
-        Point { x: bbox.x2, y: bbox.y2 },
-        Point { x: bbox.x1, y: bbox.y2 },
-    ]
-}
-
 /// Test whether two world-coordinate polygons collide.
 ///
 /// Checks:
 /// 1. Edge-edge intersection (any edge of A crosses any edge of B).
 /// 2. A vertex inside B (one vertex from each to catch containment cases).
 /// 3. B vertex inside A.
-fn polygons_collide(a: &[Point], b: &[Point]) -> bool {
+fn polygons_collide(a: &[Point], b: &[Point]) -> Result<bool, &'static str> {
+    let a = clean_valid_polygon(a)?;
+    let b = clean_valid_polygon(b)?;
     let na = a.len();
     let nb = b.len();
-    if na == 0 || nb == 0 {
-        return false;
-    }
 
-    // 1. Edge-edge intersection.
+    // 1. True edge crossing means positive-area overlap. Touching does not.
     for i in 0..na {
         let a0 = a[i];
         let a1 = a[(i + 1) % na];
-        if let Some(edge_a) = jag_edge_from_points(a0, a1) {
-            for j in 0..nb {
-                let b0 = b[j];
-                let b1 = b[(j + 1) % nb];
-                if let Some(edge_b) = jag_edge_from_points(b0, b1) {
-                    if edge_a.collides_with(&edge_b) {
-                        return true;
-                    }
-                }
+        for j in 0..nb {
+            let b0 = b[j];
+            let b1 = b[(j + 1) % nb];
+            if segments_properly_intersect(a0, a1, b0, b1) {
+                return Ok(true);
             }
         }
     }
 
-    // 2. Sample point from B: is it inside A?
-    if let Ok(a_spoly) = to_jag_polygon(a, "a_collision_check") {
-        if a_spoly.collides_with(&to_jag_point(b[0])) {
-            return true;
+    // 2. Strict containment catches positive-area overlap without edge crossing.
+    if b.iter().any(|&p| point_strictly_inside_polygon(p, &a)) {
+        return Ok(true);
+    }
+    if a.iter().any(|&p| point_strictly_inside_polygon(p, &b)) {
+        return Ok(true);
+    }
+    if edge_midpoints(&a)
+        .iter()
+        .any(|&p| point_strictly_inside_polygon(p, &b))
+    {
+        return Ok(true);
+    }
+    if edge_midpoints(&b)
+        .iter()
+        .any(|&p| point_strictly_inside_polygon(p, &a))
+    {
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn polygon_within_sheet(points: &[Point], sheet: &SheetShape) -> Result<bool, &'static str> {
+    let item = clean_valid_polygon(points)?;
+    let sheet_poly = sheet_polygon_points(sheet);
+    let sheet_poly = clean_valid_polygon(&sheet_poly)?;
+
+    for &p in &item {
+        if !point_inside_or_on_polygon(p, &sheet_poly) {
+            return Ok(false);
         }
     }
 
-    // 3. Sample point from A: is it inside B?
-    if let Ok(b_spoly) = to_jag_polygon(b, "b_collision_check") {
-        if b_spoly.collides_with(&to_jag_point(a[0])) {
-            return true;
+    for i in 0..item.len() {
+        let a0 = item[i];
+        let a1 = item[(i + 1) % item.len()];
+        for j in 0..sheet_poly.len() {
+            let b0 = sheet_poly[j];
+            let b1 = sheet_poly[(j + 1) % sheet_poly.len()];
+            if segments_properly_intersect(a0, a1, b0, b1) {
+                return Ok(false);
+            }
         }
     }
 
-    false
+    Ok(true)
+}
+
+fn sheet_polygon_points(sheet: &SheetShape) -> Vec<Point> {
+    if sheet.has_irregular_outer {
+        sheet.outer_vertices.clone()
+    } else {
+        vec![
+            Point { x: sheet.min_x, y: sheet.min_y },
+            Point { x: sheet.max_x, y: sheet.min_y },
+            Point { x: sheet.max_x, y: sheet.max_y },
+            Point { x: sheet.min_x, y: sheet.max_y },
+        ]
+    }
+}
+
+fn points_equal(a: Point, b: Point) -> bool {
+    (a.x - b.x).abs() <= EPS && (a.y - b.y).abs() <= EPS
+}
+
+fn orient(a: Point, b: Point, c: Point) -> f64 {
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+}
+
+fn point_on_segment(p: Point, a: Point, b: Point) -> bool {
+    orient(a, b, p).abs() <= EPS
+        && p.x >= a.x.min(b.x) - EPS
+        && p.x <= a.x.max(b.x) + EPS
+        && p.y >= a.y.min(b.y) - EPS
+        && p.y <= a.y.max(b.y) + EPS
+}
+
+fn segments_properly_intersect(a0: Point, a1: Point, b0: Point, b1: Point) -> bool {
+    let o1 = orient(a0, a1, b0);
+    let o2 = orient(a0, a1, b1);
+    let o3 = orient(b0, b1, a0);
+    let o4 = orient(b0, b1, a1);
+
+    o1 * o2 < -EPS && o3 * o4 < -EPS
+}
+
+fn point_inside_or_on_polygon(p: Point, poly: &[Point]) -> bool {
+    point_on_polygon_boundary(p, poly) || point_strictly_inside_polygon(p, poly)
+}
+
+fn point_on_polygon_boundary(p: Point, poly: &[Point]) -> bool {
+    (0..poly.len()).any(|i| point_on_segment(p, poly[i], poly[(i + 1) % poly.len()]))
+}
+
+fn point_strictly_inside_polygon(p: Point, poly: &[Point]) -> bool {
+    if point_on_polygon_boundary(p, poly) {
+        return false;
+    }
+    let mut inside = false;
+    let n = poly.len();
+    let mut j = n - 1;
+    for i in 0..n {
+        let pi = poly[i];
+        let pj = poly[j];
+        let intersects = (pi.y > p.y) != (pj.y > p.y)
+            && p.x < (pj.x - pi.x) * (p.y - pi.y) / (pj.y - pi.y) + pi.x;
+        if intersects {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn edge_midpoints(poly: &[Point]) -> Vec<Point> {
+    (0..poly.len())
+        .map(|i| {
+            let a = poly[i];
+            let b = poly[(i + 1) % poly.len()];
+            Point {
+                x: (a.x + b.x) * 0.5,
+                y: (a.y + b.y) * 0.5,
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -511,13 +587,17 @@ mod tests {
     }
 
     fn pl(part_id: &str, sheet: usize, x: f64, y: f64) -> Placement {
+        pl_rot(part_id, sheet, x, y, 0.0)
+    }
+
+    fn pl_rot(part_id: &str, sheet: usize, x: f64, y: f64, rotation_deg: f64) -> Placement {
         Placement {
             instance_id: format!("{}__{:04}", part_id, 1),
             part_id: part_id.to_string(),
             sheet_index: sheet,
             x,
             y,
-            rotation_deg: 0.0,
+            rotation_deg,
         }
     }
 
@@ -767,5 +847,133 @@ mod tests {
         let notch = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 60.0, y: 60.0, rotation_deg: 0.0 };
         assert!(backend.placement_within_sheet(&notch, &part, &sheets[0]).is_collision(),
             "item in L-shape notch must be a boundary violation");
+    }
+
+    #[test]
+    fn exact_backend_malformed_outer_points_returns_unsupported_not_bbox_fallback() {
+        let backend = JaguaPolygonExactBackend;
+        let malformed = make_part_with_polygon("BAD", 40.0, 40.0, serde_json::json!([["x", 0.0]]));
+        let rect = make_part("R", 10.0, 10.0);
+        let p_bad = pl("BAD", 0, 0.0, 0.0);
+        let p_rect = pl("R", 0, 1.0, 1.0);
+
+        let result = backend.placement_overlaps(&p_bad, &malformed, &p_rect, &rect);
+        assert!(result.is_unsupported(), "malformed polygon must be Unsupported: {:?}", result);
+    }
+
+    #[test]
+    fn exact_backend_degenerate_polygon_returns_unsupported_not_no_collision() {
+        let backend = JaguaPolygonExactBackend;
+        let degenerate = make_part_with_polygon(
+            "DEG",
+            40.0,
+            40.0,
+            serde_json::json!([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]]),
+        );
+        let rect = make_part("R", 10.0, 10.0);
+        let result = backend.placement_overlaps(&pl("DEG", 0, 0.0, 0.0), &degenerate, &pl("R", 0, 1.0, 1.0), &rect);
+        assert!(result.is_unsupported(), "degenerate polygon must be Unsupported: {:?}", result);
+    }
+
+    #[test]
+    fn exact_backend_rotated_rect_vs_rect_uses_true_rotated_geometry_not_aabb() {
+        let backend = JaguaPolygonExactBackend;
+        let bbox_backend = BboxCollisionBackend;
+        let long = make_part("A", 100.0, 20.0);
+        let small = make_part("B", 5.0, 5.0);
+        let rotated = pl_rot("A", 0, 0.0, 0.0, 45.0);
+        let in_rotated_aabb_corner = pl("B", 0, -10.0, 70.0);
+
+        assert!(bbox_backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &small).is_collision());
+        assert!(backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &small).is_no_collision());
+    }
+
+    #[test]
+    fn exact_backend_rotated_rect_vs_irregular_uses_true_rotated_geometry_not_aabb() {
+        let backend = JaguaPolygonExactBackend;
+        let bbox_backend = BboxCollisionBackend;
+        let long = make_part("A", 100.0, 20.0);
+        let square = make_part_with_polygon(
+            "P",
+            5.0,
+            5.0,
+            serde_json::json!([[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0]]),
+        );
+        let rotated = pl_rot("A", 0, 0.0, 0.0, 45.0);
+        let in_rotated_aabb_corner = pl("P", 0, -10.0, 70.0);
+
+        assert!(bbox_backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &square).is_collision());
+        assert!(backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &square).is_no_collision());
+    }
+
+    #[test]
+    fn exact_backend_rect_boundary_check_is_rotation_aware() {
+        let backend = JaguaPolygonExactBackend;
+        let part = make_part("A", 100.0, 20.0);
+        let sheets = rect_sheet(90.0, 90.0);
+        let placement = pl_rot("A", 0, std::f64::consts::SQRT_2 * 10.0, 0.0, 45.0);
+
+        let result = backend.placement_within_sheet(&placement, &part, &sheets[0]);
+        assert!(result.is_no_collision(), "45-degree 100x20 rect should fit in 90x90: {:?}", result);
+    }
+
+    #[test]
+    fn touching_rect_edges_are_not_collision() {
+        let backend = JaguaPolygonExactBackend;
+        let part = make_part("A", 10.0, 10.0);
+        assert!(
+            backend
+                .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 0.0), &part)
+                .is_no_collision()
+        );
+    }
+
+    #[test]
+    fn touching_rect_corners_are_not_collision() {
+        let backend = JaguaPolygonExactBackend;
+        let part = make_part("A", 10.0, 10.0);
+        assert!(
+            backend
+                .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 10.0), &part)
+                .is_no_collision()
+        );
+    }
+
+    #[test]
+    fn positive_area_overlap_is_collision() {
+        let backend = JaguaPolygonExactBackend;
+        let part = make_part("A", 10.0, 10.0);
+        assert!(
+            backend
+                .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 9.999, 0.0), &part)
+                .is_collision()
+        );
+    }
+
+    #[test]
+    fn invalid_polygon_does_not_become_no_collision() {
+        let backend = JaguaPolygonExactBackend;
+        let invalid = make_part_with_polygon("BAD", 40.0, 40.0, serde_json::json!("not-points"));
+        let rect = make_part("R", 10.0, 10.0);
+        let result = backend.placement_overlaps(&pl("BAD", 0, 100.0, 100.0), &invalid, &pl("R", 0, 0.0, 0.0), &rect);
+        assert!(result.is_unsupported());
+        assert!(!result.is_no_collision());
+    }
+
+    #[test]
+    fn bbox_backend_still_matches_existing_behavior() {
+        let backend = BboxCollisionBackend;
+        let part = make_part("A", 10.0, 10.0);
+        assert!(backend.placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 0.0), &part).is_no_collision());
+        assert!(backend.placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 9.0, 0.0), &part).is_collision());
+    }
+
+    #[test]
+    fn cde_backend_still_returns_unsupported() {
+        let backend = CdeCollisionBackend;
+        let part = make_part("A", 10.0, 10.0);
+        let sheets = rect_sheet(100.0, 100.0);
+        assert!(backend.placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 1.0, 1.0), &part).is_unsupported());
+        assert!(backend.placement_within_sheet(&pl("A", 0, 0.0, 0.0), &part, &sheets[0]).is_unsupported());
     }
 }

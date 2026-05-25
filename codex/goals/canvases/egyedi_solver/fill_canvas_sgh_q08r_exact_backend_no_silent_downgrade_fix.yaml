@@ -1,0 +1,86 @@
+steps:
+  - name: "Dependency gate és preflight"
+    description: >
+      Ellenőrizd, hogy a Q08 report első sora PASS. Olvasd el az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md,
+      a Q00/Q01 gap/roadmap doksikat, a Q08 canvas/report/contract fájlokat és ezt a Q08R canvas-t.
+      Rögzítsd a reportban, hogy Q08R miért szükséges: a Q08 exact backendben maradt silent fallback,
+      invalid-as-NoCollision és rotated-rect-as-AABB kockázat.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q08r_exact_backend_no_silent_downgrade_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q08r_exact_backend_no_silent_downgrade_fix.md"
+
+  - name: "Pre-fix kódaudit"
+    description: >
+      Auditáld a collision backend production kódot. Keresd az extract_polygon_from_part, parse_points_json,
+      polygons_collide, bbox_to_rect_pts, bbox_from_placement és collides_with használatokat. A reportban dokumentáld
+      fájl/sor szinten, hol van Absent/Invalid összemosás, hol lehet invalid geometriából NoCollision, hol használ
+      az exact backend AABB-t rect geometriaként, és hol nincs touching policy teszt.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q08r_exact_backend_no_silent_downgrade_fix.md"
+
+  - name: "PolygonExtraction háromállapotú contract"
+    description: >
+      Cseréld le az Option<Vec<Point>> polygon extraction contractot Absent / Invalid / Valid jellegű típusra.
+      Absent csak akkor lehet, ha nincs outer_points és nincs prepared_outer_points. Invalid legyen minden parseolhatatlan,
+      túl rövid, zero-area vagy degenerált polygon. JaguaPolygonExactBackend Invalid esetben Unsupported-ot adjon,
+      soha ne bbox fallbacket vagy NoCollisiont.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/geometry_preprocessing.rs"
+
+  - name: "Exact polygon collision hibakezelés"
+    description: >
+      A polygons_collide bool contractot alakítsd Result<bool, reason> vagy CollisionDecision contracttá.
+      Ha edge/SPolygon build vagy validáció hibázik, az eredmény Unsupported legyen. Invalid/degenerate geometry ne tudjon
+      false/NoCollision értékké válni.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Rotation-aware rectangle geometry"
+    description: >
+      Adj rect_polygon_from_placement helper-t, amely a placement.x/y és placement.rotation_deg alapján valós rotált
+      téglalap sarkokat ad. Exact backendben rect-vs-rect, rect-vs-irregular és irregular-vs-rect útvonalak ezt használják,
+      nem bbox_from_placement + bbox_to_rect_pts párost. BboxCollisionBackend maradjon változatlan.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Rotation-aware exact boundary check"
+    description: >
+      JaguaPolygonExactBackend::placement_within_sheet rect item esetén is polygon-within-sheet helperen menjen át,
+      ne rect_within_boundary útvonalon, ha exact backendről van szó. Absent polygon -> rotated rect polygon;
+      Valid irregular -> transformed polygon; Invalid -> Unsupported. Touching boundary engedett, true crossing/outside collision.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Touching policy explicit helper és tesztek"
+    description: >
+      Tegyél explicit touching policyt az exact helperbe: közös él/pont és no-positive-area touch NoCollision,
+      valódi crossing vagy pozitív area overlap Collision. Ha a jagua Edge.collides_with túl agresszíven kezeli a touchingot,
+      egészítsd ki saját toleráns segment classification helperrel. A cél a bbox-kompatibilis no-touching-collision policy.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott Rust teszteket a malformed outer_points Unsupported, degenerate polygon Unsupported,
+      rotated rect exact geometry, rotated rect boundary, edge/corner touching NoCollision, positive overlap Collision,
+      invalid not NoCollision, bbox backward compatibility és CDE scaffold Unsupported esetekre. A tesztnevek legyenek
+      beszédesek, és fedjék a Q08 audit blokkolóit.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/geometry_preprocessing.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+
+  - name: "Contract, report és verify"
+    description: >
+      Frissítsd a Q08 collision backend contractot: JaguaPolygonExactBackend támogatott scope-ban exact/partial,
+      nem teljes CDE parity, nem hole-aware, Invalid -> Unsupported, rect exact path rotation-aware, touching policy explicit.
+      Készíts checklistet és Q08R reportot finding/fix/test/remaining limitation táblázattal. Futtasd a célzott cargo
+      teszteket, cargo test --lib-ot és a teljes verify-t. PASS csak zöld verify esetén lehet, és csak akkor kerüljön
+      a report végére SGH-Q09_STATUS: READY.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q08r_exact_backend_no_silent_downgrade_fix.md"
+      - "docs/egyedi_solver/sgh_q08_collision_backend_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q08r_exact_backend_no_silent_downgrade_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q08r_exact_backend_no_silent_downgrade_fix.verify.log"
