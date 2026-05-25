@@ -102,7 +102,9 @@ impl InfeasibleSolutionPool {
     }
 
     pub fn best(&self) -> Option<&InfeasibleCandidate> {
-        self.candidates.peek().map(|ord| &ord.candidate)
+        self.candidates.iter()
+            .min_by(|a, b| a.cmp(b))
+            .map(|ord| &ord.candidate)
     }
 
     pub fn drain(&mut self) -> Vec<InfeasibleCandidate> {
@@ -178,19 +180,28 @@ impl LargeItemSwapDisruption {
         let top_count = top_count.max(2).min(layout.placements.len());
 
         let top_items = self.select_top_items(&layout.placements, parts, top_count);
-
-        let (item_a, item_b) = self.deterministic_pair(iteration, &top_items)?;
-
         let exec = MoveExecutor::new(parts, sheets);
-        let mut diag = MoveDiagnostics::default();
 
-        let result = exec.try_swap(&layout.placements, &item_a.instance_id, &item_b.instance_id, &mut diag);
-
-        if result.is_some() && diag.committed > 0 {
-            result
-        } else {
-            None
+        for attempt in 0..self.max_attempts {
+            let attempt_iter = iteration.wrapping_add(attempt);
+            let (item_a, item_b) = match self.deterministic_pair(attempt_iter, &top_items) {
+                Some(pair) => pair,
+                None => break,
+            };
+            let mut move_diag = MoveDiagnostics::default();
+            if let Some(result) = exec.try_swap(
+                &layout.placements,
+                &item_a.instance_id,
+                &item_b.instance_id,
+                &mut move_diag,
+            ) {
+                let violations = find_violations(&result, parts, sheets);
+                if violations.is_empty() {
+                    return Some(result);
+                }
+            }
         }
+        None
     }
 }
 
@@ -235,9 +246,10 @@ impl ExplorationPhase {
         let mut incumbent_layout = layout.snapshot();
         let mut incumbent_score = initial_score.total_cost;
 
+        let start_time = std::time::Instant::now();
         while iteration < self.config.exploration_budget.max_iterations {
             if self.config.exploration_budget.time_limit_s > 0.0 {
-                let elapsed = (iteration as f64) * 0.01;
+                let elapsed = start_time.elapsed().as_secs_f64();
                 if elapsed >= self.config.exploration_budget.time_limit_s {
                     diag.stop_reason = PhaseStopReason::TimeLimit;
                     break;
@@ -345,20 +357,73 @@ mod tests {
     }
 
     #[test]
-    fn infeasible_pool_loss_ordering() {
+    fn infeasible_pool_best_returns_lowest_loss() {
         let mut pool = InfeasibleSolutionPool::new(10);
 
         let layout = WorkingLayout::new(vec![], vec![], 1, 0);
-        // BinaryHeap is max-heap; with cmp ordering ascending (lower loss = "less"),
-        // the max-heap puts the HIGHEST loss at top (max-heap extracts largest first).
         pool.push(InfeasibleCandidate::new(layout.clone(), 5.0, 5.0, 0));
         pool.push(InfeasibleCandidate::new(layout.clone(), 1.0, 1.0, 0));
         pool.push(InfeasibleCandidate::new(layout.clone(), 3.0, 3.0, 0));
 
         let best = pool.best();
         assert!(best.is_some());
-        // Highest loss is at top of max-heap when using ascending comparator
-        assert_eq!(best.unwrap().raw_loss, 5.0);
+        assert_eq!(best.unwrap().raw_loss, 1.0, "best() must return lowest raw_loss");
+    }
+
+    #[test]
+    fn infeasible_pool_capacity_retains_lowest_losses() {
+        let mut pool = InfeasibleSolutionPool::new(3);
+        let layout = WorkingLayout::new(vec![], vec![], 1, 0);
+
+        for i in 0..5 {
+            pool.push(InfeasibleCandidate::new(layout.clone(), i as f64, i as f64, i));
+        }
+
+        assert_eq!(pool.len(), 3, "pool must not exceed capacity");
+        let best = pool.best();
+        assert!(best.is_some());
+        assert_eq!(best.unwrap().raw_loss, 0.0, "pool must retain lowest losses; best must be 0.0");
+    }
+
+    #[test]
+    fn large_item_swap_disruption_some_is_violation_free() {
+        let disruption = LargeItemSwapDisruption::new(1.0, 3, 42);
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 20.0,
+                height: 20.0,
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+            crate::item::Part {
+                id: "B".into(),
+                width: 20.0,
+                height: 20.0,
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet(), make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 2, 0);
+
+        let result = disruption.try_disrupt(&layout, &parts, &sheets, 0);
+        if let Some(new_placements) = result {
+            let violations = find_violations(&new_placements, &parts, &sheets);
+            assert!(violations.is_empty(), "try_disrupt Some output must be violation-free");
+        }
     }
 
     #[test]

@@ -1,6 +1,7 @@
-use crate::io::Placement;
 use crate::item::Part;
 use crate::sheet::SheetShape;
+use super::compress::CompressionPhase;
+use super::explore::ExplorationPhase;
 use super::score::{ScoreModel, ScoreResult, ScoreWeights};
 use super::working::WorkingLayout;
 
@@ -184,7 +185,7 @@ impl PhaseOptimizer {
 
     pub fn run(
         &self,
-        mut layout: WorkingLayout,
+        layout: WorkingLayout,
         parts: &[Part],
         sheets: &[SheetShape],
     ) -> PhaseResult {
@@ -194,45 +195,36 @@ impl PhaseOptimizer {
             parts,
             sheets,
         );
-        let mut best_score = initial_score.total_cost;
-        let mut best_layout = layout.snapshot();
-        let mut unplaced = layout.unplaced.clone();
+        let initial_score_val = initial_score.total_cost;
 
-        let exploration_diag = self.run_exploration(&mut layout, parts, sheets, &mut unplaced);
-        let exploration_best = exploration_diag.best_score;
+        let (explored_layout, exploration_diag) = self.run_exploration(layout, parts, sheets);
+        let (compressed_layout, compression_diag) = self.run_compression(explored_layout, parts, sheets);
 
-        if exploration_best < best_score {
-            best_score = exploration_best;
-            best_layout = layout.snapshot();
-        }
+        let best_score = compression_diag.best_score
+            .min(exploration_diag.best_score)
+            .min(initial_score_val);
 
-        let compression_diag = self.run_compression(&mut layout, parts, sheets);
-        let compression_best = compression_diag.best_score;
-
-        if compression_best < best_score {
-            best_score = compression_best;
-            best_layout = layout.snapshot();
-        }
-
+        let unplaced = compressed_layout.unplaced.clone();
         let final_score = self.score_model.score(
-            &best_layout.placements,
-            &best_layout.unplaced,
+            &compressed_layout.placements,
+            &compressed_layout.unplaced,
             parts,
             sheets,
         );
 
         PhaseResult {
-            layout: best_layout,
-            score: final_score.clone(),
-            initial_score: initial_score.total_cost,
+            layout: compressed_layout,
+            score: final_score,
+            initial_score: initial_score_val,
             best_score,
             diagnostics: PhaseDiagnostics {
                 phase_type: PhaseType::Exploration,
-                iterations_run: exploration_diag.iterations_run.saturating_add(compression_diag.iterations_run),
+                iterations_run: exploration_diag.iterations_run
+                    .saturating_add(compression_diag.iterations_run),
                 stop_reason: PhaseStopReason::Converged,
                 incumbent_preserved: true,
                 best_score,
-                initial_score: initial_score.total_cost,
+                initial_score: initial_score_val,
                 pool_size: exploration_diag.pool_size,
                 disruption_attempts: exploration_diag.disruption_attempts,
                 disruption_successes: exploration_diag.disruption_successes,
@@ -243,43 +235,61 @@ impl PhaseOptimizer {
 
     fn run_exploration(
         &self,
-        layout: &mut WorkingLayout,
+        layout: WorkingLayout,
         parts: &[Part],
         sheets: &[SheetShape],
-        _unplaced: &mut Vec<crate::io::Unplaced>,
-    ) -> PhaseDiagnostics {
-        let mut diag = PhaseDiagnostics::new(PhaseType::Exploration);
-        diag.initial_score = self.score_model.score(
-            &layout.placements,
-            &layout.unplaced,
-            parts,
-            sheets,
-        ).total_cost;
-        diag.best_score = diag.initial_score;
-        diag
+    ) -> (WorkingLayout, PhaseDiagnostics) {
+        let mut phase = ExplorationPhase::new(self.config.clone());
+        phase.run(layout, parts, sheets)
     }
 
     fn run_compression(
         &self,
-        layout: &mut WorkingLayout,
+        layout: WorkingLayout,
         parts: &[Part],
         sheets: &[SheetShape],
-    ) -> PhaseDiagnostics {
-        let mut diag = PhaseDiagnostics::new(PhaseType::Compression);
-        diag.initial_score = self.score_model.score(
-            &layout.placements,
-            &layout.unplaced,
-            parts,
-            sheets,
-        ).total_cost;
-        diag.best_score = diag.initial_score;
-        diag
+    ) -> (WorkingLayout, PhaseDiagnostics) {
+        let phase = CompressionPhase::new(self.config.clone());
+        phase.run(layout, parts, sheets)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::Placement;
+    use crate::optimizer::repair::find_violations;
+    use crate::optimizer::explore::make_test_sheet;
+
+    fn make_simple_layout() -> (WorkingLayout, Vec<crate::item::Part>, Vec<crate::sheet::SheetShape>) {
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 20.0,
+                height: 20.0,
+                quantity: 2,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        (layout, parts, sheets)
+    }
+
+    fn small_budget_config() -> PhaseConfig {
+        let mut cfg = PhaseConfig::deterministic_default();
+        cfg.exploration_budget = PhaseBudget::new(2, 0.0);
+        cfg.compression_budget = PhaseBudget::new(1, 0.0);
+        cfg
+    }
 
     #[test]
     fn phase_config_default_is_deterministic() {
@@ -301,5 +311,63 @@ mod tests {
         let d = PhaseDiagnostics::new(PhaseType::Exploration);
         let s = d.summary();
         assert!(s.contains("exploration"));
+    }
+
+    #[test]
+    fn phase_optimizer_invokes_real_phases_non_stub_diagnostics() {
+        let config = small_budget_config();
+        let optimizer = PhaseOptimizer::new(config);
+        let (layout, parts, sheets) = make_simple_layout();
+
+        let result = optimizer.run(layout, &parts, &sheets);
+
+        assert!(result.diagnostics.iterations_run > 0,
+            "iterations_run must be > 0 when budget > 0; stub would return 0");
+    }
+
+    #[test]
+    fn phase_result_unplaced_matches_layout_unplaced() {
+        let config = small_budget_config();
+        let optimizer = PhaseOptimizer::new(config);
+        let (layout, parts, sheets) = make_simple_layout();
+
+        let result = optimizer.run(layout, &parts, &sheets);
+
+        assert_eq!(result.unplaced.len(), result.layout.unplaced.len(),
+            "PhaseResult.unplaced must match result.layout.unplaced");
+    }
+
+    #[test]
+    fn phase_result_score_matches_layout_score() {
+        let config = small_budget_config();
+        let score_model = crate::optimizer::score::ScoreModel::new(config.score_weights.clone());
+        let optimizer = PhaseOptimizer::new(config);
+        let (layout, parts, sheets) = make_simple_layout();
+
+        let result = optimizer.run(layout, &parts, &sheets);
+
+        let actual = score_model.score(&result.layout.placements, &result.layout.unplaced, &parts, &sheets);
+        assert!((actual.total_cost - result.score.total_cost).abs() < 1e-9,
+            "PhaseResult.score must match scoring the result layout: got {} vs {}", actual.total_cost, result.score.total_cost);
+    }
+
+    #[test]
+    fn same_seed_phase_optimizer_determinism() {
+        let config = small_budget_config();
+        let (layout, parts, sheets) = make_simple_layout();
+
+        let r1 = PhaseOptimizer::new(config.clone()).run(layout.snapshot(), &parts, &sheets);
+        let r2 = PhaseOptimizer::new(config).run(layout.snapshot(), &parts, &sheets);
+
+        assert_eq!(r1.layout.placements.len(), r2.layout.placements.len(), "determinism: placement count");
+        for (a, b) in r1.layout.placements.iter().zip(r2.layout.placements.iter()) {
+            assert_eq!(a.instance_id, b.instance_id, "determinism: instance_id");
+            assert_eq!(a.sheet_index, b.sheet_index, "determinism: sheet_index");
+            assert_eq!(a.rotation_deg, b.rotation_deg, "determinism: rotation_deg");
+            assert_eq!(a.x.to_bits(), b.x.to_bits(), "determinism: x");
+            assert_eq!(a.y.to_bits(), b.y.to_bits(), "determinism: y");
+        }
+        assert!(find_violations(&r1.layout.placements, &parts, &sheets).is_empty(),
+            "determinism run must produce violation-free output");
     }
 }

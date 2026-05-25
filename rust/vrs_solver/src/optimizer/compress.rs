@@ -40,10 +40,11 @@ impl CompressionPhase {
         let mut incumbent_score = initial_score.total_cost;
         let exec = MoveExecutor::new(parts, sheets);
 
+        let start_time = std::time::Instant::now();
         let mut iteration = 0;
         while iteration < self.config.compression_budget.max_iterations {
             if self.config.compression_budget.time_limit_s > 0.0 {
-                let elapsed = (iteration as f64) * 0.01;
+                let elapsed = start_time.elapsed().as_secs_f64();
                 if elapsed >= self.config.compression_budget.time_limit_s {
                     diag.stop_reason = PhaseStopReason::TimeLimit;
                     break;
@@ -55,45 +56,40 @@ impl CompressionPhase {
             for i in 0..layout.placements.len() {
                 let instance_id = layout.placements[i].instance_id.clone();
                 let current_sheet = layout.placements[i].sheet_index;
-
                 let current_rot = layout.placements[i].rotation_deg;
-                let rotations_to_try = [0i64, 90, 180, 270];
+                let part_id = layout.placements[i].part_id.clone();
+
+                let rotations_to_try: Vec<i64> = parts.iter()
+                    .find(|pt| pt.id == part_id)
+                    .map(|pt| pt.allowed_rotations_deg.clone())
+                    .unwrap_or_default();
 
                 for rot in rotations_to_try.iter() {
                     if *rot == current_rot {
                         continue;
                     }
 
-                    let mut new_placements = layout.placements.clone();
-                    new_placements[i].rotation_deg = *rot;
-
-                    let violations = find_violations(&new_placements, parts, sheets);
-                    if !violations.is_empty() {
-                        continue;
-                    }
-
-                    let new_score = self.score_model.score(
-                        &new_placements,
-                        &layout.unplaced,
-                        parts,
-                        sheets,
-                    );
-
-                    if new_score.total_cost < incumbent_score {
-                        let mut diag_inner = MoveDiagnostics::default();
-                        if let Some(try_result) = exec.try_reinsert(
-                            &layout.placements,
-                            &instance_id,
-                            current_sheet,
-                            *rot,
-                            &mut diag_inner,
-                        ) {
-                            let try_violations = find_violations(&try_result, parts, sheets);
-                            if try_violations.is_empty() {
+                    let mut diag_inner = MoveDiagnostics::default();
+                    if let Some(try_result) = exec.try_reinsert(
+                        &layout.placements,
+                        &instance_id,
+                        current_sheet,
+                        *rot,
+                        &mut diag_inner,
+                    ) {
+                        let try_violations = find_violations(&try_result, parts, sheets);
+                        if try_violations.is_empty() {
+                            let try_score = self.score_model.score(
+                                &try_result,
+                                &layout.unplaced,
+                                parts,
+                                sheets,
+                            );
+                            if try_score.total_cost < incumbent_score {
                                 layout.placements = try_result;
                                 incumbent_layout = layout.snapshot();
-                                incumbent_score = new_score.total_cost;
-                                diag.best_score = new_score.total_cost;
+                                incumbent_score = try_score.total_cost;
+                                diag.best_score = try_score.total_cost;
                                 improved = true;
                             }
                         }
@@ -123,6 +119,74 @@ impl CompressionPhase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::optimizer::score::ScoreModel;
+
+    #[test]
+    fn compression_scores_actual_try_result_before_commit() {
+        let config = PhaseConfig::deterministic_default();
+        let score_model = ScoreModel::new(config.score_weights.clone());
+        let phase = CompressionPhase::new(config);
+
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 30.0,
+                height: 10.0,
+                quantity: 2,
+                allowed_rotations_deg: vec![0, 90],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let (result_layout, diag) = phase.run(layout, &parts, &sheets);
+
+        let actual_score = score_model.score(&result_layout.placements, &result_layout.unplaced, &parts, &sheets);
+        assert!((actual_score.total_cost - diag.best_score).abs() < 1e-9,
+            "diag.best_score must equal actual score of committed layout: got {} vs {}",
+            actual_score.total_cost, diag.best_score);
+    }
+
+    #[test]
+    fn compression_uses_part_allowed_rotations_not_hardcoded_list() {
+        let mut config = PhaseConfig::deterministic_default();
+        config.compression_budget = crate::optimizer::phase::PhaseBudget::new(1, 0.0);
+        let phase = CompressionPhase::new(config);
+
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 30.0,
+                height: 10.0,
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let (result_layout, _diag) = phase.run(layout, &parts, &sheets);
+
+        assert_eq!(result_layout.placements[0].rotation_deg, 0,
+            "part with allowed_rotations_deg=[0] must stay at rotation 0; no unsupported rotation applied");
+        let violations = find_violations(&result_layout.placements, &parts, &sheets);
+        assert!(violations.is_empty());
+    }
 
     #[test]
     fn compression_no_downgrade() {
