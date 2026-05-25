@@ -34,6 +34,23 @@ pub struct SolverInput {
     /// and no allowed_rotations_deg. Optional; backward-compatible (default: Orthogonal).
     #[serde(default)]
     pub rotation_policy: Option<RotationPolicyKind>,
+    /// Optional production optimizer routing. Missing value preserves the legacy
+    /// Phase1 MultiSheetManager path.
+    #[serde(default)]
+    pub optimizer_pipeline: Option<OptimizerPipelineKind>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OptimizerPipelineKind {
+    LegacyMultisheet,
+    PhaseOptimizer,
+}
+
+impl Default for OptimizerPipelineKind {
+    fn default() -> Self {
+        Self::LegacyMultisheet
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +66,9 @@ pub struct SolverOutput {
     /// Adding this optional field is non-breaking: existing callers ignore unknown keys.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score_breakdown: Option<ScoreBreakdownOutput>,
+    /// Optional optimizer routing diagnostics for explicit production pipeline audits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optimizer_diagnostics: Option<OptimizerDiagnosticsOutput>,
 }
 
 /// Auditálható score breakdown in the JSON output (JG-19).
@@ -67,6 +87,15 @@ pub struct ScoreBreakdownOutput {
     pub overlap_contribution: f64,
     pub boundary_contribution: f64,
     pub compactness_contribution: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OptimizerDiagnosticsOutput {
+    pub pipeline_used: String,
+    pub phase_optimizer_invoked: bool,
+    pub exploration_iterations: usize,
+    pub compression_iterations: usize,
+    pub bpp_attempts: usize,
 }
 
 /// SGH-Q07: rotation_deg migrated from i64 to f64 to support continuous/non-orthogonal rotation.

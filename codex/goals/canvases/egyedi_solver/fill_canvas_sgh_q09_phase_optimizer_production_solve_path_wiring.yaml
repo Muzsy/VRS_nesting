@@ -1,0 +1,75 @@
+steps:
+  - name: "Dependency gate és preflight"
+    description: >
+      Ellenőrizd, hogy a Q08R report első sora PASS és tartalmazza az SGH-Q09_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md, a Q00/Q01/Q08 doksikat,
+      a Q08R reportot és ezt a Q09 canvas-t. Ha a dependency gate hiányzik, BLOCKED report,
+      production kódmódosítás nélkül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q09_phase_optimizer_production_solve_path_wiring.md"
+      - "codex/reports/egyedi_solver/sgh_q09_phase_optimizer_production_solve_path_wiring.md"
+
+  - name: "Production path audit"
+    description: >
+      Auditáld, hogy jelenleg az adapter::solve production útvonal hol használja a MultiSheetManager-t,
+      és hol marad a PhaseOptimizer csak library/test útvonalon. Dokumentáld fájl/sor vagy rg bizonyítékkal.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q09_phase_optimizer_production_solve_path_wiring.md"
+      - "docs/egyedi_solver/sgh_q09_phase_optimizer_production_wiring_contract.md"
+
+  - name: "OptimizerPipelineKind input kapcsoló"
+    description: >
+      Adj backward-compatible optimizer_pipeline input mezőt SolverInputhoz. Default legyen legacy_multisheet.
+      A JSON enum legyen snake_case, például legacy_multisheet és phase_optimizer. A mező hiánya nem változtathatja
+      meg a régi outputot.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "docs/egyedi_solver/sgh_q09_phase_optimizer_production_wiring_contract.md"
+
+  - name: "Legacy path változatlanul hagyása"
+    description: >
+      Tartsd meg a jelenlegi MultiSheetManager production útvonalat alapértelmezettként. Adj tesztet arra,
+      hogy az implicit legacy és explicit legacy output azonos ugyanarra a Phase1 inputra.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/multisheet.rs"
+
+  - name: "PhaseOptimizer opt-in production útvonal"
+    description: >
+      Implementáld az explicit phase_optimizer útvonalat a Phase1 profile alatt. Ugyanazokat az input gate-eket
+      használd, majd build_initial_layout_with_rotation_context -> WorkingLayout -> PhaseOptimizer::run -> validation/commit.
+      A PhaseConfig kapja meg az input seedet, time budgetet és RotationResolveContext-et.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/working.rs"
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+
+  - name: "No-silent-fallback gate"
+    description: >
+      Biztosítsd, hogy explicit phase_optimizer kérés esetén ne fusson csendben legacy pipeline. Ha a phase output invalid,
+      az explicit hibaként/unsupported státuszként jelenjen meg; ne legyen észrevétlen fallback. Ezt teszteld.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Diagnostics és tesztek"
+    description: >
+      Adj optional optimizer_diagnostics outputot vagy unit/integration tesztet, amely bizonyítja, hogy a PhaseOptimizer tényleg
+      meghívódott. Teszteld a determinismet, no-violation kaput, rotation_context megőrzést, és az implicit/explicit legacy egyezést.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "Dokumentáció, checklist, verify"
+    description: >
+      Készítsd el a Q09 checklistet, contract doksit és reportot. Futtasd a célzott cargo teszteket,
+      cargo test --lib-ot és a teljes verify-t. PASS csak zöld verify esetén lehet. PASS esetén a report végén
+      SGH-Q10_STATUS: READY; REVISE/BLOCKED esetén marker nincs.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q09_phase_optimizer_production_solve_path_wiring.md"
+      - "docs/egyedi_solver/sgh_q09_phase_optimizer_production_wiring_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q09_phase_optimizer_production_solve_path_wiring.md"
+      - "codex/reports/egyedi_solver/sgh_q09_phase_optimizer_production_solve_path_wiring.verify.log"

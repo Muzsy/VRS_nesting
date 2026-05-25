@@ -1,14 +1,20 @@
 use std::fmt;
 
-use crate::io::{Metrics, Placement, ScoreBreakdownOutput, SolverInput, SolverOutput, Unplaced};
-use crate::optimizer::score::ScoreModel;
-use crate::item::{
-    can_fit_any_stock_with_policy, expand_instances_with_policy, part_has_holes,
+use crate::io::{
+    Metrics, OptimizerDiagnosticsOutput, OptimizerPipelineKind, Placement, ScoreBreakdownOutput,
+    SolverInput, SolverOutput, Unplaced,
 };
+use crate::item::{can_fit_any_stock_with_policy, expand_instances_with_policy, part_has_holes};
+use crate::optimizer::score::ScoreModel;
 use crate::optimizer::{
+    initializer::build_initial_layout_with_rotation_context,
     multisheet::MultiSheetManager,
+    phase::{PhaseBudget, PhaseConfig, PhaseOptimizer},
+    repair::find_violations,
     stopping::StoppingPolicy,
-    try_place_on_sheet, SheetCursor,
+    try_place_on_sheet,
+    working::WorkingLayout,
+    SheetCursor,
 };
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
 use crate::sheet::{expand_sheets, stock_has_holes};
@@ -31,7 +37,39 @@ fn _unsupported_output(reason: &str, input: &SolverInput) -> SolverOutput {
             project_name: input.project_name.clone(),
         },
         score_breakdown: None,
+        optimizer_diagnostics: None,
     }
+}
+
+fn pipeline_kind(input: &SolverInput) -> OptimizerPipelineKind {
+    input.optimizer_pipeline.clone().unwrap_or_default()
+}
+
+fn phase_config_from_input(
+    input: &SolverInput,
+    rotation_context: RotationResolveContext,
+) -> PhaseConfig {
+    let total_budget_s = (input.time_limit_s as f64).max(1.0);
+    let mut config = PhaseConfig::deterministic_default();
+    config.seed = input.seed;
+    config.worker_count = 1;
+    config.rotation_context = rotation_context;
+    config.exploration_budget = PhaseBudget::new(16, total_budget_s * 0.60);
+    config.compression_budget = PhaseBudget::new(8, total_budget_s * 0.25);
+    config.bpp_budget = PhaseBudget::new(4, total_budget_s * 0.15);
+    config.bpp_max_eliminations = 16;
+    config
+}
+
+fn phase_commit_or_unsupported(
+    input: &SolverInput,
+    layout: WorkingLayout,
+    parts: &[crate::item::Part],
+    sheets: &[crate::sheet::SheetShape],
+) -> Result<(Vec<Placement>, Vec<Unplaced>), SolverOutput> {
+    layout
+        .validate_and_commit(parts, sheets)
+        .map_err(|_| _unsupported_output("PHASE_OPTIMIZER_COMMIT_VIOLATION", input))
 }
 
 pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
@@ -43,7 +81,10 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
         }
         for stock in &input.stocks {
             if stock_has_holes(stock) {
-                return Ok(_unsupported_output("UNSUPPORTED_STOCK_HOLES_PHASE1", &input));
+                return Ok(_unsupported_output(
+                    "UNSUPPORTED_STOCK_HOLES_PHASE1",
+                    &input,
+                ));
             }
         }
         if let Some(margin_mm) = input.margin_mm {
@@ -60,12 +101,18 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     );
     let sheets = expand_sheets(&input.stocks)?;
     let all_instances = expand_instances_with_policy(&input.parts, &rotation_context)?;
-    let (placements, unplaced, diag) = if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
+    let pipeline = pipeline_kind(&input);
+    let (placements, unplaced, optimizer_diagnostics) = if input.solver_profile.as_deref()
+        == Some(PROFILE_PHASE1)
+    {
         // Pre-filter: instances whose part cannot fit any sheet get PART_NEVER_FITS_STOCK.
         let mut pre_unplaced: Vec<Unplaced> = Vec::new();
         let mut instances: Vec<_> = Vec::new();
         for inst in all_instances {
-            let part = input.parts.iter().find(|p| p.id == inst.part_id)
+            let part = input
+                .parts
+                .iter()
+                .find(|p| p.id == inst.part_id)
                 .ok_or_else(|| format!("internal error: part not found: {}", inst.part_id))?;
             if !can_fit_any_stock_with_policy(part, &sheets, &rotation_context)? {
                 pre_unplaced.push(Unplaced {
@@ -77,23 +124,62 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 instances.push(inst);
             }
         }
-        let repair_time_s = (input.time_limit_s as f64).max(1.0);
-        let mut policy = StoppingPolicy::new(256, repair_time_s);
-        let manager = MultiSheetManager::new_with_rotation_context(
-            &input.parts,
-            &sheets,
-            rotation_context.clone(),
-        );
-        let (p, mut u, ms_diag) = manager.run(&instances, &mut policy);
-        u.extend(pre_unplaced);
-        (p, u, Some(ms_diag))
+        match pipeline {
+            OptimizerPipelineKind::LegacyMultisheet => {
+                let repair_time_s = (input.time_limit_s as f64).max(1.0);
+                let mut policy = StoppingPolicy::new(256, repair_time_s);
+                let manager = MultiSheetManager::new_with_rotation_context(
+                    &input.parts,
+                    &sheets,
+                    rotation_context.clone(),
+                );
+                let (p, mut u, _ms_diag) = manager.run(&instances, &mut policy);
+                u.extend(pre_unplaced);
+                (p, u, None)
+            }
+            OptimizerPipelineKind::PhaseOptimizer => {
+                let (init_p, mut init_u, _construction_diag) =
+                    build_initial_layout_with_rotation_context(
+                        &instances,
+                        &input.parts,
+                        &sheets,
+                        &rotation_context,
+                    );
+                init_u.extend(pre_unplaced);
+                let working = WorkingLayout::new(init_p, init_u, sheets.len(), input.seed);
+                let config = phase_config_from_input(&input, rotation_context.clone());
+                let result = PhaseOptimizer::new(config).run(working, &input.parts, &sheets);
+                let diagnostics = OptimizerDiagnosticsOutput {
+                    pipeline_used: "phase_optimizer".to_string(),
+                    phase_optimizer_invoked: true,
+                    exploration_iterations: result.diagnostics.exploration_iterations,
+                    compression_iterations: result.diagnostics.compression_iterations,
+                    bpp_attempts: result.diagnostics.bpp_attempts,
+                };
+                let layout = result.layout;
+                if !find_violations(&layout.placements, &input.parts, &sheets).is_empty() {
+                    return Ok(_unsupported_output(
+                        "PHASE_OPTIMIZER_COMMIT_VIOLATION",
+                        &input,
+                    ));
+                }
+                match phase_commit_or_unsupported(&input, layout, &input.parts, &sheets) {
+                    Ok((p, u)) => (p, u, Some(diagnostics)),
+                    Err(out) => return Ok(out),
+                }
+            }
+        }
     } else {
         // Row/cursor fallback for non-Phase1 profiles.
         let mut placements: Vec<Placement> = Vec::new();
         let mut unplaced: Vec<Unplaced> = Vec::new();
         let mut per_sheet_cursor: Vec<SheetCursor> = sheets
             .iter()
-            .map(|_| SheetCursor { x: 0.0, y: 0.0, row_h: 0.0 })
+            .map(|_| SheetCursor {
+                x: 0.0,
+                y: 0.0,
+                row_h: 0.0,
+            })
             .collect();
         for instance in &all_instances {
             let part = input
@@ -111,7 +197,9 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
             }
             let mut placed = None;
             for (idx, sheet) in sheets.iter().enumerate() {
-                if let Some(c) = try_place_on_sheet(instance, sheet, &mut per_sheet_cursor[idx], idx) {
+                if let Some(c) =
+                    try_place_on_sheet(instance, sheet, &mut per_sheet_cursor[idx], idx)
+                {
                     placed = Some(c);
                     break;
                 }
@@ -147,7 +235,6 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     } else {
         None
     };
-    let _ = diag; // diagnostics available for future use; suppress unused warning
     let status = if unplaced.is_empty() { "ok" } else { "partial" }.to_string();
     let sheet_count_used = placements
         .iter()
@@ -174,6 +261,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
             project_name: input.project_name,
         },
         score_breakdown,
+        optimizer_diagnostics,
     })
 }
 
@@ -220,13 +308,13 @@ impl JaguaAdapter {
         poly_a: &[crate::geometry::Point],
         poly_b: &[crate::geometry::Point],
     ) -> Result<bool, JaguaAdapterError> {
-        use jagua_rs::geometry::geo_traits::CollidesWith;
         use crate::geometry::{jag_edge_from_points, to_jag_point, to_jag_polygon};
+        use jagua_rs::geometry::geo_traits::CollidesWith;
 
-        let spoly_a = to_jag_polygon(poly_a, "poly_a")
-            .map_err(JaguaAdapterError::ConversionError)?;
-        let spoly_b = to_jag_polygon(poly_b, "poly_b")
-            .map_err(JaguaAdapterError::ConversionError)?;
+        let spoly_a =
+            to_jag_polygon(poly_a, "poly_a").map_err(JaguaAdapterError::ConversionError)?;
+        let spoly_b =
+            to_jag_polygon(poly_b, "poly_b").map_err(JaguaAdapterError::ConversionError)?;
 
         // Point containment: any corner of B inside A?
         for p in poly_b {
@@ -272,11 +360,13 @@ impl JaguaAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::solve;
-    use crate::io::SolverInput;
+    use super::{phase_commit_or_unsupported, solve};
+    use crate::io::{OptimizerPipelineKind, Placement, SolverInput, SolverOutput};
     use crate::item::Part;
+    use crate::optimizer::repair::find_violations;
+    use crate::optimizer::working::WorkingLayout;
     use crate::rotation_policy::RotationPolicyKind;
-    use crate::sheet::Stock;
+    use crate::sheet::{expand_sheets, Stock};
 
     fn make_part(
         id: &str,
@@ -328,7 +418,42 @@ mod tests {
             solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
             margin_mm: None,
             rotation_policy,
+            optimizer_pipeline: None,
         }
+    }
+
+    fn assert_same_output(left: &SolverOutput, right: &SolverOutput) {
+        assert_eq!(left.contract_version, right.contract_version);
+        assert_eq!(left.status, right.status);
+        assert_eq!(left.unsupported_reason, right.unsupported_reason);
+        assert_eq!(left.metrics.placed_count, right.metrics.placed_count);
+        assert_eq!(left.metrics.unplaced_count, right.metrics.unplaced_count);
+        assert_eq!(
+            left.metrics.sheet_count_used,
+            right.metrics.sheet_count_used
+        );
+        assert_eq!(left.metrics.seed, right.metrics.seed);
+        assert_eq!(left.metrics.time_limit_s, right.metrics.time_limit_s);
+        assert_eq!(left.metrics.project_name, right.metrics.project_name);
+        assert_eq!(left.placements.len(), right.placements.len());
+        for (a, b) in left.placements.iter().zip(right.placements.iter()) {
+            assert_eq!(a.instance_id, b.instance_id);
+            assert_eq!(a.part_id, b.part_id);
+            assert_eq!(a.sheet_index, b.sheet_index);
+            assert!((a.x - b.x).abs() < 1e-9);
+            assert!((a.y - b.y).abs() < 1e-9);
+            assert!((a.rotation_deg - b.rotation_deg).abs() < 1e-9);
+        }
+        assert_eq!(left.unplaced.len(), right.unplaced.len());
+        for (a, b) in left.unplaced.iter().zip(right.unplaced.iter()) {
+            assert_eq!(a.instance_id, b.instance_id);
+            assert_eq!(a.part_id, b.part_id);
+            assert_eq!(a.reason, b.reason);
+        }
+        assert_eq!(
+            left.optimizer_diagnostics.is_some(),
+            right.optimizer_diagnostics.is_some()
+        );
     }
 
     #[test]
@@ -405,5 +530,128 @@ mod tests {
             assert!((pa.x - pb.x).abs() < 1e-9);
             assert!((pa.y - pb.y).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn solver_input_optimizer_pipeline_defaults_to_legacy() {
+        let json = r#"{
+            "contract_version": "v1",
+            "project_name": "default_pipeline",
+            "seed": 1,
+            "time_limit_s": 5,
+            "stocks": [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}],
+            "parts": [{"id": "P", "width": 10.0, "height": 10.0, "quantity": 1}]
+        }"#;
+        let input: SolverInput = serde_json::from_str(json).expect("input");
+        assert_eq!(
+            input.optimizer_pipeline.unwrap_or_default(),
+            OptimizerPipelineKind::LegacyMultisheet
+        );
+    }
+
+    #[test]
+    fn legacy_explicit_matches_implicit_output() {
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 3, vec![0], None)];
+
+        let implicit = solve(make_input(17, stock.clone(), parts.clone(), None)).expect("implicit");
+        let mut explicit_input = make_input(17, stock, parts, None);
+        explicit_input.optimizer_pipeline = Some(OptimizerPipelineKind::LegacyMultisheet);
+        let explicit = solve(explicit_input).expect("explicit");
+
+        assert_same_output(&implicit, &explicit);
+    }
+
+    #[test]
+    fn phase_optimizer_pipeline_invokes_phase_optimizer() {
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(21, stock, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+
+        let out = solve(input).expect("phase solve");
+        let diag = out.optimizer_diagnostics.expect("phase diagnostics");
+        assert_eq!(diag.pipeline_used, "phase_optimizer");
+        assert!(diag.phase_optimizer_invoked);
+        assert!(diag.exploration_iterations + diag.compression_iterations + diag.bpp_attempts > 0);
+    }
+
+    #[test]
+    fn phase_optimizer_pipeline_preserves_rotation_context() {
+        let stock = vec![make_stock("S", 90.0, 90.0, 1)];
+        let parts = vec![make_part("P", 100.0, 20.0, 1, vec![], None)];
+        let mut input = make_input(21, stock, parts, Some(RotationPolicyKind::FortyFive));
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+
+        let out = solve(input).expect("phase solve");
+        assert_eq!(out.metrics.placed_count, 1);
+        assert_eq!(out.metrics.unplaced_count, 0);
+    }
+
+    #[test]
+    fn phase_optimizer_pipeline_is_deterministic_for_same_seed() {
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 3, vec![0], None)];
+
+        let mut a = make_input(33, stock.clone(), parts.clone(), None);
+        a.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+        let mut b = make_input(33, stock, parts, None);
+        b.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+
+        let out_a = solve(a).expect("phase A");
+        let out_b = solve(b).expect("phase B");
+        assert_same_output(&out_a, &out_b);
+    }
+
+    #[test]
+    fn phase_optimizer_pipeline_output_has_no_violations() {
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 3, vec![0], None)];
+        let sheets = expand_sheets(&stock).expect("sheets");
+        let mut input = make_input(41, stock, parts.clone(), None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+
+        let out = solve(input).expect("phase solve");
+        assert!(find_violations(&out.placements, &parts, &sheets).is_empty());
+    }
+
+    #[test]
+    fn phase_optimizer_invalid_commit_does_not_silently_fallback_to_legacy() {
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 50.0, 50.0, 2, vec![0], None)];
+        let input = make_input(51, stock.clone(), parts.clone(), None);
+        let sheets = expand_sheets(&stock).expect("sheets");
+        let invalid = WorkingLayout::new(
+            vec![
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "P__0002".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+            ],
+            vec![],
+            sheets.len(),
+            input.seed,
+        );
+
+        let rejected = phase_commit_or_unsupported(&input, invalid, &parts, &sheets)
+            .expect_err("invalid phase commit must be rejected");
+        assert_eq!(rejected.status, "unsupported");
+        assert_eq!(
+            rejected.unsupported_reason.as_deref(),
+            Some("PHASE_OPTIMIZER_COMMIT_VIOLATION")
+        );
+        assert!(rejected.placements.is_empty());
     }
 }

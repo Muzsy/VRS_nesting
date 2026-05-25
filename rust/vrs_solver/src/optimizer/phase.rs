@@ -1,10 +1,10 @@
-use crate::item::Part;
-use crate::rotation_policy::RotationResolveContext;
-use crate::sheet::SheetShape;
 use super::compress::CompressionPhase;
 use super::explore::ExplorationPhase;
 use super::score::{ScoreModel, ScoreResult, ScoreWeights};
 use super::working::WorkingLayout;
+use crate::item::Part;
+use crate::rotation_policy::RotationResolveContext;
+use crate::sheet::SheetShape;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhaseStopReason {
@@ -70,11 +70,17 @@ impl Default for PhaseBudget {
 
 impl PhaseBudget {
     pub fn new(max_iterations: usize, time_limit_s: f64) -> Self {
-        Self { max_iterations, time_limit_s }
+        Self {
+            max_iterations,
+            time_limit_s,
+        }
     }
 
     pub fn unlimited() -> Self {
-        Self { max_iterations: usize::MAX, time_limit_s: f64::MAX }
+        Self {
+            max_iterations: usize::MAX,
+            time_limit_s: f64::MAX,
+        }
     }
 }
 
@@ -82,6 +88,9 @@ impl PhaseBudget {
 pub struct PhaseDiagnostics {
     pub phase_type: PhaseType,
     pub iterations_run: usize,
+    pub exploration_iterations: usize,
+    pub compression_iterations: usize,
+    pub bpp_attempts: usize,
     pub stop_reason: PhaseStopReason,
     pub incumbent_preserved: bool,
     pub best_score: f64,
@@ -188,34 +197,27 @@ pub struct PhaseOptimizer {
 impl PhaseOptimizer {
     pub fn new(config: PhaseConfig) -> Self {
         let score_model = ScoreModel::new(config.score_weights.clone());
-        Self { config, score_model }
+        Self {
+            config,
+            score_model,
+        }
     }
 
-    pub fn run(
-        &self,
-        layout: WorkingLayout,
-        parts: &[Part],
-        sheets: &[SheetShape],
-    ) -> PhaseResult {
-        let initial_score = self.score_model.score(
-            &layout.placements,
-            &layout.unplaced,
-            parts,
-            sheets,
-        );
+    pub fn run(&self, layout: WorkingLayout, parts: &[Part], sheets: &[SheetShape]) -> PhaseResult {
+        let initial_score =
+            self.score_model
+                .score(&layout.placements, &layout.unplaced, parts, sheets);
         let initial_score_val = initial_score.total_cost;
 
         let (explored_layout, exploration_diag) = self.run_exploration(layout, parts, sheets);
-        let (compressed_layout, compression_diag) = self.run_compression(explored_layout, parts, sheets);
+        let (compressed_layout, compression_diag) =
+            self.run_compression(explored_layout, parts, sheets);
         let (bpp_layout, bpp_diag) = self.run_bpp(compressed_layout, parts, sheets);
 
         let unplaced = bpp_layout.unplaced.clone();
-        let final_score = self.score_model.score(
-            &bpp_layout.placements,
-            &bpp_layout.unplaced,
-            parts,
-            sheets,
-        );
+        let final_score =
+            self.score_model
+                .score(&bpp_layout.placements, &bpp_layout.unplaced, parts, sheets);
 
         // PhaseResult.best_score == result.score.total_cost (the final layout score).
         // Best-seen during exploration/compression/BPP is tracked in per-phase diagnostics,
@@ -229,9 +231,13 @@ impl PhaseOptimizer {
             best_score,
             diagnostics: PhaseDiagnostics {
                 phase_type: PhaseType::Exploration,
-                iterations_run: exploration_diag.iterations_run
+                iterations_run: exploration_diag
+                    .iterations_run
                     .saturating_add(compression_diag.iterations_run)
                     .saturating_add(bpp_diag.attempts),
+                exploration_iterations: exploration_diag.iterations_run,
+                compression_iterations: compression_diag.iterations_run,
+                bpp_attempts: bpp_diag.attempts,
                 stop_reason: PhaseStopReason::Converged,
                 incumbent_preserved: true,
                 best_score,
@@ -279,28 +285,44 @@ impl PhaseOptimizer {
 mod tests {
     use super::*;
     use crate::io::Placement;
-    use crate::optimizer::repair::find_violations;
     use crate::optimizer::explore::make_test_sheet;
+    use crate::optimizer::repair::find_violations;
 
-    fn make_simple_layout() -> (WorkingLayout, Vec<crate::item::Part>, Vec<crate::sheet::SheetShape>) {
-        let parts = vec![
-            crate::item::Part {
-                id: "A".into(),
-                width: 20.0,
-                height: 20.0,
-                quantity: 2,
-                allowed_rotations_deg: vec![0],
-                holes_points: None,
-                prepared_holes_points: None,
-                outer_points: None,
-                prepared_outer_points: None,
-                rotation_policy: None,
-            },
-        ];
+    fn make_simple_layout() -> (
+        WorkingLayout,
+        Vec<crate::item::Part>,
+        Vec<crate::sheet::SheetShape>,
+    ) {
+        let parts = vec![crate::item::Part {
+            id: "A".into(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 2,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 20.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         (layout, parts, sheets)
@@ -355,8 +377,10 @@ mod tests {
 
         let result = optimizer.run(layout, &parts, &sheets);
 
-        assert!(result.diagnostics.iterations_run > 0,
-            "iterations_run must be > 0 when budget > 0; stub would return 0");
+        assert!(
+            result.diagnostics.iterations_run > 0,
+            "iterations_run must be > 0 when budget > 0; stub would return 0"
+        );
     }
 
     #[test]
@@ -367,8 +391,11 @@ mod tests {
 
         let result = optimizer.run(layout, &parts, &sheets);
 
-        assert_eq!(result.unplaced.len(), result.layout.unplaced.len(),
-            "PhaseResult.unplaced must match result.layout.unplaced");
+        assert_eq!(
+            result.unplaced.len(),
+            result.layout.unplaced.len(),
+            "PhaseResult.unplaced must match result.layout.unplaced"
+        );
     }
 
     #[test]
@@ -380,33 +407,54 @@ mod tests {
 
         let result = optimizer.run(layout, &parts, &sheets);
 
-        let actual = score_model.score(&result.layout.placements, &result.layout.unplaced, &parts, &sheets);
-        assert!((actual.total_cost - result.score.total_cost).abs() < 1e-9,
-            "PhaseResult.score must match scoring the result layout: got {} vs {}", actual.total_cost, result.score.total_cost);
+        let actual = score_model.score(
+            &result.layout.placements,
+            &result.layout.unplaced,
+            &parts,
+            &sheets,
+        );
+        assert!(
+            (actual.total_cost - result.score.total_cost).abs() < 1e-9,
+            "PhaseResult.score must match scoring the result layout: got {} vs {}",
+            actual.total_cost,
+            result.score.total_cost
+        );
     }
 
     #[test]
     fn phase_optimizer_invokes_bpp_phase_loop() {
         // Layout with 2 items on 2 separate sheets; both fit on one 100×100 sheet.
         // With exploration/compression disabled, only BPP runs. It should reduce to 1 sheet.
-        let parts = vec![
-            crate::item::Part {
-                id: "A".into(),
-                width: 20.0,
-                height: 20.0,
-                quantity: 2,
-                allowed_rotations_deg: vec![0],
-                holes_points: None,
-                prepared_holes_points: None,
-                outer_points: None,
-                prepared_outer_points: None,
-                rotation_policy: None,
-            },
-        ];
+        let parts = vec![crate::item::Part {
+            id: "A".into(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 2,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }];
         let sheets = vec![make_test_sheet(), make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 2, 0);
 
@@ -416,8 +464,10 @@ mod tests {
 
         use crate::optimizer::multisheet::compute_sheet_count_used;
         let final_sheet_count = compute_sheet_count_used(&result.layout.placements);
-        assert_eq!(final_sheet_count, 1,
-            "PhaseOptimizer must invoke BPP which consolidates 2 sheets to 1");
+        assert_eq!(
+            final_sheet_count, 1,
+            "PhaseOptimizer must invoke BPP which consolidates 2 sheets to 1"
+        );
         assert!(find_violations(&result.layout.placements, &parts, &sheets).is_empty());
     }
 
@@ -425,30 +475,47 @@ mod tests {
     fn phase_result_score_layout_consistency_after_bpp() {
         let config = bpp_only_config();
         let score_model = crate::optimizer::score::ScoreModel::new(config.score_weights.clone());
-        let parts = vec![
-            crate::item::Part {
-                id: "A".into(),
-                width: 20.0,
-                height: 20.0,
-                quantity: 2,
-                allowed_rotations_deg: vec![0],
-                holes_points: None,
-                prepared_holes_points: None,
-                outer_points: None,
-                prepared_outer_points: None,
-                rotation_policy: None,
-            },
-        ];
+        let parts = vec![crate::item::Part {
+            id: "A".into(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 2,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }];
         let sheets = vec![make_test_sheet(), make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 2, 0);
 
         let result = PhaseOptimizer::new(config).run(layout, &parts, &sheets);
 
-        let actual_score = score_model.score(&result.layout.placements, &result.layout.unplaced, &parts, &sheets);
+        let actual_score = score_model.score(
+            &result.layout.placements,
+            &result.layout.unplaced,
+            &parts,
+            &sheets,
+        );
         assert!(
             (actual_score.total_cost - result.score.total_cost).abs() < 1e-9,
             "result.score must match score(result.layout) after BPP: got {} vs {}",
@@ -461,24 +528,36 @@ mod tests {
     #[test]
     fn phase_result_best_score_equals_final_layout_score_after_bpp() {
         let config = bpp_only_config();
-        let parts = vec![
-            crate::item::Part {
-                id: "A".into(),
-                width: 20.0,
-                height: 20.0,
-                quantity: 2,
-                allowed_rotations_deg: vec![0],
-                holes_points: None,
-                prepared_holes_points: None,
-                outer_points: None,
-                prepared_outer_points: None,
-                rotation_policy: None,
-            },
-        ];
+        let parts = vec![crate::item::Part {
+            id: "A".into(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 2,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }];
         let sheets = vec![make_test_sheet(), make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 2, 0);
 
@@ -501,7 +580,11 @@ mod tests {
         let r1 = PhaseOptimizer::new(config.clone()).run(layout.snapshot(), &parts, &sheets);
         let r2 = PhaseOptimizer::new(config).run(layout.snapshot(), &parts, &sheets);
 
-        assert_eq!(r1.layout.placements.len(), r2.layout.placements.len(), "determinism: placement count");
+        assert_eq!(
+            r1.layout.placements.len(),
+            r2.layout.placements.len(),
+            "determinism: placement count"
+        );
         for (a, b) in r1.layout.placements.iter().zip(r2.layout.placements.iter()) {
             assert_eq!(a.instance_id, b.instance_id, "determinism: instance_id");
             assert_eq!(a.sheet_index, b.sheet_index, "determinism: sheet_index");
@@ -509,7 +592,9 @@ mod tests {
             assert_eq!(a.x.to_bits(), b.x.to_bits(), "determinism: x");
             assert_eq!(a.y.to_bits(), b.y.to_bits(), "determinism: y");
         }
-        assert!(find_violations(&r1.layout.placements, &parts, &sheets).is_empty(),
-            "determinism run must produce violation-free output");
+        assert!(
+            find_violations(&r1.layout.placements, &parts, &sheets).is_empty(),
+            "determinism run must produce violation-free output"
+        );
     }
 }
