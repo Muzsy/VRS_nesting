@@ -1,0 +1,53 @@
+steps:
+  - name: "Dependency gate és repo szabályok ellenőrzése"
+    description: >
+      Ellenőrizd, hogy az SGH-Q03 report létezik, első sora PASS vagy PASS_WITH_NOTES, és tartalmazza az
+      SGH-Q04_STATUS: READY markert. Olvasd el az AGENTS.md, Codex workflow, YAML schema, report standard,
+      testing guideline, SGH-Q01 no-downgrade gate-eket, SGH-Q02 GLS contractot, SGH-Q03 contractot és a valós
+      separator.rs fájlt. Gate hiba esetén állj meg BLOCKED státusszal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md"
+
+  - name: "Valós SGH-Q03 regresszió audit"
+    description: >
+      Auditáld a VrsCollisionTracker::update_weights pair collision ágát. Kifejezetten keresd a dupla egymás utáni
+      '*w = (*w * mult).min(weight_max);' sort. Rögzítsd a reportban, hogy ez miért sérti az SGH-Q02 GLS parity contractot
+      és miért nem engedhető tovább SGH-Q04 előtt.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md"
+
+  - name: "Dupla pair GLS multiplier javítása"
+    description: >
+      A rust/vrs_solver/src/optimizer/separator.rs fájlban javítsd a pair collision weight update logikát úgy, hogy egy
+      update_weights() híváson belül egy pair weight pontosan egyszer kapja meg a multiplier-t. A boundary update logikát,
+      GLS decay-t, weight_max clampet és SGH-Q03 worker logikát ne változtasd meg.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "Regression guard és célzott tesztek"
+    description: >
+      Futtasd a canvasban megadott grep/ellenőrző scriptet a dupla sor kizárására. Futtasd legalább: cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml multiplicative_gls_max_loss_pair_gets_max_ratio --lib; cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml separator --lib; cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib.
+      A reportban a pontos parancsokat és eredményeket rögzítsd.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md"
+
+  - name: "Checklist, report és scope safety"
+    description: >
+      Töltsd ki a checklistet és reportot. A report tartalmazzon dependency evidence-t, actual code findingot,
+      before/after összefoglalót, teszt evidence-t, verify evidence-t és production scope safety táblát. PASS csak akkor
+      adható, ha minden gate zöld és production módosítás kizárólag separator.rs. PASS esetén a report végén szerepeljen:
+      SGH-Q04_STATUS: READY. Fail esetén nem szerepelhet readiness marker.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md.
+      A verify log kerüljön a report mellé. Ha fail, a report első sora nem lehet PASS.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q03r_gls_pair_weight_double_update_fix.verify.log"

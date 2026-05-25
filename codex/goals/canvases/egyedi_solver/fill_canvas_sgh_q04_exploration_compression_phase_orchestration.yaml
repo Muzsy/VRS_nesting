@@ -1,0 +1,88 @@
+steps:
+  - name: "Dependency gate és repo szabályok ellenőrzése"
+    description: >
+      Ellenőrizd, hogy az SGH-Q03 report létezik, első sora PASS vagy PASS_WITH_NOTES, és tartalmazza az
+      SGH-Q04_STATUS: READY markert. Olvasd el az AGENTS.md, Codex workflow, YAML schema, report standard,
+      testing guideline, SGH-Q00/Q01/Q03 dokumentumokat, különösen az SGH-Q01 corrected roadmap SGH-Q04 sorát
+      és az SGH-Q03 contractot. Gate hiba esetén állj meg BLOCKED státusszal, és csak a report/checklist dependency
+      evidence részét frissítsd.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md"
+      - "codex/reports/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md"
+
+  - name: "Sparrow phase source audit és VRS current-state audit"
+    description: >
+      Auditáld a Sparrow exploration/compression referencia működését az elérhető source alapján (.cache/sparrow,
+      vendor, ensure_sparrow vagy SGH-Q00/Q01 audit docs). Nézd meg külön az exploration_phase, compression_phase,
+      infeasible pool/disruption/time-budget logikát és hogy ez hogyan illeszthető VRS fixed-sheet rectangular Phase 1
+      kontextusba. Auditáld a valós VRS fájlokat: separator.rs, moves.rs, working.rs, repair.rs, score.rs,
+      stopping.rs, sheet_elimination.rs és mod.rs. Rögzítsd a reportban, pontosan hol MISSING/PARTIAL F11-F14.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md"
+
+  - name: "Phase API és module wiring implementálása"
+    description: >
+      Hozd létre az optimizer/phase.rs modult PhaseConfig, PhaseBudget, PhaseDiagnostics, PhaseResult, PhaseStopReason
+      és PhaseOptimizer vagy repo-konvenció szerinti ekvivalens API-val. A config legyen determinisztikus, seedelt,
+      worker_count-ot továbbadó, külön exploration/compression budgeteket kezelő. Frissítsd az optimizer/mod.rs-t az új
+      modulok exportjával. Ne módosíts IO contractot vagy runner réteget.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+
+  - name: "ExplorationPhase, InfeasibleSolutionPool és disruption implementálása"
+    description: >
+      Hozd létre az optimizer/explore.rs modult. Implementáld az ExplorationPhase-t, InfeasibleSolutionPool-t,
+      InfeasibleCandidate-et és LargeItemSwapDisruption-t vagy repo-konvenció szerinti ekvivalens típusokat. A pool legyen
+      bounded, loss-ascending, stabil tie-breakes. A disruption determinisztikusan válasszon nagy itemeket area/top-percentile
+      alapján, seed+iteration szerint, és rollback-safe módon próbáljon swap/perturb lépést a meglévő MoveExecutor vagy
+      jól elkülönített helper használatával. Accepted output csak validate_for_commit OK esetén mehet tovább.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+
+  - name: "CompressionPhase implementálása"
+    description: >
+      Hozd létre az optimizer/compress.rs modult. Implementáld a CompressionPhase-t úgy, hogy mindig feasible incumbentból
+      induljon, csak score-nem-rontó és find_violations-mentes layoutot commitoljon, és ha nincs javulás, az eredeti
+      incumbentot adja vissza. Használhat meglévő ScoreModelt, WorkingLayout commit gate-et, MoveExecutor primitíveket,
+      de nem vezethet be új lebutított collision/geometria proxyt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+
+  - name: "Unit tesztek és acceptance fixture-ek"
+    description: >
+      Adj célzott Rust unit teszteket phase/explore/compress modulokhoz: PhaseConfig/budget smoke, pool capacity és order,
+      feasible incumbent preserve, infeasible candidate pool tárolás, large-item deterministic selection, compression no-downgrade,
+      accepted output no-violation, same-seed determinism, phase budget stop reason. Készíts 30+ item rectangular congested
+      fixture összehasonlítást baseline/no-phase vs phase optimizer: score, valid, sheet_count, utilization/compactness proxy,
+      pool_size, disruptions_attempted, disruptions_accepted.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "codex/reports/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md"
+
+  - name: "Contract, checklist és report kitöltése"
+    description: >
+      Hozd létre a contract doksit, checklistet és reportot. A report tartalmazzon dependency evidence-t, source evidence-t,
+      current-state auditot, change summaryt, public API summaryt, exploration/compression behavior summaryt, pool és disruption
+      summaryt, determinism contractot, F11-F14 parity status update-et, no-downgrade gate eredményeket, teszteredményeket,
+      baseline vs phase fixture összehasonlítást, scope safety táblát és DoD -> Evidence Matrixot konkrét fájl/funkció
+      bizonyítékokkal. Dokumentáld explicit, hogy nincs BPP loop, continuous rotation, smooth LossModel, CDE backend vagy IO változás.
+    outputs:
+      - "docs/egyedi_solver/sgh_q04_phase_orchestration_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md"
+      - "codex/reports/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a célzott Rust teszteket: cargo test --manifest-path rust/vrs_solver/Cargo.toml phase explore compress,
+      majd cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib. Ezután futtasd a standard ellenőrzést:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md.
+      Ha bármelyik fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát. Ha zöld, a report végén szerepeljen:
+      SGH-Q05_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.md"
+      - "codex/reports/egyedi_solver/sgh_q04_exploration_compression_phase_orchestration.verify.log"

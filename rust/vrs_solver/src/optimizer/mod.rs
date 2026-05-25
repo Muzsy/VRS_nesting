@@ -1,8 +1,11 @@
 pub mod boundary;
 pub mod candidates;
+pub mod compress;
+pub mod explore;
 pub mod initializer;
 pub mod moves;
 pub mod multisheet;
+pub mod phase;
 pub mod repair;
 pub mod score;
 pub mod separator;
