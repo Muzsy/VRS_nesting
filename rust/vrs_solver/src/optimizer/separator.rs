@@ -8,32 +8,14 @@ use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::initializer::bbox_from_placement;
+use super::loss_model::LossModelKind;
 use super::working::WorkingLayout;
-
-// QUALITY_RISK: BinaryBoundaryLoss
-// Exact for: never — always returns a constant (0 or 1), no gradient signal
-// Proxy for: all cases; smooth boundary loss requires PolePenetrationSmoothLoss (Sparrow Algorithm 3)
-// Parity: PROXY (F05, SGH-Q00)
-const BOUNDARY_LOSS_PROXY: f64 = 1.0;
-
-// QUALITY_RISK: BboxOnlyProxy
-// Exact for: rectangular items at 0/90/180/270° (AABB overlap == true shape overlap)
-// Proxy for: irregular shapes where axis-aligned bbox overapproximates true shape
-// Parity: PROXY (F04, SGH-Q00)
-fn bbox_overlap_area(a: &PlacedBbox, b: &PlacedBbox) -> f64 {
-    if a.sheet_index != b.sheet_index {
-        return 0.0;
-    }
-    let dx = (a.x2.min(b.x2) - a.x1.max(b.x1)).max(0.0);
-    let dy = (a.y2.min(b.y2) - a.y1.max(b.y1)).max(0.0);
-    dx * dy
-}
 
 // ---------------------------------------------------------------------------
 // LossSnapshot
 // ---------------------------------------------------------------------------
 
-/// Snapshot of `VrsCollisionTracker` geometric loss-state (bboxes + boundary validity).
+/// Snapshot of `VrsCollisionTracker` geometric loss-state (bboxes + boundary state).
 ///
 /// Restoring via [`VrsCollisionTracker::restore_but_keep_weights`] resets geometric state
 /// without touching GLS weights, preserving accumulated weight history.
@@ -41,6 +23,7 @@ fn bbox_overlap_area(a: &PlacedBbox, b: &PlacedBbox) -> f64 {
 pub struct LossSnapshot {
     bboxes: Vec<Option<PlacedBbox>>,
     boundary_valid: Vec<bool>,
+    boundary_losses: Vec<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +37,8 @@ pub struct VrsCollisionTracker {
     boundary_weights: Vec<f64>,
     bboxes: Vec<Option<PlacedBbox>>,
     boundary_valid: Vec<bool>,
+    boundary_losses: Vec<f64>,
+    loss_model_kind: LossModelKind,
 }
 
 #[derive(Clone)]
@@ -105,10 +90,20 @@ impl DeterministicRng {
 }
 
 impl VrsCollisionTracker {
-    pub fn build(layout: &WorkingLayout, parts: &[Part], sheets: &[SheetShape]) -> Self {
+    /// Build tracker using an explicit loss model.
+    ///
+    /// Called by `VrsSeparator::run` with `config.loss_model`.
+    /// Existing callers should use [`Self::build`] for `BboxArea` (default) behavior.
+    pub fn build_with_model(
+        layout: &WorkingLayout,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        loss_model_kind: LossModelKind,
+    ) -> Self {
         let n = layout.placements.len();
         let mut bboxes = Vec::with_capacity(n);
         let mut boundary_valid = Vec::with_capacity(n);
+        let mut boundary_losses = Vec::with_capacity(n);
 
         for p in &layout.placements {
             let part = parts.iter().find(|pt| pt.id == p.part_id);
@@ -123,8 +118,18 @@ impl VrsCollisionTracker {
             } else {
                 false
             };
+            let bl = if let Some(ref bb) = bbox {
+                if p.sheet_index < sheets.len() {
+                    loss_model_kind.compute_boundary_loss(bb, &sheets[p.sheet_index], valid)
+                } else {
+                    if valid { 0.0 } else { 1.0 }
+                }
+            } else {
+                if valid { 0.0 } else { 1.0 }
+            };
             bboxes.push(bbox);
             boundary_valid.push(valid);
+            boundary_losses.push(bl);
         }
 
         Self {
@@ -133,7 +138,18 @@ impl VrsCollisionTracker {
             boundary_weights: vec![1.0; n],
             bboxes,
             boundary_valid,
+            boundary_losses,
+            loss_model_kind,
         }
+    }
+
+    /// Build tracker with the default `BboxArea` loss model.
+    ///
+    /// Backward-compatible with all pre-Q06 call sites. Existing tests and
+    /// integrations that call `build` continue to use `dx*dy` overlap and binary
+    /// boundary proxy without modification.
+    pub fn build(layout: &WorkingLayout, parts: &[Part], sheets: &[SheetShape]) -> Self {
+        Self::build_with_model(layout, parts, sheets, LossModelKind::BboxArea)
     }
 
     fn pair_key(i: usize, j: usize) -> (usize, usize) {
@@ -150,13 +166,13 @@ impl VrsCollisionTracker {
 
     pub fn pair_loss(&self, i: usize, j: usize) -> f64 {
         match (&self.bboxes[i], &self.bboxes[j]) {
-            (Some(a), Some(b)) => bbox_overlap_area(a, b),
+            (Some(a), Some(b)) => self.loss_model_kind.pair_loss(a, b),
             _ => 0.0,
         }
     }
 
     pub fn boundary_loss(&self, i: usize) -> f64 {
-        if self.boundary_valid[i] { 0.0 } else { BOUNDARY_LOSS_PROXY }
+        self.boundary_losses[i]
     }
 
     pub fn total_loss(&self) -> f64 {
@@ -277,21 +293,33 @@ impl VrsCollisionTracker {
         } else {
             false
         };
+        let bl = if let Some(ref bb) = bbox {
+            if p.sheet_index < sheets.len() {
+                self.loss_model_kind.compute_boundary_loss(bb, &sheets[p.sheet_index], valid)
+            } else {
+                if valid { 0.0 } else { 1.0 }
+            }
+        } else {
+            if valid { 0.0 } else { 1.0 }
+        };
         self.bboxes[idx] = bbox;
         self.boundary_valid[idx] = valid;
+        self.boundary_losses[idx] = bl;
     }
 
-    pub fn restore_item(&mut self, idx: usize, bbox: Option<PlacedBbox>, valid: bool) {
+    pub fn restore_item(&mut self, idx: usize, bbox: Option<PlacedBbox>, valid: bool, boundary_loss: f64) {
         self.bboxes[idx] = bbox;
         self.boundary_valid[idx] = valid;
+        self.boundary_losses[idx] = boundary_loss;
     }
 
-    /// Snapshot the full geometric loss-state (bboxes + boundary validity).
+    /// Snapshot the full geometric loss-state (bboxes + boundary state).
     /// GLS weights are NOT captured and will not be affected by a subsequent restore.
     pub fn snapshot_loss(&self) -> LossSnapshot {
         LossSnapshot {
             bboxes: self.bboxes.clone(),
             boundary_valid: self.boundary_valid.clone(),
+            boundary_losses: self.boundary_losses.clone(),
         }
     }
 
@@ -299,6 +327,7 @@ impl VrsCollisionTracker {
     pub fn restore_but_keep_weights(&mut self, snap: LossSnapshot) {
         self.bboxes = snap.bboxes;
         self.boundary_valid = snap.boundary_valid;
+        self.boundary_losses = snap.boundary_losses;
     }
 }
 
@@ -324,6 +353,8 @@ pub struct VrsSeparatorConfig {
     pub worker_count: usize,
     /// Base seed for deterministic worker-specific shuffles.
     pub seed: u64,
+    /// Collision loss model. Default: `BboxArea` (backward-compatible dx*dy + binary boundary).
+    pub loss_model: LossModelKind,
 }
 
 impl Default for VrsSeparatorConfig {
@@ -338,6 +369,7 @@ impl Default for VrsSeparatorConfig {
             allowed_sheet_indices: None,
             worker_count: 1,
             seed: 0,
+            loss_model: LossModelKind::BboxArea,
         }
     }
 }
@@ -470,9 +502,10 @@ impl VrsSeparator {
                     x2: cand.x + rw,
                     y2: cand.y + rh,
                 };
+                let loss_model = self.config.loss_model;
                 let overlap: f64 = placed_without
                     .iter()
-                    .map(|pb| bbox_overlap_area(pb, &cand_bbox))
+                    .map(|pb| loss_model.pair_loss(pb, &cand_bbox))
                     .sum();
                 if overlap < best_cand_overlap {
                     let Some((ax, ay)) =
@@ -655,7 +688,7 @@ impl VrsSeparator {
             .as_ref()
             .map(|v| v.iter().copied().collect());
 
-        let mut tracker = VrsCollisionTracker::build(&layout, parts, sheets);
+        let mut tracker = VrsCollisionTracker::build_with_model(&layout, parts, sheets, self.config.loss_model);
         let initial_loss = tracker.total_loss();
 
         if initial_loss == 0.0 {
@@ -1443,5 +1476,217 @@ mod tests {
             rollback_count: 0,
         };
         assert_eq!(VrsSeparator::compare_worker_candidates(&c0, &c1), Ordering::Less);
+    }
+
+    // ---------------------------------------------------------------------------
+    // SGH-Q06: LossModel separator integration tests
+    // ---------------------------------------------------------------------------
+
+    // SGH-Q06 separator test 1: default config uses BboxAreaLoss and preserves legacy behavior
+    #[test]
+    fn separator_default_loss_model_preserves_existing_behavior() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        // Default config uses BboxAreaLoss: initial_loss = 30*30 = 900 (same as pre-Q06)
+        let sep = VrsSeparator::new(VrsSeparatorConfig::default());
+        let (result, diag) = sep.run(layout, &parts, &sheets);
+
+        assert_eq!(
+            diag.initial_loss, 900.0,
+            "default BboxAreaLoss initial_loss must match legacy 30*30=900"
+        );
+        assert_eq!(diag.best_loss, 0.0, "default config must fix overlap");
+        assert!(diag.converged, "default config must converge");
+        assert!(find_violations(&result.placements, &parts, &sheets).is_empty());
+    }
+
+    // SGH-Q06 separator test 2: PolePenetrationSmooth model runs, converges, and is violation-free
+    #[test]
+    fn separator_can_use_smooth_loss_model() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let cfg = VrsSeparatorConfig {
+            loss_model: LossModelKind::PolePenetrationSmooth,
+            ..VrsSeparatorConfig::default()
+        };
+        let (result, diag) = VrsSeparator::new(cfg).run(layout, &parts, &sheets);
+
+        assert!(
+            diag.initial_loss > 0.0,
+            "smooth model must detect non-zero initial loss for overlapping items"
+        );
+        assert_eq!(diag.best_loss, 0.0, "smooth model must achieve zero loss");
+        assert!(diag.converged, "smooth model must converge for this fixture");
+        assert!(find_violations(&result.placements, &parts, &sheets).is_empty());
+    }
+
+    // SGH-Q06 separator test 3: restore_but_keep_weights preserves GLS weights for any loss model
+    #[test]
+    fn restore_but_keep_weights_preserves_weights_with_loss_model() {
+        for &model in &[LossModelKind::BboxArea, LossModelKind::PolePenetrationSmooth] {
+            let parts = vec![make_part("A", 100.0, 100.0, 2, vec![0])];
+            let stocks = vec![make_stock("S", 500.0, 200.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let placements = vec![
+                placement("A__0001", "A", 0, 0.0, 0.0),
+                placement("A__0002", "A", 0, 0.0, 0.0),
+            ];
+            let layout = WorkingLayout::new(placements, vec![], 1, 0);
+            let mut tracker = VrsCollisionTracker::build_with_model(&layout, &parts, &sheets, model);
+
+            let c = VrsSeparatorConfig::default();
+            tracker.update_weights(
+                c.gls_weight_decay,
+                c.gls_weight_max,
+                c.gls_weight_min_inc_ratio,
+                c.gls_weight_max_inc_ratio,
+            );
+            let w_before = tracker.pair_weight(0, 1);
+            assert!(w_before > 1.0, "weight must build up from collision ({model:?})");
+
+            let snap = tracker.snapshot_loss();
+
+            let layout_moved = WorkingLayout::new(
+                vec![
+                    placement("A__0001", "A", 0, 0.0, 0.0),
+                    placement("A__0002", "A", 0, 300.0, 0.0),
+                ],
+                vec![],
+                1,
+                0,
+            );
+            tracker.update_placement(1, &layout_moved, &parts, &sheets);
+            assert_eq!(
+                tracker.total_loss(),
+                0.0,
+                "loss must be 0 after moving apart ({model:?})"
+            );
+
+            tracker.restore_but_keep_weights(snap);
+
+            assert!(
+                tracker.total_loss() > 0.0,
+                "loss must return to overlapping state after restore ({model:?})"
+            );
+            assert_eq!(
+                tracker.pair_weight(0, 1).to_bits(),
+                w_before.to_bits(),
+                "GLS weight must be bit-identical after restore_but_keep_weights ({model:?})"
+            );
+        }
+    }
+
+    // SGH-Q06 separator test 4: same seed + same loss model → bit-identical output
+    #[test]
+    fn same_seed_same_loss_model_determinism() {
+        for &model in &[LossModelKind::BboxArea, LossModelKind::PolePenetrationSmooth] {
+            let parts = vec![make_part("A", 30.0, 30.0, 3, vec![0])];
+            let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let placements = vec![
+                placement("A__0001", "A", 0, 0.0, 0.0),
+                placement("A__0002", "A", 0, 5.0, 5.0),
+                placement("A__0003", "A", 0, 10.0, 10.0),
+            ];
+            let make_layout = || WorkingLayout::new(placements.clone(), vec![], 1, 0);
+            let make_cfg = || VrsSeparatorConfig {
+                seed: 12345,
+                loss_model: model,
+                ..VrsSeparatorConfig::default()
+            };
+
+            let (r1, d1) = VrsSeparator::new(make_cfg()).run(make_layout(), &parts, &sheets);
+            let (r2, d2) = VrsSeparator::new(make_cfg()).run(make_layout(), &parts, &sheets);
+
+            assert_eq!(
+                d1.best_loss.to_bits(),
+                d2.best_loss.to_bits(),
+                "best_loss must be bit-identical for same seed + loss model ({model:?})"
+            );
+            assert_eq!(
+                d1.iterations, d2.iterations,
+                "iterations must be identical ({model:?})"
+            );
+            for (a, b) in r1.placements.iter().zip(r2.placements.iter()) {
+                assert_eq!(
+                    a.x.to_bits(),
+                    b.x.to_bits(),
+                    "x must be bit-identical ({model:?})"
+                );
+                assert_eq!(
+                    a.y.to_bits(),
+                    b.y.to_bits(),
+                    "y must be bit-identical ({model:?})"
+                );
+            }
+        }
+    }
+
+    // SGH-Q06 smoke: BboxAreaLoss vs PolePenetrationSmoothLoss on dense fixture —
+    // both must produce finite non-negative losses and detect overlaps.
+    #[test]
+    fn smoke_bbox_vs_smooth_loss_model_on_dense_fixture() {
+        let (parts, sheets, layout) = dense_fixture_21();
+        let cfg_bbox = VrsSeparatorConfig {
+            seed: 42,
+            max_strikes: 30,
+            max_inner_iterations: 200,
+            loss_model: LossModelKind::BboxArea,
+            ..VrsSeparatorConfig::default()
+        };
+        let cfg_smooth = VrsSeparatorConfig {
+            seed: 42,
+            max_strikes: 30,
+            max_inner_iterations: 200,
+            loss_model: LossModelKind::PolePenetrationSmooth,
+            ..VrsSeparatorConfig::default()
+        };
+
+        let (_, diag_bbox) = VrsSeparator::new(cfg_bbox).run(layout.snapshot(), &parts, &sheets);
+        let (_, diag_smooth) = VrsSeparator::new(cfg_smooth).run(layout, &parts, &sheets);
+
+        println!(
+            "BboxAreaLoss:          initial_loss={:.3} best_loss={:.3} iters={}",
+            diag_bbox.initial_loss, diag_bbox.best_loss, diag_bbox.iterations
+        );
+        println!(
+            "PolePenetrationSmooth: initial_loss={:.3} best_loss={:.3} iters={}",
+            diag_smooth.initial_loss, diag_smooth.best_loss, diag_smooth.iterations
+        );
+
+        assert!(
+            diag_bbox.initial_loss >= 0.0 && diag_bbox.initial_loss.is_finite(),
+            "BboxAreaLoss initial_loss must be finite non-negative"
+        );
+        assert!(
+            diag_smooth.initial_loss >= 0.0 && diag_smooth.initial_loss.is_finite(),
+            "smooth model initial_loss must be finite non-negative"
+        );
+        assert!(
+            diag_bbox.best_loss >= 0.0 && diag_bbox.best_loss.is_finite(),
+            "BboxAreaLoss best_loss must be finite non-negative"
+        );
+        assert!(
+            diag_smooth.best_loss >= 0.0 && diag_smooth.best_loss.is_finite(),
+            "smooth model best_loss must be finite non-negative"
+        );
+        assert!(
+            diag_smooth.initial_loss > 0.0,
+            "smooth model must detect overlaps in dense fixture (initial_loss > 0)"
+        );
     }
 }

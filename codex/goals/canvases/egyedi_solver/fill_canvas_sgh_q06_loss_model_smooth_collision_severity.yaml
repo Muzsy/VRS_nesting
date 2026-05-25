@@ -1,0 +1,80 @@
+steps:
+  - name: "Felderítsd a Q06 bemeneteket és a Sparrow source-t"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md,
+      docs/egyedi_solver/sgh_q00_quality_feature_gap_matrix.md,
+      docs/egyedi_solver/sgh_q01_corrected_task_roadmap.md,
+      valamint a Q05/Q05R reportokat és a Q05 BPP contractot. Vedd figyelembe:
+      a projektgazda az SGH-Q05R2 dokumentációs cleanupot elfogadottnak tekinti, még ha az aktuális checkoutban még nincs is benne.
+      Ha a Q05 contractban még szerepel a régi best_score=min(...) állítás, ezt ismert Q05R2 dokumentációs késésként kezeld,
+      és ne blokkolja a Q06-ot. Ne módosíts Q05/Q05R/Q05R2 fájlokat. Futtasd vagy használd a meglévő Sparrow source resolve
+      mechanizmust, például ./scripts/ensure_sparrow.sh, majd olvasd el a valós overlap_proxy.rs és tracker logikát.
+      A checklistben és reportban rögzítsd a ténylegesen olvasott source pathokat és függvényeket.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q06_loss_model_smooth_collision_severity.md"
+      - "codex/reports/egyedi_solver/sgh_q06_loss_model_smooth_collision_severity.md"
+
+  - name: "Vezesd be a LossModel modult"
+    description: >
+      Hozd létre a rust/vrs_solver/src/optimizer/loss_model.rs modult. Vezess be moduláris LossModel szerződést,
+      LossModelKind választót, BboxAreaLoss és PolePenetrationSmoothLoss implementációt vagy enum-dispatch ekvivalenst.
+      A BboxAreaLoss pontosan őrizze meg a Q05/Q05R viselkedést: pair loss = bbox overlap area, boundary loss = 0/1 binary proxy.
+      A smooth modell a Sparrow Algorithm 3 irányát kövesse, de a jelenlegi VRS rectangle/bbox surrogate adatmodellhez igazodjon.
+      Ne állíts teljes jagua-rs CDE vagy irregular exact parityt. Adj célzott unit teszteket a loss_model modulban.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/loss_model.rs"
+
+  - name: "Kösd be a LossModelt a separator trackerbe"
+    description: >
+      Exportáld az új loss_model modult az optimizer/mod.rs fájlban. Bővítsd a VrsSeparatorConfig-ot loss model választással,
+      defaultként BboxAreaLoss-szal. Alakítsd át a VrsCollisionTracker pair_loss/boundary_loss útvonalát úgy, hogy ne közvetlen
+      hardcoded bbox_overlap_area és BOUNDARY_LOSS_PROXY logikát használjon, hanem a LossModel réteget. Ha smooth boundary loss-hoz
+      kell, tárolj computed boundary loss értéket a trackerben, és frissítsd build/update_placement/snapshot_loss/restore_but_keep_weights
+      útvonalon is. A restore továbbra is csak geometric loss-state-et állítson vissza, GLS weights maradjanak meg.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/loss_model.rs"
+
+  - name: "Adj Q06 regressziós és determinism teszteket"
+    description: >
+      Adj célzott Rust teszteket a loss_model.rs és separator.rs modulokhoz. Kötelező viselkedések: BboxAreaLoss egyezik a legacy dx*dy overlap logikával;
+      binary boundary proxy defaultban megmarad; smooth penetration decay folytonos az epsilon körül; smooth pair loss nő overlap mélységgel;
+      azonos penetration mellett nagyobb alak nagyobb loss-t kap; smooth boundary loss nő violation depth szerint; default separator config megőrzi
+      a Q05 initial_loss viselkedést; explicit smooth loss config fut és determinisztikus; restore_but_keep_weights nem nullázza a GLS súlyokat;
+      azonos seed + azonos loss model bit-identikus outputot ad. A tesztek kis fixture-ös, determinisztikus Rust unit tesztek legyenek.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/loss_model.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "Dokumentáld a Q06 LossModel contractot"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_q06_loss_model_contract.md dokumentumot. Tartalmazza a LossModel célját, a BboxAreaLoss default
+      backward-compatible proxy szerződését, a PolePenetrationSmoothLoss Phase-1 smooth surrogate jellegét, a boundary loss kezelést,
+      a determinism contractot, a known limitations részt (no CDE, no exact irregular collision, no continuous rotation), valamint a remaining gaps
+      részt: RotationPolicy SGH-Q07 és CollisionBackend/CDE SGH-Q08.
+    outputs:
+      - "docs/egyedi_solver/sgh_q06_loss_model_contract.md"
+
+  - name: "Zárd le a checklistet és reportot"
+    description: >
+      Töltsd ki a codex checklistet és a Report Standard v2 szerinti Q06 reportot. A report tartalmazzon dependency evidence-t
+      (SGH-Q05R PASS + SGH-Q06_STATUS READY + Q05R2 owner-accepted note), Sparrow source audit evidence-t, changed files/functions matrixot,
+      DoD evidence matrixot path + line hivatkozásokkal, tests added/fixed listát, default no-downgrade evidence-t, smooth model limitations szakaszt,
+      és a BboxAreaLoss vs PolePenetrationSmoothLoss belső smoke eredményeit ugyanazon dense-overlap fixture-n.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q06_loss_model_smooth_collision_severity.md"
+      - "codex/reports/egyedi_solver/sgh_q06_loss_model_smooth_collision_severity.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a célzott Rust teszteket: cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::loss_model,
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::separator, majd cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml --lib. Végül futtasd: ./scripts/verify.sh --report
+      codex/reports/egyedi_solver/sgh_q06_loss_model_smooth_collision_severity.md. Ha bármelyik fail, a report első sora
+      REVISE vagy BLOCKED legyen, és ne legyen SGH-Q07_STATUS marker. Ha minden zöld, a report első sora PASS, és a report
+      végén szerepeljen: SGH-Q07_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q06_loss_model_smooth_collision_severity.md"
+      - "codex/reports/egyedi_solver/sgh_q06_loss_model_smooth_collision_severity.verify.log"
