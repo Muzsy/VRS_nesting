@@ -36,10 +36,17 @@ If any condition fails, the incumbent is unchanged (implicit rollback via pre-ca
 BPP phase is sheet-count-first:
 - A result is committed only if `sheet_count_used` strictly decreases.
 - Score comparison is not used in the BPP commit gate (sheet count takes priority).
-- After the full pipeline, `PhaseResult.score` is the actual score of the final BPP output.
-- `PhaseResult.best_score` = `min(final_score, compression_best, exploration_best, initial_score)`.
 
-This ensures no optimistic claim: `best_score` is always achievable by the returned layout or a layout seen during exploration/compression.
+Post-Q05R contract (canonical):
+
+```
+PhaseResult.score = ScoreModel::score(final_returned_layout)
+PhaseResult.best_score = PhaseResult.score.total_cost
+```
+
+Both `PhaseResult` fields always refer to the same (final returned) layout. There is no cross-phase minimum: the Q05R correction removed the old formula that took the minimum of exploration, compression, BPP and initial scores. If best-seen scores during exploration or compression are needed, consult the per-phase `PhaseDiagnostics.best_score` fields — they are not surfaced in `PhaseResult`.
+
+`best_seen_score` (minimum across all phases) is currently not part of `PhaseResult`. If it is needed in the future, it must be introduced as a separate field (e.g. `best_seen_score`) with an explicit contract.
 
 ## Budget and loop termination
 
@@ -81,7 +88,7 @@ pub bpp_max_eliminations: usize,   // default: 16
 | `rollback_count` | `usize` | same as `failed_eliminations` (implicit clone-based rollback) |
 | `stop_reason` | `String` | reason the outer loop terminated |
 | `initial_score` | `f64` | `ScoreModel::score` of the input layout before BPP |
-| `best_score` | `f64` | score of the last successfully committed incumbent; equals `initial_score` if no eliminations |
+| `best_score` | `f64` | **BPP-local diagnostic.** Score of the last successfully committed incumbent; equals `initial_score` if no eliminations. This is not the same as `PhaseResult.best_score` — it is a within-BPP tracking value only. |
 | `per_attempt` | `Vec<SheetEliminationDiagnostics>` | one entry per `SheetEliminationEngine::run()` call; `attempts == per_attempt.len()` invariant |
 
 ### Per-attempt audit role
@@ -96,6 +103,16 @@ pub bpp_max_eliminations: usize,   // default: 16
 Both fields always refer to the same layout (the one returned). There is no optimistic claim. If best-seen scores during exploration or compression are needed for analysis, consult the per-phase `PhaseDiagnostics.best_score` fields.
 
 If a future task wants to expose "best score seen across all phases" in `PhaseResult`, it must introduce a separate field (e.g. `best_seen_score`) with an explicit contract — it should not reuse `best_score`.
+
+### PhaseResult.improved() semantics (Q05R)
+
+Because `PhaseResult.best_score == PhaseResult.score.total_cost` after Q05R, `PhaseResult.improved()` is equivalent to:
+
+```
+final_score.total_cost < initial_score
+```
+
+i.e. it returns `true` if and only if the final returned layout has a strictly lower score than the initial layout passed to `PhaseOptimizer::run()`. It does not compare against exploration/compression intermediates.
 
 ## Remaining quality gaps
 

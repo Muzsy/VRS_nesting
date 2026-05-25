@@ -1,0 +1,46 @@
+steps:
+  - name: "Dependency gate és Q05R állapot ellenőrzése"
+    description: >
+      Ellenőrizd, hogy az SGH-Q05R report létezik, első sora PASS, és tartalmazza az SGH-Q06_STATUS: READY markert.
+      Olvasd el a Q05R canvas/YAML/report fájlokat, valamint a docs/egyedi_solver/sgh_q05_bpp_phase_loop_contract.md dokumentumot.
+      Rögzítsd a checklistben, hogy a Q05R kódjavítás rendben van, de a contract dokumentumban maradt egy régi,
+      ellentmondó PhaseResult.best_score = min(...) állítás.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q05r2_bpp_contract_score_semantics_cleanup.md"
+      - "codex/reports/egyedi_solver/sgh_q05r2_bpp_contract_score_semantics_cleanup.md"
+
+  - name: "Q05 contract score semantics tisztítása"
+    description: >
+      Frissítsd a docs/egyedi_solver/sgh_q05_bpp_phase_loop_contract.md dokumentumot úgy, hogy sehol ne állítsa:
+      PhaseResult.best_score = min(final_score, compression_best, exploration_best, initial_score). A helyes Q05R utáni
+      szerződés: PhaseResult.score = ScoreModel::score(final_returned_layout), PhaseResult.best_score =
+      PhaseResult.score.total_cost. Rögzítsd, hogy best_seen_score jelenleg nincs a PhaseResult-ben, és ha kell,
+      később külön mezőként kell bevezetni.
+    outputs:
+      - "docs/egyedi_solver/sgh_q05_bpp_phase_loop_contract.md"
+
+  - name: "BppPhaseDiagnostics és improved() tisztázás"
+    description: >
+      Pontosítsd a BppPhaseDiagnostics.best_score jelentését: ez BPP phase local diagnostic, a legutolsó committed incumbent
+      score-ja, nem globális best-seen score. Dokumentáld, hogy PhaseResult.improved() Q05R után final_score < initial_score
+      logikával értelmezhető, mert PhaseResult.best_score == final_score.total_cost. Rust átnevezés vagy production kódmódosítás tilos.
+    outputs:
+      - "docs/egyedi_solver/sgh_q05_bpp_phase_loop_contract.md"
+
+  - name: "No-production-code gate"
+    description: >
+      Ellenőrizd git diff alapján, hogy nincs rust/vrs_solver/src/** production kódmódosítás. Ez a task dokumentációs cleanup.
+      A report DoD -> Evidence matrixában szerepeljen a no-production-code gate eredménye.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q05r2_bpp_contract_score_semantics_cleanup.md"
+
+  - name: "Verify és PASS marker"
+    description: >
+      Futtasd a grep ellenőrzéseket: a régi min(...) állításra ne legyen találat, a helyes
+      PhaseResult.best_score = PhaseResult.score.total_cost állításra legyen találat. Futtasd a standard repo verify-t:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q05r2_bpp_contract_score_semantics_cleanup.md.
+      Ha ésszerűen futtatható, cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib is legyen zöld. Ha minden zöld,
+      a report első sora PASS, és a report végén szerepeljen: SGH-Q06_STATUS: READY. Ha bármi fail, REVISE/BLOCKED és nincs marker.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q05r2_bpp_contract_score_semantics_cleanup.md"
+      - "codex/reports/egyedi_solver/sgh_q05r2_bpp_contract_score_semantics_cleanup.verify.log"
