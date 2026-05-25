@@ -38,6 +38,10 @@
 use crate::geometry::Rect;
 use crate::sheet::{rect_inside_sheet_shape, SheetShape};
 
+// QUALITY_RISK: BboxBoundaryProxy
+// Exact for: rectangular stocks (delegates to axis-aligned rect_inside_sheet_shape, which is exact)
+// Proxy for: irregular outer shapes (outer polygon checked via SPolygon but no shape simplification or surrogate fast-fail)
+// Parity: PROXY (F04, SGH-Q00)
 /// Returns `true` if `rect` is entirely within the given sheet shape.
 ///
 /// This is the canonical proxy boundary check for all optimizer paths.

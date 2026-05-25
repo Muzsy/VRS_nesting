@@ -9,8 +9,16 @@ use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::initializer::bbox_from_placement;
 use super::working::WorkingLayout;
 
+// QUALITY_RISK: BinaryBoundaryLoss
+// Exact for: never — always returns a constant (0 or 1), no gradient signal
+// Proxy for: all cases; smooth boundary loss requires PolePenetrationSmoothLoss (Sparrow Algorithm 3)
+// Parity: PROXY (F05, SGH-Q00)
 const BOUNDARY_LOSS_PROXY: f64 = 1.0;
 
+// QUALITY_RISK: BboxOnlyProxy
+// Exact for: rectangular items at 0/90/180/270° (AABB overlap == true shape overlap)
+// Proxy for: irregular shapes where axis-aligned bbox overapproximates true shape
+// Parity: PROXY (F04, SGH-Q00)
 fn bbox_overlap_area(a: &PlacedBbox, b: &PlacedBbox) -> f64 {
     if a.sheet_index != b.sheet_index {
         return 0.0;
@@ -133,6 +141,10 @@ impl VrsCollisionTracker {
         loss
     }
 
+    // QUALITY_RISK: AdditiveGlsProxy
+    // Exact for: never — Sparrow Algorithm 8 uses multiplicative update with max_loss normalization
+    // Proxy for: all cases; additive formula diverges from Sparrow GLS at high loss magnitudes
+    // Parity: PARTIAL (F07, SGH-Q00)
     pub fn update_weights(&mut self, decay: f64, weight_max: f64) {
         for i in 0..self.n {
             if self.boundary_loss(i) > 0.0 {

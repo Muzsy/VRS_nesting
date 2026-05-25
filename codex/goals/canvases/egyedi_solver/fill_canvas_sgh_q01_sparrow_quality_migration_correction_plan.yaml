@@ -1,0 +1,47 @@
+steps:
+- name: Dependency gate és szabályok ellenőrzése
+  description: 'Ellenőrizd az SGH-Q00 report PASS/PASS_WITH_NOTES státuszát és az SGH-Q01_STATUS: READY markert. Olvasd el
+    az AGENTS.md, Codex workflow, YAML schema, report standard és testing guideline fájlokat. Gate hiba esetén BLOCKED report.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+  - codex/codex_checklist/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+- name: SGH-Q00 gap matrix és moduláris elvek feldolgozása
+  description: Olvasd el az SGH-Q00 auditot, gap mátrixot és modular architecture principles dokumentumot. Készíts rövid összefoglalót
+    a FULL/PARTIAL/PROXY/MISSING státuszokról és a kötelező P01-P06 elvekről.
+  outputs:
+  - codex/reports/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+  - docs/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+- name: SGH-01..SGH-05 keep / stop / replace döntés
+  description: 'Auditáld az SGH-01..SGH-05 contractokat és releváns Rust anchorokat. Készíts táblát: megtartandó szerkezeti
+    váz, leállítandó út, cserélendő proxy, szükséges új modul. Mondd ki, hogy SGH-06 paused.'
+  outputs:
+  - docs/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+- name: Target modular architecture terv
+  description: Dolgozd ki a cél architektúrát RotationPolicy, CollisionBackend, LossModel, PhaseOrchestrator, InfeasibleSolutionPool,
+    DisruptionStrategy, GeometryCache/Preprocess modulokra bontva. Minden modulnál add meg a felelősséget, jelenlegi VRS gapet,
+    és Sparrow/jagua-rs feature mappinget.
+  outputs:
+  - docs/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+- name: Corrected SGH-Q02.. roadmap kidolgozása
+  description: Készíts sorrendezett, végrehajtható SGH-Q02.. taskláncot. Minden task tartalmazzon objective, source feature,
+    VRS gap, dependency, allowed production files, required tests, benchmark/acceptance gate és PASS marker mezőket.
+  outputs:
+  - docs/egyedi_solver/sgh_q01_corrected_task_roadmap.md
+- name: No-downgrade acceptance gates kidolgozása
+  description: Készíts konkrét no-downgrade gate dokumentumot. Tiltsa a hardcoded rotation listát, hardcoded AABB collisiont
+    és binary loss proxy-t explicit quality-risk flag és benchmark nélkül. Minden future SGH tasknak tartalmaznia kell Sparrow
+    feature, VRS equivalent, parity target, tests és benchmark gate mezőket.
+  outputs:
+  - docs/egyedi_solver/sgh_q01_no_downgrade_acceptance_gates.md
+- name: Checklist és report kitöltése
+  description: Töltsd ki a checklistet és reportot. A report tartalmazzon dependency evidence-t, SGH-Q00 summaryt, keep/stop/replace
+    táblát, corrected migration ordert, risk registert és DoD -> Evidence Matrixot.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+  - codex/reports/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+- name: Repo gate verify
+  description: 'Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md.
+    Ha fail, report első sora nem lehet PASS. Ha zöld, report végén szerepeljen: SGH-Q02_STATUS: READY.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.md
+  - codex/reports/egyedi_solver/sgh_q01_sparrow_quality_migration_correction_plan.verify.log

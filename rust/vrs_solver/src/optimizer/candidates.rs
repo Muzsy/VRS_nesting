@@ -21,6 +21,10 @@ pub struct PlacedBbox {
 }
 
 impl PlacedBbox {
+    // QUALITY_RISK: BboxOnlyProxy
+    // Exact for: Phase 1 rectangular items at 0/90/180/270° (AABB overlap == true overlap)
+    // Proxy for: irregular shapes where axis-aligned bbox overapproximates true shape
+    // Parity: PROXY (F04, SGH-Q00)
     /// Rect-rect overlap — exact for Phase 1 rectangular items at 0/90/180/270°.
     pub fn overlaps(&self, other: &PlacedBbox) -> bool {
         if self.sheet_index != other.sheet_index {

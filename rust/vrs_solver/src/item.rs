@@ -44,6 +44,10 @@ pub struct Instance {
     pub allowed_rotations_deg: Vec<i64>,
 }
 
+// QUALITY_RISK: DiscreteRotationOnly
+// Exact for: inputs restricted to 0/90/180/270° (rectangular Phase 1)
+// Proxy for: arbitrary rotation angles; continuous rotation requires RotationPolicy trait (jagua-rs RotationRange::Continuous)
+// Parity: MISSING (F01, SGH-Q00)
 pub fn normalize_allowed_rotations(raw: &[i64]) -> Result<Vec<i64>, String> {
     if raw.is_empty() {
         return Err("part.allowed_rotations_deg must be non-empty".to_string());
