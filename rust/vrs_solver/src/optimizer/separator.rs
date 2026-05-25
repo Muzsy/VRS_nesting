@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use crate::geometry::Rect;
@@ -36,6 +37,7 @@ fn bbox_overlap_area(a: &PlacedBbox, b: &PlacedBbox) -> f64 {
 ///
 /// Restoring via [`VrsCollisionTracker::restore_but_keep_weights`] resets geometric state
 /// without touching GLS weights, preserving accumulated weight history.
+#[derive(Clone)]
 pub struct LossSnapshot {
     bboxes: Vec<Option<PlacedBbox>>,
     boundary_valid: Vec<bool>,
@@ -45,12 +47,61 @@ pub struct LossSnapshot {
 // VrsCollisionTracker
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct VrsCollisionTracker {
     n: usize,
     pair_weights: HashMap<(usize, usize), f64>,
     boundary_weights: Vec<f64>,
     bboxes: Vec<Option<PlacedBbox>>,
     boundary_valid: Vec<bool>,
+}
+
+#[derive(Clone)]
+struct SeparatorWorker {
+    worker_id: usize,
+    layout: WorkingLayout,
+    tracker: VrsCollisionTracker,
+    raw_loss: f64,
+    weighted_loss: f64,
+    moves_attempted: usize,
+    moves_accepted: usize,
+    rollback_count: usize,
+}
+
+struct WorkerCandidate {
+    worker_id: usize,
+    layout: WorkingLayout,
+    tracker: VrsCollisionTracker,
+    raw_loss: f64,
+    weighted_loss: f64,
+    moves_attempted: usize,
+    moves_accepted: usize,
+    rollback_count: usize,
+}
+
+struct DeterministicRng {
+    state: u64,
+}
+
+impl DeterministicRng {
+    fn new(seed: u64) -> Self {
+        // Avoid all-zero xorshift state.
+        let state = if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        };
+        Self { state }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.state = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
 }
 
 impl VrsCollisionTracker {
@@ -269,6 +320,10 @@ pub struct VrsSeparatorConfig {
     /// Optional relocation candidate filter. When set, separator can only place
     /// moved items onto these sheet indices.
     pub allowed_sheet_indices: Option<Vec<usize>>,
+    /// Number of separator workers. `0` is normalized to `1`.
+    pub worker_count: usize,
+    /// Base seed for deterministic worker-specific shuffles.
+    pub seed: u64,
 }
 
 impl Default for VrsSeparatorConfig {
@@ -281,6 +336,8 @@ impl Default for VrsSeparatorConfig {
             gls_weight_min_inc_ratio: 1.01,
             gls_weight_max_inc_ratio: 1.05,
             allowed_sheet_indices: None,
+            worker_count: 1,
+            seed: 0,
         }
     }
 }
@@ -310,6 +367,280 @@ pub struct VrsSeparator {
 impl VrsSeparator {
     pub fn new(config: VrsSeparatorConfig) -> Self {
         Self { config }
+    }
+
+    fn compare_f64_asc(a: f64, b: f64) -> Ordering {
+        a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+    }
+
+    fn normalized_worker_count(&self) -> usize {
+        self.config.worker_count.max(1)
+    }
+
+    fn worker_seed(&self, iteration: usize, worker_id: usize) -> u64 {
+        self.config.seed
+            ^ (iteration as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ ((worker_id as u64) + 1).wrapping_mul(0xD1B5_4A32_D192_ED03)
+    }
+
+    fn deterministic_shuffle(values: &[usize], seed: u64) -> Vec<usize> {
+        let mut out = values.to_vec();
+        if out.len() <= 1 {
+            return out;
+        }
+        let mut rng = DeterministicRng::new(seed);
+        for i in (1..out.len()).rev() {
+            let j = (rng.next_u64() % ((i + 1) as u64)) as usize;
+            out.swap(i, j);
+        }
+        out
+    }
+
+    fn select_worst_collider(tracker: &VrsCollisionTracker, colliders: &[usize]) -> usize {
+        colliders
+            .iter()
+            .copied()
+            .max_by(|&a, &b| {
+                Self::compare_f64_asc(
+                    tracker.weighted_loss_for_item(a),
+                    tracker.weighted_loss_for_item(b),
+                )
+                .then(a.cmp(&b))
+            })
+            .unwrap()
+    }
+
+    fn find_best_candidate_for_target(
+        &self,
+        layout: &WorkingLayout,
+        target_idx: usize,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        allowed_sheet_filter: &Option<HashSet<usize>>,
+    ) -> Option<Placement> {
+        let part = parts
+            .iter()
+            .find(|p| p.id == layout.placements[target_idx].part_id)?;
+        let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg).ok()?;
+
+        let placed_without: Vec<PlacedBbox> = layout
+            .placements
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != target_idx)
+            .filter_map(|(_, p)| {
+                parts
+                    .iter()
+                    .find(|pt| pt.id == p.part_id)
+                    .and_then(|pt| bbox_from_placement(p, pt.width, pt.height))
+            })
+            .collect();
+
+        let (candidates, _) = generate_candidates_with_sheets(sheets, &placed_without);
+        let mut best_cand_overlap = f64::MAX;
+        let mut best_cand_placement: Option<Placement> = None;
+
+        'cand: for cand in &candidates {
+            if cand.sheet_index >= sheets.len() {
+                continue;
+            }
+            if let Some(filter) = allowed_sheet_filter {
+                if !filter.contains(&cand.sheet_index) {
+                    continue;
+                }
+            }
+            let sheet = &sheets[cand.sheet_index];
+            for &rot in &allowed_rotations {
+                let Some((rw, rh)) = dims_for_rotation(part.width, part.height, rot) else {
+                    continue;
+                };
+                let rect = Rect {
+                    x1: cand.x,
+                    y1: cand.y,
+                    x2: cand.x + rw,
+                    y2: cand.y + rh,
+                };
+                if !rect_within_boundary(rect, sheet) {
+                    continue;
+                }
+                let cand_bbox = PlacedBbox {
+                    sheet_index: cand.sheet_index,
+                    x1: cand.x,
+                    y1: cand.y,
+                    x2: cand.x + rw,
+                    y2: cand.y + rh,
+                };
+                let overlap: f64 = placed_without
+                    .iter()
+                    .map(|pb| bbox_overlap_area(pb, &cand_bbox))
+                    .sum();
+                if overlap < best_cand_overlap {
+                    let Some((ax, ay)) =
+                        placement_anchor_from_rect_min(cand.x, cand.y, part.width, part.height, rot)
+                    else {
+                        continue;
+                    };
+                    best_cand_overlap = overlap;
+                    best_cand_placement = Some(Placement {
+                        instance_id: layout.placements[target_idx].instance_id.clone(),
+                        part_id: layout.placements[target_idx].part_id.clone(),
+                        sheet_index: cand.sheet_index,
+                        x: ax,
+                        y: ay,
+                        rotation_deg: rot,
+                    });
+                    if overlap == 0.0 {
+                        break 'cand;
+                    }
+                }
+            }
+        }
+        best_cand_placement
+    }
+
+    fn attempt_move(
+        &self,
+        worker: &mut SeparatorWorker,
+        target_idx: usize,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        allowed_sheet_filter: &Option<HashSet<usize>>,
+    ) {
+        worker.moves_attempted += 1;
+        let Some(new_p) = self.find_best_candidate_for_target(
+            &worker.layout,
+            target_idx,
+            parts,
+            sheets,
+            allowed_sheet_filter,
+        ) else {
+            worker.tracker.update_weights(
+                self.config.gls_weight_decay,
+                self.config.gls_weight_max,
+                self.config.gls_weight_min_inc_ratio,
+                self.config.gls_weight_max_inc_ratio,
+            );
+            worker.weighted_loss = worker.tracker.total_weighted_loss();
+            return;
+        };
+
+        let old_placement = worker.layout.placements[target_idx].clone();
+        let loss_snap = worker.tracker.snapshot_loss();
+        worker.layout.placements[target_idx] = new_p;
+        worker
+            .tracker
+            .update_placement(target_idx, &worker.layout, parts, sheets);
+        let new_loss = worker.tracker.total_loss();
+
+        if new_loss < worker.raw_loss {
+            worker.raw_loss = new_loss;
+            worker.weighted_loss = worker.tracker.total_weighted_loss();
+            worker.moves_accepted += 1;
+        } else {
+            worker.layout.placements[target_idx] = old_placement;
+            worker.tracker.restore_but_keep_weights(loss_snap);
+            worker.rollback_count += 1;
+            worker.tracker.update_weights(
+                self.config.gls_weight_decay,
+                self.config.gls_weight_max,
+                self.config.gls_weight_min_inc_ratio,
+                self.config.gls_weight_max_inc_ratio,
+            );
+            worker.weighted_loss = worker.tracker.total_weighted_loss();
+        }
+    }
+
+    fn run_worker_iteration(
+        &self,
+        current: &WorkingLayout,
+        tracker: &VrsCollisionTracker,
+        colliders: &[usize],
+        iteration: usize,
+        worker_id: usize,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        allowed_sheet_filter: &Option<HashSet<usize>>,
+    ) -> WorkerCandidate {
+        let mut worker = SeparatorWorker {
+            worker_id,
+            layout: current.snapshot(),
+            tracker: tracker.clone(),
+            raw_loss: tracker.total_loss(),
+            weighted_loss: tracker.total_weighted_loss(),
+            moves_attempted: 0,
+            moves_accepted: 0,
+            rollback_count: 0,
+        };
+
+        let targets = if worker_id == 0 {
+            vec![Self::select_worst_collider(tracker, colliders)]
+        } else {
+            Self::deterministic_shuffle(colliders, self.worker_seed(iteration, worker_id))
+        };
+
+        for target_idx in targets {
+            if worker.raw_loss == 0.0 {
+                break;
+            }
+            self.attempt_move(
+                &mut worker,
+                target_idx,
+                parts,
+                sheets,
+                allowed_sheet_filter,
+            );
+        }
+
+        WorkerCandidate {
+            worker_id: worker.worker_id,
+            layout: worker.layout,
+            tracker: worker.tracker,
+            raw_loss: worker.raw_loss,
+            weighted_loss: worker.weighted_loss,
+            moves_attempted: worker.moves_attempted,
+            moves_accepted: worker.moves_accepted,
+            rollback_count: worker.rollback_count,
+        }
+    }
+
+    fn compare_layout_order(a: &WorkingLayout, b: &WorkingLayout) -> Ordering {
+        a.placements
+            .iter()
+            .zip(b.placements.iter())
+            .find_map(|(pa, pb)| {
+                let ord = pa
+                    .sheet_index
+                    .cmp(&pb.sheet_index)
+                    .then(pa.rotation_deg.cmp(&pb.rotation_deg))
+                    .then(pa.x.to_bits().cmp(&pb.x.to_bits()))
+                    .then(pa.y.to_bits().cmp(&pb.y.to_bits()))
+                    .then(pa.instance_id.cmp(&pb.instance_id))
+                    .then(pa.part_id.cmp(&pb.part_id));
+                if ord == Ordering::Equal {
+                    None
+                } else {
+                    Some(ord)
+                }
+            })
+            .unwrap_or_else(|| a.placements.len().cmp(&b.placements.len()))
+    }
+
+    fn compare_worker_candidates(a: &WorkerCandidate, b: &WorkerCandidate) -> Ordering {
+        Self::compare_f64_asc(a.raw_loss, b.raw_loss)
+            .then(Self::compare_f64_asc(a.weighted_loss, b.weighted_loss))
+            .then(b.moves_accepted.cmp(&a.moves_accepted))
+            .then(a.worker_id.cmp(&b.worker_id))
+            .then(Self::compare_layout_order(&a.layout, &b.layout))
+    }
+
+    fn is_better_than_master(
+        master_raw_loss: f64,
+        master_weighted_loss: f64,
+        candidate: &WorkerCandidate,
+    ) -> bool {
+        candidate.raw_loss < master_raw_loss
+            || (candidate.raw_loss.to_bits() == master_raw_loss.to_bits()
+                && candidate.weighted_loss < master_weighted_loss)
     }
 
     pub fn run(
@@ -349,136 +680,49 @@ impl VrsSeparator {
         let mut moves_accepted = 0usize;
         let mut rollback_count = 0usize;
         let mut strikes = 0usize;
+        let worker_count = self.normalized_worker_count();
 
         while iterations < self.config.max_inner_iterations && strikes < self.config.max_strikes {
             iterations += 1;
 
-            if current_loss == 0.0 { break; }
-
-            let colliders = tracker.colliding_indices();
-            if colliders.is_empty() { break; }
-
-            // Select worst collider by weighted loss (deterministic: max by weighted loss, ties broken by index).
-            let target_idx = colliders.iter().copied()
-                .max_by(|&a, &b| {
-                    tracker.weighted_loss_for_item(a)
-                        .partial_cmp(&tracker.weighted_loss_for_item(b))
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then(a.cmp(&b))
-                })
-                .unwrap();
-
-            let part = match parts.iter().find(|p| p.id == current.placements[target_idx].part_id) {
-                Some(p) => p,
-                None => {
-                    strikes += 1;
-                    continue;
-                }
-            };
-            let allowed_rotations = match normalize_allowed_rotations(&part.allowed_rotations_deg) {
-                Ok(r) => r,
-                Err(_) => {
-                    strikes += 1;
-                    continue;
-                }
-            };
-
-            // Build placed bboxes for all items except the target.
-            let placed_without: Vec<PlacedBbox> = current.placements.iter().enumerate()
-                .filter(|(i, _)| *i != target_idx)
-                .filter_map(|(_, p)| {
-                    parts.iter().find(|pt| pt.id == p.part_id)
-                        .and_then(|pt| bbox_from_placement(p, pt.width, pt.height))
-                })
-                .collect();
-
-            let (candidates, _) = generate_candidates_with_sheets(sheets, &placed_without);
-
-            // Find candidate with minimum overlap area against all other placed items.
-            let mut best_cand_overlap = f64::MAX;
-            let mut best_cand_placement: Option<Placement> = None;
-
-            'cand: for cand in &candidates {
-                if cand.sheet_index >= sheets.len() { continue; }
-                if let Some(filter) = &allowed_sheet_filter {
-                    if !filter.contains(&cand.sheet_index) {
-                        continue;
-                    }
-                }
-                let sheet = &sheets[cand.sheet_index];
-                for &rot in &allowed_rotations {
-                    let Some((rw, rh)) = dims_for_rotation(part.width, part.height, rot) else { continue; };
-                    let rect = Rect {
-                        x1: cand.x,
-                        y1: cand.y,
-                        x2: cand.x + rw,
-                        y2: cand.y + rh,
-                    };
-                    if !rect_within_boundary(rect, sheet) { continue; }
-                    let cand_bbox = PlacedBbox {
-                        sheet_index: cand.sheet_index,
-                        x1: cand.x,
-                        y1: cand.y,
-                        x2: cand.x + rw,
-                        y2: cand.y + rh,
-                    };
-                    let overlap: f64 = placed_without.iter()
-                        .map(|pb| bbox_overlap_area(pb, &cand_bbox))
-                        .sum();
-                    if overlap < best_cand_overlap {
-                        let Some((ax, ay)) = placement_anchor_from_rect_min(
-                            cand.x, cand.y, part.width, part.height, rot,
-                        ) else { continue; };
-                        best_cand_overlap = overlap;
-                        best_cand_placement = Some(Placement {
-                            instance_id: current.placements[target_idx].instance_id.clone(),
-                            part_id: current.placements[target_idx].part_id.clone(),
-                            sheet_index: cand.sheet_index,
-                            x: ax,
-                            y: ay,
-                            rotation_deg: rot,
-                        });
-                        if overlap == 0.0 { break 'cand; }
-                    }
-                }
+            if current_loss == 0.0 {
+                break;
             }
 
-            moves_attempted += 1;
+            let colliders = tracker.colliding_indices();
+            if colliders.is_empty() {
+                break;
+            }
 
-            match best_cand_placement {
-                None => {
-                    strikes += 1;
-                    tracker.update_weights(
-                        self.config.gls_weight_decay,
-                        self.config.gls_weight_max,
-                        self.config.gls_weight_min_inc_ratio,
-                        self.config.gls_weight_max_inc_ratio,
-                    );
-                }
-                Some(new_p) => {
-                    let old_placement = current.placements[target_idx].clone();
-                    let loss_snap = tracker.snapshot_loss();
+            if worker_count <= 1 {
+                let worker = self.run_worker_iteration(
+                    &current,
+                    &tracker,
+                    &colliders,
+                    iterations,
+                    0,
+                    parts,
+                    sheets,
+                    &allowed_sheet_filter,
+                );
+                moves_attempted += worker.moves_attempted;
+                moves_accepted += worker.moves_accepted;
+                rollback_count += worker.rollback_count;
 
-                    current.placements[target_idx] = new_p;
-                    tracker.update_placement(target_idx, &current, parts, sheets);
-                    let new_loss = tracker.total_loss();
-
-                    if new_loss < current_loss {
-                        current_loss = new_loss;
-                        moves_accepted += 1;
-                        if new_loss < best_loss {
-                            best_loss = new_loss;
-                            best_layout = current.snapshot();
-                            strikes = 0;
-                        } else {
-                            strikes += 1;
-                        }
+                if Self::is_better_than_master(current_loss, tracker.total_weighted_loss(), &worker) {
+                    current = worker.layout;
+                    tracker = worker.tracker;
+                    current_loss = worker.raw_loss;
+                    if current_loss < best_loss {
+                        best_loss = current_loss;
+                        best_layout = current.snapshot();
+                        strikes = 0;
                     } else {
-                        // Rollback move: restore layout + loss-state, keep GLS weights.
-                        current.placements[target_idx] = old_placement;
-                        tracker.restore_but_keep_weights(loss_snap);
-                        rollback_count += 1;
                         strikes += 1;
+                    }
+                } else {
+                    strikes += 1;
+                    if worker.moves_attempted == 0 {
                         tracker.update_weights(
                             self.config.gls_weight_decay,
                             self.config.gls_weight_max,
@@ -487,6 +731,50 @@ impl VrsSeparator {
                         );
                     }
                 }
+                continue;
+            }
+
+            let master_weighted_loss = tracker.total_weighted_loss();
+            let mut workers: Vec<WorkerCandidate> = Vec::with_capacity(worker_count);
+            for worker_id in 0..worker_count {
+                workers.push(self.run_worker_iteration(
+                    &current,
+                    &tracker,
+                    &colliders,
+                    iterations,
+                    worker_id,
+                    parts,
+                    sheets,
+                    &allowed_sheet_filter,
+                ));
+            }
+
+            moves_attempted += workers.iter().map(|w| w.moves_attempted).sum::<usize>();
+            moves_accepted += workers.iter().map(|w| w.moves_accepted).sum::<usize>();
+            rollback_count += workers.iter().map(|w| w.rollback_count).sum::<usize>();
+
+            workers.sort_by(Self::compare_worker_candidates);
+            let best_worker = workers.into_iter().next().unwrap();
+
+            if Self::is_better_than_master(current_loss, master_weighted_loss, &best_worker) {
+                current = best_worker.layout;
+                tracker = best_worker.tracker;
+                current_loss = best_worker.raw_loss;
+                if current_loss < best_loss {
+                    best_loss = current_loss;
+                    best_layout = current.snapshot();
+                    strikes = 0;
+                } else {
+                    strikes += 1;
+                }
+            } else {
+                strikes += 1;
+                tracker.update_weights(
+                    self.config.gls_weight_decay,
+                    self.config.gls_weight_max,
+                    self.config.gls_weight_min_inc_ratio,
+                    self.config.gls_weight_max_inc_ratio,
+                );
             }
         }
 
@@ -955,5 +1243,205 @@ mod tests {
         tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
 
         assert!(tracker.pair_weights.is_empty(), "no weight entries must be created for non-colliding pairs");
+    }
+
+    // SGH-Q03 Test 1: worker_count=1 backward compatibility.
+    #[test]
+    fn separator_worker_count_one_backward_compatible() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let sep = VrsSeparator::new(VrsSeparatorConfig {
+            worker_count: 1,
+            ..VrsSeparatorConfig::default()
+        });
+        let (result, diag) = sep.run(layout, &parts, &sheets);
+        assert_eq!(diag.best_loss, 0.0, "worker_count=1 should keep single-worker behavior");
+        assert!(find_violations(&result.placements, &parts, &sheets).is_empty());
+    }
+
+    // SGH-Q03 Test 2: worker_count=0 normalization.
+    #[test]
+    fn separator_worker_count_zero_normalized_to_one() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let sep = VrsSeparator::new(VrsSeparatorConfig {
+            worker_count: 0,
+            ..VrsSeparatorConfig::default()
+        });
+        let (_result, diag) = sep.run(layout, &parts, &sheets);
+        assert_eq!(diag.best_loss, 0.0, "worker_count=0 should be treated as worker_count=1");
+    }
+
+    // SGH-Q03 Test 3: worker_count=3 same seed determinism.
+    #[test]
+    fn multi_worker_same_seed_is_deterministic() {
+        let parts = vec![make_part("A", 30.0, 30.0, 3, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 5.0, 5.0),
+            placement("A__0003", "A", 0, 10.0, 10.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let cfg = VrsSeparatorConfig {
+            worker_count: 3,
+            seed: 4242,
+            ..VrsSeparatorConfig::default()
+        };
+
+        let (r1, d1) = VrsSeparator::new(cfg).run(layout.snapshot(), &parts, &sheets);
+        let (r2, d2) = VrsSeparator::new(VrsSeparatorConfig { worker_count: 3, seed: 4242, ..VrsSeparatorConfig::default() })
+            .run(layout, &parts, &sheets);
+
+        assert_eq!(d1.best_loss.to_bits(), d2.best_loss.to_bits());
+        assert_eq!(d1.iterations, d2.iterations);
+        assert_eq!(d1.moves_attempted, d2.moves_attempted);
+        assert_eq!(d1.moves_accepted, d2.moves_accepted);
+        assert_eq!(d1.rollback_count, d2.rollback_count);
+        assert_eq!(r1.placements.len(), r2.placements.len());
+        for (a, b) in r1.placements.iter().zip(r2.placements.iter()) {
+            assert_eq!(a.instance_id, b.instance_id);
+            assert_eq!(a.sheet_index, b.sheet_index);
+            assert_eq!(a.rotation_deg, b.rotation_deg);
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+        }
+    }
+
+    // SGH-Q03 Test 4: deterministic shuffle differs for different worker seeds.
+    #[test]
+    fn worker_seed_shuffle_smoke_distinct_and_deterministic() {
+        let base = vec![0usize, 1, 2, 3, 4, 5, 6, 7];
+        let s1 = VrsSeparator::deterministic_shuffle(&base, 11);
+        let s2 = VrsSeparator::deterministic_shuffle(&base, 12);
+        let s1_repeat = VrsSeparator::deterministic_shuffle(&base, 11);
+        assert_ne!(s1, s2, "different seeds should produce different order in this smoke fixture");
+        assert_eq!(s1, s1_repeat, "same seed should produce deterministic order");
+    }
+
+    fn dense_fixture_21() -> (Vec<Part>, Vec<SheetShape>, WorkingLayout) {
+        let parts = vec![make_part("D", 20.0, 20.0, 21, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let mut placements = Vec::new();
+        for idx in 1..=21 {
+            placements.push(placement(&format!("D__{idx:04}"), "D", 0, 0.0, 0.0));
+        }
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        (parts, sheets, layout)
+    }
+
+    // SGH-Q03 Test 5: 3-worker dense fixture best_loss <= 1-worker best_loss.
+    #[test]
+    fn dense_fixture_three_worker_not_worse_than_single_worker() {
+        let (parts, sheets, layout) = dense_fixture_21();
+        let single_cfg = VrsSeparatorConfig {
+            worker_count: 1,
+            seed: 777,
+            max_strikes: 80,
+            max_inner_iterations: 600,
+            ..VrsSeparatorConfig::default()
+        };
+        let multi_cfg = VrsSeparatorConfig {
+            worker_count: 3,
+            seed: 777,
+            max_strikes: 80,
+            max_inner_iterations: 600,
+            ..VrsSeparatorConfig::default()
+        };
+        let (_single_layout, single_diag) = VrsSeparator::new(single_cfg).run(layout.snapshot(), &parts, &sheets);
+        let (_multi_layout, multi_diag) = VrsSeparator::new(multi_cfg).run(layout, &parts, &sheets);
+        println!(
+            "dense_fixture_21 single: best_loss={} iterations={} moves_attempted={} moves_accepted={} rollback_count={}",
+            single_diag.best_loss,
+            single_diag.iterations,
+            single_diag.moves_attempted,
+            single_diag.moves_accepted,
+            single_diag.rollback_count
+        );
+        println!(
+            "dense_fixture_21 multi3: best_loss={} iterations={} moves_attempted={} moves_accepted={} rollback_count={}",
+            multi_diag.best_loss,
+            multi_diag.iterations,
+            multi_diag.moves_attempted,
+            multi_diag.moves_accepted,
+            multi_diag.rollback_count
+        );
+        assert!(
+            multi_diag.best_loss <= single_diag.best_loss,
+            "3-worker must not be worse: single={} multi={}",
+            single_diag.best_loss,
+            multi_diag.best_loss
+        );
+    }
+
+    // SGH-Q03 Test 6: no violations when dense fixture converges to zero.
+    #[test]
+    fn dense_fixture_three_worker_output_no_violations_if_zero_loss() {
+        let (parts, sheets, layout) = dense_fixture_21();
+        let cfg = VrsSeparatorConfig {
+            worker_count: 3,
+            seed: 777,
+            max_strikes: 120,
+            max_inner_iterations: 800,
+            ..VrsSeparatorConfig::default()
+        };
+        let (result, diag) = VrsSeparator::new(cfg).run(layout, &parts, &sheets);
+        if diag.best_loss == 0.0 {
+            let violations = find_violations(&result.placements, &parts, &sheets);
+            assert!(violations.is_empty(), "zero-loss output must have no violations");
+        }
+    }
+
+    // SGH-Q03 Test 7: tie-break deterministic by worker_id on equal scores.
+    #[test]
+    fn worker_candidate_tiebreak_is_deterministic() {
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 5.0, 5.0),
+        ];
+        let layout_a = WorkingLayout::new(placements.clone(), vec![], 1, 0);
+        let layout_b = WorkingLayout::new(placements, vec![], 1, 0);
+        let parts = vec![make_part("A", 10.0, 10.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let tracker = VrsCollisionTracker::build(&layout_a, &parts, &sheets);
+
+        let c0 = WorkerCandidate {
+            worker_id: 0,
+            layout: layout_a,
+            tracker: tracker.clone(),
+            raw_loss: 12.0,
+            weighted_loss: 13.0,
+            moves_attempted: 1,
+            moves_accepted: 1,
+            rollback_count: 0,
+        };
+        let c1 = WorkerCandidate {
+            worker_id: 1,
+            layout: layout_b,
+            tracker,
+            raw_loss: 12.0,
+            weighted_loss: 13.0,
+            moves_attempted: 1,
+            moves_accepted: 1,
+            rollback_count: 0,
+        };
+        assert_eq!(VrsSeparator::compare_worker_candidates(&c0, &c1), Ordering::Less);
     }
 }

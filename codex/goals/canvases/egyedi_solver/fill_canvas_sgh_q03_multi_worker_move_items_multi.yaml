@@ -1,0 +1,97 @@
+steps:
+  - name: "Dependency gate és repo szabályok ellenőrzése"
+    description: >
+      Ellenőrizd, hogy az SGH-Q02 report létezik, első sora PASS vagy PASS_WITH_NOTES, és tartalmazza az
+      SGH-Q03_STATUS: READY markert. Olvasd el az AGENTS.md, Codex workflow, YAML schema, report standard,
+      testing guideline, SGH-Q00/Q01/Q02 dokumentumokat, különösen az SGH-Q01 corrected roadmap SGH-Q03 sorát
+      és az SGH-Q02 contractot. Gate hiba esetén állj meg BLOCKED státusszal, és csak a report/checklist dependency
+      evidence részét frissítsd.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md"
+      - "codex/reports/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md"
+
+  - name: "Sparrow move_items_multi source audit és VRS current-state audit"
+    description: >
+      Auditáld a Sparrow move_items_multi / worker move_items referencia működését az elérhető source alapján
+      (.cache/sparrow, vendor, ensure_sparrow vagy SGH-Q00/Q01 audit docs). Auditáld a valós separator.rs jelenlegi
+      single-worker ciklusát, target selection logikáját, rollback + restore_but_keep_weights pontjait, GLS súlykezelést,
+      diagnostics mezőket, és a Cargo.toml dependency állapotát. Rögzítsd a reportban, pontosan hol van F09 MISSING.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md"
+
+  - name: "Backward-compatible config bővítés"
+    description: >
+      Bővítsd a VrsSeparatorConfig publikus struktúrát worker_count és seed jellegű mezőkkel default értékekkel.
+      A worker_count=1 tartsa meg az SGH-Q02 single-worker viselkedést. A worker_count=0 vagy normalizálódjon 1-re,
+      vagy dokumentált config error/guard legyen, pánik nélkül. A meglévő publikus mezők és ..Default struct update használat
+      ne törjön el. Ha rayon vagy RNG dependency kell, kizárólag a rust/vrs_solver/Cargo.toml módosítható.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/Cargo.toml"
+
+  - name: "SeparatorWorker és WorkerCandidate modell bevezetése"
+    description: >
+      Vezess be explicit, privát worker absztrakciót a separator.rs-ben: SeparatorWorker / WorkerCandidate vagy ezzel
+      ekvivalens típusok. A worker master layout + tracker állapotból induljon, saját determinisztikus shuffled colliding
+      item sorrenddel próbáljon move-ot, és candidate layoutot/tracker állapotot/loss adatokat/diagnostics adatokat adjon vissza.
+      A VrsCollisionTracker kapja meg a szükséges Clone/snapshot képességet. A worker ne írjon közös mutable állapotot.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "move_items_multi ág implementálása"
+    description: >
+      A VrsSeparator::run vagy belső helper logikáját válaszd ketté: worker_count<=1 esetén SGH-Q02 single-worker ág,
+      worker_count>1 esetén multi-worker ág. A multi-worker ág minden iterációban azonos master állapotból indítson N workert,
+      worker_id alapján eltérő seedelt shuffle-t használjon, a worker eredményeket stabil rendezéssel válassza ki, és csak jobb
+      candidate-et commitoljon. Tie-break legyen determinisztikus: raw loss, weighted loss, accepted moves, worker_id, majd
+      placement ordering vagy dokumentált ekvivalens. A rollback továbbra is weight-preserving maradjon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "Multi-worker unit tesztek és deterministic smoke"
+    description: >
+      Adj/frissíts Rust unit teszteket separator.rs alatt. Kötelező lefedés: worker_count=1 backward compatibility;
+      worker_count=0 guard/normalizálás; worker_count=3 same seed determinism bit-identical output/diagnostics;
+      eltérő worker seed/shuffle helper smoke; 3-worker dense fixture best_loss <= 1-worker best_loss; accepted output
+      find_violations-mentes; deterministic tie-break stabil. A tesztek ne legyenek runtime-flaky-k.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "SGH-Q03 contract dokumentáció elkészítése"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_q03_multi_worker_move_items_multi_contract.md dokumentumot. Tartalmazza a döntést,
+      Sparrow source mappinget, VRS implementation summaryt, config semantics részt, worker modellt, determinism/seed contractot,
+      candidate selection és tie-break contractot, rollback + GLS weight handlinget, teszt/acceptance gate-eket, SGH-Q03 után
+      megmaradó quality gapeket és a következő SGH-Q04 taskot.
+    outputs:
+      - "docs/egyedi_solver/sgh_q03_multi_worker_move_items_multi_contract.md"
+
+  - name: "Focused Rust tesztek és no-downgrade scope safety"
+    description: >
+      Futtasd legalább: cargo test --manifest-path rust/vrs_solver/Cargo.toml separator, majd cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml --lib. Készíts 1-worker vs 3-worker dense 20+ item fixture összehasonlítást a reportba:
+      best_loss, iterations, moves_attempted, moves_accepted, rollback_count. Ellenőrizd, hogy production módosítás csak
+      separator.rs és opcionálisan Cargo.toml. Ellenőrizd a SGH-Q01 no-downgrade gate-eket: G01 cargo test, G03 accepted
+      output find_violations safety, G05 determinizmus, G06 parity non-regression, G07 nincs új jelöletlen proxy, G08 allowed scope.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md"
+
+  - name: "Checklist, report és evidence matrix kitöltése"
+    description: >
+      Töltsd ki a checklistet és reportot. A report tartalmazzon dependency evidence-t, source evidence-t, current-state auditot,
+      change summaryt, config semantics részt, F09 parity status update-et, no-downgrade gate eredményeket, teszteredményeket,
+      1-worker vs 3-worker fixture eredményeket, scope safety táblát és DoD -> Evidence Matrixot konkrét fájl/funkció
+      bizonyítékokkal. Dokumentáld explicit, hogy nincs phase orchestration, solution pool, CDE backend, smooth LossModel,
+      RotationPolicy vagy continuous rotation implementáció.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md"
+      - "codex/reports/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a standard ellenőrzést: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md.
+      Ha fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát. Ha zöld, a report végén szerepeljen:
+      SGH-Q04_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q03_multi_worker_move_items_multi.md"
+      - "codex/reports/egyedi_solver/sgh_q03_multi_worker_move_items_multi.verify.log"
