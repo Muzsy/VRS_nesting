@@ -1,0 +1,83 @@
+steps:
+  - name: "Dependency gate és preflight audit"
+    description: >
+      Ellenőrizd, hogy az SGH-Q04R report létezik, első sora PASS, és tartalmazza az SGH-Q05_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md,
+      docs/qa/testing_guidelines.md, docs/egyedi_solver/sgh_q01_corrected_task_roadmap.md,
+      docs/egyedi_solver/sgh_q04_phase_orchestration_contract.md, docs/egyedi_solver/sgh_q04r_phase_orchestration_correction_notes.md,
+      valamint a Q04R report/checklist fájlokat. Auditáld a valós kódot: phase.rs, explore.rs, compress.rs,
+      sheet_elimination.rs, multisheet.rs, working.rs, repair.rs, score.rs, stopping.rs. Rögzítsd a checklistben,
+      hogy a Q05 BPP loop milyen meglévő API-kra épül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q05_bpp_phase_loop_sheet_elimination.md"
+      - "codex/reports/egyedi_solver/sgh_q05_bpp_phase_loop_sheet_elimination.md"
+
+  - name: "BPP phase modul bevezetése"
+    description: >
+      Hozd létre a rust/vrs_solver/src/optimizer/bpp_phase.rs modult. Implementálj BppPhase vagy ekvivalens struktúrát,
+      amely WorkingLayout bemenetből iteratív, rollback-safe sheet elimination loopot futtat a meglévő SheetEliminationEngine
+      felhasználásával. Legyen külön diagnosztika: attempts, successful_eliminations, failed_eliminations, rollback_count,
+      sheet_count_used_before/after, initial_score, best_score, stop_reason, per_attempt diagnostics. A loop csak valid,
+      placement-count és instance-set preserving, find_violations-mentes, sheet_count_used-csökkentő layoutot commitolhat.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+
+  - name: "PhaseConfig és module export bekötése"
+    description: >
+      Exportáld az új bpp_phase modult az optimizer/mod.rs fájlban. Bővítsd a PhaseConfig-ot BPP budget mezőkkel
+      (például bpp_budget és bpp_max_eliminations), determinisztikus default értékekkel. A bővítés legyen backward-compatible
+      a meglévő tesztekkel; ne nyisd meg a RotationPolicy, smooth loss vagy CDE scope-ot.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "PhaseOptimizer BPP loop integráció"
+    description: >
+      Kösd be a BPP phase loopot a PhaseOptimizer::run() folyamatba az exploration és compression után. A final PhaseResult
+      layout, score, best_score és unplaced mezői ugyanarra a final committed layout állapotra vonatkozzanak. Ne maradjon
+      fiktív best_score, amely jobb értéket állít, mint a final layout score. Az output sheet_count_used nem lehet nagyobb,
+      mint a bemeneté, és minden accepted output find_violations-mentes legyen.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+
+  - name: "Szükséges sheet elimination API/diagnosztika finomítás"
+    description: >
+      Csak akkor módosítsd a sheet_elimination.rs fájlt, ha a BPP loophoz szükséges minimális API vagy diagnosztikai adat hiányzik.
+      Ne írd újra az egy-pass SheetEliminationEngine-t. Ha módosítasz, őrizd meg a jelenlegi rollback/commit gate invariánsokat:
+      no target-or-higher reuse, find_violations empty, placement count invariant, sheet_count_used strict decrease.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+
+  - name: "Célzott Rust regression tesztek"
+    description: >
+      Adj célzott unit teszteket a bpp_phase.rs és phase.rs modulokhoz. Kötelező viselkedések: iteratív loop több sheetet is
+      tud csökkenteni; failed attempt exact incumbent rollback; output soha nem növeli sheet_count_used értéket; output violation-free;
+      PhaseOptimizer ténylegesen meghívja a BPP phase-t; same-seed determinism; PhaseResult.score == score(result.layout);
+      bpp budget limitálja az attempt számot. A tesztek legyenek determinisztikusak, kis fixture-ökkel.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "Q05 contract dokumentáció és report"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_q05_bpp_phase_loop_contract.md dokumentumot, a Q05 checklistet és reportot.
+      A report tartalmazzon dependency evidence-t, changed files/functions matrixot, DoD evidence matrixot, tests added/fixed
+      listát, no-downgrade és determinism evidence-t, verify parancsokat, valamint remaining gaps szakaszt: smooth loss,
+      RotationPolicy, CDE backend. Ne állíts teljes Sparrow parityt; ez BPP phase loop foundation.
+    outputs:
+      - "docs/egyedi_solver/sgh_q05_bpp_phase_loop_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q05_bpp_phase_loop_sheet_elimination.md"
+      - "codex/reports/egyedi_solver/sgh_q05_bpp_phase_loop_sheet_elimination.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a célzott Rust teszteket: cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::bpp_phase,
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::phase, majd cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml --lib. Végül futtasd: ./scripts/verify.sh --report
+      codex/reports/egyedi_solver/sgh_q05_bpp_phase_loop_sheet_elimination.md. Ha bármelyik fail, a report első sora
+      REVISE vagy BLOCKED legyen, és ne legyen SGH-Q06_STATUS marker. Ha minden zöld, a report első sora PASS, és a report
+      végén szerepeljen: SGH-Q06_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q05_bpp_phase_loop_sheet_elimination.md"
+      - "codex/reports/egyedi_solver/sgh_q05_bpp_phase_loop_sheet_elimination.verify.log"
