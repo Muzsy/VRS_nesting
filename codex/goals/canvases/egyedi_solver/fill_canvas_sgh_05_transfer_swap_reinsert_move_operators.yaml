@@ -1,0 +1,93 @@
+steps:
+  - name: "Dependency gate és repo szabályok ellenőrzése"
+    description: >
+      Ellenőrizd, hogy a SGH-04 report létezik, első sora PASS vagy PASS_WITH_NOTES, és tartalmazza az
+      SGH-05_STATUS: READY markert. Olvasd el az AGENTS.md, Codex workflow, YAML schema, report standard,
+      testing guidelines és SGH migrációs dokumentumokat. Ha a dependency gate nem teljesül, állj meg BLOCKED
+      státusszal, és csak a report/checklist dependency evidence részét frissítsd.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md"
+      - "codex/reports/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md"
+
+  - name: "Valós moves.rs és kapcsolódó optimizer audit"
+    description: >
+      Auditáld a valós kódot: moves.rs skeleton állapot, WorkingLayout commit gate, VrsSeparator és allowed_sheet_indices,
+      sheet_elimination SGH-04 eredménye, candidates/boundary/repair/multisheet/stopping/state/io/item/sheet típusok.
+      A reportban rögzítsd a current-state megállapításokat és a tervezett API döntést. Ne találj ki nem létező fájlokat
+      vagy helper neveket; minden döntést a valós kód alapján hozz meg.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md"
+
+  - name: "Move execution API és diagnostics implementálása"
+    description: >
+      A rust/vrs_solver/src/optimizer/moves.rs fájlban tartsd meg a CandidateMove enumot és meglévő serialization teszteket,
+      majd adj hozzá rollback-safe move execution API-t és diagnostics struktúrát. A diagnostics mérje legalább az attempt,
+      commit, rollback, separator attempt/success, commit-gate rejection és last reason adatokat. Az API ne módosítsa az
+      IO contractot és ne kösse be automatikusan a pipeline-ba.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+
+  - name: "Reinsert, transfer és swap operátorok implementálása"
+    description: >
+      Implementáld a reinsert/rotate-reinsert, transfer és swap move operátorokat valós VRS típusokkal. Minden operator
+      snapshot/rollback discipline-t használjon: WorkingLayout, VrsSeparator szükség szerint, validate_for_commit,
+      find_violations és placement count + instance set invariant. Failure esetén az eredeti placements állapot változatlan
+      maradjon. A transfer/swap separator scope-ja legyen determinisztikus és dokumentált.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+
+  - name: "Resolve-by-transfers helper implementálása"
+    description: >
+      Adj budget-aware resolve_by_transfers jellegű helper réteget a moves.rs-be. A helper determinisztikus sorrendben
+      próbáljon source sheeteket, itemeket és destination sheeteket, tisztelje a budgetet és StoppingPolicy-t vagy helyi
+      ekvivalens stop mechanizmust, és minden failed attempt után rollbackeljen. Sikeres commit csak violation-free layout
+      lehet. Ne integráld még a sheet_elimination vagy initializer pipeline-ba.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+
+  - name: "Unit tesztek és invariáns lefedés"
+    description: >
+      Adj/frissíts Rust unit teszteket moves.rs alatt. Kötelező lefedés: meglévő CandidateMove serialization zöld; reinsert
+      success/failure rollback; transfer success/invalid rollback; swap success/impossible rollback; resolve_by_transfers
+      budget; diagnostics summary; placement count és instance set invariant; deterministic same input + same move => same output;
+      committed output find_violations szerint valid. Használj valós Part, Stock/SheetShape, Placement, WorkingLayout,
+      VrsSeparator, find_violations típusokat/helpereket.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+
+  - name: "SGH-05 contract dokumentáció elkészítése"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_05_move_operators_contract.md dokumentumot a canvasban megadott kötelező
+      szekciókkal. Írd le a SparrowGH bp_moves.rs mappinget, a VRS move execution API-t, reinsert/transfer/swap/resolve
+      helper szabályokat, commit/rollback gate-eket, diagnostics és determinism szabályokat, valamint hogyan készíti elő
+      SGH-06 solution pool / perturbation taskot.
+    outputs:
+      - "docs/egyedi_solver/sgh_05_move_operators_contract.md"
+
+  - name: "Checklist, report és evidence matrix kitöltése"
+    description: >
+      Töltsd ki a checklistet és reportot. A report tartalmazzon dependency evidence-t, current-state auditot, change summaryt,
+      implementation summaryt, tests részt, scope safety részt és DoD -> Evidence Matrixot konkrét fájl/funkció bizonyítékokkal.
+      Dokumentáld külön, hogy nincs külső backend/vendor, nincs Python runner/exact validator/io.rs/adapter.rs módosítás,
+      nincs pipeline integration, nincs solution pool/perturbation, nincs continuous rotation és nincs cavity-prepack.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md"
+      - "codex/reports/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md"
+
+  - name: "Focused Rust tesztek és scope safety ellenőrzés"
+    description: >
+      Futtasd legalább: cargo test -p vrs_solver moves, valamint cargo test -p vrs_solver separator sheet_elimination moves
+      vagy helyi ekvivalens. Ha szükséges, futtasd a teljes cargo test -p vrs_solver suite-et is. Git diff/status alapján
+      ellenőrizd, hogy production kódból alapértelmezetten csak moves.rs módosult. Ha tiltott fájl módosult vagy focused
+      teszt fail, a report első sora nem lehet PASS.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md.
+      Ha fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát. Ha zöld, a report végén szerepeljen:
+      SGH-06_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.md"
+      - "codex/reports/egyedi_solver/sgh_05_transfer_swap_reinsert_move_operators.verify.log"
