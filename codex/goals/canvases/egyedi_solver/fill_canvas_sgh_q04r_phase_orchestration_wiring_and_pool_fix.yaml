@@ -1,0 +1,81 @@
+steps:
+  - name: "Dependency gate és Q04 blocker audit"
+    description: >
+      Ellenőrizd, hogy az SGH-Q04 report létezik és első sora PASS, de kezeld Q04R-t corrective taskként.
+      Auditáld a valós fájlokat: phase.rs, explore.rs, compress.rs, mod.rs, moves.rs. Erősítsd meg vagy cáfold
+      a blokkolókat: PhaseOptimizer stub wiring, InfeasibleSolutionPool best() ordering, fake time budget,
+      disruption max_attempts/violation contract, compression score mismatch, hardcoded rotation list. Ha a blokkolók
+      nem reprodukálhatók, dokumentáld pontosan fájl/sor/függvény alapján; de akkor is hozz létre Q04R reportot.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q04r_phase_orchestration_wiring_and_pool_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q04r_phase_orchestration_wiring_and_pool_fix.md"
+
+  - name: "PhaseOptimizer orchestration wiring javítása"
+    description: >
+      Javítsd a PhaseOptimizer::run() implementációt úgy, hogy ténylegesen az ExplorationPhase::run() és
+      CompressionPhase::run() modulokat hívja, ne stub run_exploration/run_compression függvényeket. A compression
+      bemenete az exploration eredménye legyen. A final PhaseResult legyen konzisztens: layout, score, best_score,
+      unplaced ugyanarra a final layout állapotra vonatkozzon. Ha nincs javulás, őrizd meg az input feasible incumbentot.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "InfeasibleSolutionPool ordering és capacity javítása"
+    description: >
+      Javítsd az InfeasibleSolutionPool contractot: best() mindig a legalacsonyabb raw_loss candidate-et adja;
+      capacity túllépéskor a legalacsonyabb lossú N candidate maradjon; tie-break raw_loss, score, iteration,
+      placement_order szerint determinisztikus legyen. Cseréld le vagy javítsd a BinaryHeap comparatort. Frissítsd
+      a hibás tesztet, amely jelenleg highest loss-t vár best-ként.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+
+  - name: "Valós time budget és disruption contract javítása"
+    description: >
+      ExplorationPhase és CompressionPhase használjon std::time::Instant alapú elapsed mérést; a fake
+      iteration*0.01 számítás nem maradhat. Javítsd a LargeItemSwapDisruption::try_disrupt() helper contractját:
+      használja a max_attempts értéket, determinisztikusan próbáljon több párt, és csak violation-free placement
+      vektort adjon vissza. Ha nincs valid perturbation, None.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+
+  - name: "Compression commit score és discrete rotation source javítása"
+    description: >
+      CompressionPhase commit döntésnél a tényleges try_result placement vektorra számolj score-t, ne egy korábbi
+      kézzel módosított new_placements-re. A rotációs próbák forrása a jelenlegi Part.allowed_rotations_deg legyen,
+      ne hardcoded [0,90,180,270]. Ez nem teljes RotationPolicy implementáció, csak Q04 scope-on belüli no-new-proxy javítás.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+
+  - name: "Regression tesztek, amelyek a hibás Q04-et elkapják"
+    description: >
+      Adj célzott Rust unit teszteket: PhaseOptimizer valóban nem stub; InfeasibleSolutionPool best() lowest loss;
+      capacity retention lowest N; PhaseResult layout/score/unplaced konzisztencia; same-seed determinism; disruption
+      Some output always violation-free; compression commit score consistency; compression csak Part.allowed_rotations_deg
+      rotációkat használ. Ne írj olyan tesztet, amely a hibás Q04 viselkedést konzerválja.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+
+  - name: "Q04R dokumentáció, checklist és report"
+    description: >
+      Hozd létre a Q04R checklistet, correction notes doksit és reportot. A report tartalmazzon: blocker evidence,
+      changed files, fixed function matrix, tests added/fixed, no-downgrade gates, remaining Q04 PARTIAL gaps, és explicit
+      döntést arról, hogy az eredeti SGH-Q04 PASS marker csak Q04R PASS után tekinthető érvényesnek. Ne írd át a történelmet:
+      dokumentáld, hogy Q04R corrective task volt.
+    outputs:
+      - "docs/egyedi_solver/sgh_q04r_phase_orchestration_correction_notes.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q04r_phase_orchestration_wiring_and_pool_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q04r_phase_orchestration_wiring_and_pool_fix.md"
+
+  - name: "Verify gate"
+    description: >
+      Futtasd a célzott Rust teszteket: cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::phase,
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::explore, cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml optimizer::compress. Ezután futtasd: cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib.
+      Végül futtasd a standard verify-t: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q04r_phase_orchestration_wiring_and_pool_fix.md.
+      Ha bármelyik fail, a report első sora REVISE/BLOCKED legyen, és ne legyen SGH-Q05_STATUS marker. Ha zöld,
+      a report végén szerepeljen: SGH-Q05_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q04r_phase_orchestration_wiring_and_pool_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q04r_phase_orchestration_wiring_and_pool_fix.verify.log"
