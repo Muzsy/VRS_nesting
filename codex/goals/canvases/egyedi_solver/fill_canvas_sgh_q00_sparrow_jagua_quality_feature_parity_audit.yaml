@@ -1,0 +1,59 @@
+steps:
+- name: Dependency gate és repo szabályok ellenőrzése
+  description: 'Ellenőrizd az SGH-05 report PASS/PASS_WITH_NOTES státuszát és az SGH-06_STATUS: READY markert. Olvasd el az
+    AGENTS.md, Codex workflow, YAML schema, report standard, testing guideline és SGH-01..05 contract dokumentumokat. Gate
+    hiba esetén BLOCKED report.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+  - codex/codex_checklist/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+- name: Külső jagua-rs/Sparrow source audit beszerzése
+  description: Repo-n kívüli ideiglenes könyvtárba clone-old vagy olvasd a JeroenGar/jagua-rs, JeroenGar/sparrow, coroush/sparrow
+    és coroush/sparrow-grasshopper forrásokat. Rögzíts URL-t, commit/ref-et, licencet, elérhetőséget és NOT_FOUND/NETWORK_BLOCKED
+    státuszt. Ne vendorolj semmit.
+  outputs:
+  - docs/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+  - codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+- name: Sparrow/jagua-rs quality feature file-by-file audit
+  description: 'Kódból azonosítsd és dokumentáld a quality-critical funkciókat: rotation range, continuous sampling/wiggle,
+    CDE, collision severity, shape penalty, GLS weights, separator loop, move_items_multi, exploration/compression, infeasible
+    pool, perturbation/disruption, time budget, determinism, BPP/bin reduction, caching/preprocessing, irregular/remnant support.'
+  outputs:
+  - docs/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+- name: VRS SGH-01..SGH-05 parity audit
+  description: 'Auditáld a VRS optimizer releváns moduljait: working, separator, initializer, sheet_elimination, moves, score,
+    candidates, item, sheet, io, adapter. Minden Sparrow/jagua-rs quality feature-hez keresd meg a VRS megfelelőjét, és minősítsd
+    FULL/PARTIAL/PROXY/MISSING/WRONG státusszal.'
+  outputs:
+  - docs/egyedi_solver/sgh_q00_quality_feature_gap_matrix.md
+  - codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+- name: Quality gap matrix és no-downgrade döntési szabály
+  description: Készíts explicit gap mátrixot Feature / Source evidence / VRS equivalent / Parity status / Quality risk / Migration
+    strategy / Required tests / Required benchmark / Modularity requirement oszlopokkal. Mondd ki, mely VRS részek lebutítottak
+    vagy proxyk, és melyeket kell portolni vagy újratervezni.
+  outputs:
+  - docs/egyedi_solver/sgh_q00_quality_feature_gap_matrix.md
+- name: Modular architecture principles kidolgozása
+  description: 'Készíts dokumentumot a moduláris, bővíthető architektúra elveiről: rotation policy provider, geometry/collision
+    backend, loss model, search orchestration, separator/moves/sheet elimination hardcoded feltételezések nélkül. Proxy csak
+    quality-risk flaggel létezhet.'
+  outputs:
+  - docs/egyedi_solver/sgh_q00_modular_architecture_principles.md
+- name: Corrected roadmap és következő task döntés
+  description: A reportban add meg, mely SGH taskokat kell megállítani, revideálni vagy folytatni. Javasolj SGH-Q01 korrekciós
+    migrációs tervet, amely a Sparrow/jagua-rs minőségi parityt célozza, külön rotation, CDE/collision severity, GLS/separator,
+    exploration/compression, solution pool és benchmark gate-ekkel.
+  outputs:
+  - codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+- name: Checklist, report, evidence matrix kitöltése
+  description: Töltsd ki a checklistet és reportot. A report tartalmazzon source/ref/license táblát, file-by-file audit összefoglalót,
+    gap mátrix összefoglalót, no-downgrade döntési szabályt, modular architecture összefoglalót, corrected roadmapet és DoD
+    -> Evidence mátrixot.
+  outputs:
+  - codex/codex_checklist/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+  - codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+- name: Repo gate verify
+  description: 'Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md.
+    Ha fail, report első sora nem lehet PASS. Ha zöld és az audit teljes, report végén szerepeljen: SGH-Q01_STATUS: READY.'
+  outputs:
+  - codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.md
+  - codex/reports/egyedi_solver/sgh_q00_sparrow_jagua_quality_feature_parity_audit.verify.log
