@@ -29,6 +29,19 @@ fn bbox_overlap_area(a: &PlacedBbox, b: &PlacedBbox) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
+// LossSnapshot
+// ---------------------------------------------------------------------------
+
+/// Snapshot of `VrsCollisionTracker` geometric loss-state (bboxes + boundary validity).
+///
+/// Restoring via [`VrsCollisionTracker::restore_but_keep_weights`] resets geometric state
+/// without touching GLS weights, preserving accumulated weight history.
+pub struct LossSnapshot {
+    bboxes: Vec<Option<PlacedBbox>>,
+    boundary_valid: Vec<bool>,
+}
+
+// ---------------------------------------------------------------------------
 // VrsCollisionTracker
 // ---------------------------------------------------------------------------
 
@@ -76,8 +89,12 @@ impl VrsCollisionTracker {
         if i < j { (i, j) } else { (j, i) }
     }
 
-    fn pair_weight(&self, i: usize, j: usize) -> f64 {
+    pub fn pair_weight(&self, i: usize, j: usize) -> f64 {
         *self.pair_weights.get(&Self::pair_key(i, j)).unwrap_or(&1.0)
+    }
+
+    pub fn boundary_weight(&self, i: usize) -> f64 {
+        self.boundary_weights[i]
     }
 
     pub fn pair_loss(&self, i: usize, j: usize) -> f64 {
@@ -141,21 +158,55 @@ impl VrsCollisionTracker {
         loss
     }
 
-    // QUALITY_RISK: AdditiveGlsProxy
-    // Exact for: never — Sparrow Algorithm 8 uses multiplicative update with max_loss normalization
-    // Proxy for: all cases; additive formula diverges from Sparrow GLS at high loss magnitudes
-    // Parity: PARTIAL (F07, SGH-Q00)
-    pub fn update_weights(&mut self, decay: f64, weight_max: f64) {
+    /// Multiplicative GLS weight update (Sparrow Algorithm 8 parity, SGH-Q02).
+    ///
+    /// - Colliding pairs/boundaries: weight *= multiplier proportional to loss / max_loss,
+    ///   clamped to [1.0, weight_max].
+    /// - Non-colliding pairs with existing weight entries: weight *= decay, floored at 1.0.
+    /// - Non-colliding pairs with no entry: no entry created (no wasted memory).
+    pub fn update_weights(
+        &mut self,
+        decay: f64,
+        weight_max: f64,
+        min_inc_ratio: f64,
+        max_inc_ratio: f64,
+    ) {
+        // max_loss for normalization — computed once across all active collisions.
+        let mut max_loss = 0.0_f64;
         for i in 0..self.n {
-            if self.boundary_loss(i) > 0.0 {
-                let w = &mut self.boundary_weights[i];
-                *w = (*w + 1.0 / (1.0 + *w * decay)).min(weight_max);
-            }
+            max_loss = max_loss.max(self.boundary_loss(i));
             for j in (i + 1)..self.n {
-                if self.pair_loss(i, j) > 0.0 {
-                    let key = (i, j);
+                max_loss = max_loss.max(self.pair_loss(i, j));
+            }
+        }
+
+        // Boundary weights.
+        for i in 0..self.n {
+            let loss = self.boundary_loss(i);
+            let w = &mut self.boundary_weights[i];
+            if loss == 0.0 {
+                *w = (*w * decay).max(1.0);
+            } else {
+                let ratio = if max_loss > 0.0 { loss / max_loss } else { 1.0 };
+                let mult = min_inc_ratio + (max_inc_ratio - min_inc_ratio) * ratio;
+                *w = (*w * mult).min(weight_max);
+            }
+        }
+
+        // Pair weights.
+        for i in 0..self.n {
+            for j in (i + 1)..self.n {
+                let loss = self.pair_loss(i, j);
+                let key = (i, j);
+                if loss == 0.0 {
+                    if let Some(w) = self.pair_weights.get_mut(&key) {
+                        *w = (*w * decay).max(1.0);
+                    }
+                } else {
+                    let ratio = if max_loss > 0.0 { loss / max_loss } else { 1.0 };
+                    let mult = min_inc_ratio + (max_inc_ratio - min_inc_ratio) * ratio;
                     let w = self.pair_weights.entry(key).or_insert(1.0);
-                    *w = (*w + 1.0 / (1.0 + *w * decay)).min(weight_max);
+                    *w = (*w * mult).min(weight_max);
                 }
             }
         }
@@ -183,6 +234,21 @@ impl VrsCollisionTracker {
         self.bboxes[idx] = bbox;
         self.boundary_valid[idx] = valid;
     }
+
+    /// Snapshot the full geometric loss-state (bboxes + boundary validity).
+    /// GLS weights are NOT captured and will not be affected by a subsequent restore.
+    pub fn snapshot_loss(&self) -> LossSnapshot {
+        LossSnapshot {
+            bboxes: self.bboxes.clone(),
+            boundary_valid: self.boundary_valid.clone(),
+        }
+    }
+
+    /// Restore geometric loss-state from a snapshot, leaving GLS weights intact.
+    pub fn restore_but_keep_weights(&mut self, snap: LossSnapshot) {
+        self.bboxes = snap.bboxes;
+        self.boundary_valid = snap.boundary_valid;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -192,8 +258,14 @@ impl VrsCollisionTracker {
 pub struct VrsSeparatorConfig {
     pub max_strikes: usize,
     pub max_inner_iterations: usize,
+    /// Multiplicative decay for non-colliding weight entries (0 < decay ≤ 1.0).
+    /// Applied per iteration; weights never decay below 1.0.
     pub gls_weight_decay: f64,
     pub gls_weight_max: f64,
+    /// Minimum weight multiplier for the lowest-loss colliding pair (≥ 1.0).
+    pub gls_weight_min_inc_ratio: f64,
+    /// Maximum weight multiplier for the highest-loss colliding pair (≥ min_inc_ratio).
+    pub gls_weight_max_inc_ratio: f64,
     /// Optional relocation candidate filter. When set, separator can only place
     /// moved items onto these sheet indices.
     pub allowed_sheet_indices: Option<Vec<usize>>,
@@ -204,8 +276,10 @@ impl Default for VrsSeparatorConfig {
         Self {
             max_strikes: 20,
             max_inner_iterations: 200,
-            gls_weight_decay: 0.01,
+            gls_weight_decay: 0.98,
             gls_weight_max: 100.0,
+            gls_weight_min_inc_ratio: 1.01,
+            gls_weight_max_inc_ratio: 1.05,
             allowed_sheet_indices: None,
         }
     }
@@ -374,12 +448,16 @@ impl VrsSeparator {
             match best_cand_placement {
                 None => {
                     strikes += 1;
-                    tracker.update_weights(self.config.gls_weight_decay, self.config.gls_weight_max);
+                    tracker.update_weights(
+                        self.config.gls_weight_decay,
+                        self.config.gls_weight_max,
+                        self.config.gls_weight_min_inc_ratio,
+                        self.config.gls_weight_max_inc_ratio,
+                    );
                 }
                 Some(new_p) => {
                     let old_placement = current.placements[target_idx].clone();
-                    let old_bbox = tracker.bboxes[target_idx].clone();
-                    let old_valid = tracker.boundary_valid[target_idx];
+                    let loss_snap = tracker.snapshot_loss();
 
                     current.placements[target_idx] = new_p;
                     tracker.update_placement(target_idx, &current, parts, sheets);
@@ -396,12 +474,17 @@ impl VrsSeparator {
                             strikes += 1;
                         }
                     } else {
-                        // Rollback move.
+                        // Rollback move: restore layout + loss-state, keep GLS weights.
                         current.placements[target_idx] = old_placement;
-                        tracker.restore_item(target_idx, old_bbox, old_valid);
+                        tracker.restore_but_keep_weights(loss_snap);
                         rollback_count += 1;
                         strikes += 1;
-                        tracker.update_weights(self.config.gls_weight_decay, self.config.gls_weight_max);
+                        tracker.update_weights(
+                            self.config.gls_weight_decay,
+                            self.config.gls_weight_max,
+                            self.config.gls_weight_min_inc_ratio,
+                            self.config.gls_weight_max_inc_ratio,
+                        );
                     }
                 }
             }
@@ -693,5 +776,184 @@ mod tests {
         assert_eq!(diag.best_loss, 0.0, "default None filter should keep old behavior");
         let violations = find_violations(&result.placements, &parts, &sheets);
         assert!(violations.is_empty(), "default None filter result must remain valid");
+    }
+
+    // ---------------------------------------------------------------------------
+    // SGH-Q02: Multiplicative GLS tests
+    // ---------------------------------------------------------------------------
+
+    fn cfg() -> VrsSeparatorConfig {
+        VrsSeparatorConfig::default()
+    }
+
+    // Test 11: larger loss pair gets >= weight increment than smaller loss pair.
+    #[test]
+    fn multiplicative_gls_larger_loss_gets_larger_weight() {
+        // Item 0: x=[0,100]; Item 1: x=[50,150] — 50×100=5000 overlap with 0.
+        // Item 2: x=[90,190] — 10×100=1000 overlap with 0. Items 1 and 2 don't overlap.
+        let parts = vec![make_part("A", 100.0, 100.0, 3, vec![0])];
+        let stocks = vec![make_stock("S", 500.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 50.0, 0.0),
+            placement("A__0003", "A", 0, 90.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
+
+        let loss_01 = tracker.pair_loss(0, 1);
+        let loss_02 = tracker.pair_loss(0, 2);
+        assert!(loss_01 > loss_02, "item 1 must overlap 0 more than item 2 does");
+
+        let c = cfg();
+        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+
+        let w_01 = tracker.pair_weight(0, 1);
+        let w_02 = tracker.pair_weight(0, 2);
+        assert!(w_01 >= w_02, "larger loss pair must receive >= weight multiplier");
+        assert!(w_01 > 1.0, "colliding pair weight must exceed 1.0 after update");
+    }
+
+    // Test 12: max-loss pair gets multiplier == max_inc_ratio (ratio = 1.0).
+    #[test]
+    fn multiplicative_gls_max_loss_pair_gets_max_ratio() {
+        let parts = vec![make_part("A", 100.0, 100.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // Full overlap: loss = 100*100 = 10000 (max loss). ratio = 1.0 → mult = max_inc_ratio.
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
+
+        let c = cfg();
+        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+
+        let w = tracker.pair_weight(0, 1);
+        let expected = 1.0 * c.gls_weight_max_inc_ratio;
+        assert!((w - expected).abs() < 1e-12, "max-loss pair: weight={w} expected={expected}");
+    }
+
+    // Test 13: non-colliding existing weight decays toward 1.0 but never below.
+    #[test]
+    fn multiplicative_gls_no_collision_decay() {
+        let parts = vec![make_part("A", 100.0, 100.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 500.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // First layout: overlapping → build up weight.
+        let lp_overlap = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout_overlap = WorkingLayout::new(lp_overlap, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build(&layout_overlap, &parts, &sheets);
+        let c = cfg();
+        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        let w_after_collision = tracker.pair_weight(0, 1);
+        assert!(w_after_collision > 1.0, "weight must rise after collision");
+
+        // Now move items apart — no collision.
+        let lp_apart = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 200.0, 0.0),
+        ];
+        let layout_apart = WorkingLayout::new(lp_apart, vec![], 1, 0);
+        // Rebuild with same pair_weights already in tracker would be ideal,
+        // but for this test we build a fresh tracker and manually insert the weight.
+        let mut tracker2 = VrsCollisionTracker::build(&layout_apart, &parts, &sheets);
+        tracker2.pair_weights.insert((0, 1), w_after_collision);
+        tracker2.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+
+        let w_decayed = tracker2.pair_weight(0, 1);
+        assert!(w_decayed < w_after_collision, "weight must decay when no collision");
+        assert!(w_decayed >= 1.0, "weight must not decay below 1.0");
+    }
+
+    // Test 14: boundary weight uses same multiplicative principle.
+    #[test]
+    fn multiplicative_gls_boundary_weight_updates() {
+        let parts = vec![make_part("A", 30.0, 30.0, 1, vec![0])];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![placement("A__0001", "A", 0, 999.0, 999.0)];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
+
+        assert!(tracker.boundary_loss(0) > 0.0, "out-of-bounds item must have boundary loss");
+        let c = cfg();
+        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+
+        let bw = tracker.boundary_weight(0);
+        assert!(bw > 1.0, "boundary weight must increase after boundary violation");
+        let expected = 1.0 * c.gls_weight_max_inc_ratio; // only one loss entry → ratio = 1.0
+        assert!((bw - expected).abs() < 1e-12, "boundary weight={bw} expected={expected}");
+    }
+
+    // Test 15: restore_but_keep_weights — loss-state restored, weights intact.
+    #[test]
+    fn restore_but_keep_weights_preserves_gls() {
+        let parts = vec![make_part("A", 100.0, 100.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 500.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // Start with overlap to build up weights.
+        let placements_overlap = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout_overlap = WorkingLayout::new(placements_overlap, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build(&layout_overlap, &parts, &sheets);
+
+        let c = cfg();
+        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        let w_before = tracker.pair_weight(0, 1);
+        assert!(w_before > 1.0, "weight must be > 1.0 before snapshot");
+
+        // Snapshot the current (overlapping) loss-state.
+        let snap = tracker.snapshot_loss();
+
+        // Simulate a tentative move: move item 1 far away (no overlap).
+        let layout_moved = WorkingLayout::new(vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 300.0, 0.0),
+        ], vec![], 1, 0);
+        tracker.update_placement(1, &layout_moved, &parts, &sheets);
+
+        let loss_after_move = tracker.total_loss();
+        assert_eq!(loss_after_move, 0.0, "loss must be 0 after moving apart");
+
+        // Restore loss-state without touching weights.
+        tracker.restore_but_keep_weights(snap);
+
+        let w_after_restore = tracker.pair_weight(0, 1);
+        let loss_after_restore = tracker.total_loss();
+
+        assert!(loss_after_restore > 0.0, "loss must return to overlapping state after restore");
+        assert_eq!(
+            w_after_restore.to_bits(), w_before.to_bits(),
+            "GLS weight must be bit-identical after restore_but_keep_weights"
+        );
+    }
+
+    // Test 16: no weight entry created for zero-loss pairs.
+    #[test]
+    fn multiplicative_gls_no_spurious_entries_for_zero_loss() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // Items placed far apart — no collision.
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 100.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
+
+        let c = cfg();
+        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+
+        assert!(tracker.pair_weights.is_empty(), "no weight entries must be created for non-colliding pairs");
     }
 }

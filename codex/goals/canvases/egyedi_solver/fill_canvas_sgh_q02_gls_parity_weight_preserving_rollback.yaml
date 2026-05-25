@@ -1,0 +1,87 @@
+steps:
+  - name: "Dependency gate és repo szabályok ellenőrzése"
+    description: >
+      Ellenőrizd, hogy a SGH-Q01 report létezik, első sora PASS vagy PASS_WITH_NOTES, és tartalmazza az
+      SGH-Q02_STATUS: READY markert. Olvasd el az AGENTS.md, Codex workflow, YAML schema, report standard,
+      testing guideline, SGH-Q00 gap matrix, SGH-Q01 correction plan, corrected roadmap és no-downgrade gates
+      dokumentumokat. Gate hiba esetén állj meg BLOCKED státusszal, és csak a report/checklist dependency evidence
+      részét frissítsd.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md"
+      - "codex/reports/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md"
+
+  - name: "Separator GLS current-state audit"
+    description: >
+      Auditáld a valós rust/vrs_solver/src/optimizer/separator.rs fájlt. Rögzítsd a reportban a jelenlegi
+      VrsCollisionTracker mezőket, update_weights additive formulát, pair/boundary loss számítást, rollback pontokat,
+      restore_item használatot, config mezőket és meglévő separator teszteket. Vesd össze ezt az SGH-Q00 F07/F08
+      gap matrixszal és a SGH-Q01 roadmap SGH-Q02 bejegyzésével.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md"
+
+  - name: "Multiplicative GLS formula implementálása"
+    description: >
+      A separator.rs fájlban cseréld le az AdditiveGlsProxy update_weights implementációt Sparrow Algorithm 8 jellegű
+      multiplicative formulára: max_loss normalizáció, collision esetén min/max increment ratio interpoláció, no-collision
+      esetén decay 1.0 felé, weight >= 1.0 és weight <= gls_weight_max. A publikus VrsSeparatorConfig mezőket ne törd el;
+      ha új config mező kell, defaulttal add hozzá. A pair weight csak collision vagy már létező weight esetén legyen tárolva.
+      Frissítsd a QUALITY_RISK annotációt úgy, hogy az SGH-Q02 utáni állapotot tükrözze.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "Loss-state snapshot és restore_but_keep_weights implementálása"
+    description: >
+      Adj VrsCollisionTracker loss-state snapshot struktúrát és restore_but_keep_weights helper-t. A snapshot állítsa vissza
+      a pair_loss/boundary_loss számításhoz szükséges állapotot, például bboxes és boundary_valid, de ne állítsa vissza a
+      pair_weights és boundary_weights mezőket. A VrsSeparator::run rollback pontjain használd ezt a helper-t ott, ahol
+      eddig ad-hoc restore_item vagy teljes tracker-visszaállítás jellegű logika volt. Failure után current layout és tracker
+      loss-state legyen rollbackelve, de a tanult GLS súlyok maradjanak meg.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "GLS és rollback unit tesztek bővítése"
+    description: >
+      Adj/frissíts Rust unit teszteket separator.rs alatt. Kötelező lefedés: nagyobb loss nagyobb vagy egyenlő multiplicative
+      weight növekedés; max_loss normalizáció; no-collision decay 1.0 irányba, de nem 1.0 alá; boundary weight update;
+      restore_but_keep_weights visszaállítja a loss-state-et, de megtartja pair/boundary weights értékeit; egyszerű overlap
+      fixture továbbra is best_loss == 0.0; determinism regression azonos input + config esetén bit-identical output.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "SGH-Q02 contract dokumentáció elkészítése"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback_contract.md dokumentumot. Tartalmazza
+      a döntést, Sparrow source mappinget, VRS implementation summaryt, GLS formulát, config semantics részt, collision és
+      boundary weight kezelését, restore_but_keep_weights contractot, rollback invariánsokat, teszt/acceptance gate-eket,
+      SGH-Q02 után megmaradó quality gapeket és a következő SGH-Q03 taskot.
+    outputs:
+      - "docs/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback_contract.md"
+
+  - name: "Focused Rust tesztek és no-downgrade scope safety"
+    description: >
+      Futtasd legalább: cargo test --manifest-path rust/vrs_solver/Cargo.toml separator, majd cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml --lib. Git diff/status alapján ellenőrizd, hogy production kódból csak
+      rust/vrs_solver/src/optimizer/separator.rs módosult. Ellenőrizd a SGH-Q01 no-downgrade gate-eket: G01 cargo test,
+      G03 accepted output find_violations safety a meglévő tesztekben, G05 determinizmus, G06 parity non-regression,
+      G07 nincs új jelöletlen proxy, G08 allowed production scope.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md"
+
+  - name: "Checklist, report és evidence matrix kitöltése"
+    description: >
+      Töltsd ki a checklistet és reportot. A report tartalmazzon dependency evidence-t, source evidence-t, current-state auditot,
+      change summaryt, config semantics részt, F07/F08 parity status update-et, no-downgrade gate eredményeket, teszteredményeket,
+      scope safety táblát és DoD -> Evidence Matrixot konkrét fájl/funkció bizonyítékokkal. Dokumentáld explicit, hogy nincs
+      multi-worker, phase orchestration, solution pool, CDE backend, smooth LossModel vagy rotation policy implementáció.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md"
+      - "codex/reports/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a standard ellenőrzést: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md.
+      Ha fail, a report első sora nem lehet PASS; dokumentáld a pontos hibát. Ha zöld, a report végén szerepeljen:
+      SGH-Q03_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.md"
+      - "codex/reports/egyedi_solver/sgh_q02_gls_parity_weight_preserving_rollback.verify.log"
