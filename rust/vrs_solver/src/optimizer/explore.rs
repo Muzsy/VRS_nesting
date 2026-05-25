@@ -3,6 +3,7 @@ use std::collections::BinaryHeap;
 
 use crate::io::Placement;
 use crate::item::Part;
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::{SheetShape, Stock};
 use crate::optimizer::moves::{MoveExecutor, MoveDiagnostics};
 use crate::optimizer::phase::{PhaseConfig, PhaseDiagnostics, PhaseStopReason, PhaseType};
@@ -120,11 +121,21 @@ pub struct LargeItemSwapDisruption {
     top_percentile: f64,
     max_attempts: usize,
     seed: i64,
+    rotation_context: RotationResolveContext,
 }
 
 impl LargeItemSwapDisruption {
     pub fn new(top_percentile: f64, max_attempts: usize, seed: i64) -> Self {
-        Self { top_percentile, max_attempts, seed }
+        Self::new_with_rotation_context(top_percentile, max_attempts, seed, RotationResolveContext::legacy_default())
+    }
+
+    pub fn new_with_rotation_context(
+        top_percentile: f64,
+        max_attempts: usize,
+        seed: i64,
+        rotation_context: RotationResolveContext,
+    ) -> Self {
+        Self { top_percentile, max_attempts, seed, rotation_context }
     }
 
     fn select_top_items<'a>(
@@ -180,7 +191,7 @@ impl LargeItemSwapDisruption {
         let top_count = top_count.max(2).min(layout.placements.len());
 
         let top_items = self.select_top_items(&layout.placements, parts, top_count);
-        let exec = MoveExecutor::new(parts, sheets);
+        let exec = MoveExecutor::new_with_rotation_context(parts, sheets, self.rotation_context.clone());
 
         for attempt in 0..self.max_attempts {
             let attempt_iter = iteration.wrapping_add(attempt);
@@ -215,10 +226,11 @@ pub struct ExplorationPhase {
 impl ExplorationPhase {
     pub fn new(config: PhaseConfig) -> Self {
         let pool = InfeasibleSolutionPool::new(config.pool_capacity);
-        let disruption = LargeItemSwapDisruption::new(
+        let disruption = LargeItemSwapDisruption::new_with_rotation_context(
             config.disruption_top_percentile,
             config.disruption_max_attempts,
             config.seed,
+            config.rotation_context.clone(),
         );
         let score_model = ScoreModel::new(config.score_weights.clone());
         Self { config, score_model, pool, disruption }
@@ -259,6 +271,7 @@ impl ExplorationPhase {
             let sep_config = VrsSeparatorConfig {
                 seed: self.config.seed as u64,
                 worker_count: self.config.worker_count,
+                rotation_context: self.config.rotation_context.clone(),
                 ..VrsSeparatorConfig::default()
             };
             let sep = VrsSeparator::new(sep_config);
@@ -495,5 +508,135 @@ mod tests {
         let violations = find_violations(&result_layout.placements, &parts, &sheets);
         assert!(violations.is_empty(), "exploration must not produce violations");
         assert!(diag.incumbent_preserved, "feasible incumbent must be preserved");
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q07R2 regression tesztek
+    // -----------------------------------------------------------------------
+
+    fn make_part_no_policy(id: &str, w: f64, h: f64, qty: i64) -> crate::item::Part {
+        crate::item::Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: qty,
+            allowed_rotations_deg: vec![],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    fn make_90x90_sheet() -> SheetShape {
+        let stock = crate::sheet::Stock {
+            id: "S90".into(),
+            quantity: 1,
+            width: Some(90.0),
+            height: Some(90.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        };
+        crate::sheet::stock_to_shape(&stock).expect("valid 90x90 sheet")
+    }
+
+    #[test]
+    fn exploration_separator_uses_phase_rotation_context() {
+        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
+        use crate::item::resolve_instance_rotation_angles;
+
+        let forty_five_context = RotationResolveContext::new(
+            Some(RotationPolicyKind::FortyFive), 42, 8
+        );
+        let legacy_context = RotationResolveContext::legacy_default();
+
+        let part = make_part_no_policy("A", 100.0, 20.0, 1);
+
+        let angles_fortyfive = resolve_instance_rotation_angles(&part, "A__0001", &forty_five_context);
+        let angles_legacy = resolve_instance_rotation_angles(&part, "A__0001", &legacy_context);
+
+        assert_eq!(angles_fortyfive.len(), 8,
+            "FortyFive context should yield 8 rotation candidates");
+        assert_eq!(angles_legacy.len(), 4,
+            "Legacy context should yield 4 orthogonal candidates");
+
+        let has_45 = angles_fortyfive.iter().any(|&r| (r - 45.0).abs() < 1e-6);
+        let legacy_has_45 = angles_legacy.iter().any(|&r| (r - 45.0).abs() < 1e-6);
+        assert!(has_45, "FortyFive context must include 45° candidate");
+        assert!(!legacy_has_45, "Legacy context must NOT include 45° candidate");
+
+        // Verify ExplorationPhase is built with the correct context plumbing
+        let mut config = PhaseConfig::deterministic_default();
+        config.rotation_context = forty_five_context.clone();
+        let phase = ExplorationPhase::new(config);
+        // disruption must store the same context (FortyFive, not legacy_default)
+        let disruption_angles = resolve_instance_rotation_angles(&part, "A__0001", &phase.disruption.rotation_context);
+        assert_eq!(disruption_angles.len(), 8,
+            "disruption.rotation_context must carry the phase config's FortyFive context");
+    }
+
+    #[test]
+    fn exploration_disruption_uses_phase_rotation_context_for_move_executor() {
+        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
+
+        // Build a disruption with FortyFive context directly
+        let forty_five_context = RotationResolveContext::new(
+            Some(RotationPolicyKind::FortyFive), 0, 8
+        );
+        let disruption = LargeItemSwapDisruption::new_with_rotation_context(
+            1.0, 3, 42, forty_five_context.clone()
+        );
+
+        let parts = vec![
+            make_part_no_policy("A", 20.0, 20.0, 1),
+            make_part_no_policy("B", 20.0, 20.0, 1),
+        ];
+        let sheets = vec![make_test_sheet(), make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 2, 0);
+
+        // Must not panic — the MoveExecutor inside uses the forty_five_context
+        let result = disruption.try_disrupt(&layout, &parts, &sheets, 0);
+        if let Some(new_placements) = result {
+            let violations = find_violations(&new_placements, &parts, &sheets);
+            assert!(violations.is_empty(), "disruption with FortyFive context must be violation-free");
+        }
+
+        // Verify the stored context is FortyFive (not legacy)
+        assert!(disruption.rotation_context.global_policy.is_some(),
+            "disruption rotation_context must carry the FortyFive global policy, not None (legacy)");
+    }
+
+    #[test]
+    fn no_production_legacy_context_in_explore_or_compress_phase_paths() {
+        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
+        use crate::item::resolve_instance_rotation_angles;
+
+        // Building ExplorationPhase with FortyFive context: disruption and separator both
+        // must have received the non-legacy context.
+        let forty_five_context = RotationResolveContext::new(
+            Some(RotationPolicyKind::FortyFive), 0, 8
+        );
+        let mut config = PhaseConfig::deterministic_default();
+        config.rotation_context = forty_five_context;
+
+        let phase = ExplorationPhase::new(config.clone());
+
+        let part = make_part_no_policy("A", 100.0, 20.0, 1);
+
+        // disruption.rotation_context must be FortyFive (8 angles), not legacy (4 angles)
+        let angles = resolve_instance_rotation_angles(&part, "A__0001", &phase.disruption.rotation_context);
+        assert_eq!(angles.len(), 8,
+            "production path: ExplorationPhase disruption must NOT use legacy_default context; got {} angles instead of 8", angles.len());
+
+        // config.rotation_context itself must be FortyFive
+        let config_angles = resolve_instance_rotation_angles(&part, "A__0001", &config.rotation_context);
+        assert_eq!(config_angles.len(), 8,
+            "PhaseConfig.rotation_context must carry FortyFive (8 angles)");
     }
 }

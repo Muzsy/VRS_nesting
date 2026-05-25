@@ -1,5 +1,4 @@
 use crate::item::{resolve_instance_rotation_angles, Part};
-use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use crate::optimizer::moves::{MoveExecutor, MoveDiagnostics};
 use crate::optimizer::phase::{PhaseConfig, PhaseDiagnostics, PhaseStopReason, PhaseType};
@@ -37,8 +36,8 @@ impl CompressionPhase {
 
         let mut incumbent_layout = layout.snapshot();
         let mut incumbent_score = initial_score.total_cost;
-        let exec = MoveExecutor::new(parts, sheets);
-        let rotation_context = RotationResolveContext::legacy_default();
+        let rotation_context = &self.config.rotation_context;
+        let exec = MoveExecutor::new_with_rotation_context(parts, sheets, rotation_context.clone());
 
         let start_time = std::time::Instant::now();
         let mut iteration = 0;
@@ -253,5 +252,98 @@ mod tests {
 
         let (_, diag) = phase.run(layout, &parts, &sheets);
         assert!(diag.iterations_run <= 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q07R2 regression tesztek
+    // -----------------------------------------------------------------------
+
+    fn make_part_no_policy(id: &str, w: f64, h: f64, qty: i64) -> crate::item::Part {
+        crate::item::Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: qty,
+            allowed_rotations_deg: vec![],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    #[test]
+    fn compression_uses_phase_rotation_context_for_candidate_rotations() {
+        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
+        use crate::item::resolve_instance_rotation_angles;
+
+        // Part with no allowed_rotations_deg and no rotation_policy →
+        // resolved angles come entirely from the context's global_policy.
+        let part = make_part_no_policy("A", 100.0, 20.0, 1);
+
+        let forty_five_context = RotationResolveContext::new(
+            Some(RotationPolicyKind::FortyFive), 0, 8
+        );
+        let legacy_context = RotationResolveContext::legacy_default();
+
+        let angles_fortyfive = resolve_instance_rotation_angles(&part, "A__0001", &forty_five_context);
+        let angles_legacy = resolve_instance_rotation_angles(&part, "A__0001", &legacy_context);
+
+        assert_eq!(angles_fortyfive.len(), 8,
+            "FortyFive context → 8 candidates; compression must use this when PhaseConfig carries it");
+        assert_eq!(angles_legacy.len(), 4,
+            "Legacy context → 4 orthogonal candidates");
+
+        // Verify that a CompressionPhase built with FortyFive config resolves 8 angles
+        let mut config = PhaseConfig::deterministic_default();
+        config.rotation_context = forty_five_context;
+        config.compression_budget = crate::optimizer::phase::PhaseBudget::new(1, 0.0);
+        let phase = CompressionPhase::new(config);
+
+        // The phase's rotation_context (via self.config.rotation_context) should yield 8 angles
+        let phase_angles = resolve_instance_rotation_angles(&part, "A__0001", &phase.config.rotation_context);
+        assert_eq!(phase_angles.len(), 8,
+            "CompressionPhase.config.rotation_context must carry FortyFive (8 angles), not legacy (4)");
+        assert!(phase_angles.iter().any(|&r| (r - 45.0).abs() < 1e-6),
+            "FortyFive context must include 45° in resolved candidates");
+    }
+
+    #[test]
+    fn compression_move_executor_uses_phase_rotation_context() {
+        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
+        use crate::item::resolve_instance_rotation_angles;
+
+        // Part with no policy: orthogonal only at 0° and 90°, fits in a wide sheet.
+        // With FortyFive context the candidate list is 8 angles; since 0° and 90° are among them
+        // and the part fits, compression should remain violation-free.
+        let parts = vec![make_part_no_policy("A", 30.0, 10.0, 2)];
+        let sheets = vec![make_test_sheet()]; // 100×100
+
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0.0 },
+        ];
+
+        let mut config = PhaseConfig::deterministic_default();
+        config.rotation_context = RotationResolveContext::new(
+            Some(RotationPolicyKind::FortyFive), 0, 8
+        );
+        config.compression_budget = crate::optimizer::phase::PhaseBudget::new(2, 0.0);
+        let phase = CompressionPhase::new(config);
+
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let (result_layout, _diag) = phase.run(layout, &parts, &sheets);
+
+        let violations = find_violations(&result_layout.placements, &parts, &sheets);
+        assert!(violations.is_empty(),
+            "compression with FortyFive context and MoveExecutor from phase config must remain violation-free");
+
+        // The resolved angles for the phase context include 45°
+        let phase_angles = resolve_instance_rotation_angles(
+            &parts[0], "A__0001", &phase.config.rotation_context
+        );
+        assert!(phase_angles.iter().any(|&r| (r - 45.0).abs() < 1e-6),
+            "phase.config.rotation_context must include 45° (FortyFive), proving MoveExecutor uses phase context");
     }
 }

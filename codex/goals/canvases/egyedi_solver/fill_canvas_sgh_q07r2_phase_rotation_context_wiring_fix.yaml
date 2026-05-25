@@ -1,0 +1,66 @@
+steps:
+  - name: "Dependency gate és preflight"
+    description: >
+      Ellenőrizd, hogy a Q07R report első sora PASS. Olvasd el az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md,
+      docs/egyedi_solver/sgh_q07_rotation_policy_contract.md, a Q07/Q07R canvasokat és ezt a Q07R2 canvas-t.
+      Rögzítsd a reportban, hogy Q07R2 miért szükséges: a PhaseConfig.rotation_context nem jut át
+      teljesen exploration/disruption/compression útvonalon.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q07r2_phase_rotation_context_wiring_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q07r2_phase_rotation_context_wiring_fix.md"
+
+  - name: "Pre-fix kódaudit"
+    description: >
+      Auditáld a production phase pathot. Keresd a MoveExecutor::new(...) és RotationResolveContext::legacy_default()
+      használatot explore.rs és compress.rs production kódban, illetve az ExplorationPhase::run() separator configját.
+      Különítsd el a test-only előfordulásokat. A reportban dokumentáld a konkrét fájl/sor bizonyítékokat.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q07r2_phase_rotation_context_wiring_fix.md"
+
+  - name: "Exploration separator context javítása"
+    description: >
+      Javítsd az ExplorationPhase::run() separator létrehozását úgy, hogy a VrsSeparatorConfig explicit a
+      self.config.rotation_context.clone() értéket kapja. A seed és worker_count meglévő viselkedése maradjon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+
+  - name: "Exploration disruption / MoveExecutor context javítása"
+    description: >
+      Javítsd a LargeItemSwapDisruption::try_disrupt útvonalat úgy, hogy a MoveExecutor ne legacy default contexttel fusson.
+      Vagy adj át RotationResolveContext referenciát a try_disrupt függvénynek, vagy tárold a contextet a disruption structban.
+      A disruption swap/reinsert/separator helper ugyanazt a policy contextet használja, mint a phase.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+
+  - name: "Compression context javítása"
+    description: >
+      Javítsd a CompressionPhase::run() kódot: ne hozzon létre lokális RotationResolveContext::legacy_default() értéket,
+      és ne használjon MoveExecutor::new(parts, sheets) hívást. A rotation candidate resolve és a MoveExecutor is
+      self.config.rotation_context alapján működjön.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott Rust teszteket, amelyek bizonyítják, hogy exploration separator, exploration disruption és compression
+      a PhaseConfig.rotation_context alapján oldja fel a rotációkat. Minimum tesztnevek: exploration_separator_uses_phase_rotation_context,
+      exploration_disruption_uses_phase_rotation_context_for_move_executor, compression_uses_phase_rotation_context_for_candidate_rotations,
+      compression_move_executor_uses_phase_rotation_context, no_production_legacy_context_in_explore_or_compress_phase_paths.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "Post-fix audit, dokumentáció és verify"
+    description: >
+      Futtasd újra az audit parancsokat és dokumentáld, hogy production pathban nincs legacy-default leakage explore/compress útvonalon.
+      Frissítsd a Q07 rotation policy contractot vagy adj Q07R2 kiegészítést. Futtasd a célzott cargo teszteket,
+      cargo test --lib-ot és a teljes verify-t. PASS csak zöld verify esetén lehet, és csak akkor kerüljön a report végére
+      SGH-Q08_STATUS: READY.
+    outputs:
+      - "docs/egyedi_solver/sgh_q07_rotation_policy_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q07r2_phase_rotation_context_wiring_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q07r2_phase_rotation_context_wiring_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q07r2_phase_rotation_context_wiring_fix.verify.log"
