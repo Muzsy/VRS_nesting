@@ -9,6 +9,7 @@ use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
+use super::collision_backend::{CollisionBackend, CollisionDecision};
 use super::initializer::bbox_from_placement;
 use super::stopping::StoppingPolicy;
 
@@ -112,6 +113,97 @@ pub fn find_violations(
         }
 
         valid_bboxes.push(bbox);
+    }
+
+    violations
+}
+
+/// Backend-aware violation scan. Semantics match `find_violations` when `backend`
+/// is `BboxCollisionBackend`.
+///
+/// If the backend returns `Unsupported` for boundary or overlap queries, the
+/// function falls back to bbox-based checks transparently (conservative path).
+pub fn find_violations_with_backend(
+    placements: &[Placement],
+    parts: &[Part],
+    sheets: &[SheetShape],
+    backend: &dyn CollisionBackend,
+) -> Vec<(usize, ViolationType)> {
+    let mut valid_indices: Vec<usize> = Vec::with_capacity(placements.len());
+    let mut violations: Vec<(usize, ViolationType)> = Vec::new();
+
+    for (idx, p) in placements.iter().enumerate() {
+        let part = match parts.iter().find(|pt| pt.id == p.part_id) {
+            Some(pt) => pt,
+            None => {
+                violations.push((idx, ViolationType::BoundaryOrSheet));
+                continue;
+            }
+        };
+
+        if p.sheet_index >= sheets.len() {
+            violations.push((idx, ViolationType::BoundaryOrSheet));
+            continue;
+        }
+        let sheet = &sheets[p.sheet_index];
+
+        // Boundary check via backend; fall back to bbox on Unsupported.
+        let boundary_violated = match backend.placement_within_sheet(p, part, sheet) {
+            CollisionDecision::Collision => true,
+            CollisionDecision::NoCollision => false,
+            CollisionDecision::Unsupported { .. } => {
+                match bbox_from_placement(p, part.width, part.height) {
+                    Some(bbox) => {
+                        let rect = Rect { x1: bbox.x1, y1: bbox.y1, x2: bbox.x2, y2: bbox.y2 };
+                        !rect_within_boundary(rect, sheet)
+                    }
+                    None => true,
+                }
+            }
+        };
+        if boundary_violated {
+            violations.push((idx, ViolationType::BoundaryOrSheet));
+            continue;
+        }
+
+        // Overlap check against all previously validated placements.
+        let mut has_overlap = false;
+        'outer: for &vi in &valid_indices {
+            let vp = &placements[vi];
+            if vp.sheet_index != p.sheet_index {
+                continue;
+            }
+            let vpart = match parts.iter().find(|pt| pt.id == vp.part_id) {
+                Some(pt) => pt,
+                None => continue,
+            };
+            let decision = backend.placement_overlaps(vp, vpart, p, part);
+            match decision {
+                CollisionDecision::Collision => {
+                    has_overlap = true;
+                    break 'outer;
+                }
+                CollisionDecision::NoCollision => {}
+                CollisionDecision::Unsupported { .. } => {
+                    // Fall back to bbox overlap check.
+                    if let (Some(ba), Some(bb)) = (
+                        bbox_from_placement(vp, vpart.width, vpart.height),
+                        bbox_from_placement(p, part.width, part.height),
+                    ) {
+                        if ba.overlaps(&bb) {
+                            has_overlap = true;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+
+        if has_overlap {
+            violations.push((idx, ViolationType::Overlap));
+        } else {
+            valid_indices.push(idx);
+        }
     }
 
     violations

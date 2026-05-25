@@ -1,0 +1,84 @@
+steps:
+  - name: "Dependency gate és preflight"
+    description: >
+      Ellenőrizd, hogy a Q07R2 report első sora PASS és tartalmazza az SGH-Q08_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md, a Q00/Q01 gap/roadmap doksikat,
+      a Q07 rotation policy contractot és ezt a Q08 canvas-t. Ha a dependency gate hiányzik, BLOCKED report,
+      production kódmódosítás nélkül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q08_collision_backend_geometry_preprocessing.md"
+      - "codex/reports/egyedi_solver/sgh_q08_collision_backend_geometry_preprocessing.md"
+
+  - name: "Jagua-rs API audit"
+    description: >
+      Auditáld a helyi jagua-rs crate API-t: létezik-e CDEngine/collision_detection/OriginalShape/surrogate API,
+      vagy csak SPolygon/Edge/CollidesWith primitive áll rendelkezésre. A reportban fájl/sor/parancs bizonyítékkal
+      dokumentáld, mit lehet ténylegesen használni. Ne találj ki nem létező CDE API-t.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q08_collision_backend_geometry_preprocessing.md"
+
+  - name: "CollisionBackend trait és Bbox backend"
+    description: >
+      Hozz létre VRS-owned CollisionBackend traitet és BboxCollisionBackend implementációt. A Bbox backend legyen
+      backward-compatible: ugyanazt adja item-item overlapre és boundary checkre, mint a jelenlegi PlacedBbox.overlaps,
+      rect_within_boundary és find_violations útvonal. A jagua-rs típusok ne szivárogjanak ki a publikus optimizer API-ba.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/boundary.rs"
+
+  - name: "Jagua exact vagy CDE backend foundation"
+    description: >
+      Ha a jagua-rs CDEngine használható, implementálj minimális CdeCollisionBackend-et. Ha nem használható,
+      implementálj JaguaPolygonExactBackend-et SPolygon/Edge/CollidesWith primitívekkel, és jelöld a CDE státuszt
+      BLOCKED/MISSING-ként a reportban. Tilos CDE néven bbox fallbacket adni.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/geometry.rs"
+      - "rust/vrs_solver/src/item.rs"
+      - "rust/vrs_solver/src/sheet.rs"
+
+  - name: "Geometry preprocessing foundation"
+    description: >
+      Adj PreparedShape/PreparedGeometry jellegű metadata struktúrát és preprocess_polygon/preprocess_rect helper(eke)t:
+      invalid polygon reject, consecutive duplicate cleanup, bbox/area/original vertex count, simplification_tolerance metadata,
+      readiness flags. A teljes offset/simplify/narrow-concavity-close pipeline csak akkor legyen teljesként jelölve,
+      ha valóban implementált; egyébként explicit QUALITY_RISK/TODO maradjon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/geometry_preprocessing.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "docs/egyedi_solver/sgh_q08_collision_backend_contract.md"
+
+  - name: "Backend-aware validation hook"
+    description: >
+      Vezess be find_violations_with_backend API-t, amely CollisionBackend trait objektumot vagy enum konfigurációt kap.
+      A meglévő find_violations maradjon backward-compatible wrapper a BboxCollisionBackend felé. Ne kapcsold át a production
+      defaultot exact backendre, amíg nincs no-downgrade evidence.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Regression tesztek és exact-vs-bbox smoke"
+    description: >
+      Adj célzott Rust teszteket: bbox backend backward compat, default find_violations kompatibilitás,
+      jagua/cde polygon overlap, L-shape notch/boundary, preprocessing invalid polygon reject, duplicate cleanup,
+      no silent bbox fallback. Adj kis exact-vs-bbox smoke/script vagy Rust test matrixot irregular fixture-rel.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/geometry_preprocessing.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "scripts/smoke_sgh_q08_collision_backend_matrix.py"
+      - "codex/reports/egyedi_solver/sgh_q08_collision_backend_geometry_preprocessing.md"
+
+  - name: "Dokumentáció, checklist, verify"
+    description: >
+      Készítsd el a Q08 checklistet, a backend contract doksit és a reportot. Futtasd a célzott cargo teszteket,
+      cargo test --lib-ot és a teljes verify-t. PASS csak zöld verify esetén lehet. PASS esetén a report végén
+      SGH-Q09_STATUS: READY; REVISE/BLOCKED esetén marker nincs.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q08_collision_backend_geometry_preprocessing.md"
+      - "docs/egyedi_solver/sgh_q08_collision_backend_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q08_collision_backend_geometry_preprocessing.md"
+      - "codex/reports/egyedi_solver/sgh_q08_collision_backend_geometry_preprocessing.verify.log"
