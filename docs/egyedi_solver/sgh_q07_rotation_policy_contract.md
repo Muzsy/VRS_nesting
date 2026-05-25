@@ -129,3 +129,26 @@ Inverz: bbox bal-alsó sarokból → placement anchor (eredetileg jobb-felső-sa
 | `rust/vrs_solver/src/optimizer/moves.rs` | `CandidateMove::Rotate` f64, epsilon comparisons |
 | `rust/vrs_solver/src/optimizer/repair.rs` | `RepairItem.allowed_rotations: Vec<f64>` |
 | `rust/vrs_solver/src/optimizer/sheet_elimination.rs` | f64 rotations |
+
+---
+
+## SGH-Q07R addendum — global wiring and seed propagation
+
+Q07R pontosítja, hogy a precedence contract nem csak helper szinten, hanem a teljes solve pathon is kötelező:
+
+`Part.rotation_policy > legacy Part.allowed_rotations_deg > SolverInput.rotation_policy > Orthogonal fallback`
+
+Kötelező runtime követelmények:
+
+- `adapter::solve` a global `rotation_policy` és `seed` értéket átadja az instance expansion és pre-fit döntésekhez.
+- Continuous policy seed nem lehet hardcoded `0`; determinisztikus seed deriváció kötelező.
+- Same input + same seed determinisztikus kimenetet ad.
+- Different seed képes eltérő continuous candidate listát eredményezni.
+- Az optimizer alrendszer nem használhat indokolatlan `resolve_part_rotation_angles(..., None, 0, 8)` mintát production kódban.
+
+Technikai megvalósítási pontok:
+
+- `RotationResolveContext` (global policy + solver seed + continuous sample count)
+- policy-aware helper API (`expand_instances_with_policy`, `can_fit_any_stock_with_policy`, `build_item_geometry_store_with_policy`)
+- context bridge az optimizer koordinációs rétegekben (`multisheet`, `phase`, `bpp_phase`)
+

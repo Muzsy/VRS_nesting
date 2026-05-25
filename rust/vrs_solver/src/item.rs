@@ -5,6 +5,7 @@ use crate::geometry::EPS;
 use crate::rotation_policy::{
     candidate_angles, dedup_angles, dims_for_rotation_f64, normalize_angle,
     placement_anchor_from_rect_min_f64, rotated_bbox_min_offset_f64, RotationPolicyKind,
+    RotationResolveContext,
 };
 use crate::sheet::SheetShape;
 
@@ -89,6 +90,31 @@ pub fn resolve_part_rotation_angles(
     candidate_angles(&RotationPolicyKind::Orthogonal, seed, sample_count)
 }
 
+pub fn resolve_part_rotation_angles_with_context(
+    part: &Part,
+    context: &RotationResolveContext,
+) -> Vec<f64> {
+    resolve_part_rotation_angles(
+        part,
+        context.global_policy.as_ref(),
+        context.seed_for_part(&part.id),
+        context.continuous_sample_count,
+    )
+}
+
+pub fn resolve_instance_rotation_angles(
+    part: &Part,
+    instance_id: &str,
+    context: &RotationResolveContext,
+) -> Vec<f64> {
+    resolve_part_rotation_angles(
+        part,
+        context.global_policy.as_ref(),
+        context.seed_for_instance(&part.id, instance_id),
+        context.continuous_sample_count,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // normalize_allowed_rotations
 // ---------------------------------------------------------------------------
@@ -137,8 +163,12 @@ pub fn placement_anchor_from_rect_min(
 // can_fit_any_stock
 // ---------------------------------------------------------------------------
 
-pub fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> Result<bool, String> {
-    let allowed_rotations = resolve_part_rotation_angles(part, None, 0, 8);
+pub fn can_fit_any_stock_with_policy(
+    part: &Part,
+    sheets: &[SheetShape],
+    context: &RotationResolveContext,
+) -> Result<bool, String> {
+    let allowed_rotations = resolve_part_rotation_angles_with_context(part, context);
     if allowed_rotations.is_empty() {
         return Err("part has no rotation angles".to_string());
     }
@@ -153,24 +183,32 @@ pub fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> Result<bool, Str
     Ok(false)
 }
 
+pub fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> Result<bool, String> {
+    can_fit_any_stock_with_policy(part, sheets, &RotationResolveContext::legacy_default())
+}
+
 // ---------------------------------------------------------------------------
 // expand_instances
 // ---------------------------------------------------------------------------
 
-pub fn expand_instances(parts: &[Part]) -> Result<Vec<Instance>, String> {
+pub fn expand_instances_with_policy(
+    parts: &[Part],
+    context: &RotationResolveContext,
+) -> Result<Vec<Instance>, String> {
     let mut instances = Vec::new();
     for part in parts {
-        let allowed_rotations = if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
-            resolve_part_rotation_angles(part, None, 0, 8)
-        } else {
-            normalize_allowed_rotations(&part.allowed_rotations_deg)?
-        };
-        if allowed_rotations.is_empty() {
-            return Err(format!("part {} has no valid rotation angles", part.id));
-        }
         for idx in 0..part.quantity {
+            let instance_id = format!("{}__{:04}", part.id, idx + 1);
+            let allowed_rotations = if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
+                resolve_instance_rotation_angles(part, &instance_id, context)
+            } else {
+                normalize_allowed_rotations(&part.allowed_rotations_deg)?
+            };
+            if allowed_rotations.is_empty() {
+                return Err(format!("part {} has no valid rotation angles", part.id));
+            }
             instances.push(Instance {
-                instance_id: format!("{}__{:04}", part.id, idx + 1),
+                instance_id,
                 part_id: part.id.clone(),
                 width: part.width,
                 height: part.height,
@@ -180,6 +218,10 @@ pub fn expand_instances(parts: &[Part]) -> Result<Vec<Instance>, String> {
     }
     instances.sort_by(|a, b| a.instance_id.cmp(&b.instance_id));
     Ok(instances)
+}
+
+pub fn expand_instances(parts: &[Part]) -> Result<Vec<Instance>, String> {
+    expand_instances_with_policy(parts, &RotationResolveContext::legacy_default())
 }
 
 // ---------------------------------------------------------------------------
@@ -214,11 +256,14 @@ pub struct ItemGeometryStore {
     pub records: Vec<ItemGeometryRecord>,
 }
 
-pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, String> {
+pub fn build_item_geometry_store_with_policy(
+    parts: &[Part],
+    context: &RotationResolveContext,
+) -> Result<ItemGeometryStore, String> {
     let mut records = Vec::new();
     for part in parts {
         let allowed_rotations = if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
-            resolve_part_rotation_angles(part, None, 0, 8)
+            resolve_part_rotation_angles_with_context(part, context)
         } else {
             normalize_allowed_rotations(&part.allowed_rotations_deg)?
         };
@@ -251,6 +296,10 @@ pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, St
     Ok(ItemGeometryStore { records })
 }
 
+pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, String> {
+    build_item_geometry_store_with_policy(parts, &RotationResolveContext::legacy_default())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -258,9 +307,11 @@ pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, St
 #[cfg(test)]
 mod tests {
     use super::{
-        build_item_geometry_store, dims_for_rotation, normalize_allowed_rotations,
-        placement_anchor_from_rect_min, rotated_bbox_min_offset, Part,
+        build_item_geometry_store, dims_for_rotation, expand_instances_with_policy,
+        normalize_allowed_rotations, placement_anchor_from_rect_min,
+        rotated_bbox_min_offset, Part,
     };
+    use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
 
     fn make_part(id: &str, w: f64, h: f64, qty: i64, rotations: Vec<i64>) -> Part {
         Part {
@@ -454,5 +505,41 @@ mod tests {
         assert!((cache[2].height - 40.0).abs() < 1e-9);
         assert!((cache[3].width - 40.0).abs() < 1e-9);
         assert!((cache[3].height - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn global_forty_five_policy_affects_expand_instances_when_part_has_no_legacy_rots() {
+        let parts = vec![make_part("F", 100.0, 20.0, 1, vec![])];
+        let ctx = RotationResolveContext::new(Some(RotationPolicyKind::FortyFive), 11, 8);
+        let instances = expand_instances_with_policy(&parts, &ctx).expect("instances");
+        let rots = &instances[0].allowed_rotations_deg;
+        assert!(rots.iter().any(|&r| (r - 45.0).abs() < 1e-9));
+        assert_eq!(rots.len(), 8);
+    }
+
+    #[test]
+    fn global_continuous_policy_affects_expand_instances_when_part_has_no_legacy_rots() {
+        let parts = vec![make_part("G", 100.0, 20.0, 1, vec![])];
+        let ctx = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 1234, 8);
+        let instances = expand_instances_with_policy(&parts, &ctx).expect("instances");
+        let rots = &instances[0].allowed_rotations_deg;
+        assert!(rots.len() >= 5, "continuous must include canonical + sampled");
+        let has_non_canonical = rots
+            .iter()
+            .any(|&r| [0.0, 90.0, 180.0, 270.0].iter().all(|&c| (r - c).abs() > 0.5));
+        assert!(has_non_canonical, "continuous must include non-canonical angle");
+    }
+
+    #[test]
+    fn continuous_policy_different_seed_changes_resolved_candidate_angles() {
+        let parts = vec![make_part("H", 100.0, 20.0, 1, vec![])];
+        let a = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 1001, 8);
+        let b = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 2002, 8);
+        let ia = expand_instances_with_policy(&parts, &a).expect("a");
+        let ib = expand_instances_with_policy(&parts, &b).expect("b");
+        assert_ne!(
+            ia[0].allowed_rotations_deg, ib[0].allowed_rotations_deg,
+            "different seeds must be able to change resolved continuous angles"
+        );
     }
 }

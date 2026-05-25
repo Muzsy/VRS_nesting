@@ -3,7 +3,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::geometry::Rect;
 use crate::io::Placement;
-use crate::item::{dims_for_rotation, placement_anchor_from_rect_min, Part, resolve_part_rotation_angles};
+use crate::item::{
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
+};
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
@@ -353,6 +356,8 @@ pub struct VrsSeparatorConfig {
     pub worker_count: usize,
     /// Base seed for deterministic worker-specific shuffles.
     pub seed: u64,
+    /// Rotation resolution context for item re-candidate generation during separation.
+    pub rotation_context: RotationResolveContext,
     /// Collision loss model. Default: `BboxArea` (backward-compatible dx*dy + binary boundary).
     pub loss_model: LossModelKind,
 }
@@ -369,6 +374,7 @@ impl Default for VrsSeparatorConfig {
             allowed_sheet_indices: None,
             worker_count: 1,
             seed: 0,
+            rotation_context: RotationResolveContext::legacy_default(),
             loss_model: LossModelKind::BboxArea,
         }
     }
@@ -453,7 +459,11 @@ impl VrsSeparator {
         let part = parts
             .iter()
             .find(|p| p.id == layout.placements[target_idx].part_id)?;
-        let allowed_rotations = resolve_part_rotation_angles(part, None, 0, 8);
+        let allowed_rotations = resolve_instance_rotation_angles(
+            part,
+            &layout.placements[target_idx].instance_id,
+            &self.config.rotation_context,
+        );
 
         let placed_without: Vec<PlacedBbox> = layout
             .placements

@@ -7,9 +7,12 @@
 
 use crate::io::{Placement, Unplaced};
 use crate::item::{Instance, Part};
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
-use super::initializer::{bbox_from_placement, build_initial_layout, ConstructionDiagnostics};
-use super::repair::{run_repair, RepairDiagnostics};
+use super::initializer::{
+    bbox_from_placement, build_initial_layout_with_rotation_context, ConstructionDiagnostics,
+};
+use super::repair::{run_repair_with_rotation_context, RepairDiagnostics};
 use super::sheet_elimination::{SheetEliminationDiagnostics, SheetEliminationEngine};
 use super::stopping::StoppingPolicy;
 
@@ -99,11 +102,24 @@ impl MultiSheetDiagnostics {
 pub struct MultiSheetManager<'a> {
     parts: &'a [Part],
     sheets: &'a [SheetShape],
+    rotation_context: RotationResolveContext,
 }
 
 impl<'a> MultiSheetManager<'a> {
     pub fn new(parts: &'a [Part], sheets: &'a [SheetShape]) -> Self {
-        Self { parts, sheets }
+        Self::new_with_rotation_context(parts, sheets, RotationResolveContext::legacy_default())
+    }
+
+    pub fn new_with_rotation_context(
+        parts: &'a [Part],
+        sheets: &'a [SheetShape],
+        rotation_context: RotationResolveContext,
+    ) -> Self {
+        Self {
+            parts,
+            sheets,
+            rotation_context,
+        }
     }
 
     /// Run construction then repair; return `(placements, unplaced, diagnostics)`.
@@ -118,15 +134,29 @@ impl<'a> MultiSheetManager<'a> {
         policy: &mut StoppingPolicy,
     ) -> (Vec<Placement>, Vec<Unplaced>, MultiSheetDiagnostics) {
         // Phase 1: initial construction across all available sheet slots.
-        let (init_p, init_u, construction_diag) =
-            build_initial_layout(instances, self.parts, self.sheets);
+        let (init_p, init_u, construction_diag) = build_initial_layout_with_rotation_context(
+            instances,
+            self.parts,
+            self.sheets,
+            &self.rotation_context,
+        );
 
         // Phase 2: repair pass — tries to fix violations and reinsert unplaced items.
-        let (rep_placements, rep_unplaced, repair_diag) =
-            run_repair(init_p, init_u, self.parts, self.sheets, policy);
+        let (rep_placements, rep_unplaced, repair_diag) = run_repair_with_rotation_context(
+            init_p,
+            init_u,
+            self.parts,
+            self.sheets,
+            policy,
+            &self.rotation_context,
+        );
 
         // Phase 3: sheet elimination pass — tries to reduce sheet_count_used by one.
-        let engine = SheetEliminationEngine::new(self.parts, self.sheets);
+        let engine = SheetEliminationEngine::new_with_rotation_context(
+            self.parts,
+            self.sheets,
+            self.rotation_context.clone(),
+        );
         let (placements, unplaced, elim_diag) =
             engine.run(rep_placements, rep_unplaced, policy);
 

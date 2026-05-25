@@ -1,7 +1,6 @@
-use crate::io::Placement;
-use crate::item::{Part, resolve_part_rotation_angles};
+use crate::item::{resolve_instance_rotation_angles, Part};
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
-use crate::optimizer::explore::make_test_sheet;
 use crate::optimizer::moves::{MoveExecutor, MoveDiagnostics};
 use crate::optimizer::phase::{PhaseConfig, PhaseDiagnostics, PhaseStopReason, PhaseType};
 use crate::optimizer::repair::find_violations;
@@ -39,6 +38,7 @@ impl CompressionPhase {
         let mut incumbent_layout = layout.snapshot();
         let mut incumbent_score = initial_score.total_cost;
         let exec = MoveExecutor::new(parts, sheets);
+        let rotation_context = RotationResolveContext::legacy_default();
 
         let start_time = std::time::Instant::now();
         let mut iteration = 0;
@@ -61,7 +61,7 @@ impl CompressionPhase {
 
                 let rotations_to_try: Vec<f64> = parts.iter()
                     .find(|pt| pt.id == part_id)
-                    .map(|pt| resolve_part_rotation_angles(pt, None, 0, 8))
+                    .map(|pt| resolve_instance_rotation_angles(pt, &instance_id, &rotation_context))
                     .unwrap_or_default();
 
                 for &rot in rotations_to_try.iter() {
@@ -119,6 +119,8 @@ impl CompressionPhase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::Placement;
+    use crate::optimizer::explore::make_test_sheet;
     use crate::optimizer::score::ScoreModel;
 
     #[test]

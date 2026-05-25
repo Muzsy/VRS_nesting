@@ -1,0 +1,82 @@
+steps:
+  - name: "Dependency gate és Q07 audit"
+    description: >
+      Ellenőrizd, hogy az SGH-Q07 report első sora PASS. Olvasd el az AGENTS.md, docs/codex/overview.md,
+      docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md,
+      docs/egyedi_solver/sgh_q07_rotation_policy_contract.md, a Q07 canvas-t és ezt a Q07R canvas-t.
+      Rögzítsd a reportban, hogy Q07R miért szükséges: a SolverInput.rotation_policy parse-olva van,
+      de a valós solve path több ponton nem kapja meg.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q07r_rotation_policy_global_wiring_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q07r_rotation_policy_global_wiring_fix.md"
+
+  - name: "Rotation resolve context bevezetése vagy ekvivalens helper réteg"
+    description: >
+      Vezess be olyan context/helper réteget, amely a global rotation policy-t, solver seedet és continuous sample countot
+      egy helyen kezeli. A cél, hogy ne legyen szétszórt resolve_part_rotation_angles(part, None, 0, 8) mintázat.
+      A régi public helper API-k maradhatnak backward-compatible wrapperként, de a valós adapter solve path policy-aware legyen.
+    outputs:
+      - "rust/vrs_solver/src/rotation_policy.rs"
+      - "rust/vrs_solver/src/item.rs"
+
+  - name: "Adapter és item helper wiring"
+    description: >
+      Az adapter::solve útvonal használja a SolverInput.rotation_policy-t és input.seedet az instance expansion,
+      can-fit prefilter és bármely további geometry-store/helper hívás során. Implementálj policy-aware helper-eket:
+      expand_instances_with_policy, can_fit_any_stock_with_policy, build_item_geometry_store_with_policy vagy repo-stílushoz
+      igazított ekvivalenseket. A legacy allowed_rotations_deg precedence maradjon erősebb a global policy-nél.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/item.rs"
+
+  - name: "Optimizer call site-ok policy/context javítása"
+    description: >
+      Auditáld és javítsd az összes production resolve_part_rotation_angles(part, None, 0, 8) előfordulást.
+      Ahol lehetséges, használd az Instance.allowed_rotations_deg már feloldott listáját. Ahol csak Part áll rendelkezésre,
+      add át a contextet az adott struct/függvény konstruktorába vagy run metódusába. Külön nézd: initializer fallback,
+      separator, compression, moves, repair, sheet_elimination, multisheet/phase bridge.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+      - "rust/vrs_solver/src/optimizer/multisheet.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+
+  - name: "Continuous seed propagation"
+    description: >
+      Continuous policy esetén a candidate angle list seedje ne hardcoded 0 legyen. Használj determinisztikus seed derivációt
+      input.seed + part_id/instance_id alapján. Same input + same seed legyen bit/byte determinisztikus; eltérő seed legalább
+      a resolved continuous angle listát képes legyen megváltoztatni. A canonical 0/90/180/270 szögek maradjanak benne.
+    outputs:
+      - "rust/vrs_solver/src/rotation_policy.rs"
+      - "rust/vrs_solver/src/item.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott teszteket a global policy real solve pathra. Kötelező 100x20 part / 90x90 sheet fixture:
+      no global policy vagy Orthogonal esetén ne férjen fel, global FortyFive esetén férjen fel. Teszteld a legacy override-ot,
+      part override-ot, continuous same-seed determinizmust, different-seed candidate eltérést, és auditáld, hogy nem maradt
+      indokolatlan production resolve_part_rotation_angles(... None, 0, 8) minta.
+    outputs:
+      - "rust/vrs_solver/src/item.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/rotation_policy.rs"
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+
+  - name: "Dokumentáció, report és repo gate"
+    description: >
+      Frissítsd a sgh_q07_rotation_policy_contract.md dokumentumot vagy adj Q07R kiegészítést. Töltsd ki a checklistet és reportot.
+      Futtasd a célzott cargo teszteket és a cargo test --lib parancsot, majd ./scripts/verify.sh --report ... .
+      PASS csak teljes zöld verify esetén lehet, és csak ekkor kerülhet a report végére SGH-Q08_STATUS: READY.
+    outputs:
+      - "docs/egyedi_solver/sgh_q07_rotation_policy_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q07r_rotation_policy_global_wiring_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q07r_rotation_policy_global_wiring_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q07r_rotation_policy_global_wiring_fix.verify.log"

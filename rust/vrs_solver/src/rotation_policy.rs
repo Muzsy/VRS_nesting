@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub type AngleDeg = f64;
 
 const CANONICAL: [AngleDeg; 4] = [0.0, 90.0, 180.0, 270.0];
+pub const DEFAULT_CONTINUOUS_SAMPLE_COUNT: usize = 8;
 
 /// Modular rotation policy for VRS solver.
 ///
@@ -51,6 +52,71 @@ impl Default for RotationPolicyConfig {
             continuous_sample_count: 12,
             wiggle_degrees: vec![1.0, 2.0, 5.0],
         }
+    }
+}
+
+/// Runtime context for resolving effective rotation candidates.
+#[derive(Debug, Clone)]
+pub struct RotationResolveContext {
+    pub global_policy: Option<RotationPolicyKind>,
+    pub solver_seed: u64,
+    pub continuous_sample_count: usize,
+}
+
+impl Default for RotationResolveContext {
+    fn default() -> Self {
+        Self::legacy_default()
+    }
+}
+
+impl RotationResolveContext {
+    pub fn new(
+        global_policy: Option<RotationPolicyKind>,
+        solver_seed: u64,
+        continuous_sample_count: usize,
+    ) -> Self {
+        Self {
+            global_policy,
+            solver_seed,
+            continuous_sample_count: continuous_sample_count.max(1),
+        }
+    }
+
+    pub fn legacy_default() -> Self {
+        Self::new(None, 0, DEFAULT_CONTINUOUS_SAMPLE_COUNT)
+    }
+
+    pub fn seed_for_part(&self, part_id: &str) -> u64 {
+        derive_rotation_seed(self.solver_seed, part_id, None)
+    }
+
+    pub fn seed_for_instance(&self, part_id: &str, instance_id: &str) -> u64 {
+        derive_rotation_seed(self.solver_seed, part_id, Some(instance_id))
+    }
+}
+
+/// Deterministic seed mixing for rotation candidate generation.
+pub fn derive_rotation_seed(base_seed: u64, part_id: &str, instance_id: Option<&str>) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0001_0000_01b3;
+
+    let mut hash = FNV_OFFSET ^ base_seed.rotate_left(17);
+    for &b in part_id.as_bytes() {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    if let Some(instance) = instance_id {
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        for &b in instance.as_bytes() {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    if hash == 0 {
+        0x9E37_79B9_7F4A_7C15
+    } else {
+        hash
     }
 }
 
@@ -226,6 +292,9 @@ pub fn placement_anchor_from_rect_min_f64(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::Path;
+
     use super::*;
     use crate::item::{expand_instances, Part, resolve_part_rotation_angles};
     use crate::sheet::{expand_sheets, Stock};
@@ -514,6 +583,36 @@ mod tests {
                 approx_eq(placed_min_y, ry),
                 "rot={rot} placed_min_y={placed_min_y} expected={ry}"
             );
+        }
+    }
+
+    #[test]
+    fn no_remaining_production_none_zero_eight_policy_resolution_without_justification() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let files = [
+            "item.rs",
+            "adapter.rs",
+            "optimizer/initializer.rs",
+            "optimizer/separator.rs",
+            "optimizer/compress.rs",
+            "optimizer/moves.rs",
+            "optimizer/repair.rs",
+            "optimizer/sheet_elimination.rs",
+        ];
+        for rel in files {
+            let path = root.join(rel);
+            let src = fs::read_to_string(&path).expect("read source");
+            for (lineno, line) in src.lines().enumerate() {
+                let has_bad_call = line.contains("resolve_part_rotation_angles(")
+                    && line.contains("None, 0, 8");
+                assert!(
+                    !has_bad_call,
+                    "forbidden hardcoded policy resolution in {}:{}: {}",
+                    rel,
+                    lineno + 1,
+                    line
+                );
+            }
         }
     }
 }

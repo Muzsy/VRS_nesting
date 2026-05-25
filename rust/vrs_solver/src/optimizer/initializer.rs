@@ -4,8 +4,9 @@ use crate::geometry::Rect;
 use crate::io::{Placement, Unplaced};
 use crate::item::{
     dims_for_rotation, placement_anchor_from_rect_min,
-    rotated_bbox_min_offset, Instance, Part, resolve_part_rotation_angles,
+    rotated_bbox_min_offset, Instance, Part,
 };
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, CandidatePoint, PlacedBbox};
@@ -285,6 +286,7 @@ fn try_separator_fallback_for_instance(
     sheets: &[SheetShape],
     placed_bboxes: &[PlacedBbox],
     diag: &mut ConstructionDiagnostics,
+    rotation_context: &RotationResolveContext,
 ) -> Option<(Vec<Placement>, Vec<PlacedBbox>)> {
     diag.separator_fallback_attempts += 1;
 
@@ -293,7 +295,7 @@ fn try_separator_fallback_for_instance(
         return None;
     }
 
-    let allowed_rotations = resolve_part_rotation_angles(part, None, 0, 8);
+    let allowed_rotations = instance.allowed_rotations_deg.clone();
     if allowed_rotations.is_empty() {
         diag.separator_fallback_failures += 1;
         return None;
@@ -341,7 +343,10 @@ fn try_separator_fallback_for_instance(
     working_placements.push(seed_placement);
     let working = WorkingLayout::new(working_placements, vec![], sheets.len(), 0);
 
-    let sep = VrsSeparator::new(VrsSeparatorConfig::default());
+    let sep = VrsSeparator::new(VrsSeparatorConfig {
+        rotation_context: rotation_context.clone(),
+        ..VrsSeparatorConfig::default()
+    });
     let (result_layout, sep_diag) = sep.run(working, parts, sheets);
 
     if sep_diag.best_loss == 0.0 || sep_diag.converged {
@@ -385,6 +390,20 @@ pub fn build_initial_layout(
     instances: &[Instance],
     parts: &[Part],
     sheets: &[SheetShape],
+) -> (Vec<Placement>, Vec<Unplaced>, ConstructionDiagnostics) {
+    build_initial_layout_with_rotation_context(
+        instances,
+        parts,
+        sheets,
+        &RotationResolveContext::legacy_default(),
+    )
+}
+
+pub fn build_initial_layout_with_rotation_context(
+    instances: &[Instance],
+    parts: &[Part],
+    sheets: &[SheetShape],
+    rotation_context: &RotationResolveContext,
 ) -> (Vec<Placement>, Vec<Unplaced>, ConstructionDiagnostics) {
     let mut placements: Vec<Placement> = Vec::new();
     let mut unplaced_list: Vec<Unplaced> = Vec::new();
@@ -445,6 +464,7 @@ pub fn build_initial_layout(
             sheets,
             &placed_bboxes,
             &mut diag,
+            rotation_context,
         );
 
         if let Some((new_placements, new_bboxes)) = fallback {
@@ -671,6 +691,7 @@ mod tests {
             &sheets,
             &placed_bboxes_a,
             &mut diag,
+            &RotationResolveContext::legacy_default(),
         );
 
         assert!(result.is_some(), "separator fallback must succeed for two 30×30 items on a 200×100 sheet");
@@ -717,6 +738,7 @@ mod tests {
             &sheets,
             &placed_bboxes_a,
             &mut diag,
+            &RotationResolveContext::legacy_default(),
         );
 
         // The fallback should fail — B cannot be placed alongside A on a 50×50 sheet.

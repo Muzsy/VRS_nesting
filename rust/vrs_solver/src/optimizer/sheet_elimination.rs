@@ -16,8 +16,9 @@ use std::collections::HashSet;
 use crate::geometry::Rect;
 use crate::io::{Placement, Unplaced};
 use crate::item::{
-    dims_for_rotation, placement_anchor_from_rect_min, resolve_part_rotation_angles, Part,
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
 };
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 
 use super::boundary::rect_within_boundary;
@@ -103,11 +104,24 @@ impl SheetEliminationDiagnostics {
 pub struct SheetEliminationEngine<'a> {
     parts: &'a [Part],
     sheets: &'a [SheetShape],
+    rotation_context: RotationResolveContext,
 }
 
 impl<'a> SheetEliminationEngine<'a> {
     pub fn new(parts: &'a [Part], sheets: &'a [SheetShape]) -> Self {
-        Self { parts, sheets }
+        Self::new_with_rotation_context(parts, sheets, RotationResolveContext::legacy_default())
+    }
+
+    pub fn new_with_rotation_context(
+        parts: &'a [Part],
+        sheets: &'a [SheetShape],
+        rotation_context: RotationResolveContext,
+    ) -> Self {
+        Self {
+            parts,
+            sheets,
+            rotation_context,
+        }
     }
 
     /// Run one sheet elimination pass.
@@ -249,7 +263,7 @@ impl<'a> SheetEliminationEngine<'a> {
             }
             policy.tick();
 
-            let (w, h, rots) = self.resolve_dims(&item.part_id);
+            let (w, h, rots) = self.resolve_dims(&item.part_id, &item.instance_id);
             if w <= 0.0 || h <= 0.0 || rots.is_empty() {
                 return None;
             }
@@ -349,6 +363,7 @@ impl<'a> SheetEliminationEngine<'a> {
 
         let sep = VrsSeparator::new(VrsSeparatorConfig {
             allowed_sheet_indices: Some(allowed_receiving.to_vec()),
+            rotation_context: self.rotation_context.clone(),
             ..VrsSeparatorConfig::default()
         });
         let (sep_layout, sep_diag) = sep.run(working, self.parts, self.sheets);
@@ -508,10 +523,10 @@ impl<'a> SheetEliminationEngine<'a> {
             .collect()
     }
 
-    fn resolve_dims(&self, part_id: &str) -> (f64, f64, Vec<f64>) {
+    fn resolve_dims(&self, part_id: &str, instance_id: &str) -> (f64, f64, Vec<f64>) {
         match self.parts.iter().find(|pt| pt.id == part_id) {
             Some(pt) => {
-                let rots = resolve_part_rotation_angles(pt, None, 0, 8);
+                let rots = resolve_instance_rotation_angles(pt, instance_id, &self.rotation_context);
                 (pt.width, pt.height, rots)
             }
             None => (0.0, 0.0, vec![]),

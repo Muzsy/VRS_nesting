@@ -2,12 +2,15 @@ use std::fmt;
 
 use crate::io::{Metrics, Placement, ScoreBreakdownOutput, SolverInput, SolverOutput, Unplaced};
 use crate::optimizer::score::ScoreModel;
-use crate::item::{can_fit_any_stock, expand_instances, part_has_holes};
+use crate::item::{
+    can_fit_any_stock_with_policy, expand_instances_with_policy, part_has_holes,
+};
 use crate::optimizer::{
     multisheet::MultiSheetManager,
     stopping::StoppingPolicy,
     try_place_on_sheet, SheetCursor,
 };
+use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
 use crate::sheet::{expand_sheets, stock_has_holes};
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
@@ -50,8 +53,13 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
         }
     }
 
+    let rotation_context = RotationResolveContext::new(
+        input.rotation_policy.clone(),
+        input.seed as u64,
+        DEFAULT_CONTINUOUS_SAMPLE_COUNT,
+    );
     let sheets = expand_sheets(&input.stocks)?;
-    let all_instances = expand_instances(&input.parts)?;
+    let all_instances = expand_instances_with_policy(&input.parts, &rotation_context)?;
     let (placements, unplaced, diag) = if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
         // Pre-filter: instances whose part cannot fit any sheet get PART_NEVER_FITS_STOCK.
         let mut pre_unplaced: Vec<Unplaced> = Vec::new();
@@ -59,7 +67,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
         for inst in all_instances {
             let part = input.parts.iter().find(|p| p.id == inst.part_id)
                 .ok_or_else(|| format!("internal error: part not found: {}", inst.part_id))?;
-            if !can_fit_any_stock(part, &sheets)? {
+            if !can_fit_any_stock_with_policy(part, &sheets, &rotation_context)? {
                 pre_unplaced.push(Unplaced {
                     instance_id: inst.instance_id,
                     part_id: inst.part_id,
@@ -71,7 +79,11 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
         }
         let repair_time_s = (input.time_limit_s as f64).max(1.0);
         let mut policy = StoppingPolicy::new(256, repair_time_s);
-        let manager = MultiSheetManager::new(&input.parts, &sheets);
+        let manager = MultiSheetManager::new_with_rotation_context(
+            &input.parts,
+            &sheets,
+            rotation_context.clone(),
+        );
         let (p, mut u, ms_diag) = manager.run(&instances, &mut policy);
         u.extend(pre_unplaced);
         (p, u, Some(ms_diag))
@@ -89,7 +101,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 .iter()
                 .find(|p| p.id == instance.part_id)
                 .ok_or_else(|| format!("internal error: part not found: {}", instance.part_id))?;
-            if !can_fit_any_stock(part, &sheets)? {
+            if !can_fit_any_stock_with_policy(part, &sheets, &rotation_context)? {
                 unplaced.push(Unplaced {
                     instance_id: instance.instance_id.clone(),
                     part_id: instance.part_id.clone(),
@@ -255,5 +267,143 @@ impl JaguaAdapter {
         sheet: &crate::sheet::SheetShape,
     ) -> bool {
         crate::optimizer::boundary::rect_within_boundary(item_rect, sheet)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::solve;
+    use crate::io::SolverInput;
+    use crate::item::Part;
+    use crate::rotation_policy::RotationPolicyKind;
+    use crate::sheet::Stock;
+
+    fn make_part(
+        id: &str,
+        w: f64,
+        h: f64,
+        qty: i64,
+        rots: Vec<i64>,
+        rotation_policy: Option<RotationPolicyKind>,
+    ) -> Part {
+        Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: qty,
+            allowed_rotations_deg: rots,
+            rotation_policy,
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+        }
+    }
+
+    fn make_stock(id: &str, w: f64, h: f64, qty: i64) -> Stock {
+        Stock {
+            id: id.to_string(),
+            quantity: qty,
+            width: Some(w),
+            height: Some(h),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }
+    }
+
+    fn make_input(
+        seed: i64,
+        stocks: Vec<Stock>,
+        parts: Vec<Part>,
+        rotation_policy: Option<RotationPolicyKind>,
+    ) -> SolverInput {
+        SolverInput {
+            contract_version: "v1".to_string(),
+            project_name: "test".to_string(),
+            seed,
+            time_limit_s: 5,
+            stocks,
+            parts,
+            solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
+            margin_mm: None,
+            rotation_policy,
+        }
+    }
+
+    #[test]
+    fn adapter_solve_global_forty_five_places_100x20_on_90x90_sheet() {
+        let stock = vec![make_stock("S", 90.0, 90.0, 1)];
+        let parts = vec![make_part("P", 100.0, 20.0, 1, vec![], None)];
+
+        let mut no_global = make_input(7, stock.clone(), parts.clone(), None);
+        no_global.rotation_policy = Some(RotationPolicyKind::Orthogonal);
+        let out_a = solve(no_global).expect("solve A");
+        assert_eq!(out_a.metrics.placed_count, 0);
+        assert_eq!(out_a.metrics.unplaced_count, 1);
+
+        let with_global = make_input(7, stock, parts, Some(RotationPolicyKind::FortyFive));
+        let out_b = solve(with_global).expect("solve B");
+        assert_eq!(out_b.metrics.placed_count, 1);
+        assert_eq!(out_b.metrics.unplaced_count, 0);
+        assert_eq!(out_b.status, "ok");
+    }
+
+    #[test]
+    fn adapter_solve_legacy_allowed_rotations_overrides_global_policy() {
+        let stock = vec![make_stock("S", 90.0, 90.0, 1)];
+        let parts = vec![make_part("P", 100.0, 20.0, 1, vec![0], None)];
+        let input = make_input(9, stock, parts, Some(RotationPolicyKind::FortyFive));
+        let out = solve(input).expect("solve");
+        assert_eq!(out.metrics.placed_count, 0);
+        assert_eq!(out.metrics.unplaced_count, 1);
+    }
+
+    #[test]
+    fn part_policy_overrides_global_policy_in_real_solve_path() {
+        let stock = vec![make_stock("S", 90.0, 90.0, 1)];
+        let parts = vec![make_part(
+            "P",
+            100.0,
+            20.0,
+            1,
+            vec![],
+            Some(RotationPolicyKind::FortyFive),
+        )];
+        let input = make_input(9, stock, parts, Some(RotationPolicyKind::Orthogonal));
+        let out = solve(input).expect("solve");
+        assert_eq!(out.metrics.placed_count, 1);
+        assert_eq!(out.metrics.unplaced_count, 0);
+    }
+
+    #[test]
+    fn continuous_policy_same_seed_deterministic_through_solve() {
+        let stock = vec![make_stock("S", 90.0, 90.0, 1)];
+        let parts = vec![make_part("P", 100.0, 20.0, 1, vec![], None)];
+        let a = solve(make_input(
+            12345,
+            stock.clone(),
+            parts.clone(),
+            Some(RotationPolicyKind::Continuous),
+        ))
+        .expect("solve A");
+        let b = solve(make_input(
+            12345,
+            stock,
+            parts,
+            Some(RotationPolicyKind::Continuous),
+        ))
+        .expect("solve B");
+        assert_eq!(a.metrics.placed_count, b.metrics.placed_count);
+        assert_eq!(a.metrics.unplaced_count, b.metrics.unplaced_count);
+        assert_eq!(a.placements.len(), b.placements.len());
+        for (pa, pb) in a.placements.iter().zip(b.placements.iter()) {
+            assert_eq!(pa.instance_id, pb.instance_id);
+            assert_eq!(pa.part_id, pb.part_id);
+            assert_eq!(pa.sheet_index, pb.sheet_index);
+            assert!((pa.rotation_deg - pb.rotation_deg).abs() < 1e-9);
+            assert!((pa.x - pb.x).abs() < 1e-9);
+            assert!((pa.y - pb.y).abs() < 1e-9);
+        }
     }
 }

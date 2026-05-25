@@ -4,8 +4,9 @@ use std::collections::HashSet;
 use crate::geometry::Rect;
 use crate::io::Placement;
 use crate::item::{
-    dims_for_rotation, placement_anchor_from_rect_min, resolve_part_rotation_angles, Part,
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
 };
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
@@ -128,11 +129,24 @@ impl MoveDiagnostics {
 pub struct MoveExecutor<'a> {
     parts: &'a [Part],
     sheets: &'a [SheetShape],
+    rotation_context: RotationResolveContext,
 }
 
 impl<'a> MoveExecutor<'a> {
     pub fn new(parts: &'a [Part], sheets: &'a [SheetShape]) -> Self {
-        Self { parts, sheets }
+        Self::new_with_rotation_context(parts, sheets, RotationResolveContext::legacy_default())
+    }
+
+    pub fn new_with_rotation_context(
+        parts: &'a [Part],
+        sheets: &'a [SheetShape],
+        rotation_context: RotationResolveContext,
+    ) -> Self {
+        Self {
+            parts,
+            sheets,
+            rotation_context,
+        }
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
@@ -183,6 +197,7 @@ impl<'a> MoveExecutor<'a> {
         let working = WorkingLayout::new(placements, vec![], self.sheets.len(), 0);
         let sep = VrsSeparator::new(VrsSeparatorConfig {
             allowed_sheet_indices,
+            rotation_context: self.rotation_context.clone(),
             ..VrsSeparatorConfig::default()
         });
         let (sep_layout, sep_diag) = sep.run(working, self.parts, self.sheets);
@@ -320,9 +335,9 @@ impl<'a> MoveExecutor<'a> {
         best
     }
 
-    fn resolve_part_dims(&self, part_id: &str) -> Option<(f64, f64, Vec<f64>)> {
+    fn resolve_part_dims(&self, part_id: &str, instance_id: &str) -> Option<(f64, f64, Vec<f64>)> {
         let pt = self.parts.iter().find(|pt| pt.id == part_id)?;
-        let rots = resolve_part_rotation_angles(pt, None, 0, 8);
+        let rots = resolve_instance_rotation_angles(pt, instance_id, &self.rotation_context);
         if rots.is_empty() { return None; }
         Some((pt.width, pt.height, rots))
     }
@@ -359,7 +374,7 @@ impl<'a> MoveExecutor<'a> {
         };
 
         let part_id = placements[idx].part_id.clone();
-        let (width, height, rots) = match self.resolve_part_dims(&part_id) {
+        let (width, height, rots) = match self.resolve_part_dims(&part_id, instance_id) {
             Some(d) => d,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);
@@ -439,7 +454,7 @@ impl<'a> MoveExecutor<'a> {
         };
 
         let part_id = placements[idx].part_id.clone();
-        let (width, height, rots) = match self.resolve_part_dims(&part_id) {
+        let (width, height, rots) = match self.resolve_part_dims(&part_id, instance_id) {
             Some(d) => d,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);
@@ -587,14 +602,16 @@ impl<'a> MoveExecutor<'a> {
             return Some(placements.to_vec());
         }
 
-        let (w_a, h_a, rots_a) = match self.resolve_part_dims(&placements[idx_a].part_id) {
+        let (w_a, h_a, rots_a) =
+            match self.resolve_part_dims(&placements[idx_a].part_id, &placements[idx_a].instance_id) {
             Some(d) => d,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);
                 return None;
             }
         };
-        let (w_b, h_b, rots_b) = match self.resolve_part_dims(&placements[idx_b].part_id) {
+        let (w_b, h_b, rots_b) =
+            match self.resolve_part_dims(&placements[idx_b].part_id, &placements[idx_b].instance_id) {
             Some(d) => d,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);

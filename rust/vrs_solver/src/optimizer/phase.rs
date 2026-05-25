@@ -1,4 +1,5 @@
 use crate::item::Part;
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::compress::CompressionPhase;
 use super::explore::ExplorationPhase;
@@ -139,6 +140,7 @@ pub struct PhaseConfig {
     pub compression_budget: PhaseBudget,
     pub bpp_budget: PhaseBudget,
     pub bpp_max_eliminations: usize,
+    pub rotation_context: RotationResolveContext,
     pub score_weights: ScoreWeights,
     pub pool_capacity: usize,
     pub disruption_top_percentile: f64,
@@ -154,6 +156,7 @@ impl Default for PhaseConfig {
             compression_budget: PhaseBudget::new(50, 30.0),
             bpp_budget: PhaseBudget::new(16, 30.0),
             bpp_max_eliminations: 16,
+            rotation_context: RotationResolveContext::legacy_default(),
             score_weights: ScoreWeights::default(),
             pool_capacity: 20,
             disruption_top_percentile: 0.2,
@@ -171,6 +174,7 @@ impl PhaseConfig {
         super::separator::VrsSeparatorConfig {
             seed: self.seed as u64,
             worker_count: self.worker_count,
+            rotation_context: self.rotation_context.clone(),
             ..super::separator::VrsSeparatorConfig::default()
         }
     }

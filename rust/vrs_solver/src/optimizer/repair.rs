@@ -2,7 +2,10 @@ use std::collections::HashSet;
 
 use crate::geometry::Rect;
 use crate::io::{Placement, Unplaced};
-use crate::item::{dims_for_rotation, placement_anchor_from_rect_min, resolve_part_rotation_angles, Part};
+use crate::item::{
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
+};
+use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
@@ -142,6 +145,24 @@ pub fn run_repair(
     sheets: &[SheetShape],
     policy: &mut StoppingPolicy,
 ) -> (Vec<Placement>, Vec<Unplaced>, RepairDiagnostics) {
+    run_repair_with_rotation_context(
+        placements,
+        unplaced,
+        parts,
+        sheets,
+        policy,
+        &RotationResolveContext::legacy_default(),
+    )
+}
+
+pub fn run_repair_with_rotation_context(
+    placements: Vec<Placement>,
+    unplaced: Vec<Unplaced>,
+    parts: &[Part],
+    sheets: &[SheetShape],
+    policy: &mut StoppingPolicy,
+    rotation_context: &RotationResolveContext,
+) -> (Vec<Placement>, Vec<Unplaced>, RepairDiagnostics) {
     let mut diag = RepairDiagnostics::default();
 
     // 1. Detect violations.
@@ -160,7 +181,8 @@ pub fn run_repair(
 
     for (idx, p) in placements.into_iter().enumerate() {
         if violation_indices.contains(&idx) {
-            let (w, h, rots) = resolve_part_dims(&p.part_id, parts);
+            let (w, h, rots) =
+                resolve_part_dims(&p.part_id, &p.instance_id, parts, rotation_context);
             repair_items.push(RepairItem {
                 instance_id: p.instance_id,
                 part_id: p.part_id,
@@ -180,7 +202,8 @@ pub fn run_repair(
             out_unplaced.push(u.clone());
             continue;
         }
-        let (w, h, rots) = resolve_part_dims(&u.part_id, parts);
+        let (w, h, rots) =
+            resolve_part_dims(&u.part_id, &u.instance_id, parts, rotation_context);
         repair_items.push(RepairItem {
             instance_id: u.instance_id.clone(),
             part_id: u.part_id.clone(),
@@ -292,10 +315,15 @@ pub fn run_repair(
     (valid_placements, out_unplaced, diag)
 }
 
-fn resolve_part_dims(part_id: &str, parts: &[Part]) -> (f64, f64, Vec<f64>) {
+fn resolve_part_dims(
+    part_id: &str,
+    instance_id: &str,
+    parts: &[Part],
+    rotation_context: &RotationResolveContext,
+) -> (f64, f64, Vec<f64>) {
     match parts.iter().find(|pt| pt.id == part_id) {
         Some(pt) => {
-            let rots = resolve_part_rotation_angles(pt, None, 0, 8);
+            let rots = resolve_instance_rotation_angles(pt, instance_id, rotation_context);
             (pt.width, pt.height, rots)
         }
         None => (0.0, 0.0, vec![]),
