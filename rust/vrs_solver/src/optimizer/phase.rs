@@ -137,6 +137,8 @@ pub struct PhaseConfig {
     pub worker_count: usize,
     pub exploration_budget: PhaseBudget,
     pub compression_budget: PhaseBudget,
+    pub bpp_budget: PhaseBudget,
+    pub bpp_max_eliminations: usize,
     pub score_weights: ScoreWeights,
     pub pool_capacity: usize,
     pub disruption_top_percentile: f64,
@@ -150,6 +152,8 @@ impl Default for PhaseConfig {
             worker_count: 1,
             exploration_budget: PhaseBudget::new(100, 60.0),
             compression_budget: PhaseBudget::new(50, 30.0),
+            bpp_budget: PhaseBudget::new(16, 30.0),
+            bpp_max_eliminations: 16,
             score_weights: ScoreWeights::default(),
             pool_capacity: 20,
             disruption_top_percentile: 0.2,
@@ -199,28 +203,32 @@ impl PhaseOptimizer {
 
         let (explored_layout, exploration_diag) = self.run_exploration(layout, parts, sheets);
         let (compressed_layout, compression_diag) = self.run_compression(explored_layout, parts, sheets);
+        let (bpp_layout, bpp_diag) = self.run_bpp(compressed_layout, parts, sheets);
 
-        let best_score = compression_diag.best_score
-            .min(exploration_diag.best_score)
-            .min(initial_score_val);
-
-        let unplaced = compressed_layout.unplaced.clone();
+        let unplaced = bpp_layout.unplaced.clone();
         let final_score = self.score_model.score(
-            &compressed_layout.placements,
-            &compressed_layout.unplaced,
+            &bpp_layout.placements,
+            &bpp_layout.unplaced,
             parts,
             sheets,
         );
 
+        // best_score is the actual score of the final layout — no optimistic claim.
+        let best_score = final_score.total_cost
+            .min(compression_diag.best_score)
+            .min(exploration_diag.best_score)
+            .min(initial_score_val);
+
         PhaseResult {
-            layout: compressed_layout,
+            layout: bpp_layout,
             score: final_score,
             initial_score: initial_score_val,
             best_score,
             diagnostics: PhaseDiagnostics {
                 phase_type: PhaseType::Exploration,
                 iterations_run: exploration_diag.iterations_run
-                    .saturating_add(compression_diag.iterations_run),
+                    .saturating_add(compression_diag.iterations_run)
+                    .saturating_add(bpp_diag.attempts),
                 stop_reason: PhaseStopReason::Converged,
                 incumbent_preserved: true,
                 best_score,
@@ -250,6 +258,16 @@ impl PhaseOptimizer {
         sheets: &[SheetShape],
     ) -> (WorkingLayout, PhaseDiagnostics) {
         let phase = CompressionPhase::new(self.config.clone());
+        phase.run(layout, parts, sheets)
+    }
+
+    fn run_bpp(
+        &self,
+        layout: WorkingLayout,
+        parts: &[Part],
+        sheets: &[SheetShape],
+    ) -> (WorkingLayout, super::bpp_phase::BppPhaseDiagnostics) {
+        let phase = super::bpp_phase::BppPhase::new(self.config.clone());
         phase.run(layout, parts, sheets)
     }
 }
@@ -288,6 +306,18 @@ mod tests {
         let mut cfg = PhaseConfig::deterministic_default();
         cfg.exploration_budget = PhaseBudget::new(2, 0.0);
         cfg.compression_budget = PhaseBudget::new(1, 0.0);
+        cfg.bpp_budget = PhaseBudget::new(4, 0.0);
+        cfg.bpp_max_eliminations = 4;
+        cfg
+    }
+
+    /// Config with exploration/compression disabled so only BPP runs.
+    fn bpp_only_config() -> PhaseConfig {
+        let mut cfg = PhaseConfig::deterministic_default();
+        cfg.exploration_budget = PhaseBudget::new(0, 0.0);
+        cfg.compression_budget = PhaseBudget::new(0, 0.0);
+        cfg.bpp_budget = PhaseBudget::new(512, 0.0);
+        cfg.bpp_max_eliminations = 8;
         cfg
     }
 
@@ -349,6 +379,77 @@ mod tests {
         let actual = score_model.score(&result.layout.placements, &result.layout.unplaced, &parts, &sheets);
         assert!((actual.total_cost - result.score.total_cost).abs() < 1e-9,
             "PhaseResult.score must match scoring the result layout: got {} vs {}", actual.total_cost, result.score.total_cost);
+    }
+
+    #[test]
+    fn phase_optimizer_invokes_bpp_phase_loop() {
+        // Layout with 2 items on 2 separate sheets; both fit on one 100×100 sheet.
+        // With exploration/compression disabled, only BPP runs. It should reduce to 1 sheet.
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 20.0,
+                height: 20.0,
+                quantity: 2,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet(), make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 2, 0);
+
+        let config = bpp_only_config();
+        let optimizer = PhaseOptimizer::new(config);
+        let result = optimizer.run(layout, &parts, &sheets);
+
+        use crate::optimizer::multisheet::compute_sheet_count_used;
+        let final_sheet_count = compute_sheet_count_used(&result.layout.placements);
+        assert_eq!(final_sheet_count, 1,
+            "PhaseOptimizer must invoke BPP which consolidates 2 sheets to 1");
+        assert!(find_violations(&result.layout.placements, &parts, &sheets).is_empty());
+    }
+
+    #[test]
+    fn phase_result_score_layout_consistency_after_bpp() {
+        let config = bpp_only_config();
+        let score_model = crate::optimizer::score::ScoreModel::new(config.score_weights.clone());
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 20.0,
+                height: 20.0,
+                quantity: 2,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet(), make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 2, 0);
+
+        let result = PhaseOptimizer::new(config).run(layout, &parts, &sheets);
+
+        let actual_score = score_model.score(&result.layout.placements, &result.layout.unplaced, &parts, &sheets);
+        assert!(
+            (actual_score.total_cost - result.score.total_cost).abs() < 1e-9,
+            "result.score must match score(result.layout) after BPP: got {} vs {}",
+            actual_score.total_cost,
+            result.score.total_cost
+        );
+        assert_eq!(result.unplaced.len(), result.layout.unplaced.len());
     }
 
     #[test]
