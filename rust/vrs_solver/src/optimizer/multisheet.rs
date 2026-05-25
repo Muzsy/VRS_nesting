@@ -193,6 +193,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 
@@ -215,7 +216,7 @@ mod tests {
             sheet_index,
             x: 0.0,
             y: 0.0,
-            rotation_deg: 0,
+            rotation_deg: 0.0,
         }
     }
 

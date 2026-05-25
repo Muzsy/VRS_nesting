@@ -1,5 +1,5 @@
 use crate::io::Placement;
-use crate::item::Part;
+use crate::item::{Part, resolve_part_rotation_angles};
 use crate::sheet::SheetShape;
 use crate::optimizer::explore::make_test_sheet;
 use crate::optimizer::moves::{MoveExecutor, MoveDiagnostics};
@@ -59,13 +59,13 @@ impl CompressionPhase {
                 let current_rot = layout.placements[i].rotation_deg;
                 let part_id = layout.placements[i].part_id.clone();
 
-                let rotations_to_try: Vec<i64> = parts.iter()
+                let rotations_to_try: Vec<f64> = parts.iter()
                     .find(|pt| pt.id == part_id)
-                    .map(|pt| pt.allowed_rotations_deg.clone())
+                    .map(|pt| resolve_part_rotation_angles(pt, None, 0, 8))
                     .unwrap_or_default();
 
-                for rot in rotations_to_try.iter() {
-                    if *rot == current_rot {
+                for &rot in rotations_to_try.iter() {
+                    if (rot - current_rot).abs() < 1e-9 {
                         continue;
                     }
 
@@ -74,7 +74,7 @@ impl CompressionPhase {
                         &layout.placements,
                         &instance_id,
                         current_sheet,
-                        *rot,
+                        rot,
                         &mut diag_inner,
                     ) {
                         let try_violations = find_violations(&try_result, parts, sheets);
@@ -138,12 +138,13 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 
@@ -172,17 +173,18 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 
         let (result_layout, _diag) = phase.run(layout, &parts, &sheets);
 
-        assert_eq!(result_layout.placements[0].rotation_deg, 0,
+        assert!((result_layout.placements[0].rotation_deg - 0.0).abs() < 1e-9,
             "part with allowed_rotations_deg=[0] must stay at rotation 0; no unsupported rotation applied");
         let violations = find_violations(&result_layout.placements, &parts, &sheets);
         assert!(violations.is_empty());
@@ -204,12 +206,13 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 
@@ -237,11 +240,12 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 

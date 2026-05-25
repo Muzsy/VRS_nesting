@@ -2,6 +2,10 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 use crate::geometry::EPS;
+use crate::rotation_policy::{
+    candidate_angles, dedup_angles, dims_for_rotation_f64, normalize_angle,
+    placement_anchor_from_rect_min_f64, rotated_bbox_min_offset_f64, RotationPolicyKind,
+};
 use crate::sheet::SheetShape;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -10,8 +14,13 @@ pub struct Part {
     pub width: f64,
     pub height: f64,
     pub quantity: i64,
+    /// Legacy rotation list. Interpreted as Discrete policy when rotation_policy is absent.
     #[serde(default)]
     pub allowed_rotations_deg: Vec<i64>,
+    /// SGH-Q07: part-level rotation policy override.
+    /// Precedence: rotation_policy > allowed_rotations_deg > global > Orthogonal default.
+    #[serde(default)]
+    pub rotation_policy: Option<RotationPolicyKind>,
     #[serde(default)]
     pub holes_points: Option<JsonValue>,
     #[serde(default)]
@@ -41,69 +50,101 @@ pub struct Instance {
     pub part_id: String,
     pub width: f64,
     pub height: f64,
-    pub allowed_rotations_deg: Vec<i64>,
+    /// SGH-Q07: resolved f64 angles, already normalized to [0°, 360°) and deduped.
+    pub allowed_rotations_deg: Vec<f64>,
 }
 
-// QUALITY_RISK: DiscreteRotationOnly
-// Exact for: inputs restricted to 0/90/180/270° (rectangular Phase 1)
-// Proxy for: arbitrary rotation angles; continuous rotation requires RotationPolicy trait (jagua-rs RotationRange::Continuous)
-// Parity: MISSING (F01, SGH-Q00)
-pub fn normalize_allowed_rotations(raw: &[i64]) -> Result<Vec<i64>, String> {
+// ---------------------------------------------------------------------------
+// Rotation angle resolution
+// ---------------------------------------------------------------------------
+
+/// Resolve effective rotation angles for a part, applying the precedence rule:
+///   1. Part.rotation_policy (highest)
+///   2. Part.allowed_rotations_deg (non-empty legacy list → Discrete)
+///   3. global_policy
+///   4. Orthogonal (documented default, no silent downgrade)
+///
+/// `seed` is used only for Continuous policy. `sample_count` controls Continuous samples.
+pub fn resolve_part_rotation_angles(
+    part: &Part,
+    global_policy: Option<&RotationPolicyKind>,
+    seed: u64,
+    sample_count: usize,
+) -> Vec<f64> {
+    if let Some(policy) = &part.rotation_policy {
+        return candidate_angles(policy, seed, sample_count);
+    }
+    if !part.allowed_rotations_deg.is_empty() {
+        let angles: Vec<f64> = part
+            .allowed_rotations_deg
+            .iter()
+            .map(|&r| normalize_angle(r as f64))
+            .collect();
+        return dedup_angles(angles);
+    }
+    if let Some(policy) = global_policy {
+        return candidate_angles(policy, seed, sample_count);
+    }
+    // Default: Orthogonal — matches legacy behavior for inputs with no rotation spec.
+    candidate_angles(&RotationPolicyKind::Orthogonal, seed, sample_count)
+}
+
+// ---------------------------------------------------------------------------
+// normalize_allowed_rotations
+// ---------------------------------------------------------------------------
+
+/// Normalize and validate a legacy allowed_rotations_deg list.
+///
+/// SGH-Q07: removed 0/90/180/270 restriction; any integer angle is now accepted.
+/// Returns Err only when raw is empty.
+pub fn normalize_allowed_rotations(raw: &[i64]) -> Result<Vec<f64>, String> {
     if raw.is_empty() {
         return Err("part.allowed_rotations_deg must be non-empty".to_string());
     }
-
-    let mut out = Vec::new();
-    for r in raw {
-        let rot = r.rem_euclid(360);
-        if !matches!(rot, 0 | 90 | 180 | 270) {
-            return Err(format!(
-                "unsupported rotation in allowed_rotations_deg: {r} (normalized: {rot})"
-            ));
-        }
-        if !out.contains(&rot) {
-            out.push(rot);
-        }
-    }
-    Ok(out)
+    let angles: Vec<f64> = raw.iter().map(|&r| normalize_angle(r as f64)).collect();
+    Ok(dedup_angles(angles))
 }
 
-pub fn dims_for_rotation(width: f64, height: f64, rot: i64) -> Option<(f64, f64)> {
-    match rot.rem_euclid(360) {
-        0 | 180 => Some((width, height)),
-        90 | 270 => Some((height, width)),
-        _ => None,
-    }
+// ---------------------------------------------------------------------------
+// Rotation math — f64 wrappers for optimizer call sites
+// ---------------------------------------------------------------------------
+
+/// Compute (bbox_width, bbox_height) for an axis-aligned bounding box of the rotated rectangle.
+///
+/// SGH-Q07: accepts any f64 angle (degrees). For 0/90/180/270 the result matches the
+/// legacy i64 implementation within floating-point epsilon.
+pub fn dims_for_rotation(width: f64, height: f64, rot_deg: f64) -> (f64, f64) {
+    dims_for_rotation_f64(width, height, rot_deg)
 }
 
-pub fn rotated_bbox_min_offset(width: f64, height: f64, rot: i64) -> Option<(f64, f64)> {
-    match rot.rem_euclid(360) {
-        0 => Some((0.0, 0.0)),
-        90 => Some((-height, 0.0)),
-        180 => Some((-width, -height)),
-        270 => Some((0.0, -width)),
-        _ => None,
-    }
+/// Compute (min_x_offset, min_y_offset) of the rotated bbox from the placement anchor (0,0).
+pub fn rotated_bbox_min_offset(width: f64, height: f64, rot_deg: f64) -> (f64, f64) {
+    rotated_bbox_min_offset_f64(width, height, rot_deg)
 }
 
+/// Compute the placement anchor so the rotated bbox's min-corner is at (rect_min_x, rect_min_y).
 pub fn placement_anchor_from_rect_min(
     rect_min_x: f64,
     rect_min_y: f64,
     width: f64,
     height: f64,
-    rot: i64,
-) -> Option<(f64, f64)> {
-    let (bbox_min_x, bbox_min_y) = rotated_bbox_min_offset(width, height, rot)?;
-    Some((rect_min_x - bbox_min_x, rect_min_y - bbox_min_y))
+    rot_deg: f64,
+) -> (f64, f64) {
+    placement_anchor_from_rect_min_f64(rect_min_x, rect_min_y, width, height, rot_deg)
 }
 
+// ---------------------------------------------------------------------------
+// can_fit_any_stock
+// ---------------------------------------------------------------------------
+
 pub fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> Result<bool, String> {
-    let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg)?;
+    let allowed_rotations = resolve_part_rotation_angles(part, None, 0, 8);
+    if allowed_rotations.is_empty() {
+        return Err("part has no rotation angles".to_string());
+    }
     for sheet in sheets {
-        for rot in &allowed_rotations {
-            let Some((w, h)) = dims_for_rotation(part.width, part.height, *rot) else {
-                continue;
-            };
+        for &rot in &allowed_rotations {
+            let (w, h) = dims_for_rotation(part.width, part.height, rot);
             if w <= sheet.width + EPS && h <= sheet.height + EPS {
                 return Ok(true);
             }
@@ -112,10 +153,21 @@ pub fn can_fit_any_stock(part: &Part, sheets: &[SheetShape]) -> Result<bool, Str
     Ok(false)
 }
 
+// ---------------------------------------------------------------------------
+// expand_instances
+// ---------------------------------------------------------------------------
+
 pub fn expand_instances(parts: &[Part]) -> Result<Vec<Instance>, String> {
     let mut instances = Vec::new();
     for part in parts {
-        let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg)?;
+        let allowed_rotations = if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
+            resolve_part_rotation_angles(part, None, 0, 8)
+        } else {
+            normalize_allowed_rotations(&part.allowed_rotations_deg)?
+        };
+        if allowed_rotations.is_empty() {
+            return Err(format!("part {} has no valid rotation angles", part.id));
+        }
         for idx in 0..part.quantity {
             instances.push(Instance {
                 instance_id: format!("{}__{:04}", part.id, idx + 1),
@@ -132,39 +184,27 @@ pub fn expand_instances(parts: &[Part]) -> Result<Vec<Instance>, String> {
 
 // ---------------------------------------------------------------------------
 // ItemGeometryStore — stable per-part geometry cache (JG-06)
-//
-// Phase 1 proxy model: bbox-based rotation cache only.
-// Exact outer polygon is preserved in Part.outer_points / Part.prepared_outer_points
-// (serde_json::Value) for later phases; not expanded here to avoid premature coupling.
 // ---------------------------------------------------------------------------
 
-/// Pre-computed geometry for one rotation of a part.
-/// Phase 1: proxy bbox dimensions and anchor offset only (no full polygon rotation).
+/// Pre-computed geometry for one rotation of a part (SGH-Q07: rotation_deg is now f64).
 #[derive(Debug, Clone)]
 pub struct RotationCacheEntry {
-    pub rotation_deg: i64,
-    /// Rotated bounding-box width (swapped from base for 90°/270°).
+    pub rotation_deg: f64,
     pub width: f64,
-    /// Rotated bounding-box height.
     pub height: f64,
-    /// x-offset of the rotated bbox min-corner from the placement anchor.
     pub bbox_min_offset_x: f64,
-    /// y-offset of the rotated bbox min-corner from the placement anchor.
     pub bbox_min_offset_y: f64,
 }
 
-/// Pre-computed geometry record for a single Part.
+/// Pre-computed geometry record for a single Part (SGH-Q07: allowed_rotations is Vec<f64>).
 #[derive(Debug, Clone)]
 pub struct ItemGeometryRecord {
     pub part_id: String,
     pub quantity: i64,
     pub base_width: f64,
     pub base_height: f64,
-    /// Proxy area = base_width × base_height (Phase 1 rectangular assumption).
     pub area: f64,
-    /// Normalized, deduped allowed rotations in input-occurrence order.
-    pub allowed_rotations: Vec<i64>,
-    /// Pre-computed cache entries, one per entry in allowed_rotations.
+    pub allowed_rotations: Vec<f64>,
     pub rotation_cache: Vec<RotationCacheEntry>,
 }
 
@@ -174,20 +214,22 @@ pub struct ItemGeometryStore {
     pub records: Vec<ItemGeometryRecord>,
 }
 
-/// Build an `ItemGeometryStore` from a slice of `Part`s.
-///
-/// Returns `Err` if any part has an unsupported or empty rotation list.
 pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, String> {
     let mut records = Vec::new();
     for part in parts {
-        let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg)?;
+        let allowed_rotations = if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
+            resolve_part_rotation_angles(part, None, 0, 8)
+        } else {
+            normalize_allowed_rotations(&part.allowed_rotations_deg)?
+        };
+        if allowed_rotations.is_empty() {
+            return Err(format!("part {} has no valid rotation angles", part.id));
+        }
         let area = crate::geometry::rect_area(part.width, part.height);
         let mut rotation_cache = Vec::new();
         for &rot in &allowed_rotations {
-            let (w, h) = dims_for_rotation(part.width, part.height, rot)
-                .ok_or_else(|| format!("internal: unsupported rotation {rot} for part {}", part.id))?;
-            let (bx, by) = rotated_bbox_min_offset(part.width, part.height, rot)
-                .ok_or_else(|| format!("internal: no bbox offset for rotation {rot}, part {}", part.id))?;
+            let (w, h) = dims_for_rotation(part.width, part.height, rot);
+            let (bx, by) = rotated_bbox_min_offset(part.width, part.height, rot);
             rotation_cache.push(RotationCacheEntry {
                 rotation_deg: rot,
                 width: w,
@@ -209,12 +251,17 @@ pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, St
     Ok(ItemGeometryStore { records })
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_item_geometry_store, dims_for_rotation, placement_anchor_from_rect_min,
-        rotated_bbox_min_offset, Part,
+        build_item_geometry_store, dims_for_rotation, normalize_allowed_rotations,
+        placement_anchor_from_rect_min, rotated_bbox_min_offset, Part,
     };
+
     fn make_part(id: &str, w: f64, h: f64, qty: i64, rotations: Vec<i64>) -> Part {
         Part {
             id: id.to_string(),
@@ -222,12 +269,102 @@ mod tests {
             height: h,
             quantity: qty,
             allowed_rotations_deg: rotations,
+            rotation_policy: None,
             holes_points: None,
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
         }
     }
+
+    fn approx_eq(a: f64, b: f64) -> bool {
+        (a - b).abs() <= 1e-9
+    }
+
+    // ── dims_for_rotation and rotated_bbox_min_offset (f64, any angle) ──────
+
+    #[test]
+    fn dims_for_rotation_canonical_matches_legacy() {
+        // 0° → (100, 50), 90° → (50, 100)
+        let (w0, h0) = dims_for_rotation(100.0, 50.0, 0.0);
+        assert!(approx_eq(w0, 100.0));
+        assert!(approx_eq(h0, 50.0));
+        let (w90, h90) = dims_for_rotation(100.0, 50.0, 90.0);
+        assert!(approx_eq(w90, 50.0));
+        assert!(approx_eq(h90, 100.0));
+        let (w180, h180) = dims_for_rotation(100.0, 50.0, 180.0);
+        assert!(approx_eq(w180, 100.0));
+        assert!(approx_eq(h180, 50.0));
+        let (w270, h270) = dims_for_rotation(100.0, 50.0, 270.0);
+        assert!(approx_eq(w270, 50.0));
+        assert!(approx_eq(h270, 100.0));
+    }
+
+    #[test]
+    fn rotated_bbox_min_offset_matches_expected_quadrants() {
+        let width = 1000.0;
+        let height = 2000.0;
+        let expected = [
+            (0.0, 0.0, 0.0),
+            (90.0, -2000.0, 0.0),
+            (180.0, -1000.0, -2000.0),
+            (270.0, 0.0, -1000.0),
+        ];
+        for (rot, exp_x, exp_y) in expected {
+            let (x, y) = rotated_bbox_min_offset(width, height, rot);
+            assert!(approx_eq(x, exp_x), "rot={rot} min_x={x} expected={exp_x}");
+            assert!(approx_eq(y, exp_y), "rot={rot} min_y={y} expected={exp_y}");
+        }
+    }
+
+    #[test]
+    fn placement_anchor_from_rect_min_keeps_rotated_bbox_inside_target_rect() {
+        let width = 1000.0;
+        let height = 2000.0;
+        let rect_min_x = 0.0;
+        let rect_min_y = 480.0;
+
+        for rot in [0.0, 90.0, 180.0, 270.0] {
+            let (anchor_x, anchor_y) =
+                placement_anchor_from_rect_min(rect_min_x, rect_min_y, width, height, rot);
+            let (min_off_x, min_off_y) = rotated_bbox_min_offset(width, height, rot);
+            let (rw, rh) = dims_for_rotation(width, height, rot);
+
+            let placed_min_x = anchor_x + min_off_x;
+            let placed_min_y = anchor_y + min_off_y;
+            let placed_max_x = placed_min_x + rw;
+            let placed_max_y = placed_min_y + rh;
+
+            assert!(approx_eq(placed_min_x, rect_min_x), "rot={rot} min_x");
+            assert!(approx_eq(placed_min_y, rect_min_y), "rot={rot} min_y");
+            assert!(approx_eq(placed_max_x, rect_min_x + rw), "rot={rot} max_x");
+            assert!(approx_eq(placed_max_y, rect_min_y + rh), "rot={rot} max_y");
+        }
+    }
+
+    // ── normalize_allowed_rotations ──────────────────────────────────────────
+
+    #[test]
+    fn normalize_allowed_rotations_empty_returns_err() {
+        assert!(normalize_allowed_rotations(&[]).is_err());
+    }
+
+    #[test]
+    fn normalize_allowed_rotations_deduplicates() {
+        let rots = normalize_allowed_rotations(&[0, 0, 90, 90]).unwrap();
+        assert_eq!(rots.len(), 2);
+    }
+
+    // SGH-Q07: arbitrary angles now accepted (45° is no longer an error)
+    #[test]
+    fn normalize_allowed_rotations_accepts_arbitrary_angles() {
+        let rots = normalize_allowed_rotations(&[45, 135]).unwrap();
+        assert_eq!(rots.len(), 2);
+        assert!(rots.iter().any(|&r| (r - 45.0).abs() < 1e-9));
+        assert!(rots.iter().any(|&r| (r - 135.0).abs() < 1e-9));
+    }
+
+    // ── ItemGeometryStore ────────────────────────────────────────────────────
 
     #[test]
     fn item_geometry_store_rotation_cache_dims() {
@@ -238,12 +375,12 @@ mod tests {
         assert_eq!(rec.rotation_cache.len(), 2);
         // rot=0: 100×50
         let e0 = &rec.rotation_cache[0];
-        assert_eq!(e0.rotation_deg, 0);
+        assert!((e0.rotation_deg - 0.0).abs() < 1e-9);
         assert!((e0.width - 100.0).abs() < 1e-9);
         assert!((e0.height - 50.0).abs() < 1e-9);
         // rot=90: 50×100
         let e90 = &rec.rotation_cache[1];
-        assert_eq!(e90.rotation_deg, 90);
+        assert!((e90.rotation_deg - 90.0).abs() < 1e-9);
         assert!((e90.width - 50.0).abs() < 1e-9);
         assert!((e90.height - 100.0).abs() < 1e-9);
     }
@@ -260,17 +397,27 @@ mod tests {
         let parts = vec![make_part("C", 50.0, 30.0, 1, vec![0, 0, 90, 90, 0])];
         let store = build_item_geometry_store(&parts).expect("store build");
         let rec = &store.records[0];
-        assert_eq!(rec.allowed_rotations, vec![0, 90], "duplicates deduped");
+        assert_eq!(rec.allowed_rotations.len(), 2, "duplicates deduped");
+        assert!((rec.allowed_rotations[0] - 0.0).abs() < 1e-9);
+        assert!((rec.allowed_rotations[1] - 90.0).abs() < 1e-9);
         assert_eq!(rec.rotation_cache.len(), 2);
     }
 
+    // SGH-Q07: 45° is now supported — no longer an error
     #[test]
-    fn item_geometry_store_unsupported_rotation_error() {
+    fn item_geometry_store_allows_arbitrary_rotation() {
         let parts = vec![make_part("D", 50.0, 50.0, 1, vec![45])];
-        let result = build_item_geometry_store(&parts);
-        assert!(result.is_err(), "unsupported rotation must return Err");
-        let msg = result.unwrap_err();
-        assert!(msg.contains("45"), "error message should mention the bad rotation");
+        let store = build_item_geometry_store(&parts).expect("45° must now be supported");
+        let rec = &store.records[0];
+        assert_eq!(rec.rotation_cache.len(), 1);
+        // 45° bbox of 50×50 square: (50+50)/√2 ≈ 70.711
+        let expected = (50.0 + 50.0) / std::f64::consts::SQRT_2;
+        let entry = &rec.rotation_cache[0];
+        assert!(
+            (entry.width - expected).abs() < 0.001,
+            "bbox width at 45°: {}",
+            entry.width
+        );
     }
 
     #[test]
@@ -284,10 +431,9 @@ mod tests {
         assert_eq!(store1.records.len(), store2.records.len());
         for (r1, r2) in store1.records.iter().zip(store2.records.iter()) {
             assert_eq!(r1.part_id, r2.part_id);
-            assert_eq!(r1.allowed_rotations, r2.allowed_rotations);
-            assert_eq!(r1.rotation_cache.len(), r2.rotation_cache.len());
+            assert_eq!(r1.allowed_rotations.len(), r2.allowed_rotations.len());
             for (e1, e2) in r1.rotation_cache.iter().zip(r2.rotation_cache.iter()) {
-                assert_eq!(e1.rotation_deg, e2.rotation_deg);
+                assert!((e1.rotation_deg - e2.rotation_deg).abs() < 1e-9);
                 assert!((e1.width - e2.width).abs() < 1e-9);
                 assert!((e1.height - e2.height).abs() < 1e-9);
             }
@@ -300,82 +446,13 @@ mod tests {
         let store = build_item_geometry_store(&parts).expect("store build");
         let cache = &store.records[0].rotation_cache;
         assert_eq!(cache.len(), 4);
-        // rot=0  → 100×40
         assert!((cache[0].width - 100.0).abs() < 1e-9);
         assert!((cache[0].height - 40.0).abs() < 1e-9);
-        // rot=90 → 40×100
         assert!((cache[1].width - 40.0).abs() < 1e-9);
         assert!((cache[1].height - 100.0).abs() < 1e-9);
-        // rot=180 → 100×40
         assert!((cache[2].width - 100.0).abs() < 1e-9);
         assert!((cache[2].height - 40.0).abs() < 1e-9);
-        // rot=270 → 40×100
         assert!((cache[3].width - 40.0).abs() < 1e-9);
         assert!((cache[3].height - 100.0).abs() < 1e-9);
-    }
-
-    fn approx_eq(a: f64, b: f64) -> bool {
-        (a - b).abs() <= 1e-9
-    }
-
-    #[test]
-    fn rotated_bbox_min_offset_matches_expected_quadrants() {
-        let width = 1000.0;
-        let height = 2000.0;
-        let expected = [
-            (0, (0.0, 0.0)),
-            (90, (-2000.0, 0.0)),
-            (180, (-1000.0, -2000.0)),
-            (270, (0.0, -1000.0)),
-        ];
-
-        for (rot, (exp_x, exp_y)) in expected {
-            let (x, y) = rotated_bbox_min_offset(width, height, rot).expect("supported rotation");
-            assert!(approx_eq(x, exp_x), "rot={rot} min_x={x} expected={exp_x}");
-            assert!(approx_eq(y, exp_y), "rot={rot} min_y={y} expected={exp_y}");
-        }
-    }
-
-    #[test]
-    fn placement_anchor_from_rect_min_keeps_rotated_bbox_inside_target_rect() {
-        let width = 1000.0;
-        let height = 2000.0;
-        let rect_min_x = 0.0;
-        let rect_min_y = 480.0;
-
-        for rot in [0, 90, 180, 270] {
-            let (anchor_x, anchor_y) =
-                placement_anchor_from_rect_min(rect_min_x, rect_min_y, width, height, rot)
-                    .expect("supported rotation");
-            let (min_off_x, min_off_y) =
-                rotated_bbox_min_offset(width, height, rot).expect("supported rotation");
-            let Some((rw, rh)) = dims_for_rotation(width, height, rot) else {
-                panic!("unsupported rotation in test");
-            };
-
-            let placed_min_x = anchor_x + min_off_x;
-            let placed_min_y = anchor_y + min_off_y;
-            let placed_max_x = placed_min_x + rw;
-            let placed_max_y = placed_min_y + rh;
-
-            assert!(
-                approx_eq(placed_min_x, rect_min_x),
-                "rot={rot} placed_min_x={placed_min_x} rect_min_x={rect_min_x}"
-            );
-            assert!(
-                approx_eq(placed_min_y, rect_min_y),
-                "rot={rot} placed_min_y={placed_min_y} rect_min_y={rect_min_y}"
-            );
-            assert!(
-                approx_eq(placed_max_x, rect_min_x + rw),
-                "rot={rot} placed_max_x={placed_max_x} expected={}",
-                rect_min_x + rw
-            );
-            assert!(
-                approx_eq(placed_max_y, rect_min_y + rh),
-                "rot={rot} placed_max_y={placed_max_y} expected={}",
-                rect_min_y + rh
-            );
-        }
     }
 }

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::geometry::Rect;
 use crate::io::{Placement, Unplaced};
-use crate::item::{dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min, Part};
+use crate::item::{dims_for_rotation, placement_anchor_from_rect_min, resolve_part_rotation_angles, Part};
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
@@ -120,7 +120,7 @@ struct RepairItem {
     part_id: String,
     width: f64,
     height: f64,
-    allowed_rotations: Vec<i64>,
+    allowed_rotations: Vec<f64>,
 }
 
 /// Run one repair pass on the given layout.
@@ -240,9 +240,7 @@ pub fn run_repair(
         'cand: for candidate in &candidates {
             let sheet = &sheets[candidate.sheet_index];
             for &rot in &item.allowed_rotations {
-                let Some((rw, rh)) = dims_for_rotation(item.width, item.height, rot) else {
-                    continue;
-                };
+                let (rw, rh) = dims_for_rotation(item.width, item.height, rot);
                 let rect = Rect {
                     x1: candidate.x,
                     y1: candidate.y,
@@ -262,11 +260,9 @@ pub fn run_repair(
                 if placed_bboxes.iter().any(|pb| pb.overlaps(&candidate_bbox)) {
                     continue;
                 }
-                let Some((anchor_x, anchor_y)) = placement_anchor_from_rect_min(
+                let (anchor_x, anchor_y) = placement_anchor_from_rect_min(
                     candidate.x, candidate.y, item.width, item.height, rot,
-                ) else {
-                    continue;
-                };
+                );
                 placed_bboxes.push(candidate_bbox);
                 valid_placements.push(Placement {
                     instance_id: item.instance_id.clone(),
@@ -296,10 +292,10 @@ pub fn run_repair(
     (valid_placements, out_unplaced, diag)
 }
 
-fn resolve_part_dims(part_id: &str, parts: &[Part]) -> (f64, f64, Vec<i64>) {
+fn resolve_part_dims(part_id: &str, parts: &[Part]) -> (f64, f64, Vec<f64>) {
     match parts.iter().find(|pt| pt.id == part_id) {
         Some(pt) => {
-            let rots = normalize_allowed_rotations(&pt.allowed_rotations_deg).unwrap_or_default();
+            let rots = resolve_part_rotation_angles(pt, None, 0, 8);
             (pt.width, pt.height, rots)
         }
         None => (0.0, 0.0, vec![]),
@@ -325,6 +321,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 

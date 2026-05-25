@@ -1,0 +1,94 @@
+steps:
+  - name: "Dependency gate és source audit"
+    description: >
+      Ellenőrizd, hogy az SGH-Q06 report első sora PASS, és szerepel benne az SGH-Q07_STATUS: READY marker.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md,
+      docs/qa/testing_guidelines.md, docs/egyedi_solver/sgh_q00_quality_feature_gap_matrix.md,
+      docs/egyedi_solver/sgh_q01_corrected_task_roadmap.md, docs/egyedi_solver/sgh_q06_loss_model_contract.md,
+      valamint a Q07 canvas-t. Futtasd vagy használd a meglévő Sparrow source resolve mechanizmust, majd auditáld
+      a valós jagua-rs/Sparrow rotation source-t: RotationRange / allowed_rotation, uniform rotation sampling,
+      search_position/search_placement, coordinate descent / wiggle. A reportban rögzítsd a tényleges pathokat és függvényeket.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q07_rotation_policy_continuous_foundation.md"
+      - "codex/reports/egyedi_solver/sgh_q07_rotation_policy_continuous_foundation.md"
+
+  - name: "Vezesd be a RotationPolicy modult"
+    description: >
+      Hozz létre moduláris RotationPolicy réteget, ajánlottan rust/vrs_solver/src/rotation_policy.rs fájlban,
+      és exportáld a lib.rs-ből. Támogatott policy-k: locked/no_rotation, half_turn, orthogonal, forty_five,
+      explicit discrete, continuous. Legyen determinisztikus angle generation, normalizáció [0,360) tartományra,
+      dedupe stabil sorrenddel, és continuous policy esetén seeded non-orthogonal mintavétel + wiggle foundation.
+    outputs:
+      - "rust/vrs_solver/src/rotation_policy.rs"
+      - "rust/vrs_solver/src/lib.rs"
+
+  - name: "Input és item modell kompatibilis bővítése"
+    description: >
+      Bővítsd a SolverInput/Part/Instance útvonalat globális és part-level rotation policy támogatással, úgy,
+      hogy a legacy allowed_rotations_deg továbbra is működjön. Dokumentáld és teszteld a precedence szabályt:
+      part policy > legacy explicit allowed_rotations_deg > global policy > documented legacy error/default.
+      Ha a continuous rotation miatt Placement.rotation_deg f64-re migrálása szükséges, végezd el kontrolláltan,
+      lehetőség szerint integer szögek outputját backward-compatible módon serializálva.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/item.rs"
+      - "rust/vrs_solver/src/rotation_policy.rs"
+
+  - name: "Általános rectangle rotation math"
+    description: >
+      Cseréld le vagy bővítsd a dims_for_rotation, rotated_bbox_min_offset és placement_anchor_from_rect_min logikát
+      tetszőleges szögre. A 0/90/180/270 eredmények maradjanak legacy-kompatibilisek. A 45° és arbitrary szögek
+      a rotated rectangle corner bbox matematikájából jöjjenek, ne hardcoded táblából.
+    outputs:
+      - "rust/vrs_solver/src/item.rs"
+      - "rust/vrs_solver/src/rotation_policy.rs"
+
+  - name: "Optimizer call-site-ok átállítása policy alapra"
+    description: >
+      A try_place_on_sheet, initializer/LBF, separator candidate ranking, compression, moves, repair és sheet_elimination
+      útvonalak ne hardcoded normalize_allowed_rotations(&allowed_rotations_deg) + 0/90/180/270 helperre épüljenek,
+      hanem policyből kérjenek candidate angle listát. Continuous policy esetén a candidate listának tartalmaznia kell
+      kanonikus szögeket és seedelt non-orthogonal mintákat is. A same input + same seed output maradjon determinisztikus.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+
+  - name: "Tesztek és no-downgrade kapuk"
+    description: >
+      Adj célzott Rust teszteket a rotation policy módokra, legacy allowed_rotations_deg kompatibilitásra,
+      global/part precedence-re, 45° bbox matematikára, continuous determinismre, és arra, hogy egy 100x20 elem
+      90x90 sheeten continuous/45° mellett elférjen, orthogonal mellett ne. Ellenőrizd, hogy separator és compression
+      policyből dolgozik, nem hardcoded orthogonal listából. Minden pre-Q07 releváns teszt maradjon zöld.
+    outputs:
+      - "rust/vrs_solver/src/rotation_policy.rs"
+      - "rust/vrs_solver/src/item.rs"
+      - "rust/vrs_solver/src/optimizer/initializer.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+
+  - name: "Dokumentáció és report"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_q07_rotation_policy_contract.md dokumentumot, és töltsd ki a checklistet/reportot.
+      A report tartalmazzon dependency evidence-t, source audit evidence-t, changed files/functions matrixot, policy contract evidence-t,
+      legacy no-downgrade evidence-t, continuous rotation evidence-t, tests added/fixed listát, known limitations részt,
+      valamint verify parancsokat és eredményeket.
+    outputs:
+      - "docs/egyedi_solver/sgh_q07_rotation_policy_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q07_rotation_policy_continuous_foundation.md"
+      - "codex/reports/egyedi_solver/sgh_q07_rotation_policy_continuous_foundation.md"
+
+  - name: "Repo gate"
+    description: >
+      Futtasd a célzott Rust teszteket: cargo test rotation_policy, item, optimizer::initializer, optimizer::separator,
+      optimizer::compress, optimizer::moves, optimizer::sheet_elimination, majd cargo test --lib.
+      Végül futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q07_rotation_policy_continuous_foundation.md.
+      Ha bármelyik fail, a report első sora REVISE vagy BLOCKED, és nincs SGH-Q08_STATUS marker. Ha minden zöld,
+      report első sora PASS, és a végén szerepeljen SGH-Q08_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q07_rotation_policy_continuous_foundation.md"
+      - "codex/reports/egyedi_solver/sgh_q07_rotation_policy_continuous_foundation.verify.log"

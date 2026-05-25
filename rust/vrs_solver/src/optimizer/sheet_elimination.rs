@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use crate::geometry::Rect;
 use crate::io::{Placement, Unplaced};
 use crate::item::{
-    dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min, Part,
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_part_rotation_angles, Part,
 };
 use crate::sheet::SheetShape;
 
@@ -305,7 +305,7 @@ impl<'a> SheetEliminationEngine<'a> {
         item: &Placement,
         width: f64,
         height: f64,
-        rotations: &[i64],
+        rotations: &[f64],
         target: usize,
         allowed_receiving: &[usize],
         diag: &mut SheetEliminationDiagnostics,
@@ -316,9 +316,7 @@ impl<'a> SheetEliminationEngine<'a> {
             .iter()
             .copied()
             .find(|&rot| {
-                let Some((rw, rh)) = dims_for_rotation(width, height, rot) else {
-                    return false;
-                };
+                let (rw, rh) = dims_for_rotation(width, height, rot);
                 let rect = Rect {
                     x1: 0.0,
                     y1: 0.0,
@@ -330,7 +328,7 @@ impl<'a> SheetEliminationEngine<'a> {
             .or_else(|| rotations.first().copied())?;
 
         let (anchor_x, anchor_y) =
-            placement_anchor_from_rect_min(0.0, 0.0, width, height, seed_rot)?;
+            placement_anchor_from_rect_min(0.0, 0.0, width, height, seed_rot);
 
         let mut working_placements = current_placements.to_vec();
         working_placements.push(Placement {
@@ -381,7 +379,7 @@ impl<'a> SheetEliminationEngine<'a> {
         item: &Placement,
         width: f64,
         height: f64,
-        rotations: &[i64],
+        rotations: &[f64],
         placed_bboxes: &[PlacedBbox],
         used_receiving: &HashSet<usize>,
         target: usize,
@@ -400,9 +398,7 @@ impl<'a> SheetEliminationEngine<'a> {
             let is_unused = !used_receiving.contains(&cand.sheet_index);
 
             for &rot in rotations {
-                let Some((rw, rh)) = dims_for_rotation(width, height, rot) else {
-                    continue;
-                };
+                let (rw, rh) = dims_for_rotation(width, height, rot);
 
                 let rect = Rect {
                     x1: cand.x,
@@ -426,15 +422,13 @@ impl<'a> SheetEliminationEngine<'a> {
                     continue;
                 }
 
-                let Some((anchor_x, anchor_y)) = placement_anchor_from_rect_min(
+                let (anchor_x, anchor_y) = placement_anchor_from_rect_min(
                     cand.x,
                     cand.y,
                     width,
                     height,
                     rot,
-                ) else {
-                    continue;
-                };
+                );
 
                 let key = (is_unused, cand.y, cand.x, cand.sheet_index);
                 if best_key.map_or(true, |k| Self::lbf_key_better(key, k)) {
@@ -514,11 +508,10 @@ impl<'a> SheetEliminationEngine<'a> {
             .collect()
     }
 
-    fn resolve_dims(&self, part_id: &str) -> (f64, f64, Vec<i64>) {
+    fn resolve_dims(&self, part_id: &str) -> (f64, f64, Vec<f64>) {
         match self.parts.iter().find(|pt| pt.id == part_id) {
             Some(pt) => {
-                let rots =
-                    normalize_allowed_rotations(&pt.allowed_rotations_deg).unwrap_or_default();
+                let rots = resolve_part_rotation_angles(pt, None, 0, 8);
                 (pt.width, pt.height, rots)
             }
             None => (0.0, 0.0, vec![]),
@@ -558,6 +551,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 
@@ -601,7 +595,7 @@ mod tests {
                 sheet_index: 0,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0002".into(),
@@ -609,7 +603,7 @@ mod tests {
                 sheet_index: 2,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0003".into(),
@@ -617,7 +611,7 @@ mod tests {
                 sheet_index: 1,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
         ];
 
@@ -638,7 +632,7 @@ mod tests {
                 sheet_index: 0,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0002".into(),
@@ -646,7 +640,7 @@ mod tests {
                 sheet_index: 0,
                 x: 40.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0003".into(),
@@ -654,7 +648,7 @@ mod tests {
                 sheet_index: 1,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
         ];
 
@@ -682,7 +676,7 @@ mod tests {
                 sheet_index: 0,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0002".into(),
@@ -690,7 +684,7 @@ mod tests {
                 sheet_index: 1,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0003".into(),
@@ -698,7 +692,7 @@ mod tests {
                 sheet_index: 2,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0004".into(),
@@ -706,7 +700,7 @@ mod tests {
                 sheet_index: 0,
                 x: 30.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
         ];
 
@@ -776,7 +770,7 @@ mod tests {
                 sheet_index: 0,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
         ];
         let item = Placement {
@@ -785,7 +779,7 @@ mod tests {
             sheet_index: 1,
             x: 0.0,
             y: 0.0,
-            rotation_deg: 0,
+            rotation_deg: 0.0,
         };
 
         let placed_bboxes = engine.rebuild_placed_bboxes(&current_placements);
@@ -796,7 +790,7 @@ mod tests {
             &item,
             30.0,
             30.0,
-            &[0],
+            &[0.0],
             1,
             &[0],
             &mut diag,
@@ -821,7 +815,7 @@ mod tests {
             sheet_index: 2,
             x: 0.0,
             y: 0.0,
-            rotation_deg: 0,
+            rotation_deg: 0.0,
         }];
 
         assert!(

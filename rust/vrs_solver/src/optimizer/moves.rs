@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use crate::geometry::Rect;
 use crate::io::Placement;
 use crate::item::{
-    dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min, Part,
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_part_rotation_angles, Part,
 };
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
@@ -44,7 +44,7 @@ pub enum CandidateMove {
     /// Rotate a placed or candidate instance to a new rotation.
     Rotate {
         instance_id: String,
-        new_rotation_deg: i64,
+        new_rotation_deg: f64,
     },
 }
 
@@ -206,9 +206,9 @@ impl<'a> MoveExecutor<'a> {
         part_id: &str,
         width: f64,
         height: f64,
-        rots: &[i64],
+        rots: &[f64],
         sheet_index: usize,
-        rotation_override: Option<i64>,
+        rotation_override: Option<f64>,
     ) -> Option<Placement> {
         if sheet_index >= self.sheets.len() {
             return None;
@@ -216,8 +216,8 @@ impl<'a> MoveExecutor<'a> {
         let sheet = &self.sheets[sheet_index];
 
         let rot = if let Some(r) = rotation_override {
-            let r_norm = r.rem_euclid(360);
-            if !rots.contains(&r_norm) {
+            let r_norm = r.rem_euclid(360.0);
+            if !rots.iter().any(|&x| (x - r_norm).abs() < 1e-6) {
                 return None;
             }
             r_norm
@@ -225,9 +225,7 @@ impl<'a> MoveExecutor<'a> {
             rots.iter()
                 .copied()
                 .find(|&r| {
-                    let Some((rw, rh)) = dims_for_rotation(width, height, r) else {
-                        return false;
-                    };
+                    let (rw, rh) = dims_for_rotation(width, height, r);
                     rect_within_boundary(
                         Rect { x1: 0.0, y1: 0.0, x2: rw, y2: rh },
                         sheet,
@@ -237,7 +235,7 @@ impl<'a> MoveExecutor<'a> {
         };
 
         let (anchor_x, anchor_y) =
-            placement_anchor_from_rect_min(0.0, 0.0, width, height, rot)?;
+            placement_anchor_from_rect_min(0.0, 0.0, width, height, rot);
         Some(Placement {
             instance_id: instance_id.to_string(),
             part_id: part_id.to_string(),
@@ -258,7 +256,7 @@ impl<'a> MoveExecutor<'a> {
         part_id: &str,
         width: f64,
         height: f64,
-        rots: &[i64],
+        rots: &[f64],
         target_sheet: usize,
         placed_bboxes: &[PlacedBbox],
     ) -> Option<Placement> {
@@ -273,9 +271,7 @@ impl<'a> MoveExecutor<'a> {
 
         for cand in all_candidates.iter().filter(|c| c.sheet_index == target_sheet) {
             for &rot in rots {
-                let Some((rw, rh)) = dims_for_rotation(width, height, rot) else {
-                    continue;
-                };
+                let (rw, rh) = dims_for_rotation(width, height, rot);
                 let rect = Rect {
                     x1: cand.x,
                     y1: cand.y,
@@ -295,11 +291,8 @@ impl<'a> MoveExecutor<'a> {
                 if placed_bboxes.iter().any(|pb| pb.overlaps(&cand_bbox)) {
                     continue;
                 }
-                let Some((anchor_x, anchor_y)) =
-                    placement_anchor_from_rect_min(cand.x, cand.y, width, height, rot)
-                else {
-                    continue;
-                };
+                let (anchor_x, anchor_y) =
+                    placement_anchor_from_rect_min(cand.x, cand.y, width, height, rot);
                 let key = (cand.y, cand.x);
                 let better = best_key.map_or(true, |(ky, kx)| {
                     const EPS: f64 = 1e-12;
@@ -327,9 +320,10 @@ impl<'a> MoveExecutor<'a> {
         best
     }
 
-    fn resolve_part_dims(&self, part_id: &str) -> Option<(f64, f64, Vec<i64>)> {
+    fn resolve_part_dims(&self, part_id: &str) -> Option<(f64, f64, Vec<f64>)> {
         let pt = self.parts.iter().find(|pt| pt.id == part_id)?;
-        let rots = normalize_allowed_rotations(&pt.allowed_rotations_deg).ok()?;
+        let rots = resolve_part_rotation_angles(pt, None, 0, 8);
+        if rots.is_empty() { return None; }
         Some((pt.width, pt.height, rots))
     }
 
@@ -346,7 +340,7 @@ impl<'a> MoveExecutor<'a> {
         placements: &[Placement],
         instance_id: &str,
         to_sheet: usize,
-        rotation_deg: i64,
+        rotation_deg: f64,
         diag: &mut MoveDiagnostics,
     ) -> Option<Vec<Placement>> {
         diag.attempted += 1;
@@ -373,8 +367,8 @@ impl<'a> MoveExecutor<'a> {
             }
         };
 
-        let rot_norm = rotation_deg.rem_euclid(360);
-        if !rots.contains(&rot_norm) {
+        let rot_norm = rotation_deg.rem_euclid(360.0);
+        if !rots.iter().any(|&r| (r - rot_norm).abs() < 1e-6) {
             diag.record_failure(MoveFailureReason::UnsupportedRotation);
             return None;
         }
@@ -426,7 +420,7 @@ impl<'a> MoveExecutor<'a> {
         placements: &[Placement],
         instance_id: &str,
         to_sheet: usize,
-        explicit_rotation: Option<i64>,
+        explicit_rotation: Option<f64>,
         diag: &mut MoveDiagnostics,
     ) -> Option<Vec<Placement>> {
         diag.attempted += 1;
@@ -454,7 +448,7 @@ impl<'a> MoveExecutor<'a> {
         };
 
         if let Some(rot) = explicit_rotation {
-            if !rots.contains(&rot.rem_euclid(360)) {
+            if !rots.iter().any(|&r| (r - rot.rem_euclid(360.0)).abs() < 1e-6) {
                 diag.record_failure(MoveFailureReason::UnsupportedRotation);
                 return None;
             }
@@ -474,7 +468,7 @@ impl<'a> MoveExecutor<'a> {
 
         // Path 1: explicit rotation provided — seed at origin with that rotation, run separator.
         if let Some(rot) = explicit_rotation {
-            let rot_norm = rot.rem_euclid(360);
+            let rot_norm = rot.rem_euclid(360.0);
             if let Some(seed) = self.seed_at_origin(
                 &placements[idx].instance_id,
                 &part_id,
@@ -613,13 +607,13 @@ impl<'a> MoveExecutor<'a> {
 
         // Try B's old rotation for A (if supported), otherwise A's first rotation.
         let rot_for_a = {
-            let r = placements[idx_b].rotation_deg.rem_euclid(360);
-            if rots_a.contains(&r) { r } else { *rots_a.first().unwrap() }
+            let r = placements[idx_b].rotation_deg.rem_euclid(360.0);
+            if rots_a.iter().any(|&x| (x - r).abs() < 1e-6) { r } else { *rots_a.first().unwrap() }
         };
         // Try A's old rotation for B (if supported), otherwise B's first rotation.
         let rot_for_b = {
-            let r = placements[idx_a].rotation_deg.rem_euclid(360);
-            if rots_b.contains(&r) { r } else { *rots_b.first().unwrap() }
+            let r = placements[idx_a].rotation_deg.rem_euclid(360.0);
+            if rots_b.iter().any(|&x| (x - r).abs() < 1e-6) { r } else { *rots_b.first().unwrap() }
         };
 
         let seed_a = match self.seed_at_origin(
@@ -782,6 +776,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 
@@ -835,7 +830,7 @@ mod tests {
             },
             CandidateMove::Rotate {
                 instance_id: "D".to_string(),
-                new_rotation_deg: 270,
+                new_rotation_deg: 270.0,
             },
         ];
         assert_eq!(variants.len(), 4);
@@ -848,7 +843,7 @@ mod tests {
     #[test]
     fn candidate_move_json_stable() {
         let mv =
-            CandidateMove::Rotate { instance_id: "X__0001".to_string(), new_rotation_deg: 90 };
+            CandidateMove::Rotate { instance_id: "X__0001".to_string(), new_rotation_deg: 90.0 };
         let j1 = serde_json::to_string(&mv).expect("s1");
         let j2 = serde_json::to_string(&mv).expect("s2");
         assert_eq!(j1, j2);
@@ -885,7 +880,7 @@ mod tests {
         let (placements, parts, sheets) = two_item_layout();
         let exec = MoveExecutor::new(&parts, &sheets);
         let mut diag = MoveDiagnostics::default();
-        let result = exec.try_reinsert(&placements, "nonexistent__9999", 0, 0, &mut diag);
+        let result = exec.try_reinsert(&placements, "nonexistent__9999", 0, 0.0, &mut diag);
         assert!(result.is_none());
         assert_eq!(diag.rolled_back, 1);
         assert_eq!(diag.committed, 0);
@@ -897,7 +892,7 @@ mod tests {
         let exec = MoveExecutor::new(&parts, &sheets);
         let mut diag = MoveDiagnostics::default();
         let iid = placements[0].instance_id.clone();
-        let result = exec.try_reinsert(&placements, &iid, 9999, 0, &mut diag);
+        let result = exec.try_reinsert(&placements, &iid, 9999, 0.0, &mut diag);
         assert!(result.is_none());
         assert_eq!(diag.rolled_back, 1);
     }
@@ -943,7 +938,7 @@ mod tests {
         let exec = MoveExecutor::new(&parts, &sheets);
         let mut diag = MoveDiagnostics::default();
         let iid = placements[0].instance_id.clone();
-        let result = exec.try_transfer(&placements, &iid, 1, Some(45), &mut diag);
+        let result = exec.try_transfer(&placements, &iid, 1, Some(45.0), &mut diag);
         assert!(result.is_none());
     }
 
@@ -960,7 +955,7 @@ mod tests {
                 sheet_index: 0,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "B__0001".into(),
@@ -968,7 +963,7 @@ mod tests {
                 sheet_index: 1,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
         ];
         let exec = MoveExecutor::new(&parts, &sheets);
@@ -994,7 +989,7 @@ mod tests {
                 sheet_index: 0,
                 x: 0.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
             Placement {
                 instance_id: "A__0002".into(),
@@ -1002,7 +997,7 @@ mod tests {
                 sheet_index: 0,
                 x: 30.0,
                 y: 0.0,
-                rotation_deg: 0,
+                rotation_deg: 0.0,
             },
         ];
         let exec = MoveExecutor::new(&parts, &sheets);
@@ -1102,7 +1097,7 @@ mod tests {
                 for (pa, pb) in a.iter().zip(b.iter()) {
                     assert_eq!(pa.instance_id, pb.instance_id);
                     assert_eq!(pa.sheet_index, pb.sheet_index);
-                    assert_eq!(pa.rotation_deg, pb.rotation_deg);
+                    assert_eq!(pa.rotation_deg.to_bits(), pb.rotation_deg.to_bits());
                     assert_eq!(pa.x.to_bits(), pb.x.to_bits());
                     assert_eq!(pa.y.to_bits(), pb.y.to_bits());
                 }

@@ -1,7 +1,19 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::item::Part;
+use crate::rotation_policy::RotationPolicyKind;
 use crate::sheet::Stock;
+
+/// Serialize a rotation_deg f64 as an integer when it is a whole number,
+/// to preserve backward-compatible JSON output (90 not 90.0).
+fn serialize_rotation_deg<S: Serializer>(val: &f64, s: S) -> Result<S::Ok, S::Error> {
+    let rounded = val.round();
+    if (val - rounded).abs() < 1e-9 {
+        s.serialize_i64(rounded as i64)
+    } else {
+        s.serialize_f64(*val)
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SolverInput {
@@ -18,6 +30,10 @@ pub struct SolverInput {
     /// Python exact validator applies margin_mm independently (JG-05 deviation).
     #[serde(default)]
     pub margin_mm: Option<f64>,
+    /// Global rotation policy default. Applied when a part has no part-level policy
+    /// and no allowed_rotations_deg. Optional; backward-compatible (default: Orthogonal).
+    #[serde(default)]
+    pub rotation_policy: Option<RotationPolicyKind>,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,6 +69,10 @@ pub struct ScoreBreakdownOutput {
     pub compactness_contribution: f64,
 }
 
+/// SGH-Q07: rotation_deg migrated from i64 to f64 to support continuous/non-orthogonal rotation.
+/// Serializer outputs integer angles without ".0" for backward-compatible JSON.
+/// Breaking/near-breaking: JSON output changes from `90` to `90` (same) for integer angles;
+/// non-integer angles serialize as `45.0` etc. (new capability, not breaking existing callers).
 #[derive(Debug, Clone, Serialize)]
 pub struct Placement {
     pub instance_id: String,
@@ -60,7 +80,8 @@ pub struct Placement {
     pub sheet_index: usize,
     pub x: f64,
     pub y: f64,
-    pub rotation_deg: i64,
+    #[serde(serialize_with = "serialize_rotation_deg")]
+    pub rotation_deg: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]

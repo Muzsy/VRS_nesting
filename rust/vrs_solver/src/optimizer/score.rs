@@ -176,9 +176,8 @@ pub fn score_layout(
     let mut placed_bboxes: Vec<PlacedBbox> = Vec::with_capacity(placements.len());
     for p in placements {
         if let Some(part) = parts.iter().find(|pt| pt.id == p.part_id) {
-            if let Some((rw, rh)) = dims_for_rotation(part.width, part.height, p.rotation_deg) {
-                placed_area += rw * rh;
-            }
+            let (rw, rh) = dims_for_rotation(part.width, part.height, p.rotation_deg);
+            placed_area += rw * rh;
             if let Some(bb) = bbox_from_placement(p, part.width, part.height) {
                 placed_bboxes.push(bb);
             }
@@ -304,6 +303,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 
@@ -329,7 +329,7 @@ mod tests {
             sheet_index,
             x,
             y,
-            rotation_deg: 0,
+            rotation_deg: 0.0,
         }
     }
 

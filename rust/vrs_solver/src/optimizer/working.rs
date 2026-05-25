@@ -165,6 +165,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 
@@ -201,8 +202,8 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
 
         // Two placements at the exact same position — an impossible overlap.
-        let p1 = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 };
-        let p2 = Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 };
+        let p1 = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let p2 = Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
 
         // WorkingLayout stores them without any validation.
         let wl = WorkingLayout::new(vec![p1, p2], vec![], sheets.len(), 0);
@@ -336,11 +337,11 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
 
         // p0 valid at (0,0)
-        let p0 = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 };
+        let p0 = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
         // p1 overlaps p0 (same position)
-        let p1 = Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 };
+        let p1 = Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
         // p2 out of boundary
-        let p2 = Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 0, x: 9999.0, y: 9999.0, rotation_deg: 0 };
+        let p2 = Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 0, x: 9999.0, y: 9999.0, rotation_deg: 0.0 };
 
         let wl = WorkingLayout::new(vec![p0, p1, p2], vec![], sheets.len(), 0);
         let err = wl.validate_for_commit(&parts, &sheets).unwrap_err();

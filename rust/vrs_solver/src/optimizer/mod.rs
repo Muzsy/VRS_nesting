@@ -34,10 +34,8 @@ pub fn try_place_on_sheet(
     cursor: &mut SheetCursor,
     sheet_index: usize,
 ) -> Option<Placement> {
-    for rot in &instance.allowed_rotations_deg {
-        let Some((w, h)) = dims_for_rotation(instance.width, instance.height, *rot) else {
-            continue;
-        };
+    for &rot in &instance.allowed_rotations_deg {
+        let (w, h) = dims_for_rotation(instance.width, instance.height, rot);
         let mut x = cursor.x;
         let mut y = cursor.y;
         let mut row_h = cursor.row_h;
@@ -63,11 +61,8 @@ pub fn try_place_on_sheet(
             continue;
         }
 
-        let Some((placement_x, placement_y)) =
-            placement_anchor_from_rect_min(x, y, instance.width, instance.height, *rot)
-        else {
-            continue;
-        };
+        let (placement_x, placement_y) =
+            placement_anchor_from_rect_min(x, y, instance.width, instance.height, rot);
 
         let placed = Placement {
             instance_id: instance.instance_id.clone(),
@@ -75,7 +70,7 @@ pub fn try_place_on_sheet(
             sheet_index,
             x: placement_x,
             y: placement_y,
-            rotation_deg: *rot,
+            rotation_deg: rot,
         };
 
         cursor.x = x + w;

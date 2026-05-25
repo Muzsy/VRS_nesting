@@ -399,6 +399,7 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
             crate::item::Part {
                 id: "B".into(),
@@ -410,12 +411,13 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let sheets = vec![make_test_sheet(), make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements, vec![], 2, 0);
 
@@ -440,13 +442,14 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 10.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0004".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 10.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0004".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let sheets = vec![make_test_sheet()];
 
@@ -477,12 +480,13 @@ mod tests {
                 prepared_holes_points: None,
                 outer_points: None,
                 prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 

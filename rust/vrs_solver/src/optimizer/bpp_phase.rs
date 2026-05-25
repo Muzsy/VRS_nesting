@@ -215,6 +215,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 
@@ -257,9 +258,9 @@ mod tests {
         let stocks = vec![make_stock("S", 100.0, 100.0, 3)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 2, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 2, x: 0.0, y: 0.0, rotation_deg: 0.0 },
         ];
         (placements, sheets, parts)
     }
@@ -293,8 +294,8 @@ mod tests {
         let stocks = vec![make_stock("S", 60.0, 60.0, 2)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements.clone(), vec![], sheets.len(), 0);
 
@@ -355,10 +356,10 @@ mod tests {
         let stocks = vec![make_stock("S", 100.0, 100.0, 4)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 2, x: 0.0, y: 0.0, rotation_deg: 0 },
-            Placement { instance_id: "A__0004".into(), part_id: "A".into(), sheet_index: 3, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 2, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "A__0004".into(), part_id: "A".into(), sheet_index: 3, x: 0.0, y: 0.0, rotation_deg: 0.0 },
         ];
         let layout = WorkingLayout::new(placements, vec![], sheets.len(), 0);
 

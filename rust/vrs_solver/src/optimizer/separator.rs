@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::geometry::Rect;
 use crate::io::Placement;
-use crate::item::{dims_for_rotation, normalize_allowed_rotations, placement_anchor_from_rect_min, Part};
+use crate::item::{dims_for_rotation, placement_anchor_from_rect_min, Part, resolve_part_rotation_angles};
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
@@ -453,7 +453,7 @@ impl VrsSeparator {
         let part = parts
             .iter()
             .find(|p| p.id == layout.placements[target_idx].part_id)?;
-        let allowed_rotations = normalize_allowed_rotations(&part.allowed_rotations_deg).ok()?;
+        let allowed_rotations = resolve_part_rotation_angles(part, None, 0, 8);
 
         let placed_without: Vec<PlacedBbox> = layout
             .placements
@@ -483,9 +483,7 @@ impl VrsSeparator {
             }
             let sheet = &sheets[cand.sheet_index];
             for &rot in &allowed_rotations {
-                let Some((rw, rh)) = dims_for_rotation(part.width, part.height, rot) else {
-                    continue;
-                };
+                let (rw, rh) = dims_for_rotation(part.width, part.height, rot);
                 let rect = Rect {
                     x1: cand.x,
                     y1: cand.y,
@@ -508,11 +506,8 @@ impl VrsSeparator {
                     .map(|pb| loss_model.pair_loss(pb, &cand_bbox))
                     .sum();
                 if overlap < best_cand_overlap {
-                    let Some((ax, ay)) =
-                        placement_anchor_from_rect_min(cand.x, cand.y, part.width, part.height, rot)
-                    else {
-                        continue;
-                    };
+                    let (ax, ay) =
+                        placement_anchor_from_rect_min(cand.x, cand.y, part.width, part.height, rot);
                     best_cand_overlap = overlap;
                     best_cand_placement = Some(Placement {
                         instance_id: layout.placements[target_idx].instance_id.clone(),
@@ -644,7 +639,7 @@ impl VrsSeparator {
                 let ord = pa
                     .sheet_index
                     .cmp(&pb.sheet_index)
-                    .then(pa.rotation_deg.cmp(&pb.rotation_deg))
+                    .then(pa.rotation_deg.to_bits().cmp(&pb.rotation_deg.to_bits()))
                     .then(pa.x.to_bits().cmp(&pb.x.to_bits()))
                     .then(pa.y.to_bits().cmp(&pb.y.to_bits()))
                     .then(pa.instance_id.cmp(&pb.instance_id))
@@ -848,6 +843,7 @@ mod tests {
             prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
+            rotation_policy: None,
         }
     }
 
@@ -870,7 +866,7 @@ mod tests {
             sheet_index,
             x,
             y,
-            rotation_deg: 0,
+            rotation_deg: 0.0,
         }
     }
 
@@ -1010,7 +1006,7 @@ mod tests {
             assert_eq!(a.sheet_index, b.sheet_index);
             assert_eq!(a.x.to_bits(), b.x.to_bits());
             assert_eq!(a.y.to_bits(), b.y.to_bits());
-            assert_eq!(a.rotation_deg, b.rotation_deg);
+            assert_eq!(a.rotation_deg.to_bits(), b.rotation_deg.to_bits());
         }
     }
 
@@ -1350,7 +1346,7 @@ mod tests {
         for (a, b) in r1.placements.iter().zip(r2.placements.iter()) {
             assert_eq!(a.instance_id, b.instance_id);
             assert_eq!(a.sheet_index, b.sheet_index);
-            assert_eq!(a.rotation_deg, b.rotation_deg);
+            assert_eq!(a.rotation_deg.to_bits(), b.rotation_deg.to_bits());
             assert_eq!(a.x.to_bits(), b.x.to_bits());
             assert_eq!(a.y.to_bits(), b.y.to_bits());
         }
