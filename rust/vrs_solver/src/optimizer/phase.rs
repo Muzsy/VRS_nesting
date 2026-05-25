@@ -213,11 +213,10 @@ impl PhaseOptimizer {
             sheets,
         );
 
-        // best_score is the actual score of the final layout — no optimistic claim.
-        let best_score = final_score.total_cost
-            .min(compression_diag.best_score)
-            .min(exploration_diag.best_score)
-            .min(initial_score_val);
+        // PhaseResult.best_score == result.score.total_cost (the final layout score).
+        // Best-seen during exploration/compression/BPP is tracked in per-phase diagnostics,
+        // not surfaced here — claiming a score for a layout we don't return would be misleading.
+        let best_score = final_score.total_cost;
 
         PhaseResult {
             layout: bpp_layout,
@@ -450,6 +449,40 @@ mod tests {
             result.score.total_cost
         );
         assert_eq!(result.unplaced.len(), result.layout.unplaced.len());
+    }
+
+    #[test]
+    fn phase_result_best_score_equals_final_layout_score_after_bpp() {
+        let config = bpp_only_config();
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 20.0,
+                height: 20.0,
+                quantity: 2,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet(), make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0 },
+            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 2, 0);
+
+        let result = PhaseOptimizer::new(config).run(layout, &parts, &sheets);
+
+        assert_eq!(
+            result.best_score.to_bits(),
+            result.score.total_cost.to_bits(),
+            "PhaseResult.best_score must equal result.score.total_cost: best={} score={}",
+            result.best_score,
+            result.score.total_cost
+        );
     }
 
     #[test]

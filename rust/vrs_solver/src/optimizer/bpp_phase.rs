@@ -5,7 +5,8 @@ use crate::sheet::SheetShape;
 use super::multisheet::compute_sheet_count_used;
 use super::phase::PhaseConfig;
 use super::repair::find_violations;
-use super::sheet_elimination::SheetEliminationEngine;
+use super::score::ScoreModel;
+use super::sheet_elimination::{SheetEliminationDiagnostics, SheetEliminationEngine};
 use super::stopping::StoppingPolicy;
 use super::working::WorkingLayout;
 
@@ -22,12 +23,19 @@ pub struct BppPhaseDiagnostics {
     pub failed_eliminations: usize,
     pub rollback_count: usize,
     pub stop_reason: String,
+    /// Score of the input layout before the BPP phase runs.
+    pub initial_score: f64,
+    /// Score of the last successfully committed incumbent; equals initial_score if no eliminations.
+    pub best_score: f64,
+    /// Per-attempt diagnostics from each SheetEliminationEngine::run() call.
+    pub per_attempt: Vec<SheetEliminationDiagnostics>,
 }
 
 impl BppPhaseDiagnostics {
     pub fn summary(&self) -> String {
         format!(
-            "initial_sheets={} final_sheets={} attempts={} ok={} fail={} rollbacks={} reason={}",
+            "initial_sheets={} final_sheets={} attempts={} ok={} fail={} rollbacks={} reason={} \
+             initial_score={:.3} best_score={:.3} per_attempt_count={}",
             self.initial_sheet_count,
             self.final_sheet_count,
             self.attempts,
@@ -35,6 +43,9 @@ impl BppPhaseDiagnostics {
             self.failed_eliminations,
             self.rollback_count,
             self.stop_reason,
+            self.initial_score,
+            self.best_score,
+            self.per_attempt.len(),
         )
     }
 }
@@ -45,11 +56,13 @@ impl BppPhaseDiagnostics {
 
 pub struct BppPhase {
     config: PhaseConfig,
+    score_model: ScoreModel,
 }
 
 impl BppPhase {
     pub fn new(config: PhaseConfig) -> Self {
-        Self { config }
+        let score_model = ScoreModel::new(config.score_weights.clone());
+        Self { config, score_model }
     }
 
     /// Run the iterative BPP phase: repeatedly attempt sheet elimination until
@@ -79,6 +92,10 @@ impl BppPhase {
         let mut incumbent_placements = layout.placements;
         let mut incumbent_unplaced = layout.unplaced;
         let mut incumbent_sheet_count = initial_sheet_count;
+
+        let initial_score = self.score_model.score(&incumbent_placements, &incumbent_unplaced, parts, sheets);
+        diag.initial_score = initial_score.total_cost;
+        diag.best_score = initial_score.total_cost;
 
         loop {
             if diag.successful_eliminations >= self.config.bpp_max_eliminations {
@@ -130,12 +147,21 @@ impl BppPhase {
                 && count_preserved
                 && ids_match;
 
+            diag.per_attempt.push(elim_diag);
+
             if commit_ok {
                 incumbent_placements = new_placements;
                 incumbent_unplaced = new_unplaced;
                 incumbent_sheet_count = new_sheet_count;
                 diag.successful_eliminations += 1;
                 diag.final_sheet_count = new_sheet_count;
+                let committed_score = self.score_model.score(
+                    &incumbent_placements,
+                    &incumbent_unplaced,
+                    parts,
+                    sheets,
+                );
+                diag.best_score = committed_score.total_cost;
             } else {
                 // Rollback: incumbent unchanged (clone-based rollback safety).
                 diag.failed_eliminations += 1;
@@ -174,6 +200,7 @@ mod tests {
     use crate::optimizer::initializer::build_initial_layout;
     use crate::optimizer::phase::{PhaseConfig, PhaseBudget};
     use crate::optimizer::repair::{find_violations, run_repair};
+    use crate::optimizer::score::{ScoreModel, ScoreWeights};
     use crate::optimizer::stopping::StoppingPolicy;
     use crate::sheet::{expand_sheets, Stock};
 
@@ -247,14 +274,13 @@ mod tests {
         let phase = BppPhase::new(config);
         let (result, diag) = phase.run(layout, &parts, &sheets);
 
+        let final_count = compute_sheet_count_used(&result.placements);
         assert!(
-            diag.successful_eliminations >= 1,
-            "BPP must reduce at least one sheet; diag={}",
-            diag.summary()
-        );
-        assert!(
-            compute_sheet_count_used(&result.placements) < 3,
-            "final sheet count must be less than 3; diag={}",
+            final_count == 1 || diag.successful_eliminations >= 2,
+            "3 items on 3 sheets must reduce to 1 sheet or achieve >= 2 eliminations; \
+             final_count={} eliminations={}; diag={}",
+            final_count,
+            diag.successful_eliminations,
             diag.summary()
         );
         assert!(find_violations(&result.placements, &parts, &sheets).is_empty());
@@ -369,5 +395,77 @@ mod tests {
             assert_eq!(a.y.to_bits(), b.y.to_bits(), "determinism: y");
         }
         assert!(find_violations(&r1.placements, &parts, &sheets).is_empty());
+    }
+
+    #[test]
+    fn bpp_phase_diagnostics_records_per_attempt() {
+        let (placements, sheets, parts) = three_item_three_sheet_layout();
+        let layout = WorkingLayout::new(placements, vec![], sheets.len(), 0);
+
+        let config = bpp_test_config(3, 512);
+        let (_, diag) = BppPhase::new(config).run(layout, &parts, &sheets);
+
+        assert_eq!(
+            diag.attempts,
+            diag.per_attempt.len(),
+            "attempts must equal per_attempt.len(): {} vs {}",
+            diag.attempts,
+            diag.per_attempt.len()
+        );
+        assert!(
+            diag.attempts > 0,
+            "at least one attempt must have run on a 3-sheet fixture"
+        );
+        for (i, attempt_diag) in diag.per_attempt.iter().enumerate() {
+            assert!(
+                !attempt_diag.stop_reason.is_empty(),
+                "per_attempt[{i}].stop_reason must not be empty"
+            );
+        }
+        assert!(
+            diag.per_attempt.iter().any(|a| a.selected_sheet.is_some()),
+            "at least one attempt must have selected_sheet = Some (fixture has placements)"
+        );
+    }
+
+    #[test]
+    fn bpp_phase_diagnostics_score_fields_are_real() {
+        let (placements, sheets, parts) = three_item_three_sheet_layout();
+        let score_model = ScoreModel::new(ScoreWeights::default());
+
+        let input_layout = WorkingLayout::new(placements.clone(), vec![], sheets.len(), 0);
+        let input_score = score_model.score(&input_layout.placements, &input_layout.unplaced, &parts, &sheets);
+
+        let config = bpp_test_config(3, 512);
+        let (result, diag) = BppPhase::new(config).run(input_layout, &parts, &sheets);
+
+        assert!(
+            (diag.initial_score - input_score.total_cost).abs() < 1e-9,
+            "initial_score must equal score(input layout): {} vs {}",
+            diag.initial_score,
+            input_score.total_cost
+        );
+
+        if diag.successful_eliminations > 0 {
+            assert!(
+                diag.best_score < diag.initial_score,
+                "best_score must improve over initial_score after successful eliminations: \
+                 best={} initial={}",
+                diag.best_score,
+                diag.initial_score
+            );
+            let final_score = score_model.score(&result.placements, &result.unplaced, &parts, &sheets);
+            assert!(
+                (diag.best_score - final_score.total_cost).abs() < 1e-9,
+                "best_score must equal score(final committed layout): {} vs {}",
+                diag.best_score,
+                final_score.total_cost
+            );
+        } else {
+            assert!(
+                (diag.best_score - diag.initial_score).abs() < 1e-9,
+                "best_score must equal initial_score when no eliminations succeed"
+            );
+        }
     }
 }

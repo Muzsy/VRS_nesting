@@ -69,6 +69,34 @@ pub bpp_max_eliminations: usize,   // default: 16
 `bpp_budget.time_limit_s` = wall-clock limit for the entire BPP phase loop (0.0 = no limit).
 `bpp_max_eliminations` = max successful eliminations before stopping.
 
+## BppPhaseDiagnostics fields (Q05R)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `initial_sheet_count` | `usize` | `compute_sheet_count_used` before BPP loop |
+| `final_sheet_count` | `usize` | `compute_sheet_count_used` after BPP loop |
+| `attempts` | `usize` | total `SheetEliminationEngine::run()` calls |
+| `successful_eliminations` | `usize` | attempts that passed the commit gate |
+| `failed_eliminations` | `usize` | attempts that failed the commit gate |
+| `rollback_count` | `usize` | same as `failed_eliminations` (implicit clone-based rollback) |
+| `stop_reason` | `String` | reason the outer loop terminated |
+| `initial_score` | `f64` | `ScoreModel::score` of the input layout before BPP |
+| `best_score` | `f64` | score of the last successfully committed incumbent; equals `initial_score` if no eliminations |
+| `per_attempt` | `Vec<SheetEliminationDiagnostics>` | one entry per `SheetEliminationEngine::run()` call; `attempts == per_attempt.len()` invariant |
+
+### Per-attempt audit role
+
+`per_attempt` is the audit trail: for each BPP attempt it records which sheet was targeted (`selected_sheet`), how many items were displaced, LBF/separator outcomes, and the internal stop reason. Useful for diagnosing why an elimination failed or what path was taken.
+
+## PhaseResult.score and PhaseResult.best_score semantics (Q05R)
+
+- `PhaseResult.score` = `ScoreModel::score(final_returned_layout)`.
+- `PhaseResult.best_score` = `PhaseResult.score.total_cost`.
+
+Both fields always refer to the same layout (the one returned). There is no optimistic claim. If best-seen scores during exploration or compression are needed for analysis, consult the per-phase `PhaseDiagnostics.best_score` fields.
+
+If a future task wants to expose "best score seen across all phases" in `PhaseResult`, it must introduce a separate field (e.g. `best_seen_score`) with an explicit contract — it should not reuse `best_score`.
+
 ## Remaining quality gaps
 
 | Gap | Status | Next task |
