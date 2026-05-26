@@ -9,7 +9,7 @@ use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
-use super::collision_backend::{CollisionBackend, CollisionDecision};
+use super::collision_backend::{BackendValidationDiagnostics, CollisionBackend, CollisionDecision};
 use super::initializer::bbox_from_placement;
 use super::stopping::StoppingPolicy;
 
@@ -207,6 +207,95 @@ pub fn find_violations_with_backend(
     }
 
     violations
+}
+
+/// Result from a backend-checked validation pass (no silent fallback).
+pub struct BackendValidationResult {
+    pub violations: Vec<(usize, ViolationType)>,
+    pub diagnostics: BackendValidationDiagnostics,
+}
+
+/// Backend-aware violation scan without silent fallback.
+///
+/// Unlike `find_violations_with_backend`, this function does NOT fall back to bbox when the
+/// backend returns Unsupported. Unsupported queries are counted in `diagnostics.unsupported_queries`.
+/// Callers decide whether unsupported_queries > 0 blocks acceptance.
+pub fn validate_placements_with_backend_checked(
+    placements: &[Placement],
+    parts: &[Part],
+    sheets: &[SheetShape],
+    backend: &dyn CollisionBackend,
+) -> BackendValidationResult {
+    let mut valid_indices: Vec<usize> = Vec::with_capacity(placements.len());
+    let mut violations: Vec<(usize, ViolationType)> = Vec::new();
+    let mut unsupported_queries: usize = 0;
+
+    for (idx, p) in placements.iter().enumerate() {
+        let part = match parts.iter().find(|pt| pt.id == p.part_id) {
+            Some(pt) => pt,
+            None => {
+                violations.push((idx, ViolationType::BoundaryOrSheet));
+                continue;
+            }
+        };
+
+        if p.sheet_index >= sheets.len() {
+            violations.push((idx, ViolationType::BoundaryOrSheet));
+            continue;
+        }
+        let sheet = &sheets[p.sheet_index];
+
+        // Boundary check — no silent fallback on Unsupported.
+        match backend.placement_within_sheet(p, part, sheet) {
+            CollisionDecision::Collision => {
+                violations.push((idx, ViolationType::BoundaryOrSheet));
+                continue;
+            }
+            CollisionDecision::NoCollision => {}
+            CollisionDecision::Unsupported { .. } => {
+                unsupported_queries += 1;
+                // Do not treat as violation; caller enforces policy via unsupported_queries count.
+            }
+        }
+
+        // Overlap check — no silent fallback on Unsupported.
+        let mut has_overlap = false;
+        'outer: for &vi in &valid_indices {
+            let vp = &placements[vi];
+            if vp.sheet_index != p.sheet_index {
+                continue;
+            }
+            let vpart = match parts.iter().find(|pt| pt.id == vp.part_id) {
+                Some(pt) => pt,
+                None => continue,
+            };
+            match backend.placement_overlaps(vp, vpart, p, part) {
+                CollisionDecision::Collision => {
+                    has_overlap = true;
+                    break 'outer;
+                }
+                CollisionDecision::NoCollision => {}
+                CollisionDecision::Unsupported { .. } => {
+                    unsupported_queries += 1;
+                }
+            }
+        }
+
+        if has_overlap {
+            violations.push((idx, ViolationType::Overlap));
+        } else {
+            valid_indices.push(idx);
+        }
+    }
+
+    BackendValidationResult {
+        violations,
+        diagnostics: BackendValidationDiagnostics {
+            backend_name: backend.name().to_string(),
+            unsupported_queries,
+            bbox_fallback_queries: 0, // no fallbacks in checked path
+        },
+    }
 }
 
 /// Internal record for an item queued for repair reinsertion.
@@ -592,6 +681,51 @@ mod tests {
             assert_eq!(a.y.to_bits(), b.y.to_bits());
             assert_eq!(a.rotation_deg, b.rotation_deg);
         }
+    }
+
+    #[test]
+    fn backend_validation_bbox_matches_find_violations() {
+        use crate::optimizer::collision_backend::BboxCollisionBackend;
+
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let instances = expand_instances(&parts).expect("instances");
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let (mut placed, _, _) = build_initial_layout(&instances, &parts, &sheets);
+        assert!(placed.len() >= 2);
+        // Force overlap.
+        placed[1].x = placed[0].x;
+        placed[1].y = placed[0].y;
+
+        let old = find_violations(&placed, &parts, &sheets);
+        let checked = validate_placements_with_backend_checked(&placed, &parts, &sheets, &BboxCollisionBackend);
+
+        assert_eq!(old.len(), checked.violations.len(),
+            "bbox checked must match find_violations violation count");
+        assert_eq!(checked.diagnostics.unsupported_queries, 0,
+            "bbox backend has zero unsupported queries on valid geometry");
+        assert_eq!(checked.diagnostics.bbox_fallback_queries, 0,
+            "checked path never does bbox fallback");
+    }
+
+    #[test]
+    fn backend_validation_reports_unsupported_count() {
+        use crate::optimizer::collision_backend::CdeCollisionBackend;
+
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let instances = expand_instances(&parts).expect("instances");
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let (placed, _, _) = build_initial_layout(&instances, &parts, &sheets);
+        assert!(!placed.is_empty(), "need at least one placement");
+
+        // CDE always returns Unsupported → every boundary and overlap query increments counter.
+        let result = validate_placements_with_backend_checked(&placed, &parts, &sheets, &CdeCollisionBackend);
+        assert!(result.diagnostics.unsupported_queries > 0,
+            "CDE backend must report unsupported_queries > 0 for non-empty layout (got {})",
+            result.diagnostics.unsupported_queries);
+        assert_eq!(result.diagnostics.bbox_fallback_queries, 0,
+            "checked path must not do bbox fallback");
     }
 
     #[test]

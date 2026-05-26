@@ -38,6 +38,11 @@ pub struct SolverInput {
     /// Phase1 MultiSheetManager path.
     #[serde(default)]
     pub optimizer_pipeline: Option<OptimizerPipelineKind>,
+    /// Optional collision backend policy. Missing value defaults to Bbox (backward-compatible).
+    /// Explicit jagua_polygon_exact: no silent downgrade on invalid geometry.
+    /// Explicit cde: always Unsupported (scaffold only).
+    #[serde(default)]
+    pub collision_backend: Option<CollisionBackendKind>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -50,6 +55,21 @@ pub enum OptimizerPipelineKind {
 impl Default for OptimizerPipelineKind {
     fn default() -> Self {
         Self::LegacyMultisheet
+    }
+}
+
+/// Q10: explicit collision backend selection. Missing value defaults to Bbox (backward-compatible).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CollisionBackendKind {
+    Bbox,
+    JaguaPolygonExact,
+    Cde,
+}
+
+impl Default for CollisionBackendKind {
+    fn default() -> Self {
+        Self::Bbox
     }
 }
 
@@ -69,6 +89,9 @@ pub struct SolverOutput {
     /// Optional optimizer routing diagnostics for explicit production pipeline audits.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optimizer_diagnostics: Option<OptimizerDiagnosticsOutput>,
+    /// Optional collision backend diagnostics (Q10).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collision_backend_diagnostics: Option<CollisionBackendDiagnosticsOutput>,
 }
 
 /// Auditálható score breakdown in the JSON output (JG-19).
@@ -96,6 +119,14 @@ pub struct OptimizerDiagnosticsOutput {
     pub exploration_iterations: usize,
     pub compression_iterations: usize,
     pub bpp_attempts: usize,
+}
+
+/// Q10: collision backend audit output (optional, skip when absent).
+#[derive(Debug, Serialize)]
+pub struct CollisionBackendDiagnosticsOutput {
+    pub backend_used: String,
+    pub unsupported_queries: usize,
+    pub bbox_fallback_queries: usize,
 }
 
 /// SGH-Q07: rotation_deg migrated from i64 to f64 to support continuous/non-orthogonal rotation.

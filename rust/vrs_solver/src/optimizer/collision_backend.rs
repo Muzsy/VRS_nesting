@@ -21,6 +21,17 @@ pub enum CollisionDecision {
     Unsupported { reason: &'static str },
 }
 
+/// Diagnostics collected during a backend-aware layout validation pass.
+#[derive(Debug, Clone, Default)]
+pub struct BackendValidationDiagnostics {
+    pub backend_name: String,
+    /// Number of queries where the backend returned Unsupported.
+    /// Callers use this to enforce no-silent-downgrade policy.
+    pub unsupported_queries: usize,
+    /// Number of queries where the caller fell back to bbox (checked path: always 0).
+    pub bbox_fallback_queries: usize,
+}
+
 impl CollisionDecision {
     pub fn is_collision(&self) -> bool {
         matches!(self, CollisionDecision::Collision)

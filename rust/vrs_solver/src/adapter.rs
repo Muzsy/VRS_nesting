@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::io::{
-    Metrics, OptimizerDiagnosticsOutput, OptimizerPipelineKind, Placement, ScoreBreakdownOutput,
-    SolverInput, SolverOutput, Unplaced,
+    CollisionBackendDiagnosticsOutput, CollisionBackendKind, Metrics, OptimizerDiagnosticsOutput,
+    OptimizerPipelineKind, Placement, ScoreBreakdownOutput, SolverInput, SolverOutput, Unplaced,
 };
 use crate::item::{can_fit_any_stock_with_policy, expand_instances_with_policy, part_has_holes};
 use crate::optimizer::score::ScoreModel;
@@ -10,10 +10,9 @@ use crate::optimizer::{
     initializer::build_initial_layout_with_rotation_context,
     multisheet::MultiSheetManager,
     phase::{PhaseBudget, PhaseConfig, PhaseOptimizer},
-    repair::find_violations,
     stopping::StoppingPolicy,
     try_place_on_sheet,
-    working::WorkingLayout,
+    working::{BackendCommitResult, WorkingCommitError, WorkingLayout},
     SheetCursor,
 };
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
@@ -38,11 +37,31 @@ fn _unsupported_output(reason: &str, input: &SolverInput) -> SolverOutput {
         },
         score_breakdown: None,
         optimizer_diagnostics: None,
+        collision_backend_diagnostics: None,
     }
 }
 
 fn pipeline_kind(input: &SolverInput) -> OptimizerPipelineKind {
     input.optimizer_pipeline.clone().unwrap_or_default()
+}
+
+fn resolve_backend_kind(input: &SolverInput) -> CollisionBackendKind {
+    input.collision_backend.clone().unwrap_or_default()
+}
+
+fn backend_err_reason(e: WorkingCommitError, violation_reason: &str) -> String {
+    match e {
+        WorkingCommitError::Violations(_) => violation_reason.to_string(),
+        WorkingCommitError::UnsupportedBackend { reason, .. } => reason,
+    }
+}
+
+fn diag_output_from(result: &BackendCommitResult) -> CollisionBackendDiagnosticsOutput {
+    CollisionBackendDiagnosticsOutput {
+        backend_used: result.backend_diagnostics.backend_name.clone(),
+        unsupported_queries: result.backend_diagnostics.unsupported_queries,
+        bbox_fallback_queries: result.backend_diagnostics.bbox_fallback_queries,
+    }
 }
 
 fn phase_config_from_input(
@@ -61,6 +80,7 @@ fn phase_config_from_input(
     config
 }
 
+#[allow(dead_code)]
 fn phase_commit_or_unsupported(
     input: &SolverInput,
     layout: WorkingLayout,
@@ -102,6 +122,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     let sheets = expand_sheets(&input.stocks)?;
     let all_instances = expand_instances_with_policy(&input.parts, &rotation_context)?;
     let pipeline = pipeline_kind(&input);
+    let mut collision_backend_diag: Option<CollisionBackendDiagnosticsOutput> = None;
     let (placements, unplaced, optimizer_diagnostics) = if input.solver_profile.as_deref()
         == Some(PROFILE_PHASE1)
     {
@@ -124,6 +145,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 instances.push(inst);
             }
         }
+        let backend_kind = resolve_backend_kind(&input);
         match pipeline {
             OptimizerPipelineKind::LegacyMultisheet => {
                 let repair_time_s = (input.time_limit_s as f64).max(1.0);
@@ -135,7 +157,25 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 );
                 let (p, mut u, _ms_diag) = manager.run(&instances, &mut policy);
                 u.extend(pre_unplaced);
-                (p, u, None)
+                if backend_kind != CollisionBackendKind::Bbox {
+                    let working = WorkingLayout::new(p, u, sheets.len(), input.seed);
+                    match working.validate_and_commit_with_backend(
+                        &input.parts,
+                        &sheets,
+                        backend_kind,
+                    ) {
+                        Ok(commit) => {
+                            collision_backend_diag = Some(diag_output_from(&commit));
+                            (commit.placements, commit.unplaced, None)
+                        }
+                        Err(e) => {
+                            let reason = backend_err_reason(e, "COLLISION_BACKEND_COMMIT_VIOLATION");
+                            return Ok(_unsupported_output(&reason, &input));
+                        }
+                    }
+                } else {
+                    (p, u, None)
+                }
             }
             OptimizerPipelineKind::PhaseOptimizer => {
                 let (init_p, mut init_u, _construction_diag) =
@@ -157,15 +197,22 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                     bpp_attempts: result.diagnostics.bpp_attempts,
                 };
                 let layout = result.layout;
-                if !find_violations(&layout.placements, &input.parts, &sheets).is_empty() {
-                    return Ok(_unsupported_output(
-                        "PHASE_OPTIMIZER_COMMIT_VIOLATION",
-                        &input,
-                    ));
-                }
-                match phase_commit_or_unsupported(&input, layout, &input.parts, &sheets) {
-                    Ok((p, u)) => (p, u, Some(diagnostics)),
-                    Err(out) => return Ok(out),
+                match layout.validate_and_commit_with_backend(
+                    &input.parts,
+                    &sheets,
+                    backend_kind,
+                ) {
+                    Ok(commit) => {
+                        collision_backend_diag = Some(diag_output_from(&commit));
+                        (commit.placements, commit.unplaced, Some(diagnostics))
+                    }
+                    Err(e) => {
+                        let reason = backend_err_reason(
+                            e,
+                            "PHASE_OPTIMIZER_COMMIT_VIOLATION_BACKEND",
+                        );
+                        return Ok(_unsupported_output(&reason, &input));
+                    }
                 }
             }
         }
@@ -262,6 +309,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
         },
         score_breakdown,
         optimizer_diagnostics,
+        collision_backend_diagnostics: collision_backend_diag,
     })
 }
 
@@ -361,7 +409,7 @@ impl JaguaAdapter {
 #[cfg(test)]
 mod tests {
     use super::{phase_commit_or_unsupported, solve};
-    use crate::io::{OptimizerPipelineKind, Placement, SolverInput, SolverOutput};
+    use crate::io::{CollisionBackendKind, OptimizerPipelineKind, Placement, SolverInput, SolverOutput};
     use crate::item::Part;
     use crate::optimizer::repair::find_violations;
     use crate::optimizer::working::WorkingLayout;
@@ -419,6 +467,7 @@ mod tests {
             margin_mm: None,
             rotation_policy,
             optimizer_pipeline: None,
+            collision_backend: None,
         }
     }
 
@@ -453,6 +502,10 @@ mod tests {
         assert_eq!(
             left.optimizer_diagnostics.is_some(),
             right.optimizer_diagnostics.is_some()
+        );
+        assert_eq!(
+            left.collision_backend_diagnostics.is_some(),
+            right.collision_backend_diagnostics.is_some()
         );
     }
 
@@ -613,6 +666,216 @@ mod tests {
 
         let out = solve(input).expect("phase solve");
         assert!(find_violations(&out.placements, &parts, &sheets).is_empty());
+    }
+
+    // ── Q10: collision backend policy tests ──────────────────────────────────
+
+    #[test]
+    fn solver_input_collision_backend_defaults_to_bbox() {
+        let json = r#"{
+            "contract_version": "v1",
+            "project_name": "p",
+            "seed": 1,
+            "time_limit_s": 5,
+            "stocks": [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}],
+            "parts": [{"id": "P", "width": 10.0, "height": 10.0, "quantity": 1}]
+        }"#;
+        let input: SolverInput = serde_json::from_str(json).expect("deserialize");
+        assert!(input.collision_backend.is_none(), "missing field must deserialize to None");
+        assert_eq!(
+            input.collision_backend.unwrap_or_default(),
+            CollisionBackendKind::Bbox
+        );
+    }
+
+    #[test]
+    fn jagua_polygon_exact_backend_can_be_selected_in_solver_input() {
+        let json = r#"{
+            "contract_version": "v1",
+            "project_name": "p",
+            "seed": 1,
+            "time_limit_s": 5,
+            "stocks": [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}],
+            "parts": [{"id": "P", "width": 10.0, "height": 10.0, "quantity": 1}],
+            "collision_backend": "jagua_polygon_exact"
+        }"#;
+        let input: SolverInput = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(input.collision_backend, Some(CollisionBackendKind::JaguaPolygonExact));
+    }
+
+    #[test]
+    fn explicit_bbox_matches_implicit_default_output() {
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 2, vec![0], None)];
+
+        let implicit = solve(make_input(17, stock.clone(), parts.clone(), None)).expect("implicit");
+        let mut explicit_input = make_input(17, stock, parts, None);
+        explicit_input.collision_backend = Some(CollisionBackendKind::Bbox);
+        let explicit = solve(explicit_input).expect("explicit");
+
+        assert_eq!(implicit.status, explicit.status);
+        assert_eq!(implicit.metrics.placed_count, explicit.metrics.placed_count);
+        assert_eq!(implicit.placements.len(), explicit.placements.len());
+    }
+
+    #[test]
+    fn phase_optimizer_with_bbox_backend_preserves_q09_behavior() {
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 2, vec![0], None)];
+
+        let mut without_backend = make_input(33, stock.clone(), parts.clone(), None);
+        without_backend.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+        let out_a = solve(without_backend).expect("phase without backend");
+
+        let mut with_bbox = make_input(33, stock, parts, None);
+        with_bbox.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+        with_bbox.collision_backend = Some(CollisionBackendKind::Bbox);
+        let out_b = solve(with_bbox).expect("phase with bbox");
+
+        assert_eq!(out_a.status, out_b.status);
+        assert_eq!(out_a.metrics.placed_count, out_b.metrics.placed_count);
+        assert_eq!(out_a.placements.len(), out_b.placements.len());
+    }
+
+    #[test]
+    fn jagua_polygon_exact_invalid_outer_points_returns_unsupported_not_bbox_fallback() {
+        // Part with malformed outer_points — JaguaPolygonExactBackend returns Unsupported.
+        // bbox backend (default) would ignore outer_points and produce ok/partial.
+        // jagua_polygon_exact backend must produce status=unsupported (no silent downgrade).
+        let json_exact = r#"{
+            "contract_version": "v1",
+            "project_name": "test_exact_invalid",
+            "seed": 1,
+            "time_limit_s": 5,
+            "solver_profile": "jagua_optimizer_phase1_outer_only",
+            "stocks": [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}],
+            "parts": [{
+                "id": "P",
+                "width": 20.0,
+                "height": 20.0,
+                "quantity": 1,
+                "outer_points": [["x_bad", 0.0], [10.0, 0.0], [10.0, 10.0]]
+            }],
+            "collision_backend": "jagua_polygon_exact"
+        }"#;
+        let input: SolverInput = serde_json::from_str(json_exact).expect("deserialize exact");
+        let out = solve(input).expect("solve");
+        assert_eq!(out.status, "unsupported",
+            "jagua_polygon_exact with invalid outer_points must be unsupported, not ok/partial");
+        assert_eq!(
+            out.unsupported_reason.as_deref(),
+            Some("JAGUA_POLYGON_EXACT_UNSUPPORTED_QUERY"),
+            "reason must be JAGUA_POLYGON_EXACT_UNSUPPORTED_QUERY"
+        );
+        assert!(out.placements.is_empty());
+
+        // Contrast: bbox default ignores outer_points and places successfully.
+        let json_bbox = r#"{
+            "contract_version": "v1",
+            "project_name": "test_bbox_default",
+            "seed": 1,
+            "time_limit_s": 5,
+            "solver_profile": "jagua_optimizer_phase1_outer_only",
+            "stocks": [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}],
+            "parts": [{
+                "id": "P",
+                "width": 20.0,
+                "height": 20.0,
+                "quantity": 1,
+                "outer_points": [["x_bad", 0.0], [10.0, 0.0], [10.0, 10.0]]
+            }]
+        }"#;
+        let input_bbox: SolverInput = serde_json::from_str(json_bbox).expect("deserialize bbox");
+        let out_bbox = solve(input_bbox).expect("solve bbox");
+        assert_ne!(out_bbox.status, "unsupported",
+            "bbox default must not return unsupported for malformed outer_points");
+    }
+
+    #[test]
+    fn cde_backend_returns_unsupported_not_bbox_fallback() {
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let mut input = make_input(1, stock, parts, None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        assert_eq!(out.status, "unsupported",
+            "cde backend must produce unsupported output, not ok/partial");
+        assert_eq!(
+            out.unsupported_reason.as_deref(),
+            Some("CDE_BACKEND_UNSUPPORTED"),
+            "reason must be CDE_BACKEND_UNSUPPORTED"
+        );
+        assert!(out.placements.is_empty());
+    }
+
+    #[test]
+    fn same_seed_same_backend_is_deterministic() {
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 3, vec![0], None)];
+
+        for backend in [None, Some(CollisionBackendKind::Bbox), Some(CollisionBackendKind::JaguaPolygonExact)] {
+            let mut a = make_input(42, stock.clone(), parts.clone(), None);
+            a.collision_backend = backend.clone();
+            let mut b = make_input(42, stock.clone(), parts.clone(), None);
+            b.collision_backend = backend;
+
+            let out_a = solve(a).expect("solve A");
+            let out_b = solve(b).expect("solve B");
+
+            assert_eq!(out_a.status, out_b.status, "status must be deterministic");
+            assert_eq!(out_a.metrics.placed_count, out_b.metrics.placed_count);
+            assert_eq!(out_a.placements.len(), out_b.placements.len());
+            for (pa, pb) in out_a.placements.iter().zip(out_b.placements.iter()) {
+                assert_eq!(pa.instance_id, pb.instance_id);
+                assert!((pa.x - pb.x).abs() < 1e-9);
+                assert!((pa.y - pb.y).abs() < 1e-9);
+                assert!((pa.rotation_deg - pb.rotation_deg).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn jagua_polygon_exact_l_shape_notch_does_not_report_bbox_false_positive() {
+        // Helper-level: JaguaPolygonExactBackend must report NoCollision when B sits in A's notch.
+        // This test confirms the backend does not produce the bbox false-positive.
+        use crate::optimizer::collision_backend::{BboxCollisionBackend, JaguaPolygonExactBackend, CollisionBackend};
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
+            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+        ]);
+        let part_a = crate::item::Part {
+            id: "L".to_string(),
+            width: 40.0,
+            height: 40.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(l_json),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
+        let part_b = crate::item::Part {
+            id: "B".to_string(),
+            width: 15.0,
+            height: 15.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
+        let p_a = Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let p_b = Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 };
+
+        let bbox = BboxCollisionBackend;
+        let exact = JaguaPolygonExactBackend;
+        assert!(bbox.placement_overlaps(&p_a, &part_a, &p_b, &part_b).is_collision(),
+            "bbox must report false positive for notch");
+        assert!(exact.placement_overlaps(&p_a, &part_a, &p_b, &part_b).is_no_collision(),
+            "exact backend must report no collision for item in notch");
     }
 
     #[test]

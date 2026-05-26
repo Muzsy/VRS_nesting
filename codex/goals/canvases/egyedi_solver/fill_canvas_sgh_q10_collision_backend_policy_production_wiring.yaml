@@ -1,0 +1,78 @@
+steps:
+  - name: "Dependency gate és preflight"
+    description: >
+      Ellenőrizd, hogy a Q09 report első sora PASS és tartalmazza az SGH-Q10_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md, a Q00/Q01/Q08/Q09 doksikat,
+      a Q09 reportot és ezt a Q10 canvas-t. Ha a dependency gate hiányzik, BLOCKED report,
+      production kódmódosítás nélkül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q10_collision_backend_policy_production_wiring.md"
+      - "codex/reports/egyedi_solver/sgh_q10_collision_backend_policy_production_wiring.md"
+
+  - name: "Production collision validation audit"
+    description: >
+      Auditáld, hol használ a production acceptance jelenleg bbox find_violations-t,
+      hol létezik exact backend csak helperként, és mely commit/validation pontokra kell backend policy.
+      Dokumentáld rg bizonyítékkal és fájl/sor hivatkozással.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q10_collision_backend_policy_production_wiring.md"
+      - "docs/egyedi_solver/sgh_q10_collision_backend_policy_contract.md"
+
+  - name: "CollisionBackendKind input policy"
+    description: >
+      Adj backward-compatible collision_backend input mezőt SolverInputhoz. Default legyen bbox.
+      Támogatott JSON értékek: bbox, jagua_polygon_exact, cde. Missing value nem változtathatja
+      meg a régi outputot.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "docs/egyedi_solver/sgh_q10_collision_backend_policy_contract.md"
+
+  - name: "Checked backend validation helper"
+    description: >
+      Vezess be olyan validation helpert, amely a kiválasztott CollisionBackenddel ellenőriz,
+      és Unsupported esetet diagnosztikában ad vissza. A régi find_violations maradjon bbox defaultként.
+      Exact backend Unsupported nem válhat NoCollision-né vagy silent bbox acceptté.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+
+  - name: "WorkingLayout backend-aware commit gate"
+    description: >
+      Adj backend-aware validate/commit helpert. Bbox esetben legyen backward-compatible.
+      Explicit jagua_polygon_exact/cde esetben unsupported query vagy backend violation blokkolja a commitot.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/working.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Adapter production routing"
+    description: >
+      Az adapter::solve legacy_multisheet és phase_optimizer útvonalán is futtasd le
+      a kiválasztott backend acceptance gate-et output építés előtt. Explicit exact/cde kérés esetén
+      tilos silent fallbackkel elfogadni bbox valid outputot.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "Diagnostics és tesztek"
+    description: >
+      Adj optional collision backend diagnosztikát vagy equivalent auditálható unit teszteket.
+      Teszteld: default bbox, explicit bbox, exact selected, invalid exact geometry unsupported,
+      cde unsupported, bbox validation equivalencia, determinism.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/working.rs"
+
+  - name: "Dokumentáció, checklist, verify"
+    description: >
+      Készítsd el a Q10 checklistet, contract doksit és reportot. Futtasd a célzott cargo teszteket,
+      cargo test --lib-ot és a teljes verify-t. PASS csak zöld verify esetén lehet. PASS esetén a report végén
+      SGH-Q11_STATUS: READY; REVISE/BLOCKED esetén marker nincs.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q10_collision_backend_policy_production_wiring.md"
+      - "docs/egyedi_solver/sgh_q10_collision_backend_policy_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q10_collision_backend_policy_production_wiring.md"
+      - "codex/reports/egyedi_solver/sgh_q10_collision_backend_policy_production_wiring.verify.log"
