@@ -210,9 +210,13 @@ impl PhaseOptimizer {
     }
 
     pub fn run(&self, layout: WorkingLayout, parts: &[Part], sheets: &[SheetShape]) -> PhaseResult {
-        let initial_score =
-            self.score_model
-                .score(&layout.placements, &layout.unplaced, parts, sheets);
+        let initial_score = self.score_model.score_with_backend(
+            &layout.placements,
+            &layout.unplaced,
+            parts,
+            sheets,
+            &self.config.collision_backend,
+        );
         let initial_score_val = initial_score.total_cost;
 
         let (explored_layout, exploration_diag) = self.run_exploration(layout, parts, sheets);
@@ -221,9 +225,13 @@ impl PhaseOptimizer {
         let (bpp_layout, bpp_diag) = self.run_bpp(compressed_layout, parts, sheets);
 
         let unplaced = bpp_layout.unplaced.clone();
-        let final_score =
-            self.score_model
-                .score(&bpp_layout.placements, &bpp_layout.unplaced, parts, sheets);
+        let final_score = self.score_model.score_with_backend(
+            &bpp_layout.placements,
+            &bpp_layout.unplaced,
+            parts,
+            sheets,
+            &self.config.collision_backend,
+        );
 
         // PhaseResult.best_score == result.score.total_cost (the final layout score).
         // Best-seen during exploration/compression/BPP is tracked in per-phase diagnostics,
@@ -616,5 +624,74 @@ mod tests {
             matches!(cfg.collision_backend, CollisionBackendKind::Bbox),
             "PhaseConfig default must use Bbox collision backend"
         );
+    }
+
+    #[test]
+    fn bbox_default_still_matches_legacy_score() {
+        use crate::io::CollisionBackendKind;
+        use crate::optimizer::score::ScoreModel;
+
+        let parts = vec![crate::item::Part {
+            id: "A".into(), width: 10.0, height: 10.0, quantity: 1,
+            allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
+            outer_points: None, prepared_outer_points: None, rotation_policy: None,
+        }];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 }];
+        let model = ScoreModel::default();
+        let legacy = model.score(&placements, &[], &parts, &sheets);
+        let bbox = model.score_with_backend(&placements, &[], &parts, &sheets, &CollisionBackendKind::Bbox);
+
+        assert_eq!(legacy.total_cost.to_bits(), bbox.total_cost.to_bits(),
+            "Bbox backend must remain bit-compatible with legacy score()");
+    }
+
+    #[test]
+    fn phase_optimizer_score_uses_backend_for_exact_notch() {
+        use crate::io::CollisionBackendKind;
+        use crate::optimizer::score::ScoreModel;
+
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
+            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+        ]);
+        let parts = vec![
+            crate::item::Part {
+                id: "L".into(), width: 40.0, height: 40.0, quantity: 1,
+                allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
+                outer_points: Some(l_json), prepared_outer_points: None, rotation_policy: None,
+            },
+            crate::item::Part {
+                id: "B".into(), width: 15.0, height: 15.0, quantity: 1,
+                allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
+                outer_points: None, prepared_outer_points: None, rotation_policy: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let mut config = PhaseConfig::deterministic_default();
+        config.exploration_budget = PhaseBudget::new(0, 0.0);
+        config.compression_budget = PhaseBudget::new(0, 0.0);
+        config.bpp_budget = PhaseBudget::new(0, 0.0);
+        config.bpp_max_eliminations = 0;
+        config.collision_backend = CollisionBackendKind::JaguaPolygonExact;
+
+        let expected = ScoreModel::new(config.score_weights.clone()).score_with_backend(
+            &layout.placements, &layout.unplaced, &parts, &sheets, &config.collision_backend,
+        );
+        let bbox = ScoreModel::new(config.score_weights.clone()).score(
+            &layout.placements, &layout.unplaced, &parts, &sheets,
+        );
+        assert!(bbox.breakdown.overlap_violations > expected.breakdown.overlap_violations,
+            "fixture must expose a bbox false-positive that exact scoring removes");
+
+        let result = PhaseOptimizer::new(config).run(layout, &parts, &sheets);
+        assert!((result.initial_score - expected.total_cost).abs() < 1e-9,
+            "PhaseOptimizer initial_score must use the selected exact backend");
     }
 }

@@ -267,11 +267,12 @@ impl ExplorationPhase {
     ) -> (WorkingLayout, PhaseDiagnostics) {
         let mut diag = PhaseDiagnostics::new(PhaseType::Exploration);
 
-        let initial_score = self.score_model.score(
+        let initial_score = self.score_model.score_with_backend(
             &layout.placements,
             &layout.unplaced,
             parts,
             sheets,
+            &self.config.collision_backend,
         );
         diag.initial_score = initial_score.total_cost;
         diag.best_score = initial_score.total_cost;
@@ -677,6 +678,38 @@ mod tests {
             violations.is_empty(),
             "ExplorationPhase with JaguaPolygonExact backend must produce violation-free output"
         );
+    }
+
+    #[test]
+    fn exploration_initial_score_uses_backend() {
+        use crate::io::CollisionBackendKind;
+        use crate::optimizer::score::ScoreModel;
+
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
+            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+        ]);
+        let mut l_part = make_part_no_policy("L", 40.0, 40.0, 1);
+        l_part.outer_points = Some(l_json);
+        let parts = vec![l_part, make_part_no_policy("B", 15.0, 15.0, 1)];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![
+            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let mut config = PhaseConfig::deterministic_default();
+        config.exploration_budget = crate::optimizer::phase::PhaseBudget::new(0, 0.0);
+        config.collision_backend = CollisionBackendKind::JaguaPolygonExact;
+        let expected = ScoreModel::new(config.score_weights.clone()).score_with_backend(
+            &layout.placements, &layout.unplaced, &parts, &sheets, &config.collision_backend,
+        );
+        let mut phase = ExplorationPhase::new(config);
+
+        let (_result_layout, diag) = phase.run(layout, &parts, &sheets);
+        assert!((diag.initial_score - expected.total_cost).abs() < 1e-9,
+            "ExplorationPhase initial/incumbent score must use selected backend");
     }
 
     #[test]

@@ -439,7 +439,7 @@ impl VrsCollisionTracker {
         let pi = &placements[idx];
         let part_i = parts.iter().find(|pt| pt.id == pi.part_id);
 
-        match self.collision_backend {
+        match &self.collision_backend {
             CollisionBackendKind::JaguaPolygonExact => {
                 let backend = JaguaPolygonExactBackend;
                 if let Some(prt) = part_i {
@@ -656,7 +656,7 @@ impl VrsSeparator {
             .collect();
 
         let (candidates, _) = generate_candidates_with_sheets(sheets, &placed_without);
-        let mut best_cand_overlap = f64::MAX;
+        let mut best_cand_loss = f64::MAX;
         let mut best_cand_placement: Option<Placement> = None;
 
         'cand: for cand in &candidates {
@@ -671,15 +671,6 @@ impl VrsSeparator {
             let sheet = &sheets[cand.sheet_index];
             for &rot in &allowed_rotations {
                 let (rw, rh) = dims_for_rotation(part.width, part.height, rot);
-                let rect = Rect {
-                    x1: cand.x,
-                    y1: cand.y,
-                    x2: cand.x + rw,
-                    y2: cand.y + rh,
-                };
-                if !rect_within_boundary(rect, sheet) {
-                    continue;
-                }
                 let cand_bbox = PlacedBbox {
                     sheet_index: cand.sheet_index,
                     x1: cand.x,
@@ -687,30 +678,105 @@ impl VrsSeparator {
                     x2: cand.x + rw,
                     y2: cand.y + rh,
                 };
-                let loss_model = self.config.loss_model;
-                let overlap: f64 = placed_without
-                    .iter()
-                    .map(|pb| loss_model.pair_loss(pb, &cand_bbox))
-                    .sum();
-                if overlap < best_cand_overlap {
-                    let (ax, ay) =
-                        placement_anchor_from_rect_min(cand.x, cand.y, part.width, part.height, rot);
-                    best_cand_overlap = overlap;
-                    best_cand_placement = Some(Placement {
-                        instance_id: layout.placements[target_idx].instance_id.clone(),
-                        part_id: layout.placements[target_idx].part_id.clone(),
-                        sheet_index: cand.sheet_index,
-                        x: ax,
-                        y: ay,
-                        rotation_deg: rot,
-                    });
-                    if overlap == 0.0 {
+
+                let (ax, ay) =
+                    placement_anchor_from_rect_min(cand.x, cand.y, part.width, part.height, rot);
+                let candidate = Placement {
+                    instance_id: layout.placements[target_idx].instance_id.clone(),
+                    part_id: layout.placements[target_idx].part_id.clone(),
+                    sheet_index: cand.sheet_index,
+                    x: ax,
+                    y: ay,
+                    rotation_deg: rot,
+                };
+
+                let loss = self.candidate_loss_for_backend(
+                    &candidate,
+                    part,
+                    &cand_bbox,
+                    sheet,
+                    layout,
+                    target_idx,
+                    parts,
+                    &placed_without,
+                );
+
+                if !loss.is_finite() || loss == f64::MAX {
+                    continue;
+                }
+                if loss < best_cand_loss {
+                    best_cand_loss = loss;
+                    best_cand_placement = Some(candidate);
+                    if loss == 0.0 {
                         break 'cand;
                     }
                 }
             }
         }
         best_cand_placement
+    }
+
+    fn candidate_loss_for_backend(
+        &self,
+        candidate: &Placement,
+        part: &Part,
+        cand_bbox: &PlacedBbox,
+        sheet: &SheetShape,
+        layout: &WorkingLayout,
+        target_idx: usize,
+        parts: &[Part],
+        placed_without: &[PlacedBbox],
+    ) -> f64 {
+        let loss_model = self.config.loss_model;
+        match &self.config.collision_backend {
+            CollisionBackendKind::Bbox => {
+                let rect = Rect {
+                    x1: cand_bbox.x1,
+                    y1: cand_bbox.y1,
+                    x2: cand_bbox.x2,
+                    y2: cand_bbox.y2,
+                };
+                if !rect_within_boundary(rect, sheet) {
+                    return f64::MAX;
+                }
+                placed_without
+                    .iter()
+                    .map(|pb| loss_model.pair_loss(pb, cand_bbox))
+                    .sum()
+            }
+            CollisionBackendKind::JaguaPolygonExact => {
+                let backend = JaguaPolygonExactBackend;
+                let mut loss = match backend.placement_within_sheet(candidate, part, sheet) {
+                    CollisionDecision::NoCollision => 0.0,
+                    CollisionDecision::Collision => {
+                        loss_model.compute_boundary_loss(cand_bbox, sheet, false).max(1.0)
+                    }
+                    CollisionDecision::Unsupported { .. } => return f64::MAX,
+                };
+
+                for (idx, other) in layout.placements.iter().enumerate() {
+                    if idx == target_idx || other.sheet_index != candidate.sheet_index {
+                        continue;
+                    }
+                    let Some(other_part) = parts.iter().find(|pt| pt.id == other.part_id) else {
+                        return f64::MAX;
+                    };
+                    match backend.placement_overlaps(candidate, part, other, other_part) {
+                        CollisionDecision::NoCollision => {}
+                        CollisionDecision::Collision => {
+                            if let Some(other_bbox) = bbox_from_placement(other, other_part.width, other_part.height) {
+                                loss += loss_model.pair_loss(&other_bbox, cand_bbox).max(1.0);
+                            } else {
+                                return f64::MAX;
+                            }
+                        }
+                        CollisionDecision::Unsupported { .. } => return f64::MAX,
+                    }
+                }
+                loss
+            }
+            CollisionBackendKind::Cde => f64::MAX,
+        }
     }
 
     fn attempt_move(
@@ -1986,4 +2052,65 @@ mod tests {
             "smooth model must detect overlaps in dense fixture (initial_loss > 0)"
         );
     }
+    #[test]
+    fn separator_exact_candidate_loss_ignores_bbox_false_positive() {
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
+            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+        ]);
+        let mut l_part = make_part("L", 40.0, 40.0, 1, vec![0]);
+        l_part.outer_points = Some(l_json);
+        let parts = vec![
+            l_part,
+            make_part("T", 15.0, 15.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let layout = WorkingLayout::new(
+            vec![
+                placement("L__0001", "L", 0, 0.0, 0.0),
+                placement("T__0001", "T", 0, 0.0, 0.0),
+            ],
+            vec![],
+            sheets.len(),
+            0,
+        );
+        let candidate = placement("T__0001", "T", 0, 22.0, 22.0);
+        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 22.0, y1: 22.0, x2: 37.0, y2: 37.0 };
+        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 40.0, y2: 40.0 }];
+        let exact_sep = VrsSeparator::new(VrsSeparatorConfig {
+            collision_backend: CollisionBackendKind::JaguaPolygonExact,
+            ..VrsSeparatorConfig::default()
+        });
+        let bbox_sep = VrsSeparator::new(VrsSeparatorConfig {
+            collision_backend: CollisionBackendKind::Bbox,
+            ..VrsSeparatorConfig::default()
+        });
+
+        let exact_loss = exact_sep.candidate_loss_for_backend(
+            &candidate,
+            &parts[1],
+            &cand_bbox,
+            &sheets[0],
+            &layout,
+            1,
+            &parts,
+            &placed_without,
+        );
+        let bbox_loss = bbox_sep.candidate_loss_for_backend(
+            &candidate,
+            &parts[1],
+            &cand_bbox,
+            &sheets[0],
+            &layout,
+            1,
+            &parts,
+            &placed_without,
+        );
+
+        assert_eq!(exact_loss, 0.0, "exact backend must accept the exact-valid notch candidate");
+        assert!(bbox_loss > 0.0, "bbox backend should still see the overlapping bbox surrogate");
+    }
+
+
 }

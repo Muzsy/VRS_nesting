@@ -1,0 +1,72 @@
+steps:
+  - name: "Dependency gate és Q11R preflight"
+    description: >
+      Ellenőrizd, hogy az SGH-Q11 report első sora PASS. A Q11 reportban lévő SGH-Q12_STATUS: READY
+      markert ne tekintsd érvényes továbbhaladási kapunak Q11R PASS előtt. Olvasd el a Q11 canvas/report/contract
+      fájlokat, repo szabályokat és ezt a Q11R canvas-t. Ha a dependency gate hiányzik, BLOCKED report,
+      production módosítás nélkül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q11r_backend_aware_score_consistency_candidate_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q11r_backend_aware_score_consistency_candidate_fix.md"
+
+  - name: "Q11 utáni bbox-only pontok auditja"
+    description: >
+      Futtasd az előírt rg auditot. Dokumentáld pontos fájl/sor hivatkozással, hol maradt score(), find_violations(),
+      validate_for_commit(), default VrsSeparatorConfig vagy SheetEliminationEngine bbox-only útvonal a döntési/scoring pathban.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q11r_backend_aware_score_consistency_candidate_fix.md"
+      - "docs/egyedi_solver/sgh_q11r_backend_aware_score_consistency_contract.md"
+
+  - name: "PhaseOptimizer és phase initial/final score backend-aware javítás"
+    description: >
+      Cseréld a PhaseOptimizer::run(), ExplorationPhase::run() és CompressionPhase::run() döntési/diagnosztikai
+      initial/final/incumbent score hívásait score_with_backend(..., config.collision_backend) használatra.
+      Bbox default esetén ne változzon a régi viselkedés.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+
+  - name: "Adapter score_breakdown selected-backend consistency"
+    description: >
+      A Phase1 score_breakdown számítása használja a kiválasztott collision_backendet. Exact backendnél ne bbox false-positive
+      alapján jelenjen meg overlap/boundary contribution, ha a final commit gate exact szerint valid.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+
+  - name: "Separator candidate evaluation backend-aware"
+    description: >
+      Javítsd a VrsSeparator::find_best_candidate_for_target candidate rankingjét. Bbox backendnél maradhat a régi gyors út.
+      JaguaPolygonExact backendnél a candidate boundary/pair döntés backendből jöjjön; NoCollision null loss,
+      Collision surrogate loss, Unsupported hard loss vagy reject. Ne legyen korai break kizárólag bbox zero alapján.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "SheetEliminationEngine backend policy wiring"
+    description: >
+      Adj CollisionBackendKind mezőt és new_with_backend_and_rotation_context konstruktort a SheetEliminationEnginehez.
+      BppPhase ezt használja. A sheet elimination commit gate, separator fallback és exact LBF candidate check ne legyen bbox-only.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+
+  - name: "Tesztfedés"
+    description: >
+      Adj vagy javíts unit/integration teszteket a phase score backend consistency, adapter score_breakdown, separator exact candidate
+      false-positive, sheet elimination backend fallback/commit gate, bbox backward compatibility és CDE no-silent-success invariánsokra.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+
+  - name: "Verify és report"
+    description: >
+      Futtasd a célzott cargo teszteket, cargo test --lib-ot és a teljes verify-t. PASS csak zöld verify és minden Q11R acceptance
+      gate teljesülése esetén lehet. PASS esetén a Q11R report végén SGH-Q12_STATUS: READY markert tegyél.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q11r_backend_aware_score_consistency_candidate_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q11r_backend_aware_score_consistency_candidate_fix.verify.log"

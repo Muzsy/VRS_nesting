@@ -64,6 +64,39 @@ fn diag_output_from(result: &BackendCommitResult) -> CollisionBackendDiagnostics
     }
 }
 
+
+fn score_breakdown_from_result(result: crate::optimizer::score::ScoreResult) -> ScoreBreakdownOutput {
+    let bd = &result.breakdown;
+    ScoreBreakdownOutput {
+        total_cost: bd.total_cost,
+        placed_area_contribution: bd.placed_area_contribution,
+        unplaced_contribution: bd.unplaced_contribution,
+        sheet_cost_contribution: bd.sheet_count_contribution,
+        sheet_cost_total: bd.sheet_cost_total,
+        usable_area_utilization: bd.usable_area_utilization,
+        overlap_contribution: bd.overlap_contribution,
+        boundary_contribution: bd.boundary_contribution,
+        compactness_contribution: bd.compactness_contribution,
+    }
+}
+
+fn phase1_score_breakdown_for_backend(
+    placements: &[Placement],
+    unplaced: &[Unplaced],
+    parts: &[crate::item::Part],
+    sheets: &[crate::sheet::SheetShape],
+    backend_kind: &CollisionBackendKind,
+) -> ScoreBreakdownOutput {
+    let model = ScoreModel::default();
+    score_breakdown_from_result(model.score_with_backend(
+        placements,
+        unplaced,
+        parts,
+        sheets,
+        backend_kind,
+    ))
+}
+
 fn phase_config_from_input(
     input: &SolverInput,
     rotation_context: RotationResolveContext,
@@ -266,20 +299,14 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     };
     // Compute score breakdown for Phase1 profile (JG-19 — backward-compatible optional output field).
     let score_breakdown = if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
-        let model = ScoreModel::default();
-        let result = model.score(&placements, &unplaced, &input.parts, &sheets);
-        let bd = &result.breakdown;
-        Some(ScoreBreakdownOutput {
-            total_cost: bd.total_cost,
-            placed_area_contribution: bd.placed_area_contribution,
-            unplaced_contribution: bd.unplaced_contribution,
-            sheet_cost_contribution: bd.sheet_count_contribution,
-            sheet_cost_total: bd.sheet_cost_total,
-            usable_area_utilization: bd.usable_area_utilization,
-            overlap_contribution: bd.overlap_contribution,
-            boundary_contribution: bd.boundary_contribution,
-            compactness_contribution: bd.compactness_contribution,
-        })
+        let backend_kind = resolve_backend_kind(&input);
+        Some(phase1_score_breakdown_for_backend(
+            &placements,
+            &unplaced,
+            &input.parts,
+            &sheets,
+            &backend_kind,
+        ))
     } else {
         None
     };
@@ -922,6 +949,35 @@ mod tests {
     // -----------------------------------------------------------------------
     // SGH-Q11 tests
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn adapter_score_breakdown_uses_selected_backend() {
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
+            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+        ]);
+        let mut l_part = make_part("L", 40.0, 40.0, 1, vec![0], None);
+        l_part.outer_points = Some(l_json);
+        let parts = vec![l_part, make_part("B", 15.0, 15.0, 1, vec![0], None)];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
+        ];
+
+        let bbox = super::phase1_score_breakdown_for_backend(
+            &placements, &[], &parts, &sheets, &CollisionBackendKind::Bbox,
+        );
+        let exact = super::phase1_score_breakdown_for_backend(
+            &placements, &[], &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+        );
+
+        assert!(bbox.overlap_contribution > 0.0,
+            "bbox score_breakdown must expose the fixture's bbox false-positive");
+        assert_eq!(exact.overlap_contribution, 0.0,
+            "exact score_breakdown must use selected backend and remove bbox false-positive overlap");
+    }
 
     #[test]
     fn adapter_phase_optimizer_passes_collision_backend_to_phase_config() {

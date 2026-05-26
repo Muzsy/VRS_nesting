@@ -119,10 +119,11 @@ impl BppPhase {
 
             // Pass budget to the inner StoppingPolicy.
             // Time is controlled by the outer loop; inner policy uses iteration count only.
-            let engine = SheetEliminationEngine::new_with_rotation_context(
+            let engine = SheetEliminationEngine::new_with_backend_and_rotation_context(
                 parts,
                 sheets,
                 self.config.rotation_context.clone(),
+                self.config.collision_backend.clone(),
             );
             let mut policy =
                 StoppingPolicy::new(self.config.bpp_budget.max_iterations, f64::MAX);
