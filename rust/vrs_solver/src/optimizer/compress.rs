@@ -2,7 +2,7 @@ use crate::item::{resolve_instance_rotation_angles, Part};
 use crate::sheet::SheetShape;
 use crate::optimizer::moves::{MoveExecutor, MoveDiagnostics};
 use crate::optimizer::phase::{PhaseConfig, PhaseDiagnostics, PhaseStopReason, PhaseType};
-use crate::optimizer::repair::find_violations;
+use crate::optimizer::repair::{find_violations, validate_placements_for_backend};
 use crate::optimizer::score::ScoreModel;
 use crate::optimizer::working::WorkingLayout;
 
@@ -37,7 +37,12 @@ impl CompressionPhase {
         let mut incumbent_layout = layout.snapshot();
         let mut incumbent_score = initial_score.total_cost;
         let rotation_context = &self.config.rotation_context;
-        let exec = MoveExecutor::new_with_rotation_context(parts, sheets, rotation_context.clone());
+        let exec = MoveExecutor::new_with_backend_and_rotation_context(
+            parts,
+            sheets,
+            rotation_context.clone(),
+            self.config.collision_backend.clone(),
+        );
 
         let start_time = std::time::Instant::now();
         let mut iteration = 0;
@@ -76,13 +81,16 @@ impl CompressionPhase {
                         rot,
                         &mut diag_inner,
                     ) {
-                        let try_violations = find_violations(&try_result, parts, sheets);
+                        let try_violations = validate_placements_for_backend(
+                            &try_result, parts, sheets, &self.config.collision_backend,
+                        );
                         if try_violations.is_empty() {
-                            let try_score = self.score_model.score(
+                            let try_score = self.score_model.score_with_backend(
                                 &try_result,
                                 &layout.unplaced,
                                 parts,
                                 sheets,
+                                &self.config.collision_backend,
                             );
                             if try_score.total_cost < incumbent_score {
                                 layout.placements = try_result;
@@ -345,5 +353,50 @@ mod tests {
         );
         assert!(phase_angles.iter().any(|&r| (r - 45.0).abs() < 1e-6),
             "phase.config.rotation_context must include 45° (FortyFive), proving MoveExecutor uses phase context");
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn compression_phase_uses_backend_aware_validation_for_exact() {
+        use crate::io::CollisionBackendKind;
+
+        // Parts without outer_points fall back to rect polygon in exact backend.
+        // CompressionPhase with JaguaPolygonExact must not crash and must produce
+        // a violation-free (bbox-level) output — verifies end-to-end wiring.
+        let parts = vec![
+            crate::item::Part {
+                id: "A".into(),
+                width: 30.0,
+                height: 10.0,
+                quantity: 2,
+                allowed_rotations_deg: vec![0, 90],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+                rotation_policy: None,
+            },
+        ];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![
+            crate::io::Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            crate::io::Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0.0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let mut config = PhaseConfig::deterministic_default();
+        config.compression_budget = crate::optimizer::phase::PhaseBudget::new(2, 0.0);
+        config.collision_backend = CollisionBackendKind::JaguaPolygonExact;
+        let phase = CompressionPhase::new(config);
+
+        let (result_layout, _diag) = phase.run(layout, &parts, &sheets);
+        let violations = find_violations(&result_layout.placements, &parts, &sheets);
+        assert!(
+            violations.is_empty(),
+            "CompressionPhase with JaguaPolygonExact backend must produce violation-free output"
+        );
     }
 }

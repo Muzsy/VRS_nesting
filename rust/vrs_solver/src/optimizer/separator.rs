@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use crate::geometry::Rect;
-use crate::io::Placement;
+use crate::io::{CollisionBackendKind, Placement};
 use crate::item::{
     dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
 };
@@ -10,9 +10,16 @@ use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
+use super::collision_backend::{CollisionBackend, CollisionDecision, JaguaPolygonExactBackend};
 use super::initializer::bbox_from_placement;
 use super::loss_model::LossModelKind;
 use super::working::WorkingLayout;
+
+/// Hard loss assigned to a pair when exact backend returns Unsupported.
+/// Large relative to normal bbox overlap areas, but not so large as to overflow f64.
+const BACKEND_UNSUPPORTED_PAIR_LOSS: f64 = 1_000_000.0;
+/// Hard loss assigned to a boundary item when exact backend returns Unsupported.
+const BACKEND_UNSUPPORTED_BOUNDARY_LOSS: f64 = 1_000_000.0;
 
 // ---------------------------------------------------------------------------
 // LossSnapshot
@@ -27,6 +34,14 @@ pub struct LossSnapshot {
     bboxes: Vec<Option<PlacedBbox>>,
     boundary_valid: Vec<bool>,
     boundary_losses: Vec<f64>,
+    /// Backend-confirmed no-collision pairs (exact backend only).
+    pair_exact_no_collision: HashSet<(usize, usize)>,
+    /// Pairs where exact backend returned Unsupported.
+    pair_exact_unsupported: HashSet<(usize, usize)>,
+    /// Per-item flag: exact backend confirmed boundary is valid.
+    boundary_exact_valid: Vec<bool>,
+    /// Per-item flag: exact backend returned Unsupported for boundary.
+    boundary_exact_unsupported: Vec<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +57,16 @@ pub struct VrsCollisionTracker {
     boundary_valid: Vec<bool>,
     boundary_losses: Vec<f64>,
     loss_model_kind: LossModelKind,
+    /// Backend policy for this tracker. Bbox = pre-Q11 behavior (no change).
+    collision_backend: CollisionBackendKind,
+    /// Pairs where exact backend confirmed NoCollision (even if bbox says overlap).
+    pair_exact_no_collision: HashSet<(usize, usize)>,
+    /// Pairs where exact backend returned Unsupported.
+    pair_exact_unsupported: HashSet<(usize, usize)>,
+    /// Per-item: exact backend confirmed boundary valid (overrides bbox boundary_valid=false).
+    boundary_exact_valid: Vec<bool>,
+    /// Per-item: exact backend returned Unsupported for boundary check.
+    boundary_exact_unsupported: Vec<bool>,
 }
 
 #[derive(Clone)]
@@ -92,16 +117,76 @@ impl DeterministicRng {
     }
 }
 
+/// Compute initial backend decisions for all pairs and boundaries.
+///
+/// Returns `(pair_no_collision, pair_unsupported, boundary_valid, boundary_unsupported)`.
+fn compute_backend_decisions(
+    n: usize,
+    placements: &[Placement],
+    parts: &[Part],
+    sheets: &[SheetShape],
+    collision_backend: &CollisionBackendKind,
+) -> (HashSet<(usize, usize)>, HashSet<(usize, usize)>, Vec<bool>, Vec<bool>) {
+    match collision_backend {
+        CollisionBackendKind::Bbox => {
+            (HashSet::new(), HashSet::new(), vec![false; n], vec![false; n])
+        }
+        CollisionBackendKind::JaguaPolygonExact => {
+            let backend = JaguaPolygonExactBackend;
+            let mut pair_nc: HashSet<(usize, usize)> = HashSet::new();
+            let mut pair_unsup: HashSet<(usize, usize)> = HashSet::new();
+            let mut bnd_valid = vec![false; n];
+            let mut bnd_unsup = vec![false; n];
+            for i in 0..n {
+                let pi = &placements[i];
+                let part_i = parts.iter().find(|pt| pt.id == pi.part_id);
+                if let Some(prt) = part_i {
+                    if pi.sheet_index < sheets.len() {
+                        match backend.placement_within_sheet(pi, prt, &sheets[pi.sheet_index]) {
+                            CollisionDecision::NoCollision => { bnd_valid[i] = true; }
+                            CollisionDecision::Collision => {}
+                            CollisionDecision::Unsupported { .. } => { bnd_unsup[i] = true; }
+                        }
+                    }
+                    for j in (i + 1)..n {
+                        let pj = &placements[j];
+                        let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
+                        if let Some(prt_j) = part_j {
+                            let key = (i, j);
+                            match backend.placement_overlaps(pi, prt, pj, prt_j) {
+                                CollisionDecision::NoCollision => { pair_nc.insert(key); }
+                                CollisionDecision::Collision => {}
+                                CollisionDecision::Unsupported { .. } => { pair_unsup.insert(key); }
+                            }
+                        }
+                    }
+                }
+            }
+            (pair_nc, pair_unsup, bnd_valid, bnd_unsup)
+        }
+        CollisionBackendKind::Cde => {
+            let mut pair_unsup: HashSet<(usize, usize)> = HashSet::new();
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    pair_unsup.insert((i, j));
+                }
+            }
+            (HashSet::new(), pair_unsup, vec![false; n], vec![true; n])
+        }
+    }
+}
+
 impl VrsCollisionTracker {
-    /// Build tracker using an explicit loss model.
+    /// Build tracker using an explicit loss model and collision backend.
     ///
-    /// Called by `VrsSeparator::run` with `config.loss_model`.
-    /// Existing callers should use [`Self::build`] for `BboxArea` (default) behavior.
+    /// Called by `VrsSeparator::run` with `config.loss_model` and `config.collision_backend`.
+    /// Existing callers should use [`Self::build`] for `BboxArea`/`Bbox` (default) behavior.
     pub fn build_with_model(
         layout: &WorkingLayout,
         parts: &[Part],
         sheets: &[SheetShape],
         loss_model_kind: LossModelKind,
+        collision_backend: CollisionBackendKind,
     ) -> Self {
         let n = layout.placements.len();
         let mut bboxes = Vec::with_capacity(n);
@@ -135,6 +220,9 @@ impl VrsCollisionTracker {
             boundary_losses.push(bl);
         }
 
+        let (pair_exact_no_collision, pair_exact_unsupported, boundary_exact_valid, boundary_exact_unsupported) =
+            compute_backend_decisions(n, &layout.placements, parts, sheets, &collision_backend);
+
         Self {
             n,
             pair_weights: HashMap::new(),
@@ -143,16 +231,19 @@ impl VrsCollisionTracker {
             boundary_valid,
             boundary_losses,
             loss_model_kind,
+            collision_backend,
+            pair_exact_no_collision,
+            pair_exact_unsupported,
+            boundary_exact_valid,
+            boundary_exact_unsupported,
         }
     }
 
-    /// Build tracker with the default `BboxArea` loss model.
+    /// Build tracker with the default `BboxArea` loss model and `Bbox` backend.
     ///
-    /// Backward-compatible with all pre-Q06 call sites. Existing tests and
-    /// integrations that call `build` continue to use `dx*dy` overlap and binary
-    /// boundary proxy without modification.
+    /// Backward-compatible with all pre-Q11 call sites.
     pub fn build(layout: &WorkingLayout, parts: &[Part], sheets: &[SheetShape]) -> Self {
-        Self::build_with_model(layout, parts, sheets, LossModelKind::BboxArea)
+        Self::build_with_model(layout, parts, sheets, LossModelKind::BboxArea, CollisionBackendKind::Bbox)
     }
 
     fn pair_key(i: usize, j: usize) -> (usize, usize) {
@@ -168,6 +259,15 @@ impl VrsCollisionTracker {
     }
 
     pub fn pair_loss(&self, i: usize, j: usize) -> f64 {
+        if !matches!(self.collision_backend, CollisionBackendKind::Bbox) {
+            let key = Self::pair_key(i, j);
+            if self.pair_exact_no_collision.contains(&key) {
+                return 0.0;
+            }
+            if self.pair_exact_unsupported.contains(&key) {
+                return BACKEND_UNSUPPORTED_PAIR_LOSS;
+            }
+        }
         match (&self.bboxes[i], &self.bboxes[j]) {
             (Some(a), Some(b)) => self.loss_model_kind.pair_loss(a, b),
             _ => 0.0,
@@ -175,6 +275,14 @@ impl VrsCollisionTracker {
     }
 
     pub fn boundary_loss(&self, i: usize) -> f64 {
+        if !matches!(self.collision_backend, CollisionBackendKind::Bbox) {
+            if self.boundary_exact_valid[i] {
+                return 0.0;
+            }
+            if self.boundary_exact_unsupported[i] {
+                return BACKEND_UNSUPPORTED_BOUNDARY_LOSS;
+            }
+        }
         self.boundary_losses[i]
     }
 
@@ -308,6 +416,64 @@ impl VrsCollisionTracker {
         self.bboxes[idx] = bbox;
         self.boundary_valid[idx] = valid;
         self.boundary_losses[idx] = bl;
+
+        // Backend-aware: re-compute decisions for this item if not Bbox.
+        if !matches!(self.collision_backend, CollisionBackendKind::Bbox) {
+            self.update_backend_decisions_for_item(idx, &layout.placements, parts, sheets);
+        }
+    }
+
+    fn update_backend_decisions_for_item(
+        &mut self,
+        idx: usize,
+        placements: &[Placement],
+        parts: &[Part],
+        sheets: &[SheetShape],
+    ) {
+        // Clear existing decisions for this item.
+        self.pair_exact_no_collision.retain(|&(a, b)| a != idx && b != idx);
+        self.pair_exact_unsupported.retain(|&(a, b)| a != idx && b != idx);
+        self.boundary_exact_valid[idx] = false;
+        self.boundary_exact_unsupported[idx] = false;
+
+        let pi = &placements[idx];
+        let part_i = parts.iter().find(|pt| pt.id == pi.part_id);
+
+        match self.collision_backend {
+            CollisionBackendKind::JaguaPolygonExact => {
+                let backend = JaguaPolygonExactBackend;
+                if let Some(prt) = part_i {
+                    if pi.sheet_index < sheets.len() {
+                        match backend.placement_within_sheet(pi, prt, &sheets[pi.sheet_index]) {
+                            CollisionDecision::NoCollision => { self.boundary_exact_valid[idx] = true; }
+                            CollisionDecision::Collision => {}
+                            CollisionDecision::Unsupported { .. } => { self.boundary_exact_unsupported[idx] = true; }
+                        }
+                    }
+                    for j in 0..self.n {
+                        if j == idx { continue; }
+                        let pj = &placements[j];
+                        let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
+                        if let Some(prt_j) = part_j {
+                            let key = Self::pair_key(idx, j);
+                            match backend.placement_overlaps(pi, prt, pj, prt_j) {
+                                CollisionDecision::NoCollision => { self.pair_exact_no_collision.insert(key); }
+                                CollisionDecision::Collision => {}
+                                CollisionDecision::Unsupported { .. } => { self.pair_exact_unsupported.insert(key); }
+                            }
+                        }
+                    }
+                }
+            }
+            CollisionBackendKind::Cde => {
+                self.boundary_exact_unsupported[idx] = true;
+                for j in 0..self.n {
+                    if j == idx { continue; }
+                    self.pair_exact_unsupported.insert(Self::pair_key(idx, j));
+                }
+            }
+            CollisionBackendKind::Bbox => {}
+        }
     }
 
     pub fn restore_item(&mut self, idx: usize, bbox: Option<PlacedBbox>, valid: bool, boundary_loss: f64) {
@@ -316,13 +482,17 @@ impl VrsCollisionTracker {
         self.boundary_losses[idx] = boundary_loss;
     }
 
-    /// Snapshot the full geometric loss-state (bboxes + boundary state).
+    /// Snapshot the full geometric loss-state (bboxes + boundary state + backend decisions).
     /// GLS weights are NOT captured and will not be affected by a subsequent restore.
     pub fn snapshot_loss(&self) -> LossSnapshot {
         LossSnapshot {
             bboxes: self.bboxes.clone(),
             boundary_valid: self.boundary_valid.clone(),
             boundary_losses: self.boundary_losses.clone(),
+            pair_exact_no_collision: self.pair_exact_no_collision.clone(),
+            pair_exact_unsupported: self.pair_exact_unsupported.clone(),
+            boundary_exact_valid: self.boundary_exact_valid.clone(),
+            boundary_exact_unsupported: self.boundary_exact_unsupported.clone(),
         }
     }
 
@@ -331,6 +501,10 @@ impl VrsCollisionTracker {
         self.bboxes = snap.bboxes;
         self.boundary_valid = snap.boundary_valid;
         self.boundary_losses = snap.boundary_losses;
+        self.pair_exact_no_collision = snap.pair_exact_no_collision;
+        self.pair_exact_unsupported = snap.pair_exact_unsupported;
+        self.boundary_exact_valid = snap.boundary_exact_valid;
+        self.boundary_exact_unsupported = snap.boundary_exact_unsupported;
     }
 }
 
@@ -360,6 +534,8 @@ pub struct VrsSeparatorConfig {
     pub rotation_context: RotationResolveContext,
     /// Collision loss model. Default: `BboxArea` (backward-compatible dx*dy + binary boundary).
     pub loss_model: LossModelKind,
+    /// Collision backend for pair-loss and boundary decisions. Default: `Bbox` (pre-Q11 behavior).
+    pub collision_backend: CollisionBackendKind,
 }
 
 impl Default for VrsSeparatorConfig {
@@ -376,6 +552,7 @@ impl Default for VrsSeparatorConfig {
             seed: 0,
             rotation_context: RotationResolveContext::legacy_default(),
             loss_model: LossModelKind::BboxArea,
+            collision_backend: CollisionBackendKind::Bbox,
         }
     }
 }
@@ -693,7 +870,7 @@ impl VrsSeparator {
             .as_ref()
             .map(|v| v.iter().copied().collect());
 
-        let mut tracker = VrsCollisionTracker::build_with_model(&layout, parts, sheets, self.config.loss_model);
+        let mut tracker = VrsCollisionTracker::build_with_model(&layout, parts, sheets, self.config.loss_model, self.config.collision_backend.clone());
         let initial_loss = tracker.total_loss();
 
         if initial_loss == 0.0 {
@@ -1552,7 +1729,7 @@ mod tests {
                 placement("A__0002", "A", 0, 0.0, 0.0),
             ];
             let layout = WorkingLayout::new(placements, vec![], 1, 0);
-            let mut tracker = VrsCollisionTracker::build_with_model(&layout, &parts, &sheets, model);
+            let mut tracker = VrsCollisionTracker::build_with_model(&layout, &parts, &sheets, model, CollisionBackendKind::Bbox);
 
             let c = VrsSeparatorConfig::default();
             tracker.update_weights(
@@ -1639,6 +1816,120 @@ mod tests {
                     "y must be bit-identical ({model:?})"
                 );
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // SGH-Q11: Backend-aware scoring + separator tests
+    // ---------------------------------------------------------------------------
+
+    fn l_shape_part() -> Part {
+        // L-shape: [[0,0],[20,0],[20,10],[10,10],[10,20],[0,20]]
+        // Bounding box: (0,0,20,20). Notch: x=10..20, y=10..20.
+        make_part("L", 20.0, 20.0, 1, vec![0])
+    }
+
+    fn l_shape_part_with_polygon() -> Part {
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [20.0, 0.0], [20.0, 10.0],
+            [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]
+        ]);
+        Part {
+            id: "L".to_string(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(l_json),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    // SGH-Q11 Test 1: separator config backend defaults to Bbox.
+    #[test]
+    fn separator_config_backend_default_bbox() {
+        let cfg = VrsSeparatorConfig::default();
+        assert!(
+            matches!(cfg.collision_backend, CollisionBackendKind::Bbox),
+            "VrsSeparatorConfig::default() must have collision_backend = Bbox"
+        );
+    }
+
+    // SGH-Q11 Test 2: exact backend — notch pair_loss is zero when bbox is positive.
+    #[test]
+    fn separator_tracker_exact_notch_pair_loss_zero_when_bbox_positive() {
+        let l_part = l_shape_part_with_polygon();
+        let small = make_part("S", 3.0, 3.0, 1, vec![0]);
+        let parts = vec![l_part, small];
+        let stocks = vec![make_stock("SH", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+
+        // L-shape at (0,0), small rect at (15,15) — inside the notch.
+        // Bbox: L=(0,0,20,20), S=(15,15,18,18) → bbox overlaps!
+        // Exact: S is in the L-shape notch → NoCollision.
+        let placements = vec![
+            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement { instance_id: "S__0001".into(), part_id: "S".into(), sheet_index: 0, x: 15.0, y: 15.0, rotation_deg: 0.0 },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        // Bbox tracker: pair_loss > 0 (bbox overlap).
+        let bbox_tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
+        assert!(
+            bbox_tracker.pair_loss(0, 1) > 0.0,
+            "bbox tracker must report positive pair_loss for L-shape notch (false positive expected)"
+        );
+
+        // Exact tracker: pair_loss == 0 (no actual polygon overlap).
+        let exact_tracker = VrsCollisionTracker::build_with_model(
+            &layout, &parts, &sheets,
+            crate::optimizer::loss_model::LossModelKind::BboxArea,
+            CollisionBackendKind::JaguaPolygonExact,
+        );
+        assert_eq!(
+            exact_tracker.pair_loss(0, 1),
+            0.0,
+            "exact tracker must report pair_loss=0 when small rect is in L-shape notch"
+        );
+    }
+
+    // SGH-Q11 Test 3: same seed + same backend = bit-identical output.
+    #[test]
+    fn same_seed_same_backend_is_deterministic() {
+        let parts = vec![make_part("A", 30.0, 30.0, 3, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 5.0, 5.0),
+            placement("A__0003", "A", 0, 10.0, 10.0),
+        ];
+        let make_layout = || WorkingLayout::new(placements.clone(), vec![], 1, 0);
+        let make_cfg = |backend: CollisionBackendKind| VrsSeparatorConfig {
+            seed: 42,
+            collision_backend: backend,
+            ..VrsSeparatorConfig::default()
+        };
+
+        // Bbox: two runs identical.
+        let (r1, d1) = VrsSeparator::new(make_cfg(CollisionBackendKind::Bbox)).run(make_layout(), &parts, &sheets);
+        let (r2, d2) = VrsSeparator::new(make_cfg(CollisionBackendKind::Bbox)).run(make_layout(), &parts, &sheets);
+        assert_eq!(d1.best_loss.to_bits(), d2.best_loss.to_bits(), "Bbox: best_loss must be bit-identical");
+        for (a, b) in r1.placements.iter().zip(r2.placements.iter()) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits(), "Bbox: x must be bit-identical");
+            assert_eq!(a.y.to_bits(), b.y.to_bits(), "Bbox: y must be bit-identical");
+        }
+
+        // JaguaPolygonExact: two runs identical.
+        let (r3, d3) = VrsSeparator::new(make_cfg(CollisionBackendKind::JaguaPolygonExact)).run(make_layout(), &parts, &sheets);
+        let (r4, d4) = VrsSeparator::new(make_cfg(CollisionBackendKind::JaguaPolygonExact)).run(make_layout(), &parts, &sheets);
+        assert_eq!(d3.best_loss.to_bits(), d4.best_loss.to_bits(), "Exact: best_loss must be bit-identical");
+        for (a, b) in r3.placements.iter().zip(r4.placements.iter()) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits(), "Exact: x must be bit-identical");
+            assert_eq!(a.y.to_bits(), b.y.to_bits(), "Exact: y must be bit-identical");
         }
     }
 

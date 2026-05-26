@@ -2,6 +2,7 @@ use super::compress::CompressionPhase;
 use super::explore::ExplorationPhase;
 use super::score::{ScoreModel, ScoreResult, ScoreWeights};
 use super::working::WorkingLayout;
+use crate::io::CollisionBackendKind;
 use crate::item::Part;
 use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
@@ -154,6 +155,9 @@ pub struct PhaseConfig {
     pub pool_capacity: usize,
     pub disruption_top_percentile: f64,
     pub disruption_max_attempts: usize,
+    /// Collision backend to use for internal scoring, separator, and commit gates.
+    /// Default: Bbox (unchanged from pre-Q11 behavior).
+    pub collision_backend: CollisionBackendKind,
 }
 
 impl Default for PhaseConfig {
@@ -170,6 +174,7 @@ impl Default for PhaseConfig {
             pool_capacity: 20,
             disruption_top_percentile: 0.2,
             disruption_max_attempts: 3,
+            collision_backend: CollisionBackendKind::default(),
         }
     }
 }
@@ -184,6 +189,7 @@ impl PhaseConfig {
             seed: self.seed as u64,
             worker_count: self.worker_count,
             rotation_context: self.rotation_context.clone(),
+            collision_backend: self.collision_backend.clone(),
             ..super::separator::VrsSeparatorConfig::default()
         }
     }
@@ -595,6 +601,20 @@ mod tests {
         assert!(
             find_violations(&r1.layout.placements, &parts, &sheets).is_empty(),
             "determinism run must produce violation-free output"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn phase_config_defaults_collision_backend_bbox() {
+        use crate::io::CollisionBackendKind;
+        let cfg = PhaseConfig::deterministic_default();
+        assert!(
+            matches!(cfg.collision_backend, CollisionBackendKind::Bbox),
+            "PhaseConfig default must use Bbox collision backend"
         );
     }
 }

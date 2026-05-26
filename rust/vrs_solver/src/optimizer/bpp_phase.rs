@@ -4,7 +4,7 @@ use crate::item::Part;
 use crate::sheet::SheetShape;
 use super::multisheet::compute_sheet_count_used;
 use super::phase::PhaseConfig;
-use super::repair::find_violations;
+use super::repair::validate_placements_for_backend;
 use super::score::ScoreModel;
 use super::sheet_elimination::{SheetEliminationDiagnostics, SheetEliminationEngine};
 use super::stopping::StoppingPolicy;
@@ -93,7 +93,9 @@ impl BppPhase {
         let mut incumbent_unplaced = layout.unplaced;
         let mut incumbent_sheet_count = initial_sheet_count;
 
-        let initial_score = self.score_model.score(&incumbent_placements, &incumbent_unplaced, parts, sheets);
+        let initial_score = self.score_model.score_with_backend(
+            &incumbent_placements, &incumbent_unplaced, parts, sheets, &self.config.collision_backend,
+        );
         diag.initial_score = initial_score.total_cost;
         diag.best_score = initial_score.total_cost;
 
@@ -135,7 +137,9 @@ impl BppPhase {
 
             // Commit gate
             let new_sheet_count = compute_sheet_count_used(&new_placements);
-            let violations = find_violations(&new_placements, parts, sheets);
+            let violations = validate_placements_for_backend(
+                &new_placements, parts, sheets, &self.config.collision_backend,
+            );
             let count_preserved = new_placements.len() == incumbent_placements.len();
             let ids_match = {
                 let orig: HashSet<&str> =
@@ -159,11 +163,12 @@ impl BppPhase {
                 incumbent_sheet_count = new_sheet_count;
                 diag.successful_eliminations += 1;
                 diag.final_sheet_count = new_sheet_count;
-                let committed_score = self.score_model.score(
+                let committed_score = self.score_model.score_with_backend(
                     &incumbent_placements,
                     &incumbent_unplaced,
                     parts,
                     sheets,
+                    &self.config.collision_backend,
                 );
                 diag.best_score = committed_score.total_cost;
             } else {
@@ -472,5 +477,30 @@ mod tests {
                 "best_score must equal initial_score when no eliminations succeed"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn bpp_phase_uses_backend_aware_commit_gate_for_exact() {
+        use crate::io::CollisionBackendKind;
+
+        // BppPhase with JaguaPolygonExact must not crash and must produce violation-free output.
+        // Parts without outer_points fall back to rect polygon in exact backend.
+        let (placements, sheets, parts) = three_item_three_sheet_layout();
+        let layout = WorkingLayout::new(placements, vec![], sheets.len(), 0);
+
+        let mut config = bpp_test_config(2, 64);
+        config.collision_backend = CollisionBackendKind::JaguaPolygonExact;
+        let phase = BppPhase::new(config);
+
+        let (result, _diag) = phase.run(layout, &parts, &sheets);
+        let violations = find_violations(&result.placements, &parts, &sheets);
+        assert!(
+            violations.is_empty(),
+            "BppPhase with JaguaPolygonExact backend must produce violation-free output"
+        );
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::geometry::Rect;
-use crate::io::{Placement, Unplaced};
+use crate::io::{CollisionBackendKind, Placement, Unplaced};
 use crate::item::{
     dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
 };
@@ -9,7 +9,10 @@ use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
-use super::collision_backend::{BackendValidationDiagnostics, CollisionBackend, CollisionDecision};
+use super::collision_backend::{
+    BackendValidationDiagnostics, CdeCollisionBackend, CollisionBackend, CollisionDecision,
+    JaguaPolygonExactBackend,
+};
 use super::initializer::bbox_from_placement;
 use super::stopping::StoppingPolicy;
 
@@ -295,6 +298,48 @@ pub fn validate_placements_with_backend_checked(
             unsupported_queries,
             bbox_fallback_queries: 0, // no fallbacks in checked path
         },
+    }
+}
+
+/// Central backend-aware validation helper for internal search commit gates.
+///
+/// Routes based on `backend_kind`:
+/// - Bbox: identical to `find_violations` (backward-compatible, no behavior change).
+/// - JaguaPolygonExact / Cde: uses `validate_placements_with_backend_checked`.
+///   If `unsupported_queries > 0`, a sentinel violation is appended so that callers
+///   checking `violations.is_empty()` reject the candidate — no silent bbox fallback.
+pub fn validate_placements_for_backend(
+    placements: &[Placement],
+    parts: &[Part],
+    sheets: &[SheetShape],
+    backend_kind: &CollisionBackendKind,
+) -> Vec<(usize, ViolationType)> {
+    match backend_kind {
+        CollisionBackendKind::Bbox => find_violations(placements, parts, sheets),
+        CollisionBackendKind::JaguaPolygonExact => {
+            let result = validate_placements_with_backend_checked(
+                placements, parts, sheets, &JaguaPolygonExactBackend,
+            );
+            if result.diagnostics.unsupported_queries > 0 {
+                let mut v = result.violations;
+                v.push((usize::MAX, ViolationType::BoundaryOrSheet));
+                v
+            } else {
+                result.violations
+            }
+        }
+        CollisionBackendKind::Cde => {
+            let result = validate_placements_with_backend_checked(
+                placements, parts, sheets, &CdeCollisionBackend,
+            );
+            if result.diagnostics.unsupported_queries > 0 {
+                let mut v = result.violations;
+                v.push((usize::MAX, ViolationType::BoundaryOrSheet));
+                v
+            } else {
+                result.violations
+            }
+        }
     }
 }
 
@@ -750,5 +795,82 @@ mod tests {
             run_repair(placed, extra_unplaced, &parts, &sheets, &mut policy);
         assert_eq!(rep.len() + rep_unplaced.len(), total);
         assert!(diag.stopped_by_policy > 0, "policy should have stopped some items");
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn explicit_exact_no_silent_bbox_fallback_in_internal_search() {
+        use crate::io::CollisionBackendKind;
+
+        // The L-shape notch scenario: part with outer_points (L polygon).
+        // Small rect placed inside the notch (x=15,y=15, 3×3).
+        // - bbox validate: detects overlap (bbox covers 0..20 × 0..20)
+        // - exact validate: no overlap (rect is in the notch [10,20]×[10,20])
+        // validate_placements_for_backend(JaguaPolygonExact) must NOT silently fall back
+        // to bbox: it must return the exact result (empty violations for this case).
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [20.0, 0.0], [20.0, 10.0],
+            [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]
+        ]);
+        let l_part = Part {
+            id: "L".to_string(),
+            width: 20.0, height: 20.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None, prepared_holes_points: None,
+            outer_points: Some(l_json),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
+        let s_part = Part {
+            id: "S".to_string(),
+            width: 3.0, height: 3.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None, prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
+        let parts = vec![l_part, s_part];
+
+        let stocks = vec![crate::sheet::Stock {
+            id: "SH".to_string(),
+            quantity: 1,
+            width: Some(100.0),
+            height: Some(100.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }];
+        let sheets = crate::sheet::expand_sheets(&stocks).expect("sheets");
+
+        let placements = vec![
+            Placement {
+                instance_id: "L__0001".to_string(), part_id: "L".to_string(),
+                sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "S__0001".to_string(), part_id: "S".to_string(),
+                sheet_index: 0, x: 15.0, y: 15.0, rotation_deg: 0.0,
+            },
+        ];
+
+        let bbox_violations = find_violations(&placements, &parts, &sheets);
+        assert!(
+            !bbox_violations.is_empty(),
+            "bbox baseline must detect overlap (S inside L bbox)"
+        );
+
+        let exact_violations = validate_placements_for_backend(
+            &placements, &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+        );
+        assert!(
+            exact_violations.is_empty(),
+            "exact backend must find no overlap: S is in the L notch — no silent bbox fallback"
+        );
     }
 }

@@ -77,6 +77,7 @@ fn phase_config_from_input(
     config.compression_budget = PhaseBudget::new(8, total_budget_s * 0.25);
     config.bpp_budget = PhaseBudget::new(4, total_budget_s * 0.15);
     config.bpp_max_eliminations = 16;
+    config.collision_backend = resolve_backend_kind(input);
     config
 }
 
@@ -916,5 +917,29 @@ mod tests {
             Some("PHASE_OPTIMIZER_COMMIT_VIOLATION")
         );
         assert!(rejected.placements.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn adapter_phase_optimizer_passes_collision_backend_to_phase_config() {
+        use crate::rotation_policy::RotationResolveContext;
+
+        // Build an input with explicit JaguaPolygonExact backend.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let mut input = make_input(99, stock, parts, None);
+        input.collision_backend = Some(CollisionBackendKind::JaguaPolygonExact);
+
+        // Reconstruct phase config the same way adapter.rs does.
+        let rc = RotationResolveContext::legacy_default();
+        let cfg = super::phase_config_from_input(&input, rc);
+
+        assert!(
+            matches!(cfg.collision_backend, CollisionBackendKind::JaguaPolygonExact),
+            "phase_config_from_input must propagate collision_backend from SolverInput"
+        );
     }
 }

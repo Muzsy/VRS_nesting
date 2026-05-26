@@ -9,12 +9,12 @@
 //! - Penalty hierarchy: overlap/boundary (1e9) >> unplaced (1e6) >> sheet_count (1e4)
 //!   >> placed_area_reward (1.0) >> compactness (0.001).
 
-use crate::io::{Placement, Unplaced};
+use crate::io::{CollisionBackendKind, Placement, Unplaced};
 use crate::item::{dims_for_rotation, Part};
 use crate::sheet::SheetShape;
 use super::candidates::PlacedBbox;
 use super::initializer::bbox_from_placement;
-use super::repair::{find_violations, ViolationType};
+use super::repair::{find_violations, validate_placements_for_backend, ViolationType};
 
 // ---------------------------------------------------------------------------
 // ScoreWeights — default weight profile
@@ -131,7 +131,7 @@ impl ScoreModel {
         Self { weights }
     }
 
-    /// Score a layout. Lower `total_cost` is better.
+    /// Score a layout using bbox violations. Lower `total_cost` is better.
     pub fn score(
         &self,
         placements: &[Placement],
@@ -140,6 +140,27 @@ impl ScoreModel {
         sheets: &[SheetShape],
     ) -> ScoreResult {
         score_layout(placements, unplaced, parts, sheets, &self.weights)
+    }
+
+    /// Score a layout using the given collision backend for violation detection.
+    ///
+    /// - `Bbox`: identical to `score()` (backward-compatible).
+    /// - `JaguaPolygonExact`: uses exact polygon violations; false positives from bbox
+    ///   are removed (e.g. L-shape notch — bbox overlap but no actual polygon overlap).
+    /// - `Cde` / Unsupported: treats unsupported queries as violations (hard penalty).
+    pub fn score_with_backend(
+        &self,
+        placements: &[Placement],
+        unplaced: &[Unplaced],
+        parts: &[Part],
+        sheets: &[SheetShape],
+        backend_kind: &CollisionBackendKind,
+    ) -> ScoreResult {
+        if matches!(backend_kind, CollisionBackendKind::Bbox) {
+            return self.score(placements, unplaced, parts, sheets);
+        }
+        let violations = validate_placements_for_backend(placements, parts, sheets, backend_kind);
+        score_layout_from_violations(placements, unplaced, parts, sheets, &self.weights, &violations)
     }
 
     /// Returns `true` if `a` is strictly better (lower cost) than `b`.
@@ -170,6 +191,22 @@ pub fn score_layout(
     parts: &[Part],
     sheets: &[SheetShape],
     weights: &ScoreWeights,
+) -> ScoreResult {
+    let violations = find_violations(placements, parts, sheets);
+    score_layout_from_violations(placements, unplaced, parts, sheets, weights, &violations)
+}
+
+/// Internal helper: compute score with pre-computed violations.
+///
+/// Called by `score_layout` (with bbox violations) and `ScoreModel::score_with_backend`
+/// (with backend-specific violations).
+pub(super) fn score_layout_from_violations(
+    placements: &[Placement],
+    unplaced: &[Unplaced],
+    parts: &[Part],
+    sheets: &[SheetShape],
+    weights: &ScoreWeights,
+    violations: &[(usize, ViolationType)],
 ) -> ScoreResult {
     // --- Placed area + bboxes ---
     let mut placed_area = 0.0_f64;
@@ -202,8 +239,7 @@ pub fn score_layout(
         }
     }
 
-    // --- Violations (overlap + boundary) via repair helper ---
-    let violations = find_violations(placements, parts, sheets);
+    // --- Violations (overlap + boundary) from provided list ---
     let overlap_violations = violations
         .iter()
         .filter(|(_, v)| *v == ViolationType::Overlap)
@@ -632,6 +668,100 @@ mod tests {
         assert!(
             (r.breakdown.sheet_count_contribution - 2.0 * 10_000.0).abs() < 1e-9,
             "sheet_count_contribution backward compat"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    fn make_l_shape_part_with_polygon() -> Part {
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [20.0, 0.0], [20.0, 10.0],
+            [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]
+        ]);
+        crate::item::Part {
+            id: "L".to_string(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(l_json),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    #[test]
+    fn score_with_backend_bbox_matches_legacy_score() {
+        // score_with_backend(Bbox) must be bit-identical to score() for any layout.
+        let parts = vec![make_part("A", 30.0, 10.0)];
+        let sheets = make_sheets(100.0, 100.0, 1);
+        let placements = vec![
+            p("A__0001", "A", 0, 0.0, 0.0),
+            p("A__0002", "A", 0, 40.0, 0.0),
+        ];
+        let model = ScoreModel::default();
+        let legacy = model.score(&placements, &[], &parts, &sheets);
+        let with_bbox = model.score_with_backend(
+            &placements, &[], &parts, &sheets, &CollisionBackendKind::Bbox,
+        );
+        assert_eq!(
+            legacy.total_cost.to_bits(),
+            with_bbox.total_cost.to_bits(),
+            "score_with_backend(Bbox) must be bit-identical to score()"
+        );
+    }
+
+    #[test]
+    fn score_with_backend_exact_notch_false_positive_removed() {
+        // L-shape at (0,0) with polygon; small 3×3 rect at (15,15) — inside the notch.
+        // bbox score: overlap detected → large penalty.
+        // exact score: no overlap (rect is in the notch) → no overlap penalty.
+        let l_part = make_l_shape_part_with_polygon();
+        let small_part = make_part("S", 3.0, 3.0);
+        let parts = vec![l_part, small_part];
+        // Sheet large enough to contain both bboxes
+        let sheets = make_sheets(100.0, 100.0, 1);
+
+        let placements = vec![
+            Placement {
+                instance_id: "L__0001".to_string(),
+                part_id: "L".to_string(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "S__0001".to_string(),
+                part_id: "S".to_string(),
+                sheet_index: 0,
+                x: 15.0,
+                y: 15.0,
+                rotation_deg: 0.0,
+            },
+        ];
+        let model = ScoreModel::default();
+
+        let bbox_score = model.score(&placements, &[], &parts, &sheets);
+        let exact_score = model.score_with_backend(
+            &placements, &[], &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+        );
+
+        assert!(
+            bbox_score.breakdown.overlap_violations > 0,
+            "bbox must detect overlap: rect bbox is inside L bbox"
+        );
+        assert_eq!(
+            exact_score.breakdown.overlap_violations, 0,
+            "exact backend must see no overlap: rect is in the L notch"
+        );
+        assert!(
+            exact_score.total_cost < bbox_score.total_cost,
+            "exact score must be lower (no false-positive overlap penalty)"
         );
     }
 }

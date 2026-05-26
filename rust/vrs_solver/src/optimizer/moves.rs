@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use crate::geometry::Rect;
-use crate::io::Placement;
+use crate::io::{CollisionBackendKind, Placement};
 use crate::item::{
     dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
 };
@@ -11,7 +11,7 @@ use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::initializer::bbox_from_placement;
-use super::repair::find_violations;
+use super::repair::validate_placements_for_backend;
 use super::separator::{VrsSeparator, VrsSeparatorConfig};
 use super::state::PlacementTransform;
 use super::working::WorkingLayout;
@@ -130,6 +130,7 @@ pub struct MoveExecutor<'a> {
     parts: &'a [Part],
     sheets: &'a [SheetShape],
     rotation_context: RotationResolveContext,
+    collision_backend: CollisionBackendKind,
 }
 
 impl<'a> MoveExecutor<'a> {
@@ -146,6 +147,21 @@ impl<'a> MoveExecutor<'a> {
             parts,
             sheets,
             rotation_context,
+            collision_backend: CollisionBackendKind::Bbox,
+        }
+    }
+
+    pub fn new_with_backend_and_rotation_context(
+        parts: &'a [Part],
+        sheets: &'a [SheetShape],
+        rotation_context: RotationResolveContext,
+        collision_backend: CollisionBackendKind,
+    ) -> Self {
+        Self {
+            parts,
+            sheets,
+            rotation_context,
+            collision_backend,
         }
     }
 
@@ -165,7 +181,7 @@ impl<'a> MoveExecutor<'a> {
         placements.iter().map(|p| p.instance_id.clone()).collect()
     }
 
-    /// Full commit gate: count, instance set, sheet bounds, find_violations.
+    /// Full commit gate: count, instance set, sheet bounds, backend-aware violations.
     fn commit_gate_ok(
         &self,
         new_placements: &[Placement],
@@ -183,7 +199,7 @@ impl<'a> MoveExecutor<'a> {
         if new_placements.iter().any(|p| p.sheet_index >= self.sheets.len()) {
             return false;
         }
-        find_violations(new_placements, self.parts, self.sheets).is_empty()
+        validate_placements_for_backend(new_placements, self.parts, self.sheets, &self.collision_backend).is_empty()
     }
 
     /// Build WorkingLayout → VrsSeparator → validate; returns committed placements or None.
@@ -198,6 +214,7 @@ impl<'a> MoveExecutor<'a> {
         let sep = VrsSeparator::new(VrsSeparatorConfig {
             allowed_sheet_indices,
             rotation_context: self.rotation_context.clone(),
+            collision_backend: self.collision_backend.clone(),
             ..VrsSeparatorConfig::default()
         });
         let (sep_layout, sep_diag) = sep.run(working, self.parts, self.sheets);
@@ -1122,6 +1139,37 @@ mod tests {
             (None, None) => {}
             _ => panic!("determinism failed: one run succeeded, the other did not"),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn move_executor_backend_aware_commit_gate_rejects_exact_unsupported() {
+        // CDE backend always returns Unsupported for all queries.
+        // A MoveExecutor using Cde must reject every commit (commit_gate_ok returns false)
+        // because validate_placements_for_backend appends the sentinel violation.
+        let parts = vec![make_part("A", 20.0, 20.0, 2)];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 2)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let instances = expand_instances(&parts).expect("instances");
+        let (placements, _, _) = build_initial_layout(&instances, &parts, &sheets);
+
+        let exec = MoveExecutor::new_with_backend_and_rotation_context(
+            &parts,
+            &sheets,
+            crate::rotation_policy::RotationResolveContext::legacy_default(),
+            CollisionBackendKind::Cde,
+        );
+        let mut diag = MoveDiagnostics::default();
+        let iid = placements[0].instance_id.clone();
+        // With Cde backend (always Unsupported), every commit gate fails → try_transfer returns None.
+        let result = exec.try_transfer(&placements, &iid, 1, None, &mut diag);
+        assert!(
+            result.is_none(),
+            "CDE backend (always Unsupported) must cause commit_gate to reject all moves"
+        );
     }
 
     #[test]

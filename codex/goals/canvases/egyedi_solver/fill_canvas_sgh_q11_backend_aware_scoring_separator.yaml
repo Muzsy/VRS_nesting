@@ -1,0 +1,82 @@
+steps:
+  - name: "Dependency gate és preflight"
+    description: >
+      Ellenőrizd, hogy a Q10 report első sora PASS és tartalmazza az SGH-Q11_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md, a Q08/Q10 contractokat,
+      a Q10 reportot és ezt a Q11 canvas-t. Ha a dependency gate hiányzik, BLOCKED report,
+      production kódmódosítás nélkül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q11_backend_aware_scoring_separator.md"
+      - "codex/reports/egyedi_solver/sgh_q11_backend_aware_scoring_separator.md"
+
+  - name: "BBox-only internal search audit"
+    description: >
+      Auditáld, hol maradt find_violations/score/separator/move/BPP útvonal bbox-only Q10 után.
+      Dokumentáld rg outputtal és konkrét fájl/sor hivatkozással.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q11_backend_aware_scoring_separator.md"
+      - "docs/egyedi_solver/sgh_q11_backend_aware_scoring_contract.md"
+
+  - name: "PhaseConfig collision backend propagation"
+    description: >
+      Adj CollisionBackendKind mezőt PhaseConfighez Bbox defaulttal. Az adapter::phase_config_from_input
+      adja át az input collision_backend policyt, a PhaseConfig::make_separator_config pedig továbbítsa
+      VrsSeparatorConfigbe. Bbox default output nem változhat.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+
+  - name: "Backend-aware validation/scoring helper"
+    description: >
+      Hozz létre központi backend-aware validation helper-t és ScoreModel::score_with_backend vagy equivalent
+      metódust. Bbox esetben legyen azonos a régi score/find_violations eredménnyel. Exact esetben backend alapján
+      számolja a boundary/overlap violationt; Unsupported magas penalty vagy invalid candidate, de nem bbox fallback.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "VrsSeparator backend-aware loss tracker"
+    description: >
+      Vezesd be a CollisionBackendKind-et VrsSeparatorConfigben és VrsCollisionTrackerben.
+      Exact backendnél a colliding pair és boundary_valid backend döntésből jöjjön. L-shape notch esetben
+      exact pair loss legyen nulla, miközben bbox backendnél pozitív marad. Unsupported ne fallbackeljen bboxra.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/loss_model.rs"
+
+  - name: "MoveExecutor és phase modulok backend-aware commit gate-je"
+    description: >
+      Vezesd végig a backend policyt MoveExecutor, ExplorationPhase, CompressionPhase és BppPhase belső
+      validation/scoring/commit útvonalain. Bbox default behavior maradjon kompatibilis. Exact backendnél
+      bbox false-positive ne blokkoljon valid exact jelöltet.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+
+  - name: "Dokumentáció és kötelező tesztek"
+    description: >
+      Készítsd el a Q11 contract doksit és checklistet. Teszteld: bbox score equivalencia, exact notch score/separator
+      false-positive eltűnése, exact Unsupported no-fallback belső searchben, phase modules backend-aware path,
+      determinism. Ha egy integrációs teszt túl nagy, unit szintű invariant teszttel helyettesítsd és dokumentáld.
+    outputs:
+      - "docs/egyedi_solver/sgh_q11_backend_aware_scoring_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q11_backend_aware_scoring_separator.md"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/explore.rs"
+      - "rust/vrs_solver/src/optimizer/compress.rs"
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+
+  - name: "Verify és report"
+    description: >
+      Futtasd a célzott cargo teszteket, cargo test --lib-ot és a teljes verify-t.
+      PASS csak zöld verify és teljes acceptance gate esetén lehet. PASS esetén a report végén SGH-Q12_STATUS: READY.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q11_backend_aware_scoring_separator.md"
+      - "codex/reports/egyedi_solver/sgh_q11_backend_aware_scoring_separator.verify.log"

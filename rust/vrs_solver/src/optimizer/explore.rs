@@ -1,13 +1,13 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use crate::io::Placement;
+use crate::io::{CollisionBackendKind, Placement};
 use crate::item::Part;
 use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::{SheetShape, Stock};
 use crate::optimizer::moves::{MoveExecutor, MoveDiagnostics};
 use crate::optimizer::phase::{PhaseConfig, PhaseDiagnostics, PhaseStopReason, PhaseType};
-use crate::optimizer::repair::find_violations;
+use crate::optimizer::repair::{find_violations, validate_placements_for_backend};
 use crate::optimizer::score::ScoreModel;
 use crate::optimizer::separator::{VrsSeparator, VrsSeparatorConfig};
 use crate::optimizer::working::WorkingLayout;
@@ -121,7 +121,8 @@ pub struct LargeItemSwapDisruption {
     top_percentile: f64,
     max_attempts: usize,
     seed: i64,
-    rotation_context: RotationResolveContext,
+    pub rotation_context: RotationResolveContext,
+    collision_backend: CollisionBackendKind,
 }
 
 impl LargeItemSwapDisruption {
@@ -135,7 +136,23 @@ impl LargeItemSwapDisruption {
         seed: i64,
         rotation_context: RotationResolveContext,
     ) -> Self {
-        Self { top_percentile, max_attempts, seed, rotation_context }
+        Self {
+            top_percentile,
+            max_attempts,
+            seed,
+            rotation_context,
+            collision_backend: CollisionBackendKind::Bbox,
+        }
+    }
+
+    pub fn new_with_backend_and_rotation_context(
+        top_percentile: f64,
+        max_attempts: usize,
+        seed: i64,
+        rotation_context: RotationResolveContext,
+        collision_backend: CollisionBackendKind,
+    ) -> Self {
+        Self { top_percentile, max_attempts, seed, rotation_context, collision_backend }
     }
 
     fn select_top_items<'a>(
@@ -191,7 +208,12 @@ impl LargeItemSwapDisruption {
         let top_count = top_count.max(2).min(layout.placements.len());
 
         let top_items = self.select_top_items(&layout.placements, parts, top_count);
-        let exec = MoveExecutor::new_with_rotation_context(parts, sheets, self.rotation_context.clone());
+        let exec = MoveExecutor::new_with_backend_and_rotation_context(
+            parts,
+            sheets,
+            self.rotation_context.clone(),
+            self.collision_backend.clone(),
+        );
 
         for attempt in 0..self.max_attempts {
             let attempt_iter = iteration.wrapping_add(attempt);
@@ -206,7 +228,7 @@ impl LargeItemSwapDisruption {
                 &item_b.instance_id,
                 &mut move_diag,
             ) {
-                let violations = find_violations(&result, parts, sheets);
+                let violations = validate_placements_for_backend(&result, parts, sheets, &self.collision_backend);
                 if violations.is_empty() {
                     return Some(result);
                 }
@@ -226,11 +248,12 @@ pub struct ExplorationPhase {
 impl ExplorationPhase {
     pub fn new(config: PhaseConfig) -> Self {
         let pool = InfeasibleSolutionPool::new(config.pool_capacity);
-        let disruption = LargeItemSwapDisruption::new_with_rotation_context(
+        let disruption = LargeItemSwapDisruption::new_with_backend_and_rotation_context(
             config.disruption_top_percentile,
             config.disruption_max_attempts,
             config.seed,
             config.rotation_context.clone(),
+            config.collision_backend.clone(),
         );
         let score_model = ScoreModel::new(config.score_weights.clone());
         Self { config, score_model, pool, disruption }
@@ -272,19 +295,23 @@ impl ExplorationPhase {
                 seed: self.config.seed as u64,
                 worker_count: self.config.worker_count,
                 rotation_context: self.config.rotation_context.clone(),
+                collision_backend: self.config.collision_backend.clone(),
                 ..VrsSeparatorConfig::default()
             };
             let sep = VrsSeparator::new(sep_config);
             let (sep_layout, sep_diag) = sep.run(layout.snapshot(), parts, sheets);
 
-            let sep_score = self.score_model.score(
+            let sep_score = self.score_model.score_with_backend(
                 &sep_layout.placements,
                 &sep_layout.unplaced,
                 parts,
                 sheets,
+                &self.config.collision_backend,
             );
 
-            let violations = find_violations(&sep_layout.placements, parts, sheets);
+            let violations = validate_placements_for_backend(
+                &sep_layout.placements, parts, sheets, &self.config.collision_backend,
+            );
 
             if violations.is_empty() {
                 if sep_score.total_cost < incumbent_score {
@@ -315,7 +342,9 @@ impl ExplorationPhase {
                         layout.sheet_count,
                         layout.seed,
                     );
-                    let new_violations = find_violations(&new_layout.placements, parts, sheets);
+                    let new_violations = validate_placements_for_backend(
+                        &new_layout.placements, parts, sheets, &self.config.collision_backend,
+                    );
                     if new_violations.is_empty() {
                         layout = new_layout;
                         diag.disruption_successes += 1;
@@ -610,6 +639,44 @@ mod tests {
         // Verify the stored context is FortyFive (not legacy)
         assert!(disruption.rotation_context.global_policy.is_some(),
             "disruption rotation_context must carry the FortyFive global policy, not None (legacy)");
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q11 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn exploration_phase_uses_backend_aware_validation_for_exact() {
+        // With JaguaPolygonExact backend, ExplorationPhase must not crash and must produce
+        // a violation-free (bbox-level) layout. Parts without outer_points fall back to
+        // rect polygon in the exact backend — this verifies the wiring is end-to-end.
+        use crate::io::CollisionBackendKind;
+
+        let parts = vec![make_part_no_policy("A", 20.0, 20.0, 2)];
+        let sheets = vec![make_test_sheet()];
+        let placements = vec![
+            Placement {
+                instance_id: "A__0001".into(), part_id: "A".into(),
+                sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(), part_id: "A".into(),
+                sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0,
+            },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let mut config = PhaseConfig::deterministic_default();
+        config.exploration_budget = crate::optimizer::phase::PhaseBudget::new(2, 0.0);
+        config.collision_backend = CollisionBackendKind::JaguaPolygonExact;
+        let mut phase = ExplorationPhase::new(config);
+
+        let (result_layout, _diag) = phase.run(layout, &parts, &sheets);
+        let violations = find_violations(&result_layout.placements, &parts, &sheets);
+        assert!(
+            violations.is_empty(),
+            "ExplorationPhase with JaguaPolygonExact backend must produce violation-free output"
+        );
     }
 
     #[test]
