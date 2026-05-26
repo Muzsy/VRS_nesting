@@ -410,6 +410,10 @@ fn transform_polygon(
 /// 1. Edge-edge intersection (any edge of A crosses any edge of B).
 /// 2. A vertex inside B (one vertex from each to catch containment cases).
 /// 3. B vertex inside A.
+/// 4. Identical/coincident polygon coverage. This is required because
+///    touching-only predicates deliberately ignore boundary contacts, but a
+///    duplicate placement with the exact same rectangle is a positive-area
+///    overlap and must be rejected by exact backend commit gates.
 fn polygons_collide(a: &[Point], b: &[Point]) -> Result<bool, &'static str> {
     let a = clean_valid_polygon(a)?;
     let b = clean_valid_polygon(b)?;
@@ -449,7 +453,20 @@ fn polygons_collide(a: &[Point], b: &[Point]) -> Result<bool, &'static str> {
         return Ok(true);
     }
 
+    // Coincident/equal polygons have positive overlapping area even though
+    // every vertex and edge lies exactly on the other polygon's boundary.
+    // They would otherwise slip through as "touching only".
+    if polygons_have_same_boundary_coverage(&a, &b) {
+        return Ok(true);
+    }
+
     Ok(false)
+}
+
+fn polygons_have_same_boundary_coverage(a: &[Point], b: &[Point]) -> bool {
+    (polygon_area(a).abs() - polygon_area(b).abs()).abs() <= EPS
+        && a.iter().all(|&p| point_on_polygon_boundary(p, b))
+        && b.iter().all(|&p| point_on_polygon_boundary(p, a))
 }
 
 fn polygon_within_sheet(points: &[Point], sheet: &SheetShape) -> Result<bool, &'static str> {
@@ -958,6 +975,52 @@ mod tests {
             backend
                 .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 9.999, 0.0), &part)
                 .is_collision()
+        );
+    }
+
+    #[test]
+    fn identical_rect_placements_are_collision_for_exact_backend() {
+        let backend = JaguaPolygonExactBackend;
+        let part = make_part("A", 10.0, 10.0);
+        assert!(
+            backend
+                .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 0.0, 0.0), &part)
+                .is_collision(),
+            "exact backend must reject duplicate same-area placements, not classify them as touching"
+        );
+    }
+
+    #[test]
+    fn identical_irregular_polygon_placements_are_collision_for_exact_backend() {
+        let backend = JaguaPolygonExactBackend;
+        let poly = serde_json::json!([[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [0.0, 10.0]]);
+        let part = make_part_with_polygon("P", 20.0, 10.0, poly);
+        assert!(
+            backend
+                .placement_overlaps(&pl("P", 0, 5.0, 7.0), &part, &pl("P", 0, 5.0, 7.0), &part)
+                .is_collision(),
+            "exact backend must reject duplicate coincident irregular polygons"
+        );
+    }
+
+    #[test]
+    fn exact_backend_validation_rejects_duplicate_rect_layout() {
+        use crate::io::CollisionBackendKind;
+        use crate::optimizer::repair::validate_placements_for_backend;
+
+        let part = make_part("A", 10.0, 10.0);
+        let placements = vec![pl("A", 0, 0.0, 0.0), pl("A", 0, 0.0, 0.0)];
+        let sheets = rect_sheet(100.0, 100.0);
+
+        let violations = validate_placements_for_backend(
+            &placements,
+            &[part],
+            &sheets,
+            &CollisionBackendKind::JaguaPolygonExact,
+        );
+        assert!(
+            !violations.is_empty(),
+            "backend-aware validation must reject duplicate rect placements"
         );
     }
 
