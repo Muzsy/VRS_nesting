@@ -223,41 +223,73 @@ impl CollisionBackend for JaguaPolygonExactBackend {
 // CdeCollisionBackend — scaffold / BLOCKED
 // ---------------------------------------------------------------------------
 
-/// CDEngine-based collision backend scaffold.
+/// CDEngine-based collision backend (pilot implementation).
 ///
-/// STATUS: BLOCKED — CDEngine requires upfront hazard registration and does not
-/// expose a synchronous polygon-polygon query API compatible with VRS's
-/// placement-level collision pattern. All methods return Unsupported.
+/// Uses a per-call `CDEngine` built from jagua-rs 0.6.4. This is genuine CDE
+/// collision detection — not a bbox or JaguaPolygonExact wrapper.
 ///
-/// This struct exists to hold the documented CDE slot in the backend hierarchy.
-/// Do not mistake Unsupported responses for NoCollision.
+/// Semantic difference vs JaguaPolygonExactBackend: CDE uses
+/// `Edge::collides_with` with `proper_only=false`, so collinear/touching edges
+/// are counted as Collision. JaguaPolygonExact requires a proper edge crossing.
+///
+/// Performance note: per-call CDEngine construction is O(n) setup per query.
+/// A session-owned CDEngine is the production port target (see contract doc).
 pub struct CdeCollisionBackend;
 
 impl CollisionBackend for CdeCollisionBackend {
     fn name(&self) -> &'static str {
-        "cde_scaffold_blocked"
+        "cde_adapter"
     }
 
     fn placement_overlaps(
         &self,
-        _a: &Placement,
-        _a_part: &Part,
-        _b: &Placement,
-        _b_part: &Part,
+        a: &Placement,
+        a_part: &Part,
+        b: &Placement,
+        b_part: &Part,
     ) -> CollisionDecision {
-        CollisionDecision::Unsupported {
-            reason: "CdeCollisionBackend is not yet implemented; use JaguaPolygonExactBackend",
+        if a.sheet_index != b.sheet_index {
+            return CollisionDecision::NoCollision;
+        }
+        let a_shape = match super::cde_adapter::prepare_shape_from_placement(a, a_part) {
+            Ok(s) => s,
+            Err(reason) => return CollisionDecision::Unsupported { reason },
+        };
+        let b_shape = match super::cde_adapter::prepare_shape_from_placement(b, b_part) {
+            Ok(s) => s,
+            Err(reason) => return CollisionDecision::Unsupported { reason },
+        };
+        let adapter = super::cde_adapter::CdeAdapter::with_defaults();
+        match adapter.query_pair(&a_shape, &b_shape) {
+            super::cde_adapter::CdeQueryResult::Collision => CollisionDecision::Collision,
+            super::cde_adapter::CdeQueryResult::NoCollision => CollisionDecision::NoCollision,
+            super::cde_adapter::CdeQueryResult::Unsupported { reason } => {
+                CollisionDecision::Unsupported { reason }
+            }
         }
     }
 
     fn placement_within_sheet(
         &self,
-        _placement: &Placement,
-        _part: &Part,
-        _sheet: &SheetShape,
+        placement: &Placement,
+        part: &Part,
+        sheet: &SheetShape,
     ) -> CollisionDecision {
-        CollisionDecision::Unsupported {
-            reason: "CdeCollisionBackend is not yet implemented; use JaguaPolygonExactBackend",
+        let item_shape = match super::cde_adapter::prepare_shape_from_placement(placement, part) {
+            Ok(s) => s,
+            Err(reason) => return CollisionDecision::Unsupported { reason },
+        };
+        let sheet_shape = match super::cde_adapter::prepare_shape_from_sheet(sheet) {
+            Ok(s) => s,
+            Err(reason) => return CollisionDecision::Unsupported { reason },
+        };
+        let adapter = super::cde_adapter::CdeAdapter::with_defaults();
+        match adapter.query_boundary(&item_shape, &sheet_shape) {
+            super::cde_adapter::CdeQueryResult::Collision => CollisionDecision::Collision,
+            super::cde_adapter::CdeQueryResult::NoCollision => CollisionDecision::NoCollision,
+            super::cde_adapter::CdeQueryResult::Unsupported { reason } => {
+                CollisionDecision::Unsupported { reason }
+            }
         }
     }
 }
@@ -386,7 +418,7 @@ fn rect_polygon_from_placement(
 ///
 /// The placement anchor (placement.x, placement.y) is the rotation center — local (0,0)
 /// maps to world (anchor_x, anchor_y).
-fn transform_polygon(
+pub(crate) fn transform_polygon(
     local_points: &[Point],
     anchor_x: f64,
     anchor_y: f64,
@@ -816,30 +848,28 @@ mod tests {
 
     #[test]
     fn backend_does_not_silently_fallback_to_bbox_when_exact_unavailable() {
-        // CdeCollisionBackend must return Unsupported, not Collision or NoCollision.
-        let cde = CdeCollisionBackend;
-        let part = make_part("A", 30.0, 30.0);
-        let p1 = pl("A", 0, 0.0, 0.0);
-        let p2 = pl("A", 0, 15.0, 15.0);
-        let sheets = rect_sheet(100.0, 100.0);
+        // CdeCollisionBackend performs genuine polygon queries, not bbox fallback.
+        // Proof via L-shape notch fixture: BboxCollisionBackend gives Collision
+        // (false positive) but CdeCollisionBackend gives NoCollision.
+        let l_json = serde_json::json!([
+            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
+            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+        ]);
+        let l_part = make_part_with_polygon("L", 40.0, 40.0, l_json);
+        let small_part = make_part("B", 15.0, 15.0);
+        let p_l = pl("L", 0, 0.0, 0.0);
+        let p_small = pl("B", 0, 22.0, 22.0); // inside L-shape notch
 
-        let overlap_result = cde.placement_overlaps(&p1, &part, &p2, &part);
+        let bbox_result = BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let cde_result = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+
+        assert!(bbox_result.is_collision(), "Bbox must give false positive for L-notch fixture");
         assert!(
-            overlap_result.is_unsupported(),
-            "CdeCollisionBackend.placement_overlaps must return Unsupported, not {:?}",
-            overlap_result
+            cde_result.is_no_collision(),
+            "CDE must not fallback to bbox; expected NoCollision for notch fixture, got {:?}",
+            cde_result
         );
-
-        let boundary_result = cde.placement_within_sheet(&p1, &part, &sheets[0]);
-        assert!(
-            boundary_result.is_unsupported(),
-            "CdeCollisionBackend.placement_within_sheet must return Unsupported, not {:?}",
-            boundary_result
-        );
-
-        // Verify that Unsupported is distinguishable from Collision and NoCollision.
-        assert!(!overlap_result.is_collision());
-        assert!(!overlap_result.is_no_collision());
+        assert_ne!(bbox_result, cde_result, "CDE and bbox must disagree for notch fixture");
     }
 
     // -------------------------------------------------------------------------
@@ -1043,11 +1073,18 @@ mod tests {
     }
 
     #[test]
-    fn cde_backend_still_returns_unsupported() {
+    fn cde_backend_returns_unsupported_for_invalid_polygon() {
+        // CdeCollisionBackend must return Unsupported for invalid geometry,
+        // not silently return NoCollision or delegate to bbox.
         let backend = CdeCollisionBackend;
-        let part = make_part("A", 10.0, 10.0);
-        let sheets = rect_sheet(100.0, 100.0);
-        assert!(backend.placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 1.0, 1.0), &part).is_unsupported());
-        assert!(backend.placement_within_sheet(&pl("A", 0, 0.0, 0.0), &part, &sheets[0]).is_unsupported());
+        let invalid = make_part_with_polygon("BAD", 40.0, 40.0, serde_json::json!("not-points"));
+        let rect = make_part("R", 10.0, 10.0);
+        let result = backend.placement_overlaps(
+            &pl("BAD", 0, 0.0, 0.0), &invalid,
+            &pl("R",   0, 1.0, 1.0), &rect,
+        );
+        assert!(result.is_unsupported(), "invalid polygon must be Unsupported: {:?}", result);
+        assert!(!result.is_no_collision());
+        assert!(!result.is_collision());
     }
 }

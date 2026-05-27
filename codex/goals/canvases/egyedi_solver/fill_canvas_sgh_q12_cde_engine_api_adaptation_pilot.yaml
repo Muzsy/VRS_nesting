@@ -1,0 +1,71 @@
+steps:
+  - name: "Dependency gate és Q11R végállapot ellenőrzése"
+    description: >
+      Ellenőrizd, hogy a Q11R report első sora PASS és tartalmazza az SGH-Q12_STATUS: READY markert.
+      Ha a Q11R report törzsében maradt régi REVISE packaging szöveg, de az auto-verify blokk PASS, a follow-up
+      duplicate-overlap tesztek zöldek, és a report első sora PASS, akkor ezt ne blokkold. Olvasd el az AGENTS.md,
+      docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md, docs/qa/testing_guidelines.md,
+      a Q08/Q10/Q11/Q11R contractokat és ezt a Q12 canvas-t.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q12_cde_engine_api_adaptation_pilot.md"
+      - "codex/reports/egyedi_solver/sgh_q12_cde_engine_api_adaptation_pilot.md"
+
+  - name: "jagua-rs CDE/source API audit"
+    description: >
+      Auditáld a helyi jagua-rs 0.6.4 API-t cargo tree és rg keresésekkel. Keresd a CDEngine, collision_detection,
+      OriginalShape, SPolygon, Surrogate, Hazard, CollidesWith és related symbolokat. A reportban táblázd:
+      symbol/API, path, visibility, VRS-ből használható-e, lifecycle/ownership akadályok. Ne README vagy korábbi
+      állítás alapján dönts.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q12_cde_engine_api_adaptation_pilot.md"
+      - "docs/egyedi_solver/sgh_q12_cde_engine_adapter_contract.md"
+
+  - name: "CDE adapter contract bevezetése"
+    description: >
+      Hozz létre rust/vrs_solver/src/optimizer/cde_adapter.rs modult vagy repo-stílusú ekvivalenst. A VRS-owned adapter
+      rejtse el a jagua-rs típusokat, legyen CdeAdapterConfig, prepared-shape/query/result jellegű contract, és Unsupported
+      eredmény explicit reasonnel. Ha a CDE API nem elérhető, ne hagyd üresen: legyen tesztelhető unavailable adapter.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+
+  - name: "CdeCollisionBackend pilot vagy explicit blocker"
+    description: >
+      Ha a jagua-rs API alapján lehetséges, kösd be a CdeCollisionBackendet a CdeAdapteren keresztül rect/outer-polygon
+      overlap és boundary querykre. Ha nem lehetséges, maradjon Unsupported, de pontos CDE_API_UNAVAILABLE / lifecycle blocker
+      reasonnel. Tilos bbox vagy JaguaPolygonExact fallback CDE néven.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/geometry_preprocessing.rs"
+
+  - name: "Geometry preprocessing kapcsolat"
+    description: >
+      Kapcsold össze a CDE adaptert a PreparedShape/PreparedGeometry/preprocess_polygon/preprocess_rect foundationnel.
+      Dokumentáld, milyen metadata kell CDE-hez, mi van kész, és mi hiányzik teljes Sparrow/jagua parityhez. Ne dolgozz
+      szétszórtan nyers serde_json outer_points-ból.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/geometry_preprocessing.rs"
+      - "docs/egyedi_solver/sgh_q12_cde_engine_adapter_contract.md"
+
+  - name: "No-silent-fallback regression tesztek"
+    description: >
+      Adj célzott teszteket: CDE unavailable esetén nem fallbackel bboxra vagy JaguaPolygonExactre; CDE adapter explicit
+      Unsupported reasonnel tér vissza; rect/rotated-rect/irregular query vagy működik, vagy explicit blocked; invalid geometry
+      Unsupported, nem NoCollision. Ha valódi CDE működik, ezek query eredményt is bizonyítsanak.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/geometry_preprocessing.rs"
+
+  - name: "Contract, report és verify"
+    description: >
+      Készítsd el a Q12 checklistet, reportot és docs/egyedi_solver/sgh_q12_cde_engine_adapter_contract.md dokumentumot.
+      A report ne állítson kész CDE parityt, ha nincs valódi CDE query. Futtasd a célzott cargo teszteket, cargo test --lib-ot
+      és ./scripts/verify.sh --report ... parancsot. PASS csak zöld verify és őszinte CDE státusz esetén lehet.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q12_cde_engine_api_adaptation_pilot.md"
+      - "docs/egyedi_solver/sgh_q12_cde_engine_adapter_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q12_cde_engine_api_adaptation_pilot.md"
+      - "codex/reports/egyedi_solver/sgh_q12_cde_engine_api_adaptation_pilot.verify.log"

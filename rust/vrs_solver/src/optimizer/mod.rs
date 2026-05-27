@@ -1,5 +1,6 @@
 pub mod boundary;
 pub mod bpp_phase;
+pub mod cde_adapter;
 pub mod collision_backend;
 pub mod geometry_preprocessing;
 pub mod candidates;

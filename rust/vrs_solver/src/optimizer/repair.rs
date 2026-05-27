@@ -755,7 +755,7 @@ mod tests {
 
     #[test]
     fn backend_validation_reports_unsupported_count() {
-        use crate::optimizer::collision_backend::CdeCollisionBackend;
+        use crate::optimizer::collision_backend::{BboxCollisionBackend, CdeCollisionBackend};
 
         let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
@@ -764,13 +764,18 @@ mod tests {
         let (placed, _, _) = build_initial_layout(&instances, &parts, &sheets);
         assert!(!placed.is_empty(), "need at least one placement");
 
-        // CDE always returns Unsupported → every boundary and overlap query increments counter.
-        let result = validate_placements_with_backend_checked(&placed, &parts, &sheets, &CdeCollisionBackend);
-        assert!(result.diagnostics.unsupported_queries > 0,
-            "CDE backend must report unsupported_queries > 0 for non-empty layout (got {})",
-            result.diagnostics.unsupported_queries);
-        assert_eq!(result.diagnostics.bbox_fallback_queries, 0,
+        // CDE adapter works for rect parts (no outer_points) → 0 unsupported queries.
+        let cde_result = validate_placements_with_backend_checked(&placed, &parts, &sheets, &CdeCollisionBackend);
+        assert_eq!(cde_result.diagnostics.unsupported_queries, 0,
+            "CDE adapter must succeed for valid rect parts (got {} unsupported)",
+            cde_result.diagnostics.unsupported_queries);
+        assert_eq!(cde_result.diagnostics.bbox_fallback_queries, 0,
             "checked path must not do bbox fallback");
+
+        // Bbox backend also must have 0 unsupported queries for the same layout.
+        let bbox_result = validate_placements_with_backend_checked(&placed, &parts, &sheets, &BboxCollisionBackend);
+        assert_eq!(bbox_result.diagnostics.unsupported_queries, 0,
+            "BboxCollisionBackend must not return unsupported for rect parts");
     }
 
     #[test]
