@@ -134,6 +134,7 @@ impl CdeAdapter {
 
         let exterior_hazard = Hazard::new(HazardEntity::Exterior, ext_spoly, false);
         let b_hole_hazard = Hazard::new(HazardEntity::Hole { idx: 0 }, b.spoly.clone(), false);
+        super::cde_observability::inc_engine_build();
         let cde = CDEngine::new(jag_bbox, vec![exterior_hazard, b_hole_hazard], cde_config);
 
         if !cde.detect_poly_collision(&a.spoly, &NoFilter) {
@@ -174,6 +175,7 @@ impl CdeAdapter {
         };
 
         let exterior_hazard = Hazard::new(HazardEntity::Exterior, sheet.spoly.clone(), false);
+        super::cde_observability::inc_engine_build();
         let cde = CDEngine::new(jag_bbox, vec![exterior_hazard], cde_config);
 
         if !cde.detect_poly_collision(&item.spoly, &NoFilter) {

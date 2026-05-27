@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Instant;
 
 use crate::io::{
     CollisionBackendDiagnosticsOutput, CollisionBackendKind, Metrics, OptimizerDiagnosticsOutput,
@@ -15,6 +16,7 @@ use crate::optimizer::{
     working::{BackendCommitResult, WorkingCommitError, WorkingLayout},
     SheetCursor,
 };
+use crate::optimizer::cde_observability;
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
 use crate::sheet::{expand_sheets, stock_has_holes};
 
@@ -61,6 +63,110 @@ fn diag_output_from(result: &BackendCommitResult) -> CollisionBackendDiagnostics
         backend_used: result.backend_diagnostics.backend_name.clone(),
         unsupported_queries: result.backend_diagnostics.unsupported_queries,
         bbox_fallback_queries: result.backend_diagnostics.bbox_fallback_queries,
+        final_commit_backend_used: None,
+        final_commit_unsupported_queries: None,
+        final_commit_bbox_fallback_queries: None,
+        cde_pair_queries: None,
+        cde_boundary_queries: None,
+        cde_total_queries: None,
+        cde_engine_builds: None,
+        cde_collision_results: None,
+        cde_no_collision_results: None,
+        cde_unsupported_results: None,
+        cde_prepare_failures: None,
+        cde_cross_sheet_skipped: None,
+        cde_observability_scope: None,
+        final_commit_validation_ms: None,
+    }
+}
+
+fn cde_timing_enabled() -> bool {
+    std::env::var("VRS_CDE_OBSERVABILITY_TIMING").map(|v| v == "1").unwrap_or(false)
+}
+
+fn timing_start(enabled: bool) -> Option<Instant> {
+    if enabled { Some(Instant::now()) } else { None }
+}
+
+fn timing_ms(start: Option<Instant>) -> Option<f64> {
+    start.map(|t| t.elapsed().as_secs_f64() * 1000.0)
+}
+
+fn diag_output_from_with_cde(
+    result: &BackendCommitResult,
+    snap: cde_observability::CdeCounters,
+    scope: &str,
+    commit_ms: Option<f64>,
+) -> CollisionBackendDiagnosticsOutput {
+    CollisionBackendDiagnosticsOutput {
+        backend_used: result.backend_diagnostics.backend_name.clone(),
+        unsupported_queries: result.backend_diagnostics.unsupported_queries,
+        bbox_fallback_queries: result.backend_diagnostics.bbox_fallback_queries,
+        final_commit_backend_used: Some(result.backend_diagnostics.backend_name.clone()),
+        final_commit_unsupported_queries: Some(result.backend_diagnostics.unsupported_queries),
+        final_commit_bbox_fallback_queries: Some(result.backend_diagnostics.bbox_fallback_queries),
+        cde_pair_queries: Some(snap.pair_queries),
+        cde_boundary_queries: Some(snap.boundary_queries),
+        cde_total_queries: Some(snap.total_queries),
+        cde_engine_builds: Some(snap.engine_builds),
+        cde_collision_results: Some(snap.collision_results),
+        cde_no_collision_results: Some(snap.no_collision_results),
+        cde_unsupported_results: Some(snap.unsupported_results),
+        cde_prepare_failures: Some(snap.prepare_failures),
+        cde_cross_sheet_skipped: Some(snap.cross_sheet_skipped),
+        cde_observability_scope: Some(scope.to_string()),
+        final_commit_validation_ms: commit_ms,
+    }
+}
+
+fn cde_unsupported_diag(
+    snap: &cde_observability::CdeCounters,
+    scope: &str,
+    commit_ms: Option<f64>,
+) -> CollisionBackendDiagnosticsOutput {
+    CollisionBackendDiagnosticsOutput {
+        backend_used: "cde_adapter".to_string(),
+        unsupported_queries: snap.unsupported_results,
+        bbox_fallback_queries: 0,
+        final_commit_backend_used: Some("cde_adapter".to_string()),
+        final_commit_unsupported_queries: Some(snap.unsupported_results),
+        final_commit_bbox_fallback_queries: Some(0),
+        cde_pair_queries: Some(snap.pair_queries),
+        cde_boundary_queries: Some(snap.boundary_queries),
+        cde_total_queries: Some(snap.total_queries),
+        cde_engine_builds: Some(snap.engine_builds),
+        cde_collision_results: Some(snap.collision_results),
+        cde_no_collision_results: Some(snap.no_collision_results),
+        cde_unsupported_results: Some(snap.unsupported_results),
+        cde_prepare_failures: Some(snap.prepare_failures),
+        cde_cross_sheet_skipped: Some(snap.cross_sheet_skipped),
+        cde_observability_scope: Some(scope.to_string()),
+        final_commit_validation_ms: commit_ms,
+    }
+}
+
+fn _unsupported_output_with_backend_diag(
+    reason: &str,
+    input: &SolverInput,
+    backend_diag: Option<CollisionBackendDiagnosticsOutput>,
+) -> SolverOutput {
+    SolverOutput {
+        contract_version: "v1".to_string(),
+        status: "unsupported".to_string(),
+        unsupported_reason: Some(reason.to_string()),
+        placements: vec![],
+        unplaced: vec![],
+        metrics: Metrics {
+            placed_count: 0,
+            unplaced_count: input.parts.iter().map(|p| p.quantity as usize).sum(),
+            sheet_count_used: 0,
+            seed: input.seed,
+            time_limit_s: input.time_limit_s,
+            project_name: input.project_name.clone(),
+        },
+        score_breakdown: None,
+        optimizer_diagnostics: None,
+        collision_backend_diagnostics: backend_diag,
     }
 }
 
@@ -192,6 +298,10 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 let (p, mut u, _ms_diag) = manager.run(&instances, &mut policy);
                 u.extend(pre_unplaced);
                 if backend_kind != CollisionBackendKind::Bbox {
+                    let is_cde = backend_kind == CollisionBackendKind::Cde;
+                    if is_cde { cde_observability::reset(); }
+                    let timing_enabled = cde_timing_enabled();
+                    let t_start = timing_start(timing_enabled);
                     let working = WorkingLayout::new(p, u, sheets.len(), input.seed);
                     match working.validate_and_commit_with_backend(
                         &input.parts,
@@ -199,11 +309,23 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                         backend_kind,
                     ) {
                         Ok(commit) => {
-                            collision_backend_diag = Some(diag_output_from(&commit));
+                            let ms = timing_ms(t_start);
+                            collision_backend_diag = Some(if is_cde {
+                                let snap = cde_observability::snapshot();
+                                diag_output_from_with_cde(&commit, snap, "final_commit_only", ms)
+                            } else {
+                                diag_output_from(&commit)
+                            });
                             (commit.placements, commit.unplaced, None)
                         }
                         Err(e) => {
                             let reason = backend_err_reason(e, "COLLISION_BACKEND_COMMIT_VIOLATION");
+                            if is_cde {
+                                let snap = cde_observability::snapshot();
+                                let ms = timing_ms(t_start);
+                                let diag = cde_unsupported_diag(&snap, "final_commit_only", ms);
+                                return Ok(_unsupported_output_with_backend_diag(&reason, &input, Some(diag)));
+                            }
                             return Ok(_unsupported_output(&reason, &input));
                         }
                     }
@@ -212,6 +334,9 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 }
             }
             OptimizerPipelineKind::PhaseOptimizer => {
+                let is_cde = backend_kind == CollisionBackendKind::Cde;
+                if is_cde { cde_observability::reset(); }
+                let timing_enabled = cde_timing_enabled();
                 let (init_p, mut init_u, _construction_diag) =
                     build_initial_layout_with_rotation_context(
                         &instances,
@@ -231,13 +356,20 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                     bpp_attempts: result.diagnostics.bpp_attempts,
                 };
                 let layout = result.layout;
+                let t_commit_start = timing_start(timing_enabled);
                 match layout.validate_and_commit_with_backend(
                     &input.parts,
                     &sheets,
                     backend_kind,
                 ) {
                     Ok(commit) => {
-                        collision_backend_diag = Some(diag_output_from(&commit));
+                        let ms = timing_ms(t_commit_start);
+                        collision_backend_diag = Some(if is_cde {
+                            let snap = cde_observability::snapshot();
+                            diag_output_from_with_cde(&commit, snap, "full_solve", ms)
+                        } else {
+                            diag_output_from(&commit)
+                        });
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
                     Err(e) => {
@@ -245,6 +377,12 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             e,
                             "PHASE_OPTIMIZER_COMMIT_VIOLATION_BACKEND",
                         );
+                        if is_cde {
+                            let snap = cde_observability::snapshot();
+                            let ms = timing_ms(t_commit_start);
+                            let diag = cde_unsupported_diag(&snap, "full_solve", ms);
+                            return Ok(_unsupported_output_with_backend_diag(&reason, &input, Some(diag)));
+                        }
                         return Ok(_unsupported_output(&reason, &input));
                     }
                 }
@@ -906,6 +1044,81 @@ mod tests {
             Some("CDE_BACKEND_UNSUPPORTED"),
             "legacy CDE_BACKEND_UNSUPPORTED must not appear for valid simple geometry after Q16"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q18A tests — CDE observability diagnostics
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn adapter_cde_valid_output_contains_observability_diagnostics() {
+        // Valid rect + CDE backend must emit cde_total_queries > 0 and cde_engine_builds > 0.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let mut input = make_input(1, stock, parts, None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        let diag = out.collision_backend_diagnostics
+            .expect("CDE valid output must have collision_backend_diagnostics");
+        assert_eq!(diag.backend_used, "cde_adapter");
+        assert_eq!(diag.bbox_fallback_queries, 0, "no bbox fallback for CDE");
+        let total = diag.cde_total_queries.expect("cde_total_queries must be present");
+        let builds = diag.cde_engine_builds.expect("cde_engine_builds must be present");
+        assert!(total > 0, "CDE must have processed at least one query: total={}", total);
+        assert!(builds > 0, "CDE must have built at least one CDEngine: builds={}", builds);
+        assert_eq!(diag.cde_observability_scope.as_deref(), Some("final_commit_only"),
+            "legacy_multisheet CDE scope must be final_commit_only");
+        assert_eq!(diag.final_commit_backend_used.as_deref(), Some("cde_adapter"),
+            "final_commit_backend_used must be cde_adapter");
+    }
+
+    #[test]
+    fn adapter_cde_unsupported_output_preserves_observability_diagnostics() {
+        // Malformed outer_points + CDE → unsupported output must still carry CDE diagnostics.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let mut bad_part = make_part("P", 20.0, 20.0, 1, vec![0], None);
+        bad_part.outer_points = Some(serde_json::json!("not-an-array"));
+        let mut input = make_input(1, stock, vec![bad_part], None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        assert_eq!(out.status, "unsupported");
+        assert_eq!(out.unsupported_reason.as_deref(), Some("CDE_BACKEND_UNSUPPORTED_QUERY"));
+        let diag = out.collision_backend_diagnostics
+            .expect("CDE unsupported output must carry observability diagnostics");
+        assert_eq!(diag.backend_used, "cde_adapter");
+        assert_eq!(diag.bbox_fallback_queries, 0);
+        // At least 1 unsupported/prepare-failure must be counted
+        let unsupported = diag.cde_unsupported_results.expect("cde_unsupported_results must be present");
+        let failures = diag.cde_prepare_failures.expect("cde_prepare_failures must be present");
+        assert!(unsupported > 0 || failures > 0,
+            "malformed geometry must register at least one unsupported or prepare_failure counter");
+    }
+
+    #[test]
+    fn bbox_backend_does_not_emit_cde_observability() {
+        // Bbox backend (default) must not produce collision_backend_diagnostics at all.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let input = make_input(1, stock, parts, None); // no collision_backend → defaults to Bbox
+        let out = solve(input).expect("solve");
+        assert!(out.collision_backend_diagnostics.is_none(),
+            "bbox backend must not emit collision_backend_diagnostics");
+    }
+
+    #[test]
+    fn cde_observability_does_not_break_existing_q16_tests() {
+        // Regression: Q16 tests still pass with Q18A instrumentation.
+        // valid CDE → not unsupported; backend_used == "cde_adapter"; no bbox fallback
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let mut input = make_input(1, stock.clone(), parts.clone(), None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        assert_ne!(out.status, "unsupported", "Q16: valid CDE must not be unsupported");
+        let diag = out.collision_backend_diagnostics.expect("Q16: must have diagnostics");
+        assert_eq!(diag.backend_used, "cde_adapter");
+        assert_eq!(diag.unsupported_queries, 0);
+        assert_eq!(diag.bbox_fallback_queries, 0);
     }
 
     #[test]

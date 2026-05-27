@@ -1,0 +1,73 @@
+steps:
+  - name: "Dependency gate és CDE observability pre-audit"
+    description: >
+      Ellenőrizd, hogy a Q16 report első sora PASS és tartalmazza az SGH-Q18_STATUS: READY markert. Olvasd el az AGENTS.md,
+      Codex workflow/report/QA doksikat, a Q16 reportot, valamint a CDE backendhez és phase optimizerhez tartozó Rust fájlokat.
+      Futtasd az előírt rg auditot, és rögzítsd, hol épül CDEngine, hol hívódik CDE scoring/separator/validation alatt,
+      valamint milyen diagnosztika hiányzik a Q18B döntéshez.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+      - "codex/reports/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+
+  - name: "Solve-scoped CDE query/count observability"
+    description: >
+      Vezess be CDE observability számlálókat legalább a CdeCollisionBackend::placement_overlaps és placement_within_sheet hívásokra.
+      Mérd a pair query, boundary query, total query, CDEngine/per-call adapter build, collision/no-collision/unsupported result,
+      prepare failure és releváns skipped/cross-sheet eseteket. Kerüld a process-global flaky mutable state-et; használj thread-local vagy
+      solve-scoped counters megoldást úgy, hogy a cargo test párhuzamos futása ne legyen versenyhelyzetes.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+
+  - name: "Backward-compatible output diagnostics"
+    description: >
+      Bővítsd a collision_backend_diagnostics outputot backward-compatible módon. A meglévő backend_used, unsupported_queries és
+      bbox_fallback_queries mezők maradjanak. Adj CDE observability mezőket a final commit backend bizonyítására és CDE query/call countokra.
+      Explicit CDE backend unsupported output esetén is próbáld meg megőrizni a diagnosztikát; ha ez nem tisztán megoldható, dokumentáld és
+      teszttel rögzítsd a viselkedést.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/working.rs"
+
+  - name: "Runtime/per-phase timing determinisztika védelmével"
+    description: >
+      Mérhetővé kell tenni legalább a final commit validation runtime-ot, PhaseOptimizer esetén pedig exploration/compression/bpp/final-commit
+      időket report vagy explicit diagnostics módban. Ne tegyél nem-determinisztikus wall-clock mezőket alapértelmezett SolverOutput JSON-ba.
+      Ha outputba kerül runtime, azt env flag vagy explicit diagnostics mód kapcsolja be. A meglévő determinism smoke-ok nem regresszálhatnak.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Célzott Q18A smoke script"
+    description: >
+      Készíts scripts/smoke_sgh_q18a_cde_observability.py smoke scriptet. Fusson valid CDE legacy pathon, valid CDE phase_optimizer pathon,
+      malformed CDE unsupported geometrián, és egy bbox false-positive notch fixture-ön. Ellenőrizze a backend_used/final commit backend,
+      bbox_fallback_queries == 0, cde_total_queries > 0, cde_engine_builds > 0, unsupported reason, és hogy bbox/default útvonal nem kap
+      CDE runtime számlálókat. Ha timing env mód van, a script logolja, de ne exact értékre assertelje a runtime-ot.
+    outputs:
+      - "scripts/smoke_sgh_q18a_cde_observability.py"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott Rust és/vagy Python teszteket a CDE observability counters, engine build count, no bbox fallback, valid output diagnostics,
+      unsupported output behavior, bbox non-CDE path és Q16 regresszió védelmére. A tesztnevek eltérhetnek, de a reportban mapeld őket a
+      canvasban felsorolt követelményekre.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "tests/"
+
+  - name: "Contract, report, verify és Q18B döntés"
+    description: >
+      Hozd létre/frissítsd a Q18A contract doksit, checklistet és reportot. A report első sora csak zöld cargo + smoke + verify után lehet PASS.
+      A report tartalmazzon mért CDE call/query countokat, final commit backend proofot, fallback/unsupported állapotot, timing evidenciát,
+      és egyértelmű Q18B_RECOMMENDATION döntést: REQUIRED, NOT_REQUIRED_NOW vagy INCONCLUSIVE_NEEDS_BIGGER_FIXTURE.
+    outputs:
+      - "docs/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+      - "codex/reports/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+      - "codex/reports/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.verify.log"

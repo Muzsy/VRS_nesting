@@ -247,21 +247,38 @@ impl CollisionBackend for CdeCollisionBackend {
         b_part: &Part,
     ) -> CollisionDecision {
         if a.sheet_index != b.sheet_index {
+            crate::optimizer::cde_observability::inc_cross_sheet_skipped();
             return CollisionDecision::NoCollision;
         }
+        crate::optimizer::cde_observability::inc_pair();
         let a_shape = match super::cde_adapter::prepare_shape_from_placement(a, a_part) {
             Ok(s) => s,
-            Err(reason) => return CollisionDecision::Unsupported { reason },
+            Err(reason) => {
+                crate::optimizer::cde_observability::inc_prepare_failure();
+                crate::optimizer::cde_observability::inc_unsupported();
+                return CollisionDecision::Unsupported { reason };
+            }
         };
         let b_shape = match super::cde_adapter::prepare_shape_from_placement(b, b_part) {
             Ok(s) => s,
-            Err(reason) => return CollisionDecision::Unsupported { reason },
+            Err(reason) => {
+                crate::optimizer::cde_observability::inc_prepare_failure();
+                crate::optimizer::cde_observability::inc_unsupported();
+                return CollisionDecision::Unsupported { reason };
+            }
         };
         let adapter = super::cde_adapter::CdeAdapter::with_defaults();
         match adapter.query_pair(&a_shape, &b_shape) {
-            super::cde_adapter::CdeQueryResult::Collision => CollisionDecision::Collision,
-            super::cde_adapter::CdeQueryResult::NoCollision => CollisionDecision::NoCollision,
+            super::cde_adapter::CdeQueryResult::Collision => {
+                crate::optimizer::cde_observability::inc_collision();
+                CollisionDecision::Collision
+            }
+            super::cde_adapter::CdeQueryResult::NoCollision => {
+                crate::optimizer::cde_observability::inc_no_collision();
+                CollisionDecision::NoCollision
+            }
             super::cde_adapter::CdeQueryResult::Unsupported { reason } => {
+                crate::optimizer::cde_observability::inc_unsupported();
                 CollisionDecision::Unsupported { reason }
             }
         }
@@ -273,19 +290,35 @@ impl CollisionBackend for CdeCollisionBackend {
         part: &Part,
         sheet: &SheetShape,
     ) -> CollisionDecision {
+        crate::optimizer::cde_observability::inc_boundary();
         let item_shape = match super::cde_adapter::prepare_shape_from_placement(placement, part) {
             Ok(s) => s,
-            Err(reason) => return CollisionDecision::Unsupported { reason },
+            Err(reason) => {
+                crate::optimizer::cde_observability::inc_prepare_failure();
+                crate::optimizer::cde_observability::inc_unsupported();
+                return CollisionDecision::Unsupported { reason };
+            }
         };
         let sheet_shape = match super::cde_adapter::prepare_shape_from_sheet(sheet) {
             Ok(s) => s,
-            Err(reason) => return CollisionDecision::Unsupported { reason },
+            Err(reason) => {
+                crate::optimizer::cde_observability::inc_prepare_failure();
+                crate::optimizer::cde_observability::inc_unsupported();
+                return CollisionDecision::Unsupported { reason };
+            }
         };
         let adapter = super::cde_adapter::CdeAdapter::with_defaults();
         match adapter.query_boundary(&item_shape, &sheet_shape) {
-            super::cde_adapter::CdeQueryResult::Collision => CollisionDecision::Collision,
-            super::cde_adapter::CdeQueryResult::NoCollision => CollisionDecision::NoCollision,
+            super::cde_adapter::CdeQueryResult::Collision => {
+                crate::optimizer::cde_observability::inc_collision();
+                CollisionDecision::Collision
+            }
+            super::cde_adapter::CdeQueryResult::NoCollision => {
+                crate::optimizer::cde_observability::inc_no_collision();
+                CollisionDecision::NoCollision
+            }
             super::cde_adapter::CdeQueryResult::Unsupported { reason } => {
+                crate::optimizer::cde_observability::inc_unsupported();
                 CollisionDecision::Unsupported { reason }
             }
         }
@@ -1115,5 +1148,104 @@ mod tests {
         assert!(result.is_unsupported(), "invalid polygon must be Unsupported: {:?}", result);
         assert!(!result.is_no_collision());
         assert!(!result.is_collision());
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q18A: CDE observability counter tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cde_observability_pair_query_increments_pair_and_total() {
+        crate::optimizer::cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 10.0); // overlap
+        CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
+        let snap = crate::optimizer::cde_observability::snapshot();
+        assert_eq!(snap.pair_queries, 1, "one pair query must be counted");
+        assert_eq!(snap.boundary_queries, 0);
+        assert_eq!(snap.total_queries, 1);
+    }
+
+    #[test]
+    fn cde_observability_boundary_query_increments_boundary_and_total() {
+        crate::optimizer::cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let sheets = {
+            let stock = Stock { id: "R".into(), quantity: 1, width: Some(100.0), height: Some(100.0),
+                outer_points: None, holes_points: None, cost_per_use: None };
+            expand_sheets(&[stock]).expect("sheets")
+        };
+        CdeCollisionBackend.placement_within_sheet(&pl("A", 0, 10.0, 10.0), &part, &sheets[0]);
+        let snap = crate::optimizer::cde_observability::snapshot();
+        assert_eq!(snap.boundary_queries, 1, "one boundary query must be counted");
+        assert_eq!(snap.pair_queries, 0);
+        assert_eq!(snap.total_queries, 1);
+    }
+
+    #[test]
+    fn cde_observability_engine_builds_counted_for_pair_query() {
+        crate::optimizer::cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 30.0, 30.0);
+        CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
+        let snap = crate::optimizer::cde_observability::snapshot();
+        assert!(snap.engine_builds >= 1, "at least one CDEngine must be built per pair query");
+    }
+
+    #[test]
+    fn cde_observability_engine_builds_counted_for_boundary_query() {
+        crate::optimizer::cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let sheets = {
+            let stock = Stock { id: "R".into(), quantity: 1, width: Some(100.0), height: Some(100.0),
+                outer_points: None, holes_points: None, cost_per_use: None };
+            expand_sheets(&[stock]).expect("sheets")
+        };
+        CdeCollisionBackend.placement_within_sheet(&pl("A", 0, 10.0, 10.0), &part, &sheets[0]);
+        let snap = crate::optimizer::cde_observability::snapshot();
+        assert!(snap.engine_builds >= 1, "at least one CDEngine must be built per boundary query");
+    }
+
+    #[test]
+    fn cde_observability_prepare_failure_counted_for_invalid_polygon() {
+        crate::optimizer::cde_observability::reset();
+        let invalid = make_part_with_polygon("BAD", 40.0, 40.0, serde_json::json!("not-points"));
+        let rect = make_part("R", 10.0, 10.0);
+        CdeCollisionBackend.placement_overlaps(
+            &pl("BAD", 0, 0.0, 0.0), &invalid,
+            &pl("R",   0, 1.0, 1.0), &rect,
+        );
+        let snap = crate::optimizer::cde_observability::snapshot();
+        assert!(snap.prepare_failures >= 1, "prepare_failure must be counted for invalid polygon");
+        assert!(snap.unsupported_results >= 1, "unsupported_results must be counted for prepare failure");
+    }
+
+    #[test]
+    fn cde_observability_cross_sheet_skip_counted() {
+        crate::optimizer::cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let p_sheet0 = pl("A", 0, 0.0, 0.0);
+        let p_sheet1 = Placement { instance_id: "A__0002".into(), part_id: "A".into(),
+            sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let result = CdeCollisionBackend.placement_overlaps(&p_sheet0, &part, &p_sheet1, &part);
+        let snap = crate::optimizer::cde_observability::snapshot();
+        assert!(result.is_no_collision(), "cross-sheet items must be NoCollision");
+        assert_eq!(snap.cross_sheet_skipped, 1, "cross-sheet skip must be counted");
+        assert_eq!(snap.pair_queries, 0, "cross-sheet skip must not count as pair query");
+    }
+
+    #[test]
+    fn bbox_backend_does_not_increment_cde_observability_counters() {
+        crate::optimizer::cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 10.0);
+        BboxCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
+        let snap = crate::optimizer::cde_observability::snapshot();
+        assert_eq!(snap.pair_queries, 0, "bbox backend must not increment CDE pair counter");
+        assert_eq!(snap.total_queries, 0, "bbox backend must not increment CDE total counter");
+        assert_eq!(snap.engine_builds, 0, "bbox backend must not increment CDE engine_builds");
     }
 }

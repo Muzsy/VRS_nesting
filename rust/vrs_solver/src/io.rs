@@ -123,11 +123,41 @@ pub struct OptimizerDiagnosticsOutput {
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).
+/// Q18A: extended with CDE observability fields (all optional, backward-compatible).
 #[derive(Debug, Serialize)]
 pub struct CollisionBackendDiagnosticsOutput {
     pub backend_used: String,
     pub unsupported_queries: usize,
     pub bbox_fallback_queries: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_commit_backend_used: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_commit_unsupported_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_commit_bbox_fallback_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_pair_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_boundary_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_total_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_engine_builds: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_collision_results: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_no_collision_results: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_unsupported_results: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_prepare_failures: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cross_sheet_skipped: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_observability_scope: Option<String>,
+    /// Only populated when VRS_CDE_OBSERVABILITY_TIMING=1 is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_commit_validation_ms: Option<f64>,
 }
 
 /// SGH-Q07: rotation_deg migrated from i64 to f64 to support continuous/non-orthogonal rotation.
