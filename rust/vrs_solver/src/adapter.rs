@@ -821,19 +821,91 @@ mod tests {
 
     #[test]
     fn cde_backend_returns_unsupported_not_bbox_fallback() {
+        // Malformed outer_points → CDE prepare_shape fails → UnsupportedBackend with per-query reason.
+        // Valid simple geometry (no outer_points) must NOT produce this error after Q16.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let mut bad_part = make_part("P", 20.0, 20.0, 1, vec![0], None);
+        bad_part.outer_points = Some(serde_json::json!("not-an-array")); // malformed
+        let mut input = make_input(1, stock, vec![bad_part], None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        assert_eq!(out.status, "unsupported",
+            "malformed geometry with cde backend must produce unsupported");
+        assert_eq!(
+            out.unsupported_reason.as_deref(),
+            Some("CDE_BACKEND_UNSUPPORTED_QUERY"),
+            "reason must be CDE_BACKEND_UNSUPPORTED_QUERY for per-query failure, not blanket CDE_BACKEND_UNSUPPORTED"
+        );
+        assert!(out.placements.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q16 tests — CDE final commit gate consistency
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn adapter_cde_backend_valid_simple_case_is_not_unsupported() {
+        // After Q16: valid rect part + CDE backend must NOT produce status="unsupported".
+        // The blanket CDE_BACKEND_UNSUPPORTED scaffold is gone.
         let stock = vec![make_stock("S", 100.0, 100.0, 1)];
         let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
         let mut input = make_input(1, stock, parts, None);
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
-        assert_eq!(out.status, "unsupported",
-            "cde backend must produce unsupported output, not ok/partial");
+        assert_ne!(out.status, "unsupported",
+            "valid rect part with CDE backend must not produce unsupported output after Q16");
+    }
+
+    #[test]
+    fn adapter_cde_backend_valid_simple_case_reports_cde_diagnostics() {
+        // After Q16: valid rect part with CDE backend must report CDE diagnostics.
+        // backend_used == "cde_adapter", unsupported_queries == 0, bbox_fallback_queries == 0.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let mut input = make_input(1, stock, parts, None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        let diag = out.collision_backend_diagnostics
+            .expect("CDE commit must produce collision_backend_diagnostics");
+        assert_eq!(diag.backend_used, "cde_adapter",
+            "backend_used must be cde_adapter for CDE commit");
+        assert_eq!(diag.unsupported_queries, 0,
+            "no unsupported queries for valid rect part with CDE");
+        assert_eq!(diag.bbox_fallback_queries, 0,
+            "no bbox fallback for CDE final commit");
+    }
+
+    #[test]
+    fn adapter_cde_backend_invalid_geometry_returns_unsupported_not_bbox_fallback() {
+        // Malformed outer_points → CDE must return UnsupportedBackend with per-query reason.
+        // Must NOT silently fall back to bbox and produce a placement.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let mut bad_part = make_part("P", 20.0, 20.0, 1, vec![0], None);
+        bad_part.outer_points = Some(serde_json::json!("not-an-array")); // malformed
+        let mut input = make_input(1, stock, vec![bad_part], None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        assert_eq!(out.status, "unsupported");
         assert_eq!(
             out.unsupported_reason.as_deref(),
-            Some("CDE_BACKEND_UNSUPPORTED"),
-            "reason must be CDE_BACKEND_UNSUPPORTED"
+            Some("CDE_BACKEND_UNSUPPORTED_QUERY"),
         );
-        assert!(out.placements.is_empty());
+        assert!(out.placements.is_empty(), "malformed geometry must not produce placements");
+    }
+
+    #[test]
+    fn adapter_cde_backend_does_not_return_legacy_cde_backend_unsupported_for_valid_case() {
+        // After Q16: the blanket "CDE_BACKEND_UNSUPPORTED" reason must not appear for valid simple geometry.
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let mut input = make_input(1, stock, parts, None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        assert_ne!(
+            out.unsupported_reason.as_deref(),
+            Some("CDE_BACKEND_UNSUPPORTED"),
+            "legacy CDE_BACKEND_UNSUPPORTED must not appear for valid simple geometry after Q16"
+        );
     }
 
     #[test]

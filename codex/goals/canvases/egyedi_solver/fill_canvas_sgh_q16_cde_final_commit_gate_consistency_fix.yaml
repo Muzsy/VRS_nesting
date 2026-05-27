@@ -1,0 +1,65 @@
+steps:
+  - name: "Dependency gate és CDE final-commit pre-audit"
+    description: >
+      Ellenőrizd, hogy a Q15 report első sora PASS és tartalmazza az SGH-Q16_STATUS: READY markert.
+      Olvasd el az AGENTS.md, Codex workflow/report/QA doksikat, a Q15 reportot, valamint a CDE backendhez
+      tartozó Rust fájlokat: io.rs, adapter.rs, optimizer/working.rs, repair.rs, collision_backend.rs, cde_adapter.rs,
+      score.rs, separator.rs és phase.rs. Rögzítsd, hol volt még CDE scaffoldként kezelve, és hol fut már valós
+      CdeCollisionBackend.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.md"
+
+  - name: "WorkingLayout CDE final commit gate javítás"
+    description: >
+      Javítsd a WorkingLayout::validate_and_commit_with_backend(CollisionBackendKind::Cde) ágat úgy, hogy ne blanket
+      CDE_BACKEND_UNSUPPORTED hibát dobjon, hanem validate_placements_with_backend_checked + CdeCollisionBackend útvonalon
+      validáljon. Valid layout esetén adjon BackendCommitResult-ot; unsupported query esetén explicit UnsupportedBackend-et;
+      collision/boundary hiba esetén WorkingCommitError::Violations-t.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/working.rs"
+
+  - name: "No silent fallback és diagnostics contract"
+    description: >
+      Biztosítsd, hogy CDE final commit alatt bbox_fallback_queries mindig 0, unsupported_queries csak valós unsupported query
+      esetén nő, backend_name/backend_used pedig cde_adapter legyen. Ne legyen bbox fallback és ne legyen JaguaPolygonExact fallback
+      a CDE branchben.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/working.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Adapter output viselkedés és stale kommentek frissítése"
+    description: >
+      Frissítsd az adapter és IO viselkedést/teszteket: explicit collision_backend=cde valid simple case-ben ne unsupportedot adjon,
+      hanem sikeres outputot CDE diagnosztikával. Malformed/degenerate geometry továbbra is unsupported legyen, bbox fallback nélkül.
+      Frissítsd az elavult kommenteket, amelyek szerint CDE mindig scaffold/unsupported.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott Rust teszteket: working_cde_valid_layout_commits_successfully, working_cde_valid_layout_reports_cde_adapter_backend,
+      working_cde_positive_overlap_rejects_with_violation, working_cde_boundary_violation_rejects_with_violation,
+      working_cde_unsupported_geometry_rejects_without_bbox_fallback, adapter_cde_backend_valid_simple_case_is_not_unsupported,
+      adapter_cde_backend_valid_simple_case_reports_cde_diagnostics, adapter_cde_backend_invalid_geometry_returns_unsupported_not_bbox_fallback,
+      adapter_cde_backend_does_not_return_legacy_cde_backend_unsupported_for_valid_case, bbox_default_commit_behavior_unchanged,
+      jagua_polygon_exact_commit_behavior_unchanged.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/working.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Contract, report és verify"
+    description: >
+      Hozd létre/frissítsd a Q16 contract doksit, checklistet és reportot. A report explicit mondja ki: CDE final commit supported,
+      CDE per-call/session performance nincs megoldva, CDE továbbra is opt-in és outer-only main solver backend. Futtasd a kötelező
+      cargo teszteket és a repo verify scriptet. PASS csak zöld verify esetén lehet, és csak akkor legyen SGH-Q18_STATUS: READY.
+    outputs:
+      - "docs/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.verify.log"

@@ -40,7 +40,8 @@ pub struct SolverInput {
     pub optimizer_pipeline: Option<OptimizerPipelineKind>,
     /// Optional collision backend policy. Missing value defaults to Bbox (backward-compatible).
     /// Explicit jagua_polygon_exact: no silent downgrade on invalid geometry.
-    /// Explicit cde: always Unsupported (scaffold only).
+    /// Explicit cde: genuine CDE final commit supported; opt-in; outer-only in main solver.
+    /// CDE per-call/session performance is not addressed here.
     #[serde(default)]
     pub collision_backend: Option<CollisionBackendKind>,
 }

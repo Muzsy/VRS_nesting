@@ -162,10 +162,8 @@ impl CollisionBackend for BboxCollisionBackend {
 /// For parts with outer_points: builds world-coordinate polygons and performs
 /// edge-edge intersection + point-in-polygon tests via jagua-rs.
 ///
-/// CDE status: BLOCKED — CDEngine requires hazard registration infrastructure
-/// not compatible with VRS's synchronous placement-query pattern.
 /// Use this backend for exact polygon collision; see CdeCollisionBackend for
-/// the CDEngine scaffold.
+/// the CDEngine-based backend (final commit supported, per-call pilot).
 pub struct JaguaPolygonExactBackend;
 
 impl CollisionBackend for JaguaPolygonExactBackend {
@@ -220,7 +218,7 @@ impl CollisionBackend for JaguaPolygonExactBackend {
 }
 
 // ---------------------------------------------------------------------------
-// CdeCollisionBackend — scaffold / BLOCKED
+// CdeCollisionBackend — pilot implementation, final commit supported
 // ---------------------------------------------------------------------------
 
 /// CDEngine-based collision backend (pilot implementation).
