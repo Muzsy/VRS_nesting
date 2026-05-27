@@ -1056,6 +1056,9 @@ mod tests {
 
     #[test]
     fn cde_internal_paths_reject_or_hard_penalty_no_silent_success() {
+        // Q14 update: CDE now applies VRS touching post-policy (boundary touch = NoCollision).
+        // A 10x10 rect at (0,0) on a 100x100 sheet is fully inside — boundary touching is allowed.
+        // CDE must correctly accept this as valid (not reject as Unsupported or false Collision).
         let parts = vec![make_part("A", 10.0, 10.0, 1)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
@@ -1069,14 +1072,28 @@ mod tests {
         let bbox = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 10.0, y2: 10.0 };
         let rect = Rect { x1: 0.0, y1: 0.0, x2: 10.0, y2: 10.0 };
 
-        assert!(!engine.lbf_candidate_valid_for_backend(
+        // Boundary touching is NoCollision after Q14: lbf_candidate_valid_for_backend must return true.
+        assert!(engine.lbf_candidate_valid_for_backend(
             &candidate,
             &bbox,
             rect,
             &sheets[0],
             &[],
             &[],
-        ), "CDE must reject/hard-penalize internally, never silently pass as bbox");
+        ), "CDE must accept valid rect candidate touching sheet boundary (touching ≠ Collision after Q14)");
+
+        // Verify out-of-bounds placement is still correctly rejected (not silently allowed).
+        let outside = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 95.0, y: 95.0, rotation_deg: 0.0 };
+        let outside_bbox = PlacedBbox { sheet_index: 0, x1: 95.0, y1: 95.0, x2: 105.0, y2: 105.0 };
+        let outside_rect = Rect { x1: 95.0, y1: 95.0, x2: 105.0, y2: 105.0 };
+        assert!(!engine.lbf_candidate_valid_for_backend(
+            &outside,
+            &outside_bbox,
+            outside_rect,
+            &sheets[0],
+            &[],
+            &[],
+        ), "CDE must reject item clearly outside sheet boundary");
     }
 
 }

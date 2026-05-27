@@ -446,7 +446,7 @@ pub(crate) fn transform_polygon(
 ///    touching-only predicates deliberately ignore boundary contacts, but a
 ///    duplicate placement with the exact same rectangle is a positive-area
 ///    overlap and must be rejected by exact backend commit gates.
-fn polygons_collide(a: &[Point], b: &[Point]) -> Result<bool, &'static str> {
+pub(crate) fn polygons_collide(a: &[Point], b: &[Point]) -> Result<bool, &'static str> {
     let a = clean_valid_polygon(a)?;
     let b = clean_valid_polygon(b)?;
     let na = a.len();
@@ -499,6 +499,37 @@ fn polygons_have_same_boundary_coverage(a: &[Point], b: &[Point]) -> bool {
     (polygon_area(a).abs() - polygon_area(b).abs()).abs() <= EPS
         && a.iter().all(|&p| point_on_polygon_boundary(p, b))
         && b.iter().all(|&p| point_on_polygon_boundary(p, a))
+}
+
+/// Check whether `item_pts` is fully within the polygon defined by `sheet_pts`.
+///
+/// Returns `Ok(true)` if all item vertices are inside-or-on the sheet polygon and no item edge
+/// properly crosses any sheet edge (touching the boundary counts as within — NoCollision).
+/// Returns `Ok(false)` if any vertex is outside or any edge properly crosses the boundary.
+/// Returns `Err` if either polygon is degenerate.
+pub(crate) fn polygon_within_sheet_pts(item_pts: &[Point], sheet_pts: &[Point]) -> Result<bool, &'static str> {
+    let item = clean_valid_polygon(item_pts)?;
+    let sheet = clean_valid_polygon(sheet_pts)?;
+
+    for &p in &item {
+        if !point_inside_or_on_polygon(p, &sheet) {
+            return Ok(false);
+        }
+    }
+
+    for i in 0..item.len() {
+        let a0 = item[i];
+        let a1 = item[(i + 1) % item.len()];
+        for j in 0..sheet.len() {
+            let b0 = sheet[j];
+            let b1 = sheet[(j + 1) % sheet.len()];
+            if segments_properly_intersect(a0, a1, b0, b1) {
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 fn polygon_within_sheet(points: &[Point], sheet: &SheetShape) -> Result<bool, &'static str> {

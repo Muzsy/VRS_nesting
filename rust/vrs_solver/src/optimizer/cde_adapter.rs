@@ -8,7 +8,10 @@ use crate::geometry::{polygon_bbox, to_jag_polygon, Point};
 use crate::io::Placement;
 use crate::item::Part;
 use crate::sheet::SheetShape;
-use super::collision_backend::{extract_polygon_from_part, transform_polygon, PolygonExtraction};
+use super::collision_backend::{
+    extract_polygon_from_part, polygon_within_sheet_pts, polygons_collide, transform_polygon,
+    PolygonExtraction,
+};
 
 // ---------------------------------------------------------------------------
 // CdeAdapterConfig
@@ -31,17 +34,21 @@ impl Default for CdeAdapterConfig {
 // CdePreparedShape
 // ---------------------------------------------------------------------------
 
-/// A shape pre-built for CDE queries: holds the jagua-rs SPolygon plus an
-/// f64 bounding box needed to compute the union region for pair queries.
+/// A shape pre-built for CDE queries: holds the jagua-rs SPolygon, an f64 bounding box,
+/// and the original f64 world-coordinate polygon points.
 ///
-/// Jagua-rs types must not appear in the public optimizer API — this type is
-/// crate-internal only.
+/// `world_pts` is used by the VRS-side post-policy to distinguish touching (NoCollision)
+/// from positive-area overlap (Collision) — see `polygons_collide` / `polygon_within_sheet_pts`.
+///
+/// Jagua-rs types must not appear in the public optimizer API — this type is crate-internal only.
 pub(crate) struct CdePreparedShape {
     pub(crate) spoly: jagua_rs::geometry::primitives::SPolygon,
     pub(crate) min_x: f64,
     pub(crate) min_y: f64,
     pub(crate) max_x: f64,
     pub(crate) max_y: f64,
+    /// World-coordinate f64 polygon points for VRS-side touching post-policy.
+    pub(crate) world_pts: Vec<Point>,
 }
 
 // ---------------------------------------------------------------------------
@@ -129,10 +136,18 @@ impl CdeAdapter {
         let b_hole_hazard = Hazard::new(HazardEntity::Hole { idx: 0 }, b.spoly.clone(), false);
         let cde = CDEngine::new(jag_bbox, vec![exterior_hazard, b_hole_hazard], cde_config);
 
-        if cde.detect_poly_collision(&a.spoly, &NoFilter) {
-            CdeQueryResult::Collision
-        } else {
-            CdeQueryResult::NoCollision
+        if !cde.detect_poly_collision(&a.spoly, &NoFilter) {
+            return CdeQueryResult::NoCollision;
+        }
+
+        // CDE raw says Collision. Apply VRS-side post-policy to distinguish:
+        //   touching edge/corner → NoCollision
+        //   positive-area overlap / proper crossing → Collision
+        // polygons_collide uses segments_properly_intersect (no touching) + strict containment.
+        match polygons_collide(&a.world_pts, &b.world_pts) {
+            Ok(true) => CdeQueryResult::Collision,
+            Ok(false) => CdeQueryResult::NoCollision,
+            Err(reason) => CdeQueryResult::Unsupported { reason },
         }
     }
 
@@ -161,10 +176,19 @@ impl CdeAdapter {
         let exterior_hazard = Hazard::new(HazardEntity::Exterior, sheet.spoly.clone(), false);
         let cde = CDEngine::new(jag_bbox, vec![exterior_hazard], cde_config);
 
-        if cde.detect_poly_collision(&item.spoly, &NoFilter) {
-            CdeQueryResult::Collision
-        } else {
-            CdeQueryResult::NoCollision
+        if !cde.detect_poly_collision(&item.spoly, &NoFilter) {
+            return CdeQueryResult::NoCollision;
+        }
+
+        // CDE raw says Collision. Apply VRS-side post-policy:
+        //   item fully inside or touching boundary → NoCollision
+        //   any vertex outside or proper crossing → Collision
+        // polygon_within_sheet_pts uses point_inside_or_on_polygon (boundary ok) +
+        // segments_properly_intersect (touching the boundary edge is not a crossing).
+        match polygon_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
+            Ok(true) => CdeQueryResult::NoCollision,
+            Ok(false) => CdeQueryResult::Collision,
+            Err(reason) => CdeQueryResult::Unsupported { reason },
         }
     }
 }
@@ -210,7 +234,7 @@ pub(crate) fn prepare_shape_from_placement(
     let spoly =
         to_jag_polygon(&world_pts, "cde_placement_shape").map_err(|_| "SPolygon build failed for placement")?;
 
-    Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y })
+    Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
 }
 
 /// Build a `CdePreparedShape` from a sheet boundary polygon.
@@ -230,8 +254,9 @@ pub(crate) fn prepare_shape_from_sheet(sheet: &SheetShape) -> Result<CdePrepared
         polygon_bbox(&pts).ok_or("sheet polygon is empty")?;
     let spoly =
         to_jag_polygon(&pts, "cde_sheet_shape").map_err(|_| "SPolygon build failed for sheet")?;
+    let world_pts = pts;
 
-    Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y })
+    Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
 }
 
 // ---------------------------------------------------------------------------
@@ -374,29 +399,32 @@ mod tests {
 
     #[test]
     fn cde_backend_does_not_fallback_to_jagua_polygon_exact_when_unavailable() {
-        // CDE has stricter touching semantics than JaguaPolygonExact.
-        // Two touching rects (shared edge at x=10):
-        //   JaguaPolygonExact → NoCollision (touching only, not proper crossing)
-        //   CDE              → Collision   (Edge::collides_with, proper_only=false)
-        // This proves CDE is NOT a JaguaPolygonExact wrapper.
-        let part = make_part("A", 10.0, 10.0);
-        let p_left = pl("A", 0, 0.0, 0.0);
-        let p_right = pl("A", 0, 10.0, 0.0); // touching at x=10
+        // Q14: CDE now applies VRS-side touching post-policy. For touching rects, both
+        // CDE and JaguaPolygonExact return NoCollision. The proof that CDE is NOT a
+        // JaguaPolygonExact wrapper is the L-notch fixture: bbox gives a false positive
+        // for items in the notch, but both CDE and JaguaPolygonExact correctly give NoCollision
+        // via different code paths (CDE: CDEngine quadtree query + VRS post-policy;
+        // JaguaPolygonExact: segments_properly_intersect directly).
+        let l_part = make_part_with_polygon("L", 40.0, 40.0, l_shape_outer());
+        let small_part = make_part("B", 15.0, 15.0);
+        let p_l = pl("L", 0, 0.0, 0.0);
+        let p_small = pl("B", 0, 22.0, 22.0); // in the L-shape notch
 
-        let exact_result = JaguaPolygonExactBackend.placement_overlaps(&p_left, &part, &p_right, &part);
-        let cde_result = CdeCollisionBackend.placement_overlaps(&p_left, &part, &p_right, &part);
+        let bbox_result = BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let exact_result = JaguaPolygonExactBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let cde_result = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
 
+        assert!(bbox_result.is_collision(), "bbox must give false positive for L-notch");
         assert!(
             exact_result.is_no_collision(),
-            "JaguaPolygonExact must report NoCollision for touching rects: {:?}",
-            exact_result
+            "JaguaPolygonExact must give NoCollision for L-notch: {:?}", exact_result
         );
         assert!(
-            cde_result.is_collision(),
-            "CDE must report Collision for touching rects (stricter semantics): {:?}",
-            cde_result
+            cde_result.is_no_collision(),
+            "CDE must give NoCollision for L-notch (not a bbox wrapper): {:?}", cde_result
         );
-        assert_ne!(exact_result, cde_result, "CDE and JaguaPolygonExact must disagree for touching rects");
+        // Both exact and CDE agree, but via different implementations — CDE uses CDEngine + VRS post-policy.
+        assert_eq!(exact_result, cde_result, "CDE and JaguaPolygonExact must agree on L-notch NoCollision");
     }
 
     // -------------------------------------------------------------------------
@@ -540,5 +568,163 @@ mod tests {
         };
         let result = CdeCollisionBackend.placement_within_sheet(&outside, &part, &sheets[0]);
         assert!(result.is_collision(), "item outside sheet must be Collision: {:?}", result);
+    }
+
+    // =========================================================================
+    // SGH-Q14: CDE touching semantics parity tests
+    // =========================================================================
+
+    /// Two rects sharing an edge must be NoCollision (touching ≠ overlap).
+    #[test]
+    fn cde_touching_rect_edges_are_no_collision() {
+        let part = make_part("A", 10.0, 10.0);
+        let p_left  = pl("A", 0, 0.0, 0.0);
+        let p_right = pl("A", 0, 10.0, 0.0); // shared edge at x=10
+
+        let cde = CdeCollisionBackend.placement_overlaps(&p_left, &part, &p_right, &part);
+        assert!(cde.is_no_collision(), "touching rect edges must be NoCollision: {:?}", cde);
+    }
+
+    /// Two rects sharing a corner must be NoCollision.
+    #[test]
+    fn cde_touching_rect_corners_are_no_collision() {
+        let part = make_part("A", 10.0, 10.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 10.0); // corner touch at (10, 10)
+
+        let cde = CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
+        assert!(cde.is_no_collision(), "touching rect corners must be NoCollision: {:?}", cde);
+    }
+
+    /// Two rects with positive-area overlap must be Collision.
+    #[test]
+    fn cde_positive_rect_overlap_is_collision() {
+        let part = make_part("A", 20.0, 20.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 10.0); // 10×10 overlap
+
+        let cde = CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
+        assert!(cde.is_collision(), "positive-area rect overlap must be Collision: {:?}", cde);
+    }
+
+    /// Two L-shapes touching on their notch edge must be NoCollision.
+    #[test]
+    fn cde_touching_irregular_polygon_edges_are_no_collision() {
+        // Place the L at (0,0) and another L mirrored at (40,0), sharing the edge at x=40.
+        // Actually, simpler: use a rect and an L-shape touching edge-to-edge.
+        let l_part = make_part_with_polygon("L", 40.0, 40.0, l_shape_outer());
+        let rect_part = make_part("R", 10.0, 20.0);
+        // The L goes 0..40 in x, 0..40 in y (with notch).
+        // Place rect to the right of L, touching at x=40.
+        let p_l    = pl("L", 0, 0.0, 0.0);
+        let p_rect = pl("R", 0, 40.0, 0.0); // touching at x=40
+
+        let cde = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_rect, &rect_part);
+        assert!(
+            cde.is_no_collision(),
+            "irregular polygon touching at shared edge must be NoCollision: {:?}", cde
+        );
+    }
+
+    /// Two L-shapes with genuine polygon overlap must be Collision.
+    #[test]
+    fn cde_positive_irregular_overlap_is_collision() {
+        let l_part = make_part_with_polygon("L", 40.0, 40.0, l_shape_outer());
+        let rect_part = make_part("R", 10.0, 10.0);
+        // The L-shape goes to (20,20) at its inner corner. Place rect starting at (10,10) — inside L.
+        let p_l    = pl("L", 0, 0.0, 0.0);
+        let p_rect = pl("R", 0, 5.0, 5.0); // genuinely inside the L polygon
+
+        let cde = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_rect, &rect_part);
+        assert!(
+            cde.is_collision(),
+            "item inside L-polygon must be Collision: {:?}", cde
+        );
+    }
+
+    /// Item whose edge exactly touches the sheet boundary must be NoCollision.
+    #[test]
+    fn cde_item_touching_sheet_boundary_inside_is_no_collision() {
+        let part = make_part("A", 20.0, 20.0);
+        let sheets = rect_sheet(100.0, 100.0);
+        // Item at (0, 0): its left edge is at x=0 = sheet boundary; right at x=20 inside.
+        let touching = pl("A", 0, 0.0, 0.0);
+        let result = CdeCollisionBackend.placement_within_sheet(&touching, &part, &sheets[0]);
+        assert!(
+            result.is_no_collision(),
+            "item touching sheet boundary edge must be NoCollision (boundary touch allowed): {:?}", result
+        );
+    }
+
+    /// Item whose corner exactly touches the sheet boundary corner must be NoCollision.
+    #[test]
+    fn cde_item_corner_touching_sheet_boundary_inside_is_no_collision() {
+        let part = make_part("A", 20.0, 20.0);
+        let sheets = rect_sheet(100.0, 100.0);
+        // Item at (80, 80): corner at (100, 100) = sheet corner.
+        let corner_touch = pl("A", 0, 80.0, 80.0);
+        let result = CdeCollisionBackend.placement_within_sheet(&corner_touch, &part, &sheets[0]);
+        assert!(
+            result.is_no_collision(),
+            "item corner touching sheet corner must be NoCollision: {:?}", result
+        );
+    }
+
+    /// Item crossing the sheet boundary must be Collision.
+    #[test]
+    fn cde_item_crossing_sheet_boundary_is_collision() {
+        let part = make_part("A", 20.0, 20.0);
+        let sheets = rect_sheet(100.0, 100.0);
+        // Item at (95, 0): extends to x=115, outside sheet x=100.
+        let crossing = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 95.0, y: 0.0,
+            rotation_deg: 0.0,
+        };
+        let result = CdeCollisionBackend.placement_within_sheet(&crossing, &part, &sheets[0]);
+        assert!(result.is_collision(), "item crossing sheet boundary must be Collision: {:?}", result);
+    }
+
+    /// Bbox backend touching semantics unchanged (adjacent rects still NoCollision).
+    #[test]
+    fn bbox_default_touching_semantics_unchanged() {
+        let part = make_part("A", 10.0, 10.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 0.0); // adjacent, touching edge
+
+        let bbox = BboxCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
+        assert!(bbox.is_no_collision(), "bbox: adjacent touching rects still NoCollision: {:?}", bbox);
+    }
+
+    /// JaguaPolygonExact touching semantics unchanged after Q14.
+    #[test]
+    fn jagua_polygon_exact_touching_semantics_unchanged() {
+        let part = make_part("A", 10.0, 10.0);
+        let p_left  = pl("A", 0, 0.0, 0.0);
+        let p_right = pl("A", 0, 10.0, 0.0); // touching at x=10
+
+        let exact = JaguaPolygonExactBackend.placement_overlaps(&p_left, &part, &p_right, &part);
+        assert!(exact.is_no_collision(), "JaguaPolygonExact: touching rects still NoCollision: {:?}", exact);
+    }
+
+    /// No silent bbox fallback for CDE touching policy: L-notch shows CDE ≠ bbox.
+    #[test]
+    fn no_silent_bbox_fallback_for_cde_touching_policy() {
+        let l_part = make_part_with_polygon("L", 40.0, 40.0, l_shape_outer());
+        let small_part = make_part("B", 15.0, 15.0);
+        let p_l = pl("L", 0, 0.0, 0.0);
+        let p_small = pl("B", 0, 22.0, 22.0); // in notch: bbox=Collision, CDE=NoCollision
+
+        let bbox_result = BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let cde_result  = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+
+        assert!(bbox_result.is_collision(), "bbox must give false positive for L-notch");
+        assert!(
+            cde_result.is_no_collision(),
+            "CDE must NOT silently fall back to bbox: expected NoCollision for L-notch, got {:?}", cde_result
+        );
+        assert_ne!(bbox_result, cde_result, "CDE and bbox must disagree for L-notch (proof: not bbox fallback)");
     }
 }

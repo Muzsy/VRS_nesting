@@ -1,0 +1,76 @@
+steps:
+  - name: "Dependency gate és CDE touching audit"
+    description: >
+      Ellenőrizd, hogy a Q13 report első sora PASS, és tartalmazza az SGH-Q14_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md,
+      docs/qa/testing_guidelines.md, a Q08/Q13 contractokat, a Q13 reportot és ezt a Q14 canvas-t. Auditáld a CDE/jagua
+      raw touching viselkedést: collides_with/proper_only, Edge, CDE, touch, Collision/NoCollision útvonalak. Ha a dependency gate
+      hiányzik, BLOCKED report, production módosítás nélkül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q14_cde_touching_semantics_parity_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q14_cde_touching_semantics_parity_fix.md"
+
+  - name: "Explicit touching classification helper"
+    description: >
+      Vezess be explicit VRS-side touching/crossing classification helper-t, ha a CDE/jagua raw edge collision touchingot is collisionnek ad.
+      A helper különböztesse meg: None, TouchPoint, TouchOverlap, ProperCrossing. TouchPoint/TouchOverlap legyen NoCollision,
+      ProperCrossing és positive-area overlap legyen Collision. Használd a meglévő EPS/tolerance szabályokat.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/geometry.rs"
+
+  - name: "CDE pair policy wrapper"
+    description: >
+      A CdeAdapter/CdeCollisionBackend pair query ne közvetlenül nyers CDE touching döntést adjon vissza.
+      Tegyél VRS post-policy réteget: raw CDE collision candidate után ellenőrizd, hogy csak edge/corner touch-e vagy positive overlap/true crossing.
+      Edge/corner touch -> NoCollision; positive overlap / true crossing -> Collision; unsupported geometry -> Unsupported, bbox fallback nélkül.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "CDE boundary policy wrapper"
+    description: >
+      Sheet boundary querynél a boundary touch legyen NoCollision, ha az item teljesen bent van vagy épp boundaryn érintkezik.
+      True outside, outside vertex vagy proper boundary crossing legyen Collision. Unsupported geometry továbbra is Unsupported.
+      Ne fallbackelj Bbox backendre CDE opt-in esetén.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+
+  - name: "Separator candidate loss parity"
+    description: >
+      Ellenőrizd és szükség esetén javítsd a CDE candidate_backend_loss útvonalat: touching layout loss legyen 0,
+      positive overlap adjon pozitív loss-t vagy legalább collision penaltyt, Unsupported pedig sentinel/Unsupported maradjon.
+      Bbox és JaguaPolygonExact viselkedés ne regresszáljon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott teszteket: cde_touching_rect_edges_are_no_collision, cde_touching_rect_corners_are_no_collision,
+      cde_positive_rect_overlap_is_collision, cde_touching_irregular_polygon_edges_are_no_collision,
+      cde_positive_irregular_overlap_is_collision, cde_item_touching_sheet_boundary_inside_is_no_collision,
+      cde_item_corner_touching_sheet_boundary_inside_is_no_collision, cde_item_crossing_sheet_boundary_is_collision,
+      cde_separator_candidate_loss_touching_layout_is_zero, cde_separator_candidate_loss_positive_overlap_is_positive,
+      bbox_default_touching_semantics_unchanged, jagua_polygon_exact_touching_semantics_unchanged,
+      no_silent_bbox_fallback_for_cde_touching_policy.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/repair.rs"
+
+  - name: "Contract, report és verify"
+    description: >
+      Hozd létre a docs/egyedi_solver/sgh_q14_cde_touching_semantics_contract.md dokumentumot, töltsd ki a checklistet és reportot.
+      Futtasd a célzott cargo teszteket: optimizer::cde_adapter, optimizer::collision_backend, optimizer::separator, optimizer::repair,
+      majd cargo test --lib és ./scripts/verify.sh --report ... . PASS csak zöld verify esetén lehet, és csak akkor kerüljön
+      a report végére SGH-Q15_STATUS: READY.
+    outputs:
+      - "docs/egyedi_solver/sgh_q14_cde_touching_semantics_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q14_cde_touching_semantics_parity_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q14_cde_touching_semantics_parity_fix.md"
+      - "codex/reports/egyedi_solver/sgh_q14_cde_touching_semantics_parity_fix.verify.log"

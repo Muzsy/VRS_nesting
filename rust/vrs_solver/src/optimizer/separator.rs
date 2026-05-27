@@ -2322,4 +2322,71 @@ mod tests {
         assert!(tracker.boundary_exact_valid[0] && tracker.boundary_exact_valid[1], "boundary must be valid");
         assert_eq!(tracker.total_loss(), 0.0, "valid layout with JaguaPolygonExact must be zero loss");
     }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q14: separator candidate loss touching semantics
+    // -----------------------------------------------------------------------
+
+    /// CDE candidate_backend_loss for a touching layout must be 0 (touching ≠ overlap penalty).
+    #[test]
+    fn cde_separator_candidate_loss_touching_layout_is_zero() {
+        let parts = vec![
+            make_part("A", 30.0, 30.0, 1, vec![0]),
+            make_part("T", 15.0, 15.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // Existing item at (5, 5), size 30x30 → occupies (5..35, 5..35).
+        let layout = WorkingLayout::new(
+            vec![placement("A__0001", "A", 0, 5.0, 5.0)],
+            vec![], 1, 0,
+        );
+        // Candidate at (35, 5): touching edge of existing item (x=35) and inside sheet.
+        // Touching = NoCollision → candidate_loss must be 0.
+        let candidate = placement("T__0001", "T", 0, 35.0, 5.0);
+        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 35.0, y1: 5.0, x2: 50.0, y2: 20.0 };
+        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 5.0, y1: 5.0, x2: 35.0, y2: 35.0 }];
+
+        let cde_sep = VrsSeparator::new(VrsSeparatorConfig {
+            collision_backend: CollisionBackendKind::Cde,
+            ..VrsSeparatorConfig::default()
+        });
+        let loss = cde_sep.candidate_loss_for_backend(
+            &candidate, &parts[1], &cand_bbox, &sheets[0], &layout, 1, &parts, &placed_without,
+        );
+        assert_eq!(loss, 0.0, "CDE: touching candidate loss must be 0 (touching ≠ overlap), got {}", loss);
+    }
+
+    /// CDE candidate_backend_loss for a genuinely overlapping candidate must be positive.
+    #[test]
+    fn cde_separator_candidate_loss_positive_overlap_is_positive() {
+        let parts = vec![
+            make_part("A", 30.0, 30.0, 1, vec![0]),
+            make_part("T", 15.0, 15.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // Existing item at (5, 5), size 30x30 → occupies (5..35, 5..35).
+        let layout = WorkingLayout::new(
+            vec![placement("A__0001", "A", 0, 5.0, 5.0)],
+            vec![], 1, 0,
+        );
+        // Candidate at (20, 5): 10-unit positive overlap with existing item.
+        let candidate = placement("T__0001", "T", 0, 20.0, 5.0);
+        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 20.0, y1: 5.0, x2: 35.0, y2: 20.0 };
+        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 5.0, y1: 5.0, x2: 35.0, y2: 35.0 }];
+
+        let cde_sep = VrsSeparator::new(VrsSeparatorConfig {
+            collision_backend: CollisionBackendKind::Cde,
+            ..VrsSeparatorConfig::default()
+        });
+        let loss = cde_sep.candidate_loss_for_backend(
+            &candidate, &parts[1], &cand_bbox, &sheets[0], &layout, 1, &parts, &placed_without,
+        );
+        assert!(
+            loss > 0.0,
+            "CDE: positive-overlap candidate loss must be > 0, got {}", loss
+        );
+        assert!(loss < f64::MAX, "CDE: overlapping candidate loss must be finite, not f64::MAX");
+    }
 }
