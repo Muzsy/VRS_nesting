@@ -764,4 +764,74 @@ mod tests {
             "exact score must be lower (no false-positive overlap penalty)"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q13: CDE scoring tests
+    // -----------------------------------------------------------------------
+
+    /// CDE score_with_backend must not report unsupported violations for valid rect parts.
+    #[test]
+    fn cde_score_with_backend_matches_validation_for_valid_rects() {
+        let model = ScoreModel::default();
+        let parts = vec![make_part("A", 30.0, 30.0), make_part("B", 20.0, 20.0)];
+        let sheets = make_sheets(200.0, 100.0, 1);
+        // Place items away from boundary edges: CDE counts touching boundary as Collision
+        let placements = vec![
+            p("A__0001", "A", 0, 5.0, 5.0),
+            p("B__0001", "B", 0, 60.0, 5.0),
+        ];
+
+        let cde_result = model.score_with_backend(
+            &placements, &[], &parts, &sheets, &CollisionBackendKind::Cde,
+        );
+        let exact_result = model.score_with_backend(
+            &placements, &[], &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+        );
+
+        // Both backends must agree: no overlaps, no boundary violations for valid non-overlapping rects
+        assert_eq!(
+            cde_result.breakdown.overlap_violations, 0,
+            "CDE must detect no overlaps for non-overlapping valid rects"
+        );
+        assert_eq!(
+            cde_result.breakdown.boundary_violations, 0,
+            "CDE must detect no boundary violations for items inside sheet"
+        );
+        assert_eq!(
+            cde_result.breakdown.overlap_violations,
+            exact_result.breakdown.overlap_violations,
+            "CDE and JaguaPolygonExact must agree on overlap count for non-overlapping rects"
+        );
+    }
+
+    /// CDE phase optimizer: valid rect fixture must have no unsupported violations.
+    #[test]
+    fn cde_phase_optimizer_valid_rect_fixture_has_no_backend_unsupported() {
+        use crate::optimizer::repair::validate_placements_for_backend;
+
+        let parts = vec![make_part("A", 30.0, 30.0), make_part("B", 20.0, 20.0)];
+        let sheets = make_sheets(200.0, 100.0, 1);
+        // Place items away from boundary edges: CDE counts touching boundary as Collision
+        let placements = vec![
+            p("A__0001", "A", 0, 5.0, 5.0),
+            p("B__0001", "B", 0, 60.0, 5.0),
+        ];
+
+        let violations = validate_placements_for_backend(
+            &placements, &parts, &sheets, &CollisionBackendKind::Cde,
+        );
+
+        // usize::MAX is the sentinel index for unsupported queries
+        let has_unsupported_sentinel = violations.iter().any(|(idx, _)| *idx == usize::MAX);
+        assert!(
+            !has_unsupported_sentinel,
+            "CDE backend must have 0 unsupported queries for valid rect fixture"
+        );
+
+        let violation_count = violations.iter().filter(|(idx, _)| *idx != usize::MAX).count();
+        assert_eq!(
+            violation_count, 0,
+            "CDE backend must report no violations for non-overlapping rects inside sheet"
+        );
+    }
 }

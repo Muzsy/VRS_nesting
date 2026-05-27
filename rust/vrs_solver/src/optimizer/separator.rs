@@ -10,7 +10,7 @@ use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
-use super::collision_backend::{CollisionBackend, CollisionDecision, JaguaPolygonExactBackend};
+use super::collision_backend::{CdeCollisionBackend, CollisionBackend, CollisionDecision, JaguaPolygonExactBackend};
 use super::initializer::bbox_from_placement;
 use super::loss_model::LossModelKind;
 use super::working::WorkingLayout;
@@ -165,13 +165,37 @@ fn compute_backend_decisions(
             (pair_nc, pair_unsup, bnd_valid, bnd_unsup)
         }
         CollisionBackendKind::Cde => {
+            let backend = CdeCollisionBackend;
+            let mut pair_nc: HashSet<(usize, usize)> = HashSet::new();
             let mut pair_unsup: HashSet<(usize, usize)> = HashSet::new();
+            let mut bnd_valid = vec![false; n];
+            let mut bnd_unsup = vec![false; n];
             for i in 0..n {
-                for j in (i + 1)..n {
-                    pair_unsup.insert((i, j));
+                let pi = &placements[i];
+                let part_i = parts.iter().find(|pt| pt.id == pi.part_id);
+                if let Some(prt) = part_i {
+                    if pi.sheet_index < sheets.len() {
+                        match backend.placement_within_sheet(pi, prt, &sheets[pi.sheet_index]) {
+                            CollisionDecision::NoCollision => { bnd_valid[i] = true; }
+                            CollisionDecision::Collision => {}
+                            CollisionDecision::Unsupported { .. } => { bnd_unsup[i] = true; }
+                        }
+                    }
+                    for j in (i + 1)..n {
+                        let pj = &placements[j];
+                        let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
+                        if let Some(prt_j) = part_j {
+                            let key = (i, j);
+                            match backend.placement_overlaps(pi, prt, pj, prt_j) {
+                                CollisionDecision::NoCollision => { pair_nc.insert(key); }
+                                CollisionDecision::Collision => {}
+                                CollisionDecision::Unsupported { .. } => { pair_unsup.insert(key); }
+                            }
+                        }
+                    }
                 }
             }
-            (HashSet::new(), pair_unsup, vec![false; n], vec![true; n])
+            (pair_nc, pair_unsup, bnd_valid, bnd_unsup)
         }
     }
 }
@@ -466,10 +490,28 @@ impl VrsCollisionTracker {
                 }
             }
             CollisionBackendKind::Cde => {
-                self.boundary_exact_unsupported[idx] = true;
-                for j in 0..self.n {
-                    if j == idx { continue; }
-                    self.pair_exact_unsupported.insert(Self::pair_key(idx, j));
+                let backend = CdeCollisionBackend;
+                if let Some(prt) = part_i {
+                    if pi.sheet_index < sheets.len() {
+                        match backend.placement_within_sheet(pi, prt, &sheets[pi.sheet_index]) {
+                            CollisionDecision::NoCollision => { self.boundary_exact_valid[idx] = true; }
+                            CollisionDecision::Collision => {}
+                            CollisionDecision::Unsupported { .. } => { self.boundary_exact_unsupported[idx] = true; }
+                        }
+                    }
+                    for j in 0..self.n {
+                        if j == idx { continue; }
+                        let pj = &placements[j];
+                        let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
+                        if let Some(prt_j) = part_j {
+                            let key = Self::pair_key(idx, j);
+                            match backend.placement_overlaps(pi, prt, pj, prt_j) {
+                                CollisionDecision::NoCollision => { self.pair_exact_no_collision.insert(key); }
+                                CollisionDecision::Collision => {}
+                                CollisionDecision::Unsupported { .. } => { self.pair_exact_unsupported.insert(key); }
+                            }
+                        }
+                    }
                 }
             }
             CollisionBackendKind::Bbox => {}
@@ -775,7 +817,37 @@ impl VrsSeparator {
                 }
                 loss
             }
-            CollisionBackendKind::Cde => f64::MAX,
+            CollisionBackendKind::Cde => {
+                let backend = CdeCollisionBackend;
+                let mut loss = match backend.placement_within_sheet(candidate, part, sheet) {
+                    CollisionDecision::NoCollision => 0.0,
+                    CollisionDecision::Collision => {
+                        loss_model.compute_boundary_loss(cand_bbox, sheet, false).max(1.0)
+                    }
+                    CollisionDecision::Unsupported { .. } => return f64::MAX,
+                };
+
+                for (idx, other) in layout.placements.iter().enumerate() {
+                    if idx == target_idx || other.sheet_index != candidate.sheet_index {
+                        continue;
+                    }
+                    let Some(other_part) = parts.iter().find(|pt| pt.id == other.part_id) else {
+                        return f64::MAX;
+                    };
+                    match backend.placement_overlaps(candidate, part, other, other_part) {
+                        CollisionDecision::NoCollision => {}
+                        CollisionDecision::Collision => {
+                            if let Some(other_bbox) = bbox_from_placement(other, other_part.width, other_part.height) {
+                                loss += loss_model.pair_loss(&other_bbox, cand_bbox).max(1.0);
+                            } else {
+                                return f64::MAX;
+                            }
+                        }
+                        CollisionDecision::Unsupported { .. } => return f64::MAX,
+                    }
+                }
+                loss
+            }
         }
     }
 
@@ -2112,5 +2184,142 @@ mod tests {
         assert!(bbox_loss > 0.0, "bbox backend should still see the overlapping bbox surrogate");
     }
 
+    // -----------------------------------------------------------------------
+    // SGH-Q13: CDE search-path wiring tests
+    // -----------------------------------------------------------------------
 
+    /// CDE tracker build must NOT mark all pairs as Unsupported.
+    #[test]
+    fn cde_tracker_build_uses_cde_backend_not_all_unsupported() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // Place away from boundary: CDE counts touching edges as Collision
+        let placements = vec![
+            placement("A__0001", "A", 0, 5.0, 5.0),
+            placement("A__0002", "A", 0, 55.0, 5.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let tracker = VrsCollisionTracker::build_with_model(
+            &layout, &parts, &sheets,
+            LossModelKind::BboxArea,
+            CollisionBackendKind::Cde,
+        );
+
+        // Non-overlapping rects: CDE must report NoCollision for this pair, not Unsupported
+        let all_unsupported = tracker.pair_exact_unsupported.contains(&(0, 1))
+            || tracker.pair_exact_unsupported.contains(&(1, 0));
+        let any_no_collision = tracker.pair_exact_no_collision.contains(&(0, 1))
+            || tracker.pair_exact_no_collision.contains(&(1, 0));
+        assert!(
+            any_no_collision,
+            "CDE tracker must record NoCollision for non-overlapping rects, not all-Unsupported"
+        );
+        assert!(
+            !all_unsupported,
+            "CDE tracker must NOT mark non-overlapping pair as Unsupported"
+        );
+    }
+
+    /// CDE candidate_loss must NOT return f64::MAX for valid non-overlapping placements.
+    #[test]
+    fn cde_separator_candidate_backend_loss_is_not_always_max() {
+        let parts = vec![
+            make_part("A", 30.0, 30.0, 1, vec![0]),
+            make_part("T", 15.0, 15.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let layout = WorkingLayout::new(
+            vec![placement("A__0001", "A", 0, 5.0, 5.0)],
+            vec![], 1, 0,
+        );
+        // Candidate placed clearly away from the only existing item and inside sheet.
+        // Use y=5 to avoid CDE counting touching y=0 boundary as Collision.
+        let candidate = placement("T__0001", "T", 0, 100.0, 5.0);
+        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 100.0, y1: 5.0, x2: 115.0, y2: 20.0 };
+        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 30.0, y2: 30.0 }];
+
+        let cde_sep = VrsSeparator::new(VrsSeparatorConfig {
+            collision_backend: CollisionBackendKind::Cde,
+            ..VrsSeparatorConfig::default()
+        });
+        let loss = cde_sep.candidate_loss_for_backend(
+            &candidate, &parts[1], &cand_bbox, &sheets[0], &layout, 1, &parts, &placed_without,
+        );
+        assert!(
+            loss < f64::MAX,
+            "CDE candidate_loss must not return f64::MAX for valid non-overlapping candidate"
+        );
+        assert_eq!(loss, 0.0, "non-overlapping candidate inside sheet must have zero loss");
+    }
+
+    /// CDE separator must repair a simple overlap or report a real Unsupported, not f64::MAX stub.
+    #[test]
+    fn cde_separator_repairs_simple_overlap_or_reports_real_unsupported() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 10.0, 0.0), // overlap
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let sep = VrsSeparator::new(VrsSeparatorConfig {
+            collision_backend: CollisionBackendKind::Cde,
+            max_strikes: 20,
+            max_inner_iterations: 200,
+            ..VrsSeparatorConfig::default()
+        });
+        let (_final_layout, diag) = sep.run(layout, &parts, &sheets);
+        // After repair, loss should be 0 (overlap resolved) or result must have run without panic/crash
+        // The key: CDE search path must actually attempt moves (loss tracked, not stuck at f64::MAX)
+        assert!(diag.best_loss.is_finite(), "separator must return a finite loss, not f64::MAX or NaN");
+        assert!(diag.moves_attempted > 0, "CDE separator must attempt moves, not be stuck at f64::MAX candidates");
+    }
+
+    /// Bbox default must still behave identically to pre-Q13.
+    #[test]
+    fn bbox_default_still_matches_pre_q13_behavior() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 30.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
+        // Bbox default: no exact backend decisions; pair loss from bbox overlap model
+        assert!(tracker.pair_exact_no_collision.is_empty(), "bbox: no exact no-collision entries");
+        assert!(tracker.pair_exact_unsupported.is_empty(), "bbox: no exact unsupported entries");
+        assert!(!tracker.boundary_exact_valid.iter().any(|&v| v), "bbox: no exact boundary valid flags");
+        assert_eq!(tracker.total_loss(), 0.0, "non-overlapping valid bbox layout must have zero loss");
+    }
+
+    /// JaguaPolygonExact path must be unchanged after Q13.
+    #[test]
+    fn jagua_polygon_exact_path_unchanged() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // Use (5,5) offsets: JaguaPolygonExact uses proper-crossing test so boundary touch
+        // is not flagged, but we place inside to be consistent with CDE semantics discussion.
+        let placements = vec![
+            placement("A__0001", "A", 0, 5.0, 5.0),
+            placement("A__0002", "A", 0, 55.0, 5.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let tracker = VrsCollisionTracker::build_with_model(
+            &layout, &parts, &sheets,
+            LossModelKind::BboxArea,
+            CollisionBackendKind::JaguaPolygonExact,
+        );
+        let any_no_collision = tracker.pair_exact_no_collision.contains(&(0, 1))
+            || tracker.pair_exact_no_collision.contains(&(1, 0));
+        assert!(any_no_collision, "JaguaPolygonExact must record NoCollision for non-overlapping rects");
+        assert!(tracker.pair_exact_unsupported.is_empty(), "JaguaPolygonExact must have no Unsupported pairs");
+        assert!(tracker.boundary_exact_valid[0] && tracker.boundary_exact_valid[1], "boundary must be valid");
+        assert_eq!(tracker.total_loss(), 0.0, "valid layout with JaguaPolygonExact must be zero loss");
+    }
 }

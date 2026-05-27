@@ -1,0 +1,79 @@
+steps:
+  - name: "Dependency gate és Q12 preflight"
+    description: >
+      Ellenőrizd, hogy a Q12 report első sora PASS és tartalmazza az SGH-Q13_STATUS: READY markert.
+      Olvasd el az AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md, docs/codex/report_standard.md,
+      docs/qa/testing_guidelines.md, a Q12 canvas/report/contract fájlokat és ezt a Q13 canvas-t. Ha a dependency gate hiányzik,
+      BLOCKED report, production módosítás nélkül.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q13_cde_session_backend_search_path_wiring.md"
+      - "codex/reports/egyedi_solver/sgh_q13_cde_session_backend_search_path_wiring.md"
+
+  - name: "jagua-rs CDE filter/lifecycle API audit"
+    description: >
+      Auditáld a helyi jagua-rs filter és lifecycle API-t: Filter trait, NoFilter, HazardEntity, PlacedItem, PItemKey,
+      SlotMap és CDEngine konstrukció. Válaszold meg, hogy lehet-e self-hazardot kizárni egy session-owned engine queryből,
+      használható-e PlacedItem PItemKey VRS layout state nélkül, vagy csak Hole idx + custom filter/per-call megoldás biztonságos.
+      A reportban path/funkció bizonyíték legyen.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q13_cde_session_backend_search_path_wiring.md"
+      - "docs/egyedi_solver/sgh_q13_cde_session_backend_contract.md"
+
+  - name: "CDE session/lifecycle contract"
+    description: >
+      Hozz létre rust/vrs_solver/src/optimizer/cde_session.rs modult vagy ekvivalens struktúrát. Legyen CdeSheetSession /
+      CdeLayoutSession / CdeSessionCapability jellegű contract. Ha full session megvalósítható, építs sheetenként/layoutonként
+      CDEEngine-t és hasonlítsd per-call adapterhez. Ha nem biztonságos, reportold PerCallOnly reasonnel, de ne fake-eld sessionként.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_session.rs"
+      - "rust/vrs_solver/src/optimizer/mod.rs"
+      - "docs/egyedi_solver/sgh_q13_cde_session_backend_contract.md"
+
+  - name: "CDE backend search-path wiring"
+    description: >
+      Javítsd a VrsCollisionTracker CDE ágát: compute_backend_decisions(Cde) ne jelöljön minden pairt/boundaryt Unsupportednek,
+      hanem használja a CdeCollisionBackendet vagy a CDE session/per-call adaptert. Javítsd a candidate_backend_loss(Cde) ágat:
+      ne legyen automatikusan f64::MAX; Collision adjon pozitív loss-t, NoCollision 0-t, Unsupported f64::MAX-et. Bbox és
+      JaguaPolygonExact viselkedés ne regresszáljon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/cde_session.rs"
+      - "rust/vrs_solver/src/optimizer/collision_backend.rs"
+
+  - name: "CDE-aware scoring/phase diagnostics"
+    description: >
+      Ellenőrizd, hogy score_with_backend, phase optimizer, moves, BPP és sheet elimination útvonalakon CDE explicit opt-in esetén
+      nem silent bbox fallback történik, és nem full unsupported sentinel miatt válik használhatatlanná a search. Adj diagnostics mezőket
+      vagy reportolt counters-t: cde_queries, cde_engine_builds, cde_unsupported_count, cde_session_capability.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/moves.rs"
+      - "rust/vrs_solver/src/optimizer/sheet_elimination.rs"
+      - "rust/vrs_solver/src/optimizer/bpp_phase.rs"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott teszteket: cde_tracker_build_uses_cde_backend_not_all_unsupported,
+      cde_separator_candidate_backend_loss_is_not_always_max, cde_separator_repairs_simple_overlap_or_reports_real_unsupported,
+      cde_phase_optimizer_valid_rect_fixture_has_no_backend_unsupported, cde_score_with_backend_matches_validation_for_valid_rects,
+      cde_session_capability_reports_truthful_lifecycle_status, cde_session_or_batch_matches_per_call_adapter_for_pair_matrix,
+      bbox_default_still_matches_pre_q13_behavior, jagua_polygon_exact_path_unchanged, no_silent_bbox_fallback_for_cde_search_path.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_session.rs"
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/separator.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+      - "rust/vrs_solver/src/optimizer/score.rs"
+
+  - name: "Report, contract és verify"
+    description: >
+      Készítsd el a Q13 checklistet, reportot és docs/egyedi_solver/sgh_q13_cde_session_backend_contract.md dokumentumot.
+      Futtasd a célzott cargo teszteket, cargo test --lib-ot és ./scripts/verify.sh --report ... parancsot. PASS csak zöld
+      verify és őszinte CDE lifecycle státusz esetén lehet. PASS esetén a report végén SGH-Q14_STATUS: READY.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q13_cde_session_backend_search_path_wiring.md"
+      - "docs/egyedi_solver/sgh_q13_cde_session_backend_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q13_cde_session_backend_search_path_wiring.md"
+      - "codex/reports/egyedi_solver/sgh_q13_cde_session_backend_search_path_wiring.verify.log"
