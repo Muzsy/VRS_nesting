@@ -1,0 +1,70 @@
+steps:
+  - name: "Dependency gate és cavity-prepack pre-audit"
+    description: >
+      Ellenőrizd, hogy a Q14 report első sora PASS és tartalmazza az SGH-Q15_STATUS: READY markert.
+      Olvasd el az AGENTS.md, Codex workflow/report/QA doksikat, a Q14 reportot, valamint a cavity_v2 plan/validator canvasokat.
+      Auditáld worker/cavity_prepack.py, worker/cavity_validation.py, worker/result_normalizer.py, worker/main.py és
+      worker/engine_adapter_input.py fájlokat. Rögzítsd, hogy a fő solver cavity_prepack_v2 után outer-only inputot kap.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q15_cavity_prepack_v2_solver_hole_free_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q15_cavity_prepack_v2_solver_hole_free_contract.md"
+
+  - name: "Solver-input hole-free invariant hardening"
+    description: >
+      Bizonyítsd és ha kell erősítsd, hogy build_cavity_prepacked_engine_input_v2(enabled=True) minden generated solver partnál
+      holes_points_mm=[] értéket ad. Ez vonatkozzon virtual parent/module parts és remaining top-level parts elemekre is.
+      A validate_prepack_solver_input_hole_free gate bármilyen hole passthrough esetén hibázzon.
+    outputs:
+      - "worker/cavity_prepack.py"
+      - "worker/main.py"
+
+  - name: "Production boundary no-hole gate"
+    description: >
+      Ellenőrizd a worker production útvonalat. Ha nesting_engine_v2 fő solver inputhoz hole-os part juthat cavity_prepack nélkül,
+      azt vagy blokkolni kell stabil Unsupported/WorkerError reasonnel, vagy explicit dokumentált outer-only solidify policyvel kell kezelni.
+      Ne legyen silent hole passthrough a fő solver felé.
+    outputs:
+      - "worker/main.py"
+      - "worker/engine_adapter_input.py"
+      - "codex/reports/egyedi_solver/sgh_q15_cavity_prepack_v2_solver_hole_free_contract.md"
+
+  - name: "Cavity metadata preservation"
+    description: >
+      Ellenőrizd és teszteld, hogy cavity_plan_v2 megőrzi a virtual_parts, placement_trees, instance_bases, quantity_delta,
+      diagnostics és summary adatokat. Kötelező mezők: parent_part_revision_id, parent_instance, child part_revision_id/child_instance,
+      parent_cavity_index, local transform, cavity_tree_depth.
+    outputs:
+      - "worker/cavity_prepack.py"
+      - "worker/result_normalizer.py"
+      - "worker/cavity_validation.py"
+
+  - name: "Expansion és validation gate"
+    description: >
+      Teszteld, hogy result_normalizer a virtual parent solver placementből top_level_parent és internal_cavity placement row-kat képez,
+      és hogy validate_cavity_plan_v2 fail esetén a worker nem jelöl successful run-t. Fedd le child outside cavity,
+      child-child overlap, transform és quantity mismatch eseteket.
+    outputs:
+      - "worker/result_normalizer.py"
+      - "worker/cavity_validation.py"
+      - "worker/main.py"
+
+  - name: "Regression tesztek"
+    description: >
+      Adj célzott pytest/unit teszteket: cavity_prepack_v2_outputs_hole_free_solver_input,
+      cavity_prepack_v2_virtual_parent_has_empty_holes_points, remaining_top_level_parts_have_empty_holes_points,
+      validate_prepack_solver_input_hole_free_rejects_any_holes, placement_tree_metadata preserved, quantity_delta matches,
+      result_normalizer expands virtual parent, validate_cavity_plan_v2 rejects outside/overlap, production boundary rejects hole passthrough.
+    outputs:
+      - "tests/"
+      - "worker/"
+
+  - name: "Contract, report és verify"
+    description: >
+      Hozd létre a Q15 contract doksit, checklistet és reportot. A report explicit mondja ki: Q15 nem cavity_prepack_v2 kiváltás,
+      nem main-solver hole-aware CDE, hanem solver-hole-free contract + cavity_plan_v2 preservation/validation hardening.
+      Futtasd a repo standard pytest/verify parancsokat. PASS csak zöld verify esetén lehet, és csak akkor legyen SGH-Q16_STATUS: READY.
+    outputs:
+      - "docs/egyedi_solver/sgh_q15_cavity_prepack_v2_solver_hole_free_contract.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q15_cavity_prepack_v2_solver_hole_free_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q15_cavity_prepack_v2_solver_hole_free_contract.md"
+      - "codex/reports/egyedi_solver/sgh_q15_cavity_prepack_v2_solver_hole_free_contract.verify.log"

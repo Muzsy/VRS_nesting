@@ -593,3 +593,196 @@ def test_empty_plan_v2_enabled_schema() -> None:
     assert plan["quantity_delta"] == {}
     assert plan["diagnostics"] == []
     assert plan["summary"] == {}
+
+
+# SGH-Q15 contract hardening tests
+
+
+def test_cavity_prepack_v2_outputs_hole_free_solver_input() -> None:
+    parts = [
+        {
+            "id": "parent-a",
+            "part_code": "PARENT_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0),
+            "holes_points_mm": [_rect(2.0, 2.0, 12.0, 12.0)],
+        },
+        {
+            "id": "child-a",
+            "part_code": "CHILD_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 4.0, 4.0),
+            "holes_points_mm": [],
+        },
+    ]
+    snapshot = _snapshot_for_parts(parts)
+    out_input, _plan = build_cavity_prepacked_engine_input_v2(
+        snapshot_row=snapshot,
+        base_engine_input=_base_input(parts),
+        enabled=True,
+    )
+    assert all(part["holes_points_mm"] == [] for part in out_input["parts"])
+
+
+def test_cavity_prepack_v2_virtual_parent_has_empty_holes_points() -> None:
+    parts = [
+        {
+            "id": "parent-a",
+            "part_code": "PARENT_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0),
+            "holes_points_mm": [_rect(2.0, 2.0, 12.0, 12.0)],
+        },
+        {
+            "id": "child-a",
+            "part_code": "CHILD_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 4.0, 4.0),
+            "holes_points_mm": [],
+        },
+    ]
+    snapshot = _snapshot_for_parts(parts)
+    out_input, _plan = build_cavity_prepacked_engine_input_v2(
+        snapshot_row=snapshot,
+        base_engine_input=_base_input(parts),
+        enabled=True,
+    )
+    virtual_parts = [part for part in out_input["parts"] if str(part["id"]).startswith("__cavity_composite__")]
+    assert len(virtual_parts) >= 1
+    for vpart in virtual_parts:
+        assert vpart["holes_points_mm"] == []
+
+
+def test_cavity_prepack_v2_remaining_top_level_parts_have_empty_holes_points() -> None:
+    # plain-a (5x5) is too large to fit in parent-a's 4x4 cavity, so it remains as a top-level solver part.
+    parts = [
+        {
+            "id": "parent-a",
+            "part_code": "PARENT_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0),
+            "holes_points_mm": [_rect(2.0, 2.0, 6.0, 6.0)],
+        },
+        {
+            "id": "plain-a",
+            "part_code": "PLAIN_A",
+            "quantity": 2,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 5.0, 5.0),
+            "holes_points_mm": [],
+        },
+    ]
+    snapshot = _snapshot_for_parts(parts)
+    out_input, _plan = build_cavity_prepacked_engine_input_v2(
+        snapshot_row=snapshot,
+        base_engine_input=_base_input(parts),
+        enabled=True,
+    )
+    plain_parts = [part for part in out_input["parts"] if str(part["id"]) == "plain-a"]
+    assert len(plain_parts) == 1
+    assert plain_parts[0]["holes_points_mm"] == []
+
+
+def test_validate_prepack_solver_input_hole_free_rejects_any_holes() -> None:
+    engine_input_with_holes = {
+        "version": "nesting_engine_v2",
+        "parts": [
+            {
+                "id": "virtual-x",
+                "quantity": 1,
+                "holes_points_mm": [_rect(1.0, 1.0, 5.0, 5.0)],
+            }
+        ],
+    }
+    with pytest.raises(CavityPrepackGuardError) as exc_info:
+        validate_prepack_solver_input_hole_free(engine_input_with_holes)
+    assert "CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN" in str(exc_info.value)
+
+
+def test_cavity_prepack_v2_preserves_placement_tree_metadata() -> None:
+    parts = [
+        {
+            "id": "parent-a",
+            "part_code": "PARENT_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0),
+            "holes_points_mm": [_rect(2.0, 2.0, 12.0, 12.0)],
+        },
+        {
+            "id": "child-a",
+            "part_code": "CHILD_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 4.0, 4.0),
+            "holes_points_mm": [],
+        },
+    ]
+    snapshot = _snapshot_for_parts(parts)
+    _out, plan = build_cavity_prepacked_engine_input_v2(
+        snapshot_row=snapshot,
+        base_engine_input=_base_input(parts),
+        enabled=True,
+    )
+    assert plan["version"] == "cavity_plan_v2"
+    for key in ("virtual_parts", "placement_trees", "instance_bases", "quantity_delta", "diagnostics", "summary"):
+        assert key in plan
+
+
+def test_cavity_prepack_v2_quantity_delta_matches_internal_and_top_level() -> None:
+    parts = [
+        {
+            "id": "parent-a",
+            "part_code": "PARENT_A",
+            "quantity": 1,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0),
+            "holes_points_mm": [_rect(2.0, 2.0, 12.0, 12.0)],
+        },
+        {
+            "id": "child-a",
+            "part_code": "CHILD_A",
+            "quantity": 2,
+            "allowed_rotations_deg": [0],
+            "outer_points_mm": _rect(0.0, 0.0, 4.0, 4.0),
+            "holes_points_mm": [],
+        },
+    ]
+    snapshot = _snapshot_for_parts(parts)
+    _out, plan = build_cavity_prepacked_engine_input_v2(
+        snapshot_row=snapshot,
+        base_engine_input=_base_input(parts),
+        enabled=True,
+    )
+    for part in parts:
+        part_id = str(part["id"])
+        original = int(part["quantity"])
+        delta = plan["quantity_delta"][part_id]
+        assert int(delta["internal_qty"]) + int(delta["top_level_qty"]) == original
+
+
+def test_production_worker_rejects_or_blocks_hole_passthrough_without_prepack() -> None:
+    # Simulate a holed part bypassing prepack and reaching the production gate.
+    # The validate_prepack_solver_input_hole_free guard must reject it.
+    solver_input_with_passthrough = {
+        "version": "nesting_engine_v2",
+        "parts": [
+            {
+                "id": "holed-part",
+                "quantity": 1,
+                "holes_points_mm": [_rect(1.0, 1.0, 9.0, 9.0)],
+            },
+            {
+                "id": "clean-part",
+                "quantity": 1,
+                "holes_points_mm": [],
+            },
+        ],
+    }
+    with pytest.raises(CavityPrepackGuardError):
+        validate_prepack_solver_input_hole_free(solver_input_with_passthrough)

@@ -1093,3 +1093,106 @@ def test_v1_metrics_unchanged(tmp_path: Path) -> None:
         "version": "cavity_plan_v1",
         "virtual_parent_count": 1,
     }
+
+
+# SGH-Q15 contract hardening tests
+
+
+def test_result_normalizer_expands_virtual_parent_to_internal_cavity_rows(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-q15-expand"
+    _write_nesting_output(
+        run_dir,
+        {
+            "version": "nesting_engine_v2",
+            "status": "ok",
+            "sheets_used": 1,
+            "placements": [
+                {
+                    "part_id": "__cavity_composite__parent-a__000000",
+                    "instance": 0,
+                    "sheet": 0,
+                    "x_mm": 30.0,
+                    "y_mm": 40.0,
+                    "rotation_deg": 0.0,
+                }
+            ],
+            "unplaced": [],
+            "objective": {"utilization_pct": 10.0},
+            "meta": {},
+        },
+    )
+    _write_cavity_plan(
+        run_dir,
+        {
+            "version": "cavity_plan_v2",
+            "enabled": True,
+            "policy": {"mode": "recursive_cavity_prepack", "max_cavity_depth": 3},
+            "virtual_parts": {
+                "__cavity_composite__parent-a__000000": {
+                    "kind": "parent_composite",
+                    "parent_part_revision_id": "parent-a",
+                    "parent_instance": 0,
+                    "source_geometry_revision_id": "geo-parent-a",
+                    "selected_nesting_derivative_id": "drv-parent-a",
+                }
+            },
+            "placement_trees": {
+                "__cavity_composite__parent-a__000000": {
+                    "node_id": "node:parent-a:0",
+                    "part_revision_id": "parent-a",
+                    "instance": 0,
+                    "kind": "top_level_virtual_parent",
+                    "parent_node_id": None,
+                    "parent_cavity_index": None,
+                    "x_local_mm": 0.0,
+                    "y_local_mm": 0.0,
+                    "rotation_deg": 0,
+                    "placement_origin_ref": "bbox_min_corner",
+                    "children": [
+                        {
+                            "node_id": "node:child-a:0",
+                            "part_revision_id": "child-a",
+                            "instance": 0,
+                            "kind": "internal_cavity_child",
+                            "parent_node_id": "node:parent-a:0",
+                            "parent_cavity_index": 0,
+                            "x_local_mm": 3.0,
+                            "y_local_mm": 3.0,
+                            "rotation_deg": 0,
+                            "placement_origin_ref": "bbox_min_corner",
+                            "children": [],
+                        }
+                    ],
+                }
+            },
+            "instance_bases": {
+                "parent-a": {"internal_reserved_count": 0, "top_level_instance_base": 0},
+                "child-a": {"internal_reserved_count": 1, "top_level_instance_base": 1},
+            },
+            "quantity_delta": {
+                "parent-a": {"original_required_qty": 1, "internal_qty": 0, "top_level_qty": 1},
+                "child-a": {"original_required_qty": 1, "internal_qty": 1, "top_level_qty": 0},
+                "plain-a": {"original_required_qty": 3, "internal_qty": 0, "top_level_qty": 3},
+            },
+            "diagnostics": [],
+            "summary": {},
+        },
+    )
+    projection = normalize_solver_output_projection(
+        run_id="run-q15-expand",
+        snapshot_row=_snapshot(),
+        run_dir=run_dir,
+    )
+    by_instance = _instance_map(projection.placements)
+    # Virtual parent must be expanded: parent-a row with top_level_parent scope
+    assert "parent-a:0" in by_instance
+    parent_meta = by_instance["parent-a:0"]["metadata_jsonb"]
+    assert isinstance(parent_meta, dict)
+    assert parent_meta["placement_scope"] == "top_level_parent"
+    # Internal child must appear with internal_cavity scope
+    assert "child-a:0" in by_instance
+    child_meta = by_instance["child-a:0"]["metadata_jsonb"]
+    assert isinstance(child_meta, dict)
+    assert child_meta["placement_scope"] == "internal_cavity"
+    # No virtual composite ID must leak into output
+    assert not any("__cavity_composite__" in str(row.get("part_revision_id", "")) for row in projection.placements)

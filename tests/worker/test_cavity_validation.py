@@ -294,6 +294,104 @@ def test_matrjoska_valid_three_level() -> None:
     assert issues == []
 
 
+# SGH-Q15 contract hardening tests
+
+
+def test_validate_cavity_plan_v2_rejects_child_outside_cavity() -> None:
+    part_records = [
+        {"part_id": "P", "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0), "holes_points_mm": [_rect(2.0, 2.0, 10.0, 10.0)]},
+        {"part_id": "C", "outer_points_mm": _rect(0.0, 0.0, 4.0, 4.0), "holes_points_mm": []},
+    ]
+    plan = _base_plan(
+        virtual_id="__cavity_composite__P__000000",
+        parent_part_id="P",
+        parent_instance=0,
+        tree_children=[
+            {
+                "node_id": "node:C:0",
+                "part_revision_id": "C",
+                "instance": 0,
+                "kind": "internal_cavity_child",
+                "parent_node_id": "node:P:0",
+                "parent_cavity_index": 0,
+                "x_local_mm": 15.0,
+                "y_local_mm": 15.0,
+                "rotation_deg": 0,
+                "placement_origin_ref": "bbox_min_corner",
+                "children": [],
+            }
+        ],
+        quantity_delta={
+            "P": {"original_required_qty": 1, "internal_qty": 0, "top_level_qty": 1},
+            "C": {"original_required_qty": 1, "internal_qty": 1, "top_level_qty": 0},
+        },
+    )
+    solver_placements = [{"part_id": "__cavity_composite__P__000000", "x_mm": 0.0, "y_mm": 0.0, "rotation_deg": 0.0}]
+    with pytest.raises(CavityValidationError) as exc_info:
+        validate_cavity_plan_v2(
+            cavity_plan=plan,
+            part_records=part_records,
+            solver_placements=solver_placements,
+            strict=True,
+        )
+    assert "CAVITY_CHILD_OUTSIDE_PARENT_CAVITY" in str(exc_info.value)
+
+
+def test_validate_cavity_plan_v2_rejects_child_child_overlap() -> None:
+    part_records = [
+        {"part_id": "P", "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0), "holes_points_mm": [_rect(2.0, 2.0, 18.0, 18.0)]},
+        {"part_id": "C1", "outer_points_mm": _rect(0.0, 0.0, 8.0, 8.0), "holes_points_mm": []},
+        {"part_id": "C2", "outer_points_mm": _rect(0.0, 0.0, 8.0, 8.0), "holes_points_mm": []},
+    ]
+    plan = _base_plan(
+        virtual_id="__cavity_composite__P__000000",
+        parent_part_id="P",
+        parent_instance=0,
+        tree_children=[
+            {
+                "node_id": "node:C1:0",
+                "part_revision_id": "C1",
+                "instance": 0,
+                "kind": "internal_cavity_child",
+                "parent_node_id": "node:P:0",
+                "parent_cavity_index": 0,
+                "x_local_mm": 3.0,
+                "y_local_mm": 3.0,
+                "rotation_deg": 0,
+                "placement_origin_ref": "bbox_min_corner",
+                "children": [],
+            },
+            {
+                "node_id": "node:C2:0",
+                "part_revision_id": "C2",
+                "instance": 0,
+                "kind": "internal_cavity_child",
+                "parent_node_id": "node:P:0",
+                "parent_cavity_index": 0,
+                "x_local_mm": 5.0,
+                "y_local_mm": 5.0,
+                "rotation_deg": 0,
+                "placement_origin_ref": "bbox_min_corner",
+                "children": [],
+            },
+        ],
+        quantity_delta={
+            "P": {"original_required_qty": 1, "internal_qty": 0, "top_level_qty": 1},
+            "C1": {"original_required_qty": 1, "internal_qty": 1, "top_level_qty": 0},
+            "C2": {"original_required_qty": 1, "internal_qty": 1, "top_level_qty": 0},
+        },
+    )
+    solver_placements = [{"part_id": "__cavity_composite__P__000000", "x_mm": 0.0, "y_mm": 0.0, "rotation_deg": 0.0}]
+    issues = validate_cavity_plan_v2(
+        cavity_plan=plan,
+        part_records=part_records,
+        solver_placements=solver_placements,
+        strict=False,
+    )
+    codes = [issue.code for issue in issues]
+    assert "CAVITY_CHILD_CHILD_OVERLAP" in codes
+
+
 def test_strict_false_returns_issues() -> None:
     part_records = [
         {"part_id": "P", "outer_points_mm": _rect(0.0, 0.0, 20.0, 20.0), "holes_points_mm": [_rect(2.0, 2.0, 18.0, 18.0)]},
