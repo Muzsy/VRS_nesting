@@ -1,0 +1,83 @@
+id: sgh_q20r_sparrow_search_position_coord_descent
+project: VRS_nesting
+kind: solver_quality_task
+priority: critical
+status: ready_after_q20
+
+objective: >
+  Build the missing Sparrow-style search_position kernel on top of the now-passed Q20 rotation refinement work:
+  deterministic global/focused transform sampling, coordinate descent over x/y/rotation where legal, active-backend
+  sample evaluation, and VrsSeparator integration so separator repositioning is no longer primarily LBF/bbox candidate based.
+
+depends_on:
+  - sgh_q16_cde_final_commit_gate_consistency_fix
+  - sgh_q18a_cde_correctness_runtime_observability
+  - sgh_q18a_r1_phase_timing_report_consistency_fix
+  - sgh_q20_continuous_rotation_refinement
+
+must_read:
+  - codex/reports/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.md
+  - codex/reports/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md
+  - codex/reports/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.md
+  - codex/reports/egyedi_solver/sgh_q20_continuous_rotation_refinement.md
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - rust/vrs_solver/src/optimizer/candidates.rs
+  - rust/vrs_solver/src/optimizer/collision_backend.rs
+  - rust/vrs_solver/src/optimizer/cde_adapter.rs
+  - rust/vrs_solver/src/optimizer/loss_model.rs
+  - rust/vrs_solver/src/optimizer/compress.rs
+  - rust/vrs_solver/src/optimizer/phase.rs
+  - rust/vrs_solver/src/rotation_policy.rs
+  - rust/vrs_solver/src/item.rs
+
+scope:
+  include:
+    - new optimizer/search_position.rs module or equivalent
+    - deterministic global sheet transform sampling
+    - focused transform sampling around current placement
+    - coordinate descent refinement for top-k candidates
+    - x/y axes always, rotation axis only for Continuous policy
+    - active backend boundary/pair evaluation
+    - VrsSeparator integration replacing default generate_candidates_with_sheets path
+    - explicit counted LBF fallback only if retained
+    - diagnostics for search_position behavior
+    - unit/integration tests and smoke script
+  exclude:
+    - Q19 LV8 benchmark gate
+    - Q18B CDE session/cache rewrite
+    - full Q21 shape-based severity rewrite
+    - main solver hole-aware collision
+    - multi-sheet objective redesign
+
+acceptance:
+  - Q20 rotation refinement remains green and is reused, not reverted.
+  - SearchPosition exists and is exported.
+  - VrsSeparator uses search_position before any LBF fallback.
+  - generate_candidates_with_sheets is not the primary PhaseOptimizer/Sparrow separator path.
+  - Sampling is deterministic for fixed seed/instance/iteration/worker.
+  - Focused and global samples are both covered.
+  - Coordinate descent improves or preserves candidate evaluation without mutating incumbent layout.
+  - Rotation policy is respected exactly.
+  - CDE/Jagua evaluation has no silent bbox fallback.
+  - Diagnostics expose calls, samples, unsupported samples, refinement steps, and fallback usage.
+  - Smoke proves overlap reduction, boundary correction, continuous rotation rescue, CDE no-fallback, and determinism.
+  - cargo test --lib and verify.sh pass.
+
+commands:
+  required:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::search_position
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::separator
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::compress
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml rotation_policy
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q20_continuous_rotation_refinement.py
+    - python3 scripts/smoke_sgh_q20r_sparrow_search_position.py
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q20r_sparrow_search_position_coord_descent.md
+
+report:
+  path: codex/reports/egyedi_solver/sgh_q20r_sparrow_search_position_coord_descent.md
+  required_markers:
+    - SGH-Q20R_STATUS: READY_FOR_AUDIT
+    - SGH-Q21_STATUS: READY
+    - Q19_STATUS: HOLD
+    - Q18B_RECOMMENDATION: REQUIRED|NOT_REQUIRED_NOW|INCONCLUSIVE_NEEDS_BIGGER_FIXTURE

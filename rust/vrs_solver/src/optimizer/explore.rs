@@ -302,6 +302,18 @@ impl ExplorationPhase {
             let sep = VrsSeparator::new(sep_config);
             let (sep_layout, sep_diag) = sep.run(layout.snapshot(), parts, sheets);
 
+            // Accumulate search_position diagnostics from this separator run.
+            diag.search_position_calls += sep_diag.search_stats.calls;
+            diag.search_position_global_samples_evaluated += sep_diag.search_stats.global_samples_evaluated;
+            diag.search_position_focused_samples_evaluated += sep_diag.search_stats.focused_samples_evaluated;
+            diag.search_position_samples_unsupported += sep_diag.search_stats.samples_unsupported;
+            diag.search_position_refined_samples += sep_diag.search_stats.refined_samples;
+            diag.search_position_coord_descent_steps += sep_diag.search_stats.coord_descent_steps;
+            diag.search_position_lbf_fallback_used += sep_diag.search_stats.lbf_fallback_used;
+            if sep_diag.search_stats.best_eval < diag.search_position_best_eval {
+                diag.search_position_best_eval = sep_diag.search_stats.best_eval;
+            }
+
             let sep_score = self.score_model.score_with_backend(
                 &sep_layout.placements,
                 &sep_layout.unplaced,

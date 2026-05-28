@@ -376,6 +376,18 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             rotation_refinement_rejections: diag_ref.rotation_refinement_attempts
                                 .saturating_sub(diag_ref.rotation_refinement_accepts),
                             rotation_refinement_best_delta: diag_ref.rotation_refinement_best_delta,
+                            search_position_calls: diag_ref.search_position_calls,
+                            search_position_global_samples_evaluated: diag_ref.search_position_global_samples_evaluated,
+                            search_position_focused_samples_evaluated: diag_ref.search_position_focused_samples_evaluated,
+                            search_position_samples_unsupported: diag_ref.search_position_samples_unsupported,
+                            search_position_refined_samples: diag_ref.search_position_refined_samples,
+                            search_position_coord_descent_steps: diag_ref.search_position_coord_descent_steps,
+                            search_position_lbf_fallback_used: diag_ref.search_position_lbf_fallback_used,
+                            search_position_best_eval: if diag_ref.search_position_best_eval == f64::MAX {
+                                0.0
+                            } else {
+                                diag_ref.search_position_best_eval
+                            },
                             phase_optimizer_exploration_ms: result.exploration_ms,
                             phase_optimizer_compression_ms: result.compression_ms,
                             phase_optimizer_bpp_ms: result.bpp_ms,

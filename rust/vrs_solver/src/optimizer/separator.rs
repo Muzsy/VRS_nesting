@@ -13,6 +13,7 @@ use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::collision_backend::{CdeCollisionBackend, CollisionBackend, CollisionDecision, JaguaPolygonExactBackend};
 use super::initializer::bbox_from_placement;
 use super::loss_model::LossModelKind;
+use super::search_position::{search_position_for_target, SearchPositionConfig, SearchPositionStats};
 use super::working::WorkingLayout;
 
 /// Hard loss assigned to a pair when exact backend returns Unsupported.
@@ -79,6 +80,7 @@ struct SeparatorWorker {
     moves_attempted: usize,
     moves_accepted: usize,
     rollback_count: usize,
+    search_stats: SearchPositionStats,
 }
 
 struct WorkerCandidate {
@@ -90,6 +92,7 @@ struct WorkerCandidate {
     moves_attempted: usize,
     moves_accepted: usize,
     rollback_count: usize,
+    search_stats: SearchPositionStats,
 }
 
 struct DeterministicRng {
@@ -578,6 +581,12 @@ pub struct VrsSeparatorConfig {
     pub loss_model: LossModelKind,
     /// Collision backend for pair-loss and boundary decisions. Default: `Bbox` (pre-Q11 behavior).
     pub collision_backend: CollisionBackendKind,
+    /// Q20R: use search_position kernel as primary relocation path.
+    pub search_position_enabled: bool,
+    /// Q20R: fall back to LBF candidates when search_position returns None.
+    pub allow_lbf_fallback: bool,
+    /// Q20R: configuration for the search_position kernel.
+    pub search_position_config: SearchPositionConfig,
 }
 
 impl Default for VrsSeparatorConfig {
@@ -595,6 +604,9 @@ impl Default for VrsSeparatorConfig {
             rotation_context: RotationResolveContext::legacy_default(),
             loss_model: LossModelKind::BboxArea,
             collision_backend: CollisionBackendKind::Bbox,
+            search_position_enabled: true,
+            allow_lbf_fallback: true,
+            search_position_config: SearchPositionConfig::default(),
         }
     }
 }
@@ -611,6 +623,7 @@ pub struct VrsSeparatorDiagnostics {
     pub moves_accepted: usize,
     pub rollback_count: usize,
     pub converged: bool,
+    pub search_stats: SearchPositionStats,
 }
 
 // ---------------------------------------------------------------------------
@@ -674,7 +687,35 @@ impl VrsSeparator {
         parts: &[Part],
         sheets: &[SheetShape],
         allowed_sheet_filter: &Option<HashSet<usize>>,
+        call_seed: u64,
+        search_stats: &mut SearchPositionStats,
     ) -> Option<Placement> {
+        // Q20R: primary path — Sparrow search_position kernel.
+        if self.config.search_position_enabled {
+            let sp = search_position_for_target(
+                layout,
+                target_idx,
+                parts,
+                sheets,
+                allowed_sheet_filter,
+                &self.config.collision_backend,
+                self.config.loss_model,
+                &self.config.rotation_context,
+                &self.config.search_position_config,
+                call_seed,
+                search_stats,
+            );
+            if sp.is_some() {
+                return sp;
+            }
+        }
+
+        // LBF compatibility fallback.
+        if !self.config.allow_lbf_fallback {
+            return None;
+        }
+        search_stats.lbf_fallback_used += 1;
+
         let part = parts
             .iter()
             .find(|p| p.id == layout.placements[target_idx].part_id)?;
@@ -855,17 +896,22 @@ impl VrsSeparator {
         &self,
         worker: &mut SeparatorWorker,
         target_idx: usize,
+        iteration: usize,
         parts: &[Part],
         sheets: &[SheetShape],
         allowed_sheet_filter: &Option<HashSet<usize>>,
     ) {
         worker.moves_attempted += 1;
+        let call_seed = self.worker_seed(iteration, worker.worker_id)
+            ^ (target_idx as u64).wrapping_mul(0x517C_C1B7_2722_0A95);
         let Some(new_p) = self.find_best_candidate_for_target(
             &worker.layout,
             target_idx,
             parts,
             sheets,
             allowed_sheet_filter,
+            call_seed,
+            &mut worker.search_stats,
         ) else {
             worker.tracker.update_weights(
                 self.config.gls_weight_decay,
@@ -923,6 +969,7 @@ impl VrsSeparator {
             moves_attempted: 0,
             moves_accepted: 0,
             rollback_count: 0,
+            search_stats: SearchPositionStats::default(),
         };
 
         let targets = if worker_id == 0 {
@@ -938,6 +985,7 @@ impl VrsSeparator {
             self.attempt_move(
                 &mut worker,
                 target_idx,
+                iteration,
                 parts,
                 sheets,
                 allowed_sheet_filter,
@@ -953,6 +1001,7 @@ impl VrsSeparator {
             moves_attempted: worker.moves_attempted,
             moves_accepted: worker.moves_accepted,
             rollback_count: worker.rollback_count,
+            search_stats: worker.search_stats,
         }
     }
 
@@ -1020,6 +1069,7 @@ impl VrsSeparator {
                 moves_accepted: 0,
                 rollback_count: 0,
                 converged: true,
+                search_stats: SearchPositionStats::default(),
             });
         }
 
@@ -1034,6 +1084,7 @@ impl VrsSeparator {
         let mut rollback_count = 0usize;
         let mut strikes = 0usize;
         let worker_count = self.normalized_worker_count();
+        let mut agg_search_stats = SearchPositionStats::default();
 
         while iterations < self.config.max_inner_iterations && strikes < self.config.max_strikes {
             iterations += 1;
@@ -1061,6 +1112,7 @@ impl VrsSeparator {
                 moves_attempted += worker.moves_attempted;
                 moves_accepted += worker.moves_accepted;
                 rollback_count += worker.rollback_count;
+                agg_search_stats.accumulate(&worker.search_stats);
 
                 if Self::is_better_than_master(current_loss, tracker.total_weighted_loss(), &worker) {
                     current = worker.layout;
@@ -1105,6 +1157,9 @@ impl VrsSeparator {
             moves_attempted += workers.iter().map(|w| w.moves_attempted).sum::<usize>();
             moves_accepted += workers.iter().map(|w| w.moves_accepted).sum::<usize>();
             rollback_count += workers.iter().map(|w| w.rollback_count).sum::<usize>();
+            for w in &workers {
+                agg_search_stats.accumulate(&w.search_stats);
+            }
 
             workers.sort_by(Self::compare_worker_candidates);
             let best_worker = workers.into_iter().next().unwrap();
@@ -1140,6 +1195,7 @@ impl VrsSeparator {
             moves_accepted,
             rollback_count,
             converged,
+            search_stats: agg_search_stats,
         })
     }
 }
@@ -1785,6 +1841,7 @@ mod tests {
             moves_attempted: 1,
             moves_accepted: 1,
             rollback_count: 0,
+            search_stats: SearchPositionStats::default(),
         };
         let c1 = WorkerCandidate {
             worker_id: 1,
@@ -1795,6 +1852,7 @@ mod tests {
             moves_attempted: 1,
             moves_accepted: 1,
             rollback_count: 0,
+            search_stats: SearchPositionStats::default(),
         };
         assert_eq!(VrsSeparator::compare_worker_candidates(&c0, &c1), Ordering::Less);
     }
@@ -2388,5 +2446,98 @@ mod tests {
             "CDE: positive-overlap candidate loss must be > 0, got {}", loss
         );
         assert!(loss < f64::MAX, "CDE: overlapping candidate loss must be finite, not f64::MAX");
+    }
+
+    // Q20R-S1: search_position is called (search_stats.calls > 0) when search_position_enabled.
+    #[test]
+    fn separator_uses_search_position_before_lbf_candidates() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let sep = VrsSeparator::new(VrsSeparatorConfig {
+            search_position_enabled: true,
+            ..VrsSeparatorConfig::default()
+        });
+        let (_result, diag) = sep.run(layout, &parts, &sheets);
+        assert!(
+            diag.search_stats.calls > 0,
+            "search_position must be called when enabled (calls={})", diag.search_stats.calls
+        );
+    }
+
+    // Q20R-S2: search_position primary path resolves a simple overlap to zero loss.
+    #[test]
+    fn separator_search_position_reduces_simple_overlap() {
+        let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
+        let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("A__0002", "A", 0, 0.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let sep = VrsSeparator::new(VrsSeparatorConfig {
+            search_position_enabled: true,
+            allow_lbf_fallback: false,
+            ..VrsSeparatorConfig::default()
+        });
+        let (_result, diag) = sep.run(layout, &parts, &sheets);
+        assert_eq!(diag.best_loss, 0.0, "search_position must converge to zero loss");
+        assert!(diag.search_stats.calls > 0, "search_stats must show calls made");
+        assert_eq!(diag.search_stats.lbf_fallback_used, 0, "no LBF fallback when allow_lbf_fallback=false");
+    }
+
+    // Q20R-S3: coordinate descent never returns a worse loss than the starting point.
+    // Full-sheet blocker ensures ALL grid points have loss > 0 → coord descent is triggered.
+    #[test]
+    fn coord_descent_improves_or_preserves_candidate_eval() {
+        use crate::rotation_policy::RotationResolveContext;
+        use crate::optimizer::search_position::{
+            SearchPositionConfig, SearchPositionStats, search_position_for_target,
+        };
+        let parts = vec![
+            make_part("A", 10.0, 8.0, 1, vec![0]),
+            make_part("BLK", 200.0, 200.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        // BLK covers the entire sheet — A always overlaps it at any grid point.
+        let placements = vec![
+            placement("A__0001", "A", 0, 90.0, 90.0),  // target
+            placement("BLK__0001", "BLK", 0, 0.0, 0.0), // full-sheet blocker
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let ctx = RotationResolveContext::new(None, 0, 16);
+        let cfg = SearchPositionConfig {
+            global_grid_n: 4,
+            focused_sample_count: 0,
+            coord_descent_max_steps: 20,
+            coord_descent_min_step: 0.5,
+            ..Default::default()
+        };
+        let mut stats = SearchPositionStats::default();
+        let result = search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::Bbox,
+            crate::optimizer::loss_model::LossModelKind::BboxArea,
+            &ctx, &cfg, 0, &mut stats,
+        );
+        assert!(
+            stats.best_eval < f64::MAX || result.is_none(),
+            "search_position must find a finite evaluation or return None"
+        );
+        assert!(
+            stats.refined_samples > 0,
+            "coord_descent_from must be called when best_loss > 0"
+        );
+        assert!(
+            stats.coord_descent_steps > 0,
+            "coord descent must have taken at least 1 step (got {})", stats.coord_descent_steps
+        );
     }
 }

@@ -15,6 +15,7 @@ pub mod multisheet;
 pub mod phase;
 pub mod repair;
 pub mod score;
+pub mod search_position;
 pub mod separator;
 pub mod sheet_elimination;
 pub mod state;

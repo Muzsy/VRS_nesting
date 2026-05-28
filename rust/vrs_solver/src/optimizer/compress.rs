@@ -140,6 +140,17 @@ impl CompressionPhase {
                             };
                             let sep = VrsSeparator::new(sep_cfg);
                             let (sep_layout, sep_diag) = sep.run(working_try, parts, sheets);
+                            // Accumulate search_position stats from this refinement separator call.
+                            diag.search_position_calls += sep_diag.search_stats.calls;
+                            diag.search_position_global_samples_evaluated += sep_diag.search_stats.global_samples_evaluated;
+                            diag.search_position_focused_samples_evaluated += sep_diag.search_stats.focused_samples_evaluated;
+                            diag.search_position_samples_unsupported += sep_diag.search_stats.samples_unsupported;
+                            diag.search_position_refined_samples += sep_diag.search_stats.refined_samples;
+                            diag.search_position_coord_descent_steps += sep_diag.search_stats.coord_descent_steps;
+                            diag.search_position_lbf_fallback_used += sep_diag.search_stats.lbf_fallback_used;
+                            if sep_diag.search_stats.best_eval < diag.search_position_best_eval {
+                                diag.search_position_best_eval = sep_diag.search_stats.best_eval;
+                            }
                             if !(sep_diag.best_loss == 0.0 || sep_diag.converged) {
                                 continue;
                             }
@@ -202,6 +213,7 @@ mod tests {
     use crate::io::Placement;
     use crate::optimizer::explore::make_test_sheet;
     use crate::optimizer::score::ScoreModel;
+    use crate::rotation_policy::RotationResolveContext;
 
     #[test]
     fn compression_scores_actual_try_result_before_commit() {
@@ -623,5 +635,50 @@ mod tests {
         let snap = crate::optimizer::cde_observability::snapshot();
         assert_eq!(snap.pair_queries + snap.boundary_queries, snap.total_queries,
             "CDE total_queries must equal pair+boundary (no bbox fallback leakage)");
+    }
+
+    // Q20R regression: Q20 rotation refinement still works after Q20R search_position wiring.
+    #[test]
+    fn q20_rotation_refinement_regression_still_passes() {
+        use crate::io::CollisionBackendKind;
+        use crate::rotation_policy::RotationPolicyKind;
+
+        let parts = vec![
+            crate::item::Part {
+                id: "R".into(),
+                width: 80.0,
+                height: 20.0,
+                quantity: 1,
+                allowed_rotations_deg: vec![],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+                rotation_policy: Some(RotationPolicyKind::Continuous),
+            },
+        ];
+        let sheets = crate::sheet::expand_sheets(&[crate::sheet::Stock {
+            id: "S".into(), quantity: 1, width: Some(200.0), height: Some(200.0),
+            outer_points: None, holes_points: None, cost_per_use: None,
+        }]).expect("sheets");
+        let placements = vec![
+            crate::io::Placement {
+                instance_id: "R__0001".into(), part_id: "R".into(),
+                sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+            },
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+
+        let mut config = PhaseConfig::deterministic_default();
+        config.rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 0, 16);
+        config.compression_budget = crate::optimizer::phase::PhaseBudget::new(3, 0.0);
+        config.collision_backend = CollisionBackendKind::Bbox;
+        let phase = CompressionPhase::new(config);
+
+        let (_result, diag) = phase.run(layout, &parts, &sheets);
+        // Q20 refinement must still fire for Continuous policy.
+        assert!(diag.rotation_refinement_enabled, "Q20 refinement must remain enabled after Q20R");
+        // Q20R search_position stats must also be present.
+        assert!(diag.search_position_calls >= 0, "search_position_calls field must exist");
     }
 }

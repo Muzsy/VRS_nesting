@@ -99,7 +99,7 @@ impl PhaseBudget {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PhaseDiagnostics {
     pub phase_type: PhaseType,
     pub iterations_run: usize,
@@ -119,6 +119,47 @@ pub struct PhaseDiagnostics {
     pub rotation_refinement_accepts: usize,
     /// Best score improvement from a single accepted refinement. 0.0 if no accepts.
     pub rotation_refinement_best_delta: f64,
+    /// Q20R: search_position diagnostics (accumulated across exploration + compression separator calls).
+    pub search_position_calls: usize,
+    pub search_position_global_samples_evaluated: usize,
+    pub search_position_focused_samples_evaluated: usize,
+    pub search_position_samples_unsupported: usize,
+    pub search_position_refined_samples: usize,
+    pub search_position_coord_descent_steps: usize,
+    pub search_position_lbf_fallback_used: usize,
+    /// Minimum evaluation loss seen. f64::MAX = no calls (sentinel).
+    pub search_position_best_eval: f64,
+}
+
+impl Default for PhaseDiagnostics {
+    fn default() -> Self {
+        Self {
+            phase_type: PhaseType::default(),
+            iterations_run: 0,
+            exploration_iterations: 0,
+            compression_iterations: 0,
+            bpp_attempts: 0,
+            stop_reason: PhaseStopReason::default(),
+            incumbent_preserved: false,
+            best_score: 0.0,
+            initial_score: 0.0,
+            pool_size: 0,
+            disruption_attempts: 0,
+            disruption_successes: 0,
+            rotation_refinement_enabled: false,
+            rotation_refinement_attempts: 0,
+            rotation_refinement_accepts: 0,
+            rotation_refinement_best_delta: 0.0,
+            search_position_calls: 0,
+            search_position_global_samples_evaluated: 0,
+            search_position_focused_samples_evaluated: 0,
+            search_position_samples_unsupported: 0,
+            search_position_refined_samples: 0,
+            search_position_coord_descent_steps: 0,
+            search_position_lbf_fallback_used: 0,
+            search_position_best_eval: f64::MAX,
+        }
+    }
 }
 
 impl PhaseDiagnostics {
@@ -131,8 +172,13 @@ impl PhaseDiagnostics {
     }
 
     pub fn summary(&self) -> String {
+        let sp_best = if self.search_position_best_eval == f64::MAX {
+            "none".to_string()
+        } else {
+            format!("{:.4}", self.search_position_best_eval)
+        };
         format!(
-            "phase={} iter={} stop={} preserved={} initial={:.3} best={:.3} pool={} disruption_att={} disruption_ok={} refine_enabled={} refine_att={} refine_ok={} refine_best_delta={:.4}",
+            "phase={} iter={} stop={} preserved={} initial={:.3} best={:.3} pool={} disruption_att={} disruption_ok={} refine_enabled={} refine_att={} refine_ok={} refine_best_delta={:.4} sp_calls={} sp_global={} sp_focused={} sp_unsup={} sp_refined={} sp_cd_steps={} sp_lbf_fb={} sp_best={}",
             self.phase_type,
             self.iterations_run,
             self.stop_reason,
@@ -146,6 +192,14 @@ impl PhaseDiagnostics {
             self.rotation_refinement_attempts,
             self.rotation_refinement_accepts,
             self.rotation_refinement_best_delta,
+            self.search_position_calls,
+            self.search_position_global_samples_evaluated,
+            self.search_position_focused_samples_evaluated,
+            self.search_position_samples_unsupported,
+            self.search_position_refined_samples,
+            self.search_position_coord_descent_steps,
+            self.search_position_lbf_fallback_used,
+            sp_best,
         )
     }
 }
@@ -301,6 +355,28 @@ impl PhaseOptimizer {
                 rotation_refinement_attempts: compression_diag.rotation_refinement_attempts,
                 rotation_refinement_accepts: compression_diag.rotation_refinement_accepts,
                 rotation_refinement_best_delta: compression_diag.rotation_refinement_best_delta,
+                search_position_calls: exploration_diag.search_position_calls
+                    + compression_diag.search_position_calls,
+                search_position_global_samples_evaluated: exploration_diag
+                    .search_position_global_samples_evaluated
+                    + compression_diag.search_position_global_samples_evaluated,
+                search_position_focused_samples_evaluated: exploration_diag
+                    .search_position_focused_samples_evaluated
+                    + compression_diag.search_position_focused_samples_evaluated,
+                search_position_samples_unsupported: exploration_diag
+                    .search_position_samples_unsupported
+                    + compression_diag.search_position_samples_unsupported,
+                search_position_refined_samples: exploration_diag.search_position_refined_samples
+                    + compression_diag.search_position_refined_samples,
+                search_position_coord_descent_steps: exploration_diag
+                    .search_position_coord_descent_steps
+                    + compression_diag.search_position_coord_descent_steps,
+                search_position_lbf_fallback_used: exploration_diag
+                    .search_position_lbf_fallback_used
+                    + compression_diag.search_position_lbf_fallback_used,
+                search_position_best_eval: exploration_diag
+                    .search_position_best_eval
+                    .min(compression_diag.search_position_best_eval),
             },
             unplaced,
             exploration_ms,

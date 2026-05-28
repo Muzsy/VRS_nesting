@@ -127,6 +127,16 @@ pub struct OptimizerDiagnosticsOutput {
     pub rotation_refinement_rejections: usize,
     /// Best score improvement from a single accepted refinement. 0.0 if no accepts.
     pub rotation_refinement_best_delta: f64,
+    /// Q20R: search_position diagnostics (accumulated across exploration + compression).
+    pub search_position_calls: usize,
+    pub search_position_global_samples_evaluated: usize,
+    pub search_position_focused_samples_evaluated: usize,
+    pub search_position_samples_unsupported: usize,
+    pub search_position_refined_samples: usize,
+    pub search_position_coord_descent_steps: usize,
+    pub search_position_lbf_fallback_used: usize,
+    /// 0.0 when no calls were made (sentinel f64::MAX → 0.0 in adapter).
+    pub search_position_best_eval: f64,
     /// Per-phase wall-clock timing. Only populated when VRS_CDE_OBSERVABILITY_TIMING=1.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase_optimizer_exploration_ms: Option<f64>,
