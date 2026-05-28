@@ -113,6 +113,12 @@ pub struct PhaseDiagnostics {
     pub pool_size: usize,
     pub disruption_attempts: usize,
     pub disruption_successes: usize,
+    /// Q20: rotation refinement diagnostics (accumulated during CompressionPhase).
+    pub rotation_refinement_enabled: bool,
+    pub rotation_refinement_attempts: usize,
+    pub rotation_refinement_accepts: usize,
+    /// Best score improvement from a single accepted refinement. 0.0 if no accepts.
+    pub rotation_refinement_best_delta: f64,
 }
 
 impl PhaseDiagnostics {
@@ -126,7 +132,7 @@ impl PhaseDiagnostics {
 
     pub fn summary(&self) -> String {
         format!(
-            "phase={} iter={} stop={} preserved={} initial={:.3} best={:.3} pool={} disruption_att={} disruption_ok={}",
+            "phase={} iter={} stop={} preserved={} initial={:.3} best={:.3} pool={} disruption_att={} disruption_ok={} refine_enabled={} refine_att={} refine_ok={} refine_best_delta={:.4}",
             self.phase_type,
             self.iterations_run,
             self.stop_reason,
@@ -136,6 +142,10 @@ impl PhaseDiagnostics {
             self.pool_size,
             self.disruption_attempts,
             self.disruption_successes,
+            self.rotation_refinement_enabled,
+            self.rotation_refinement_attempts,
+            self.rotation_refinement_accepts,
+            self.rotation_refinement_best_delta,
         )
     }
 }
@@ -287,6 +297,10 @@ impl PhaseOptimizer {
                 pool_size: exploration_diag.pool_size,
                 disruption_attempts: exploration_diag.disruption_attempts,
                 disruption_successes: exploration_diag.disruption_successes,
+                rotation_refinement_enabled: compression_diag.rotation_refinement_enabled,
+                rotation_refinement_attempts: compression_diag.rotation_refinement_attempts,
+                rotation_refinement_accepts: compression_diag.rotation_refinement_accepts,
+                rotation_refinement_best_delta: compression_diag.rotation_refinement_best_delta,
             },
             unplaced,
             exploration_ms,

@@ -14,7 +14,13 @@ use serde::{Deserialize, Serialize};
 pub type AngleDeg = f64;
 
 const CANONICAL: [AngleDeg; 4] = [0.0, 90.0, 180.0, 270.0];
-pub const DEFAULT_CONTINUOUS_SAMPLE_COUNT: usize = 8;
+/// Sparrow-aligned default: 16 uniform steps → 22.5° spacing, includes all canonical + 45° diagonals.
+pub const DEFAULT_CONTINUOUS_SAMPLE_COUNT: usize = 16;
+
+/// Symmetric wiggle offsets (degrees) used for local rotation refinement.
+const REFINEMENT_OFFSETS: &[f64] = &[0.75, 1.5, 3.0, 7.5, 15.0];
+/// Maximum refinement candidates generated per call.
+pub const REFINEMENT_MAX_CANDIDATES: usize = 10;
 
 /// Modular rotation policy for VRS solver.
 ///
@@ -153,14 +159,15 @@ pub fn dedup_angles(angles: Vec<AngleDeg>) -> Vec<AngleDeg> {
 
 /// Generate a deterministic, deduped list of candidate rotation angles for a policy.
 ///
-/// - `seed`: only used for `Continuous` sampling; derive from part/instance id.
-/// - `sample_count`: number of non-canonical Continuous samples (≥ 1).
+/// - `_seed`: reserved for future seeded extras; currently unused for Continuous (linspace-based).
+/// - `sample_count`: number of uniform Continuous samples (≥ 4); canonical always included.
 ///
-/// Continuous policy always includes the canonical angles 0/90/180/270 so that
-/// it never degrades below Orthogonal; plus seeded non-canonical samples.
+/// Continuous policy uses a uniform linspace over `[0, 360)` so that useful diagonal/coarse
+/// angles (e.g. 22.5°/45°) are deterministically present for standard sample counts.
+/// Canonical angles 0/90/180/270 are always included, ensuring Continuous ≥ Orthogonal.
 pub fn candidate_angles(
     kind: &RotationPolicyKind,
-    seed: u64,
+    _seed: u64,
     sample_count: usize,
 ) -> Vec<AngleDeg> {
     let raw = match kind {
@@ -172,17 +179,14 @@ pub fn candidate_angles(
             angles.iter().map(|&a| normalize_angle(a)).collect()
         }
         RotationPolicyKind::Continuous => {
-            let mut angles = CANONICAL.to_vec();
-            let n = sample_count.max(1);
-            let mut rng = ContinuousRng::new(seed);
-            let mut added = 0;
-            while added < n {
-                let deg = rng.next_f64() * 360.0;
-                let normalized = normalize_angle(deg);
-                // Require at least 1° gap from any existing angle.
-                if !angles.iter().any(|&x| (x - normalized).abs() < 1.0) {
-                    angles.push(normalized);
-                    added += 1;
+            let n = sample_count.max(4);
+            let step = 360.0 / n as f64;
+            // Uniform linspace base: deterministic coarse coverage.
+            let mut angles: Vec<AngleDeg> = (0..n).map(|i| normalize_angle(i as f64 * step)).collect();
+            // Always include canonical angles (already present for n divisible by 4).
+            for &c in &CANONICAL {
+                if !angles.iter().any(|&x| (x - c).abs() < 1e-9) {
+                    angles.push(c);
                 }
             }
             angles
@@ -191,37 +195,40 @@ pub fn candidate_angles(
     dedup_angles(raw)
 }
 
-// ---------------------------------------------------------------------------
-// Deterministic RNG for continuous policy (xorshift64 × multiplier)
-// ---------------------------------------------------------------------------
-
-struct ContinuousRng {
-    state: u64,
-}
-
-impl ContinuousRng {
-    fn new(seed: u64) -> Self {
-        let state = if seed == 0 {
-            0x9E3779B97F4A7C15
-        } else {
-            seed
-        };
-        Self { state }
+/// Generate local rotation refinement candidate angles around `current_deg`.
+///
+/// Returns candidates only for `RotationPolicyKind::Continuous`; all other policies
+/// return an empty vec (no unsupported extra angles for Locked/HalfTurn/Orthogonal/FortyFive/Discrete).
+///
+/// Candidates are symmetric ±offsets around `current_deg`, normalized to `[0, 360)`,
+/// deduped against `base_candidates`, and capped at `max_candidates`.
+/// Order is deterministic: innermost offsets first.
+pub fn continuous_refinement_angles(
+    current_deg: f64,
+    effective_policy: &RotationPolicyKind,
+    base_candidates: &[f64],
+    max_candidates: usize,
+) -> Vec<AngleDeg> {
+    match effective_policy {
+        RotationPolicyKind::Continuous => {}
+        _ => return vec![],
     }
-
-    fn next_u64(&mut self) -> u64 {
-        let mut x = self.state;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.state = x;
-        x.wrapping_mul(0x2545F4914F6CDD1D)
+    let current_norm = normalize_angle(current_deg);
+    let mut result: Vec<AngleDeg> = Vec::new();
+    'outer: for &offset in REFINEMENT_OFFSETS {
+        for &delta in &[offset, -offset] {
+            let candidate = normalize_angle(current_norm + delta);
+            let dup_base = base_candidates.iter().any(|&b| (b - candidate).abs() < 1e-9);
+            let dup_result = result.iter().any(|&r| (r - candidate).abs() < 1e-9);
+            if !dup_base && !dup_result {
+                result.push(candidate);
+                if result.len() >= max_candidates {
+                    break 'outer;
+                }
+            }
+        }
     }
-
-    /// Returns a uniform float in [0, 1).
-    fn next_f64(&mut self) -> f64 {
-        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
-    }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -584,6 +591,109 @@ mod tests {
                 "rot={rot} placed_min_y={placed_min_y} expected={ry}"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q20 tests
+    // -----------------------------------------------------------------------
+
+    // Q20-1: Continuous linspace includes deterministic coarse diagonals
+    #[test]
+    fn continuous_candidate_generation_linspace_includes_coarse_diagonals() {
+        // n=8 → step=45°: must include 45°, 135°, 225°, 315°
+        let angles8 = candidate_angles(&RotationPolicyKind::Continuous, 0, 8);
+        assert!(angles8.iter().any(|&a| (a - 45.0).abs() < 1e-9), "45° must be in n=8 linspace: {:?}", angles8);
+        assert!(angles8.iter().any(|&a| (a - 135.0).abs() < 1e-9), "135° must be in n=8: {:?}", angles8);
+        assert_eq!(angles8.len(), 8, "n=8 gives exactly 8 angles: {:?}", angles8);
+
+        // n=16 → step=22.5°: must include 22.5°, 45°, 67.5°
+        let angles16 = candidate_angles(&RotationPolicyKind::Continuous, 0, 16);
+        assert!(angles16.iter().any(|&a| (a - 22.5).abs() < 1e-9), "22.5° must be in n=16: {:?}", angles16);
+        assert!(angles16.iter().any(|&a| (a - 45.0).abs() < 1e-9), "45° must be in n=16: {:?}", angles16);
+        assert_eq!(angles16.len(), 16, "n=16 gives exactly 16 angles: {:?}", angles16);
+    }
+
+    // Q20-2: Continuous always includes canonical angles
+    #[test]
+    fn continuous_candidate_generation_always_includes_canonical() {
+        for n in [4, 6, 7, 8, 12, 16] {
+            let angles = candidate_angles(&RotationPolicyKind::Continuous, 42, n);
+            for &c in &CANONICAL {
+                assert!(
+                    angles.iter().any(|&a| (a - c).abs() < 1e-9),
+                    "canonical {c}° missing for n={n}: {:?}", angles
+                );
+            }
+        }
+    }
+
+    // Q20-3: Continuous linspace is deterministic regardless of seed
+    #[test]
+    fn continuous_linspace_is_deterministic_regardless_of_seed() {
+        let a1 = candidate_angles(&RotationPolicyKind::Continuous, 0, 16);
+        let a2 = candidate_angles(&RotationPolicyKind::Continuous, 999_999, 16);
+        assert_eq!(a1, a2, "linspace is deterministic: seed must not affect output for n=16");
+    }
+
+    // Q20-4: Local refinement returns symmetric normalized candidates for Continuous
+    #[test]
+    fn continuous_refinement_symmetric_normalized_deduped() {
+        let base = vec![0.0, 90.0, 180.0, 270.0];
+        let candidates = continuous_refinement_angles(45.0, &RotationPolicyKind::Continuous, &base, 10);
+        // Smallest offset ±0.75° around 45°: expect 45.75° and 44.25°
+        assert!(candidates.iter().any(|&a| (a - 45.75).abs() < 1e-9), "45.75° expected: {:?}", candidates);
+        assert!(candidates.iter().any(|&a| (a - 44.25).abs() < 1e-9), "44.25° expected: {:?}", candidates);
+        // No duplicates
+        let mut seen = vec![];
+        for &a in &candidates {
+            assert!(!seen.iter().any(|&x: &f64| (x - a).abs() < 1e-9), "duplicate {a} in {:?}", candidates);
+            seen.push(a);
+        }
+        // All normalized to [0, 360)
+        for &a in &candidates { assert!(a >= 0.0 && a < 360.0, "not normalized: {a}"); }
+    }
+
+    // Q20-5: Refinement wraps correctly at 0°/360° boundary
+    #[test]
+    fn continuous_refinement_normalizes_at_boundary() {
+        let base = vec![90.0, 180.0, 270.0];
+        let candidates = continuous_refinement_angles(1.0, &RotationPolicyKind::Continuous, &base, 10);
+        // 1.0 - 15.0 = -14.0 → normalized to 346.0
+        assert!(candidates.iter().any(|&a| (a - 346.0).abs() < 1e-9), "346° expected for wrap: {:?}", candidates);
+    }
+
+    // Q20-6: Non-continuous policies return no refinement candidates
+    #[test]
+    fn non_continuous_policies_return_no_refinement_candidates() {
+        let base = vec![0.0, 90.0, 180.0, 270.0];
+        for policy in &[
+            RotationPolicyKind::Locked,
+            RotationPolicyKind::HalfTurn,
+            RotationPolicyKind::Orthogonal,
+            RotationPolicyKind::FortyFive,
+            RotationPolicyKind::Discrete(vec![0.0, 45.0, 90.0]),
+        ] {
+            let result = continuous_refinement_angles(45.0, policy, &base, 10);
+            assert!(result.is_empty(), "{policy:?} must return no refinement candidates, got: {:?}", result);
+        }
+    }
+
+    // Q20-7: Refinement cap is respected
+    #[test]
+    fn continuous_refinement_candidate_count_capped() {
+        let base = vec![];
+        let candidates = continuous_refinement_angles(90.0, &RotationPolicyKind::Continuous, &base, 4);
+        assert!(candidates.len() <= 4, "cap=4 must be respected: {:?}", candidates);
+    }
+
+    // Q20-8: Refinement does not produce base-duplicate candidates
+    #[test]
+    fn continuous_refinement_dedupes_against_base() {
+        // Base includes exactly the offset values: refinement should skip them
+        let base = vec![90.75, 89.25]; // == 90 ± 0.75
+        let candidates = continuous_refinement_angles(90.0, &RotationPolicyKind::Continuous, &base, 10);
+        assert!(!candidates.iter().any(|&a| (a - 90.75).abs() < 1e-9), "90.75° should be deduped against base");
+        assert!(!candidates.iter().any(|&a| (a - 89.25).abs() < 1e-9), "89.25° should be deduped against base");
     }
 
     #[test]

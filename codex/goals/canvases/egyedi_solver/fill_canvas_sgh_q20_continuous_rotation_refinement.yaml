@@ -1,0 +1,75 @@
+id: sgh_q20_continuous_rotation_refinement
+project: VRS_nesting
+kind: solver_quality_task
+status: ready
+priority: high
+
+objective: >
+  Implement deterministic Continuous rotation refinement v1 for the PhaseOptimizer path:
+  stronger coarse continuous candidate coverage, local incumbent-neighborhood rotation wiggle/refinement,
+  compression phase wiring, backend-aware commit gates, diagnostics, and tests.
+
+depends_on:
+  - sgh_q16_cde_final_commit_gate_consistency_fix
+  - sgh_q18a_cde_correctness_runtime_observability
+  - sgh_q18a_r1_phase_timing_report_consistency_fix
+
+must_read:
+  - codex/reports/egyedi_solver/sgh_q16_cde_final_commit_gate_consistency_fix.md
+  - codex/reports/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md
+  - codex/reports/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.md
+  - rust/vrs_solver/src/rotation_policy.rs
+  - rust/vrs_solver/src/item.rs
+  - rust/vrs_solver/src/optimizer/phase.rs
+  - rust/vrs_solver/src/optimizer/compress.rs
+  - rust/vrs_solver/src/optimizer/moves.rs
+  - rust/vrs_solver/src/optimizer/repair.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+
+scope:
+  include:
+    - deterministic continuous coarse angle coverage
+    - local continuous rotation refinement candidates
+    - compression phase refinement wiring
+    - backend-aware validation before refinement commit
+    - optimizer diagnostics for refinement attempts/accepts/rejections/best delta
+    - targeted unit/integration tests
+    - small smoke evidence if practical
+  exclude:
+    - Q19 realistic LV8 benchmark gate
+    - Q18B CDE session/cache rewrite
+    - Q21 full geometry-aware loss rewrite
+    - bbox fallback as production quality path
+    - hole-aware main solver changes
+
+acceptance:
+  - Continuous policy candidate coverage is deterministic and includes useful diagonal/coarse angles.
+  - Local refinement candidates are generated only for Continuous policy.
+  - Non-continuous policies never receive unsupported extra angles.
+  - Compression phase tries refinement candidates and accepts only score-improving backend-valid layouts.
+  - CDE/Jagua exact backend paths do not silently downgrade to bbox.
+  - Default solver output determinism remains stable.
+  - Diagnostics expose refinement activity clearly.
+  - Tests and smoke/report evidence are committed.
+  - Report first line is PASS, REVISE, or BLOCKED.
+  - PASS report contains SGH-Q20_STATUS: READY_FOR_AUDIT.
+  - PASS report contains Q19_STATUS: HOLD.
+
+commands:
+  required:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml rotation_policy
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::compress
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml adapter
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q18a_cde_observability.py
+    - python3 scripts/smoke_sgh_q20_continuous_rotation_refinement.py
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q20_continuous_rotation_refinement.md
+
+report:
+  path: codex/reports/egyedi_solver/sgh_q20_continuous_rotation_refinement.md
+  required_markers:
+    - SGH-Q20_STATUS: READY_FOR_AUDIT
+    - SGH-Q21_STATUS: READY|HOLD
+    - Q19_STATUS: HOLD
+    - Q18B_RECOMMENDATION: REQUIRED|NOT_REQUIRED_NOW|INCONCLUSIVE_NEEDS_BIGGER_FIXTURE

@@ -160,6 +160,32 @@ pub fn placement_anchor_from_rect_min(
 }
 
 // ---------------------------------------------------------------------------
+// Effective policy resolution
+// ---------------------------------------------------------------------------
+
+/// Resolve the effective RotationPolicyKind for a part, following the standard precedence:
+///   1. Part.rotation_policy (highest)
+///   2. Part.allowed_rotations_deg (non-empty → Discrete)
+///   3. context.global_policy
+///   4. Orthogonal (default)
+///
+/// Used by compression refinement to determine if Continuous policy is active.
+pub fn effective_policy_kind(part: &Part, context: &RotationResolveContext) -> RotationPolicyKind {
+    if let Some(policy) = &part.rotation_policy {
+        return policy.clone();
+    }
+    if !part.allowed_rotations_deg.is_empty() {
+        return RotationPolicyKind::Discrete(
+            part.allowed_rotations_deg.iter().map(|&a| normalize_angle(a as f64)).collect(),
+        );
+    }
+    if let Some(policy) = &context.global_policy {
+        return policy.clone();
+    }
+    RotationPolicyKind::Orthogonal
+}
+
+// ---------------------------------------------------------------------------
 // can_fit_any_stock
 // ---------------------------------------------------------------------------
 
@@ -531,15 +557,25 @@ mod tests {
     }
 
     #[test]
-    fn continuous_policy_different_seed_changes_resolved_candidate_angles() {
+    fn continuous_policy_linspace_is_seed_independent() {
+        // Q20: linspace candidate gen is deterministic regardless of seed.
         let parts = vec![make_part("H", 100.0, 20.0, 1, vec![])];
         let a = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 1001, 8);
         let b = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 2002, 8);
         let ia = expand_instances_with_policy(&parts, &a).expect("a");
         let ib = expand_instances_with_policy(&parts, &b).expect("b");
-        assert_ne!(
+        assert_eq!(
             ia[0].allowed_rotations_deg, ib[0].allowed_rotations_deg,
-            "different seeds must be able to change resolved continuous angles"
+            "linspace candidates must be identical across seeds"
         );
+        // n=8 → step=45°, so all 8 canonical multiples of 45° are included.
+        let rots = &ia[0].allowed_rotations_deg;
+        assert_eq!(rots.len(), 8, "n=8 linspace must produce 8 angles");
+        for &expected in &[0.0_f64, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0] {
+            assert!(
+                rots.iter().any(|&r| (r - expected).abs() < 1e-9),
+                "linspace n=8 must include {expected}°"
+            );
+        }
     }
 }

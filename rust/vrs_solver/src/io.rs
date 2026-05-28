@@ -120,6 +120,13 @@ pub struct OptimizerDiagnosticsOutput {
     pub exploration_iterations: usize,
     pub compression_iterations: usize,
     pub bpp_attempts: usize,
+    /// Q20: rotation refinement diagnostics (compression phase, Continuous policy only).
+    pub rotation_refinement_enabled: bool,
+    pub rotation_refinement_attempts: usize,
+    pub rotation_refinement_accepts: usize,
+    pub rotation_refinement_rejections: usize,
+    /// Best score improvement from a single accepted refinement. 0.0 if no accepts.
+    pub rotation_refinement_best_delta: f64,
     /// Per-phase wall-clock timing. Only populated when VRS_CDE_OBSERVABILITY_TIMING=1.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase_optimizer_exploration_ms: Option<f64>,

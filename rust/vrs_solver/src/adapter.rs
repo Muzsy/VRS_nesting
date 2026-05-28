@@ -363,12 +363,19 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                         } else {
                             diag_output_from(&commit)
                         });
+                        let diag_ref = &result.diagnostics;
                         let diagnostics = OptimizerDiagnosticsOutput {
                             pipeline_used: "phase_optimizer".to_string(),
                             phase_optimizer_invoked: true,
-                            exploration_iterations: result.diagnostics.exploration_iterations,
-                            compression_iterations: result.diagnostics.compression_iterations,
-                            bpp_attempts: result.diagnostics.bpp_attempts,
+                            exploration_iterations: diag_ref.exploration_iterations,
+                            compression_iterations: diag_ref.compression_iterations,
+                            bpp_attempts: diag_ref.bpp_attempts,
+                            rotation_refinement_enabled: diag_ref.rotation_refinement_enabled,
+                            rotation_refinement_attempts: diag_ref.rotation_refinement_attempts,
+                            rotation_refinement_accepts: diag_ref.rotation_refinement_accepts,
+                            rotation_refinement_rejections: diag_ref.rotation_refinement_attempts
+                                .saturating_sub(diag_ref.rotation_refinement_accepts),
+                            rotation_refinement_best_delta: diag_ref.rotation_refinement_best_delta,
                             phase_optimizer_exploration_ms: result.exploration_ms,
                             phase_optimizer_compression_ms: result.compression_ms,
                             phase_optimizer_bpp_ms: result.bpp_ms,
