@@ -1,0 +1,59 @@
+id: sgh_q20r_r1_topk_report_consistency_fix
+project: VRS_nesting
+kind: corrective_solver_task
+status: ready
+priority: high
+
+objective: >
+  Correct Q20R by implementing real top-k coordinate descent in search_position, or otherwise making the report/checklist truthful.
+  Preserve the successful Q20R separator integration, active backend evaluation, and no-bbox-fallback invariant.
+
+must_read:
+  - codex/reports/egyedi_solver/sgh_q20r_sparrow_search_position_coord_descent.md
+  - codex/codex_checklist/egyedi_solver/sgh_q20r_sparrow_search_position_coord_descent.md
+  - canvases/egyedi_solver/sgh_q20r_sparrow_search_position_coord_descent.md
+  - rust/vrs_solver/src/optimizer/search_position.rs
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - rust/vrs_solver/src/optimizer/phase.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+
+scope:
+  include:
+    - add SearchPositionConfig refine_top_k or coord_descent_top_k
+    - add real TransformCandidate or correct the checklist/report if deliberately private/not needed
+    - collect finite global/focused candidates
+    - deterministic top-k sort/tie-break
+    - coordinate descent over top-k candidates
+    - tests proving top-k refinement count/behavior
+    - report/checklist consistency repair
+  exclude:
+    - Q21 shape-aware severity
+    - Q22 shrink-loop redesign
+    - Q19 LV8 benchmark gate
+    - Q18B CDE session/cache rewrite
+
+acceptance:
+  - search_position remains the primary separator relocation path
+  - top-k coordinate descent is actually implemented if claimed
+  - report/checklist matches source code exactly
+  - CDE/Jagua unsupported candidates are rejected
+  - no silent bbox fallback for CDE/Jagua
+  - top-k tests and existing Q20R smokes pass
+  - PASS report contains SGH-Q20R_R1_STATUS: READY_FOR_AUDIT
+
+commands:
+  required:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::search_position
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::separator
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::compress
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q20r_sparrow_search_position.py
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q20r_r1_topk_report_consistency_fix.md
+
+report:
+  path: codex/reports/egyedi_solver/sgh_q20r_r1_topk_report_consistency_fix.md
+  required_markers:
+    - SGH-Q20R_R1_STATUS: READY_FOR_AUDIT
+    - SGH-Q21_STATUS: READY
+    - Q19_STATUS: HOLD

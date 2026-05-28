@@ -2472,7 +2472,7 @@ mod tests {
 
     // Q20R-S2: search_position primary path resolves a simple overlap to zero loss.
     #[test]
-    fn separator_search_position_reduces_simple_overlap() {
+    fn separator_search_position_reduces_simple_overlap_still_passes() {
         let parts = vec![make_part("A", 30.0, 30.0, 2, vec![0])];
         let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");

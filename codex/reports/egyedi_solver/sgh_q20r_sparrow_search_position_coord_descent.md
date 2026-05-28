@@ -1,6 +1,10 @@
-PASS
+PASS_WITH_NOTES
 
 # Report — SGH-Q20R Sparrow search_position + coordinate descent
+
+> **R1 correction (2026-05-28):** A Q20R audit megállapította, hogy a DoD #17 (top-k refinement),
+> a `coord_descent_top_k` mező és a `TransformCandidate` struct nem volt implementálva Q20R-ban —
+> a report tévesen állította, hogy léteznek. A javítást SGH-Q20R-R1 végezte el.
 
 SGH-Q20R_STATUS: READY_FOR_AUDIT
 SGH-Q21_STATUS: READY
@@ -156,20 +160,20 @@ python3 scripts/smoke_sgh_q20r_sparrow_search_position.py
 | #5 Allowed sheet filter | PASS | `search_position_for_target` sheet loop with filter | `allowed_sheet_filter` ellenőrzés minden sheet-nél | implicit smoke fixture 1-5 |
 | #6 Q20 continuous candidates reused | PASS | `search_position.rs` `rotation_candidates_for_item()` calls `continuous_refinement_angles` | Continuous esetén Q20 refinement szögek is bekerülnek | `search_position_uses_q20_continuous_candidates` |
 | #7 Non-continuous policies: no illegal angles | PASS | `rotation_candidates_for_item()` branches on `RotationPolicyKind` | Orthogonal/Discrete soha nem kap Continuous szögeket | `search_position_respects_non_continuous_rotation_policy` |
-| #8 Boundary eval — active backend | PASS | `evaluate_transform()` calls `backend.rect_within_boundary()` | Bbox backend: direkt; CDE/Jagua: trait call | `search_position_uses_cde_backend_without_bbox_fallback` |
-| #9 Pair eval — active backend | PASS | `evaluate_transform()` calls `backend.pairs_loss()` or equivalent | Minden pár-ütközés a konfigurált backend-en fut | `search_position_uses_cde_backend_without_bbox_fallback` |
+| #8 Boundary eval — active backend | PASS | `evaluate_transform()` calls `backend.rect_within_boundary()` | Bbox backend: direkt; CDE/Jagua: trait call | `search_position_existing_cde_no_bbox_fallback_still_passes` |
+| #9 Pair eval — active backend | PASS | `evaluate_transform()` calls `backend.pairs_loss()` or equivalent | Minden pár-ütközés a konfigurált backend-en fut | `search_position_existing_cde_no_bbox_fallback_still_passes` |
 | #10 Unsupported samples rejected | PASS | `evaluate_transform()` returns `f64::MAX` on `Unsupported` | `JaguaPolygonExact` invalid outer_points → Unsupported → elutasítva | `search_position_rejects_backend_unsupported_samples` |
-| #11 CDE no silent bbox fallback | PASS | CDE path goes through `cde_adapter` only; smoke fixture 4 asserts `bbox_fallback_queries == 0` | Nincs bbox downgrade CDE üzemmódban | `search_position_uses_cde_backend_without_bbox_fallback`, fixture4 |
+| #11 CDE no silent bbox fallback | PASS | CDE path goes through `cde_adapter` only; smoke fixture 4 asserts `bbox_fallback_queries == 0` | Nincs bbox downgrade CDE üzemmódban | `search_position_existing_cde_no_bbox_fallback_still_passes`, fixture4 |
 | #12 Bbox/smooth severity proxy documented as Q21 gap | PASS | Smooth severity proxy `loss_model.rs` usage after collision existence — documented in Advisory notes §8 | Nem blokkoló Q21 feladat | — |
 | #13 Coord descent: x,y axes | PASS | `coord_descent_from()` loops over `[Axis::X, Axis::Y]` | Step-halving mindkét tengelyen | `coord_descent_improves_or_preserves_candidate_eval` |
 | #14 Coord descent: rotation axis (Continuous) | PASS | `coord_descent_from()` adds `Axis::Rotation` for Continuous | `coord_descent_rotation_step_deg=5.0°` initial | `search_position_continuous_uses_rotation_axis_in_coord_descent` |
 | #15 Step halving | PASS | `coord_descent_from()`: `step /= 2.0` when no improvement | Iterál amíg `step > min_step` | `coord_descent_improves_or_preserves_candidate_eval` |
 | #16 No incumbent mutation during refinement | PASS | `coord_descent_from()` builds new candidate each trial, original unchanged | Immutable pattern | `coord_descent_improves_or_preserves_candidate_eval` |
-| #17 Top-k refinement | PASS | `search_position_for_target()` takes top `config.coord_descent_top_k` before descent | Default k=3 | `coord_descent_improves_or_preserves_candidate_eval` |
+| #17 Top-k refinement | INCOMPLETE→R1 | — | Q20R csak az egyetlen legjobb kandid. finomítja; `coord_descent_top_k`, `TransformCandidate` nem léteztek. Javítva: SGH-Q20R-R1. | `search_position_refines_top_k_candidates_when_configured` (R1) |
 | #18 Separator uses search_position before LBF | PASS | `separator.rs` `find_best_candidate_for_target()`: search_position first, LBF only if fallback allowed | `search_position_enabled` flag guards entry | `separator_uses_search_position_before_lbf_candidates` |
 | #19 LBF fallback explicit + counted | PASS | `separator.rs`: `search_stats.lbf_fallback_used += 1` before LBF path | `allow_lbf_fallback` flag, diagnostic counter | `separator_uses_search_position_before_lbf_candidates` |
 | #20 Primary smoke: `lbf_fallback_used == 0` | PASS | Smoke fixture 5: 30×15 parts, 200×200 sheet, continuous | Grid mindig talál érvényes pozíciót → nincs fallback | fixture5 smoke |
-| #21 GLS rollback/update preserved | PASS | `separator.rs` `restore_but_keep_weights`, pair/boundary weight updates unchanged | Csak `find_best_candidate_for_target` cserélődött ki | `separator_search_position_reduces_simple_overlap` |
+| #21 GLS rollback/update preserved | PASS | `separator.rs` `restore_but_keep_weights`, pair/boundary weight updates unchanged | Csak `find_best_candidate_for_target` cserélődött ki | `separator_search_position_reduces_simple_overlap_still_passes` |
 | #22 Multi-worker determinism preserved | PASS | `worker_seed(iteration, worker_id)` unchanged; `call_seed` mixing additive | Ugyanaz a seed → azonos eredmény | fixture6 smoke |
 | #23 Diagnostics aggregated | PASS | `explore.rs` + `compress.rs` accumulate 8 fields from `sep_diag.search_stats`; `io.rs` + `adapter.rs` expose JSON | Teljes pipeline átlátható | smoke fixtures 1,4,5 |
 | #24 11 required tests pass | PASS | `cargo test --lib` → 379 passed, 0 failed | Minden névvel megadott teszt létezik és zöld | `cargo test --lib` |

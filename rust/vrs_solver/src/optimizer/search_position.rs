@@ -3,7 +3,7 @@
 /// Replaces the primary finite LBF/bbox candidate relocation path with:
 ///   1. Global uniform sheet grid sampling
 ///   2. Focused sampling around the current placement
-///   3. Coordinate descent on x, y and (Continuous only) rotation axes
+///   3. Top-k coordinate descent on x, y and (Continuous only) rotation axes
 ///   4. Active backend evaluation — no silent bbox fallback for CDE/JaguaExact
 use std::collections::HashSet;
 
@@ -122,6 +122,8 @@ pub struct SearchPositionConfig {
     pub coord_descent_max_steps: usize,
     /// Initial rotation step for coord descent (degrees, Continuous only).
     pub coord_descent_rotation_step_deg: f64,
+    /// Number of top candidates (by eval) to refine with coordinate descent.
+    pub coord_descent_top_k: usize,
 }
 
 impl Default for SearchPositionConfig {
@@ -134,8 +136,21 @@ impl Default for SearchPositionConfig {
             coord_descent_min_step: 0.01,
             coord_descent_max_steps: 15,
             coord_descent_rotation_step_deg: 5.0,
+            coord_descent_top_k: 3,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// TransformCandidate
+// ---------------------------------------------------------------------------
+
+struct TransformCandidate {
+    sheet_index: usize,
+    rect_min_x: f64,
+    rect_min_y: f64,
+    rotation_deg: f64,
+    eval: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -398,11 +413,15 @@ fn coord_descent_from(
 // Main entry point
 // ---------------------------------------------------------------------------
 
-/// Find the best placement for `target_idx` using global/focused sampling + coordinate descent.
+/// Find the best placement for `target_idx` using global/focused sampling + top-k coordinate descent.
 ///
-/// Returns the best placement found, or `None` if all candidates evaluated to `f64::MAX`
-/// (all Unsupported or nothing fits). The `call_seed` is mixed with instance_id for
-/// reproducible focused-sampling sequences.
+/// Sampling phase: evaluates an n×n global grid and focused random samples; collects all finite
+/// (non-Unsupported, loss < f64::MAX) candidates into a list.
+///
+/// Refinement phase: sorts candidates deterministically (eval ASC, then sheet/rotation/x/y),
+/// takes top `cfg.coord_descent_top_k` and runs step-halving coordinate descent on each.
+///
+/// Returns the best placement found, or `None` if all samples were Unsupported or nothing fits.
 pub fn search_position_for_target(
     layout: &WorkingLayout,
     target_idx: usize,
@@ -437,12 +456,7 @@ pub fn search_position_for_target(
     let part_id = &current_p.part_id;
     let seed = mix_seed(call_seed, instance_id, 0);
 
-    let mut best_loss = f64::MAX;
-    let mut best_x = 0.0f64;
-    let mut best_y = 0.0f64;
-    let mut best_rot = allowed_rotations[0];
-    let mut best_sheet = 0usize;
-    let mut found_any = false;
+    let mut candidates: Vec<TransformCandidate> = Vec::new();
 
     for (sheet_idx, sheet) in sheets.iter().enumerate() {
         if let Some(filter) = allowed_sheet_filter {
@@ -457,11 +471,9 @@ pub fn search_position_for_target(
 
         // Global grid
         let mut gy = sheet.min_y + step_y;
-        let mut yi = 0;
-        while yi < n {
+        for _yi in 0..n {
             let mut gx = sheet.min_x + step_x;
-            let mut xi = 0;
-            while xi < n {
+            for _xi in 0..n {
                 for &rot in &allowed_rotations {
                     let r = eval_at_point(
                         gx, gy, rot, sheet_idx,
@@ -471,25 +483,25 @@ pub fn search_position_for_target(
                     stats.global_samples_evaluated += 1;
                     if r.unsupported {
                         stats.samples_unsupported += 1;
+                        continue;
                     }
-                    if r.loss < best_loss {
-                        best_loss = r.loss;
-                        best_x = gx;
-                        best_y = gy;
-                        best_rot = rot;
-                        best_sheet = sheet_idx;
-                        found_any = true;
-                        if best_loss == 0.0 {
-                            if best_loss < stats.best_eval { stats.best_eval = best_loss; }
+                    if r.loss < f64::MAX {
+                        if r.loss == 0.0 {
+                            if r.loss < stats.best_eval { stats.best_eval = r.loss; }
                             return Some(r.placement);
                         }
+                        candidates.push(TransformCandidate {
+                            sheet_index: sheet_idx,
+                            rect_min_x: gx,
+                            rect_min_y: gy,
+                            rotation_deg: rot,
+                            eval: r.loss,
+                        });
                     }
                 }
                 gx += step_x;
-                xi += 1;
             }
             gy += step_y;
-            yi += 1;
         }
 
         // Focused samples around current placement on this sheet
@@ -512,18 +524,20 @@ pub fn search_position_for_target(
                         stats.focused_samples_evaluated += 1;
                         if r.unsupported {
                             stats.samples_unsupported += 1;
+                            continue;
                         }
-                        if r.loss < best_loss {
-                            best_loss = r.loss;
-                            best_x = fx;
-                            best_y = fy;
-                            best_rot = rot;
-                            best_sheet = sheet_idx;
-                            found_any = true;
-                            if best_loss == 0.0 {
-                                if best_loss < stats.best_eval { stats.best_eval = best_loss; }
+                        if r.loss < f64::MAX {
+                            if r.loss == 0.0 {
+                                if r.loss < stats.best_eval { stats.best_eval = r.loss; }
                                 return Some(r.placement);
                             }
+                            candidates.push(TransformCandidate {
+                                sheet_index: sheet_idx,
+                                rect_min_x: fx,
+                                rect_min_y: fy,
+                                rotation_deg: rot,
+                                eval: r.loss,
+                            });
                         }
                     }
                 }
@@ -531,39 +545,60 @@ pub fn search_position_for_target(
         }
     }
 
-    if !found_any || best_loss == f64::MAX {
+    if candidates.is_empty() {
         return None;
     }
 
-    // Coordinate descent from best sample found
-    let sheet = &sheets[best_sheet];
-    stats.refined_samples += 1;
-    let (cd_x, cd_y, cd_rot, cd_loss) = coord_descent_from(
-        best_x, best_y, best_rot, best_loss,
-        best_sheet, instance_id, part_id,
-        part, sheet, layout, target_idx, parts,
-        collision_backend, loss_model,
-        cfg, is_continuous, stats,
-    );
-    if cd_loss < best_loss {
-        best_x = cd_x;
-        best_y = cd_y;
-        best_rot = cd_rot;
-        best_loss = cd_loss;
+    // Sort deterministically: eval ASC, then sheet_index, rotation, x, y
+    candidates.sort_by(|a, b| {
+        a.eval.total_cmp(&b.eval)
+            .then_with(|| a.sheet_index.cmp(&b.sheet_index))
+            .then_with(|| a.rotation_deg.total_cmp(&b.rotation_deg))
+            .then_with(|| a.rect_min_x.total_cmp(&b.rect_min_x))
+            .then_with(|| a.rect_min_y.total_cmp(&b.rect_min_y))
+    });
+
+    // Refine top-k candidates with coordinate descent
+    let top_k = cfg.coord_descent_top_k.min(candidates.len());
+    let mut best_refined: Option<(f64, f64, f64, f64, usize)> = None; // (loss, x, y, rot, sheet)
+
+    for cand in candidates.iter().take(top_k) {
+        let sheet = &sheets[cand.sheet_index];
+        stats.refined_samples += 1;
+        let (cd_x, cd_y, cd_rot, cd_loss) = coord_descent_from(
+            cand.rect_min_x, cand.rect_min_y, cand.rotation_deg, cand.eval,
+            cand.sheet_index, instance_id, part_id,
+            part, sheet, layout, target_idx, parts,
+            collision_backend, loss_model,
+            cfg, is_continuous, stats,
+        );
+        if best_refined.map_or(true, |(bl, ..)| cd_loss < bl) {
+            best_refined = Some((cd_loss, cd_x, cd_y, cd_rot, cand.sheet_index));
+            if cd_loss == 0.0 { break; }
+        }
     }
 
-    if best_loss < stats.best_eval {
-        stats.best_eval = best_loss;
+    // If k=0 or no refined candidate beat the unrefined list, use best unrefined
+    let (final_loss, final_x, final_y, final_rot, final_sheet) = match best_refined {
+        Some((l, x, y, r, s)) => (l, x, y, r, s),
+        None => {
+            let c = &candidates[0]; // sorted, so [0] is best
+            (c.eval, c.rect_min_x, c.rect_min_y, c.rotation_deg, c.sheet_index)
+        }
+    };
+
+    if final_loss < stats.best_eval {
+        stats.best_eval = final_loss;
     }
 
-    let (ax, ay) = placement_anchor_from_rect_min(best_x, best_y, part.width, part.height, best_rot);
+    let (ax, ay) = placement_anchor_from_rect_min(final_x, final_y, part.width, part.height, final_rot);
     Some(Placement {
         instance_id: instance_id.clone(),
         part_id: part_id.clone(),
-        sheet_index: best_sheet,
+        sheet_index: final_sheet,
         x: ax,
         y: ay,
-        rotation_deg: best_rot,
+        rotation_deg: final_rot,
     })
 }
 
@@ -835,6 +870,7 @@ pub(crate) mod tests {
             global_grid_n: 3,
             focused_sample_count: 0,
             coord_descent_max_steps: 0,
+            coord_descent_top_k: 0,
             ..Default::default()
         };
         let ctx = default_ctx();
@@ -850,9 +886,9 @@ pub(crate) mod tests {
         );
     }
 
-    // Q20R-T7: CDE backend does not trigger bbox fallback (pair+boundary == total)
+    // Q20R-T7 (regression): CDE backend does not trigger bbox fallback (pair+boundary == total)
     #[test]
-    fn search_position_uses_cde_backend_without_bbox_fallback() {
+    fn search_position_existing_cde_no_bbox_fallback_still_passes() {
         let parts = vec![make_continuous_part("P", 20.0, 10.0, 2)];
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
@@ -876,6 +912,158 @@ pub(crate) mod tests {
         assert_eq!(
             snap.pair_queries + snap.boundary_queries, snap.total_queries,
             "CDE total must equal pair+boundary (no bbox fallback leak)"
+        );
+    }
+
+    // Q20R-R1-T1: refines exactly top-k candidates when all have nonzero loss.
+    // A full-sheet BLK blocker guarantees every grid position overlaps it, so
+    // no zero-loss early-return fires and coord_descent_from is called for each
+    // of the top-k candidates. refined_samples must equal coord_descent_top_k.
+    #[test]
+    fn search_position_refines_top_k_candidates_when_configured() {
+        let k = 3usize;
+        let parts = vec![
+            make_rect_part("P", 10.0, 5.0, 1, vec![0]),
+            make_rect_part("BLK", 200.0, 200.0, 1, vec![0]),
+        ];
+        let sheets = make_test_sheets(200.0, 200.0);
+        let layout = WorkingLayout::new(
+            vec![
+                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
+                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            ],
+            vec![], 1, 0,
+        );
+        let cfg = SearchPositionConfig {
+            global_grid_n: 4,
+            focused_sample_count: 0,
+            coord_descent_top_k: k,
+            coord_descent_max_steps: 5,
+            coord_descent_min_step: 0.5,
+            ..Default::default()
+        };
+        let ctx = default_ctx();
+        let mut stats = SearchPositionStats::default();
+        search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+        );
+        assert_eq!(
+            stats.refined_samples, k,
+            "refined_samples must equal coord_descent_top_k={k} (got {})",
+            stats.refined_samples
+        );
+        assert!(stats.coord_descent_steps > 0, "coord_descent_steps must be > 0");
+    }
+
+    // Q20R-R1-T2: same seed always selects the same top-k candidates (sort is deterministic).
+    #[test]
+    fn search_position_top_k_tie_break_is_deterministic() {
+        let parts = vec![
+            make_rect_part("P", 10.0, 5.0, 1, vec![0]),
+            make_rect_part("BLK", 200.0, 200.0, 1, vec![0]),
+        ];
+        let sheets = make_test_sheets(200.0, 200.0);
+        let layout = WorkingLayout::new(
+            vec![
+                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
+                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            ],
+            vec![], 1, 0,
+        );
+        let cfg = SearchPositionConfig {
+            global_grid_n: 4,
+            focused_sample_count: 0,
+            coord_descent_top_k: 3,
+            coord_descent_max_steps: 5,
+            ..Default::default()
+        };
+        let ctx = default_ctx();
+        let mut s1 = SearchPositionStats::default();
+        let mut s2 = SearchPositionStats::default();
+        let r1 = search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 77, &mut s1,
+        );
+        let r2 = search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 77, &mut s2,
+        );
+        assert!(r1.is_some() && r2.is_some(), "both runs must find a candidate");
+        let r1 = r1.unwrap(); let r2 = r2.unwrap();
+        assert!((r1.x - r2.x).abs() < 1e-12, "top-k tie-break must be deterministic: x {} vs {}", r1.x, r2.x);
+        assert!((r1.y - r2.y).abs() < 1e-12, "top-k tie-break must be deterministic: y {} vs {}", r1.y, r2.y);
+        assert_eq!(s1.refined_samples, s2.refined_samples, "refined_samples must be identical");
+        assert_eq!(s1.coord_descent_steps, s2.coord_descent_steps, "coord_descent_steps must be identical");
+    }
+
+    // Q20R-R1-T3: setting coord_descent_top_k=0 disables refinement (refined_samples == 0).
+    #[test]
+    fn search_position_refine_top_k_zero_disables_refinement_or_is_rejected_by_config_validation() {
+        let parts = vec![
+            make_rect_part("P", 10.0, 5.0, 1, vec![0]),
+            make_rect_part("BLK", 200.0, 200.0, 1, vec![0]),
+        ];
+        let sheets = make_test_sheets(200.0, 200.0);
+        let layout = WorkingLayout::new(
+            vec![
+                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
+                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            ],
+            vec![], 1, 0,
+        );
+        let cfg = SearchPositionConfig {
+            global_grid_n: 4,
+            focused_sample_count: 0,
+            coord_descent_top_k: 0,
+            coord_descent_max_steps: 10,
+            ..Default::default()
+        };
+        let ctx = default_ctx();
+        let mut stats = SearchPositionStats::default();
+        let result = search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+        );
+        assert!(result.is_some(), "k=0 must still return best unrefined candidate");
+        assert_eq!(stats.refined_samples, 0, "k=0 must produce refined_samples=0 (got {})", stats.refined_samples);
+        assert_eq!(stats.coord_descent_steps, 0, "k=0 must produce coord_descent_steps=0 (got {})", stats.coord_descent_steps);
+    }
+
+    // Q20R-R1-T4: diagnostic refined_samples exactly equals top_k when fixture forces nonzero loss.
+    #[test]
+    fn search_position_reported_refined_samples_matches_top_k_for_nonzero_loss_fixture() {
+        // Use k=2 with full-sheet blocker to guarantee nonzero loss on all grid points.
+        let k = 2usize;
+        let parts = vec![
+            make_rect_part("P", 10.0, 5.0, 1, vec![0]),
+            make_rect_part("BLK", 200.0, 200.0, 1, vec![0]),
+        ];
+        let sheets = make_test_sheets(200.0, 200.0);
+        let layout = WorkingLayout::new(
+            vec![
+                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
+                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            ],
+            vec![], 1, 0,
+        );
+        let cfg = SearchPositionConfig {
+            global_grid_n: 4,
+            focused_sample_count: 0,
+            coord_descent_top_k: k,
+            coord_descent_max_steps: 3,
+            ..Default::default()
+        };
+        let ctx = default_ctx();
+        let mut stats = SearchPositionStats::default();
+        search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+        );
+        assert_eq!(
+            stats.refined_samples, k,
+            "refined_samples must equal coord_descent_top_k={k} for nonzero-loss fixture (got {})",
+            stats.refined_samples
         );
     }
 }
