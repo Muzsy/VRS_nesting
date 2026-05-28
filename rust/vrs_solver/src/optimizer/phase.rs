@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::compress::CompressionPhase;
 use super::explore::ExplorationPhase;
 use super::score::{ScoreModel, ScoreResult, ScoreWeights};
@@ -6,6 +8,18 @@ use crate::io::CollisionBackendKind;
 use crate::item::Part;
 use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
+
+fn phase_timing_enabled() -> bool {
+    std::env::var("VRS_CDE_OBSERVABILITY_TIMING").map(|v| v == "1").unwrap_or(false)
+}
+
+fn phase_t_start(enabled: bool) -> Option<Instant> {
+    if enabled { Some(Instant::now()) } else { None }
+}
+
+fn phase_t_ms(start: Option<Instant>) -> Option<f64> {
+    start.map(|t| t.elapsed().as_secs_f64() * 1000.0)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhaseStopReason {
@@ -134,6 +148,10 @@ pub struct PhaseResult {
     pub best_score: f64,
     pub diagnostics: PhaseDiagnostics,
     pub unplaced: Vec<crate::io::Unplaced>,
+    /// Per-phase wall-clock timing. Only populated when VRS_CDE_OBSERVABILITY_TIMING=1.
+    pub exploration_ms: Option<f64>,
+    pub compression_ms: Option<f64>,
+    pub bpp_ms: Option<f64>,
 }
 
 impl PhaseResult {
@@ -210,6 +228,8 @@ impl PhaseOptimizer {
     }
 
     pub fn run(&self, layout: WorkingLayout, parts: &[Part], sheets: &[SheetShape]) -> PhaseResult {
+        let timing = phase_timing_enabled();
+
         let initial_score = self.score_model.score_with_backend(
             &layout.placements,
             &layout.unplaced,
@@ -219,10 +239,18 @@ impl PhaseOptimizer {
         );
         let initial_score_val = initial_score.total_cost;
 
+        let t_explore = phase_t_start(timing);
         let (explored_layout, exploration_diag) = self.run_exploration(layout, parts, sheets);
+        let exploration_ms = phase_t_ms(t_explore);
+
+        let t_compress = phase_t_start(timing);
         let (compressed_layout, compression_diag) =
             self.run_compression(explored_layout, parts, sheets);
+        let compression_ms = phase_t_ms(t_compress);
+
+        let t_bpp = phase_t_start(timing);
         let (bpp_layout, bpp_diag) = self.run_bpp(compressed_layout, parts, sheets);
+        let bpp_ms = phase_t_ms(t_bpp);
 
         let unplaced = bpp_layout.unplaced.clone();
         let final_score = self.score_model.score_with_backend(
@@ -261,6 +289,9 @@ impl PhaseOptimizer {
                 disruption_successes: exploration_diag.disruption_successes,
             },
             unplaced,
+            exploration_ms,
+            compression_ms,
+            bpp_ms,
         }
     }
 
@@ -359,6 +390,46 @@ mod tests {
         cfg.bpp_budget = PhaseBudget::new(512, 0.0);
         cfg.bpp_max_eliminations = 8;
         cfg
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q18A-R1: phase timing tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn phase_optimizer_timing_fields_absent_by_default() {
+        // Without VRS_CDE_OBSERVABILITY_TIMING=1, all timing fields must be None.
+        // This test relies on the env var NOT being set in the normal test environment.
+        // If the env var is set externally, this test is intentionally skipped via the guard below.
+        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING").ok().as_deref() == Some("1") {
+            return; // skip when timing is explicitly enabled by the test runner
+        }
+        let config = small_budget_config();
+        let optimizer = PhaseOptimizer::new(config);
+        let (layout, parts, sheets) = make_simple_layout();
+        let result = optimizer.run(layout, &parts, &sheets);
+        assert!(result.exploration_ms.is_none(), "exploration_ms must be None by default");
+        assert!(result.compression_ms.is_none(), "compression_ms must be None by default");
+        assert!(result.bpp_ms.is_none(), "bpp_ms must be None by default");
+    }
+
+    #[test]
+    fn phase_timing_helpers_absent_when_disabled() {
+        // phase_t_start(false) → None; phase_t_ms(None) → None.
+        let start = phase_t_start(false);
+        assert!(start.is_none(), "phase_t_start(false) must return None");
+        let ms = phase_t_ms(None);
+        assert!(ms.is_none(), "phase_t_ms(None) must return None");
+    }
+
+    #[test]
+    fn phase_timing_helpers_present_when_enabled() {
+        // phase_t_start(true) → Some; phase_t_ms(Some) → Some non-negative.
+        let start = phase_t_start(true);
+        assert!(start.is_some(), "phase_t_start(true) must return Some(Instant)");
+        let ms = phase_t_ms(start);
+        assert!(ms.is_some(), "phase_t_ms(Some) must return Some(f64)");
+        assert!(ms.unwrap() >= 0.0, "timing must be non-negative");
     }
 
     #[test]

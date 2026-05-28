@@ -348,13 +348,6 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 let working = WorkingLayout::new(init_p, init_u, sheets.len(), input.seed);
                 let config = phase_config_from_input(&input, rotation_context.clone());
                 let result = PhaseOptimizer::new(config).run(working, &input.parts, &sheets);
-                let diagnostics = OptimizerDiagnosticsOutput {
-                    pipeline_used: "phase_optimizer".to_string(),
-                    phase_optimizer_invoked: true,
-                    exploration_iterations: result.diagnostics.exploration_iterations,
-                    compression_iterations: result.diagnostics.compression_iterations,
-                    bpp_attempts: result.diagnostics.bpp_attempts,
-                };
                 let layout = result.layout;
                 let t_commit_start = timing_start(timing_enabled);
                 match layout.validate_and_commit_with_backend(
@@ -363,13 +356,24 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                     backend_kind,
                 ) {
                     Ok(commit) => {
-                        let ms = timing_ms(t_commit_start);
+                        let final_commit_ms = timing_ms(t_commit_start);
                         collision_backend_diag = Some(if is_cde {
                             let snap = cde_observability::snapshot();
-                            diag_output_from_with_cde(&commit, snap, "full_solve", ms)
+                            diag_output_from_with_cde(&commit, snap, "full_solve", final_commit_ms)
                         } else {
                             diag_output_from(&commit)
                         });
+                        let diagnostics = OptimizerDiagnosticsOutput {
+                            pipeline_used: "phase_optimizer".to_string(),
+                            phase_optimizer_invoked: true,
+                            exploration_iterations: result.diagnostics.exploration_iterations,
+                            compression_iterations: result.diagnostics.compression_iterations,
+                            bpp_attempts: result.diagnostics.bpp_attempts,
+                            phase_optimizer_exploration_ms: result.exploration_ms,
+                            phase_optimizer_compression_ms: result.compression_ms,
+                            phase_optimizer_bpp_ms: result.bpp_ms,
+                            phase_optimizer_final_commit_ms: final_commit_ms,
+                        };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
                     Err(e) => {
@@ -1103,6 +1107,68 @@ mod tests {
         let out = solve(input).expect("solve");
         assert!(out.collision_backend_diagnostics.is_none(),
             "bbox backend must not emit collision_backend_diagnostics");
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q18A-R1: phase timing output tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn phase_optimizer_timing_fields_absent_by_default() {
+        // Without VRS_CDE_OBSERVABILITY_TIMING=1, optimizer_diagnostics must not
+        // contain timing fields (they're None → omitted by serde).
+        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING").ok().as_deref() == Some("1") {
+            return; // skip when timing explicitly enabled by test runner
+        }
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(21, stock, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+        let out = solve(input).expect("solve");
+        let diag = out.optimizer_diagnostics.expect("must have optimizer_diagnostics");
+        assert!(diag.phase_optimizer_exploration_ms.is_none(),
+            "exploration_ms must be None by default");
+        assert!(diag.phase_optimizer_compression_ms.is_none(),
+            "compression_ms must be None by default");
+        assert!(diag.phase_optimizer_bpp_ms.is_none(),
+            "bpp_ms must be None by default");
+        assert!(diag.phase_optimizer_final_commit_ms.is_none(),
+            "final_commit_ms must be None by default");
+    }
+
+    #[test]
+    fn cde_timing_field_absent_by_default_in_cde_output() {
+        // Without VRS_CDE_OBSERVABILITY_TIMING=1, final_commit_validation_ms must be None.
+        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING").ok().as_deref() == Some("1") {
+            return; // skip when timing explicitly enabled
+        }
+        let stock = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
+        let mut input = make_input(1, stock, parts, None);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = solve(input).expect("solve");
+        let diag = out.collision_backend_diagnostics.expect("must have CDE diagnostics");
+        assert!(diag.final_commit_validation_ms.is_none(),
+            "final_commit_validation_ms must be None by default");
+    }
+
+    #[test]
+    fn determinism_not_broken_by_default_output() {
+        // Same seed + same backend → identical placements (timing fields are None and absent
+        // from JSON, so they don't affect determinism).
+        let stock = vec![make_stock("S", 160.0, 100.0, 1)];
+        let parts = vec![make_part("P", 40.0, 20.0, 3, vec![0], None)];
+        let mut a = make_input(42, stock.clone(), parts.clone(), None);
+        a.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+        let mut b = make_input(42, stock, parts, None);
+        b.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
+        let out_a = solve(a).expect("solve A");
+        let out_b = solve(b).expect("solve B");
+        assert_eq!(out_a.placements.len(), out_b.placements.len());
+        for (pa, pb) in out_a.placements.iter().zip(out_b.placements.iter()) {
+            assert_eq!(pa.x.to_bits(), pb.x.to_bits());
+            assert_eq!(pa.y.to_bits(), pb.y.to_bits());
+        }
     }
 
     #[test]

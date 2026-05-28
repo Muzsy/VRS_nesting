@@ -50,6 +50,8 @@ def run_solver(input_dict: dict, timing: bool = False) -> dict:
     env = os.environ.copy()
     if timing:
         env["VRS_CDE_OBSERVABILITY_TIMING"] = "1"
+    else:
+        env.pop("VRS_CDE_OBSERVABILITY_TIMING", None)
     with tempfile.TemporaryDirectory() as tmpdir:
         in_path = Path(tmpdir) / "in.json"
         out_path = Path(tmpdir) / "out.json"
@@ -240,6 +242,91 @@ def fixture6_timing_env_flag():
 
 
 # ---------------------------------------------------------------------------
+# Fixture 7: no timing fields by default (no env flag)
+# ---------------------------------------------------------------------------
+
+def fixture7_timing_absent_by_default():
+    print("\n=== Fixture 7: timing fields absent by default (no env flag) ===")
+    # Run without timing env → timing fields must be absent from JSON.
+    out = run_solver(base_input(pipeline="phase_optimizer", backend="cde"), timing=False)
+    if not out:
+        check(False, "solver produced output")
+        return
+    cde_diag = out.get("collision_backend_diagnostics")
+    if cde_diag:
+        check(cde_diag.get("final_commit_validation_ms") is None,
+              "final_commit_validation_ms must be absent by default")
+    opt_diag = out.get("optimizer_diagnostics")
+    if opt_diag:
+        check(opt_diag.get("phase_optimizer_exploration_ms") is None,
+              "phase_optimizer_exploration_ms must be absent by default")
+        check(opt_diag.get("phase_optimizer_compression_ms") is None,
+              "phase_optimizer_compression_ms must be absent by default")
+        check(opt_diag.get("phase_optimizer_bpp_ms") is None,
+              "phase_optimizer_bpp_ms must be absent by default")
+        check(opt_diag.get("phase_optimizer_final_commit_ms") is None,
+              "phase_optimizer_final_commit_ms must be absent by default")
+    check(True, "no timing fields in default JSON output confirmed")
+
+
+# ---------------------------------------------------------------------------
+# Fixture 8: per-phase timing with VRS_CDE_OBSERVABILITY_TIMING=1 (phase_optimizer)
+# ---------------------------------------------------------------------------
+
+def fixture8_phase_optimizer_timing_env():
+    print("\n=== Fixture 8: phase_optimizer per-phase timing with env flag ===")
+    out = run_solver(base_input(pipeline="phase_optimizer", backend="cde"), timing=True)
+    if not out:
+        check(False, "solver produced output with timing flag")
+        return
+    check(out.get("status") in ("ok", "partial"), f"status ok/partial (got {out.get('status')})")
+    opt_diag = out.get("optimizer_diagnostics")
+    check(opt_diag is not None, "optimizer_diagnostics present")
+    if opt_diag:
+        for field in [
+            "phase_optimizer_exploration_ms",
+            "phase_optimizer_compression_ms",
+            "phase_optimizer_bpp_ms",
+            "phase_optimizer_final_commit_ms",
+        ]:
+            val = opt_diag.get(field)
+            check(val is not None and isinstance(val, (int, float)) and val >= 0,
+                  f"{field} present and non-negative (got {val})")
+            print(f"  [INFO] {field}={val}")
+    # Also verify final_commit_validation_ms in CDE diag (legacy_multisheet equivalent for phase path)
+    cde_diag = out.get("collision_backend_diagnostics")
+    if cde_diag:
+        ms = cde_diag.get("final_commit_validation_ms")
+        check(ms is not None and isinstance(ms, (int, float)) and ms >= 0,
+              f"final_commit_validation_ms present and non-negative (got {ms})")
+
+
+# ---------------------------------------------------------------------------
+# Fixture 9: legacy_multisheet final_commit timing with env flag (already covered,
+#            now asserted explicitly as a named requirement)
+# ---------------------------------------------------------------------------
+
+def fixture9_legacy_multisheet_final_commit_timing():
+    print("\n=== Fixture 9: legacy_multisheet CDE final_commit timing with env flag ===")
+    out = run_solver(base_input(pipeline="legacy_multisheet", backend="cde"), timing=True)
+    if not out:
+        check(False, "solver produced output with timing flag")
+        return
+    check(out.get("status") in ("ok", "partial"), f"status ok/partial (got {out.get('status')})")
+    diag = out.get("collision_backend_diagnostics")
+    check(diag is not None, "collision_backend_diagnostics present")
+    if diag:
+        ms = diag.get("final_commit_validation_ms")
+        check(ms is not None and isinstance(ms, (int, float)) and ms >= 0,
+              f"legacy_multisheet_cde_final_commit_runtime present and non-negative (got {ms})")
+        print(f"  [INFO] legacy_multisheet_cde_final_commit_runtime_ms={ms}")
+    # Phase-level timing fields must NOT appear in legacy_multisheet (no optimizer_diagnostics)
+    opt_diag = out.get("optimizer_diagnostics")
+    check(opt_diag is None,
+          "legacy_multisheet must not emit optimizer_diagnostics (no per-phase timing)")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -257,6 +344,9 @@ def main():
     fixture4_lshape_notch_cde()
     fixture5_bbox_no_cde_observability()
     fixture6_timing_env_flag()
+    fixture7_timing_absent_by_default()
+    fixture8_phase_optimizer_timing_env()
+    fixture9_legacy_multisheet_final_commit_timing()
 
     print(f"\n{'='*60}")
     print(f"Results: {PASS_COUNT} passed, {FAIL_COUNT} failed")

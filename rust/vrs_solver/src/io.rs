@@ -120,6 +120,15 @@ pub struct OptimizerDiagnosticsOutput {
     pub exploration_iterations: usize,
     pub compression_iterations: usize,
     pub bpp_attempts: usize,
+    /// Per-phase wall-clock timing. Only populated when VRS_CDE_OBSERVABILITY_TIMING=1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_optimizer_exploration_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_optimizer_compression_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_optimizer_bpp_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_optimizer_final_commit_ms: Option<f64>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

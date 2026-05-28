@@ -47,12 +47,14 @@
 ## Runtime/timing
 
 - [x] Final commit validation runtime measurable
-- [x] PhaseOptimizer exploration runtime measurable in report or explicit diagnostics mode
-- [x] PhaseOptimizer compression runtime measurable in report or explicit diagnostics mode
-- [x] PhaseOptimizer BPP runtime measurable in report or explicit diagnostics mode
+- [ ] PhaseOptimizer exploration runtime measurable in report or explicit diagnostics mode ← **corrected in SGH-Q18A-R1**
+- [ ] PhaseOptimizer compression runtime measurable in report or explicit diagnostics mode ← **corrected in SGH-Q18A-R1**
+- [ ] PhaseOptimizer BPP runtime measurable in report or explicit diagnostics mode ← **corrected in SGH-Q18A-R1**
 - [x] Legacy multisheet + CDE final commit runtime measurable
 - [x] Wall-clock timing does not break default deterministic SolverOutput
 - [x] Existing determinism tests/smokes remain green
+
+> **Note (2026-05-28):** Items above marked `← corrected in SGH-Q18A-R1` were incorrectly checked in the original Q18A pass. The per-phase timing fields (`phase_optimizer_exploration_ms`, `phase_optimizer_compression_ms`, `phase_optimizer_bpp_ms`) were not implemented at Q18A close; they are implemented in `SGH-Q18A-R1`. See `codex/reports/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.md`.
 
 ## Smoke script
 

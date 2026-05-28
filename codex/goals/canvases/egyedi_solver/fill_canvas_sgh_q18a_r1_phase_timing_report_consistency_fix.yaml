@@ -1,0 +1,46 @@
+steps:
+  - name: "Q18A-R1 pre-audit és inkonzisztencia feltárás"
+    description: >
+      Auditáld a Q18A reportot, checklistet, docsot és a PhaseOptimizer/adapter/io kódot. Rögzítsd, mely per-phase timing mezők vannak ténylegesen
+      implementálva, melyek hiányoznak, és mely checklist sorok voltak hamisan kipipálva. Ha a repo már javított, dokumentált PASS_NOOP jellegű reportot készíts.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.md"
+
+  - name: "PhaseOptimizer és legacy CDE timing implementáció"
+    description: >
+      Tedd mérhetővé explicit diagnostics/env módban a phase_optimizer exploration, compression, bpp és final_commit runtime értékeket, valamint a
+      legacy_multisheet CDE final commit runtime-ot. A timing mezők Option + skip_serializing_if módon jelenjenek meg, és csak
+      VRS_CDE_OBSERVABILITY_TIMING=1 esetén kerüljenek outputba. Alapértelmezett SolverOutput JSON ne tartalmazzon nem-determinisztikus wall-clock mezőket.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "Smoke script és teszt coverage bővítése"
+    description: >
+      Bővítsd a Q18A smoke scriptet timing env flaggel futó legacy és phase_optimizer fixture-ökkel. Asserteld, hogy timing env nélkül nincs wall-clock mező,
+      timing envvel pedig minden előírt timing mező jelen van és nem negatív. Adj célzott Rust teszteket a timing mezők default hiányára, env flag melletti
+      jelenlétére, és a determinism default output védelmére.
+    outputs:
+      - "scripts/smoke_sgh_q18a_cde_observability.py"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/phase.rs"
+
+  - name: "Q18A docs/checklist/report konzisztencia javítása"
+    description: >
+      Frissítsd a Q18A dokumentációt, checklistet és reportot úgy, hogy ne állítson hamisan elkészült per-phase timingot. A checklistben csak a ténylegesen
+      implementált és tesztelt pontok legyenek kipipálva. Hozd létre a Q18A-R1 reportot, amely tisztán rögzíti a javítást és a Q18B újraértékelt döntést.
+    outputs:
+      - "docs/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+      - "codex/reports/egyedi_solver/sgh_q18a_cde_correctness_runtime_observability.md"
+      - "codex/reports/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.md"
+
+  - name: "Verify és továbbhaladási marker"
+    description: >
+      Futtasd a célzott cargo teszteket, a teljes lib tesztet, a Q18A smoke scriptet normál és VRS_CDE_OBSERVABILITY_TIMING=1 módban, majd a repo verify scriptet.
+      PASS esetén a Q18A-R1 report végén add meg: SGH-Q18A_R1_STATUS: READY_FOR_AUDIT, SGH-Q20_STATUS: READY vagy HOLD,
+      Q18B_RECOMMENDATION: REQUIRED|NOT_REQUIRED_NOW|INCONCLUSIVE_NEEDS_BIGGER_FIXTURE.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.verify.log"

@@ -142,8 +142,12 @@ Gated by env flag — default SolverOutput JSON contains no timing fields.
 
 Existing determinism tests pass (350/350 green) — no regression.
 
-Per-phase breakdown (exploration/compression/bpp separately) is not exposed in the current output
-structure; only the aggregate final commit timing is available. This is noted for Q18B consideration.
+Per-phase breakdown (exploration/compression/bpp separately) was not exposed in the Q18A output
+structure; only the aggregate final commit timing was available at Q18A close. This gap was
+incorrectly marked done in the Q18A checklist. **SGH-Q18A-R1** corrects this: `phase_optimizer_exploration_ms`,
+`phase_optimizer_compression_ms`, and `phase_optimizer_bpp_ms` are now gated by
+`VRS_CDE_OBSERVABILITY_TIMING=1` and present in `optimizer_diagnostics` when enabled.
+See `codex/reports/egyedi_solver/sgh_q18a_r1_phase_timing_report_consistency_fix.md`.
 
 ## Smoke script output
 
