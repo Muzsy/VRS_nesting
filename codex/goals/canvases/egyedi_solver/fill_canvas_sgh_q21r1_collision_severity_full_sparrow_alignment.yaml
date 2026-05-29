@@ -1,0 +1,129 @@
+id: sgh_q21r1_collision_severity_full_sparrow_alignment
+project: VRS_nesting
+kind: solver_core_correction
+priority: critical
+status: ready
+
+objective: >
+  Harden SGH-Q21 from a partial collision severity layer into a full Sparrow-aligned
+  backend-oracle collision severity/evaluate_transform core: multi-direction adaptive probe,
+  binary-refined resolution severity, complete query/probe/unsupported accounting, sane industrial defaults,
+  no bbox source-of-truth under CDE/Jagua, and honest report markers.
+
+principle: >
+  The target is not a minimally working solver. The target is always the full jagua_rs/Sparrow logic.
+  If a requirement cannot be fully implemented and tested, mark REVISE instead of PASS.
+
+depends_on:
+  - sgh_q21_cde_sparrow_collision_severity_evaluate_transform
+  - sgh_q20r_r1_topk_report_consistency_fix
+  - sgh_q18a_r1_phase_timing_report_consistency_fix
+
+must_read:
+  - codex/reports/egyedi_solver/sgh_q21_cde_sparrow_collision_severity_evaluate_transform.md
+  - codex/reports/egyedi_solver/sgh_q21_cde_sparrow_collision_severity_evaluate_transform.verify.log
+  - codex/codex_checklist/egyedi_solver/sgh_q21_cde_sparrow_collision_severity_evaluate_transform.md
+  - canvases/egyedi_solver/sgh_q21_cde_sparrow_collision_severity_evaluate_transform.md
+  - rust/vrs_solver/src/optimizer/collision_severity.rs
+  - rust/vrs_solver/src/optimizer/search_position.rs
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - rust/vrs_solver/src/optimizer/phase.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+  - scripts/smoke_sgh_q21_collision_severity.py
+
+steps:
+  - name: Pre-audit Q21 against full Sparrow target
+    description: >
+      Audit current Q21 code and report. Identify hard-coded f64::MAX unsupported paths, cardinal-only probe,
+      uncapped sheet_diag-based initial step, missing query accounting in tracker compute/update, unsupported probe paths,
+      bbox proxy leakage, and missing report markers. Record findings in the Q21R1 report before coding.
+    outputs:
+      - codex/reports/egyedi_solver/sgh_q21r1_collision_severity_full_sparrow_alignment.md
+
+  - name: Upgrade CollisionSeverityConfig and probe math
+    description: >
+      Add industrial-grade probe config: max initial step cap, growth factor, binary refinement steps/tolerance,
+      diagonal directions, pair-center direction, sheet-center direction, and hard unsupported loss usage.
+      Replace uncapped sheet_diag*factor behavior with capped/min bounded initial step.
+    outputs:
+      - rust/vrs_solver/src/optimizer/collision_severity.rs
+
+  - name: Implement multi-direction adaptive oracle probe
+    description: >
+      Replace cardinal-only exponential probe with deterministic multi-direction probe using cardinal, diagonal,
+      pair-center-away and sheet-center directions as applicable. For each direction, bracket first clear distance and
+      binary-refine the boundary. Dedupe directions. Count probe pair/boundary/unsupported/resolved/unresolved stats.
+    outputs:
+      - rust/vrs_solver/src/optimizer/collision_severity.rs
+
+  - name: Fix query and unsupported accounting everywhere
+    description: >
+      Ensure every severity-purpose backend placement_overlaps/placement_within_sheet call increments the correct query counter.
+      This includes evaluate_transform_loss, tracker compute_backend_decisions, tracker update_backend_decisions_for_item,
+      and all probe subqueries. Unsupported must increment unsupported stats in all paths.
+    outputs:
+      - rust/vrs_solver/src/optimizer/collision_severity.rs
+      - rust/vrs_solver/src/optimizer/separator.rs
+      - rust/vrs_solver/src/optimizer/search_position.rs
+
+  - name: Enforce no bbox source-of-truth and hard unsupported loss semantics
+    description: >
+      Under CDE/Jagua, bbox must not decide collision existence and must not be default severity when probe is enabled.
+      Bbox proxy is allowed only for Bbox backend or explicit disabled probe fallback and must be counted.
+      Replace scoring f64::MAX unsupported returns with cfg.hard_unsupported_loss where severity contract applies.
+    outputs:
+      - rust/vrs_solver/src/optimizer/collision_severity.rs
+      - rust/vrs_solver/src/optimizer/separator.rs
+      - rust/vrs_solver/src/optimizer/search_position.rs
+
+  - name: Diagnostics output and integration hardening
+    description: >
+      Extend CollisionSeverityStats and output diagnostics with probe pair/boundary queries, resolved/unresolved/unsupported probe counts,
+      and min/max/avg resolution if implemented. Ensure stats propagate search_position -> separator -> phase -> adapter -> output.
+      Keep existing fields backward-compatible.
+    outputs:
+      - rust/vrs_solver/src/optimizer/collision_severity.rs
+      - rust/vrs_solver/src/optimizer/search_position.rs
+      - rust/vrs_solver/src/optimizer/separator.rs
+      - rust/vrs_solver/src/optimizer/phase.rs
+      - rust/vrs_solver/src/io.rs
+      - rust/vrs_solver/src/adapter.rs
+
+  - name: Tests and smoke
+    description: >
+      Add rigorous tests for large-sheet capped initial step, multi-direction probes, binary refinement, unsupported accounting,
+      tracker query accounting, hard_unsupported_loss, bbox false positives, search_position integration, and separator GLS integration.
+      Expand the Q21 smoke to cover large sheet severity granularity and no bbox fallback under CDE/Jagua.
+    outputs:
+      - rust/vrs_solver/src/optimizer/collision_severity.rs
+      - rust/vrs_solver/src/optimizer/search_position.rs
+      - rust/vrs_solver/src/optimizer/separator.rs
+      - scripts/smoke_sgh_q21_collision_severity.py
+
+  - name: Report and marker correction
+    description: >
+      Create a Q21R1 report. Fix Q21 report/checklist markers or add an explicit addendum. PASS only if the full acceptance is implemented
+      and tested. Include mandatory SGH-Q21R1_STATUS, SGH-Q21_STATUS, SGH-Q22_STATUS, Q19_STATUS and Q18B_RECOMMENDATION markers.
+    outputs:
+      - codex/reports/egyedi_solver/sgh_q21r1_collision_severity_full_sparrow_alignment.md
+      - codex/reports/egyedi_solver/sgh_q21r1_collision_severity_full_sparrow_alignment.verify.log
+      - codex/codex_checklist/egyedi_solver/sgh_q21r1_collision_severity_full_sparrow_alignment.md
+
+verification:
+  required_commands:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::collision_severity
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::search_position
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::separator
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml adapter
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q20r_sparrow_search_position.py
+    - python3 scripts/smoke_sgh_q21_collision_severity.py
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q21r1_collision_severity_full_sparrow_alignment.md
+
+pass_markers:
+  - SGH-Q21R1_STATUS: READY_FOR_AUDIT
+  - SGH-Q21_STATUS: READY_FOR_AUDIT
+  - SGH-Q22_STATUS: READY
+  - Q19_STATUS: HOLD
+  - Q18B_RECOMMENDATION: REQUIRED|NOT_REQUIRED_NOW|INCONCLUSIVE_NEEDS_BIGGER_FIXTURE

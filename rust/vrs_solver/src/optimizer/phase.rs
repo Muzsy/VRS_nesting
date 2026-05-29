@@ -138,6 +138,15 @@ pub struct PhaseDiagnostics {
     pub collision_severity_backend_confirmed_no_collisions: usize,
     pub collision_severity_unsupported_queries: usize,
     pub collision_severity_bbox_proxy_uses: usize,
+    /// Q21R1: extended severity engine diagnostics.
+    pub collision_severity_probe_pair_queries: usize,
+    pub collision_severity_probe_boundary_queries: usize,
+    pub collision_severity_probe_resolved: usize,
+    pub collision_severity_probe_unresolved: usize,
+    pub collision_severity_probe_unsupported: usize,
+    pub collision_severity_min_resolution_mm: f64,
+    pub collision_severity_max_resolution_mm: f64,
+    pub collision_severity_avg_resolution_mm: f64,
 }
 
 impl Default for PhaseDiagnostics {
@@ -175,6 +184,14 @@ impl Default for PhaseDiagnostics {
             collision_severity_backend_confirmed_no_collisions: 0,
             collision_severity_unsupported_queries: 0,
             collision_severity_bbox_proxy_uses: 0,
+            collision_severity_probe_pair_queries: 0,
+            collision_severity_probe_boundary_queries: 0,
+            collision_severity_probe_resolved: 0,
+            collision_severity_probe_unresolved: 0,
+            collision_severity_probe_unsupported: 0,
+            collision_severity_min_resolution_mm: 0.0,
+            collision_severity_max_resolution_mm: 0.0,
+            collision_severity_avg_resolution_mm: 0.0,
         }
     }
 }
@@ -415,6 +432,43 @@ impl PhaseOptimizer {
                 collision_severity_bbox_proxy_uses: exploration_diag
                     .collision_severity_bbox_proxy_uses
                     + compression_diag.collision_severity_bbox_proxy_uses,
+                collision_severity_probe_pair_queries: exploration_diag
+                    .collision_severity_probe_pair_queries
+                    + compression_diag.collision_severity_probe_pair_queries,
+                collision_severity_probe_boundary_queries: exploration_diag
+                    .collision_severity_probe_boundary_queries
+                    + compression_diag.collision_severity_probe_boundary_queries,
+                collision_severity_probe_resolved: exploration_diag
+                    .collision_severity_probe_resolved
+                    + compression_diag.collision_severity_probe_resolved,
+                collision_severity_probe_unresolved: exploration_diag
+                    .collision_severity_probe_unresolved
+                    + compression_diag.collision_severity_probe_unresolved,
+                collision_severity_probe_unsupported: exploration_diag
+                    .collision_severity_probe_unsupported
+                    + compression_diag.collision_severity_probe_unsupported,
+                collision_severity_min_resolution_mm: {
+                    let a = exploration_diag.collision_severity_min_resolution_mm;
+                    let b = compression_diag.collision_severity_min_resolution_mm;
+                    if a == 0.0 { b } else if b == 0.0 { a } else { a.min(b) }
+                },
+                collision_severity_max_resolution_mm: exploration_diag
+                    .collision_severity_max_resolution_mm
+                    .max(compression_diag.collision_severity_max_resolution_mm),
+                collision_severity_avg_resolution_mm: {
+                    let ar = exploration_diag.collision_severity_probe_resolved;
+                    let br = compression_diag.collision_severity_probe_resolved;
+                    let total = ar + br;
+                    if total == 0 {
+                        0.0
+                    } else {
+                        let sum = exploration_diag.collision_severity_avg_resolution_mm
+                            * ar as f64
+                            + compression_diag.collision_severity_avg_resolution_mm
+                                * br as f64;
+                        sum / total as f64
+                    }
+                },
             },
             unplaced,
             exploration_ms,

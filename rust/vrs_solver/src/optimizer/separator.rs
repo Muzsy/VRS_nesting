@@ -170,8 +170,13 @@ fn compute_backend_decisions(
                 if let Some(prt) = part_i {
                     if pi.sheet_index < sheets.len() {
                         let sheet = &sheets[pi.sheet_index];
+                        // Q21R1: count every severity-purpose boundary backend query.
+                        severity_stats.boundary_queries += 1;
                         match backend.placement_within_sheet(pi, prt, sheet) {
-                            CollisionDecision::NoCollision => { bnd_valid[i] = true; }
+                            CollisionDecision::NoCollision => {
+                                bnd_valid[i] = true;
+                                severity_stats.backend_confirmed_no_collisions += 1;
+                            }
                             CollisionDecision::Collision => {
                                 severity_stats.backend_confirmed_collisions += 1;
                                 let sev = compute_probe_boundary_severity(
@@ -179,7 +184,10 @@ fn compute_backend_decisions(
                                 ).max(1.0);
                                 bnd_probe[i] = sev;
                             }
-                            CollisionDecision::Unsupported { .. } => { bnd_unsup[i] = true; }
+                            CollisionDecision::Unsupported { .. } => {
+                                bnd_unsup[i] = true;
+                                severity_stats.unsupported_queries += 1;
+                            }
                         }
                     }
                     for j in (i + 1)..n {
@@ -187,8 +195,13 @@ fn compute_backend_decisions(
                         let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
                         if let Some(prt_j) = part_j {
                             let key = (i, j);
+                            // Q21R1: count every severity-purpose pair backend query.
+                            severity_stats.pair_queries += 1;
                             match backend.placement_overlaps(pi, prt, pj, prt_j) {
-                                CollisionDecision::NoCollision => { pair_nc.insert(key); }
+                                CollisionDecision::NoCollision => {
+                                    pair_nc.insert(key);
+                                    severity_stats.backend_confirmed_no_collisions += 1;
+                                }
                                 CollisionDecision::Collision => {
                                     severity_stats.backend_confirmed_collisions += 1;
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
@@ -201,7 +214,10 @@ fn compute_backend_decisions(
                                     ).max(1.0);
                                     pair_probe.insert(key, sev);
                                 }
-                                CollisionDecision::Unsupported { .. } => { pair_unsup.insert(key); }
+                                CollisionDecision::Unsupported { .. } => {
+                                    pair_unsup.insert(key);
+                                    severity_stats.unsupported_queries += 1;
+                                }
                             }
                         }
                     }
@@ -223,8 +239,12 @@ fn compute_backend_decisions(
                 if let Some(prt) = part_i {
                     if pi.sheet_index < sheets.len() {
                         let sheet = &sheets[pi.sheet_index];
+                        severity_stats.boundary_queries += 1;
                         match backend.placement_within_sheet(pi, prt, sheet) {
-                            CollisionDecision::NoCollision => { bnd_valid[i] = true; }
+                            CollisionDecision::NoCollision => {
+                                bnd_valid[i] = true;
+                                severity_stats.backend_confirmed_no_collisions += 1;
+                            }
                             CollisionDecision::Collision => {
                                 severity_stats.backend_confirmed_collisions += 1;
                                 let sev = compute_probe_boundary_severity(
@@ -232,7 +252,10 @@ fn compute_backend_decisions(
                                 ).max(1.0);
                                 bnd_probe[i] = sev;
                             }
-                            CollisionDecision::Unsupported { .. } => { bnd_unsup[i] = true; }
+                            CollisionDecision::Unsupported { .. } => {
+                                bnd_unsup[i] = true;
+                                severity_stats.unsupported_queries += 1;
+                            }
                         }
                     }
                     for j in (i + 1)..n {
@@ -240,8 +263,12 @@ fn compute_backend_decisions(
                         let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
                         if let Some(prt_j) = part_j {
                             let key = (i, j);
+                            severity_stats.pair_queries += 1;
                             match backend.placement_overlaps(pi, prt, pj, prt_j) {
-                                CollisionDecision::NoCollision => { pair_nc.insert(key); }
+                                CollisionDecision::NoCollision => {
+                                    pair_nc.insert(key);
+                                    severity_stats.backend_confirmed_no_collisions += 1;
+                                }
                                 CollisionDecision::Collision => {
                                     severity_stats.backend_confirmed_collisions += 1;
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
@@ -254,7 +281,10 @@ fn compute_backend_decisions(
                                     ).max(1.0);
                                     pair_probe.insert(key, sev);
                                 }
-                                CollisionDecision::Unsupported { .. } => { pair_unsup.insert(key); }
+                                CollisionDecision::Unsupported { .. } => {
+                                    pair_unsup.insert(key);
+                                    severity_stats.unsupported_queries += 1;
+                                }
                             }
                         }
                     }
@@ -558,15 +588,22 @@ impl VrsCollisionTracker {
                 if let Some(prt) = part_i {
                     if pi.sheet_index < sheets.len() {
                         let sheet = &sheets[pi.sheet_index];
+                        tmp_stats.boundary_queries += 1;
                         match backend.placement_within_sheet(pi, prt, sheet) {
-                            CollisionDecision::NoCollision => { self.boundary_exact_valid[idx] = true; }
+                            CollisionDecision::NoCollision => {
+                                self.boundary_exact_valid[idx] = true;
+                                tmp_stats.backend_confirmed_no_collisions += 1;
+                            }
                             CollisionDecision::Collision => {
                                 tmp_stats.backend_confirmed_collisions += 1;
                                 new_bnd_probe = compute_probe_boundary_severity(
                                     &collision_backend, pi, prt, sheet, &severity_cfg, &mut tmp_stats,
                                 ).max(1.0);
                             }
-                            CollisionDecision::Unsupported { .. } => { self.boundary_exact_unsupported[idx] = true; }
+                            CollisionDecision::Unsupported { .. } => {
+                                self.boundary_exact_unsupported[idx] = true;
+                                tmp_stats.unsupported_queries += 1;
+                            }
                         }
                     }
                     for j in 0..n {
@@ -575,8 +612,12 @@ impl VrsCollisionTracker {
                         let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
                         if let Some(prt_j) = part_j {
                             let key = Self::pair_key(idx, j);
+                            tmp_stats.pair_queries += 1;
                             match backend.placement_overlaps(pi, prt, pj, prt_j) {
-                                CollisionDecision::NoCollision => { self.pair_exact_no_collision.insert(key); }
+                                CollisionDecision::NoCollision => {
+                                    self.pair_exact_no_collision.insert(key);
+                                    tmp_stats.backend_confirmed_no_collisions += 1;
+                                }
                                 CollisionDecision::Collision => {
                                     tmp_stats.backend_confirmed_collisions += 1;
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
@@ -589,7 +630,10 @@ impl VrsCollisionTracker {
                                     ).max(1.0);
                                     new_pair_probes.push((key, sev));
                                 }
-                                CollisionDecision::Unsupported { .. } => { self.pair_exact_unsupported.insert(key); }
+                                CollisionDecision::Unsupported { .. } => {
+                                    self.pair_exact_unsupported.insert(key);
+                                    tmp_stats.unsupported_queries += 1;
+                                }
                             }
                         }
                     }
@@ -600,15 +644,22 @@ impl VrsCollisionTracker {
                 if let Some(prt) = part_i {
                     if pi.sheet_index < sheets.len() {
                         let sheet = &sheets[pi.sheet_index];
+                        tmp_stats.boundary_queries += 1;
                         match backend.placement_within_sheet(pi, prt, sheet) {
-                            CollisionDecision::NoCollision => { self.boundary_exact_valid[idx] = true; }
+                            CollisionDecision::NoCollision => {
+                                self.boundary_exact_valid[idx] = true;
+                                tmp_stats.backend_confirmed_no_collisions += 1;
+                            }
                             CollisionDecision::Collision => {
                                 tmp_stats.backend_confirmed_collisions += 1;
                                 new_bnd_probe = compute_probe_boundary_severity(
                                     &collision_backend, pi, prt, sheet, &severity_cfg, &mut tmp_stats,
                                 ).max(1.0);
                             }
-                            CollisionDecision::Unsupported { .. } => { self.boundary_exact_unsupported[idx] = true; }
+                            CollisionDecision::Unsupported { .. } => {
+                                self.boundary_exact_unsupported[idx] = true;
+                                tmp_stats.unsupported_queries += 1;
+                            }
                         }
                     }
                     for j in 0..n {
@@ -617,8 +668,12 @@ impl VrsCollisionTracker {
                         let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
                         if let Some(prt_j) = part_j {
                             let key = Self::pair_key(idx, j);
+                            tmp_stats.pair_queries += 1;
                             match backend.placement_overlaps(pi, prt, pj, prt_j) {
-                                CollisionDecision::NoCollision => { self.pair_exact_no_collision.insert(key); }
+                                CollisionDecision::NoCollision => {
+                                    self.pair_exact_no_collision.insert(key);
+                                    tmp_stats.backend_confirmed_no_collisions += 1;
+                                }
                                 CollisionDecision::Collision => {
                                     tmp_stats.backend_confirmed_collisions += 1;
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
@@ -631,7 +686,10 @@ impl VrsCollisionTracker {
                                     ).max(1.0);
                                     new_pair_probes.push((key, sev));
                                 }
-                                CollisionDecision::Unsupported { .. } => { self.pair_exact_unsupported.insert(key); }
+                                CollisionDecision::Unsupported { .. } => {
+                                    self.pair_exact_unsupported.insert(key);
+                                    tmp_stats.unsupported_queries += 1;
+                                }
                             }
                         }
                     }
@@ -917,7 +975,12 @@ impl VrsSeparator {
                     &placed_without,
                 );
 
-                if !loss.is_finite() || loss == f64::MAX {
+                // Q21R1: skip both legacy out-of-sheet sentinel (f64::MAX) and
+                // severity unsupported sentinel (cfg.hard_unsupported_loss).
+                if !loss.is_finite()
+                    || loss == f64::MAX
+                    || loss >= self.config.search_position_config.severity_cfg.hard_unsupported_loss
+                {
                     continue;
                 }
                 if loss < best_cand_loss {
@@ -932,6 +995,13 @@ impl VrsSeparator {
         best_cand_placement
     }
 
+    /// LBF compatibility fallback candidate scoring. Q21R1: routes through the
+    /// central `evaluate_transform_loss` engine to avoid a parallel scoring layer.
+    ///
+    /// The returned `f64::MAX` is a candidate-reject sentinel for the Bbox arm's
+    /// out-of-sheet rectangle (legacy LBF feasibility check, not a severity score).
+    /// Severity unsupported (CDE/Jagua backend Unsupported) returns
+    /// `cfg.hard_unsupported_loss`, and the caller treats both as reject signals.
     fn candidate_loss_for_backend(
         &self,
         candidate: &Placement,
@@ -944,85 +1014,30 @@ impl VrsSeparator {
         placed_without: &[PlacedBbox],
     ) -> f64 {
         let loss_model = self.config.loss_model;
-        match &self.config.collision_backend {
-            CollisionBackendKind::Bbox => {
-                let rect = Rect {
-                    x1: cand_bbox.x1,
-                    y1: cand_bbox.y1,
-                    x2: cand_bbox.x2,
-                    y2: cand_bbox.y2,
-                };
-                if !rect_within_boundary(rect, sheet) {
-                    return f64::MAX;
-                }
-                placed_without
-                    .iter()
-                    .map(|pb| loss_model.pair_loss(pb, cand_bbox))
-                    .sum()
+        if matches!(self.config.collision_backend, CollisionBackendKind::Bbox) {
+            let rect = Rect {
+                x1: cand_bbox.x1,
+                y1: cand_bbox.y1,
+                x2: cand_bbox.x2,
+                y2: cand_bbox.y2,
+            };
+            if !rect_within_boundary(rect, sheet) {
+                return f64::MAX;
             }
-            CollisionBackendKind::JaguaPolygonExact => {
-                let backend = JaguaPolygonExactBackend;
-                let mut loss = match backend.placement_within_sheet(candidate, part, sheet) {
-                    CollisionDecision::NoCollision => 0.0,
-                    CollisionDecision::Collision => {
-                        loss_model.compute_boundary_loss(cand_bbox, sheet, false).max(1.0)
-                    }
-                    CollisionDecision::Unsupported { .. } => return f64::MAX,
-                };
-
-                for (idx, other) in layout.placements.iter().enumerate() {
-                    if idx == target_idx || other.sheet_index != candidate.sheet_index {
-                        continue;
-                    }
-                    let Some(other_part) = parts.iter().find(|pt| pt.id == other.part_id) else {
-                        return f64::MAX;
-                    };
-                    match backend.placement_overlaps(candidate, part, other, other_part) {
-                        CollisionDecision::NoCollision => {}
-                        CollisionDecision::Collision => {
-                            if let Some(other_bbox) = bbox_from_placement(other, other_part.width, other_part.height) {
-                                loss += loss_model.pair_loss(&other_bbox, cand_bbox).max(1.0);
-                            } else {
-                                return f64::MAX;
-                            }
-                        }
-                        CollisionDecision::Unsupported { .. } => return f64::MAX,
-                    }
-                }
-                loss
-            }
-            CollisionBackendKind::Cde => {
-                let backend = CdeCollisionBackend;
-                let mut loss = match backend.placement_within_sheet(candidate, part, sheet) {
-                    CollisionDecision::NoCollision => 0.0,
-                    CollisionDecision::Collision => {
-                        loss_model.compute_boundary_loss(cand_bbox, sheet, false).max(1.0)
-                    }
-                    CollisionDecision::Unsupported { .. } => return f64::MAX,
-                };
-
-                for (idx, other) in layout.placements.iter().enumerate() {
-                    if idx == target_idx || other.sheet_index != candidate.sheet_index {
-                        continue;
-                    }
-                    let Some(other_part) = parts.iter().find(|pt| pt.id == other.part_id) else {
-                        return f64::MAX;
-                    };
-                    match backend.placement_overlaps(candidate, part, other, other_part) {
-                        CollisionDecision::NoCollision => {}
-                        CollisionDecision::Collision => {
-                            if let Some(other_bbox) = bbox_from_placement(other, other_part.width, other_part.height) {
-                                loss += loss_model.pair_loss(&other_bbox, cand_bbox).max(1.0);
-                            } else {
-                                return f64::MAX;
-                            }
-                        }
-                        CollisionDecision::Unsupported { .. } => return f64::MAX,
-                    }
-                }
-                loss
-            }
+            return placed_without
+                .iter()
+                .map(|pb| loss_model.pair_loss(pb, cand_bbox))
+                .sum();
         }
+        // Central engine: backend-confirmed severity, hard_unsupported_loss for Unsupported.
+        let mut tmp_stats = CollisionSeverityStats::default();
+        let r = super::collision_severity::evaluate_transform_loss(
+            candidate, part, cand_bbox, sheet,
+            layout, target_idx, parts,
+            &self.config.collision_backend, loss_model,
+            &self.config.search_position_config.severity_cfg, &mut tmp_stats,
+        );
+        r.loss
     }
 
     fn attempt_move(
@@ -2684,6 +2699,111 @@ mod tests {
         tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
         assert!(tracker.pair_weight(0, 1) > 1.0,
             "GLS weight must increase for backend-confirmed collision pair");
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q21R1: tracker build counts pair and boundary backend queries
+    // -----------------------------------------------------------------------
+    #[test]
+    fn severity_tracker_counts_pair_and_boundary_queries() {
+        let parts = vec![
+            make_part("A", 20.0, 20.0, 1, vec![0]),
+            make_part("B", 20.0, 20.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("B__0001", "B", 0, 50.0, 50.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let tracker = VrsCollisionTracker::build_with_model(
+            &layout, &parts, &sheets,
+            LossModelKind::BboxArea,
+            CollisionBackendKind::JaguaPolygonExact,
+        );
+        // build_with_model issues 1 boundary query per placement (2 items → 2 bdry)
+        // and 1 pair query per (i,j) pair (1 pair).
+        assert!(tracker.severity_stats.boundary_queries >= 2,
+            "tracker build must count >= 2 boundary queries, got {}",
+            tracker.severity_stats.boundary_queries);
+        assert!(tracker.severity_stats.pair_queries >= 1,
+            "tracker build must count >= 1 pair query, got {}",
+            tracker.severity_stats.pair_queries);
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q21R1: tracker update counts pair and boundary backend queries
+    // -----------------------------------------------------------------------
+    #[test]
+    fn severity_tracker_update_counts_pair_and_boundary_queries() {
+        let parts = vec![
+            make_part("A", 20.0, 20.0, 1, vec![0]),
+            make_part("B", 20.0, 20.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("B__0001", "B", 0, 50.0, 50.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build_with_model(
+            &layout, &parts, &sheets,
+            LossModelKind::BboxArea,
+            CollisionBackendKind::JaguaPolygonExact,
+        );
+        let baseline_pair = tracker.severity_stats.pair_queries;
+        let baseline_bnd = tracker.severity_stats.boundary_queries;
+        // Move B near A → tracker update fires pair + boundary backend queries.
+        let mut moved_layout = layout.clone();
+        moved_layout.placements[1] = placement("B__0001", "B", 0, 10.0, 0.0);
+        tracker.update_placement(1, &moved_layout, &parts, &sheets);
+        assert!(tracker.severity_stats.boundary_queries > baseline_bnd,
+            "update must increment boundary_queries: was {}, now {}",
+            baseline_bnd, tracker.severity_stats.boundary_queries);
+        assert!(tracker.severity_stats.pair_queries > baseline_pair,
+            "update must increment pair_queries: was {}, now {}",
+            baseline_pair, tracker.severity_stats.pair_queries);
+    }
+
+    // -----------------------------------------------------------------------
+    // SGH-Q21R1: separator GLS weight update uses improved (backend-confirmed) severity
+    // -----------------------------------------------------------------------
+    #[test]
+    fn separator_gls_uses_improved_backend_confirmed_severity() {
+        let parts = vec![
+            make_part("A", 20.0, 20.0, 1, vec![0]),
+            make_part("B", 20.0, 20.0, 1, vec![0]),
+        ];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let placements = vec![
+            placement("A__0001", "A", 0, 0.0, 0.0),
+            placement("B__0001", "B", 0, 10.0, 0.0),
+        ];
+        let layout = WorkingLayout::new(placements, vec![], 1, 0);
+        let mut tracker = VrsCollisionTracker::build_with_model(
+            &layout, &parts, &sheets,
+            LossModelKind::BboxArea,
+            CollisionBackendKind::JaguaPolygonExact,
+        );
+        let pair_sev = tracker.pair_loss(0, 1);
+        // With improved adaptive probe: a 10 mm true overlap must resolve to a
+        // refined distance much smaller than the bbox area surrogate (200 = 10×20).
+        assert!(pair_sev > 0.0, "confirmed collision must have positive pair_loss");
+        assert!(pair_sev < 50.0,
+            "improved probe severity must be a refined resolution distance (<50), got {}",
+            pair_sev);
+        let c = VrsSeparatorConfig::default();
+        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max,
+                                c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        assert!(tracker.pair_weight(0, 1) > 1.0,
+            "GLS weight must increase using improved backend-confirmed severity");
+        // Probe stats must show resolved probe queries on at least one direction.
+        assert!(tracker.severity_stats.probe_resolved > 0,
+            "GLS path must have probe_resolved > 0, got {}",
+            tracker.severity_stats.probe_resolved);
     }
 
     // Q20R-S3: coordinate descent never returns a worse loss than the starting point.

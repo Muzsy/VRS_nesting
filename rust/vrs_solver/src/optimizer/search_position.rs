@@ -1047,4 +1047,49 @@ pub(crate) mod tests {
             stats.severity_stats.bbox_proxy_severity_uses
         );
     }
+
+    // ----------------------------------------------------------------------
+    // SGH-Q21R1: search_position uses improved severity engine stats
+    // ----------------------------------------------------------------------
+    /// Verifies that search_position propagates the Q21R1 probe stats
+    /// (probe_pair_queries, probe_boundary_queries) into SearchPositionStats.
+    #[test]
+    fn search_position_uses_improved_severity_stats() {
+        let parts = vec![make_continuous_part("P", 20.0, 10.0, 3)];
+        let sheets = make_test_sheets(200.0, 200.0);
+        // Three placements with controlled overlaps → search_position must probe.
+        let layout = WorkingLayout::new(
+            vec![
+                Placement { instance_id: "P__0001".into(), part_id: "P".into(),
+                    sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+                Placement { instance_id: "P__0002".into(), part_id: "P".into(),
+                    sheet_index: 0, x: 18.0, y: 0.0, rotation_deg: 0.0 },
+                Placement { instance_id: "P__0003".into(), part_id: "P".into(),
+                    sheet_index: 0, x: 0.0, y: 8.0, rotation_deg: 0.0 },
+            ],
+            vec![], 1, 0,
+        );
+        let cfg = SearchPositionConfig {
+            global_grid_n: 4,
+            focused_sample_count: 0,
+            ..Default::default()
+        };
+        let ctx = continuous_ctx();
+        let mut stats = SearchPositionStats::default();
+        search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
+            &ctx, &cfg, 0, &mut stats,
+        );
+        // Stats must carry Q21R1 fields populated for at least some queries.
+        let s = &stats.severity_stats;
+        assert!(s.pair_queries + s.boundary_queries > 0,
+            "must have decisive queries, pair={} bnd={}",
+            s.pair_queries, s.boundary_queries);
+        assert_eq!(s.bbox_proxy_severity_uses, 0,
+            "exact backend with probe enabled must not use bbox proxy");
+        // probe_queries = probe_pair_queries + probe_boundary_queries.
+        assert_eq!(s.probe_queries, s.probe_pair_queries + s.probe_boundary_queries,
+            "probe_queries must equal sum of pair+boundary probe sub-queries");
+    }
 }

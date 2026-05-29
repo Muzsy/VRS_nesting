@@ -313,7 +313,7 @@ impl ExplorationPhase {
             if sep_diag.search_stats.best_eval < diag.search_position_best_eval {
                 diag.search_position_best_eval = sep_diag.search_stats.best_eval;
             }
-            // Q21: accumulate collision severity stats.
+            // Q21 + Q21R1: accumulate collision severity stats.
             diag.collision_severity_enabled = true;
             diag.collision_severity_pair_queries += sep_diag.severity_stats.pair_queries;
             diag.collision_severity_boundary_queries += sep_diag.severity_stats.boundary_queries;
@@ -322,6 +322,37 @@ impl ExplorationPhase {
             diag.collision_severity_backend_confirmed_no_collisions += sep_diag.severity_stats.backend_confirmed_no_collisions;
             diag.collision_severity_unsupported_queries += sep_diag.severity_stats.unsupported_queries;
             diag.collision_severity_bbox_proxy_uses += sep_diag.severity_stats.bbox_proxy_severity_uses;
+            diag.collision_severity_probe_pair_queries += sep_diag.severity_stats.probe_pair_queries;
+            diag.collision_severity_probe_boundary_queries += sep_diag.severity_stats.probe_boundary_queries;
+            diag.collision_severity_probe_resolved += sep_diag.severity_stats.probe_resolved;
+            diag.collision_severity_probe_unresolved += sep_diag.severity_stats.probe_unresolved;
+            diag.collision_severity_probe_unsupported += sep_diag.severity_stats.probe_unsupported;
+            let new_min = sep_diag.severity_stats.min_resolution_mm;
+            if new_min > 0.0 {
+                diag.collision_severity_min_resolution_mm =
+                    if diag.collision_severity_min_resolution_mm == 0.0 {
+                        new_min
+                    } else {
+                        diag.collision_severity_min_resolution_mm.min(new_min)
+                    };
+            }
+            if sep_diag.severity_stats.max_resolution_mm > diag.collision_severity_max_resolution_mm {
+                diag.collision_severity_max_resolution_mm =
+                    sep_diag.severity_stats.max_resolution_mm;
+            }
+            if sep_diag.severity_stats.resolutions_recorded > 0 {
+                // Running mean across separator runs in this phase.
+                let prior_count = diag.collision_severity_probe_resolved
+                    - sep_diag.severity_stats.probe_resolved;
+                let prior_sum = diag.collision_severity_avg_resolution_mm * prior_count as f64;
+                let new_total = prior_count + sep_diag.severity_stats.resolutions_recorded;
+                let new_sum = prior_sum + sep_diag.severity_stats.resolution_sum_mm;
+                diag.collision_severity_avg_resolution_mm = if new_total > 0 {
+                    new_sum / new_total as f64
+                } else {
+                    0.0
+                };
+            }
 
             let sep_score = self.score_model.score_with_backend(
                 &sep_layout.placements,

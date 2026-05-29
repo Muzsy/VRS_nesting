@@ -147,6 +147,15 @@ pub struct OptimizerDiagnosticsOutput {
     pub collision_severity_backend_confirmed_no_collisions: usize,
     pub collision_severity_unsupported_queries: usize,
     pub collision_severity_bbox_proxy_uses: usize,
+    /// Q21R1: extended severity diagnostics.
+    pub collision_severity_probe_pair_queries: usize,
+    pub collision_severity_probe_boundary_queries: usize,
+    pub collision_severity_probe_resolved: usize,
+    pub collision_severity_probe_unresolved: usize,
+    pub collision_severity_probe_unsupported: usize,
+    pub collision_severity_min_resolution_mm: f64,
+    pub collision_severity_max_resolution_mm: f64,
+    pub collision_severity_avg_resolution_mm: f64,
     /// Per-phase wall-clock timing. Only populated when VRS_CDE_OBSERVABILITY_TIMING=1.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase_optimizer_exploration_ms: Option<f64>,
