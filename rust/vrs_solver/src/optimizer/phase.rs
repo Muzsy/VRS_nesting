@@ -129,6 +129,15 @@ pub struct PhaseDiagnostics {
     pub search_position_lbf_fallback_used: usize,
     /// Minimum evaluation loss seen. f64::MAX = no calls (sentinel).
     pub search_position_best_eval: f64,
+    /// Q21: collision severity engine diagnostics.
+    pub collision_severity_enabled: bool,
+    pub collision_severity_pair_queries: usize,
+    pub collision_severity_boundary_queries: usize,
+    pub collision_severity_probe_queries: usize,
+    pub collision_severity_backend_confirmed_collisions: usize,
+    pub collision_severity_backend_confirmed_no_collisions: usize,
+    pub collision_severity_unsupported_queries: usize,
+    pub collision_severity_bbox_proxy_uses: usize,
 }
 
 impl Default for PhaseDiagnostics {
@@ -158,6 +167,14 @@ impl Default for PhaseDiagnostics {
             search_position_coord_descent_steps: 0,
             search_position_lbf_fallback_used: 0,
             search_position_best_eval: f64::MAX,
+            collision_severity_enabled: false,
+            collision_severity_pair_queries: 0,
+            collision_severity_boundary_queries: 0,
+            collision_severity_probe_queries: 0,
+            collision_severity_backend_confirmed_collisions: 0,
+            collision_severity_backend_confirmed_no_collisions: 0,
+            collision_severity_unsupported_queries: 0,
+            collision_severity_bbox_proxy_uses: 0,
         }
     }
 }
@@ -377,6 +394,27 @@ impl PhaseOptimizer {
                 search_position_best_eval: exploration_diag
                     .search_position_best_eval
                     .min(compression_diag.search_position_best_eval),
+                collision_severity_enabled: exploration_diag.collision_severity_enabled
+                    || compression_diag.collision_severity_enabled,
+                collision_severity_pair_queries: exploration_diag.collision_severity_pair_queries
+                    + compression_diag.collision_severity_pair_queries,
+                collision_severity_boundary_queries: exploration_diag
+                    .collision_severity_boundary_queries
+                    + compression_diag.collision_severity_boundary_queries,
+                collision_severity_probe_queries: exploration_diag.collision_severity_probe_queries
+                    + compression_diag.collision_severity_probe_queries,
+                collision_severity_backend_confirmed_collisions: exploration_diag
+                    .collision_severity_backend_confirmed_collisions
+                    + compression_diag.collision_severity_backend_confirmed_collisions,
+                collision_severity_backend_confirmed_no_collisions: exploration_diag
+                    .collision_severity_backend_confirmed_no_collisions
+                    + compression_diag.collision_severity_backend_confirmed_no_collisions,
+                collision_severity_unsupported_queries: exploration_diag
+                    .collision_severity_unsupported_queries
+                    + compression_diag.collision_severity_unsupported_queries,
+                collision_severity_bbox_proxy_uses: exploration_diag
+                    .collision_severity_bbox_proxy_uses
+                    + compression_diag.collision_severity_bbox_proxy_uses,
             },
             unplaced,
             exploration_ms,

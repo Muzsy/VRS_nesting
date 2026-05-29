@@ -151,6 +151,15 @@ impl CompressionPhase {
                             if sep_diag.search_stats.best_eval < diag.search_position_best_eval {
                                 diag.search_position_best_eval = sep_diag.search_stats.best_eval;
                             }
+                            // Q21: accumulate collision severity stats.
+                            diag.collision_severity_enabled = true;
+                            diag.collision_severity_pair_queries += sep_diag.severity_stats.pair_queries;
+                            diag.collision_severity_boundary_queries += sep_diag.severity_stats.boundary_queries;
+                            diag.collision_severity_probe_queries += sep_diag.severity_stats.probe_queries;
+                            diag.collision_severity_backend_confirmed_collisions += sep_diag.severity_stats.backend_confirmed_collisions;
+                            diag.collision_severity_backend_confirmed_no_collisions += sep_diag.severity_stats.backend_confirmed_no_collisions;
+                            diag.collision_severity_unsupported_queries += sep_diag.severity_stats.unsupported_queries;
+                            diag.collision_severity_bbox_proxy_uses += sep_diag.severity_stats.bbox_proxy_severity_uses;
                             if !(sep_diag.best_loss == 0.0 || sep_diag.converged) {
                                 continue;
                             }

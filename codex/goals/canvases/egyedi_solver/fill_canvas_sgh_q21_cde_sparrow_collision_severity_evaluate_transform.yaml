@@ -1,0 +1,89 @@
+id: sgh_q21_cde_sparrow_collision_severity_evaluate_transform
+project: VRS_nesting
+kind: solver_quality_task
+status: ready
+priority: high
+
+objective: >
+  Implement a backend-aware Sparrow-style collision severity and evaluate_transform scoring layer
+  so search_position and separator/GLS ranking no longer rely on bbox-only severity when CDE/Jagua
+  backends are active.
+
+depends_on:
+  - sgh_q20r_r1_topk_report_consistency_fix
+
+must_read:
+  - codex/reports/egyedi_solver/sgh_q20r_r1_topk_report_consistency_fix.md
+  - codex/reports/egyedi_solver/sgh_q20r_sparrow_search_position_coord_descent.md
+  - rust/vrs_solver/src/optimizer/search_position.rs
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - rust/vrs_solver/src/optimizer/loss_model.rs
+  - rust/vrs_solver/src/optimizer/collision_backend.rs
+  - rust/vrs_solver/src/optimizer/cde_adapter.rs
+  - rust/vrs_solver/src/optimizer/phase.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+
+scope:
+  include:
+    - central collision_severity / evaluate_transform API
+    - backend-confirmed pair collision severity
+    - backend-confirmed boundary violation severity
+    - search_position candidate ranking through the shared evaluation API
+    - separator / VrsCollisionTracker loss update through backend-confirmed severity
+    - diagnostics for severity queries, probes, unsupported, bbox proxy uses
+    - targeted cargo tests and smoke script
+  exclude:
+    - Q19 LV8 benchmark gate
+    - Q18B CDE session/cache rewrite
+    - Q22 shrink-loop redesign
+    - full exact overlap-area if backend API does not expose it
+    - main solver hole-aware changes
+    - DXF/preflight refactor
+
+implementation_requirements:
+  - Add a central optimizer/collision_severity.rs module or equivalent.
+  - Bbox backend preserves legacy pair/boundary loss behavior.
+  - CDE/Jagua uses active backend for collision and boundary existence.
+  - CDE/Jagua collision severity must be backend-confirmed, preferably with deterministic oracle probing if exact depth is unavailable.
+  - Unsupported backend results are rejected or converted to explicit hard unsupported loss.
+  - SearchPosition must no longer maintain a separate backend-eval path that bypasses the severity engine.
+  - VrsCollisionTracker pair_loss/boundary_loss under CDE/Jagua must come from backend-confirmed severity.
+  - GLS update_weights must use backend-confirmed severity values.
+  - CDE path must not silently use bbox as collision source-of-truth.
+  - Diagnostics must expose severity query/probe/fallback/unsupported counts.
+
+acceptance:
+  - Q20R-R1 dependency PASS and SGH-Q21_STATUS READY present.
+  - New severity API exists and is used by search_position.
+  - New severity API is used by separator tracker or an equivalent shared path.
+  - Bbox backend behavior is backward compatible.
+  - Exact backend bbox false-positive is zeroed by backend-confirmed no-collision.
+  - Exact backend collision returns positive severity.
+  - Deep collision severity is greater than shallow collision severity in a deterministic fixture.
+  - Boundary valid returns zero and boundary violation returns positive severity.
+  - Unsupported returns hard loss or rejection with diagnostics.
+  - CDE/Jagua no silent bbox fallback invariant preserved.
+  - Smoke and cargo tests pass.
+  - Report first line is PASS, REVISE, or BLOCKED.
+  - PASS report contains SGH-Q21_STATUS: READY_FOR_AUDIT.
+  - PASS report contains Q19_STATUS: HOLD.
+
+commands:
+  required:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::collision_severity
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::search_position
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::separator
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml adapter
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q20r_sparrow_search_position.py
+    - python3 scripts/smoke_sgh_q21_collision_severity.py
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q21_cde_sparrow_collision_severity_evaluate_transform.md
+
+report:
+  path: codex/reports/egyedi_solver/sgh_q21_cde_sparrow_collision_severity_evaluate_transform.md
+  required_markers:
+    - SGH-Q21_STATUS: READY_FOR_AUDIT
+    - SGH-Q22_STATUS: READY|HOLD
+    - Q19_STATUS: HOLD
+    - Q18B_RECOMMENDATION: REQUIRED|NOT_REQUIRED_NOW|INCONCLUSIVE_NEEDS_BIGGER_FIXTURE

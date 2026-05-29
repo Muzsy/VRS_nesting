@@ -137,6 +137,16 @@ pub struct OptimizerDiagnosticsOutput {
     pub search_position_lbf_fallback_used: usize,
     /// 0.0 when no calls were made (sentinel f64::MAX → 0.0 in adapter).
     pub search_position_best_eval: f64,
+    /// Q21: collision severity engine diagnostics.
+    pub collision_severity_backend: String,
+    pub collision_severity_enabled: bool,
+    pub collision_severity_pair_queries: usize,
+    pub collision_severity_boundary_queries: usize,
+    pub collision_severity_probe_queries: usize,
+    pub collision_severity_backend_confirmed_collisions: usize,
+    pub collision_severity_backend_confirmed_no_collisions: usize,
+    pub collision_severity_unsupported_queries: usize,
+    pub collision_severity_bbox_proxy_uses: usize,
     /// Per-phase wall-clock timing. Only populated when VRS_CDE_OBSERVABILITY_TIMING=1.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase_optimizer_exploration_ms: Option<f64>,

@@ -350,6 +350,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 let result = PhaseOptimizer::new(config).run(working, &input.parts, &sheets);
                 let layout = result.layout;
                 let t_commit_start = timing_start(timing_enabled);
+                let backend_name = format!("{:?}", backend_kind);
                 match layout.validate_and_commit_with_backend(
                     &input.parts,
                     &sheets,
@@ -388,6 +389,15 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             } else {
                                 diag_ref.search_position_best_eval
                             },
+                            collision_severity_backend: backend_name,
+                            collision_severity_enabled: diag_ref.collision_severity_enabled,
+                            collision_severity_pair_queries: diag_ref.collision_severity_pair_queries,
+                            collision_severity_boundary_queries: diag_ref.collision_severity_boundary_queries,
+                            collision_severity_probe_queries: diag_ref.collision_severity_probe_queries,
+                            collision_severity_backend_confirmed_collisions: diag_ref.collision_severity_backend_confirmed_collisions,
+                            collision_severity_backend_confirmed_no_collisions: diag_ref.collision_severity_backend_confirmed_no_collisions,
+                            collision_severity_unsupported_queries: diag_ref.collision_severity_unsupported_queries,
+                            collision_severity_bbox_proxy_uses: diag_ref.collision_severity_bbox_proxy_uses,
                             phase_optimizer_exploration_ms: result.exploration_ms,
                             phase_optimizer_compression_ms: result.compression_ms,
                             phase_optimizer_bpp_ms: result.bpp_ms,

@@ -7,7 +7,6 @@
 ///   4. Active backend evaluation — no silent bbox fallback for CDE/JaguaExact
 use std::collections::HashSet;
 
-use crate::geometry::Rect;
 use crate::io::{CollisionBackendKind, Placement};
 use crate::item::{
     effective_policy_kind, dims_for_rotation, placement_anchor_from_rect_min,
@@ -15,9 +14,8 @@ use crate::item::{
 };
 use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
 use crate::sheet::SheetShape;
-use super::boundary::rect_within_boundary;
 use super::candidates::PlacedBbox;
-use super::collision_backend::{CdeCollisionBackend, CollisionBackend, CollisionDecision, JaguaPolygonExactBackend};
+use super::collision_severity::{CollisionSeverityConfig, CollisionSeverityStats};
 use super::initializer::bbox_from_placement;
 use super::loss_model::LossModelKind;
 use super::working::WorkingLayout;
@@ -70,6 +68,8 @@ pub struct SearchPositionStats {
     pub lbf_fallback_used: usize,
     /// Minimum evaluation loss seen (lower = better; f64::MAX = no calls).
     pub best_eval: f64,
+    /// Q21: collision severity engine stats accumulated across all evaluations.
+    pub severity_stats: CollisionSeverityStats,
 }
 
 impl Default for SearchPositionStats {
@@ -83,6 +83,7 @@ impl Default for SearchPositionStats {
             coord_descent_steps: 0,
             lbf_fallback_used: 0,
             best_eval: f64::MAX,
+            severity_stats: CollisionSeverityStats::default(),
         }
     }
 }
@@ -99,6 +100,7 @@ impl SearchPositionStats {
         if other.best_eval < self.best_eval {
             self.best_eval = other.best_eval;
         }
+        self.severity_stats.accumulate(&other.severity_stats);
     }
 }
 
@@ -124,6 +126,8 @@ pub struct SearchPositionConfig {
     pub coord_descent_rotation_step_deg: f64,
     /// Number of top candidates (by eval) to refine with coordinate descent.
     pub coord_descent_top_k: usize,
+    /// Q21: collision severity engine configuration.
+    pub severity_cfg: CollisionSeverityConfig,
 }
 
 impl Default for SearchPositionConfig {
@@ -137,6 +141,7 @@ impl Default for SearchPositionConfig {
             coord_descent_max_steps: 15,
             coord_descent_rotation_step_deg: 5.0,
             coord_descent_top_k: 3,
+            severity_cfg: CollisionSeverityConfig::default(),
         }
     }
 }
@@ -165,106 +170,7 @@ fn mix_seed(base: u64, instance_id: &str, call_index: usize) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
-// Backend-aware candidate evaluation
-// ---------------------------------------------------------------------------
-
-fn eval_with_backend_trait(
-    backend: &dyn CollisionBackend,
-    candidate: &Placement,
-    part: &Part,
-    cand_bbox: &PlacedBbox,
-    sheet: &SheetShape,
-    layout: &WorkingLayout,
-    target_idx: usize,
-    parts: &[Part],
-    loss_model: LossModelKind,
-    unsupported_count: &mut usize,
-) -> f64 {
-    let mut loss = match backend.placement_within_sheet(candidate, part, sheet) {
-        CollisionDecision::NoCollision => 0.0,
-        CollisionDecision::Collision => {
-            loss_model.compute_boundary_loss(cand_bbox, sheet, false).max(1.0)
-        }
-        CollisionDecision::Unsupported { .. } => {
-            *unsupported_count += 1;
-            return f64::MAX;
-        }
-    };
-
-    for (idx, other) in layout.placements.iter().enumerate() {
-        if idx == target_idx || other.sheet_index != candidate.sheet_index {
-            continue;
-        }
-        let Some(other_part) = parts.iter().find(|pt| pt.id == other.part_id) else {
-            return f64::MAX;
-        };
-        match backend.placement_overlaps(candidate, part, other, other_part) {
-            CollisionDecision::NoCollision => {}
-            CollisionDecision::Collision => {
-                if let Some(ob) = bbox_from_placement(other, other_part.width, other_part.height) {
-                    loss += loss_model.pair_loss(&ob, cand_bbox).max(1.0);
-                } else {
-                    return f64::MAX;
-                }
-            }
-            CollisionDecision::Unsupported { .. } => {
-                *unsupported_count += 1;
-                return f64::MAX;
-            }
-        }
-    }
-    loss
-}
-
-fn eval_candidate_loss(
-    candidate: &Placement,
-    part: &Part,
-    cand_bbox: &PlacedBbox,
-    sheet: &SheetShape,
-    layout: &WorkingLayout,
-    target_idx: usize,
-    parts: &[Part],
-    collision_backend: &CollisionBackendKind,
-    loss_model: LossModelKind,
-    unsupported_count: &mut usize,
-) -> f64 {
-    match collision_backend {
-        CollisionBackendKind::Bbox => {
-            let rect = Rect {
-                x1: cand_bbox.x1, y1: cand_bbox.y1,
-                x2: cand_bbox.x2, y2: cand_bbox.y2,
-            };
-            if !rect_within_boundary(rect, sheet) {
-                return f64::MAX;
-            }
-            layout.placements.iter().enumerate()
-                .filter(|(i, p)| *i != target_idx && p.sheet_index == candidate.sheet_index)
-                .filter_map(|(_, p)| {
-                    parts.iter().find(|pt| pt.id == p.part_id)
-                        .and_then(|pt| bbox_from_placement(p, pt.width, pt.height))
-                        .map(|pb| loss_model.pair_loss(&pb, cand_bbox))
-                })
-                .sum()
-        }
-        CollisionBackendKind::JaguaPolygonExact => {
-            eval_with_backend_trait(
-                &JaguaPolygonExactBackend,
-                candidate, part, cand_bbox, sheet, layout, target_idx, parts, loss_model,
-                unsupported_count,
-            )
-        }
-        CollisionBackendKind::Cde => {
-            eval_with_backend_trait(
-                &CdeCollisionBackend,
-                candidate, part, cand_bbox, sheet, layout, target_idx, parts, loss_model,
-                unsupported_count,
-            )
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Point evaluation helper
+// Point evaluation helper (Q21: delegates to central collision_severity engine)
 // ---------------------------------------------------------------------------
 
 struct EvalResult {
@@ -287,6 +193,8 @@ fn eval_at_point(
     parts: &[Part],
     collision_backend: &CollisionBackendKind,
     loss_model: LossModelKind,
+    cfg: &SearchPositionConfig,
+    stats: &mut SearchPositionStats,
 ) -> EvalResult {
     let (rw, rh) = dims_for_rotation(part.width, part.height, rot);
     let (ax, ay) = placement_anchor_from_rect_min(rect_min_x, rect_min_y, part.width, part.height, rot);
@@ -305,12 +213,12 @@ fn eval_at_point(
         x2: rect_min_x + rw,
         y2: rect_min_y + rh,
     };
-    let mut unsup = 0usize;
-    let loss = eval_candidate_loss(
+    let r = super::collision_severity::evaluate_transform_loss(
         &candidate, part, &cand_bbox, sheet,
-        layout, target_idx, parts, collision_backend, loss_model, &mut unsup,
+        layout, target_idx, parts, collision_backend, loss_model,
+        &cfg.severity_cfg, &mut stats.severity_stats,
     );
-    EvalResult { loss, placement: candidate, unsupported: unsup > 0 }
+    EvalResult { loss: r.loss, placement: candidate, unsupported: r.unsupported }
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +272,7 @@ fn coord_descent_from(
                 best_x + dx, best_y + dy, best_rot, sheet_idx,
                 instance_id, part_id, part, sheet, layout, target_idx, parts,
                 collision_backend, loss_model,
+                cfg, stats,
             );
             total_steps += 1;
             stats.coord_descent_steps += 1;
@@ -386,6 +295,7 @@ fn coord_descent_from(
                     best_x, best_y, nr, sheet_idx,
                     instance_id, part_id, part, sheet, layout, target_idx, parts,
                     collision_backend, loss_model,
+                    cfg, stats,
                 );
                 total_steps += 1;
                 stats.coord_descent_steps += 1;
@@ -479,6 +389,7 @@ pub fn search_position_for_target(
                         gx, gy, rot, sheet_idx,
                         instance_id, part_id, part, sheet, layout, target_idx, parts,
                         collision_backend, loss_model,
+                        cfg, stats,
                     );
                     stats.global_samples_evaluated += 1;
                     if r.unsupported {
@@ -520,6 +431,7 @@ pub fn search_position_for_target(
                             fx, fy, rot, sheet_idx,
                             instance_id, part_id, part, sheet, layout, target_idx, parts,
                             collision_backend, loss_model,
+                            cfg, stats,
                         );
                         stats.focused_samples_evaluated += 1;
                         if r.unsupported {
@@ -1064,6 +976,75 @@ pub(crate) mod tests {
             stats.refined_samples, k,
             "refined_samples must equal coord_descent_top_k={k} for nonzero-loss fixture (got {})",
             stats.refined_samples
+        );
+    }
+
+    // Q21-SP-T1: severity engine is queried when using JaguaPolygonExact backend.
+    #[test]
+    fn search_position_uses_collision_severity_engine() {
+        let parts = vec![
+            make_rect_part("A", 20.0, 20.0, 1, vec![0]),
+            make_rect_part("B", 20.0, 20.0, 1, vec![0]),
+        ];
+        let sheets = make_test_sheets(100.0, 100.0);
+        // A at (0,0) and B at (10,0) overlap → severity engine will confirm collision
+        let layout = WorkingLayout::new(
+            vec![
+                Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+                Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 10.0, y: 0.0, rotation_deg: 0.0 },
+            ],
+            vec![], 1, 0,
+        );
+        let cfg = SearchPositionConfig {
+            global_grid_n: 3,
+            focused_sample_count: 0,
+            coord_descent_top_k: 1,
+            coord_descent_max_steps: 3,
+            ..Default::default()
+        };
+        let ctx = default_ctx();
+        let mut stats = SearchPositionStats::default();
+        search_position_for_target(
+            &layout, 1, &parts, &sheets, &None,
+            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+        );
+        let sev = &stats.severity_stats;
+        assert!(
+            sev.pair_queries + sev.boundary_queries > 0,
+            "JaguaPolygonExact must trigger severity engine queries: pair={}, boundary={}",
+            sev.pair_queries, sev.boundary_queries
+        );
+        assert_eq!(sev.bbox_proxy_severity_uses, 0,
+            "JaguaPolygonExact must not use bbox proxy severity");
+    }
+
+    // Q21-SP-T2: CDE path uses no bbox proxy as collision source-of-truth.
+    #[test]
+    fn cde_path_reports_no_bbox_collision_source_of_truth() {
+        let parts = vec![make_continuous_part("P", 20.0, 10.0, 2)];
+        let sheets = make_test_sheets(200.0, 200.0);
+        let layout = WorkingLayout::new(
+            vec![
+                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+                Placement { instance_id: "P__0002".into(), part_id: "P".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
+            ],
+            vec![], 1, 0,
+        );
+        let cfg = SearchPositionConfig {
+            global_grid_n: 3,
+            focused_sample_count: 0,
+            ..Default::default()
+        };
+        let ctx = continuous_ctx();
+        let mut stats = SearchPositionStats::default();
+        search_position_for_target(
+            &layout, 0, &parts, &sheets, &None,
+            &CollisionBackendKind::Cde, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+        );
+        assert_eq!(
+            stats.severity_stats.bbox_proxy_severity_uses, 0,
+            "CDE path must not use bbox proxy as collision source-of-truth (got {})",
+            stats.severity_stats.bbox_proxy_severity_uses
         );
     }
 }
