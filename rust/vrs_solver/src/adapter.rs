@@ -253,6 +253,7 @@ fn sparrow_optimizer_diag_from(
     backend_name: String,
     final_commit_ms: Option<f64>,
     pipeline_label: &str,
+    loss_model: crate::optimizer::loss_model::LossModelKind,
 ) -> OptimizerDiagnosticsOutput {
     OptimizerDiagnosticsOutput {
         pipeline_used: pipeline_label.to_string(),
@@ -349,6 +350,8 @@ fn sparrow_optimizer_diag_from(
         sparrow_fixed_sheet_objective_before: Some(sd.fixed_sheet_objective_before),
         sparrow_fixed_sheet_objective_after: Some(sd.fixed_sheet_objective_after),
         sparrow_fixed_sheet_objective_delta: Some(sd.fixed_sheet_objective_delta),
+        loss_model_used: Some(loss_model.name().to_string()),
+        loss_bbox_proxy_used_as_primary: Some(loss_model.is_bbox_area_primary()),
     }
 }
 
@@ -408,20 +411,31 @@ fn run_sparrow_pipeline(
         max_iterations: 256,
         time_limit_s: (input.time_limit_s as f64).max(1.0),
         collision_backend: backend_kind.clone(),
-        loss_model: crate::optimizer::loss_model::LossModelKind::BboxArea,
+        // SGH-Q24: production CDE path uses the CDE-separation loss identity (the
+        // authoritative search loss is the batch separation distance, not bbox
+        // area). Non-CDE debug runs keep the legacy bbox-area model.
+        loss_model: if backend_kind == CollisionBackendKind::Cde {
+            crate::optimizer::loss_model::LossModelKind::CdeSeparation
+        } else {
+            crate::optimizer::loss_model::LossModelKind::BboxArea
+        },
         rotation_context: rotation_context.clone(),
         seed: input.seed as u64,
+        // SGH-Q24: non-trivial production search budget (Q23R3 left this
+        // effectively disabled). Deterministic, modest, and measured — proves
+        // real search activity without making runs unusable.
         search_position_config: SearchPositionConfig {
-            global_grid_n: 1,
-            focused_sample_count: 0,
-            coord_descent_max_steps: 0,
-            coord_descent_top_k: 1,
+            global_grid_n: 2,
+            focused_sample_count: 2,
+            coord_descent_max_steps: 3,
+            coord_descent_top_k: 2,
             ..SearchPositionConfig::default()
         },
         // Production Sparrow contract: no LBF/finite-candidate fallback.
         allow_lbf_fallback: false,
         ..SparrowConfig::default()
     };
+    let prod_loss_model = sparrow_cfg.loss_model;
     let kernel = SparrowSeparationKernel::new(sparrow_cfg);
     let sparrow_result = kernel.run(seed_layout, &input.parts, sheets);
     let layout = sparrow_result.layout;
@@ -435,6 +449,7 @@ fn run_sparrow_pipeline(
             backend_name.clone(),
             final_commit_ms,
             pipeline_label,
+            prod_loss_model,
         );
         if is_cde {
             let snap = cde_observability::snapshot();
@@ -468,6 +483,7 @@ fn run_sparrow_pipeline(
                 backend_name,
                 final_commit_ms,
                 pipeline_label,
+                prod_loss_model,
             );
             Ok((commit.placements, commit.unplaced, Some(diagnostics), backend_diag))
         }
@@ -479,6 +495,7 @@ fn run_sparrow_pipeline(
                 backend_name,
                 ms,
                 pipeline_label,
+                prod_loss_model,
             );
             if is_cde {
                 let snap = cde_observability::snapshot();
@@ -790,6 +807,8 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_fixed_sheet_objective_before: None,
                             sparrow_fixed_sheet_objective_after: None,
                             sparrow_fixed_sheet_objective_delta: None,
+                            loss_model_used: None,
+                            loss_bbox_proxy_used_as_primary: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

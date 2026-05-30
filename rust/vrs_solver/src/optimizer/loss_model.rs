@@ -36,6 +36,16 @@ pub enum LossModelKind {
     /// Smooth penetration severity (Sparrow Algorithm 3, VRS bbox surrogate).
     /// Provides gradient signal proportional to penetration depth and item size.
     PolePenetrationSmooth,
+    /// SGH-Q24: production CDE-separation loss identity for `sparrow_cde`.
+    ///
+    /// The authoritative search loss for this model is the CDE-truth separation
+    /// distance computed by the single-engine batch evaluator
+    /// (`collision_severity::evaluate_transform_cde_batch`), NOT a bbox area.
+    /// The `pair_loss` / `compute_boundary_loss` methods here are only the
+    /// tracker/graph secondary signal and intentionally use the smooth
+    /// penetration surrogate (never `dx*dy` bbox-area), so bbox area is never the
+    /// primary production loss. `loss_bbox_proxy_used_as_primary` is `false`.
+    CdeSeparation,
 }
 
 /// Equivalent circle radius for a placed bbox, used as shape scale in smooth loss.
@@ -73,7 +83,7 @@ impl LossModelKind {
         let dy = (a.y2.min(b.y2) - a.y1.max(b.y1)).max(0.0);
         match self {
             LossModelKind::BboxArea => dx * dy,
-            LossModelKind::PolePenetrationSmooth => {
+            LossModelKind::PolePenetrationSmooth | LossModelKind::CdeSeparation => {
                 if dx == 0.0 || dy == 0.0 {
                     return 0.0;
                 }
@@ -104,7 +114,7 @@ impl LossModelKind {
         }
         match self {
             LossModelKind::BboxArea => 1.0,
-            LossModelKind::PolePenetrationSmooth => {
+            LossModelKind::PolePenetrationSmooth | LossModelKind::CdeSeparation => {
                 // Rectangular sheet bounds violation depth.
                 let viol = (sheet.min_x - bbox.x1)
                     .max(bbox.x2 - sheet.max_x)
@@ -128,13 +138,23 @@ impl LossModelKind {
         match self {
             LossModelKind::BboxArea => "BboxAreaLoss",
             LossModelKind::PolePenetrationSmooth => "PolePenetrationSmoothLoss",
+            LossModelKind::CdeSeparation => "CdeSeparationLoss",
         }
+    }
+
+    /// True only for the legacy bbox-area model whose primary signal is `dx*dy`.
+    /// `CdeSeparation` and the smooth surrogate are NOT primary-bbox-area.
+    pub fn is_bbox_area_primary(&self) -> bool {
+        matches!(self, LossModelKind::BboxArea)
     }
 
     pub fn quality_risk(&self) -> LossQualityRisk {
         match self {
             LossModelKind::BboxArea => LossQualityRisk::BboxOnlyProxy,
             LossModelKind::PolePenetrationSmooth => LossQualityRisk::SmoothBboxSurrogate,
+            // CDE separation is the authoritative search signal (batch evaluator);
+            // the bbox-derived tracker methods are a smooth surrogate only.
+            LossModelKind::CdeSeparation => LossQualityRisk::SmoothBboxSurrogate,
         }
     }
 }

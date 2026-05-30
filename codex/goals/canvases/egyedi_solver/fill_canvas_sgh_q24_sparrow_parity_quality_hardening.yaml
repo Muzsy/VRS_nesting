@@ -1,0 +1,19 @@
+id: fill_canvas_sgh_q24_sparrow_parity_quality_hardening
+kind: canvas_task
+slug: sgh_q24_sparrow_parity_quality_hardening
+title: SGH-Q24 Sparrow parity quality hardening
+canvas_path: canvases/egyedi_solver/sgh_q24_sparrow_parity_quality_hardening.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24_sparrow_parity_quality_hardening/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24_sparrow_parity_quality_hardening.md
+status: ready
+acceptance:
+  - production_sparrow_cde_search_position_budget_nontrivial
+  - exploration_pool_restore_disruption_lifecycle_active
+  - compression_restore_compact_separate_accept_reject_loop_active
+  - production_loss_model_not_bbox_area_primary
+  - medium_fixture_still_ok_12_of_12
+  - lv8_12types_x1_ok_12_of_12
+  - lv8_24_instances_ok_24_of_24
+  - no_bbox_lbf_legacy_fallback_in_production_sparrow_cde
+  - lv8_50_100_full_rows_measured_or_explicitly_accounted
+  - smoke_benchmark_report_verify_artifacts_written

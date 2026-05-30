@@ -283,6 +283,16 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_fixed_sheet_objective_after: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_fixed_sheet_objective_delta: Option<f64>,
+    /// SGH-Q24: production loss-model identity used for the search (e.g.
+    /// `CdeSeparationLoss`). For production `sparrow_cde` this must NOT be
+    /// `BboxAreaLoss` — the authoritative search loss is the CDE batch
+    /// separation distance, never bbox area.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loss_model_used: Option<String>,
+    /// SGH-Q24: true only if a bbox-area proxy is the PRIMARY production loss.
+    /// Must be `false` for production `sparrow_cde`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loss_bbox_proxy_used_as_primary: Option<bool>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).
