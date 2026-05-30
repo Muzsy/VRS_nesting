@@ -51,6 +51,8 @@ pub struct SolverInput {
 pub enum OptimizerPipelineKind {
     LegacyMultisheet,
     PhaseOptimizer,
+    /// SGH-Q22: Sparrow-style separation kernel with explicit infeasible state.
+    SparrowExperimental,
 }
 
 impl Default for OptimizerPipelineKind {
@@ -165,6 +167,57 @@ pub struct OptimizerDiagnosticsOutput {
     pub phase_optimizer_bpp_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase_optimizer_final_commit_ms: Option<f64>,
+    /// SGH-Q22 Sparrow kernel diagnostics. Populated only for sparrow_experimental.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_invoked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_seed_placements: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_seed_unplaced: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_initial_raw_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_initial_weighted_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_final_raw_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_final_weighted_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_best_infeasible_raw_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_best_infeasible_weighted_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_iterations: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_moves_attempted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_moves_accepted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_rollbacks: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_gls_weight_updates: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_converged: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_collision_graph_initial_pairs: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_collision_graph_final_pairs: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_boundary_violations_initial: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_boundary_violations_final: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_search_position_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_search_position_samples: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_severity_pair_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_severity_boundary_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_severity_probe_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_lbf_fallback_used: Option<usize>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

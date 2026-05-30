@@ -1,0 +1,141 @@
+id: sgh_q22_sparrow_state_separation_kernel
+project: VRS_nesting
+kind: solver_architecture_task
+priority: critical
+status: ready
+
+objective: >
+  Implement the first serious, measurable jagua_rs/Sparrow-style solver kernel: explicit
+  sparrow_experimental pipeline, SparrowState with infeasible lifecycle, deterministic collision graph
+  snapshots, GLS-guided separation loop, search_position relocation, backend-oracle evaluation,
+  commit/rollback, final backend validation, and smoke/benchmark measurement.
+
+depends_on:
+  - sgh_q20r_r1_topk_report_consistency_fix
+  - sgh_q21r1_collision_severity_full_sparrow_alignment
+
+must_read:
+  - codex/reports/egyedi_solver/sgh_q20r_r1_topk_report_consistency_fix.md
+  - codex/reports/egyedi_solver/sgh_q21r1_collision_severity_full_sparrow_alignment.md
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/optimizer/working.rs
+  - rust/vrs_solver/src/optimizer/phase.rs
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - rust/vrs_solver/src/optimizer/search_position.rs
+  - rust/vrs_solver/src/optimizer/collision_severity.rs
+  - rust/vrs_solver/src/optimizer/initializer.rs
+  - rust/vrs_solver/src/optimizer/mod.rs
+
+steps:
+  - name: Dependency and architecture gate
+    description: >
+      Verify Q20R-R1 and Q21R1 reports are PASS/READY. Audit the current phase optimizer,
+      separator, search_position and collision_severity paths. Document where existing code is reusable
+      and where a real SparrowState lifecycle is missing. If dependencies are missing, stop with BLOCKED.
+    outputs:
+      - codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel.md
+
+  - name: Add explicit sparrow_experimental pipeline
+    description: >
+      Extend OptimizerPipelineKind with SparrowExperimental using JSON value sparrow_experimental.
+      Wire adapter routing to the new kernel without regressing legacy_multisheet or phase_optimizer.
+      Successful output must expose pipeline_used=sparrow_experimental and sparrow_invoked diagnostics.
+    outputs:
+      - rust/vrs_solver/src/io.rs
+      - rust/vrs_solver/src/adapter.rs
+
+  - name: Implement optimizer/sparrow.rs
+    description: >
+      Create a new optimizer/sparrow.rs module with SparrowConfig, SparrowDiagnostics, SparrowState,
+      CollisionGraphSnapshot, SparrowSeparationKernel, and SparrowResult or equivalent types. The state
+      must allow infeasible layouts, track current/best feasible/best infeasible state, collision graph,
+      GLS tracker, iteration counts, move counts, rollback counts, and deterministic seed/run metadata.
+    outputs:
+      - rust/vrs_solver/src/optimizer/sparrow.rs
+      - rust/vrs_solver/src/optimizer/mod.rs
+
+  - name: Deterministic infeasible seed layout
+    description: >
+      Implement a deterministic seed builder for sparrow_experimental. Include every instance that can
+      fit at least one sheet under the rotation policy. Mark never-fit parts unplaced. Seed placements may
+      overlap; this is intentional. Respect rotation policy and Q15 hole-free main solver contract.
+    outputs:
+      - rust/vrs_solver/src/optimizer/sparrow.rs
+      - rust/vrs_solver/src/adapter.rs
+
+  - name: CollisionGraphSnapshot
+    description: >
+      Build deterministic collision graph snapshots from tracker/severity state. Include pair collision
+      counts, boundary violation counts, raw/weighted loss, worst item/pair/boundary, max weights, and top
+      pair/boundary summaries where feasible. Use stable tie-breaks by instance_id/index.
+    outputs:
+      - rust/vrs_solver/src/optimizer/sparrow.rs
+
+  - name: SparrowSeparationKernel loop
+    description: >
+      Implement the real loop: build/update graph; choose target by weighted collision graph; call
+      search_position_for_target; evaluate using collision_severity and active backend; tentatively apply;
+      commit improvements; rollback non-improvements while preserving GLS weights; update GLS weights on
+      stagnation; retain best feasible and best infeasible states. Do not relabel phase_optimizer as Sparrow.
+    outputs:
+      - rust/vrs_solver/src/optimizer/sparrow.rs
+      - rust/vrs_solver/src/optimizer/separator.rs
+      - rust/vrs_solver/src/optimizer/search_position.rs
+      - rust/vrs_solver/src/optimizer/collision_severity.rs
+
+  - name: Final commit and diagnostics
+    description: >
+      Successful sparrow_experimental output must pass WorkingLayout::validate_and_commit_with_backend with
+      the selected backend. Add optimizer diagnostics for sparrow state, loss reduction, graph counts,
+      move/rollback/GLS counts, search_position stats, severity stats, and backend no-fallback evidence.
+    outputs:
+      - rust/vrs_solver/src/io.rs
+      - rust/vrs_solver/src/adapter.rs
+      - rust/vrs_solver/src/optimizer/sparrow.rs
+
+  - name: Measurement smoke and quick bench
+    description: >
+      Add scripts/smoke_sgh_q22_sparrow_kernel.py with overlap, boundary, chain, continuous rescue, and
+      medium fixtures. Add scripts/bench_sgh_q22_sparrow_kernel.py --quick to compare phase_optimizer vs
+      sparrow_experimental on deterministic small/medium fixtures and write JSON+MD measurement artifacts.
+    outputs:
+      - scripts/smoke_sgh_q22_sparrow_kernel.py
+      - scripts/bench_sgh_q22_sparrow_kernel.py
+      - codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel_measurements.json
+      - codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel_measurements.md
+
+  - name: Tests and verify
+    description: >
+      Add targeted Rust tests for seed layout, infeasible state, graph counts, target selection, commit/rollback,
+      GLS weight preservation, convergence on simple fixtures, adapter routing, final backend validation, CDE no
+      bbox fallback, and determinism. Run all required cargo, smoke, bench, and verify commands. Report honestly.
+    outputs:
+      - codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel.md
+      - codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel.verify.log
+
+acceptance:
+  - Explicit sparrow_experimental pipeline exists and routes from adapter.
+  - SparrowState exists and permits infeasible intermediate states.
+  - CollisionGraphSnapshot exists and is deterministic.
+  - SparrowSeparationKernel has a real loop, not phase_optimizer relabeling.
+  - Search_position is the primary relocation engine.
+  - GLS weights survive rollback and guide target selection.
+  - Final feasible output is backend-validated.
+  - CDE/Jagua mode has no silent bbox fallback.
+  - Smoke fixtures prove convergence for overlap, boundary, and chain cases.
+  - Measurement report exists.
+  - Same-seed determinism is tested.
+  - PASS report contains SPARROW_EXPERIMENTAL_STATUS: TESTABLE.
+
+commands:
+  required:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::sparrow
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::separator
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::search_position
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::collision_severity
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml adapter
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q22_sparrow_kernel.py
+    - python3 scripts/bench_sgh_q22_sparrow_kernel.py --quick
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel.md

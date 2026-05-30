@@ -410,6 +410,31 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             phase_optimizer_compression_ms: result.compression_ms,
                             phase_optimizer_bpp_ms: result.bpp_ms,
                             phase_optimizer_final_commit_ms: final_commit_ms,
+                            sparrow_invoked: None,
+                            sparrow_seed_placements: None,
+                            sparrow_seed_unplaced: None,
+                            sparrow_initial_raw_loss: None,
+                            sparrow_initial_weighted_loss: None,
+                            sparrow_final_raw_loss: None,
+                            sparrow_final_weighted_loss: None,
+                            sparrow_best_infeasible_raw_loss: None,
+                            sparrow_best_infeasible_weighted_loss: None,
+                            sparrow_iterations: None,
+                            sparrow_moves_attempted: None,
+                            sparrow_moves_accepted: None,
+                            sparrow_rollbacks: None,
+                            sparrow_gls_weight_updates: None,
+                            sparrow_converged: None,
+                            sparrow_collision_graph_initial_pairs: None,
+                            sparrow_collision_graph_final_pairs: None,
+                            sparrow_boundary_violations_initial: None,
+                            sparrow_boundary_violations_final: None,
+                            sparrow_search_position_calls: None,
+                            sparrow_search_position_samples: None,
+                            sparrow_severity_pair_queries: None,
+                            sparrow_severity_boundary_queries: None,
+                            sparrow_severity_probe_queries: None,
+                            sparrow_lbf_fallback_used: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
@@ -422,6 +447,148 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             let snap = cde_observability::snapshot();
                             let ms = timing_ms(t_commit_start);
                             let diag = cde_unsupported_diag(&snap, "full_solve", ms);
+                            return Ok(_unsupported_output_with_backend_diag(&reason, &input, Some(diag)));
+                        }
+                        return Ok(_unsupported_output(&reason, &input));
+                    }
+                }
+            }
+            OptimizerPipelineKind::SparrowExperimental => {
+                use crate::optimizer::sparrow::{
+                    build_sparrow_seed_layout, SparrowConfig, SparrowSeparationKernel,
+                };
+                let is_cde = backend_kind == CollisionBackendKind::Cde;
+                if is_cde { cde_observability::reset(); }
+                let timing_enabled = cde_timing_enabled();
+                let (seed_placements, mut seed_unplaced) =
+                    build_sparrow_seed_layout(&input.parts, &sheets, &rotation_context)
+                        .map_err(|e| format!("sparrow seed build failed: {e}"))?;
+                seed_unplaced.extend(pre_unplaced);
+                let seed_layout = WorkingLayout::new(
+                    seed_placements,
+                    seed_unplaced,
+                    sheets.len(),
+                    input.seed,
+                );
+                let sparrow_cfg = SparrowConfig {
+                    max_iterations: 256,
+                    time_limit_s: (input.time_limit_s as f64).max(1.0),
+                    collision_backend: backend_kind.clone(),
+                    loss_model: crate::optimizer::loss_model::LossModelKind::BboxArea,
+                    rotation_context: rotation_context.clone(),
+                    seed: input.seed as u64,
+                    ..SparrowConfig::default()
+                };
+                let kernel = SparrowSeparationKernel::new(sparrow_cfg);
+                let sparrow_result = kernel.run(seed_layout, &input.parts, &sheets);
+                let layout = sparrow_result.layout;
+                let backend_name = format!("{:?}", backend_kind);
+                let t_commit_start = timing_start(timing_enabled);
+
+                if !sparrow_result.feasible {
+                    // Honest reporting: no feasible layout means we cannot commit
+                    // colliding placements as successful.
+                    let final_commit_ms = timing_ms(t_commit_start);
+                    if is_cde {
+                        let snap = cde_observability::snapshot();
+                        let diag = cde_unsupported_diag(
+                            &snap, "sparrow_no_feasible", final_commit_ms,
+                        );
+                        return Ok(_unsupported_output_with_backend_diag(
+                            "SPARROW_NO_FEASIBLE_LAYOUT", &input, Some(diag),
+                        ));
+                    }
+                    return Ok(_unsupported_output("SPARROW_NO_FEASIBLE_LAYOUT", &input));
+                }
+
+                match layout.validate_and_commit_with_backend(
+                    &input.parts, &sheets, backend_kind,
+                ) {
+                    Ok(commit) => {
+                        let final_commit_ms = timing_ms(t_commit_start);
+                        collision_backend_diag = Some(if is_cde {
+                            let snap = cde_observability::snapshot();
+                            diag_output_from_with_cde(&commit, snap, "sparrow_full_solve", final_commit_ms)
+                        } else {
+                            diag_output_from(&commit)
+                        });
+                        let sd = &sparrow_result.diagnostics;
+                        let diagnostics = OptimizerDiagnosticsOutput {
+                            pipeline_used: "sparrow_experimental".to_string(),
+                            phase_optimizer_invoked: false,
+                            exploration_iterations: 0,
+                            compression_iterations: 0,
+                            bpp_attempts: 0,
+                            rotation_refinement_enabled: false,
+                            rotation_refinement_attempts: 0,
+                            rotation_refinement_accepts: 0,
+                            rotation_refinement_rejections: 0,
+                            rotation_refinement_best_delta: 0.0,
+                            search_position_calls: sd.search_position_calls,
+                            search_position_global_samples_evaluated: 0,
+                            search_position_focused_samples_evaluated: 0,
+                            search_position_samples_unsupported: 0,
+                            search_position_refined_samples: 0,
+                            search_position_coord_descent_steps: 0,
+                            search_position_lbf_fallback_used: sd.lbf_fallback_used,
+                            search_position_best_eval: 0.0,
+                            collision_severity_backend: backend_name,
+                            collision_severity_enabled: true,
+                            collision_severity_pair_queries: sd.severity_pair_queries,
+                            collision_severity_boundary_queries: sd.severity_boundary_queries,
+                            collision_severity_probe_queries: sd.severity_probe_queries,
+                            collision_severity_backend_confirmed_collisions: 0,
+                            collision_severity_backend_confirmed_no_collisions: 0,
+                            collision_severity_unsupported_queries: 0,
+                            collision_severity_bbox_proxy_uses: 0,
+                            collision_severity_probe_pair_queries: 0,
+                            collision_severity_probe_boundary_queries: 0,
+                            collision_severity_probe_resolved: 0,
+                            collision_severity_probe_unresolved: 0,
+                            collision_severity_probe_unsupported: 0,
+                            collision_severity_min_resolution_mm: 0.0,
+                            collision_severity_max_resolution_mm: 0.0,
+                            collision_severity_avg_resolution_mm: 0.0,
+                            phase_optimizer_exploration_ms: None,
+                            phase_optimizer_compression_ms: None,
+                            phase_optimizer_bpp_ms: None,
+                            phase_optimizer_final_commit_ms: final_commit_ms,
+                            sparrow_invoked: Some(sd.invoked),
+                            sparrow_seed_placements: Some(sd.seed_placements),
+                            sparrow_seed_unplaced: Some(sd.seed_unplaced),
+                            sparrow_initial_raw_loss: Some(sd.initial_raw_loss),
+                            sparrow_initial_weighted_loss: Some(sd.initial_weighted_loss),
+                            sparrow_final_raw_loss: Some(sd.final_raw_loss),
+                            sparrow_final_weighted_loss: Some(sd.final_weighted_loss),
+                            sparrow_best_infeasible_raw_loss: Some(sd.best_infeasible_raw_loss),
+                            sparrow_best_infeasible_weighted_loss: Some(sd.best_infeasible_weighted_loss),
+                            sparrow_iterations: Some(sd.iterations),
+                            sparrow_moves_attempted: Some(sd.moves_attempted),
+                            sparrow_moves_accepted: Some(sd.moves_accepted),
+                            sparrow_rollbacks: Some(sd.rollbacks),
+                            sparrow_gls_weight_updates: Some(sd.gls_weight_updates),
+                            sparrow_converged: Some(sd.converged),
+                            sparrow_collision_graph_initial_pairs: Some(sd.collision_graph_initial_pairs),
+                            sparrow_collision_graph_final_pairs: Some(sd.collision_graph_final_pairs),
+                            sparrow_boundary_violations_initial: Some(sd.boundary_violations_initial),
+                            sparrow_boundary_violations_final: Some(sd.boundary_violations_final),
+                            sparrow_search_position_calls: Some(sd.search_position_calls),
+                            sparrow_search_position_samples: Some(sd.search_position_samples),
+                            sparrow_severity_pair_queries: Some(sd.severity_pair_queries),
+                            sparrow_severity_boundary_queries: Some(sd.severity_boundary_queries),
+                            sparrow_severity_probe_queries: Some(sd.severity_probe_queries),
+                            sparrow_lbf_fallback_used: Some(sd.lbf_fallback_used),
+                        };
+                        (commit.placements, commit.unplaced, Some(diagnostics))
+                    }
+                    Err(e) => {
+                        let reason = backend_err_reason(
+                            e, "SPARROW_COMMIT_VIOLATION_BACKEND",
+                        );
+                        if is_cde {
+                            let snap = cde_observability::snapshot();
+                            let ms = timing_ms(t_commit_start);
+                            let diag = cde_unsupported_diag(&snap, "sparrow_full_solve", ms);
                             return Ok(_unsupported_output_with_backend_diag(&reason, &input, Some(diag)));
                         }
                         return Ok(_unsupported_output(&reason, &input));
@@ -1385,5 +1552,86 @@ mod tests {
             matches!(cfg.collision_backend, CollisionBackendKind::JaguaPolygonExact),
             "phase_config_from_input must propagate collision_backend from SolverInput"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // SGH-Q22: Sparrow adapter integration tests
+    // ------------------------------------------------------------------
+
+    /// SGH-Q22: explicit `sparrow_experimental` pipeline routes from adapter
+    /// and emits `pipeline_used = sparrow_experimental` in diagnostics.
+    #[test]
+    fn sparrow_pipeline_routes_from_adapter() {
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let parts = vec![make_part("P", 30.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(1, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
+        let out = super::solve(input).expect("solve ok");
+        assert!(out.status == "ok" || out.status == "partial",
+                "status got {} for sparrow run", out.status);
+        let diag = out
+            .optimizer_diagnostics
+            .expect("sparrow run must emit optimizer_diagnostics");
+        assert_eq!(diag.pipeline_used, "sparrow_experimental");
+        assert_eq!(diag.sparrow_invoked, Some(true));
+        assert!(diag.sparrow_iterations.is_some());
+    }
+
+    /// SGH-Q22: final commit on sparrow pipeline must use the selected backend.
+    /// Under JaguaPolygonExact, `collision_backend_diagnostics.backend_used`
+    /// must reflect the exact backend (or "cde_adapter" for CDE).
+    #[test]
+    fn sparrow_pipeline_final_commit_uses_selected_backend() {
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let parts = vec![make_part("P", 30.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(2, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
+        input.collision_backend = Some(CollisionBackendKind::JaguaPolygonExact);
+        let out = super::solve(input).expect("solve ok");
+        assert!(out.status == "ok" || out.status == "partial");
+        let cbd = out
+            .collision_backend_diagnostics
+            .expect("sparrow + exact backend must emit collision_backend_diagnostics");
+        assert!(
+            cbd.backend_used.contains("jagua") || cbd.backend_used.contains("exact"),
+            "expected jagua/exact backend, got {}",
+            cbd.backend_used
+        );
+    }
+
+    /// SGH-Q22: CDE mode under sparrow must have `bbox_fallback_queries == 0`.
+    #[test]
+    fn sparrow_pipeline_cde_has_no_bbox_fallback() {
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let parts = vec![make_part("P", 30.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(3, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = super::solve(input).expect("solve ok");
+        if out.status == "unsupported" {
+            return; // accept unsupported CDE setup; other tests cover routing.
+        }
+        let cbd = out
+            .collision_backend_diagnostics
+            .expect("CDE sparrow must emit cde diagnostics");
+        assert_eq!(
+            cbd.bbox_fallback_queries, 0,
+            "CDE/sparrow path must not fall back to bbox, got {}",
+            cbd.bbox_fallback_queries
+        );
+    }
+
+    /// SGH-Q22: same seed produces identical placements through the sparrow pipeline.
+    #[test]
+    fn sparrow_pipeline_same_seed_is_deterministic() {
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let parts = vec![make_part("P", 30.0, 20.0, 3, vec![0], None)];
+        let mut input_a = make_input(42, stocks.clone(), parts.clone(), None);
+        input_a.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
+        let mut input_b = make_input(42, stocks, parts, None);
+        input_b.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
+        let a = super::solve(input_a).expect("solve a");
+        let b = super::solve(input_b).expect("solve b");
+        assert_same_output(&a, &b);
     }
 }

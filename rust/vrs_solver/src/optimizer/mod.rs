@@ -19,6 +19,7 @@ pub mod score;
 pub mod search_position;
 pub mod separator;
 pub mod sheet_elimination;
+pub mod sparrow;
 pub mod state;
 pub mod stopping;
 pub mod working;
