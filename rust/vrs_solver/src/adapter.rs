@@ -44,7 +44,13 @@ fn _unsupported_output(reason: &str, input: &SolverInput) -> SolverOutput {
 }
 
 fn pipeline_kind(input: &SolverInput) -> OptimizerPipelineKind {
-    input.optimizer_pipeline.clone().unwrap_or_default()
+    match input.optimizer_pipeline.clone() {
+        Some(pipeline) => pipeline,
+        None if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) => {
+            OptimizerPipelineKind::SparrowCde
+        }
+        None => OptimizerPipelineKind::default(),
+    }
 }
 
 fn resolve_backend_kind(input: &SolverInput) -> CollisionBackendKind {
@@ -313,6 +319,36 @@ fn sparrow_optimizer_diag_from(
         sparrow_severity_boundary_queries: Some(sd.severity_boundary_queries),
         sparrow_severity_probe_queries: Some(sd.severity_probe_queries),
         sparrow_lbf_fallback_used: Some(sd.lbf_fallback_used),
+        sparrow_workers: Some(sd.workers),
+        sparrow_worker_passes: Some(sd.worker_passes),
+        sparrow_worker_candidates_evaluated: Some(sd.worker_candidates_evaluated),
+        sparrow_worker_commits: Some(sd.worker_commits),
+        sparrow_worker_rollbacks: Some(sd.worker_rollbacks),
+        sparrow_worker_best_loss: Some(sd.worker_best_loss),
+        sparrow_multi_target_items_attempted: Some(sd.multi_target_items_attempted),
+        sparrow_multi_target_items_accepted: Some(sd.multi_target_items_accepted),
+        sparrow_multi_target_items_rejected: Some(sd.multi_target_items_rejected),
+        sparrow_topk_target_count: Some(sd.topk_target_count),
+        sparrow_graph_full_rebuilds: Some(sd.graph_full_rebuilds),
+        sparrow_graph_incremental_updates: Some(sd.graph_incremental_updates),
+        sparrow_graph_edges_recomputed: Some(sd.graph_edges_recomputed),
+        sparrow_graph_edges_pruned_by_broadphase: Some(sd.graph_edges_pruned_by_broadphase),
+        sparrow_graph_debug_rebuilds: Some(sd.graph_debug_rebuilds),
+        sparrow_graph_debug_rebuild_mismatches: Some(sd.graph_debug_rebuild_mismatches),
+        sparrow_exploration_restarts: Some(sd.exploration_restarts),
+        sparrow_exploration_seed_strategies: Some(sd.exploration_seed_strategies),
+        sparrow_exploration_disruptions: Some(sd.exploration_disruptions),
+        sparrow_exploration_stagnation_events: Some(sd.exploration_stagnation_events),
+        sparrow_exploration_best_raw_loss: Some(sd.exploration_best_raw_loss),
+        sparrow_exploration_best_weighted_loss: Some(sd.exploration_best_weighted_loss),
+        sparrow_exploration_best_feasible_found: Some(sd.exploration_best_feasible_found),
+        sparrow_compression_passes: Some(sd.compression_passes),
+        sparrow_compression_candidates_evaluated: Some(sd.compression_candidates_evaluated),
+        sparrow_compression_accepts: Some(sd.compression_accepts),
+        sparrow_compression_rejects: Some(sd.compression_rejects),
+        sparrow_fixed_sheet_objective_before: Some(sd.fixed_sheet_objective_before),
+        sparrow_fixed_sheet_objective_after: Some(sd.fixed_sheet_objective_after),
+        sparrow_fixed_sheet_objective_delta: Some(sd.fixed_sheet_objective_delta),
     }
 }
 
@@ -347,6 +383,7 @@ fn run_sparrow_pipeline(
     use crate::optimizer::sparrow::{
         build_sparrow_seed_layout, SparrowConfig, SparrowSeparationKernel,
     };
+    use crate::optimizer::search_position::SearchPositionConfig;
     let is_cde = backend_kind == CollisionBackendKind::Cde;
     if is_cde {
         cde_observability::reset();
@@ -374,6 +411,13 @@ fn run_sparrow_pipeline(
         loss_model: crate::optimizer::loss_model::LossModelKind::BboxArea,
         rotation_context: rotation_context.clone(),
         seed: input.seed as u64,
+        search_position_config: SearchPositionConfig {
+            global_grid_n: 1,
+            focused_sample_count: 0,
+            coord_descent_max_steps: 0,
+            coord_descent_top_k: 1,
+            ..SearchPositionConfig::default()
+        },
         // Production Sparrow contract: no LBF/finite-candidate fallback.
         allow_lbf_fallback: false,
         ..SparrowConfig::default()
@@ -716,6 +760,36 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_severity_boundary_queries: None,
                             sparrow_severity_probe_queries: None,
                             sparrow_lbf_fallback_used: None,
+                            sparrow_workers: None,
+                            sparrow_worker_passes: None,
+                            sparrow_worker_candidates_evaluated: None,
+                            sparrow_worker_commits: None,
+                            sparrow_worker_rollbacks: None,
+                            sparrow_worker_best_loss: None,
+                            sparrow_multi_target_items_attempted: None,
+                            sparrow_multi_target_items_accepted: None,
+                            sparrow_multi_target_items_rejected: None,
+                            sparrow_topk_target_count: None,
+                            sparrow_graph_full_rebuilds: None,
+                            sparrow_graph_incremental_updates: None,
+                            sparrow_graph_edges_recomputed: None,
+                            sparrow_graph_edges_pruned_by_broadphase: None,
+                            sparrow_graph_debug_rebuilds: None,
+                            sparrow_graph_debug_rebuild_mismatches: None,
+                            sparrow_exploration_restarts: None,
+                            sparrow_exploration_seed_strategies: None,
+                            sparrow_exploration_disruptions: None,
+                            sparrow_exploration_stagnation_events: None,
+                            sparrow_exploration_best_raw_loss: None,
+                            sparrow_exploration_best_weighted_loss: None,
+                            sparrow_exploration_best_feasible_found: None,
+                            sparrow_compression_passes: None,
+                            sparrow_compression_candidates_evaluated: None,
+                            sparrow_compression_accepts: None,
+                            sparrow_compression_rejects: None,
+                            sparrow_fixed_sheet_objective_before: None,
+                            sparrow_fixed_sheet_objective_after: None,
+                            sparrow_fixed_sheet_objective_delta: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
@@ -1017,7 +1091,7 @@ mod tests {
             solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
             margin_mm: None,
             rotation_policy,
-            optimizer_pipeline: None,
+            optimizer_pipeline: Some(OptimizerPipelineKind::LegacyMultisheet),
             collision_backend: None,
         }
     }
@@ -1151,6 +1225,30 @@ mod tests {
             input.optimizer_pipeline.unwrap_or_default(),
             OptimizerPipelineKind::LegacyMultisheet
         );
+    }
+
+    #[test]
+    fn phase1_missing_optimizer_pipeline_routes_to_sparrow_cde() {
+        let input = SolverInput {
+            contract_version: "v1".to_string(),
+            project_name: "default_phase1_sparrow_cde".to_string(),
+            seed: 1,
+            time_limit_s: 5,
+            stocks: vec![make_stock("S", 100.0, 100.0, 1)],
+            parts: vec![make_part("P", 10.0, 10.0, 1, vec![0], None)],
+            solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
+            margin_mm: None,
+            rotation_policy: None,
+            optimizer_pipeline: None,
+            collision_backend: Some(CollisionBackendKind::Bbox),
+        };
+        let out = solve(input).expect("solve");
+        let diag = out.optimizer_diagnostics.expect("sparrow diagnostics");
+        assert_eq!(diag.pipeline_used, "sparrow_cde");
+        assert_eq!(diag.collision_severity_backend, "Cde");
+        let backend = out.collision_backend_diagnostics.expect("backend diagnostics");
+        assert_eq!(backend.backend_used, "cde_adapter");
+        assert_eq!(backend.bbox_fallback_queries, 0);
     }
 
     #[test]
@@ -1299,6 +1397,7 @@ mod tests {
             "seed": 1,
             "time_limit_s": 5,
             "solver_profile": "jagua_optimizer_phase1_outer_only",
+            "optimizer_pipeline": "phase_optimizer",
             "stocks": [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}],
             "parts": [{
                 "id": "P",
@@ -1327,6 +1426,7 @@ mod tests {
             "seed": 1,
             "time_limit_s": 5,
             "solver_profile": "jagua_optimizer_phase1_outer_only",
+            "optimizer_pipeline": "legacy_multisheet",
             "stocks": [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}],
             "parts": [{
                 "id": "P",
@@ -1965,6 +2065,7 @@ mod tests {
         let parts = vec![make_part("P", 50.0, 50.0, 5, vec![0], None)];
         let mut input = make_input(7, stocks, parts, None);
         input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowCde);
+        input.time_limit_s = 1;
         let out = super::solve(input).expect("solve returns Ok(unsupported)");
         assert_eq!(out.status, "unsupported");
         assert_eq!(out.unsupported_reason.as_deref(), Some("SPARROW_NO_FEASIBLE_LAYOUT"));

@@ -1,0 +1,84 @@
+id: fill_canvas_sgh_q23r3_real_search_lifecycle_completion
+kind: canvas_task
+slug: sgh_q23r3_real_search_lifecycle_completion
+title: SGH-Q23R3 Real Sparrow search lifecycle completion
+canvas_path: canvases/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion/run.md
+report_path: codex/reports/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion.md
+status: ready
+acceptance:
+  - medium_10_to_20_items_sparrow_cde_converges_12_of_12
+  - medium_final_collision_pairs_zero
+  - medium_final_boundary_violations_zero
+  - medium_final_raw_loss_zero
+  - production_phase1_default_routes_to_sparrow_cde_after_medium_pass
+  - no_bbox_lbf_legacy_fallback_in_production_sparrow_cde
+  - q23r2_cde_batch_hotpath_preserved_no_pairwise_regression
+  - incremental_collision_graph_active_in_production_loop
+  - multi_target_worker_pass_active_in_production_loop
+  - fixed_sheet_exploration_restart_disruption_active
+  - fixed_sheet_compression_pass_active
+  - lv8_subset_readiness_smoke_if_fixture_exists
+  - full_diagnostics_on_success_and_failure
+  - smoke_benchmark_report_verify_artifacts_written
+reject_if:
+  - report_only_or_audit_only
+  - medium_convergence_softened
+  - medium_fixture_weakened
+  - default_remains_legacy_after_medium_pass
+  - hidden_phase_optimizer_or_legacy_or_lbf_fallback
+  - bbox_used_as_positive_collision_truth_or_search_loss_or_final_validity
+  - invalid_layout_emitted_as_ok
+  - benchmark_denominator_counts_only_successes
+steps:
+  - name: "Sparrow lifecycle implementacio"
+    description: >
+      Implementald a production sparrow_cde kernel hianyzo Q23R3 elemeit:
+      determinisztikus multi-target worker pass, maintained/incremental collision
+      graph frissites, fixed-sheet exploration/restart/disruption, feasible layout
+      utani compression/compaction, es a hozza tartozo diagnosztikai mezok.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow.rs"
+      - "rust/vrs_solver/src/optimizer/cde_observability.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Production routing es tesztek"
+    description: >
+      A medium hard gate sikeres teljesitese utan allitsd at a Phase1 missing
+      optimizer_pipeline production routingot sparrow_cde-re, de tartsd meg az
+      explicit legacy_multisheet es phase_optimizer opt-int. Adj celzott Rust
+      unit teszteket a worker, graph, exploration, compression es routing gatekre.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Smoke es benchmark artefaktok"
+    description: >
+      Hozd letre a Q23R3 smoke es benchmark scripteket. A smoke legyen non-zero
+      exit a medium hard gate bukasakor. A benchmark irja ki a JSON es Markdown
+      meresi riportokat, honest denominator accountinggal es LV8 subset
+      readiness sorral, ha a fixture letezik.
+    outputs:
+      - "scripts/smoke_sgh_q23r3_real_search_lifecycle_completion.py"
+      - "scripts/bench_sgh_q23r3_real_search_lifecycle_completion.py"
+      - "codex/reports/egyedi_solver/sgh_q23r3_real_search_lifecycle_measurements.json"
+      - "codex/reports/egyedi_solver/sgh_q23r3_real_search_lifecycle_measurements.md"
+
+  - name: "Checklist es report"
+    description: >
+      Toltsd ki a checklistet es a Q23R3 riportot PASS vagy REVISE top line-nal,
+      a run.md hard gatek szerinti bizonyitekokkal es pontos limitaciokkal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion.md"
+      - "codex/reports/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion.md"
+
+  - name: "Repo gate automatikus verify"
+    description: >
+      Futtasd a standard repo gate-et a wrapperen keresztul:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion.md
+      A verify logot a report mellett kell rogzitani.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion.md"
+      - "codex/reports/egyedi_solver/sgh_q23r3_real_search_lifecycle_completion.verify.log"

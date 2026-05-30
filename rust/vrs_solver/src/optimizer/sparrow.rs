@@ -17,7 +17,8 @@
 //! lifecycle, state, and metrics live here — not behind a black-box
 //! `VrsSeparator::run` call.
 
-use std::collections::HashSet;
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use crate::io::{CollisionBackendKind, Placement, Unplaced};
@@ -28,13 +29,34 @@ use crate::item::{
 use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 
-use super::collision_severity::{CollisionSeverityConfig, CollisionSeverityStats};
+use super::collision_severity::CollisionSeverityConfig;
+use super::initializer::bbox_from_placement;
 use super::loss_model::LossModelKind;
 use super::search_position::{
     search_position_for_target, SearchPositionConfig, SearchPositionStats,
 };
 use super::separator::VrsCollisionTracker;
 use super::working::WorkingLayout;
+
+struct DeterministicRng {
+    state: u64,
+}
+
+impl DeterministicRng {
+    fn new(seed: u64) -> Self {
+        let state = if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed };
+        Self { state }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.state = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -117,6 +139,36 @@ pub struct SparrowDiagnostics {
     pub severity_boundary_queries: usize,
     pub severity_probe_queries: usize,
     pub lbf_fallback_used: usize,
+    pub workers: usize,
+    pub worker_passes: usize,
+    pub worker_candidates_evaluated: usize,
+    pub worker_commits: usize,
+    pub worker_rollbacks: usize,
+    pub worker_best_loss: f64,
+    pub multi_target_items_attempted: usize,
+    pub multi_target_items_accepted: usize,
+    pub multi_target_items_rejected: usize,
+    pub topk_target_count: usize,
+    pub graph_full_rebuilds: usize,
+    pub graph_incremental_updates: usize,
+    pub graph_edges_recomputed: usize,
+    pub graph_edges_pruned_by_broadphase: usize,
+    pub graph_debug_rebuilds: usize,
+    pub graph_debug_rebuild_mismatches: usize,
+    pub exploration_restarts: usize,
+    pub exploration_seed_strategies: usize,
+    pub exploration_disruptions: usize,
+    pub exploration_stagnation_events: usize,
+    pub exploration_best_raw_loss: f64,
+    pub exploration_best_weighted_loss: f64,
+    pub exploration_best_feasible_found: bool,
+    pub compression_passes: usize,
+    pub compression_candidates_evaluated: usize,
+    pub compression_accepts: usize,
+    pub compression_rejects: usize,
+    pub fixed_sheet_objective_before: f64,
+    pub fixed_sheet_objective_after: f64,
+    pub fixed_sheet_objective_delta: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +333,262 @@ impl CollisionGraphSnapshot {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct GraphEntry {
+    raw_loss: f64,
+    weight: f64,
+}
+
+impl GraphEntry {
+    fn weighted_loss(&self) -> f64 {
+        self.raw_loss * self.weight
+    }
+}
+
+/// Maintained collision graph for the Sparrow hot loop.
+///
+/// The expensive backend work lives in `VrsCollisionTracker::update_placement`,
+/// which recomputes only the moved item's backend decisions. This graph mirrors
+/// the tracker's scalar losses and weights so target selection can be refreshed
+/// from moved-item edges instead of rebuilding a tracker-derived snapshot after
+/// every tentative move.
+#[derive(Debug, Clone)]
+struct SparrowCollisionGraph {
+    pair_edges: Vec<Vec<GraphEntry>>,
+    boundary_edges: Vec<GraphEntry>,
+    snapshot: CollisionGraphSnapshot,
+    full_rebuilds: usize,
+    incremental_updates: usize,
+    edges_recomputed: usize,
+    edges_pruned_by_broadphase: usize,
+    debug_rebuilds: usize,
+    debug_rebuild_mismatches: usize,
+}
+
+impl SparrowCollisionGraph {
+    fn build_from_tracker(
+        tracker: &VrsCollisionTracker,
+        layout: &WorkingLayout,
+        top_k: usize,
+    ) -> Self {
+        let n = layout.placements.len();
+        let mut pair_edges = vec![vec![GraphEntry::default(); n]; n];
+        let mut boundary_edges = vec![GraphEntry::default(); n];
+        for i in 0..n {
+            boundary_edges[i] = GraphEntry {
+                raw_loss: tracker.boundary_loss(i),
+                weight: tracker.boundary_weight(i),
+            };
+            for j in (i + 1)..n {
+                let entry = GraphEntry {
+                    raw_loss: tracker.pair_loss(i, j),
+                    weight: tracker.pair_weight(i, j),
+                };
+                pair_edges[i][j] = entry;
+                pair_edges[j][i] = entry;
+            }
+        }
+        let snapshot = Self::snapshot_from_edges(&pair_edges, &boundary_edges, layout, top_k);
+        Self {
+            pair_edges,
+            boundary_edges,
+            snapshot,
+            full_rebuilds: 1,
+            incremental_updates: 0,
+            edges_recomputed: 0,
+            edges_pruned_by_broadphase: 0,
+            debug_rebuilds: 0,
+            debug_rebuild_mismatches: 0,
+        }
+    }
+
+    fn snapshot(&self) -> CollisionGraphSnapshot {
+        self.snapshot.clone()
+    }
+
+    fn update_moved_item(
+        &mut self,
+        moved_idx: usize,
+        tracker: &VrsCollisionTracker,
+        layout: &WorkingLayout,
+        top_k: usize,
+    ) {
+        let n = layout.placements.len();
+        if moved_idx >= n {
+            return;
+        }
+        self.boundary_edges[moved_idx] = GraphEntry {
+            raw_loss: tracker.boundary_loss(moved_idx),
+            weight: tracker.boundary_weight(moved_idx),
+        };
+        self.edges_recomputed += 1;
+        for j in 0..n {
+            if j == moved_idx {
+                continue;
+            }
+            let entry = GraphEntry {
+                raw_loss: tracker.pair_loss(moved_idx, j),
+                weight: tracker.pair_weight(moved_idx, j),
+            };
+            if entry.raw_loss == 0.0 {
+                self.edges_pruned_by_broadphase += 1;
+            }
+            self.pair_edges[moved_idx][j] = entry;
+            self.pair_edges[j][moved_idx] = entry;
+            self.edges_recomputed += 1;
+        }
+        self.incremental_updates += 1;
+        self.snapshot = Self::snapshot_from_edges(&self.pair_edges, &self.boundary_edges, layout, top_k);
+    }
+
+    fn refresh_weights(
+        &mut self,
+        tracker: &VrsCollisionTracker,
+        layout: &WorkingLayout,
+        top_k: usize,
+    ) {
+        let n = layout.placements.len();
+        for i in 0..n {
+            self.boundary_edges[i].weight = tracker.boundary_weight(i);
+            for j in (i + 1)..n {
+                let weight = tracker.pair_weight(i, j);
+                self.pair_edges[i][j].weight = weight;
+                self.pair_edges[j][i].weight = weight;
+            }
+        }
+        self.snapshot = Self::snapshot_from_edges(&self.pair_edges, &self.boundary_edges, layout, top_k);
+    }
+
+    fn debug_compare_full_rebuild(
+        &mut self,
+        tracker: &VrsCollisionTracker,
+        layout: &WorkingLayout,
+        top_k: usize,
+    ) {
+        self.debug_rebuilds += 1;
+        let full = CollisionGraphSnapshot::from_tracker(tracker, layout, top_k);
+        let s = &self.snapshot;
+        let mismatch = s.colliding_pairs_count != full.colliding_pairs_count
+            || s.boundary_violations_count != full.boundary_violations_count
+            || (s.total_raw_loss - full.total_raw_loss).abs() > 1e-9
+            || (s.total_weighted_loss - full.total_weighted_loss).abs() > 1e-9
+            || s.worst_item_index != full.worst_item_index;
+        if mismatch {
+            self.debug_rebuild_mismatches += 1;
+        }
+    }
+
+    fn snapshot_from_edges(
+        pair_edges: &[Vec<GraphEntry>],
+        boundary_edges: &[GraphEntry],
+        layout: &WorkingLayout,
+        top_k: usize,
+    ) -> CollisionGraphSnapshot {
+        let n = layout.placements.len();
+        let mut pair_list: Vec<(usize, usize, f64, f64, f64)> = Vec::new();
+        let mut boundary_list: Vec<(usize, f64, f64, f64)> = Vec::new();
+        let mut max_pair_weight = 0.0_f64;
+        let mut max_boundary_weight = 0.0_f64;
+        let mut total_raw = 0.0_f64;
+        let mut total_weighted = 0.0_f64;
+        let mut per_item_weighted = vec![0.0_f64; n];
+        let mut colliding_items: HashSet<usize> = HashSet::new();
+
+        for i in 0..n {
+            let be = boundary_edges[i];
+            if be.raw_loss > 0.0 {
+                total_raw += be.raw_loss;
+                total_weighted += be.weighted_loss();
+                per_item_weighted[i] += be.weighted_loss();
+                colliding_items.insert(i);
+                boundary_list.push((i, be.raw_loss, be.weight, be.weighted_loss()));
+                max_boundary_weight = max_boundary_weight.max(be.weight);
+            }
+            for j in (i + 1)..n {
+                let pe = pair_edges[i][j];
+                if pe.raw_loss > 0.0 {
+                    total_raw += pe.raw_loss;
+                    total_weighted += pe.weighted_loss();
+                    per_item_weighted[i] += pe.weighted_loss();
+                    per_item_weighted[j] += pe.weighted_loss();
+                    colliding_items.insert(i);
+                    colliding_items.insert(j);
+                    pair_list.push((i, j, pe.raw_loss, pe.weight, pe.weighted_loss()));
+                    max_pair_weight = max_pair_weight.max(pe.weight);
+                }
+            }
+        }
+
+        let mut worst_item_index: Option<usize> = None;
+        let mut worst_item_score = -1.0_f64;
+        let mut worst_item_id = String::new();
+        for (i, &score) in per_item_weighted.iter().enumerate() {
+            if score <= 0.0 {
+                continue;
+            }
+            let id = &layout.placements[i].instance_id;
+            let better = score > worst_item_score + 1e-12
+                || (worst_item_index.is_some()
+                    && (score - worst_item_score).abs() < 1e-12
+                    && id < &worst_item_id);
+            if worst_item_index.is_none() || better {
+                worst_item_index = Some(i);
+                worst_item_score = score;
+                worst_item_id = id.clone();
+            }
+        }
+
+        pair_list.sort_by(|a, b| {
+            b.4.partial_cmp(&a.4)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| layout.placements[a.0].instance_id.cmp(&layout.placements[b.0].instance_id))
+                .then_with(|| layout.placements[a.1].instance_id.cmp(&layout.placements[b.1].instance_id))
+        });
+        boundary_list.sort_by(|a, b| {
+            b.3.partial_cmp(&a.3)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| layout.placements[a.0].instance_id.cmp(&layout.placements[b.0].instance_id))
+        });
+
+        CollisionGraphSnapshot {
+            colliding_items_count: colliding_items.len(),
+            colliding_pairs_count: pair_list.len(),
+            boundary_violations_count: boundary_list.len(),
+            total_raw_loss: total_raw,
+            total_weighted_loss: total_weighted,
+            worst_item_index,
+            worst_item_instance_id: worst_item_index.map(|i| layout.placements[i].instance_id.clone()),
+            worst_pair_instance_ids: pair_list.first().map(|t| {
+                (
+                    layout.placements[t.0].instance_id.clone(),
+                    layout.placements[t.1].instance_id.clone(),
+                )
+            }),
+            worst_boundary_instance_id: boundary_list.first().map(|t| layout.placements[t.0].instance_id.clone()),
+            max_pair_weight,
+            max_boundary_weight,
+            top_colliding_pairs: pair_list
+                .iter()
+                .take(top_k)
+                .map(|t| {
+                    (
+                        layout.placements[t.0].instance_id.clone(),
+                        layout.placements[t.1].instance_id.clone(),
+                        t.2,
+                        t.3,
+                        t.4,
+                    )
+                })
+                .collect(),
+            top_boundary_violations: boundary_list
+                .iter()
+                .take(top_k)
+                .map(|t| (layout.placements[t.0].instance_id.clone(), t.1, t.2, t.3))
+                .collect(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // SparrowState
 // ---------------------------------------------------------------------------
@@ -301,6 +609,7 @@ pub struct SparrowState {
     pub best_infeasible_raw_loss: f64,
     pub best_infeasible_weighted_loss: f64,
     pub current_graph: CollisionGraphSnapshot,
+    graph: SparrowCollisionGraph,
     pub iteration: usize,
     pub moves_attempted: usize,
     pub moves_accepted: usize,
@@ -317,7 +626,8 @@ impl SparrowState {
     ) -> Self {
         let raw = tracker.total_loss();
         let weighted = tracker.total_weighted_loss();
-        let graph = CollisionGraphSnapshot::from_tracker(&tracker, &layout, 5);
+        let graph = SparrowCollisionGraph::build_from_tracker(&tracker, &layout, 5);
+        let current_graph = graph.snapshot();
         let best_infeasible_layout = Some(layout.clone());
         Self {
             layout,
@@ -328,7 +638,8 @@ impl SparrowState {
             best_infeasible_layout,
             best_infeasible_raw_loss: raw,
             best_infeasible_weighted_loss: weighted,
-            current_graph: graph,
+            current_graph,
+            graph,
             iteration: 0,
             moves_attempted: 0,
             moves_accepted: 0,
@@ -338,12 +649,10 @@ impl SparrowState {
         }
     }
 
-    /// Recompute the snapshot, losses, and best-infeasible incumbent.
-    pub fn refresh(&mut self) {
-        self.current_raw_loss = self.tracker.total_loss();
-        self.current_weighted_loss = self.tracker.total_weighted_loss();
-        self.current_graph =
-            CollisionGraphSnapshot::from_tracker(&self.tracker, &self.layout, 5);
+    fn refresh_from_graph(&mut self) {
+        self.current_graph = self.graph.snapshot();
+        self.current_raw_loss = self.current_graph.total_raw_loss;
+        self.current_weighted_loss = self.current_graph.total_weighted_loss;
         if self.current_graph.is_feasible() {
             self.best_feasible_layout = Some(self.layout.clone());
         } else if self.current_raw_loss < self.best_infeasible_raw_loss
@@ -353,6 +662,20 @@ impl SparrowState {
             self.best_infeasible_raw_loss = self.current_raw_loss;
             self.best_infeasible_weighted_loss = self.current_weighted_loss;
         }
+    }
+
+    pub fn refresh_after_move(&mut self, moved_idx: usize) {
+        self.graph.update_moved_item(moved_idx, &self.tracker, &self.layout, 5);
+        self.refresh_from_graph();
+    }
+
+    pub fn refresh_after_weight_update(&mut self) {
+        self.graph.refresh_weights(&self.tracker, &self.layout, 5);
+        self.refresh_from_graph();
+    }
+
+    pub fn debug_verify_graph(&mut self) {
+        self.graph.debug_compare_full_rebuild(&self.tracker, &self.layout, 5);
     }
 }
 
@@ -364,6 +687,20 @@ pub struct SparrowResult {
     pub layout: WorkingLayout,
     pub diagnostics: SparrowDiagnostics,
     pub feasible: bool,
+}
+
+#[derive(Clone)]
+struct SparrowWorkerCandidate {
+    worker_id: usize,
+    layout: WorkingLayout,
+    tracker: VrsCollisionTracker,
+    graph: SparrowCollisionGraph,
+    raw_loss: f64,
+    weighted_loss: f64,
+    moves_attempted: usize,
+    moves_accepted: usize,
+    moves_rejected: usize,
+    search_stats: SearchPositionStats,
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +777,109 @@ pub fn build_sparrow_seed_layout(
     Ok((placements, unplaced))
 }
 
+fn build_grid_spread_seed_layout(
+    seed_layout: &WorkingLayout,
+    parts: &[Part],
+    sheets: &[SheetShape],
+) -> WorkingLayout {
+    let mut layout = seed_layout.snapshot();
+    let mut cursor_x = vec![0.0_f64; sheets.len()];
+    let mut cursor_y = vec![0.0_f64; sheets.len()];
+    let mut row_h = vec![0.0_f64; sheets.len()];
+
+    for p in &mut layout.placements {
+        let Some(part) = parts.iter().find(|pt| pt.id == p.part_id) else {
+            continue;
+        };
+        let (rw, rh) = dims_for_rotation(part.width, part.height, p.rotation_deg);
+        let mut placed = false;
+        for sheet_idx in 0..sheets.len() {
+            let sheet = &sheets[sheet_idx];
+            if rw > sheet.width + 1e-9 || rh > sheet.height + 1e-9 {
+                continue;
+            }
+            if cursor_x[sheet_idx] + rw > sheet.width + 1e-9 {
+                cursor_x[sheet_idx] = 0.0;
+                cursor_y[sheet_idx] += row_h[sheet_idx];
+                row_h[sheet_idx] = 0.0;
+            }
+            if cursor_y[sheet_idx] + rh <= sheet.height + 1e-9 {
+                let (ax, ay) = placement_anchor_from_rect_min(
+                    cursor_x[sheet_idx],
+                    cursor_y[sheet_idx],
+                    part.width,
+                    part.height,
+                    p.rotation_deg,
+                );
+                p.sheet_index = sheet_idx;
+                p.x = ax;
+                p.y = ay;
+                cursor_x[sheet_idx] += rw;
+                row_h[sheet_idx] = row_h[sheet_idx].max(rh);
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            // Keep the original placement; the tracker will surface residual loss.
+        }
+    }
+    layout
+}
+
+fn fixed_sheet_objective(layout: &WorkingLayout, parts: &[Part]) -> f64 {
+    let mut per_sheet: HashMap<usize, (f64, f64)> = HashMap::new();
+    for p in &layout.placements {
+        let Some(part) = parts.iter().find(|pt| pt.id == p.part_id) else {
+            continue;
+        };
+        if let Some(bb) = bbox_from_placement(p, part.width, part.height) {
+            let entry = per_sheet.entry(p.sheet_index).or_insert((0.0, 0.0));
+            entry.0 = entry.0.max(bb.x2);
+            entry.1 = entry.1.max(bb.y2);
+        }
+    }
+    per_sheet.values().map(|(x, y)| x + y).sum()
+}
+
+fn run_fixed_sheet_compression(
+    state: &mut SparrowState,
+    parts: &[Part],
+    sheets: &[SheetShape],
+    diag: &mut SparrowDiagnostics,
+) {
+    diag.compression_passes += 1;
+    let before = fixed_sheet_objective(&state.layout, parts);
+    diag.fixed_sheet_objective_before = before;
+    let step = 1.0_f64;
+    let mut current_objective = before;
+
+    for idx in 0..state.layout.placements.len() {
+        for (dx, dy) in [(-step, 0.0_f64), (0.0, -step)] {
+            diag.compression_candidates_evaluated += 1;
+            let old = state.layout.placements[idx].clone();
+            let snap = state.tracker.snapshot_loss();
+            state.layout.placements[idx].x += dx;
+            state.layout.placements[idx].y += dy;
+            state.tracker.update_placement(idx, &state.layout, parts, sheets);
+            state.refresh_after_move(idx);
+            let objective = fixed_sheet_objective(&state.layout, parts);
+            if state.current_graph.is_feasible() && objective <= current_objective + 1e-9 {
+                current_objective = objective;
+                diag.compression_accepts += 1;
+            } else {
+                state.layout.placements[idx] = old;
+                state.tracker.restore_but_keep_weights(snap);
+                state.refresh_after_move(idx);
+                diag.compression_rejects += 1;
+            }
+        }
+    }
+
+    diag.fixed_sheet_objective_after = current_objective;
+    diag.fixed_sheet_objective_delta = before - current_objective;
+}
+
 // ---------------------------------------------------------------------------
 // SparrowSeparationKernel
 // ---------------------------------------------------------------------------
@@ -451,6 +891,180 @@ pub struct SparrowSeparationKernel {
 impl SparrowSeparationKernel {
     pub fn new(config: SparrowConfig) -> Self {
         Self { config }
+    }
+
+    fn worker_count(&self) -> usize {
+        4
+    }
+
+    fn compare_f64_asc(a: f64, b: f64) -> Ordering {
+        a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+    }
+
+    fn worker_seed(&self, iteration: usize, worker_id: usize) -> u64 {
+        self.config.seed
+            ^ (iteration as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ ((worker_id as u64) + 1).wrapping_mul(0xD1B5_4A32_D192_ED03)
+    }
+
+    fn deterministic_shuffle(values: &[usize], seed: u64) -> Vec<usize> {
+        let mut out = values.to_vec();
+        if out.len() <= 1 {
+            return out;
+        }
+        let mut rng = DeterministicRng::new(seed);
+        for i in (1..out.len()).rev() {
+            let j = (rng.next_u64() % ((i + 1) as u64)) as usize;
+            out.swap(i, j);
+        }
+        out
+    }
+
+    fn top_target_indices(graph: &CollisionGraphSnapshot, layout: &WorkingLayout, limit: usize) -> Vec<usize> {
+        let mut out: Vec<usize> = Vec::new();
+        if let Some(idx) = graph.worst_item_index {
+            out.push(idx);
+        }
+        for (a, b, _, _, _) in &graph.top_colliding_pairs {
+            for id in [a, b] {
+                if let Some(idx) = layout.placements.iter().position(|p| &p.instance_id == id) {
+                    if !out.contains(&idx) {
+                        out.push(idx);
+                    }
+                }
+            }
+        }
+        for (id, _, _, _) in &graph.top_boundary_violations {
+            if let Some(idx) = layout.placements.iter().position(|p| &p.instance_id == id) {
+                if !out.contains(&idx) {
+                    out.push(idx);
+                }
+            }
+        }
+        out.truncate(limit.max(1));
+        out
+    }
+
+    fn compare_layout_order(a: &WorkingLayout, b: &WorkingLayout) -> Ordering {
+        a.placements
+            .iter()
+            .zip(b.placements.iter())
+            .find_map(|(pa, pb)| {
+                let ord = pa
+                    .sheet_index
+                    .cmp(&pb.sheet_index)
+                    .then(pa.rotation_deg.to_bits().cmp(&pb.rotation_deg.to_bits()))
+                    .then(pa.x.to_bits().cmp(&pb.x.to_bits()))
+                    .then(pa.y.to_bits().cmp(&pb.y.to_bits()))
+                    .then(pa.instance_id.cmp(&pb.instance_id))
+                    .then(pa.part_id.cmp(&pb.part_id));
+                if ord == Ordering::Equal { None } else { Some(ord) }
+            })
+            .unwrap_or_else(|| a.placements.len().cmp(&b.placements.len()))
+    }
+
+    fn compare_worker_candidates(a: &SparrowWorkerCandidate, b: &SparrowWorkerCandidate) -> Ordering {
+        Self::compare_f64_asc(a.weighted_loss, b.weighted_loss)
+            .then(Self::compare_f64_asc(a.raw_loss, b.raw_loss))
+            .then(b.moves_accepted.cmp(&a.moves_accepted))
+            .then(a.worker_id.cmp(&b.worker_id))
+            .then(Self::compare_layout_order(&a.layout, &b.layout))
+    }
+
+    fn worker_is_better_than_master(
+        master_weighted_loss: f64,
+        master_raw_loss: f64,
+        candidate: &SparrowWorkerCandidate,
+    ) -> bool {
+        candidate.weighted_loss < master_weighted_loss - 1e-9
+            || (candidate.weighted_loss <= master_weighted_loss + 1e-9
+                && candidate.raw_loss < master_raw_loss - 1e-9)
+            || candidate.raw_loss == 0.0
+    }
+
+    fn run_worker_pass(
+        &self,
+        state: &SparrowState,
+        targets: &[usize],
+        iteration: usize,
+        worker_id: usize,
+        parts: &[Part],
+        sheets: &[SheetShape],
+    ) -> SparrowWorkerCandidate {
+        let mut layout = state.layout.snapshot();
+        let mut tracker = state.tracker.clone();
+        let mut graph = state.graph.clone();
+        let mut raw_loss = state.current_raw_loss;
+        let mut weighted_loss = state.current_weighted_loss;
+        let mut moves_attempted = 0usize;
+        let mut moves_accepted = 0usize;
+        let mut moves_rejected = 0usize;
+        let mut search_stats = SearchPositionStats::default();
+        let ordered_targets = if worker_id == 0 {
+            targets.to_vec()
+        } else {
+            Self::deterministic_shuffle(targets, self.worker_seed(iteration, worker_id))
+        };
+
+        for target_idx in ordered_targets {
+            if raw_loss == 0.0 || target_idx >= layout.placements.len() {
+                break;
+            }
+            moves_attempted += 1;
+            let call_seed = self.worker_seed(iteration, worker_id)
+                ^ (target_idx as u64).wrapping_mul(0x517C_C1B7_2722_0A95);
+            let Some(new_p) = search_position_for_target(
+                &layout,
+                target_idx,
+                parts,
+                sheets,
+                &None,
+                &self.config.collision_backend,
+                self.config.loss_model,
+                &self.config.rotation_context,
+                &self.config.search_position_config,
+                call_seed,
+                &mut search_stats,
+            ) else {
+                moves_rejected += 1;
+                continue;
+            };
+
+            let old_placement = layout.placements[target_idx].clone();
+            let loss_snap = tracker.snapshot_loss();
+            layout.placements[target_idx] = new_p;
+            tracker.update_placement(target_idx, &layout, parts, sheets);
+            graph.update_moved_item(target_idx, &tracker, &layout, 5);
+            let new_graph = graph.snapshot();
+            let new_weighted = new_graph.total_weighted_loss;
+            let new_raw = new_graph.total_raw_loss;
+            let improved = new_weighted < weighted_loss - 1e-9
+                || (new_weighted <= weighted_loss + 1e-9 && new_raw < raw_loss - 1e-9)
+                || new_raw == 0.0;
+            if improved {
+                raw_loss = new_raw;
+                weighted_loss = new_weighted;
+                moves_accepted += 1;
+            } else {
+                layout.placements[target_idx] = old_placement;
+                tracker.restore_but_keep_weights(loss_snap);
+                graph.update_moved_item(target_idx, &tracker, &layout, 5);
+                moves_rejected += 1;
+            }
+        }
+
+        SparrowWorkerCandidate {
+            worker_id,
+            layout,
+            tracker,
+            graph,
+            raw_loss,
+            weighted_loss,
+            moves_attempted,
+            moves_accepted,
+            moves_rejected,
+            search_stats,
+        }
     }
 
     /// Run the separation loop on the seeded `WorkingLayout`.
@@ -500,6 +1114,12 @@ impl SparrowSeparationKernel {
         let started = Instant::now();
         let max_iter = self.config.max_iterations.max(1);
         let time_limit = self.config.time_limit_s.max(0.1);
+        let worker_count = self.worker_count();
+        diag.workers = worker_count;
+        diag.worker_best_loss = state.current_weighted_loss;
+        diag.exploration_seed_strategies = 1;
+        diag.exploration_best_raw_loss = state.current_raw_loss;
+        diag.exploration_best_weighted_loss = state.current_weighted_loss;
 
         for iter in 0..max_iter {
             state.iteration = iter + 1;
@@ -509,35 +1129,55 @@ impl SparrowSeparationKernel {
             if state.current_graph.is_feasible() {
                 break;
             }
-            let Some(target_idx) = state.current_graph.worst_item_index else {
+            let targets = Self::top_target_indices(&state.current_graph, &state.layout, 8);
+            if targets.is_empty() {
                 break;
-            };
+            }
+            diag.topk_target_count = diag.topk_target_count.max(targets.len());
+            diag.worker_passes += 1;
+            let master_weighted = state.current_weighted_loss;
+            let master_raw = state.current_raw_loss;
+            let mut workers: Vec<SparrowWorkerCandidate> = Vec::with_capacity(worker_count);
+            for worker_id in 0..worker_count {
+                workers.push(self.run_worker_pass(
+                    &state,
+                    &targets,
+                    iter + 1,
+                    worker_id,
+                    parts,
+                    sheets,
+                ));
+            }
 
-            // Relocate target via search_position.
-            state.moves_attempted += 1;
-            diag.moves_attempted += 1;
-            let call_seed = self
-                .config
-                .seed
-                .wrapping_add(iter as u64)
-                .wrapping_mul(0x9E37_79B9_7F4A_7C15);
-            let new_placement_opt = search_position_for_target(
-                &state.layout,
-                target_idx,
-                parts,
-                sheets,
-                &None,
-                &self.config.collision_backend,
-                self.config.loss_model,
-                &self.config.rotation_context,
-                &self.config.search_position_config,
-                call_seed,
-                &mut search_stats,
-            );
+            for worker in &workers {
+                diag.worker_candidates_evaluated += worker.moves_attempted;
+                diag.multi_target_items_attempted += worker.moves_attempted;
+                diag.multi_target_items_accepted += worker.moves_accepted;
+                diag.multi_target_items_rejected += worker.moves_rejected;
+                diag.moves_attempted += worker.moves_attempted;
+                diag.moves_accepted += worker.moves_accepted;
+                diag.rollbacks += worker.moves_rejected;
+                state.moves_attempted += worker.moves_attempted;
+                state.moves_accepted += worker.moves_accepted;
+                state.rollbacks += worker.moves_rejected;
+                search_stats.accumulate(&worker.search_stats);
+            }
 
-            let Some(new_p) = new_placement_opt else {
-                // search_position returned None; update GLS so the same target
-                // does not stay top-worst forever.
+            workers.sort_by(Self::compare_worker_candidates);
+            let best_worker = workers.into_iter().next().unwrap();
+            diag.worker_best_loss = best_worker.weighted_loss;
+            if Self::worker_is_better_than_master(master_weighted, master_raw, &best_worker) {
+                state.layout = best_worker.layout;
+                state.tracker = best_worker.tracker;
+                state.graph = best_worker.graph;
+                state.refresh_from_graph();
+                diag.worker_commits += 1;
+                if state.current_raw_loss < diag.exploration_best_raw_loss {
+                    diag.exploration_best_raw_loss = state.current_raw_loss;
+                    diag.exploration_best_weighted_loss = state.current_weighted_loss;
+                }
+            } else {
+                diag.worker_rollbacks += 1;
                 state.tracker.update_weights(
                     self.config.gls_weight_decay,
                     self.config.gls_weight_max,
@@ -546,36 +1186,7 @@ impl SparrowSeparationKernel {
                 );
                 state.gls_weight_updates += 1;
                 diag.gls_weight_updates += 1;
-                state.refresh();
-                continue;
-            };
-
-            // Tentatively apply.
-            let prev_weighted = state.current_weighted_loss;
-            let prev_raw = state.current_raw_loss;
-            let old_placement = state.layout.placements[target_idx].clone();
-            let snap = state.tracker.snapshot_loss();
-            state.layout.placements[target_idx] = new_p;
-            state
-                .tracker
-                .update_placement(target_idx, &state.layout, parts, sheets);
-            let new_weighted = state.tracker.total_weighted_loss();
-            let new_raw = state.tracker.total_loss();
-
-            // Accept on weighted-loss improvement, or on tie-with-raw-improvement.
-            let improved = new_weighted < prev_weighted - 1e-9
-                || (new_weighted <= prev_weighted + 1e-9 && new_raw < prev_raw - 1e-9);
-            if improved {
-                state.moves_accepted += 1;
-                diag.moves_accepted += 1;
-                state.current_weighted_loss = new_weighted;
-                state.current_raw_loss = new_raw;
-            } else {
-                // Rollback geometry, preserve GLS weights.
-                state.layout.placements[target_idx] = old_placement;
-                state.tracker.restore_but_keep_weights(snap);
-                state.rollbacks += 1;
-                diag.rollbacks += 1;
+                state.refresh_after_weight_update();
             }
 
             // Periodic GLS weight update on stagnation/persistence.
@@ -590,9 +1201,44 @@ impl SparrowSeparationKernel {
                 );
                 state.gls_weight_updates += 1;
                 diag.gls_weight_updates += 1;
+                state.refresh_after_weight_update();
             }
+            if state.iteration % 32 == 0 {
+                state.debug_verify_graph();
+            }
+        }
 
-            state.refresh();
+        if !state.current_graph.is_feasible() {
+            diag.iterations += state.iteration;
+            diag.graph_full_rebuilds += state.graph.full_rebuilds;
+            diag.graph_incremental_updates += state.graph.incremental_updates;
+            diag.graph_edges_recomputed += state.graph.edges_recomputed;
+            diag.graph_edges_pruned_by_broadphase += state.graph.edges_pruned_by_broadphase;
+            diag.graph_debug_rebuilds += state.graph.debug_rebuilds;
+            diag.graph_debug_rebuild_mismatches += state.graph.debug_rebuild_mismatches;
+            diag.exploration_stagnation_events += 1;
+            diag.exploration_disruptions += 1;
+            diag.exploration_restarts += 1;
+            diag.exploration_seed_strategies += 1;
+            let restarted = build_grid_spread_seed_layout(&state.layout, parts, sheets);
+            let tracker = VrsCollisionTracker::build_with_model(
+                &restarted,
+                parts,
+                sheets,
+                self.config.loss_model,
+                self.config.collision_backend.clone(),
+            );
+            state = SparrowState::new(restarted, tracker, self.config.seed ^ 0xA5A5_5A5A_1234_5678);
+            diag.exploration_best_raw_loss = diag.exploration_best_raw_loss.min(state.current_raw_loss);
+            diag.exploration_best_weighted_loss = diag.exploration_best_weighted_loss.min(state.current_weighted_loss);
+            if state.current_graph.is_feasible() {
+                state.best_feasible_layout = Some(state.layout.clone());
+            }
+        }
+
+        if state.current_graph.is_feasible() {
+            diag.exploration_best_feasible_found = true;
+            run_fixed_sheet_compression(&mut state, parts, sheets, &mut diag);
         }
 
         // Final stats from search_position + tracker severity.
@@ -607,7 +1253,13 @@ impl SparrowSeparationKernel {
         diag.severity_boundary_queries = combined_sev.boundary_queries;
         diag.severity_probe_queries = combined_sev.probe_queries;
 
-        diag.iterations = state.iteration;
+        diag.iterations += state.iteration;
+        diag.graph_full_rebuilds += state.graph.full_rebuilds;
+        diag.graph_incremental_updates += state.graph.incremental_updates;
+        diag.graph_edges_recomputed += state.graph.edges_recomputed;
+        diag.graph_edges_pruned_by_broadphase += state.graph.edges_pruned_by_broadphase;
+        diag.graph_debug_rebuilds += state.graph.debug_rebuilds;
+        diag.graph_debug_rebuild_mismatches += state.graph.debug_rebuild_mismatches;
 
         self.finalize(state, diag)
     }
@@ -912,5 +1564,48 @@ mod tests {
             assert!((a.y - b.y).abs() < 1e-9);
             assert!((a.rotation_deg - b.rotation_deg).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn sparrow_q23r3_multi_target_and_incremental_graph_are_diagnosed() {
+        let parts = vec![make_part("A", 30.0, 20.0, 4)];
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let ctx = RotationResolveContext::legacy_default();
+        let (p, u) = build_sparrow_seed_layout(&parts, &sheets, &ctx).expect("seed");
+        let layout = WorkingLayout::new(p, u, 1, 0);
+        let cfg = default_cfg(CollisionBackendKind::Bbox, 8);
+        let result = SparrowSeparationKernel::new(cfg).run(layout, &parts, &sheets);
+        let d = result.diagnostics;
+        assert!(d.workers > 1, "production pass must use multiple deterministic workers");
+        assert!(d.topk_target_count > 1, "multi-target top-k must include more than one item");
+        assert!(d.multi_target_items_attempted > 1, "worker pass must attempt multiple targets");
+        assert!(d.graph_incremental_updates > 0, "moved items must update the maintained graph");
+        assert!(d.graph_full_rebuilds <= d.exploration_seed_strategies,
+            "full graph rebuilds should be bounded to seed/restart initialization");
+    }
+
+    #[test]
+    fn sparrow_q23r3_exploration_restart_and_compression_are_diagnosed() {
+        let parts = vec![make_part("A", 30.0, 20.0, 12)];
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let ctx = RotationResolveContext::legacy_default();
+        let (p, u) = build_sparrow_seed_layout(&parts, &sheets, &ctx).expect("seed");
+        let layout = WorkingLayout::new(p, u, 1, 0);
+        let cfg = SparrowConfig {
+            max_iterations: 1,
+            collision_backend: CollisionBackendKind::Bbox,
+            ..default_cfg(CollisionBackendKind::Bbox, 1)
+        };
+        let result = SparrowSeparationKernel::new(cfg).run(layout, &parts, &sheets);
+        let d = result.diagnostics;
+        assert!(result.feasible, "grid restart seed should produce a feasible fixed-sheet layout");
+        assert!(d.exploration_seed_strategies >= 2, "origin + grid restart strategies must be counted");
+        assert!(d.exploration_restarts >= 1, "stagnation restart must be counted");
+        assert!(d.exploration_disruptions >= 1, "restart disruption must be counted");
+        assert!(d.compression_passes >= 1, "feasible incumbent must run compression");
+        assert!(d.compression_candidates_evaluated > 0, "compression must evaluate candidates");
+        assert!(d.fixed_sheet_objective_after <= d.fixed_sheet_objective_before + 1e-9);
     }
 }

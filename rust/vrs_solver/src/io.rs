@@ -223,6 +223,66 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_severity_probe_queries: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_lbf_fallback_used: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_workers: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_worker_passes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_worker_candidates_evaluated: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_worker_commits: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_worker_rollbacks: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_worker_best_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_multi_target_items_attempted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_multi_target_items_accepted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_multi_target_items_rejected: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_topk_target_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_graph_full_rebuilds: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_graph_incremental_updates: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_graph_edges_recomputed: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_graph_edges_pruned_by_broadphase: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_graph_debug_rebuilds: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_graph_debug_rebuild_mismatches: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_exploration_restarts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_exploration_seed_strategies: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_exploration_disruptions: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_exploration_stagnation_events: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_exploration_best_raw_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_exploration_best_weighted_loss: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_exploration_best_feasible_found: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_compression_passes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_compression_candidates_evaluated: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_compression_accepts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_compression_rejects: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_fixed_sheet_objective_before: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_fixed_sheet_objective_after: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_fixed_sheet_objective_delta: Option<f64>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).
