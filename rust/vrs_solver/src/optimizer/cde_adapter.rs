@@ -312,12 +312,17 @@ impl CdeQueryCache {
 
 thread_local! {
     static QUERY_CACHE: RefCell<CdeQueryCache> = RefCell::new(CdeQueryCache::new());
+    /// SGH-Q24R1 per-target-search session cache: (fixed-hazard fingerprint,
+    /// shared session). Reused across all candidate evaluations of one target's
+    /// search (the fixed hazards do not move during the search).
+    static SESSION_CACHE: RefCell<Option<(u64, Rc<CdeCandidateSession>)>> = const { RefCell::new(None) };
 }
 
 /// Reset the solve-scoped CDE cache. Called alongside `cde_observability::reset()`
 /// at the start of each CDE-backed solve scope.
 pub(crate) fn reset_query_cache() {
     QUERY_CACHE.with(|c| *c.borrow_mut() = CdeQueryCache::new());
+    SESSION_CACHE.with(|c| *c.borrow_mut() = None);
 }
 
 /// Hash the part's full geometric identity (id + dimensions + outer polygon),
@@ -579,13 +584,53 @@ impl CdeCandidateSession {
 /// Build a `CdeCandidateSession` for `target_idx` from a placement list, using the
 /// solve-scoped prepared-shape cache for every fixed item. Returns `None` if any
 /// shape cannot be prepared (caller falls back to the pairwise path and counts it).
+/// Fingerprint of the FIXED hazards for `target_idx` on `sheet_index`: identifies
+/// the exact set of other same-sheet placements (geometry + transform) plus the
+/// sheet. The moving candidate is NOT part of this — so during one target's
+/// search (others fixed) the fingerprint is stable and the session is reused.
+fn session_fingerprint(
+    placements: &[Placement],
+    target_idx: usize,
+    sheet_index: usize,
+    parts: &[Part],
+    sheet: &SheetShape,
+) -> u64 {
+    let mut h = DefaultHasher::new();
+    target_idx.hash(&mut h);
+    sheet_index.hash(&mut h);
+    sheet_key(sheet).hash(&mut h);
+    for (i, p) in placements.iter().enumerate() {
+        if i == target_idx || p.sheet_index != sheet_index {
+            continue;
+        }
+        i.hash(&mut h);
+        if let Some(part) = parts.iter().find(|pt| pt.id == p.part_id) {
+            part_geom_hash(part).hash(&mut h);
+        }
+        p.x.to_bits().hash(&mut h);
+        p.y.to_bits().hash(&mut h);
+        p.rotation_deg.to_bits().hash(&mut h);
+    }
+    h.finish()
+}
+
+/// Build (or reuse) the per-target-search CDE session. SGH-Q24R1: the session is
+/// cached by the fixed-hazard fingerprint; consecutive candidate evaluations of
+/// the same target search reuse one `CDEngine` instead of rebuilding it.
 pub(crate) fn build_candidate_session(
     placements: &[Placement],
     target_idx: usize,
     sheet_index: usize,
     parts: &[Part],
     sheet: &SheetShape,
-) -> Option<CdeCandidateSession> {
+) -> Option<Rc<CdeCandidateSession>> {
+    let fp = session_fingerprint(placements, target_idx, sheet_index, parts, sheet);
+    if let Some(rc) = SESSION_CACHE.with(|c| {
+        c.borrow().as_ref().and_then(|(f, s)| if *f == fp { Some(s.clone()) } else { None })
+    }) {
+        super::cde_observability::inc_candidate_session(true);
+        return Some(rc);
+    }
     let sheet_shape = prepare_shape_from_sheet(sheet).ok()?;
     let mut others = Vec::new();
     for (i, p) in placements.iter().enumerate() {
@@ -596,7 +641,10 @@ pub(crate) fn build_candidate_session(
         let shape = cached_prepared(p, part).ok()?;
         others.push((i, shape));
     }
-    CdeCandidateSession::build(others, &sheet_shape)
+    let session = Rc::new(CdeCandidateSession::build(others, &sheet_shape)?);
+    super::cde_observability::inc_candidate_session(false);
+    SESSION_CACHE.with(|c| *c.borrow_mut() = Some((fp, session.clone())));
+    Some(session)
 }
 
 /// Prepare (cached) a candidate placement shape for batch querying.

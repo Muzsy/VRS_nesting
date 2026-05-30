@@ -64,6 +64,13 @@ pub struct CdeCounters {
     /// Pairwise CDE queries that still went through the per-pair path (broad-phase,
     /// tracker rebuild, jagua-exact backend) rather than the batch session.
     pub pairwise_fallback_queries: usize,
+    /// SGH-Q24R1 per-target-search CDE session reuse. A `CdeCandidateSession` is
+    /// cached by a fingerprint of the FIXED hazards (target + sheet + other
+    /// placements); during one target's search all candidate evaluations reuse it
+    /// instead of rebuilding. `candidate_session_builds` counts genuine builds,
+    /// `candidate_session_reuses` counts fingerprint cache hits.
+    pub candidate_session_builds: usize,
+    pub candidate_session_reuses: usize,
 }
 
 thread_local! {
@@ -172,6 +179,13 @@ pub(crate) fn record_batch_query(collisions_returned: usize) {
 
 pub(crate) fn inc_pairwise_fallback() {
     COUNTERS.with(|c| c.borrow_mut().pairwise_fallback_queries += 1);
+}
+
+pub(crate) fn inc_candidate_session(reused: bool) {
+    COUNTERS.with(|c| {
+        let mut b = c.borrow_mut();
+        if reused { b.candidate_session_reuses += 1; } else { b.candidate_session_builds += 1; }
+    });
 }
 
 // ---------------------------------------------------------------------------

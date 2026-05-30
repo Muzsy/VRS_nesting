@@ -94,6 +94,8 @@ fn diag_output_from(result: &BackendCommitResult) -> CollisionBackendDiagnostics
         cde_batch_hazards_registered: None,
         cde_batch_collisions_returned: None,
         cde_pairwise_fallback_queries: None,
+        cde_candidate_session_builds: None,
+        cde_candidate_session_reuses: None,
         cde_observability_scope: None,
         final_commit_validation_ms: None,
     }
@@ -146,6 +148,8 @@ fn diag_output_from_with_cde(
         cde_batch_hazards_registered: Some(snap.batch_hazards_registered),
         cde_batch_collisions_returned: Some(snap.batch_collisions_returned),
         cde_pairwise_fallback_queries: Some(snap.pairwise_fallback_queries),
+        cde_candidate_session_builds: Some(snap.candidate_session_builds),
+        cde_candidate_session_reuses: Some(snap.candidate_session_reuses),
         cde_observability_scope: Some(scope.to_string()),
         final_commit_validation_ms: commit_ms,
     }
@@ -185,6 +189,8 @@ fn cde_unsupported_diag(
         cde_batch_hazards_registered: Some(snap.batch_hazards_registered),
         cde_batch_collisions_returned: Some(snap.batch_collisions_returned),
         cde_pairwise_fallback_queries: Some(snap.pairwise_fallback_queries),
+        cde_candidate_session_builds: Some(snap.candidate_session_builds),
+        cde_candidate_session_reuses: Some(snap.candidate_session_reuses),
         cde_observability_scope: Some(scope.to_string()),
         final_commit_validation_ms: commit_ms,
     }

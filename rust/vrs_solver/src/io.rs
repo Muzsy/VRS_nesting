@@ -356,6 +356,11 @@ pub struct CollisionBackendDiagnosticsOutput {
     pub cde_batch_collisions_returned: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_pairwise_fallback_queries: Option<usize>,
+    /// SGH-Q24R1 per-target-search CDE session reuse metrics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_candidate_session_builds: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_candidate_session_reuses: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_observability_scope: Option<String>,
     /// Only populated when VRS_CDE_OBSERVABILITY_TIMING=1 is set.

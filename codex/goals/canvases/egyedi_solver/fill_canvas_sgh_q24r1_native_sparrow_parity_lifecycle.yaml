@@ -1,0 +1,22 @@
+id: fill_canvas_sgh_q24r1_native_sparrow_parity_lifecycle
+kind: canvas_task
+slug: sgh_q24r1_native_sparrow_parity_lifecycle
+title: SGH-Q24R1 Native Sparrow parity lifecycle
+canvas_path: canvases/egyedi_solver/sgh_q24r1_native_sparrow_parity_lifecycle.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r1_native_sparrow_parity_lifecycle/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r1_native_sparrow_parity_lifecycle.md
+status: ready
+acceptance:
+  - local_cache_sparrow_reference_map_written
+  - cde_target_search_session_reuse_active
+  - active_hazard_set_has_full_cde_final_validation
+  - worker_move_items_parity_processes_colliding_item_set
+  - search_placement_parity_focus_container_best_samples_two_stage_cd
+  - production_cde_tracker_loss_not_bbox_surrogate
+  - exploration_pool_restore_disruption_active
+  - fixed_sheet_compression_restore_compact_separate_accept_active
+  - medium_12_of_12_ok
+  - lv8_12types_x1_12_of_12_ok
+  - lv8_24_instances_24_of_24_ok
+  - no_bbox_lbf_legacy_pairwise_fallback
+  - smoke_bench_check_reports_written
