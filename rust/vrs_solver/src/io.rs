@@ -260,6 +260,21 @@ pub struct CollisionBackendDiagnosticsOutput {
     /// pre-check, without building a CDEngine (query reduction evidence).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_broadphase_pruned: Option<usize>,
+    /// SGH-Q23R1: solve-scoped cache metrics (hits skip the CDEngine build).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cache_pair_hits: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cache_pair_misses: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cache_boundary_hits: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cache_boundary_misses: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cache_prepared_hits: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cache_prepared_misses: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_cache_invalidations: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_observability_scope: Option<String>,
     /// Only populated when VRS_CDE_OBSERVABILITY_TIMING=1 is set.

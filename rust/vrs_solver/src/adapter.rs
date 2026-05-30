@@ -76,6 +76,13 @@ fn diag_output_from(result: &BackendCommitResult) -> CollisionBackendDiagnostics
         cde_prepare_failures: None,
         cde_cross_sheet_skipped: None,
         cde_broadphase_pruned: None,
+        cde_cache_pair_hits: None,
+        cde_cache_pair_misses: None,
+        cde_cache_boundary_hits: None,
+        cde_cache_boundary_misses: None,
+        cde_cache_prepared_hits: None,
+        cde_cache_prepared_misses: None,
+        cde_cache_invalidations: None,
         cde_observability_scope: None,
         final_commit_validation_ms: None,
     }
@@ -116,6 +123,13 @@ fn diag_output_from_with_cde(
         cde_prepare_failures: Some(snap.prepare_failures),
         cde_cross_sheet_skipped: Some(snap.cross_sheet_skipped),
         cde_broadphase_pruned: Some(snap.broadphase_pruned),
+        cde_cache_pair_hits: Some(snap.cache_pair_hits),
+        cde_cache_pair_misses: Some(snap.cache_pair_misses),
+        cde_cache_boundary_hits: Some(snap.cache_boundary_hits),
+        cde_cache_boundary_misses: Some(snap.cache_boundary_misses),
+        cde_cache_prepared_hits: Some(snap.cache_prepared_hits),
+        cde_cache_prepared_misses: Some(snap.cache_prepared_misses),
+        cde_cache_invalidations: Some(snap.cache_invalidations),
         cde_observability_scope: Some(scope.to_string()),
         final_commit_validation_ms: commit_ms,
     }
@@ -143,6 +157,13 @@ fn cde_unsupported_diag(
         cde_prepare_failures: Some(snap.prepare_failures),
         cde_cross_sheet_skipped: Some(snap.cross_sheet_skipped),
         cde_broadphase_pruned: Some(snap.broadphase_pruned),
+        cde_cache_pair_hits: Some(snap.cache_pair_hits),
+        cde_cache_pair_misses: Some(snap.cache_pair_misses),
+        cde_cache_boundary_hits: Some(snap.cache_boundary_hits),
+        cde_cache_boundary_misses: Some(snap.cache_boundary_misses),
+        cde_cache_prepared_hits: Some(snap.cache_prepared_hits),
+        cde_cache_prepared_misses: Some(snap.cache_prepared_misses),
+        cde_cache_invalidations: Some(snap.cache_invalidations),
         cde_observability_scope: Some(scope.to_string()),
         final_commit_validation_ms: commit_ms,
     }
@@ -314,6 +335,7 @@ fn run_sparrow_pipeline(
     let is_cde = backend_kind == CollisionBackendKind::Cde;
     if is_cde {
         cde_observability::reset();
+        crate::optimizer::cde_adapter::reset_query_cache();
     }
     let timing_enabled = cde_timing_enabled();
     let (seed_placements, mut seed_unplaced) =
@@ -543,7 +565,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 u.extend(pre_unplaced);
                 if backend_kind != CollisionBackendKind::Bbox {
                     let is_cde = backend_kind == CollisionBackendKind::Cde;
-                    if is_cde { cde_observability::reset(); }
+                    if is_cde { cde_observability::reset(); crate::optimizer::cde_adapter::reset_query_cache(); }
                     let timing_enabled = cde_timing_enabled();
                     let t_start = timing_start(timing_enabled);
                     let working = WorkingLayout::new(p, u, sheets.len(), input.seed);
@@ -579,7 +601,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
             }
             OptimizerPipelineKind::PhaseOptimizer => {
                 let is_cde = backend_kind == CollisionBackendKind::Cde;
-                if is_cde { cde_observability::reset(); }
+                if is_cde { cde_observability::reset(); crate::optimizer::cde_adapter::reset_query_cache(); }
                 let timing_enabled = cde_timing_enabled();
                 let (init_p, mut init_u, _construction_diag) =
                     build_initial_layout_with_rotation_context(

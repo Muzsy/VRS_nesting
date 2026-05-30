@@ -40,6 +40,19 @@ pub struct CdeCounters {
     /// are provably non-colliding, so this skips the exact query and saves one
     /// engine build. Broad-phase NEVER produces positive collision truth.
     pub broadphase_pruned: usize,
+    /// SGH-Q23R1 solve-scoped cache metrics. A cache hit returns a memoised
+    /// CDE verdict (pure function of shapes+transforms) WITHOUT building a
+    /// `CDEngine`. Hits are the primary engine-build reduction lever.
+    pub cache_pair_hits: usize,
+    pub cache_pair_misses: usize,
+    pub cache_boundary_hits: usize,
+    pub cache_boundary_misses: usize,
+    pub cache_prepared_hits: usize,
+    pub cache_prepared_misses: usize,
+    /// Cache entries dropped because the solve-scoped cache exceeded its size cap
+    /// (bounded-memory eviction). Transform-keyed entries are pure, so eviction
+    /// only costs a recompute, never correctness.
+    pub cache_invalidations: usize,
 }
 
 thread_local! {
@@ -97,14 +110,36 @@ pub(crate) fn inc_cross_sheet_skipped() {
 }
 
 /// SGH-Q23: record an AABB broad-phase prune (NoCollision resolved without an
-/// engine build). Also counts as a `no_collision_results` so the result
-/// histogram stays consistent with the query count.
+/// engine build). The result histogram (`no_collision_results`) is owned by the
+/// backend caller (`placement_overlaps`), so this counts only the prune itself.
 pub(crate) fn inc_broadphase_pruned() {
+    COUNTERS.with(|c| c.borrow_mut().broadphase_pruned += 1);
+}
+
+// SGH-Q23R1 solve-scoped cache counters.
+pub(crate) fn inc_cache_pair(hit: bool) {
     COUNTERS.with(|c| {
         let mut b = c.borrow_mut();
-        b.broadphase_pruned += 1;
-        b.no_collision_results += 1;
+        if hit { b.cache_pair_hits += 1; } else { b.cache_pair_misses += 1; }
     });
+}
+
+pub(crate) fn inc_cache_boundary(hit: bool) {
+    COUNTERS.with(|c| {
+        let mut b = c.borrow_mut();
+        if hit { b.cache_boundary_hits += 1; } else { b.cache_boundary_misses += 1; }
+    });
+}
+
+pub(crate) fn inc_cache_prepared(hit: bool) {
+    COUNTERS.with(|c| {
+        let mut b = c.borrow_mut();
+        if hit { b.cache_prepared_hits += 1; } else { b.cache_prepared_misses += 1; }
+    });
+}
+
+pub(crate) fn add_cache_invalidations(n: usize) {
+    COUNTERS.with(|c| c.borrow_mut().cache_invalidations += n);
 }
 
 // ---------------------------------------------------------------------------

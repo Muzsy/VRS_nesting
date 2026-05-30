@@ -251,24 +251,10 @@ impl CollisionBackend for CdeCollisionBackend {
             return CollisionDecision::NoCollision;
         }
         crate::optimizer::cde_observability::inc_pair();
-        let a_shape = match super::cde_adapter::prepare_shape_from_placement(a, a_part) {
-            Ok(s) => s,
-            Err(reason) => {
-                crate::optimizer::cde_observability::inc_prepare_failure();
-                crate::optimizer::cde_observability::inc_unsupported();
-                return CollisionDecision::Unsupported { reason };
-            }
-        };
-        let b_shape = match super::cde_adapter::prepare_shape_from_placement(b, b_part) {
-            Ok(s) => s,
-            Err(reason) => {
-                crate::optimizer::cde_observability::inc_prepare_failure();
-                crate::optimizer::cde_observability::inc_unsupported();
-                return CollisionDecision::Unsupported { reason };
-            }
-        };
-        let adapter = super::cde_adapter::CdeAdapter::with_defaults();
-        match adapter.query_pair(&a_shape, &b_shape) {
+        // SGH-Q23R1: solve-scoped cache (verdict + prepared geometry). A cache
+        // hit returns a memoised verdict without building a CDEngine; the
+        // prepare-failure counter is owned by the cache layer.
+        match super::cde_adapter::cached_query_pair(a, a_part, b, b_part) {
             super::cde_adapter::CdeQueryResult::Collision => {
                 crate::optimizer::cde_observability::inc_collision();
                 CollisionDecision::Collision
@@ -291,24 +277,8 @@ impl CollisionBackend for CdeCollisionBackend {
         sheet: &SheetShape,
     ) -> CollisionDecision {
         crate::optimizer::cde_observability::inc_boundary();
-        let item_shape = match super::cde_adapter::prepare_shape_from_placement(placement, part) {
-            Ok(s) => s,
-            Err(reason) => {
-                crate::optimizer::cde_observability::inc_prepare_failure();
-                crate::optimizer::cde_observability::inc_unsupported();
-                return CollisionDecision::Unsupported { reason };
-            }
-        };
-        let sheet_shape = match super::cde_adapter::prepare_shape_from_sheet(sheet) {
-            Ok(s) => s,
-            Err(reason) => {
-                crate::optimizer::cde_observability::inc_prepare_failure();
-                crate::optimizer::cde_observability::inc_unsupported();
-                return CollisionDecision::Unsupported { reason };
-            }
-        };
-        let adapter = super::cde_adapter::CdeAdapter::with_defaults();
-        match adapter.query_boundary(&item_shape, &sheet_shape) {
+        // SGH-Q23R1: solve-scoped boundary decision cache.
+        match super::cde_adapter::cached_query_boundary(placement, part, sheet) {
             super::cde_adapter::CdeQueryResult::Collision => {
                 crate::optimizer::cde_observability::inc_collision();
                 CollisionDecision::Collision

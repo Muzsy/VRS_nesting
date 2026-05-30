@@ -4,6 +4,12 @@ use jagua_rs::collision_detection::hazards::filter::NoFilter;
 use jagua_rs::geometry::primitives::Rect as JagRect;
 use jagua_rs::geometry::fail_fast::SPSurrogateConfig;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::rc::Rc;
+
 use crate::geometry::{polygon_bbox, to_jag_polygon, Point};
 use crate::io::Placement;
 use crate::item::Part;
@@ -270,6 +276,177 @@ pub(crate) fn prepare_shape_from_sheet(sheet: &SheetShape) -> Result<CdePrepared
     let world_pts = pts;
 
     Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
+}
+
+// ---------------------------------------------------------------------------
+// SGH-Q23R1: solve-scoped CDE decision + prepared-geometry cache (strategy B)
+// ---------------------------------------------------------------------------
+//
+// CDE pair/boundary verdicts are *pure functions* of (shape geometry, transform,
+// backend config). With deterministic transforms this lets us memoise verdicts
+// and prepared `SPolygon`s in a solve-scoped (thread-local) cache and serve
+// repeats WITHOUT building a `CDEngine`. A moved item simply produces new
+// transform keys, so stale entries become unreachable — transform keying is its
+// own dirty-invalidation (documented; explicit eviction only bounds memory).
+//
+// This is the run.md §1 strategy B: "VRS-side solve-scoped exact/CDE cache with
+// dirty invalidation while keeping CDE adapter calls behind cache misses."
+
+/// (part-id hash, x bits, y bits, rotation bits) — exact transform identity.
+type ShapeKey = (u64, u64, u64, u64);
+
+const CACHE_ENTRY_CAP: usize = 400_000;
+
+struct CdeQueryCache {
+    prepared: HashMap<ShapeKey, Rc<CdePreparedShape>>,
+    pair: HashMap<(ShapeKey, ShapeKey), CdeQueryResult>,
+    boundary: HashMap<(ShapeKey, u64), CdeQueryResult>,
+}
+
+impl CdeQueryCache {
+    fn new() -> Self {
+        Self { prepared: HashMap::new(), pair: HashMap::new(), boundary: HashMap::new() }
+    }
+}
+
+thread_local! {
+    static QUERY_CACHE: RefCell<CdeQueryCache> = RefCell::new(CdeQueryCache::new());
+}
+
+/// Reset the solve-scoped CDE cache. Called alongside `cde_observability::reset()`
+/// at the start of each CDE-backed solve scope.
+pub(crate) fn reset_query_cache() {
+    QUERY_CACHE.with(|c| *c.borrow_mut() = CdeQueryCache::new());
+}
+
+/// Hash the part's full geometric identity (id + dimensions + outer polygon),
+/// not just its id. This makes the cache key a pure function of actual geometry,
+/// so two parts that share an id but differ geometrically (e.g. across solves or
+/// across tests on the same thread) can never collide on a cached verdict.
+fn part_geom_hash(part: &Part) -> u64 {
+    let mut h = DefaultHasher::new();
+    part.id.hash(&mut h);
+    part.width.to_bits().hash(&mut h);
+    part.height.to_bits().hash(&mut h);
+    match &part.outer_points {
+        Some(v) => v.to_string().hash(&mut h),
+        None => 0u8.hash(&mut h),
+    }
+    h.finish()
+}
+
+fn shape_key(p: &Placement, part_geom_hash: u64) -> ShapeKey {
+    (part_geom_hash, p.x.to_bits(), p.y.to_bits(), p.rotation_deg.to_bits())
+}
+
+fn sheet_key(s: &SheetShape) -> u64 {
+    let mut h = DefaultHasher::new();
+    s.min_x.to_bits().hash(&mut h);
+    s.min_y.to_bits().hash(&mut h);
+    s.max_x.to_bits().hash(&mut h);
+    s.max_y.to_bits().hash(&mut h);
+    s.has_irregular_outer.hash(&mut h);
+    for v in &s.outer_vertices {
+        v.x.to_bits().hash(&mut h);
+        v.y.to_bits().hash(&mut h);
+    }
+    h.finish()
+}
+
+/// Prepared-shape cache lookup. Returns a shared `Rc` so the fixed (non-moving)
+/// items' `SPolygon`s are built once and reused across the whole search.
+fn cached_prepared(p: &Placement, part: &Part) -> Result<Rc<CdePreparedShape>, &'static str> {
+    let key = shape_key(p, part_geom_hash(part));
+    if let Some(rc) = QUERY_CACHE.with(|c| c.borrow().prepared.get(&key).cloned()) {
+        super::cde_observability::inc_cache_prepared(true);
+        return Ok(rc);
+    }
+    super::cde_observability::inc_cache_prepared(false);
+    let shape = match prepare_shape_from_placement(p, part) {
+        Ok(s) => Rc::new(s),
+        Err(reason) => {
+            super::cde_observability::inc_prepare_failure();
+            return Err(reason);
+        }
+    };
+    QUERY_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        if cache.prepared.len() >= CACHE_ENTRY_CAP {
+            super::cde_observability::add_cache_invalidations(cache.prepared.len());
+            cache.prepared.clear();
+        }
+        cache.prepared.insert(key, shape.clone());
+    });
+    Ok(shape)
+}
+
+/// Solve-scoped cached pair query. On a cache hit no `CDEngine` is built; on a
+/// miss the per-call `CdeAdapter::query_pair` runs (with AABB broad-phase) and
+/// the verdict is memoised. Returns the raw `CdeQueryResult` (the backend caller
+/// owns the result histogram counters).
+pub(crate) fn cached_query_pair(
+    a: &Placement, a_part: &Part, b: &Placement, b_part: &Part,
+) -> CdeQueryResult {
+    let ka = shape_key(a, part_geom_hash(a_part));
+    let kb = shape_key(b, part_geom_hash(b_part));
+    let key = if ka <= kb { (ka, kb) } else { (kb, ka) };
+    if let Some(r) = QUERY_CACHE.with(|c| c.borrow().pair.get(&key).cloned()) {
+        super::cde_observability::inc_cache_pair(true);
+        return r;
+    }
+    super::cde_observability::inc_cache_pair(false);
+    let sa = match cached_prepared(a, a_part) {
+        Ok(s) => s,
+        Err(reason) => return CdeQueryResult::Unsupported { reason },
+    };
+    let sb = match cached_prepared(b, b_part) {
+        Ok(s) => s,
+        Err(reason) => return CdeQueryResult::Unsupported { reason },
+    };
+    let adapter = CdeAdapter::with_defaults();
+    let r = adapter.query_pair(&sa, &sb);
+    QUERY_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        if cache.pair.len() >= CACHE_ENTRY_CAP {
+            super::cde_observability::add_cache_invalidations(cache.pair.len());
+            cache.pair.clear();
+        }
+        cache.pair.insert(key, r.clone());
+    });
+    r
+}
+
+/// Solve-scoped cached boundary query.
+pub(crate) fn cached_query_boundary(
+    item: &Placement, item_part: &Part, sheet: &SheetShape,
+) -> CdeQueryResult {
+    let ki = shape_key(item, part_geom_hash(item_part));
+    let ks = sheet_key(sheet);
+    let key = (ki, ks);
+    if let Some(r) = QUERY_CACHE.with(|c| c.borrow().boundary.get(&key).cloned()) {
+        super::cde_observability::inc_cache_boundary(true);
+        return r;
+    }
+    super::cde_observability::inc_cache_boundary(false);
+    let item_shape = match cached_prepared(item, item_part) {
+        Ok(s) => s,
+        Err(reason) => return CdeQueryResult::Unsupported { reason },
+    };
+    let sheet_shape = match prepare_shape_from_sheet(sheet) {
+        Ok(s) => s,
+        Err(reason) => return CdeQueryResult::Unsupported { reason },
+    };
+    let adapter = CdeAdapter::with_defaults();
+    let r = adapter.query_boundary(&item_shape, &sheet_shape);
+    QUERY_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        if cache.boundary.len() >= CACHE_ENTRY_CAP {
+            super::cde_observability::add_cache_invalidations(cache.boundary.len());
+            cache.boundary.clear();
+        }
+        cache.boundary.insert(key, r.clone());
+    });
+    r
 }
 
 // ---------------------------------------------------------------------------
@@ -552,6 +729,63 @@ mod tests {
             "degenerate polygon must be Unsupported, not NoCollision: {:?}", result
         );
         assert!(!result.is_no_collision(), "invalid geometry must not be treated as safe");
+    }
+
+    // -------------------------------------------------------------------------
+    // SGH-Q23R1: solve-scoped cache
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn cde_q23r1_cache_hit_avoids_second_engine_build() {
+        use crate::optimizer::cde_observability;
+        reset_query_cache();
+        cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 10.0); // overlapping → reaches CDEngine
+        let r1 = cached_query_pair(&p1, &part, &p2, &part);
+        let r2 = cached_query_pair(&p1, &part, &p2, &part);
+        let snap = cde_observability::snapshot();
+        assert_eq!(r1, CdeQueryResult::Collision);
+        assert_eq!(r2, CdeQueryResult::Collision);
+        assert_eq!(snap.cache_pair_misses, 1, "first call misses");
+        assert_eq!(snap.cache_pair_hits, 1, "second identical call hits");
+        assert_eq!(snap.engine_builds, 1, "cache hit must NOT build a second CDEngine");
+    }
+
+    #[test]
+    fn cde_q23r1_cache_key_includes_geometry_not_just_id() {
+        use crate::optimizer::cde_observability;
+        reset_query_cache();
+        cde_observability::reset();
+        // Same part id "X" but different geometry. At placements (0,0) and (15,15):
+        //   30×30 parts overlap; 10×10 parts do not. The cache must not confuse them.
+        let big = make_part("X", 30.0, 30.0);
+        let small = make_part("X", 10.0, 10.0);
+        let p1 = pl("X", 0, 0.0, 0.0);
+        let p2 = pl("X", 0, 15.0, 15.0);
+        let r_big = cached_query_pair(&p1, &big, &p2, &big);
+        let r_small = cached_query_pair(&p1, &small, &p2, &small);
+        assert_eq!(r_big, CdeQueryResult::Collision, "30×30 at (0,0)/(15,15) overlap");
+        assert_eq!(r_small, CdeQueryResult::NoCollision,
+            "10×10 at (0,0)/(15,15) are separate — must NOT return the big part's cached verdict");
+    }
+
+    #[test]
+    fn cde_q23r1_reset_clears_cache() {
+        use crate::optimizer::cde_observability;
+        reset_query_cache();
+        cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 10.0);
+        cached_query_pair(&p1, &part, &p2, &part);
+        reset_query_cache();
+        cde_observability::reset();
+        cached_query_pair(&p1, &part, &p2, &part);
+        let snap = cde_observability::snapshot();
+        assert_eq!(snap.cache_pair_hits, 0, "after reset the verdict must be recomputed (miss)");
+        assert_eq!(snap.cache_pair_misses, 1);
     }
 
     // -------------------------------------------------------------------------

@@ -1,0 +1,119 @@
+id: sgh_q23r1_production_sparrow_cutover_implementation
+project: VRS_nesting
+kind: production_cutover_implementation
+priority: critical
+
+objective: >
+  Complete the production transition from the old VRS solver path to a jagua_rs/Sparrow-style fixed-sheet solver.
+  This is not an audit-only task and not a bbox-removal task. Implement the missing Sparrow mechanisms: solve-scoped
+  CDE/Jagua session/cache, incremental collision graph, multi-target separation pass, GLS lifecycle, exploration/compression
+  fixed-sheet adaptation, production sparrow_cde routing/defaults, and legacy quarantine.
+
+local_reference:
+  required_path: .cache/sparrow
+  missing_behavior: BLOCKED
+  required_delta_artifact: docs/egyedi_solver/sgh_q23r1_sparrow_reference_delta.md
+
+baseline_from_q23:
+  report: codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover.md
+  measurements: codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover_measurements.json
+  status: REVISE
+  blocker: medium_cde_convergence_blocked
+  q23_medium_baseline:
+    status: unsupported
+    placed: 0
+    required: 12
+    runtime_ms_approx: 25017.8
+    cde_total_queries: 11236
+    cde_engine_builds: 7650
+    cde_broadphase_pruned: 3586
+
+must_read:
+  - codex/prompts/egyedi_solver/sgh_q23_full_sparrow_parity_cutover/run.md
+  - codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover.md
+  - codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover_measurements.json
+  - docs/egyedi_solver/sgh_q23_sparrow_reference_map.md
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/optimizer/sparrow.rs
+  - rust/vrs_solver/src/optimizer/cde_session.rs
+  - rust/vrs_solver/src/optimizer/cde_adapter.rs
+  - rust/vrs_solver/src/optimizer/collision_backend.rs
+  - rust/vrs_solver/src/optimizer/collision_severity.rs
+  - rust/vrs_solver/src/optimizer/search_position.rs
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - rust/vrs_solver/src/optimizer/loss_model.rs
+
+implementation_requirements:
+  - replace_per_call_cde_hot_path_with_solve_scoped_session_or_cache
+  - implement_prepared_geometry_cache
+  - implement_transformed_placement_cache
+  - implement_pair_decision_cache_with_version_keys
+  - implement_boundary_decision_cache_with_version_keys
+  - implement_dirty_invalidation_on_item_move
+  - implement_active_set_pair_filtering
+  - implement_incremental_collision_graph_update
+  - implement_multi_target_sparrow_pass
+  - implement_gls_stagnation_disruption_restart_lifecycle
+  - implement_fixed_sheet_exploration_compression_lifecycle
+  - route_normal_production_solves_to_sparrow_cde
+  - quarantine_legacy_solvers_explicit_opt_in_only
+  - preserve_full_diagnostics_on_success_partial_unsupported_timeout_error
+
+forbidden_in_production_sparrow_cde:
+  - bbox_collision_truth
+  - bbox_semantic_loss_truth
+  - bbox_final_validation
+  - phase_optimizer_black_box_fallback
+  - legacy_multisheet_silent_fallback
+  - lbf_finite_candidate_fallback
+  - unsupported_cde_treated_as_no_collision
+
+required_outputs:
+  - docs/egyedi_solver/sgh_q23r1_sparrow_reference_delta.md
+  - docs/egyedi_solver/sgh_q23r1_production_sparrow_cutover_implementation.md
+  - scripts/smoke_sgh_q23r1_production_sparrow_cutover.py
+  - scripts/bench_sgh_q23r1_production_sparrow_cutover.py
+  - codex/reports/egyedi_solver/sgh_q23r1_production_sparrow_cutover_implementation.md
+  - codex/reports/egyedi_solver/sgh_q23r1_production_sparrow_cutover_implementation.verify.log
+  - codex/reports/egyedi_solver/sgh_q23r1_production_sparrow_cutover_measurements.json
+  - codex/reports/egyedi_solver/sgh_q23r1_production_sparrow_cutover_measurements.md
+
+acceptance:
+  - medium_10_to_20_items_sparrow_cde_status_ok
+  - medium_10_to_20_items_placed_equals_required
+  - medium_10_to_20_items_no_timeout
+  - cde_engine_builds_reduced_by_at_least_80_percent_or_session_reuse_metric_proves_reuse
+  - cache_hit_miss_invalidation_metrics_present
+  - incremental_collision_graph_metrics_present
+  - production_route_is_sparrow_cde
+  - legacy_solvers_explicit_opt_in_only
+  - no_lbf_phase_optimizer_or_legacy_fallback_in_sparrow_cde
+  - bbox_fallback_queries_zero
+  - final_commit_cde_jagua_validated
+  - smoke_passes
+  - quick_benchmark_writes_json_and_markdown
+  - cargo_lib_tests_pass
+
+commands:
+  required:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::sparrow
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::cde_session
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::collision_severity
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::search_position
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::separator
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml adapter
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q23r1_production_sparrow_cutover.py
+    - python3 scripts/bench_sgh_q23r1_production_sparrow_cutover.py --quick
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q23r1_production_sparrow_cutover_implementation.md
+
+report_markers:
+  pass:
+    - SGH-Q23R1_STATUS: READY_FOR_AUDIT
+    - SPARROW_PRODUCTION_STATUS: FULL_CUTOVER_FIXED_SHEET_CDE
+    - CDE_SESSION_STATUS: STATEFUL_SESSION_OR_CACHE_ACTIVE
+    - INCREMENTAL_GRAPH_STATUS: ACTIVE
+    - LEGACY_SOLVER_STATUS: EXPLICIT_OPT_IN_ONLY
+    - MEDIUM_CDE_STATUS: CONVERGED
+    - Q19_STATUS: HOLD
