@@ -1,0 +1,19 @@
+id: fill_canvas_sgh_q23r2_real_sparrow_cutover_completion
+kind: canvas_task
+slug: sgh_q23r2_real_sparrow_cutover_completion
+title: SGH-Q23R2 Real Sparrow cutover completion
+canvas_path: canvases/egyedi_solver/sgh_q23r2_real_sparrow_cutover_completion.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q23r2_real_sparrow_cutover_completion/run.md
+report_path: codex/reports/egyedi_solver/sgh_q23r2_real_sparrow_cutover_completion.md
+status: ready
+acceptance:
+  - production_phase1_default_routes_to_sparrow_cde
+  - medium_10_to_20_items_sparrow_cde_converges_12_of_12
+  - single_engine_multi_hazard_cde_candidate_query_implemented
+  - cde_engine_builds_reduced_at_least_80_percent_vs_q23_baseline_or_better_batch_metric_documented
+  - incremental_collision_graph_active
+  - multi_target_move_items_multi_active
+  - fixed_sheet_exploration_compression_active
+  - bbox_lbf_legacy_fallback_zero_in_production
+  - full_diagnostics_on_success_and_failure
+  - tests_and_benchmark_reports_written

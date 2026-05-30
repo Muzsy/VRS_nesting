@@ -275,6 +275,17 @@ pub struct CollisionBackendDiagnosticsOutput {
     pub cde_cache_prepared_misses: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_cache_invalidations: Option<usize>,
+    /// SGH-Q23R2 single-engine multi-hazard batch candidate evaluation metrics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_batch_candidate_queries: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_batch_engine_builds: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_batch_hazards_registered: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_batch_collisions_returned: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_pairwise_fallback_queries: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_observability_scope: Option<String>,
     /// Only populated when VRS_CDE_OBSERVABILITY_TIMING=1 is set.

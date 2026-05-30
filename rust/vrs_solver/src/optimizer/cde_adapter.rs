@@ -1,6 +1,7 @@
 use jagua_rs::collision_detection::{CDEConfig, CDEngine};
 use jagua_rs::collision_detection::hazards::{Hazard, HazardEntity};
 use jagua_rs::collision_detection::hazards::filter::NoFilter;
+use jagua_rs::collision_detection::hazards::collector::{BasicHazardCollector, HazardCollector};
 use jagua_rs::geometry::primitives::Rect as JagRect;
 use jagua_rs::geometry::fail_fast::SPSurrogateConfig;
 
@@ -450,6 +451,160 @@ pub(crate) fn cached_query_boundary(
 }
 
 // ---------------------------------------------------------------------------
+// SGH-Q23R2: single-engine multi-hazard candidate session (requirement A)
+// ---------------------------------------------------------------------------
+//
+// Builds ONE `CDEngine` holding the sheet boundary as an `Exterior` hazard and
+// every same-sheet fixed item as a `Hole` hazard. A moving candidate is then
+// queried against that engine ONCE via `collect_poly_collisions`, returning the
+// set of colliding fixed items + whether the sheet boundary is violated — with
+// the VRS touching post-policy applied per collided hazard. This replaces N
+// pairwise `CDEngine::new(...)` builds per candidate with a single build, and
+// the same session is reused across a candidate's probe steps (the fixed
+// hazards do not move during one item's search).
+//
+// CDE remains the sole source of positive collision truth; the bbox is only used
+// (inside `query_pair`) as broad-phase. The post-policy distinguishes touching
+// (NoCollision) from positive-area overlap.
+
+/// Result of one batch candidate query against a `CdeCandidateSession`.
+pub(crate) struct CdeBatchResult {
+    pub(crate) boundary_collision: bool,
+    /// Layout indices of fixed items the candidate positively overlaps.
+    pub(crate) colliding_layout_idxs: Vec<usize>,
+    /// True if any collided hazard could not be resolved by the post-policy.
+    pub(crate) unsupported: bool,
+}
+
+impl CdeBatchResult {
+    pub(crate) fn is_clear(&self) -> bool {
+        !self.boundary_collision && self.colliding_layout_idxs.is_empty() && !self.unsupported
+    }
+}
+
+/// A reusable single-engine multi-hazard session for one item's search.
+pub(crate) struct CdeCandidateSession {
+    cde: CDEngine,
+    /// `holes[i]` is the (layout index, prepared shape) registered as `Hole { idx: i }`.
+    holes: Vec<(usize, Rc<CdePreparedShape>)>,
+    sheet_world_pts: Vec<Point>,
+}
+
+impl CdeCandidateSession {
+    /// Build the session from the fixed same-sheet items + the sheet shape.
+    /// Returns `None` if the engine bbox is degenerate (caller falls back to the
+    /// pairwise path).
+    pub(crate) fn build(
+        others: Vec<(usize, Rc<CdePreparedShape>)>,
+        sheet: &CdePreparedShape,
+    ) -> Option<Self> {
+        let mut min_x = sheet.min_x;
+        let mut min_y = sheet.min_y;
+        let mut max_x = sheet.max_x;
+        let mut max_y = sheet.max_y;
+        for (_, s) in &others {
+            min_x = min_x.min(s.min_x);
+            min_y = min_y.min(s.min_y);
+            max_x = max_x.max(s.max_x);
+            max_y = max_y.max(s.max_y);
+        }
+        // Generous margin so candidate/probe excursions stay inside the engine bbox
+        // (any spill is re-checked against the actual sheet by the post-policy).
+        let margin = ((max_x - min_x) + (max_y - min_y)).max(1.0);
+        let bbox = JagRect::try_new(
+            (min_x - margin) as f32,
+            (min_y - margin) as f32,
+            (max_x + margin) as f32,
+            (max_y + margin) as f32,
+        )
+        .ok()?;
+
+        let cde_config = CDEConfig {
+            quadtree_depth: 4,
+            cd_threshold: 0,
+            item_surrogate_config: SPSurrogateConfig::none(),
+        };
+        let mut hazards = Vec::with_capacity(others.len() + 1);
+        hazards.push(Hazard::new(HazardEntity::Exterior, sheet.spoly.clone(), false));
+        for (i, (_, s)) in others.iter().enumerate() {
+            hazards.push(Hazard::new(HazardEntity::Hole { idx: i }, s.spoly.clone(), false));
+        }
+        super::cde_observability::inc_batch_engine_build(others.len());
+        let cde = CDEngine::new(bbox, hazards, cde_config);
+        Some(Self { cde, holes: others, sheet_world_pts: sheet.world_pts.clone() })
+    }
+
+    pub(crate) fn hazard_count(&self) -> usize {
+        self.holes.len()
+    }
+
+    /// Query a candidate shape once against all registered hazards.
+    pub(crate) fn query(&self, candidate: &CdePreparedShape) -> CdeBatchResult {
+        let mut collector = BasicHazardCollector::default();
+        self.cde.collect_poly_collisions(&candidate.spoly, &mut collector);
+
+        let mut boundary_collision = false;
+        let mut colliding = Vec::new();
+        let mut unsupported = false;
+        for (_, ent) in collector.iter() {
+            match ent {
+                HazardEntity::Exterior => {
+                    // Re-check against the real sheet polygon (touching boundary is allowed).
+                    match polygon_within_sheet_pts(&candidate.world_pts, &self.sheet_world_pts) {
+                        Ok(true) => {}
+                        Ok(false) => boundary_collision = true,
+                        Err(_) => unsupported = true,
+                    }
+                }
+                HazardEntity::Hole { idx } => {
+                    if let Some((layout_idx, oshape)) = self.holes.get(*idx) {
+                        // Touching post-policy: only positive-area overlap counts.
+                        match polygons_collide(&candidate.world_pts, &oshape.world_pts) {
+                            Ok(true) => colliding.push(*layout_idx),
+                            Ok(false) => {}
+                            Err(_) => unsupported = true,
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        super::cde_observability::record_batch_query(
+            colliding.len() + boundary_collision as usize,
+        );
+        CdeBatchResult { boundary_collision, colliding_layout_idxs: colliding, unsupported }
+    }
+}
+
+/// Build a `CdeCandidateSession` for `target_idx` from a placement list, using the
+/// solve-scoped prepared-shape cache for every fixed item. Returns `None` if any
+/// shape cannot be prepared (caller falls back to the pairwise path and counts it).
+pub(crate) fn build_candidate_session(
+    placements: &[Placement],
+    target_idx: usize,
+    sheet_index: usize,
+    parts: &[Part],
+    sheet: &SheetShape,
+) -> Option<CdeCandidateSession> {
+    let sheet_shape = prepare_shape_from_sheet(sheet).ok()?;
+    let mut others = Vec::new();
+    for (i, p) in placements.iter().enumerate() {
+        if i == target_idx || p.sheet_index != sheet_index {
+            continue;
+        }
+        let part = parts.iter().find(|pt| pt.id == p.part_id)?;
+        let shape = cached_prepared(p, part).ok()?;
+        others.push((i, shape));
+    }
+    CdeCandidateSession::build(others, &sheet_shape)
+}
+
+/// Prepare (cached) a candidate placement shape for batch querying.
+pub(crate) fn prepare_candidate(p: &Placement, part: &Part) -> Option<Rc<CdePreparedShape>> {
+    cached_prepared(p, part).ok()
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -729,6 +884,61 @@ mod tests {
             "degenerate polygon must be Unsupported, not NoCollision: {:?}", result
         );
         assert!(!result.is_no_collision(), "invalid geometry must not be treated as safe");
+    }
+
+    // -------------------------------------------------------------------------
+    // SGH-Q23R2: single-engine multi-hazard candidate session
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn cde_q23r2_batch_session_one_build_many_queries() {
+        use crate::optimizer::cde_observability;
+        reset_query_cache();
+        cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let sheets = rect_sheet(200.0, 200.0);
+        // Two fixed items at (0,0) and (100,100); target idx 0 (excluded).
+        let placements = vec![
+            pl("A", 0, 0.0, 0.0),     // idx 0 = target (excluded)
+            pl("A", 0, 50.0, 50.0),   // idx 1 fixed
+            pl("A", 0, 120.0, 120.0), // idx 2 fixed
+        ];
+        let parts = vec![part.clone()];
+        let session = build_candidate_session(&placements, 0, 0, &parts, &sheets[0])
+            .expect("session builds");
+        assert_eq!(session.hazard_count(), 2, "two fixed items registered as holes");
+
+        // Candidate overlapping idx 1 (at 55,55 — overlaps the 50..70 item).
+        let cand_overlap = prepare_candidate(&pl("A", 0, 55.0, 55.0), &part).expect("cand");
+        let r1 = session.query(&cand_overlap);
+        assert!(r1.colliding_layout_idxs.contains(&1), "must report overlap with item idx 1");
+        assert!(!r1.boundary_collision, "candidate is inside the sheet");
+
+        // Candidate in free space → clear.
+        let cand_clear = prepare_candidate(&pl("A", 0, 10.0, 150.0), &part).expect("cand");
+        let r2 = session.query(&cand_clear);
+        assert!(r2.is_clear(), "free-space candidate must be clear: {:?}", r2.colliding_layout_idxs);
+
+        let snap = cde_observability::snapshot();
+        assert_eq!(snap.batch_engine_builds, 1, "ONE engine build for the whole session");
+        assert_eq!(snap.batch_candidate_queries, 2, "two candidate queries, no extra builds");
+    }
+
+    #[test]
+    fn cde_q23r2_batch_session_detects_boundary_violation() {
+        use crate::optimizer::cde_observability;
+        reset_query_cache();
+        cde_observability::reset();
+        let part = make_part("A", 20.0, 20.0);
+        let sheets = rect_sheet(100.0, 100.0);
+        let placements = vec![pl("A", 0, 0.0, 0.0)];
+        let parts = vec![part.clone()];
+        let session = build_candidate_session(&placements, 0, 0, &parts, &sheets[0])
+            .expect("session builds");
+        // Candidate at (95,10): extends to x=115 > 100 → boundary violation.
+        let cand = prepare_candidate(&pl("A", 0, 95.0, 10.0), &part).expect("cand");
+        let r = session.query(&cand);
+        assert!(r.boundary_collision, "candidate crossing sheet boundary must be flagged");
     }
 
     // -------------------------------------------------------------------------

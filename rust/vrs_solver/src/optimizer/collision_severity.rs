@@ -843,12 +843,192 @@ pub fn evaluate_transform_loss(
             candidate, part, cand_bbox, sheet, layout, target_idx, parts,
             loss_model, cfg, stats,
         ),
-        CollisionBackendKind::Cde => eval_with_severity_backend(
-            &CdeCollisionBackend,
-            candidate, part, cand_bbox, sheet, layout, target_idx, parts,
-            loss_model, cfg, stats,
-        ),
+        CollisionBackendKind::Cde => {
+            // SGH-Q23R2: production CDE path uses the single-engine multi-hazard
+            // batch evaluator (one CDEngine for all same-sheet hazards, candidate
+            // queried once + cheap CDE-truth separation probe). Falls back to the
+            // pairwise severity path only if the session cannot be built.
+            evaluate_transform_cde_batch(
+                candidate, part, sheet, layout, target_idx, parts, cfg, stats,
+            )
+        }
         CollisionBackendKind::Bbox => unreachable!(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SGH-Q23R2: single-engine multi-hazard batch evaluator (CDE production path)
+// ---------------------------------------------------------------------------
+
+fn shifted_xy(p: &Placement, dx: f64, dy: f64) -> Placement {
+    Placement { x: p.x + dx, y: p.y + dy, ..p.clone() }
+}
+
+/// CDE-truth separation loss: the smallest translation distance (over a few
+/// directions, bracket + binary refine) that makes the candidate fully clear
+/// according to the batch session. No `CDEngine::new` per probe step (the session
+/// is reused), and the bbox is never used as loss truth — the session/CDE decides
+/// "clear". Returns a finite loss; if no direction clears within the cap, returns
+/// a large (but finite) loss proportional to the sheet diagonal.
+#[allow(clippy::too_many_arguments)]
+fn cde_batch_separation_loss(
+    session: &crate::optimizer::cde_adapter::CdeCandidateSession,
+    candidate: &Placement,
+    part: &Part,
+    sheet: &SheetShape,
+    cfg: &CollisionSeverityConfig,
+    stats: &mut CollisionSeverityStats,
+) -> f64 {
+    let sheet_diag = (sheet.width * sheet.width + sheet.height * sheet.height).sqrt();
+    let initial = cfg.effective_initial_step(sheet_diag);
+    let max_reach = sheet_diag;
+    // 8 compass directions.
+    const DIRS: [(f64, f64); 8] = [
+        (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
+        (0.7071, 0.7071), (-0.7071, 0.7071), (0.7071, -0.7071), (-0.7071, -0.7071),
+    ];
+    let clear_at = |dx: f64, dy: f64| -> bool {
+        match crate::optimizer::cde_adapter::prepare_candidate(&shifted_xy(candidate, dx, dy), part) {
+            Some(s) => session.query(&s).is_clear(),
+            None => false,
+        }
+    };
+    let mut best: Option<f64> = None;
+    for &(ux, uy) in DIRS.iter() {
+        // Bracket: grow step until clear or exceed max_reach.
+        let mut step = initial;
+        let mut bracket: Option<(f64, f64)> = None; // (last_collide_dist, first_clear_dist)
+        let mut prev = 0.0_f64;
+        while step <= max_reach {
+            stats.probe_pair_queries += 1;
+            if clear_at(ux * step, uy * step) {
+                bracket = Some((prev, step));
+                break;
+            }
+            prev = step;
+            step *= 2.0;
+        }
+        let Some((mut lo, mut hi)) = bracket else { continue };
+        // Binary refine to probe_min_step resolution (bounded iterations).
+        for _ in 0..8 {
+            if hi - lo <= cfg.probe_min_step {
+                break;
+            }
+            let mid = 0.5 * (lo + hi);
+            stats.probe_pair_queries += 1;
+            if clear_at(ux * mid, uy * mid) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        best = Some(match best {
+            Some(b) => b.min(hi),
+            None => hi,
+        });
+    }
+    match best {
+        Some(d) => d.max(cfg.probe_min_step),
+        // No direction cleared within reach — finite large loss (still ranks worse
+        // than any resolvable candidate, but not the unsupported sentinel).
+        None => max_reach + sheet_diag,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_transform_cde_batch(
+    candidate: &Placement,
+    part: &Part,
+    sheet: &SheetShape,
+    layout: &WorkingLayout,
+    target_idx: usize,
+    parts: &[Part],
+    cfg: &CollisionSeverityConfig,
+    stats: &mut CollisionSeverityStats,
+) -> EvaluationResult {
+    use crate::optimizer::cde_adapter::{build_candidate_session, prepare_candidate};
+
+    let session = match build_candidate_session(
+        &layout.placements, target_idx, candidate.sheet_index, parts, sheet,
+    ) {
+        Some(s) => s,
+        None => {
+            // Could not build the batch session → fall back to the pairwise path.
+            crate::optimizer::cde_observability::inc_pairwise_fallback();
+            let cand_bbox = match bbox_from_placement(candidate, part.width, part.height) {
+                Some(b) => b,
+                None => {
+                    stats.unsupported_queries += 1;
+                    return EvaluationResult {
+                        loss: cfg.hard_unsupported_loss,
+                        unsupported: true,
+                        pair_collision_count: 0,
+                        boundary_collision: false,
+                        backend_confirmed_collision: false,
+                        unresolved_probe: false,
+                        severity_mode: SeverityMode::Unsupported,
+                    };
+                }
+            };
+            return eval_with_severity_backend(
+                &CdeCollisionBackend, candidate, part, &cand_bbox, sheet, layout,
+                target_idx, parts, LossModelKind::BboxArea, cfg, stats,
+            );
+        }
+    };
+
+    let Some(cand_shape) = prepare_candidate(candidate, part) else {
+        stats.unsupported_queries += 1;
+        return EvaluationResult {
+            loss: cfg.hard_unsupported_loss,
+            unsupported: true,
+            pair_collision_count: 0,
+            boundary_collision: false,
+            backend_confirmed_collision: false,
+            unresolved_probe: false,
+            severity_mode: SeverityMode::Unsupported,
+        };
+    };
+
+    stats.boundary_queries += 1;
+    let res = session.query(&cand_shape);
+    if res.unsupported {
+        stats.unsupported_queries += 1;
+        return EvaluationResult {
+            loss: cfg.hard_unsupported_loss,
+            unsupported: true,
+            pair_collision_count: res.colliding_layout_idxs.len(),
+            boundary_collision: res.boundary_collision,
+            backend_confirmed_collision: false,
+            unresolved_probe: false,
+            severity_mode: SeverityMode::Unsupported,
+        };
+    }
+    stats.pair_queries += session.hazard_count();
+
+    if res.is_clear() {
+        stats.backend_confirmed_no_collisions += 1;
+        return EvaluationResult {
+            loss: 0.0,
+            unsupported: false,
+            pair_collision_count: 0,
+            boundary_collision: false,
+            backend_confirmed_collision: false,
+            unresolved_probe: false,
+            severity_mode: SeverityMode::BackendOracleProbe,
+        };
+    }
+
+    stats.backend_confirmed_collisions += 1;
+    let loss = cde_batch_separation_loss(&session, candidate, part, sheet, cfg, stats);
+    EvaluationResult {
+        loss,
+        unsupported: false,
+        pair_collision_count: res.colliding_layout_idxs.len(),
+        boundary_collision: res.boundary_collision,
+        backend_confirmed_collision: true,
+        unresolved_probe: false,
+        severity_mode: SeverityMode::BackendOracleProbe,
     }
 }
 

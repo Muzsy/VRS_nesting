@@ -53,6 +53,17 @@ pub struct CdeCounters {
     /// (bounded-memory eviction). Transform-keyed entries are pure, so eviction
     /// only costs a recompute, never correctness.
     pub cache_invalidations: usize,
+    /// SGH-Q23R2 single-engine multi-hazard batch candidate evaluation metrics.
+    /// One `CDEngine` holds the sheet (Exterior) + all same-sheet fixed items
+    /// (Hole hazards); a candidate is queried against it ONCE, replacing N
+    /// pairwise `CDEngine::new` builds.
+    pub batch_candidate_queries: usize,
+    pub batch_engine_builds: usize,
+    pub batch_hazards_registered: usize,
+    pub batch_collisions_returned: usize,
+    /// Pairwise CDE queries that still went through the per-pair path (broad-phase,
+    /// tracker rebuild, jagua-exact backend) rather than the batch session.
+    pub pairwise_fallback_queries: usize,
 }
 
 thread_local! {
@@ -140,6 +151,27 @@ pub(crate) fn inc_cache_prepared(hit: bool) {
 
 pub(crate) fn add_cache_invalidations(n: usize) {
     COUNTERS.with(|c| c.borrow_mut().cache_invalidations += n);
+}
+
+// SGH-Q23R2 batch (single-engine multi-hazard) counters.
+pub(crate) fn inc_batch_engine_build(hazards: usize) {
+    COUNTERS.with(|c| {
+        let mut b = c.borrow_mut();
+        b.batch_engine_builds += 1;
+        b.batch_hazards_registered += hazards;
+    });
+}
+
+pub(crate) fn record_batch_query(collisions_returned: usize) {
+    COUNTERS.with(|c| {
+        let mut b = c.borrow_mut();
+        b.batch_candidate_queries += 1;
+        b.batch_collisions_returned += collisions_returned;
+    });
+}
+
+pub(crate) fn inc_pairwise_fallback() {
+    COUNTERS.with(|c| c.borrow_mut().pairwise_fallback_queries += 1);
 }
 
 // ---------------------------------------------------------------------------
