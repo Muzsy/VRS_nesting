@@ -1,0 +1,51 @@
+id: sgh_q22r1_sparrow_cde_diagnostics_acceptance_fix
+project: VRS_nesting
+kind: corrective_solver_task
+priority: high
+
+objective: >
+  Harden the SGH-Q22 Sparrow experimental kernel by preserving diagnostics on unsupported paths,
+  proving a tiny CDE Sparrow success path, fixing misleading smoke/benchmark acceptance, and aligning
+  Q18B recommendation with measured CDE viability.
+
+steps:
+  - name: Pre-audit Q22 implementation and measurements
+    outputs:
+      - codex/reports/egyedi_solver/sgh_q22r1_sparrow_cde_diagnostics_acceptance_fix.md
+    description: >
+      Audit Q22 report, measurements, sparrow.rs, adapter.rs, smoke and benchmark scripts. Explicitly document
+      unsupported diagnostics loss, CDE unsupported/timeout behavior, skipped CDE smoke, zero-value rendering,
+      denominator bug, and Q18B recommendation inconsistency if present.
+
+  - name: Preserve optimizer diagnostics on Sparrow unsupported outputs
+    outputs:
+      - rust/vrs_solver/src/adapter.rs
+      - rust/vrs_solver/src/io.rs
+    description: >
+      Add/extend unsupported output helpers so sparrow_experimental failure outputs include both optimizer_diagnostics
+      and collision_backend_diagnostics. SPARROW_NO_FEASIBLE_LAYOUT and SPARROW_COMMIT_VIOLATION_BACKEND must keep
+      SparrowDiagnostics in JSON output.
+
+  - name: Harden Q22 smoke acceptance
+    outputs:
+      - scripts/smoke_sgh_q22_sparrow_kernel.py
+    description: >
+      Add a required tiny CDE Sparrow success fixture with bbox_fallback_queries == 0. Stop skipping CDE unsupported
+      as pass evidence. Rename or strengthen boundary/rotation smoke fixtures so they do not overclaim behavior.
+
+  - name: Fix benchmark accounting and rendering
+    outputs:
+      - scripts/bench_sgh_q22_sparrow_kernel.py
+      - codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel_measurements.json
+      - codex/reports/egyedi_solver/sgh_q22_sparrow_state_separation_kernel_measurements.md
+    description: >
+      Count unsupported and timeout Sparrow runs in the denominator, render zero values as zero, add per-backend summary,
+      and preserve failure reasons/diagnostics for CDE runs.
+
+  - name: Correct Q18B recommendation and report
+    outputs:
+      - codex/reports/egyedi_solver/sgh_q22r1_sparrow_cde_diagnostics_acceptance_fix.md
+      - codex/reports/egyedi_solver/sgh_q22r1_sparrow_cde_diagnostics_acceptance_fix.verify.log
+    description: >
+      If CDE Sparrow medium fixtures remain unsupported/timeout due to backend query cost, mark Q18B as REQUIRED or
+      REQUIRED_FOR_CDE_SCALE. PASS only if diagnostics and smoke/benchmark are honest and tested.

@@ -7,7 +7,7 @@
       "seed": 1,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 3.9,
+        "runtime_ms": 4.7,
         "placed_count": 12,
         "unplaced_count": 0,
         "pipeline_used": "phase_optimizer",
@@ -65,7 +65,7 @@
       "seed": 3,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 3.4,
+        "runtime_ms": 4.1,
         "placed_count": 12,
         "unplaced_count": 0,
         "pipeline_used": "phase_optimizer",
@@ -94,7 +94,7 @@
       "seed": 1,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30030.6,
+        "runtime_ms": 30031.1,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -123,7 +123,7 @@
       "seed": 2,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30031.0,
+        "runtime_ms": 30030.3,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -152,7 +152,7 @@
       "seed": 3,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30030.7,
+        "runtime_ms": 30031.1,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -181,7 +181,7 @@
       "seed": 1,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 2.3,
+        "runtime_ms": 2.2,
         "placed_count": 12,
         "unplaced_count": 0,
         "pipeline_used": "sparrow_experimental",
@@ -210,7 +210,7 @@
       "seed": 2,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 2.3,
+        "runtime_ms": 2.1,
         "placed_count": 12,
         "unplaced_count": 0,
         "pipeline_used": "sparrow_experimental",
@@ -239,7 +239,7 @@
       "seed": 3,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 3.1,
+        "runtime_ms": 2.1,
         "placed_count": 12,
         "unplaced_count": 0,
         "pipeline_used": "sparrow_experimental",
@@ -268,26 +268,26 @@
       "seed": 1,
       "metrics": {
         "status": "unsupported",
-        "runtime_ms": 20233.6,
+        "runtime_ms": 20588.7,
         "placed_count": 0,
         "unplaced_count": 12,
-        "pipeline_used": null,
-        "sparrow_converged": null,
-        "sparrow_iterations": null,
-        "sparrow_moves_attempted": null,
-        "sparrow_moves_accepted": null,
-        "sparrow_rollbacks": null,
-        "sparrow_initial_raw_loss": null,
-        "sparrow_final_raw_loss": null,
-        "sparrow_collision_graph_initial_pairs": null,
-        "sparrow_collision_graph_final_pairs": null,
-        "sparrow_search_position_calls": null,
+        "pipeline_used": "sparrow_experimental",
+        "sparrow_converged": false,
+        "sparrow_iterations": 4,
+        "sparrow_moves_attempted": 3,
+        "sparrow_moves_accepted": 3,
+        "sparrow_rollbacks": 0,
+        "sparrow_initial_raw_loss": 1320.0,
+        "sparrow_final_raw_loss": 720.0,
+        "sparrow_collision_graph_initial_pairs": 66,
+        "sparrow_collision_graph_final_pairs": 36,
+        "sparrow_search_position_calls": 3,
         "backend_used": "cde_adapter",
         "bbox_fallback_queries": 0,
         "cde_total_queries": 8352,
-        "phase_optimizer_invoked": null,
-        "exploration_iterations": null,
-        "compression_iterations": null
+        "phase_optimizer_invoked": false,
+        "exploration_iterations": 0,
+        "compression_iterations": 0
       }
     },
     {
@@ -297,26 +297,26 @@
       "seed": 2,
       "metrics": {
         "status": "unsupported",
-        "runtime_ms": 20400.8,
+        "runtime_ms": 20363.1,
         "placed_count": 0,
         "unplaced_count": 12,
-        "pipeline_used": null,
-        "sparrow_converged": null,
-        "sparrow_iterations": null,
-        "sparrow_moves_attempted": null,
-        "sparrow_moves_accepted": null,
-        "sparrow_rollbacks": null,
-        "sparrow_initial_raw_loss": null,
-        "sparrow_final_raw_loss": null,
-        "sparrow_collision_graph_initial_pairs": null,
-        "sparrow_collision_graph_final_pairs": null,
-        "sparrow_search_position_calls": null,
+        "pipeline_used": "sparrow_experimental",
+        "sparrow_converged": false,
+        "sparrow_iterations": 4,
+        "sparrow_moves_attempted": 3,
+        "sparrow_moves_accepted": 3,
+        "sparrow_rollbacks": 0,
+        "sparrow_initial_raw_loss": 1320.0,
+        "sparrow_final_raw_loss": 720.0,
+        "sparrow_collision_graph_initial_pairs": 66,
+        "sparrow_collision_graph_final_pairs": 36,
+        "sparrow_search_position_calls": 3,
         "backend_used": "cde_adapter",
         "bbox_fallback_queries": 0,
         "cde_total_queries": 8352,
-        "phase_optimizer_invoked": null,
-        "exploration_iterations": null,
-        "compression_iterations": null
+        "phase_optimizer_invoked": false,
+        "exploration_iterations": 0,
+        "compression_iterations": 0
       }
     },
     {
@@ -326,26 +326,26 @@
       "seed": 3,
       "metrics": {
         "status": "unsupported",
-        "runtime_ms": 20309.2,
+        "runtime_ms": 20497.0,
         "placed_count": 0,
         "unplaced_count": 12,
-        "pipeline_used": null,
-        "sparrow_converged": null,
-        "sparrow_iterations": null,
-        "sparrow_moves_attempted": null,
-        "sparrow_moves_accepted": null,
-        "sparrow_rollbacks": null,
-        "sparrow_initial_raw_loss": null,
-        "sparrow_final_raw_loss": null,
-        "sparrow_collision_graph_initial_pairs": null,
-        "sparrow_collision_graph_final_pairs": null,
-        "sparrow_search_position_calls": null,
+        "pipeline_used": "sparrow_experimental",
+        "sparrow_converged": false,
+        "sparrow_iterations": 4,
+        "sparrow_moves_attempted": 3,
+        "sparrow_moves_accepted": 3,
+        "sparrow_rollbacks": 0,
+        "sparrow_initial_raw_loss": 1320.0,
+        "sparrow_final_raw_loss": 720.0,
+        "sparrow_collision_graph_initial_pairs": 66,
+        "sparrow_collision_graph_final_pairs": 36,
+        "sparrow_search_position_calls": 3,
         "backend_used": "cde_adapter",
         "bbox_fallback_queries": 0,
         "cde_total_queries": 8352,
-        "phase_optimizer_invoked": null,
-        "exploration_iterations": null,
-        "compression_iterations": null
+        "phase_optimizer_invoked": false,
+        "exploration_iterations": 0,
+        "compression_iterations": 0
       }
     },
     {
@@ -355,7 +355,7 @@
       "seed": 1,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 19.8,
+        "runtime_ms": 20.7,
         "placed_count": 30,
         "unplaced_count": 0,
         "pipeline_used": "phase_optimizer",
@@ -384,7 +384,7 @@
       "seed": 2,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 19.8,
+        "runtime_ms": 20.1,
         "placed_count": 30,
         "unplaced_count": 0,
         "pipeline_used": "phase_optimizer",
@@ -413,7 +413,7 @@
       "seed": 3,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 22.2,
+        "runtime_ms": 18.8,
         "placed_count": 30,
         "unplaced_count": 0,
         "pipeline_used": "phase_optimizer",
@@ -471,7 +471,7 @@
       "seed": 2,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30030.4,
+        "runtime_ms": 30009.9,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -500,7 +500,7 @@
       "seed": 3,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30030.6,
+        "runtime_ms": 30031.1,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -529,7 +529,7 @@
       "seed": 1,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 8.0,
+        "runtime_ms": 8.2,
         "placed_count": 30,
         "unplaced_count": 0,
         "pipeline_used": "sparrow_experimental",
@@ -558,7 +558,7 @@
       "seed": 2,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 8.1,
+        "runtime_ms": 10.6,
         "placed_count": 30,
         "unplaced_count": 0,
         "pipeline_used": "sparrow_experimental",
@@ -587,7 +587,7 @@
       "seed": 3,
       "metrics": {
         "status": "ok",
-        "runtime_ms": 9.6,
+        "runtime_ms": 10.0,
         "placed_count": 30,
         "unplaced_count": 0,
         "pipeline_used": "sparrow_experimental",
@@ -616,7 +616,7 @@
       "seed": 1,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30020.6,
+        "runtime_ms": 30031.2,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -645,7 +645,7 @@
       "seed": 2,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30025.0,
+        "runtime_ms": 30031.4,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -674,7 +674,7 @@
       "seed": 3,
       "metrics": {
         "status": "timeout",
-        "runtime_ms": 30020.8,
+        "runtime_ms": 30030.9,
         "placed_count": null,
         "unplaced_count": null,
         "pipeline_used": null,
@@ -697,9 +697,23 @@
       }
     }
   ],
-  "sparrow_total": 9,
+  "sparrow_total": 12,
   "sparrow_converged_count": 6,
-  "total_runtime_ms": 331300.6017850421,
+  "total_runtime_ms": 331814.1933020088,
+  "per_backend_summary": {
+    "bbox": {
+      "total": 6,
+      "converged": 6,
+      "unsupported": 0,
+      "timeout": 0
+    },
+    "cde": {
+      "total": 6,
+      "converged": 0,
+      "unsupported": 3,
+      "timeout": 3
+    }
+  },
   "notes": [
     "medium_10_to_20_items/phase_optimizer/cde/seed=1 solver error: timeout after 30.0s",
     "medium_10_to_20_items/phase_optimizer/cde/seed=2 solver error: timeout after 30.0s",

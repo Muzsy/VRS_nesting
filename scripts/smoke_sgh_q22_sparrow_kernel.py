@@ -133,20 +133,26 @@ def fixture1_overlap_two_rects():
           f"sparrow must resolve two-rect overlap (converged={od.get('sparrow_converged')})")
 
 
-def fixture2_boundary_recovery():
-    print("\n=== Fixture 2: boundary_recovery ===")
-    # Single small item, large sheet — seed places at (0,0) which is already
-    # inside. The fixture validates the boundary-recovery PATH still runs
-    # cleanly even when the initial state is already feasible (no regression).
+def fixture2_already_feasible_single_item():
+    """Q22R1 honest rename: the adapter-level seed builder places the single
+    item at (0,0) of the first fitting sheet, which IS inside the boundary.
+    This fixture therefore proves the no-op / already-feasible path rather
+    than actual boundary recovery (which is unit-tested in
+    `sparrow_kernel_boundary_recovery` where we inject an out-of-sheet
+    placement directly into the kernel)."""
+    print("\n=== Fixture 2: already_feasible_single_item (Q22R1 renamed) ===")
     stocks = [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}]
     parts = [{"id": "P", "width": 40.0, "height": 30.0, "quantity": 1}]
     out, ms = run_solver(base_input(parts, stocks, seed=2))
-    record_fixture("boundary_recovery", out, ms)
+    record_fixture("already_feasible_single_item", out, ms)
     check(out.get("status") in ("ok", "partial"),
           f"status ok/partial (got {out.get('status')})")
     od = out.get("optimizer_diagnostics") or {}
     check(od.get("sparrow_converged") is True,
           "single fit item must be feasible after sparrow")
+    check(od.get("sparrow_initial_raw_loss") == 0.0,
+          f"single-item seed must already be feasible (initial_raw_loss=0); "
+          f"got {od.get('sparrow_initial_raw_loss')}")
 
 
 def fixture3_three_item_collision_chain():
@@ -163,8 +169,10 @@ def fixture3_three_item_collision_chain():
 
 
 def fixture4_continuous_rotation_rescue():
-    print("\n=== Fixture 4: continuous_rotation_rescue ===")
-    # Long parts on a square sheet — feasible with rotation, easy with continuous.
+    """Q22R1: continuous rotation rescue now REQUIRES convergence. Two 80×30
+    parts cannot share a 100×100 sheet without rotation use; continuous policy
+    must let Sparrow find a feasible layout."""
+    print("\n=== Fixture 4: continuous_rotation_rescue (Q22R1 must converge) ===")
     stocks = [{"id": "S", "quantity": 1, "width": 100.0, "height": 100.0}]
     parts = [{"id": "P", "width": 80.0, "height": 30.0, "quantity": 2}]
     out, ms = run_solver(base_input(parts, stocks, seed=4,
@@ -172,9 +180,10 @@ def fixture4_continuous_rotation_rescue():
     record_fixture("continuous_rotation_rescue", out, ms)
     check(out.get("status") in ("ok", "partial"),
           f"status ok/partial (got {out.get('status')})")
-    # Acceptance: feasible OR honest unsupported, but never invalid placements.
-    # We don't strictly require convergence in this fixture (challenging).
-    _log("INFO", f"converged={(out.get('optimizer_diagnostics') or {}).get('sparrow_converged')}")
+    od = out.get("optimizer_diagnostics") or {}
+    check(od.get("sparrow_converged") is True,
+          f"continuous rotation must rescue 2×80×30 on 100×100 "
+          f"(converged={od.get('sparrow_converged')})")
 
 
 def fixture5_medium_10_to_20_items():
@@ -204,18 +213,67 @@ def fixture_same_seed_determinism():
               f"placement[{i}] x,y identical ({a['x']},{a['y']})")
 
 
-def fixture_cde_no_bbox_fallback():
-    print("\n=== CDE: bbox_fallback_queries == 0 ===")
+def fixture_tiny_cde_must_converge():
+    """Q22R1 micro-acceptance gate: tiny CDE Sparrow fixture (2 small parts,
+    large sheet) MUST converge to a feasible final layout, and CDE must not
+    silently fall back to bbox (`bbox_fallback_queries == 0`).
+
+    Q22R1: this replaces the prior `fixture_cde_no_bbox_fallback` which
+    silently SKIP-ped on `unsupported` and therefore never proved the CDE
+    success path. A skip is no longer acceptable evidence.
+    """
+    print("\n=== Q22R1 micro-gate: tiny CDE Sparrow must converge ===")
     stocks = [{"id": "S", "quantity": 1, "width": 200.0, "height": 200.0}]
     parts = [{"id": "P", "width": 30.0, "height": 20.0, "quantity": 2}]
-    out, _ = run_solver(base_input(parts, stocks, seed=7, backend="cde"))
-    if out.get("status") == "unsupported":
-        _log("SKIP", "CDE returned unsupported — skip")
-        return
+    out, ms = run_solver(base_input(parts, stocks, seed=7, backend="cde",
+                                    time_limit=5))
+    record_fixture("tiny_cde_must_converge", out, ms)
+    check(
+        out.get("status") in ("ok", "partial"),
+        f"Q22R1 micro CDE must succeed (status={out.get('status')}, "
+        f"reason={out.get('unsupported_reason')})",
+    )
     cbd = out.get("collision_backend_diagnostics") or {}
     bbox_fb = cbd.get("bbox_fallback_queries", -1)
     check(bbox_fb == 0,
           f"CDE bbox_fallback_queries == 0 (got {bbox_fb})")
+    od = out.get("optimizer_diagnostics") or {}
+    check(od.get("sparrow_converged") is True,
+          f"micro CDE Sparrow must converge (got {od.get('sparrow_converged')})")
+
+
+def fixture_cde_medium_diagnostics_preserved():
+    """Q22R1: medium CDE Sparrow may legitimately remain unsupported (probe
+    cost is significant on dense layouts under CDE), BUT the unsupported
+    output MUST preserve `optimizer_diagnostics` so the failure can be
+    analyzed. This is the diagnostics-preservation gate."""
+    print("\n=== Q22R1: medium CDE Sparrow — diagnostics preserved on failure ===")
+    stocks = [{"id": "S", "quantity": 2, "width": 200.0, "height": 200.0}]
+    parts = [{"id": "P", "width": 30.0, "height": 20.0, "quantity": 12}]
+    out, ms = run_solver(base_input(parts, stocks, seed=8, backend="cde",
+                                    time_limit=4))
+    record_fixture("cde_medium_diagnostics", out, ms)
+    status = out.get("status")
+    check(status in ("ok", "partial", "unsupported"),
+          f"status ok/partial/unsupported (got {status})")
+    od = out.get("optimizer_diagnostics")
+    if status == "unsupported":
+        check(od is not None,
+              "Q22R1: unsupported CDE Sparrow MUST preserve optimizer_diagnostics")
+        if od:
+            check(od.get("pipeline_used") == "sparrow_experimental",
+                  f"pipeline_used == sparrow_experimental (got {od.get('pipeline_used')})")
+            check(od.get("sparrow_invoked") is True,
+                  "sparrow_invoked must be true on unsupported path")
+            check(od.get("sparrow_converged") is False,
+                  f"sparrow_converged must be false on unsupported (got {od.get('sparrow_converged')})")
+            check(od.get("sparrow_iterations") is not None
+                  and od.get("sparrow_iterations") > 0,
+                  f"iterations > 0 expected, got {od.get('sparrow_iterations')}")
+            check(od.get("sparrow_initial_raw_loss") is not None,
+                  "initial_raw_loss field present")
+            check(od.get("sparrow_best_infeasible_raw_loss") is not None,
+                  "best_infeasible_raw_loss field present")
 
 
 # ---------------------------------------------------------------------------
@@ -251,12 +309,13 @@ def main():
     print(f"Binary: {BINARY}")
 
     fixture1_overlap_two_rects()
-    fixture2_boundary_recovery()
+    fixture2_already_feasible_single_item()
     fixture3_three_item_collision_chain()
     fixture4_continuous_rotation_rescue()
     fixture5_medium_10_to_20_items()
     fixture_same_seed_determinism()
-    fixture_cde_no_bbox_fallback()
+    fixture_tiny_cde_must_converge()
+    fixture_cde_medium_diagnostics_preserved()
 
     print_table()
 

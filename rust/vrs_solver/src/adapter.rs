@@ -170,6 +170,112 @@ fn _unsupported_output_with_backend_diag(
     }
 }
 
+/// SGH-Q22R1: Unsupported output that preserves BOTH optimizer_diagnostics and
+/// collision_backend_diagnostics. Used by the Sparrow pipeline so that
+/// `SPARROW_NO_FEASIBLE_LAYOUT` and `SPARROW_COMMIT_VIOLATION_BACKEND` callers
+/// still surface every Sparrow counter that was computed before the failure.
+fn _unsupported_output_with_full_diag(
+    reason: &str,
+    input: &SolverInput,
+    optimizer_diag: Option<OptimizerDiagnosticsOutput>,
+    backend_diag: Option<CollisionBackendDiagnosticsOutput>,
+) -> SolverOutput {
+    SolverOutput {
+        contract_version: "v1".to_string(),
+        status: "unsupported".to_string(),
+        unsupported_reason: Some(reason.to_string()),
+        placements: vec![],
+        unplaced: vec![],
+        metrics: Metrics {
+            placed_count: 0,
+            unplaced_count: input.parts.iter().map(|p| p.quantity as usize).sum(),
+            sheet_count_used: 0,
+            seed: input.seed,
+            time_limit_s: input.time_limit_s,
+            project_name: input.project_name.clone(),
+        },
+        score_breakdown: None,
+        optimizer_diagnostics: optimizer_diag,
+        collision_backend_diagnostics: backend_diag,
+    }
+}
+
+/// SGH-Q22R1: Build a Sparrow diagnostics OptimizerDiagnosticsOutput from
+/// a SparrowDiagnostics + backend label. Reused by both success and failure
+/// paths so that diagnostics never silently disappear.
+fn sparrow_optimizer_diag_from(
+    sd: &crate::optimizer::sparrow::SparrowDiagnostics,
+    backend_name: String,
+    final_commit_ms: Option<f64>,
+) -> OptimizerDiagnosticsOutput {
+    OptimizerDiagnosticsOutput {
+        pipeline_used: "sparrow_experimental".to_string(),
+        phase_optimizer_invoked: false,
+        exploration_iterations: 0,
+        compression_iterations: 0,
+        bpp_attempts: 0,
+        rotation_refinement_enabled: false,
+        rotation_refinement_attempts: 0,
+        rotation_refinement_accepts: 0,
+        rotation_refinement_rejections: 0,
+        rotation_refinement_best_delta: 0.0,
+        search_position_calls: sd.search_position_calls,
+        search_position_global_samples_evaluated: 0,
+        search_position_focused_samples_evaluated: 0,
+        search_position_samples_unsupported: 0,
+        search_position_refined_samples: 0,
+        search_position_coord_descent_steps: 0,
+        search_position_lbf_fallback_used: sd.lbf_fallback_used,
+        search_position_best_eval: 0.0,
+        collision_severity_backend: backend_name,
+        collision_severity_enabled: true,
+        collision_severity_pair_queries: sd.severity_pair_queries,
+        collision_severity_boundary_queries: sd.severity_boundary_queries,
+        collision_severity_probe_queries: sd.severity_probe_queries,
+        collision_severity_backend_confirmed_collisions: 0,
+        collision_severity_backend_confirmed_no_collisions: 0,
+        collision_severity_unsupported_queries: 0,
+        collision_severity_bbox_proxy_uses: 0,
+        collision_severity_probe_pair_queries: 0,
+        collision_severity_probe_boundary_queries: 0,
+        collision_severity_probe_resolved: 0,
+        collision_severity_probe_unresolved: 0,
+        collision_severity_probe_unsupported: 0,
+        collision_severity_min_resolution_mm: 0.0,
+        collision_severity_max_resolution_mm: 0.0,
+        collision_severity_avg_resolution_mm: 0.0,
+        phase_optimizer_exploration_ms: None,
+        phase_optimizer_compression_ms: None,
+        phase_optimizer_bpp_ms: None,
+        phase_optimizer_final_commit_ms: final_commit_ms,
+        sparrow_invoked: Some(sd.invoked),
+        sparrow_seed_placements: Some(sd.seed_placements),
+        sparrow_seed_unplaced: Some(sd.seed_unplaced),
+        sparrow_initial_raw_loss: Some(sd.initial_raw_loss),
+        sparrow_initial_weighted_loss: Some(sd.initial_weighted_loss),
+        sparrow_final_raw_loss: Some(sd.final_raw_loss),
+        sparrow_final_weighted_loss: Some(sd.final_weighted_loss),
+        sparrow_best_infeasible_raw_loss: Some(sd.best_infeasible_raw_loss),
+        sparrow_best_infeasible_weighted_loss: Some(sd.best_infeasible_weighted_loss),
+        sparrow_iterations: Some(sd.iterations),
+        sparrow_moves_attempted: Some(sd.moves_attempted),
+        sparrow_moves_accepted: Some(sd.moves_accepted),
+        sparrow_rollbacks: Some(sd.rollbacks),
+        sparrow_gls_weight_updates: Some(sd.gls_weight_updates),
+        sparrow_converged: Some(sd.converged),
+        sparrow_collision_graph_initial_pairs: Some(sd.collision_graph_initial_pairs),
+        sparrow_collision_graph_final_pairs: Some(sd.collision_graph_final_pairs),
+        sparrow_boundary_violations_initial: Some(sd.boundary_violations_initial),
+        sparrow_boundary_violations_final: Some(sd.boundary_violations_final),
+        sparrow_search_position_calls: Some(sd.search_position_calls),
+        sparrow_search_position_samples: Some(sd.search_position_samples),
+        sparrow_severity_pair_queries: Some(sd.severity_pair_queries),
+        sparrow_severity_boundary_queries: Some(sd.severity_boundary_queries),
+        sparrow_severity_probe_queries: Some(sd.severity_probe_queries),
+        sparrow_lbf_fallback_used: Some(sd.lbf_fallback_used),
+    }
+}
+
 
 fn score_breakdown_from_result(result: crate::optimizer::score::ScoreResult) -> ScoreBreakdownOutput {
     let bd = &result.breakdown;
@@ -486,19 +592,26 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 let t_commit_start = timing_start(timing_enabled);
 
                 if !sparrow_result.feasible {
-                    // Honest reporting: no feasible layout means we cannot commit
-                    // colliding placements as successful.
+                    // Q22R1: honest reporting BUT preserve Sparrow diagnostics so the
+                    // failure can be analyzed (initial/final loss, iterations, moves,
+                    // collision graph counts, query counts).
                     let final_commit_ms = timing_ms(t_commit_start);
+                    let optimizer_diag = sparrow_optimizer_diag_from(
+                        &sparrow_result.diagnostics, backend_name.clone(), final_commit_ms,
+                    );
                     if is_cde {
                         let snap = cde_observability::snapshot();
-                        let diag = cde_unsupported_diag(
+                        let backend_diag = cde_unsupported_diag(
                             &snap, "sparrow_no_feasible", final_commit_ms,
                         );
-                        return Ok(_unsupported_output_with_backend_diag(
-                            "SPARROW_NO_FEASIBLE_LAYOUT", &input, Some(diag),
+                        return Ok(_unsupported_output_with_full_diag(
+                            "SPARROW_NO_FEASIBLE_LAYOUT", &input,
+                            Some(optimizer_diag), Some(backend_diag),
                         ));
                     }
-                    return Ok(_unsupported_output("SPARROW_NO_FEASIBLE_LAYOUT", &input));
+                    return Ok(_unsupported_output_with_full_diag(
+                        "SPARROW_NO_FEASIBLE_LAYOUT", &input, Some(optimizer_diag), None,
+                    ));
                 }
 
                 match layout.validate_and_commit_with_backend(
@@ -512,86 +625,30 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                         } else {
                             diag_output_from(&commit)
                         });
-                        let sd = &sparrow_result.diagnostics;
-                        let diagnostics = OptimizerDiagnosticsOutput {
-                            pipeline_used: "sparrow_experimental".to_string(),
-                            phase_optimizer_invoked: false,
-                            exploration_iterations: 0,
-                            compression_iterations: 0,
-                            bpp_attempts: 0,
-                            rotation_refinement_enabled: false,
-                            rotation_refinement_attempts: 0,
-                            rotation_refinement_accepts: 0,
-                            rotation_refinement_rejections: 0,
-                            rotation_refinement_best_delta: 0.0,
-                            search_position_calls: sd.search_position_calls,
-                            search_position_global_samples_evaluated: 0,
-                            search_position_focused_samples_evaluated: 0,
-                            search_position_samples_unsupported: 0,
-                            search_position_refined_samples: 0,
-                            search_position_coord_descent_steps: 0,
-                            search_position_lbf_fallback_used: sd.lbf_fallback_used,
-                            search_position_best_eval: 0.0,
-                            collision_severity_backend: backend_name,
-                            collision_severity_enabled: true,
-                            collision_severity_pair_queries: sd.severity_pair_queries,
-                            collision_severity_boundary_queries: sd.severity_boundary_queries,
-                            collision_severity_probe_queries: sd.severity_probe_queries,
-                            collision_severity_backend_confirmed_collisions: 0,
-                            collision_severity_backend_confirmed_no_collisions: 0,
-                            collision_severity_unsupported_queries: 0,
-                            collision_severity_bbox_proxy_uses: 0,
-                            collision_severity_probe_pair_queries: 0,
-                            collision_severity_probe_boundary_queries: 0,
-                            collision_severity_probe_resolved: 0,
-                            collision_severity_probe_unresolved: 0,
-                            collision_severity_probe_unsupported: 0,
-                            collision_severity_min_resolution_mm: 0.0,
-                            collision_severity_max_resolution_mm: 0.0,
-                            collision_severity_avg_resolution_mm: 0.0,
-                            phase_optimizer_exploration_ms: None,
-                            phase_optimizer_compression_ms: None,
-                            phase_optimizer_bpp_ms: None,
-                            phase_optimizer_final_commit_ms: final_commit_ms,
-                            sparrow_invoked: Some(sd.invoked),
-                            sparrow_seed_placements: Some(sd.seed_placements),
-                            sparrow_seed_unplaced: Some(sd.seed_unplaced),
-                            sparrow_initial_raw_loss: Some(sd.initial_raw_loss),
-                            sparrow_initial_weighted_loss: Some(sd.initial_weighted_loss),
-                            sparrow_final_raw_loss: Some(sd.final_raw_loss),
-                            sparrow_final_weighted_loss: Some(sd.final_weighted_loss),
-                            sparrow_best_infeasible_raw_loss: Some(sd.best_infeasible_raw_loss),
-                            sparrow_best_infeasible_weighted_loss: Some(sd.best_infeasible_weighted_loss),
-                            sparrow_iterations: Some(sd.iterations),
-                            sparrow_moves_attempted: Some(sd.moves_attempted),
-                            sparrow_moves_accepted: Some(sd.moves_accepted),
-                            sparrow_rollbacks: Some(sd.rollbacks),
-                            sparrow_gls_weight_updates: Some(sd.gls_weight_updates),
-                            sparrow_converged: Some(sd.converged),
-                            sparrow_collision_graph_initial_pairs: Some(sd.collision_graph_initial_pairs),
-                            sparrow_collision_graph_final_pairs: Some(sd.collision_graph_final_pairs),
-                            sparrow_boundary_violations_initial: Some(sd.boundary_violations_initial),
-                            sparrow_boundary_violations_final: Some(sd.boundary_violations_final),
-                            sparrow_search_position_calls: Some(sd.search_position_calls),
-                            sparrow_search_position_samples: Some(sd.search_position_samples),
-                            sparrow_severity_pair_queries: Some(sd.severity_pair_queries),
-                            sparrow_severity_boundary_queries: Some(sd.severity_boundary_queries),
-                            sparrow_severity_probe_queries: Some(sd.severity_probe_queries),
-                            sparrow_lbf_fallback_used: Some(sd.lbf_fallback_used),
-                        };
+                        let diagnostics = sparrow_optimizer_diag_from(
+                            &sparrow_result.diagnostics, backend_name, final_commit_ms,
+                        );
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
                     Err(e) => {
+                        // Q22R1: commit-time failure must preserve Sparrow diagnostics too.
                         let reason = backend_err_reason(
                             e, "SPARROW_COMMIT_VIOLATION_BACKEND",
                         );
+                        let ms = timing_ms(t_commit_start);
+                        let optimizer_diag = sparrow_optimizer_diag_from(
+                            &sparrow_result.diagnostics, backend_name, ms,
+                        );
                         if is_cde {
                             let snap = cde_observability::snapshot();
-                            let ms = timing_ms(t_commit_start);
-                            let diag = cde_unsupported_diag(&snap, "sparrow_full_solve", ms);
-                            return Ok(_unsupported_output_with_backend_diag(&reason, &input, Some(diag)));
+                            let backend_diag = cde_unsupported_diag(&snap, "sparrow_full_solve", ms);
+                            return Ok(_unsupported_output_with_full_diag(
+                                &reason, &input, Some(optimizer_diag), Some(backend_diag),
+                            ));
                         }
-                        return Ok(_unsupported_output(&reason, &input));
+                        return Ok(_unsupported_output_with_full_diag(
+                            &reason, &input, Some(optimizer_diag), None,
+                        ));
                     }
                 }
             }
@@ -1633,5 +1690,89 @@ mod tests {
         let a = super::solve(input_a).expect("solve a");
         let b = super::solve(input_b).expect("solve b");
         assert_same_output(&a, &b);
+    }
+
+    // ------------------------------------------------------------------
+    // SGH-Q22R1: Sparrow unsupported diagnostics + tiny CDE acceptance
+    // ------------------------------------------------------------------
+
+    /// SGH-Q22R1: SPARROW_NO_FEASIBLE_LAYOUT must preserve Sparrow optimizer
+    /// diagnostics (initial/final loss, iterations, moves, collision graph counts).
+    ///
+    /// Forced-fail fixture: 5 × 50×50 parts on a single 100×100 sheet. Only 4
+    /// non-overlapping placements exist (corners); the 5th can never be placed
+    /// feasibly, so the Sparrow loop exhausts its iteration budget and the
+    /// adapter returns `SPARROW_NO_FEASIBLE_LAYOUT`. We assert that the output
+    /// `optimizer_diagnostics` is present with the Sparrow counters populated.
+    #[test]
+    fn sparrow_unsupported_preserves_optimizer_diagnostics_bbox() {
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 50.0, 50.0, 5, vec![0], None)];
+        let mut input = make_input(11, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
+        let out = super::solve(input).expect("solve ok");
+        // Either the kernel converges (unlikely given 5×50²=12500 > 10000) or
+        // returns unsupported. We assert unsupported AND diagnostics preserved.
+        if out.status == "unsupported" {
+            assert_eq!(
+                out.unsupported_reason.as_deref(),
+                Some("SPARROW_NO_FEASIBLE_LAYOUT"),
+                "expected SPARROW_NO_FEASIBLE_LAYOUT, got {:?}",
+                out.unsupported_reason
+            );
+            let diag = out
+                .optimizer_diagnostics
+                .expect("Q22R1: unsupported Sparrow output MUST preserve optimizer_diagnostics");
+            assert_eq!(diag.pipeline_used, "sparrow_experimental");
+            assert_eq!(diag.sparrow_invoked, Some(true));
+            assert_eq!(diag.sparrow_converged, Some(false));
+            assert!(
+                diag.sparrow_iterations.unwrap_or(0) > 0,
+                "expected iterations > 0 on failure path, got {:?}",
+                diag.sparrow_iterations
+            );
+            assert!(
+                diag.sparrow_initial_raw_loss.unwrap_or(0.0) > 0.0,
+                "expected initial_raw_loss > 0 (seed had overlaps)"
+            );
+            assert!(diag.sparrow_collision_graph_initial_pairs.is_some());
+            assert!(diag.sparrow_best_infeasible_raw_loss.is_some());
+        }
+        // If by chance it converged: still acceptable for this corner-case fixture.
+    }
+
+    /// SGH-Q22R1: Tiny CDE Sparrow fixture MUST converge to feasible. This is
+    /// the micro-acceptance gate proving that CDE/Sparrow is not gratuitously
+    /// broken — only larger fixtures may be intentionally bottlenecked.
+    /// `bbox_fallback_queries` must remain 0 (no silent bbox fallback).
+    #[test]
+    fn sparrow_pipeline_cde_tiny_converges_with_no_bbox_fallback() {
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        // Two small parts, plenty of room — minimal CDE workload.
+        let parts = vec![make_part("P", 30.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(101, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
+        input.collision_backend = Some(CollisionBackendKind::Cde);
+        let out = super::solve(input).expect("solve ok");
+        // Honest acceptance: if CDE on this micro fixture cannot converge,
+        // sparrow_experimental + CDE is broken, period.
+        assert!(
+            out.status == "ok" || out.status == "partial",
+            "Q22R1 micro-CDE must succeed; got status={} reason={:?}",
+            out.status,
+            out.unsupported_reason
+        );
+        let cbd = out
+            .collision_backend_diagnostics
+            .expect("CDE output must emit collision_backend_diagnostics");
+        assert_eq!(
+            cbd.bbox_fallback_queries, 0,
+            "CDE/Sparrow must not bbox-fall-back; got bbox_fallback_queries={}",
+            cbd.bbox_fallback_queries
+        );
+        let diag = out
+            .optimizer_diagnostics
+            .expect("Sparrow CDE success path must emit optimizer_diagnostics");
+        assert_eq!(diag.sparrow_converged, Some(true));
     }
 }

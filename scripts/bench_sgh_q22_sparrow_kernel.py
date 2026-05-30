@@ -122,35 +122,57 @@ def summarize_run(out: dict, runtime_ms: float) -> dict:
     }
 
 
+def render_value(v):
+    """Q22R1: render `0`, `0.0`, `False`, '' as actual values, only None → '-'."""
+    if v is None:
+        return "-"
+    return v
+
+
 def emit_md(results: dict) -> str:
     lines = []
     lines.append("# SGH-Q22 Sparrow benchmark measurements\n")
     lines.append("Quick local matrix run. Each row = (fixture, pipeline, backend, seed) → metrics.\n")
+    lines.append("**Q22R1 accounting**: every `sparrow_experimental` run counts towards the denominator, including `unsupported` and `timeout`. Zero/false values render as `0` / `false`, only missing fields as `-`.\n")
     lines.append("| fixture | pipeline | backend | seed | status | placed | runtime_ms | sp_init_raw | sp_final_raw | sp_iters | sp_moves | sp_pairs_i→f | bbox_fb | cde_total |")
     lines.append("|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|---:|---:|")
     for row in results["rows"]:
         m = row["metrics"]
         pairs_arrow = (
-            f"{m.get('sparrow_collision_graph_initial_pairs') or '-'}→"
-            f"{m.get('sparrow_collision_graph_final_pairs') or '-'}"
+            f"{render_value(m.get('sparrow_collision_graph_initial_pairs'))}→"
+            f"{render_value(m.get('sparrow_collision_graph_final_pairs'))}"
         )
         lines.append(
             f"| {row['fixture']} | {row['pipeline']} | {row['backend']} | {row['seed']} | "
-            f"{m['status']} | {m['placed_count'] or '-'} | {m['runtime_ms']} | "
-            f"{m.get('sparrow_initial_raw_loss') or '-'} | "
-            f"{m.get('sparrow_final_raw_loss') or '-'} | "
-            f"{m.get('sparrow_iterations') or '-'} | "
-            f"{m.get('sparrow_moves_accepted') or '-'} / "
-            f"{m.get('sparrow_moves_attempted') or '-'} | "
+            f"{m['status']} | {render_value(m['placed_count'])} | {m['runtime_ms']} | "
+            f"{render_value(m.get('sparrow_initial_raw_loss'))} | "
+            f"{render_value(m.get('sparrow_final_raw_loss'))} | "
+            f"{render_value(m.get('sparrow_iterations'))} | "
+            f"{render_value(m.get('sparrow_moves_accepted'))} / "
+            f"{render_value(m.get('sparrow_moves_attempted'))} | "
             f"{pairs_arrow} | "
-            f"{m.get('bbox_fallback_queries') if m.get('bbox_fallback_queries') is not None else '-'} | "
-            f"{m.get('cde_total_queries') or '-'} |"
+            f"{render_value(m.get('bbox_fallback_queries'))} | "
+            f"{render_value(m.get('cde_total_queries'))} |"
         )
     lines.append("")
     lines.append("## Summary\n")
     lines.append(f"- Configurations run: **{len(results['rows'])}**")
-    lines.append(f"- Sparrow runs converged: **{results['sparrow_converged_count']} / {results['sparrow_total']}**")
+    lines.append(
+        f"- Sparrow runs converged: **{results['sparrow_converged_count']} / {results['sparrow_total']}** "
+        "(denominator includes ok/partial/unsupported/timeout)"
+    )
     lines.append(f"- Total runtime: **{results['total_runtime_ms']:.0f} ms**")
+    # Per-backend summary
+    bs = results.get("per_backend_summary", {})
+    if bs:
+        lines.append("\n### Per-backend Sparrow summary\n")
+        lines.append("| backend | sparrow_total | converged | unsupported | timeout |")
+        lines.append("|---|---:|---:|---:|---:|")
+        for backend, stats in sorted(bs.items()):
+            lines.append(
+                f"| {backend} | {stats['total']} | {stats['converged']} | "
+                f"{stats['unsupported']} | {stats['timeout']} |"
+            )
     if results.get("notes"):
         lines.append("\n### Notes\n")
         for n in results["notes"]:
@@ -178,6 +200,9 @@ def main():
     sparrow_converged_count = 0
     total_runtime_ms = 0.0
     notes = []
+    # Q22R1: per-backend Sparrow accounting (every run counts, including
+    # unsupported / timeout).
+    per_backend_summary: dict[str, dict[str, int]] = {}
 
     for fixture_name in FIXTURES:
         for pipeline in PIPELINES:
@@ -189,10 +214,21 @@ def main():
                     out, ms = run_solver(inp)
                     total_runtime_ms += ms
                     metrics = summarize_run(out, ms)
-                    if pipeline == "sparrow_experimental" and metrics["status"] != "unsupported":
+                    if pipeline == "sparrow_experimental":
+                        # Q22R1: count EVERY sparrow run including unsupported
+                        # and timeout — denominator must not hide CDE failure.
                         sparrow_total += 1
-                        if metrics.get("sparrow_converged"):
+                        bs = per_backend_summary.setdefault(
+                            backend, {"total": 0, "converged": 0,
+                                      "unsupported": 0, "timeout": 0})
+                        bs["total"] += 1
+                        if metrics.get("sparrow_converged") is True:
                             sparrow_converged_count += 1
+                            bs["converged"] += 1
+                        if metrics["status"] == "unsupported":
+                            bs["unsupported"] += 1
+                        if metrics["status"] == "timeout":
+                            bs["timeout"] += 1
                     if "_error" in out:
                         notes.append(
                             f"{fixture_name}/{pipeline}/{backend}/seed={seed} solver error: {out['_error']}"
@@ -213,6 +249,7 @@ def main():
         "sparrow_total": sparrow_total,
         "sparrow_converged_count": sparrow_converged_count,
         "total_runtime_ms": total_runtime_ms,
+        "per_backend_summary": per_backend_summary,
         "notes": notes,
     }
     json_path.write_text(json.dumps(results, indent=2))
