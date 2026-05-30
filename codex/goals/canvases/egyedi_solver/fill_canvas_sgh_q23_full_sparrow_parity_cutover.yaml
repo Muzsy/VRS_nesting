@@ -1,0 +1,96 @@
+id: sgh_q23_full_sparrow_parity_cutover
+project: VRS_nesting
+kind: production_cutover
+priority: critical
+
+objective: >
+  Implement a production fixed-sheet solver path with algorithmic behavior aligned to the local `.cache/sparrow` reference:
+  infeasible-state feasibility solving, collision graph, GLS memory, search_position sampling/refinement, coordinate descent,
+  separation lifecycle, exploration/compression where applicable, CDE/Jagua geometry backend, and fixed-sheet adaptation.
+  This is not a bbox-removal task; bbox restrictions are only guardrails derived from the Sparrow/CDE-first target.
+
+local_reference:
+  required_path: .cache/sparrow
+  missing_behavior: BLOCKED
+  required_artifact: docs/egyedi_solver/sgh_q23_sparrow_reference_map.md
+
+must_read:
+  - codex/reports/egyedi_solver/sgh_q21r1_collision_severity_full_sparrow_alignment.md
+  - codex/reports/egyedi_solver/sgh_q22r1_sparrow_cde_diagnostics_acceptance_fix.md
+  - rust/vrs_solver/src/adapter.rs
+  - rust/vrs_solver/src/io.rs
+  - rust/vrs_solver/src/optimizer/sparrow.rs
+  - rust/vrs_solver/src/optimizer/search_position.rs
+  - rust/vrs_solver/src/optimizer/collision_severity.rs
+  - rust/vrs_solver/src/optimizer/separator.rs
+  - rust/vrs_solver/src/optimizer/cde_session.rs
+  - rust/vrs_solver/src/optimizer/cde_adapter.rs
+  - rust/vrs_solver/src/optimizer/collision_backend.rs
+  - rust/vrs_solver/src/optimizer/loss_model.rs
+
+implementation_requirements:
+  - create_or_harden_production_pipeline: sparrow_cde
+  - implement_sparrow_state_lifecycle: true
+  - implement_backend_confirmed_collision_graph: true
+  - implement_gls_pair_weight_memory: true
+  - use_search_position_as_primary_relocation: true
+  - implement_top_k_coord_descent_refinement: true
+  - implement_backend_oracle_evaluate_transform: true
+  - implement_accept_reject_rollback_lifecycle: true
+  - implement_stagnation_weight_update_disruption_restart: true
+  - implement_exploration_compression_alignment_where_applicable: true
+  - implement_fixed_sheet_objective_adaptation: true
+  - implement_cde_session_cache_and_active_set_query_reduction: true
+  - quarantine_legacy_solvers_explicit_opt_in_only: true
+  - forbid_production_legacy_fallback: true
+  - preserve_full_diagnostics_on_all_failures: true
+
+bbox_guardrails:
+  - bbox_may_be_broadphase_prereject_only
+  - bbox_may_be_debug_or_legacy_only
+  - bbox_may_not_be_collision_truth_in_production_sparrow_cde
+  - bbox_may_not_be_final_validation
+  - bbox_may_not_be_semantic_loss_identity
+  - bbox_may_not_be_fallback_when_cde_is_slow
+
+required_outputs:
+  - docs/egyedi_solver/sgh_q23_sparrow_reference_map.md
+  - docs/egyedi_solver/sgh_q23_full_sparrow_parity_cutover.md
+  - scripts/smoke_sgh_q23_full_sparrow_parity_cutover.py
+  - scripts/bench_sgh_q23_full_sparrow_parity_cutover.py
+  - codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover.md
+  - codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover.verify.log
+  - codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover_measurements.json
+  - codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover_measurements.md
+
+acceptance:
+  - local `.cache/sparrow` reference map completed with concrete paths/functions
+  - production Sparrow path is unambiguous
+  - production path behavior is mapped to local Sparrow concepts with intentional deviations documented
+  - fixed single-sheet CDE medium fixture does not timeout
+  - production path uses backend-oracle evaluation and active backend final validation
+  - CDE/Jagua session/cache or equivalent query reduction is implemented and measured
+  - legacy solvers are explicit opt-in only
+  - LBF/finite-candidate fallback is not used in production Sparrow/CDE
+  - all unsupported/partial/failure outputs preserve full optimizer diagnostics
+  - benchmark counts unsupported/timeouts/errors in denominators
+  - PASS is not allowed if the only successful path is bbox/debug/legacy
+
+commands:
+  required:
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::sparrow
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::cde_session
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::collision_severity
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml optimizer::search_position
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml adapter
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q23_full_sparrow_parity_cutover.py
+    - python3 scripts/bench_sgh_q23_full_sparrow_parity_cutover.py --quick
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q23_full_sparrow_parity_cutover.md
+
+report_markers:
+  pass:
+    - SGH-Q23_STATUS: READY_FOR_AUDIT
+    - SPARROW_PRODUCTION_STATUS: FULL_SPARROW_PARITY_FIXED_SHEET|CDE_FIRST_PARTIAL_READY_WITH_EXPLICIT_GAPS
+    - LEGACY_SOLVER_STATUS: EXPLICIT_OPT_IN_ONLY
+    - Q19_STATUS: HOLD

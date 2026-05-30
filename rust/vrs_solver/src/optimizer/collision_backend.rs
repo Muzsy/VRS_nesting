@@ -1186,12 +1186,16 @@ mod tests {
     #[test]
     fn cde_observability_engine_builds_counted_for_pair_query() {
         crate::optimizer::cde_observability::reset();
+        // SGH-Q23: use an OVERLAPPING pair so the query reaches the CDEngine.
+        // AABB-separated pairs are now resolved by broad-phase without an engine
+        // build (see cde_q23_broadphase_* tests); this test validates that a pair
+        // that survives broad-phase does build an engine.
         let part = make_part("A", 20.0, 20.0);
         let p1 = pl("A", 0, 0.0, 0.0);
-        let p2 = pl("A", 0, 30.0, 30.0);
+        let p2 = pl("A", 0, 10.0, 10.0); // 10×10 overlap → not broad-phase prunable
         CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
         let snap = crate::optimizer::cde_observability::snapshot();
-        assert!(snap.engine_builds >= 1, "at least one CDEngine must be built per pair query");
+        assert!(snap.engine_builds >= 1, "at least one CDEngine must be built per overlapping pair query");
     }
 
     #[test]

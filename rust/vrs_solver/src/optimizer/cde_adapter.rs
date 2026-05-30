@@ -104,6 +104,17 @@ impl CdeAdapter {
     /// so collinear/touching edges count as Collision. This is STRICTER than
     /// JaguaPolygonExactBackend, which requires a proper crossing.
     pub(crate) fn query_pair(&self, a: &CdePreparedShape, b: &CdePreparedShape) -> CdeQueryResult {
+        // SGH-Q23 AABB broad-phase pre-check. If the two axis-aligned bounding
+        // boxes are strictly separated on either axis, the polygons cannot
+        // overlap — resolve as NoCollision WITHOUT building a CDEngine. This is
+        // pure broad-phase pruning: it only ever yields NoCollision (never a
+        // positive collision), so CDE/Jagua remains the sole source of positive
+        // collision truth.
+        if a.max_x < b.min_x || b.max_x < a.min_x || a.max_y < b.min_y || b.max_y < a.min_y {
+            super::cde_observability::inc_broadphase_pruned();
+            return CdeQueryResult::NoCollision;
+        }
+
         let margin = 1.0_f64;
         let ux1 = (a.min_x.min(b.min_x) - margin) as f32;
         let uy1 = (a.min_y.min(b.min_y) - margin) as f32;
@@ -541,6 +552,52 @@ mod tests {
             "degenerate polygon must be Unsupported, not NoCollision: {:?}", result
         );
         assert!(!result.is_no_collision(), "invalid geometry must not be treated as safe");
+    }
+
+    // -------------------------------------------------------------------------
+    // SGH-Q23: AABB broad-phase pruning
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn cde_q23_broadphase_prunes_separated_rects_without_engine_build() {
+        use crate::optimizer::cde_observability;
+        // Two clearly separated rects: must be NoCollision via broad-phase,
+        // with NO engine build and a recorded broadphase prune.
+        let part = make_part("A", 10.0, 10.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 100.0, 100.0);
+        let s1 = prepare_shape_from_placement(&p1, &part).expect("s1");
+        let s2 = prepare_shape_from_placement(&p2, &part).expect("s2");
+
+        cde_observability::reset();
+        let adapter = CdeAdapter::with_defaults();
+        let result = adapter.query_pair(&s1, &s2);
+        let snap = cde_observability::snapshot();
+
+        assert_eq!(result, CdeQueryResult::NoCollision, "separated rects must be NoCollision");
+        assert_eq!(snap.broadphase_pruned, 1, "separated pair must be broad-phase pruned");
+        assert_eq!(snap.engine_builds, 0, "broad-phase prune must NOT build a CDEngine");
+    }
+
+    #[test]
+    fn cde_q23_broadphase_does_not_prune_overlapping_rects() {
+        use crate::optimizer::cde_observability;
+        // Overlapping rects: broad-phase must NOT prune; CDE decides (Collision)
+        // and an engine build happens. Broad-phase never asserts positive truth.
+        let part = make_part("A", 20.0, 20.0);
+        let p1 = pl("A", 0, 0.0, 0.0);
+        let p2 = pl("A", 0, 10.0, 10.0);
+        let s1 = prepare_shape_from_placement(&p1, &part).expect("s1");
+        let s2 = prepare_shape_from_placement(&p2, &part).expect("s2");
+
+        cde_observability::reset();
+        let adapter = CdeAdapter::with_defaults();
+        let result = adapter.query_pair(&s1, &s2);
+        let snap = cde_observability::snapshot();
+
+        assert_eq!(result, CdeQueryResult::Collision, "overlapping rects must be Collision");
+        assert_eq!(snap.broadphase_pruned, 0, "overlapping pair must not be broad-phase pruned");
+        assert_eq!(snap.engine_builds, 1, "overlapping pair must reach the CDEngine");
     }
 
     // -------------------------------------------------------------------------

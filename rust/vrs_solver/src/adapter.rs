@@ -75,6 +75,7 @@ fn diag_output_from(result: &BackendCommitResult) -> CollisionBackendDiagnostics
         cde_unsupported_results: None,
         cde_prepare_failures: None,
         cde_cross_sheet_skipped: None,
+        cde_broadphase_pruned: None,
         cde_observability_scope: None,
         final_commit_validation_ms: None,
     }
@@ -114,6 +115,7 @@ fn diag_output_from_with_cde(
         cde_unsupported_results: Some(snap.unsupported_results),
         cde_prepare_failures: Some(snap.prepare_failures),
         cde_cross_sheet_skipped: Some(snap.cross_sheet_skipped),
+        cde_broadphase_pruned: Some(snap.broadphase_pruned),
         cde_observability_scope: Some(scope.to_string()),
         final_commit_validation_ms: commit_ms,
     }
@@ -140,6 +142,7 @@ fn cde_unsupported_diag(
         cde_unsupported_results: Some(snap.unsupported_results),
         cde_prepare_failures: Some(snap.prepare_failures),
         cde_cross_sheet_skipped: Some(snap.cross_sheet_skipped),
+        cde_broadphase_pruned: Some(snap.broadphase_pruned),
         cde_observability_scope: Some(scope.to_string()),
         final_commit_validation_ms: commit_ms,
     }
@@ -207,9 +210,10 @@ fn sparrow_optimizer_diag_from(
     sd: &crate::optimizer::sparrow::SparrowDiagnostics,
     backend_name: String,
     final_commit_ms: Option<f64>,
+    pipeline_label: &str,
 ) -> OptimizerDiagnosticsOutput {
     OptimizerDiagnosticsOutput {
-        pipeline_used: "sparrow_experimental".to_string(),
+        pipeline_used: pipeline_label.to_string(),
         phase_optimizer_invoked: false,
         exploration_iterations: 0,
         compression_iterations: 0,
@@ -273,6 +277,140 @@ fn sparrow_optimizer_diag_from(
         sparrow_severity_boundary_queries: Some(sd.severity_boundary_queries),
         sparrow_severity_probe_queries: Some(sd.severity_probe_queries),
         sparrow_lbf_fallback_used: Some(sd.lbf_fallback_used),
+    }
+}
+
+/// SGH-Q22/Q23: shared Sparrow separation pipeline driver.
+///
+/// Used by both `sparrow_experimental` (caller chooses the backend) and the
+/// `sparrow_cde` production path (caller forces `CollisionBackendKind::Cde`).
+///
+/// Returns `Ok((placements, unplaced, optimizer_diagnostics, backend_diagnostics))`
+/// on a backend-valid commit, or `Err(SolverOutput)` carrying an `unsupported`
+/// output that preserves the full optimizer + backend diagnostics on any failure
+/// (no feasible layout, or final-commit violation). LBF/finite-candidate fallback
+/// is disabled (`allow_lbf_fallback = false`); this driver never falls back to a
+/// legacy solver.
+#[allow(clippy::type_complexity)]
+fn run_sparrow_pipeline(
+    input: &SolverInput,
+    sheets: &[crate::sheet::SheetShape],
+    rotation_context: &RotationResolveContext,
+    pre_unplaced: Vec<Unplaced>,
+    backend_kind: CollisionBackendKind,
+    pipeline_label: &str,
+) -> Result<
+    (
+        Vec<Placement>,
+        Vec<Unplaced>,
+        Option<OptimizerDiagnosticsOutput>,
+        Option<CollisionBackendDiagnosticsOutput>,
+    ),
+    SolverOutput,
+> {
+    use crate::optimizer::sparrow::{
+        build_sparrow_seed_layout, SparrowConfig, SparrowSeparationKernel,
+    };
+    let is_cde = backend_kind == CollisionBackendKind::Cde;
+    if is_cde {
+        cde_observability::reset();
+    }
+    let timing_enabled = cde_timing_enabled();
+    let (seed_placements, mut seed_unplaced) =
+        match build_sparrow_seed_layout(&input.parts, sheets, rotation_context) {
+            Ok(v) => v,
+            Err(_e) => {
+                return Err(_unsupported_output_with_full_diag(
+                    "SPARROW_SEED_BUILD_FAILED",
+                    input,
+                    None,
+                    None,
+                ));
+            }
+        };
+    seed_unplaced.extend(pre_unplaced);
+    let seed_layout = WorkingLayout::new(seed_placements, seed_unplaced, sheets.len(), input.seed);
+    let sparrow_cfg = SparrowConfig {
+        max_iterations: 256,
+        time_limit_s: (input.time_limit_s as f64).max(1.0),
+        collision_backend: backend_kind.clone(),
+        loss_model: crate::optimizer::loss_model::LossModelKind::BboxArea,
+        rotation_context: rotation_context.clone(),
+        seed: input.seed as u64,
+        // Production Sparrow contract: no LBF/finite-candidate fallback.
+        allow_lbf_fallback: false,
+        ..SparrowConfig::default()
+    };
+    let kernel = SparrowSeparationKernel::new(sparrow_cfg);
+    let sparrow_result = kernel.run(seed_layout, &input.parts, sheets);
+    let layout = sparrow_result.layout;
+    let backend_name = format!("{:?}", backend_kind);
+    let t_commit_start = timing_start(timing_enabled);
+
+    if !sparrow_result.feasible {
+        let final_commit_ms = timing_ms(t_commit_start);
+        let optimizer_diag = sparrow_optimizer_diag_from(
+            &sparrow_result.diagnostics,
+            backend_name.clone(),
+            final_commit_ms,
+            pipeline_label,
+        );
+        if is_cde {
+            let snap = cde_observability::snapshot();
+            let backend_diag = cde_unsupported_diag(&snap, "sparrow_no_feasible", final_commit_ms);
+            return Err(_unsupported_output_with_full_diag(
+                "SPARROW_NO_FEASIBLE_LAYOUT",
+                input,
+                Some(optimizer_diag),
+                Some(backend_diag),
+            ));
+        }
+        return Err(_unsupported_output_with_full_diag(
+            "SPARROW_NO_FEASIBLE_LAYOUT",
+            input,
+            Some(optimizer_diag),
+            None,
+        ));
+    }
+
+    match layout.validate_and_commit_with_backend(&input.parts, sheets, backend_kind) {
+        Ok(commit) => {
+            let final_commit_ms = timing_ms(t_commit_start);
+            let backend_diag = Some(if is_cde {
+                let snap = cde_observability::snapshot();
+                diag_output_from_with_cde(&commit, snap, "sparrow_full_solve", final_commit_ms)
+            } else {
+                diag_output_from(&commit)
+            });
+            let diagnostics = sparrow_optimizer_diag_from(
+                &sparrow_result.diagnostics,
+                backend_name,
+                final_commit_ms,
+                pipeline_label,
+            );
+            Ok((commit.placements, commit.unplaced, Some(diagnostics), backend_diag))
+        }
+        Err(e) => {
+            let reason = backend_err_reason(e, "SPARROW_COMMIT_VIOLATION_BACKEND");
+            let ms = timing_ms(t_commit_start);
+            let optimizer_diag = sparrow_optimizer_diag_from(
+                &sparrow_result.diagnostics,
+                backend_name,
+                ms,
+                pipeline_label,
+            );
+            if is_cde {
+                let snap = cde_observability::snapshot();
+                let backend_diag = cde_unsupported_diag(&snap, "sparrow_full_solve", ms);
+                return Err(_unsupported_output_with_full_diag(
+                    &reason,
+                    input,
+                    Some(optimizer_diag),
+                    Some(backend_diag),
+                ));
+            }
+            Err(_unsupported_output_with_full_diag(&reason, input, Some(optimizer_diag), None))
+        }
     }
 }
 
@@ -560,96 +698,41 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 }
             }
             OptimizerPipelineKind::SparrowExperimental => {
-                use crate::optimizer::sparrow::{
-                    build_sparrow_seed_layout, SparrowConfig, SparrowSeparationKernel,
-                };
-                let is_cde = backend_kind == CollisionBackendKind::Cde;
-                if is_cde { cde_observability::reset(); }
-                let timing_enabled = cde_timing_enabled();
-                let (seed_placements, mut seed_unplaced) =
-                    build_sparrow_seed_layout(&input.parts, &sheets, &rotation_context)
-                        .map_err(|e| format!("sparrow seed build failed: {e}"))?;
-                seed_unplaced.extend(pre_unplaced);
-                let seed_layout = WorkingLayout::new(
-                    seed_placements,
-                    seed_unplaced,
-                    sheets.len(),
-                    input.seed,
-                );
-                let sparrow_cfg = SparrowConfig {
-                    max_iterations: 256,
-                    time_limit_s: (input.time_limit_s as f64).max(1.0),
-                    collision_backend: backend_kind.clone(),
-                    loss_model: crate::optimizer::loss_model::LossModelKind::BboxArea,
-                    rotation_context: rotation_context.clone(),
-                    seed: input.seed as u64,
-                    ..SparrowConfig::default()
-                };
-                let kernel = SparrowSeparationKernel::new(sparrow_cfg);
-                let sparrow_result = kernel.run(seed_layout, &input.parts, &sheets);
-                let layout = sparrow_result.layout;
-                let backend_name = format!("{:?}", backend_kind);
-                let t_commit_start = timing_start(timing_enabled);
-
-                if !sparrow_result.feasible {
-                    // Q22R1: honest reporting BUT preserve Sparrow diagnostics so the
-                    // failure can be analyzed (initial/final loss, iterations, moves,
-                    // collision graph counts, query counts).
-                    let final_commit_ms = timing_ms(t_commit_start);
-                    let optimizer_diag = sparrow_optimizer_diag_from(
-                        &sparrow_result.diagnostics, backend_name.clone(), final_commit_ms,
-                    );
-                    if is_cde {
-                        let snap = cde_observability::snapshot();
-                        let backend_diag = cde_unsupported_diag(
-                            &snap, "sparrow_no_feasible", final_commit_ms,
-                        );
-                        return Ok(_unsupported_output_with_full_diag(
-                            "SPARROW_NO_FEASIBLE_LAYOUT", &input,
-                            Some(optimizer_diag), Some(backend_diag),
-                        ));
-                    }
-                    return Ok(_unsupported_output_with_full_diag(
-                        "SPARROW_NO_FEASIBLE_LAYOUT", &input, Some(optimizer_diag), None,
-                    ));
-                }
-
-                match layout.validate_and_commit_with_backend(
-                    &input.parts, &sheets, backend_kind,
+                // Q22 experimental Sparrow: backend chosen by the caller (bbox or cde).
+                match run_sparrow_pipeline(
+                    &input,
+                    &sheets,
+                    &rotation_context,
+                    pre_unplaced,
+                    backend_kind,
+                    "sparrow_experimental",
                 ) {
-                    Ok(commit) => {
-                        let final_commit_ms = timing_ms(t_commit_start);
-                        collision_backend_diag = Some(if is_cde {
-                            let snap = cde_observability::snapshot();
-                            diag_output_from_with_cde(&commit, snap, "sparrow_full_solve", final_commit_ms)
-                        } else {
-                            diag_output_from(&commit)
-                        });
-                        let diagnostics = sparrow_optimizer_diag_from(
-                            &sparrow_result.diagnostics, backend_name, final_commit_ms,
-                        );
-                        (commit.placements, commit.unplaced, Some(diagnostics))
+                    Ok((p, u, diag, bdiag)) => {
+                        collision_backend_diag = bdiag;
+                        (p, u, diag)
                     }
-                    Err(e) => {
-                        // Q22R1: commit-time failure must preserve Sparrow diagnostics too.
-                        let reason = backend_err_reason(
-                            e, "SPARROW_COMMIT_VIOLATION_BACKEND",
-                        );
-                        let ms = timing_ms(t_commit_start);
-                        let optimizer_diag = sparrow_optimizer_diag_from(
-                            &sparrow_result.diagnostics, backend_name, ms,
-                        );
-                        if is_cde {
-                            let snap = cde_observability::snapshot();
-                            let backend_diag = cde_unsupported_diag(&snap, "sparrow_full_solve", ms);
-                            return Ok(_unsupported_output_with_full_diag(
-                                &reason, &input, Some(optimizer_diag), Some(backend_diag),
-                            ));
-                        }
-                        return Ok(_unsupported_output_with_full_diag(
-                            &reason, &input, Some(optimizer_diag), None,
-                        ));
+                    Err(out) => return Ok(out),
+                }
+            }
+            OptimizerPipelineKind::SparrowCde => {
+                // SGH-Q23 production Sparrow path. CDE-first by contract: the CDE
+                // geometry backend is forced regardless of the requested
+                // `collision_backend` (bbox is debug/legacy only and may not be a
+                // production collision source). No legacy fallback; a failure is
+                // surfaced as unsupported/partial with full diagnostics preserved.
+                match run_sparrow_pipeline(
+                    &input,
+                    &sheets,
+                    &rotation_context,
+                    pre_unplaced,
+                    CollisionBackendKind::Cde,
+                    "sparrow_cde",
+                ) {
+                    Ok((p, u, diag, bdiag)) => {
+                        collision_backend_diag = bdiag;
+                        (p, u, diag)
                     }
+                    Err(out) => return Ok(out),
                 }
             }
         }
@@ -1774,5 +1857,91 @@ mod tests {
             .optimizer_diagnostics
             .expect("Sparrow CDE success path must emit optimizer_diagnostics");
         assert_eq!(diag.sparrow_converged, Some(true));
+    }
+
+    // ── SGH-Q23: sparrow_cde production pipeline ──────────────────────────────
+
+    #[test]
+    fn sparrow_cde_pipeline_deserializes_from_snake_case() {
+        let json = r#"{
+            "contract_version": "v1",
+            "project_name": "q23",
+            "seed": 1,
+            "time_limit_s": 5,
+            "stocks": [{"id": "S", "quantity": 1, "width": 200.0, "height": 200.0}],
+            "parts": [{"id": "P", "width": 30.0, "height": 20.0, "quantity": 2}],
+            "optimizer_pipeline": "sparrow_cde"
+        }"#;
+        let input: SolverInput = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(input.optimizer_pipeline, Some(OptimizerPipelineKind::SparrowCde));
+    }
+
+    #[test]
+    fn sparrow_cde_tiny_converges_and_labels_pipeline_sparrow_cde() {
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let parts = vec![make_part("P", 30.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(101, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowCde);
+        let out = super::solve(input).expect("solve ok");
+        assert!(
+            out.status == "ok" || out.status == "partial",
+            "sparrow_cde tiny must succeed; got status={} reason={:?}",
+            out.status, out.unsupported_reason
+        );
+        let diag = out.optimizer_diagnostics.expect("optimizer_diagnostics present");
+        assert_eq!(diag.pipeline_used, "sparrow_cde", "production label must be sparrow_cde");
+        assert_eq!(diag.sparrow_converged, Some(true));
+        let cbd = out
+            .collision_backend_diagnostics
+            .expect("sparrow_cde must emit collision_backend_diagnostics");
+        // CDE-first: the active backend is the CDE adapter, not bbox.
+        assert_eq!(cbd.backend_used, "cde_adapter", "sparrow_cde must use the CDE backend");
+        assert_eq!(cbd.bbox_fallback_queries, 0, "no bbox fallback in sparrow_cde");
+        // Q23 query-reduction evidence is surfaced (broad-phase counter present).
+        assert!(cbd.cde_broadphase_pruned.is_some(), "broadphase prune counter must be surfaced");
+    }
+
+    #[test]
+    fn sparrow_cde_forces_cde_backend_even_when_bbox_requested() {
+        // Production sparrow_cde must NOT honor a bbox backend request as a
+        // collision source-of-truth; it forces CDE.
+        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let parts = vec![make_part("P", 30.0, 20.0, 2, vec![0], None)];
+        let mut input = make_input(101, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowCde);
+        input.collision_backend = Some(CollisionBackendKind::Bbox);
+        let out = super::solve(input).expect("solve ok");
+        let cbd = out
+            .collision_backend_diagnostics
+            .expect("sparrow_cde must emit collision_backend_diagnostics");
+        assert_eq!(
+            cbd.backend_used, "cde_adapter",
+            "sparrow_cde must force CDE even when bbox is requested; got {}",
+            cbd.backend_used
+        );
+    }
+
+    #[test]
+    fn sparrow_cde_failure_preserves_full_diagnostics() {
+        // 5×50×50 on a single 100×100 sheet: only 4 fit → never converges.
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let parts = vec![make_part("P", 50.0, 50.0, 5, vec![0], None)];
+        let mut input = make_input(7, stocks, parts, None);
+        input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowCde);
+        let out = super::solve(input).expect("solve returns Ok(unsupported)");
+        assert_eq!(out.status, "unsupported");
+        assert_eq!(out.unsupported_reason.as_deref(), Some("SPARROW_NO_FEASIBLE_LAYOUT"));
+        let diag = out
+            .optimizer_diagnostics
+            .expect("failure must preserve optimizer_diagnostics");
+        assert_eq!(diag.pipeline_used, "sparrow_cde");
+        assert_eq!(diag.sparrow_converged, Some(false));
+        assert!(diag.sparrow_iterations.unwrap_or(0) > 0, "iterations must be recorded");
+        assert!(diag.sparrow_initial_raw_loss.unwrap_or(0.0) > 0.0, "initial loss must be recorded");
+        // CDE-first failure must also preserve backend diagnostics.
+        let cbd = out
+            .collision_backend_diagnostics
+            .expect("failure must preserve collision_backend_diagnostics");
+        assert_eq!(cbd.backend_used, "cde_adapter");
     }
 }

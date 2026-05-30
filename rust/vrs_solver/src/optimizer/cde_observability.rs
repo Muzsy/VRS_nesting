@@ -35,6 +35,11 @@ pub struct CdeCounters {
     pub prepare_failures: usize,
     /// Pair queries skipped because items are on different sheets.
     pub cross_sheet_skipped: usize,
+    /// SGH-Q23: pair/boundary queries resolved as `NoCollision` by the AABB
+    /// broad-phase pre-check WITHOUT building a `CDEngine`. AABB-separated shapes
+    /// are provably non-colliding, so this skips the exact query and saves one
+    /// engine build. Broad-phase NEVER produces positive collision truth.
+    pub broadphase_pruned: usize,
 }
 
 thread_local! {
@@ -89,6 +94,17 @@ pub(crate) fn inc_prepare_failure() {
 
 pub(crate) fn inc_cross_sheet_skipped() {
     COUNTERS.with(|c| c.borrow_mut().cross_sheet_skipped += 1);
+}
+
+/// SGH-Q23: record an AABB broad-phase prune (NoCollision resolved without an
+/// engine build). Also counts as a `no_collision_results` so the result
+/// histogram stays consistent with the query count.
+pub(crate) fn inc_broadphase_pruned() {
+    COUNTERS.with(|c| {
+        let mut b = c.borrow_mut();
+        b.broadphase_pruned += 1;
+        b.no_collision_results += 1;
+    });
 }
 
 // ---------------------------------------------------------------------------

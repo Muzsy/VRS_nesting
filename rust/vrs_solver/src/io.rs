@@ -53,6 +53,11 @@ pub enum OptimizerPipelineKind {
     PhaseOptimizer,
     /// SGH-Q22: Sparrow-style separation kernel with explicit infeasible state.
     SparrowExperimental,
+    /// SGH-Q23: production Sparrow path. CDE-first by contract — forces the CDE
+    /// geometry backend, forbids LBF/finite-candidate fallback, and never falls
+    /// back to a legacy solver. A failure returns unsupported/partial with full
+    /// diagnostics preserved. Legacy pipelines remain explicit opt-in only.
+    SparrowCde,
 }
 
 impl Default for OptimizerPipelineKind {
@@ -251,6 +256,10 @@ pub struct CollisionBackendDiagnosticsOutput {
     pub cde_prepare_failures: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_cross_sheet_skipped: Option<usize>,
+    /// SGH-Q23: pair queries resolved as NoCollision by the AABB broad-phase
+    /// pre-check, without building a CDEngine (query reduction evidence).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cde_broadphase_pruned: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cde_observability_scope: Option<String>,
     /// Only populated when VRS_CDE_OBSERVABILITY_TIMING=1 is set.
