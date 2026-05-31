@@ -449,6 +449,16 @@ fn native_sparrow_diag_to_output(
         sparrow_native_problem_instances: Some(d.native_problem_instances),
         sparrow_native_tracker_full_rebuilds: Some(d.native_tracker_full_rebuilds),
         sparrow_native_tracker_incremental_updates: Some(d.native_tracker_incremental_updates),
+        sparrow_dense_guard_used: Some(d.dense_guard_used),
+        sparrow_dense_real_run: Some(d.dense_real_run),
+        sparrow_dense_partial_reason: d.dense_partial_reason.clone(),
+        sparrow_dense_validated_placements: d.dense_validated_placements,
+        sparrow_dense_unresolved_instances: if d.dense_unresolved_instances.is_empty() {
+            None
+        } else {
+            Some(d.dense_unresolved_instances.clone())
+        },
+        sparrow_dense_final_validation_ran: Some(d.dense_final_validation_ran),
     }
 }
 
@@ -857,6 +867,12 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_native_problem_instances: None,
                             sparrow_native_tracker_full_rebuilds: None,
                             sparrow_native_tracker_incremental_updates: None,
+                            sparrow_dense_guard_used: None,
+                            sparrow_dense_real_run: None,
+                            sparrow_dense_partial_reason: None,
+                            sparrow_dense_validated_placements: None,
+                            sparrow_dense_unresolved_instances: None,
+                            sparrow_dense_final_validation_ran: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

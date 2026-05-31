@@ -310,6 +310,18 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_native_tracker_full_rebuilds: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_native_tracker_incremental_updates: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_dense_guard_used: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_dense_real_run: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_dense_partial_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_dense_validated_placements: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_dense_unresolved_instances: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_dense_final_validation_ran: Option<bool>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

@@ -1,0 +1,29 @@
+id: fill_canvas_sgh_q24r7r1_dense_first_sheet_real_run_fix
+kind: canvas_task
+slug: sgh_q24r7r1_dense_first_sheet_real_run_fix
+title: SGH-Q24R7-R1 Dense first-sheet real-run fix
+canvas_path: canvases/egyedi_solver/sgh_q24r7r1_dense_first_sheet_real_run_fix.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r7r1_dense_first_sheet_real_run_fix/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r7r1_dense_first_sheet_real_run_fix.md
+status: ready
+primary_goal: Repair Q24R7 by removing the dense single-sheet guarded partial shortcut and making the LV8 first-sheet 191-instance probe run a real bounded native Sparrow CDE search, compression excluded.
+acceptance:
+  - q24r7_report_read_and_failure_understood
+  - production_sparrow_cde_still_uses_native_problem_optimizer_solution
+  - old_vrs_core_not_reintroduced_to_production_sparrow_cde
+  - large_single_sheet_guard_removed_or_test_only_quarantined
+  - lv8_reference_sheet1_191_input_generated_from_fixture_with_exact_quantity_vector
+  - lv8_reference_sheet1_probe_runs_real_separation_search_under_cde
+  - dense_probe_runtime_is_real_and_bounded_not_zero_second_guarded_partial
+  - diagnostics_show_search_worker_candidate_evaluator_tracker_activity
+  - partial_result_if_any_reports_final_pairs_boundary_unresolved_or_colliding_instances
+  - dense_probe_does_not_report_fake_solved_191_191_when_status_is_partial
+  - medium_cde_and_lv8_12types_x1_regressions_still_pass
+  - compression_disabled_and_unused
+reject_if:
+  - instances_ge_100_single_sheet_production_guard_still_short_circuits_solve
+  - dense_probe_has_zero_search_calls_or_zero_worker_candidates_or_zero_cde_queries
+  - dense_probe_returns_marker_diagnostics_instead_of_real_final_validation
+  - output_counts_seed_placements_as_valid_placements_for_partial_dense_result
+  - bbox_truth_lbf_legacy_or_compression_used
+  - q24r7r1_returns_docs_only_or_report_only

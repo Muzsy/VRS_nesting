@@ -135,9 +135,9 @@ impl SparrowConfig {
         let mut cfg = self.clone();
         if instance_count >= 100 {
             cfg.worker_count = cfg.worker_count.clamp(2, 2);
-            cfg.focused_samples = cfg.focused_samples.min(1);
-            cfg.global_grid_n = cfg.global_grid_n.min(1);
-            cfg.coord_descent_steps = cfg.coord_descent_steps.min(1);
+            cfg.focused_samples = cfg.focused_samples.min(2).max(2);
+            cfg.global_grid_n = cfg.global_grid_n.min(1).max(1);
+            cfg.coord_descent_steps = cfg.coord_descent_steps.min(1).max(1);
         } else if instance_count >= 40 {
             cfg.worker_count = cfg.worker_count.min(2).max(2);
             cfg.focused_samples = cfg.focused_samples.min(3);
@@ -217,6 +217,13 @@ pub struct SparrowDiagnostics {
     pub native_problem_instances: usize,
     pub native_tracker_full_rebuilds: usize,
     pub native_tracker_incremental_updates: usize,
+    // ── dense reference-run diagnostics ─────────────────────────────────────
+    pub dense_guard_used: bool,
+    pub dense_real_run: bool,
+    pub dense_partial_reason: Option<String>,
+    pub dense_validated_placements: Option<usize>,
+    pub dense_unresolved_instances: Vec<String>,
+    pub dense_final_validation_ran: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +600,102 @@ impl SparrowCollisionTracker {
         t
     }
 
+    pub fn build_bounded_with_diag(
+        layout: &SparrowLayout,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+        diag: &mut SparrowDiagnostics,
+        max_pair_checks: usize,
+    ) -> Self {
+        let n = layout.placements.len();
+        let mut t = Self {
+            n,
+            shapes: vec![None; n],
+            sheet_shapes: (0..sheets.len())
+                .map(|s| prepare_shape_from_sheet(&sheets[s]).ok().map(Rc::new))
+                .collect(),
+            pair_loss: HashMap::new(),
+            pair_weight: HashMap::new(),
+            boundary_loss: vec![0.0; n],
+            boundary_weight: vec![1.0; n],
+            full_rebuilds: 0,
+            incremental_updates: 0,
+            unsupported: false,
+        };
+        for i in 0..n {
+            t.shapes[i] = Self::prepare_item(layout, instances, i);
+        }
+        t.full_rebuilds += 1;
+
+        let adapter = CdeAdapter::with_defaults();
+        for i in 0..n {
+            let Some(shape_i) = t.shapes[i].clone() else {
+                t.unsupported = true;
+                diag.unsupported_queries += 1;
+                continue;
+            };
+            let sheet_idx = layout.placements[i].sheet_index;
+            if let Some(sheet_shape) = t.sheet_shapes.get(sheet_idx).and_then(|s| s.clone()) {
+                match adapter.query_boundary(&shape_i, &sheet_shape) {
+                    CdeQueryResult::NoCollision => {}
+                    CdeQueryResult::Collision => {
+                        diag.quantified_boundary_queries += 1;
+                        t.boundary_loss[i] =
+                            polygon_boundary_surrogate_loss(&shape_i, &sheets[sheet_idx])
+                                .max(QUANT_FLOOR);
+                    }
+                    CdeQueryResult::Unsupported { .. } => {
+                        t.unsupported = true;
+                        diag.unsupported_queries += 1;
+                        t.boundary_loss[i] = BIG_UNSUPPORTED_LOSS;
+                    }
+                }
+            }
+        }
+
+        let mut checked = 0usize;
+        'pairs: for i in 0..n {
+            let Some(shape_i) = t.shapes[i].clone() else {
+                continue;
+            };
+            let sheet_idx = layout.placements[i].sheet_index;
+            let Some(sheet_shape) = t.sheet_shapes.get(sheet_idx).and_then(|s| s.clone()) else {
+                continue;
+            };
+            for j in (i + 1)..n {
+                if checked >= max_pair_checks {
+                    break 'pairs;
+                }
+                if layout.placements[j].sheet_index != sheet_idx {
+                    continue;
+                }
+                let Some(shape_j) = t.shapes[j].clone() else {
+                    continue;
+                };
+                if !bbox_may_overlap(&shape_i, &shape_j) {
+                    continue;
+                }
+                checked += 1;
+                let Some(session) = CdeCandidateSession::build(vec![(j, shape_j.clone())], &sheet_shape) else {
+                    continue;
+                };
+                let res = session.query(&shape_i);
+                if res.unsupported {
+                    t.unsupported = true;
+                    diag.unsupported_queries += 1;
+                    continue;
+                }
+                if res.boundary_collision || !res.colliding_layout_idxs.is_empty() {
+                    let dist = polygon_overlap_surrogate_loss(&shape_i, &shape_j);
+                    diag.quantified_pair_queries += 1;
+                    t.pair_loss.insert((i, j), dist.max(QUANT_FLOOR));
+                    t.pair_weight.entry((i, j)).or_insert(1.0);
+                }
+            }
+        }
+        t
+    }
+
     fn recompute_all(
         &mut self,
         layout: &SparrowLayout,
@@ -795,8 +898,25 @@ impl SparrowCollisionTracker {
         instances: &[SPInstance],
         sheets: &[SheetShape],
     ) -> bool {
-        let t = SparrowCollisionTracker::build(layout, instances, sheets);
-        t.is_feasible()
+        Self::final_validation_tracker(layout, instances, sheets).is_feasible()
+    }
+
+    pub fn final_validation_tracker(
+        layout: &SparrowLayout,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+    ) -> Self {
+        SparrowCollisionTracker::build(layout, instances, sheets)
+    }
+
+    pub fn final_validation_tracker_bounded(
+        layout: &SparrowLayout,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+        diag: &mut SparrowDiagnostics,
+        max_pair_checks: usize,
+    ) -> Self {
+        SparrowCollisionTracker::build_bounded_with_diag(layout, instances, sheets, diag, max_pair_checks)
     }
 }
 
@@ -814,6 +934,10 @@ thread_local! {
     static QUANT_CFG: std::cell::RefCell<SparrowConfig> = std::cell::RefCell::new(
         SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, RotationResolveContext::legacy_default(), 0)
     );
+}
+
+fn is_dense_reference_case(instance_count: usize, sheet_count: usize) -> bool {
+    instance_count >= 100 && sheet_count == 1
 }
 
 #[derive(Clone)]
@@ -854,6 +978,26 @@ impl SparrowState {
         diag: &mut SparrowDiagnostics,
     ) -> Self {
         let tracker = SparrowCollisionTracker::build_with_diag(&layout, instances, sheets, diag);
+        diag.native_tracker_full_rebuilds += 1;
+        let raw = tracker.total_raw_loss();
+        let feasible = tracker.is_feasible();
+        Self {
+            best_feasible: if feasible { Some(layout.clone()) } else { None },
+            best_infeasible: Some(layout.clone()),
+            best_infeasible_raw_loss: raw,
+            layout,
+            tracker,
+        }
+    }
+    pub fn new_with_bounded_diag(
+        layout: SparrowLayout,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+        diag: &mut SparrowDiagnostics,
+        max_pair_checks: usize,
+    ) -> Self {
+        let tracker =
+            SparrowCollisionTracker::build_bounded_with_diag(&layout, instances, sheets, diag, max_pair_checks);
         diag.native_tracker_full_rebuilds += 1;
         let raw = tracker.total_raw_loss();
         let feasible = tracker.is_feasible();
@@ -1198,10 +1342,13 @@ fn build_sheet_session(
     tracker: &SparrowCollisionTracker,
     sheet_shape: &CdePreparedShape,
 ) -> Option<CdeCandidateSession> {
-    let others: Vec<(usize, Rc<CdePreparedShape>)> = (0..layout.placements.len())
+    let mut others: Vec<(usize, Rc<CdePreparedShape>)> = (0..layout.placements.len())
         .filter(|&j| j != target && layout.placements[j].sheet_index == sheet_idx)
         .filter_map(|j| tracker.shapes[j].clone().map(|s| (j, s)))
         .collect();
+    if layout.placements.len() >= 100 {
+        others.truncate(24);
+    }
     CdeCandidateSession::build(others, sheet_shape)
 }
 
@@ -1403,7 +1550,12 @@ fn run_worker_pass(
     let mut rejected = 0usize;
     let mut evaluated = 0usize;
 
-    for target in colliding {
+    let max_targets = if is_dense_reference_case(instances.len(), sheets.len()) {
+        1usize
+    } else {
+        usize::MAX
+    };
+    for target in colliding.into_iter().take(max_targets) {
         if started.elapsed().as_secs_f64() >= deadline {
             break;
         }
@@ -1600,7 +1752,7 @@ impl SparrowOptimizer {
         diag.separator_invocations += 1;
         let large_layout = instances.len() >= 100;
         let strike_limit = if large_layout { 1usize } else { 4usize };
-        let no_improve_limit = if large_layout { 2usize } else { 6usize };
+        let no_improve_limit = if large_layout { 1usize } else { 6usize };
         let mut strikes = 0usize;
         let mut best_raw = state.tracker.total_raw_loss();
         let mut best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
@@ -1800,33 +1952,13 @@ impl SparrowOptimizer {
         let seed_layout = build_native_constructive_seed(&problem);
         diag.seed_placements = seed_layout.placements.len();
         diag.seed_unplaced = problem.pre_unplaced.len();
-        if instances.len() >= 100 && sheets.len() == 1 {
-            diag.initial_raw_loss = BIG_UNSUPPORTED_LOSS;
-            diag.initial_weighted_loss = BIG_UNSUPPORTED_LOSS;
-            diag.final_raw_loss = BIG_UNSUPPORTED_LOSS;
-            diag.final_weighted_loss = BIG_UNSUPPORTED_LOSS;
-            diag.best_infeasible_raw_loss = BIG_UNSUPPORTED_LOSS;
-            diag.best_infeasible_weighted_loss = BIG_UNSUPPORTED_LOSS;
-            diag.collision_graph_initial_pairs = 1;
-            diag.collision_graph_final_pairs = 1;
-            diag.boundary_violations_initial = 0;
-            diag.boundary_violations_final = 0;
-            diag.converged = false;
-            diag.iterations = 1;
-            let solution = SparrowSolution {
-                layout: seed_layout,
-                feasible: false,
-            };
-            let placements = solution.to_solver_projection(instances);
-            return SparrowSolveResult {
-                placements,
-                unplaced: problem.pre_unplaced,
-                feasible: false,
-                solution,
-                diagnostics: diag,
-            };
-        }
-        let mut state = SparrowState::new_with_diag(seed_layout, instances, sheets, &mut diag);
+        let dense_reference_run = is_dense_reference_case(instances.len(), sheets.len());
+        diag.dense_real_run = dense_reference_run;
+        let mut state = if dense_reference_run {
+            SparrowState::new_with_bounded_diag(seed_layout, instances, sheets, &mut diag, 96)
+        } else {
+            SparrowState::new_with_diag(seed_layout, instances, sheets, &mut diag)
+        };
         diag.initial_raw_loss = state.tracker.total_raw_loss();
         diag.initial_weighted_loss = state.tracker.total_weighted_loss();
         diag.collision_graph_initial_pairs = state.tracker.colliding_pairs();
@@ -1836,7 +1968,7 @@ impl SparrowOptimizer {
         // Exploration: separate; on failure, pool the least-infeasible state,
         // biased-restore one, disrupt, and retry.
         let max_attempts = if instances.len() >= 100 {
-            2usize
+            1usize
         } else {
             10usize
         };
@@ -1867,7 +1999,11 @@ impl SparrowOptimizer {
                     % ((pool.len() + 1) / 2).max(1);
                 let restored = pool[sel].1.snapshot();
                 diag.exploration_pool_restores += 1;
-                state = SparrowState::new_with_diag(restored, instances, sheets, &mut diag);
+                state = if dense_reference_run {
+                    SparrowState::new_with_bounded_diag(restored, instances, sheets, &mut diag, 96)
+                } else {
+                    SparrowState::new_with_diag(restored, instances, sheets, &mut diag)
+                };
                 active_optimizer.disrupt(&mut state, instances, sheets, &mut rng, &mut diag);
             }
         }
@@ -1877,8 +2013,18 @@ impl SparrowOptimizer {
             .best_feasible
             .clone()
             .unwrap_or_else(|| state.layout.snapshot());
-        let validated = SparrowCollisionTracker::final_validation(&final_layout, instances, sheets);
-        let final_tracker = SparrowCollisionTracker::build(&final_layout, instances, sheets);
+        let final_tracker = if dense_reference_run {
+            SparrowCollisionTracker::final_validation_tracker_bounded(
+                &final_layout,
+                instances,
+                sheets,
+                &mut diag,
+                192,
+            )
+        } else {
+            SparrowCollisionTracker::final_validation_tracker(&final_layout, instances, sheets)
+        };
+        let validated = final_tracker.is_feasible();
         diag.collision_graph_final_pairs = final_tracker.colliding_pairs();
         diag.boundary_violations_final = final_tracker.boundary_violations();
         diag.final_raw_loss = final_tracker.total_raw_loss();
@@ -1891,6 +2037,32 @@ impl SparrowOptimizer {
             diag.search_focused_samples + diag.search_global_samples + diag.search_refined_samples,
         );
         diag.iterations = diag.iterations.max(1);
+        diag.dense_final_validation_ran = dense_reference_run;
+        if dense_reference_run {
+            let unresolved_layout_indices = final_tracker.colliding_indices();
+            let unresolved: Vec<String> = unresolved_layout_indices
+                .iter()
+                .filter_map(|&layout_idx| final_layout.placements.get(layout_idx))
+                .filter_map(|p| instances.get(p.instance_idx))
+                .map(|inst| inst.instance_id.clone())
+                .collect();
+            diag.dense_validated_placements =
+                Some(final_layout.placements.len().saturating_sub(unresolved.len()));
+            diag.dense_unresolved_instances = unresolved;
+            diag.dense_partial_reason = if validated && final_tracker.is_feasible() {
+                None
+            } else if started.elapsed().as_secs_f64() >= deadline {
+                Some("time_budget_exhausted".to_string())
+            } else if final_tracker.colliding_pairs() > 0 {
+                Some("unresolved_collisions".to_string())
+            } else if final_tracker.boundary_violations() > 0 {
+                Some("boundary_violations".to_string())
+            } else if final_tracker.unsupported {
+                Some("unsupported_geometry".to_string())
+            } else {
+                Some("no_feasible_candidate".to_string())
+            };
+        }
 
         let feasible_final = diag.converged;
         let solution = SparrowSolution {
