@@ -390,7 +390,7 @@ fn run_sparrow_pipeline(
     SolverOutput,
 > {
     use crate::optimizer::sparrow::{
-        build_sparrow_seed_layout, SparrowConfig, SparrowSeparationKernel,
+        build_constructive_seed_layout, SparrowConfig, SparrowSeparationKernel,
     };
     use crate::optimizer::search_position::SearchPositionConfig;
     let is_cde = backend_kind == CollisionBackendKind::Cde;
@@ -399,8 +399,10 @@ fn run_sparrow_pipeline(
         crate::optimizer::cde_adapter::reset_query_cache();
     }
     let timing_enabled = cde_timing_enabled();
+    // SGH-Q24R3: production seed is the constructive (LBF/grid) near-feasible
+    // initial solution (Sparrow LBFBuilder role), not all-at-origin.
     let (seed_placements, mut seed_unplaced) =
-        match build_sparrow_seed_layout(&input.parts, sheets, rotation_context) {
+        match build_constructive_seed_layout(&input.parts, sheets, rotation_context) {
             Ok(v) => v,
             Err(_e) => {
                 return Err(_unsupported_output_with_full_diag(

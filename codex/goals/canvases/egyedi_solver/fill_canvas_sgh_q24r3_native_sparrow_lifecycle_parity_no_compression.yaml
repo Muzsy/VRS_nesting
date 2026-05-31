@@ -1,0 +1,35 @@
+id: fill_canvas_sgh_q24r3_native_sparrow_lifecycle_parity_no_compression
+kind: canvas_task
+slug: sgh_q24r3_native_sparrow_lifecycle_parity_no_compression
+title: SGH-Q24R3 Native Sparrow lifecycle parity without compression
+canvas_path: canvases/egyedi_solver/sgh_q24r3_native_sparrow_lifecycle_parity_no_compression.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r3_native_sparrow_lifecycle_parity_no_compression/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r3_native_sparrow_lifecycle_parity_no_compression.md
+status: ready
+primary_goal: Implement current jagua_rs/Sparrow exploration/separation/search/tracker lifecycle in production VRS sparrow_cde, excluding compression.
+acceptance:
+  - local_cache_sparrow_reference_read_and_mapped
+  - production_sparrow_cde_forces_cde_no_legacy_fallback
+  - fixed_sheet_sparrow_problem_layout_state_or_equivalent_adapter_completed
+  - initial_solution_no_longer_all_origin_only
+  - worker_master_move_items_multi_active
+  - worker_move_items_processes_all_colliding_items
+  - cde_tracker_loss_real_not_bbox_surrogate_primary
+  - sparrow_like_search_depth_active_under_cde
+  - active_set_or_session_support_makes_cde_search_affordable
+  - exploration_pool_restore_disruption_solves_medium_cde
+  - compression_disabled_or_gated_out_of_default_production_path
+  - medium_cde_12_items_ok_12_12_zero_collisions
+  - full_final_cde_validation_before_success
+  - compile_tests_smoke_check_evidence_written
+reject_if:
+  - only_reports_scripts_docs_or_diagnostics_changed
+  - main_diff_is_compression
+  - main_diff_is_bbox_rhetoric
+  - medium_cde_convergence_deferred_again
+  - search_depth_reduced_to_avoid_timeout
+  - cde_loss_still_bbox_or_surrogate_primary
+  - final_success_without_full_cde_validation
+  - instances_silently_dropped
+  - legacy_row_cursor_or_lbf_final_fallback_used_in_sparrow_cde
+  - cache_sparrow_not_read_without_blocker

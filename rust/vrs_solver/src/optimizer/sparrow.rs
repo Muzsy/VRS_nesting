@@ -84,6 +84,11 @@ pub struct SparrowConfig {
     /// LBF fallback is disabled by default in sparrow_experimental — counted
     /// in diagnostics if it ever fires elsewhere.
     pub allow_lbf_fallback: bool,
+    /// SGH-Q24R3: compression is intentionally gated OUT of the default
+    /// production lifecycle (fixed-sheet compression is only meaningful later on
+    /// the last partially-used sheet). When false, the compression phase is
+    /// skipped and exploration receives the full time budget.
+    pub enable_compression: bool,
 }
 
 impl Default for SparrowConfig {
@@ -103,6 +108,7 @@ impl Default for SparrowConfig {
             gls_update_period: 5,
             seed: 0,
             allow_lbf_fallback: false,
+            enable_compression: false,
         }
     }
 }
@@ -799,6 +805,136 @@ pub fn build_sparrow_seed_layout(
     Ok((placements, unplaced))
 }
 
+/// SGH-Q24R3 constructive (LBF/grid-like) fixed-sheet initial solution builder.
+///
+/// Plays the role of Sparrow's `LBFBuilder::construct` for fixed sheets: instead
+/// of stacking every instance at the origin (66 colliding pairs on the medium
+/// fixture), it places instances on a coarse row/grid spread across the available
+/// sheets, area-sorted (largest first), deterministically. The grid pitch is a
+/// fraction of the item size, so neighbours overlap only MILDLY — the layout is
+/// near-feasible (a handful of small overlaps the separator resolves quickly) and
+/// every item starts in-bounds and near its final neighbourhood. This is NOT a
+/// final answer: it is the seed for the Sparrow separation/exploration lifecycle,
+/// which still runs and is gated by full CDE validation before success.
+///
+/// Deterministic for the same seed; respects rotation policy and sheet
+/// availability; preserves all fittable instances (overlap-allowed fallback only
+/// when the constructive grid cannot host an item).
+pub fn build_constructive_seed_layout(
+    parts: &[Part],
+    sheets: &[SheetShape],
+    rotation_context: &RotationResolveContext,
+) -> Result<(Vec<Placement>, Vec<Unplaced>), String> {
+    // Mild overlap so the seed is near-feasible AND the separator still has real
+    // work (search_position runs). 0.9 → ~10% overlap between grid neighbours.
+    const PITCH_FACTOR: f64 = 0.9;
+
+    let instances: Vec<Instance> = expand_instances_with_policy(parts, rotation_context)?;
+    let mut placements: Vec<Placement> = Vec::new();
+    let mut unplaced: Vec<Unplaced> = Vec::new();
+
+    // Area-sorted (largest first), deterministic tie-break by instance_id.
+    let mut order: Vec<usize> = (0..instances.len()).collect();
+    order.sort_by(|&a, &b| {
+        let pa = parts.iter().find(|p| p.id == instances[a].part_id);
+        let pb = parts.iter().find(|p| p.id == instances[b].part_id);
+        let area_a = pa.map(|p| p.width * p.height).unwrap_or(0.0);
+        let area_b = pb.map(|p| p.width * p.height).unwrap_or(0.0);
+        area_b
+            .partial_cmp(&area_a)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| instances[a].instance_id.cmp(&instances[b].instance_id))
+    });
+
+    // Per-sheet grid cursor.
+    let mut cur_x = vec![0.0_f64; sheets.len()];
+    let mut cur_y = vec![0.0_f64; sheets.len()];
+    let mut row_h = vec![0.0_f64; sheets.len()];
+
+    for &oi in &order {
+        let inst = &instances[oi];
+        let part = parts
+            .iter()
+            .find(|p| p.id == inst.part_id)
+            .ok_or_else(|| format!("part {} missing for instance {}", inst.part_id, inst.instance_id))?;
+        if !can_fit_any_stock_with_policy(part, sheets, rotation_context)? {
+            unplaced.push(Unplaced {
+                instance_id: inst.instance_id.clone(),
+                part_id: inst.part_id.clone(),
+                reason: "PART_NEVER_FITS_STOCK".to_string(),
+            });
+            continue;
+        }
+        let rot = inst.allowed_rotations_deg.first().copied().unwrap_or(0.0);
+        let (rw, rh) = dims_for_rotation(part.width, part.height, rot);
+
+        // Find a grid slot on the first sheet that can host the rotated item.
+        let mut placed = false;
+        for sheet_idx in 0..sheets.len() {
+            let sheet = &sheets[sheet_idx];
+            if rw > sheet.width + 1e-9 || rh > sheet.height + 1e-9 {
+                continue;
+            }
+            // Wrap to a new row if the item would overflow the sheet width.
+            if cur_x[sheet_idx] + rw > sheet.width + 1e-9 {
+                cur_x[sheet_idx] = 0.0;
+                cur_y[sheet_idx] += row_h[sheet_idx].max(rh) * PITCH_FACTOR;
+                row_h[sheet_idx] = 0.0;
+            }
+            if cur_y[sheet_idx] + rh > sheet.height + 1e-9 {
+                continue; // sheet full → try next sheet
+            }
+            let (ax, ay) = placement_anchor_from_rect_min(
+                cur_x[sheet_idx],
+                cur_y[sheet_idx],
+                part.width,
+                part.height,
+                rot,
+            );
+            placements.push(Placement {
+                instance_id: inst.instance_id.clone(),
+                part_id: inst.part_id.clone(),
+                sheet_index: sheet_idx,
+                x: ax,
+                y: ay,
+                rotation_deg: rot,
+            });
+            cur_x[sheet_idx] += rw * PITCH_FACTOR;
+            row_h[sheet_idx] = row_h[sheet_idx].max(rh);
+            placed = true;
+            break;
+        }
+        if !placed {
+            // Overlap-allowed fallback: the grid is full on every sheet. Place at
+            // the origin of the first hosting sheet; the separator must resolve it.
+            for (sheet_idx, sheet) in sheets.iter().enumerate() {
+                if rw <= sheet.width + 1e-9 && rh <= sheet.height + 1e-9 {
+                    let (ax, ay) =
+                        placement_anchor_from_rect_min(0.0, 0.0, part.width, part.height, rot);
+                    placements.push(Placement {
+                        instance_id: inst.instance_id.clone(),
+                        part_id: inst.part_id.clone(),
+                        sheet_index: sheet_idx,
+                        x: ax,
+                        y: ay,
+                        rotation_deg: rot,
+                    });
+                    placed = true;
+                    break;
+                }
+            }
+        }
+        if !placed {
+            unplaced.push(Unplaced {
+                instance_id: inst.instance_id.clone(),
+                part_id: inst.part_id.clone(),
+                reason: "PART_NEVER_FITS_STOCK".to_string(),
+            });
+        }
+    }
+    Ok((placements, unplaced))
+}
+
 fn fixed_sheet_objective(layout: &WorkingLayout, parts: &[Part]) -> f64 {
     let mut per_sheet: HashMap<usize, (f64, f64)> = HashMap::new();
     for p in &layout.placements {
@@ -1344,8 +1480,14 @@ impl SparrowSeparationKernel {
         let mut search_stats = SearchPositionStats::default();
         let started = Instant::now();
         let time_limit = self.config.time_limit_s.max(0.1);
-        // Reserve part of the budget for the compression phase (Algorithm 13).
-        let exploration_deadline = time_limit * 0.8;
+        // SGH-Q24R3: compression is gated out of the default lifecycle, so
+        // exploration/separation gets the FULL budget. Only reserve a tail for
+        // compression when it is explicitly enabled.
+        let exploration_deadline = if self.config.enable_compression {
+            time_limit * 0.8
+        } else {
+            time_limit
+        };
         diag.workers = self.worker_count();
         diag.worker_best_loss = state.current_weighted_loss;
         diag.exploration_seed_strategies = 1;
@@ -1361,14 +1503,16 @@ impl SparrowSeparationKernel {
             &mut search_stats, &mut diag,
         );
 
-        // Compression phase (Alg 13): restore feasible incumbent → pressure →
-        // separate → accept/reject, under the remaining budget.
+        // Compression phase (Alg 13): GATED OFF by default in Q24R3. Only runs
+        // when explicitly enabled; never required for the medium CDE gate.
         if feasible || state.best_feasible_layout.is_some() {
             diag.exploration_best_feasible_found = true;
-            self.compression_phase(
-                &mut state, parts, sheets, &started, time_limit,
-                &mut search_stats, &mut diag,
-            );
+            if self.config.enable_compression {
+                self.compression_phase(
+                    &mut state, parts, sheets, &started, time_limit,
+                    &mut search_stats, &mut diag,
+                );
+            }
         }
 
         // Final stats from search_position + tracker severity.
@@ -1727,7 +1871,12 @@ mod tests {
         let ctx = RotationResolveContext::legacy_default();
         let (p, u) = build_sparrow_seed_layout(&parts, &sheets, &ctx).expect("seed");
         let layout = WorkingLayout::new(p, u, 1, 0);
-        let cfg = default_cfg(CollisionBackendKind::Bbox, 64);
+        // Compression is gated OFF by default (Q24R3); enable it explicitly to
+        // exercise the Alg 13 restore→pressure→separate→accept lifecycle here.
+        let cfg = SparrowConfig {
+            enable_compression: true,
+            ..default_cfg(CollisionBackendKind::Bbox, 64)
+        };
         let result = SparrowSeparationKernel::new(cfg).run(layout, &parts, &sheets);
         let d = result.diagnostics;
         assert!(result.feasible, "native lifecycle should produce a feasible fixed-sheet layout");
