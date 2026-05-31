@@ -24,15 +24,16 @@
 //! the CDE adapter, or as a centroid/direction hint — never as positive
 //! collision truth. Compression is intentionally out of scope.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::geometry::{polygon_area, Point};
+use crate::geometry::Point;
 use crate::io::{CollisionBackendKind, Placement, Unplaced};
 use crate::item::{
     can_fit_any_stock_with_policy, dims_for_rotation, expand_instances_with_policy,
-    placement_anchor_from_rect_min, Instance, Part,
+    placement_anchor_from_rect_min, rotated_bbox_min_offset, Instance, Part,
 };
 use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
@@ -134,10 +135,10 @@ impl SparrowConfig {
     pub fn scaled_for_instance_count(&self, instance_count: usize) -> Self {
         let mut cfg = self.clone();
         if instance_count >= 100 {
-            cfg.worker_count = cfg.worker_count.clamp(2, 2);
-            cfg.focused_samples = cfg.focused_samples.min(2).max(2);
-            cfg.global_grid_n = cfg.global_grid_n.min(1).max(1);
-            cfg.coord_descent_steps = cfg.coord_descent_steps.min(1).max(1);
+            cfg.worker_count = cfg.worker_count.clamp(2, 3);
+            cfg.focused_samples = cfg.focused_samples.min(4).max(3);
+            cfg.global_grid_n = cfg.global_grid_n.min(2).max(2);
+            cfg.coord_descent_steps = cfg.coord_descent_steps.min(3).max(2);
         } else if instance_count >= 40 {
             cfg.worker_count = cfg.worker_count.min(2).max(2);
             cfg.focused_samples = cfg.focused_samples.min(3);
@@ -600,102 +601,6 @@ impl SparrowCollisionTracker {
         t
     }
 
-    pub fn build_bounded_with_diag(
-        layout: &SparrowLayout,
-        instances: &[SPInstance],
-        sheets: &[SheetShape],
-        diag: &mut SparrowDiagnostics,
-        max_pair_checks: usize,
-    ) -> Self {
-        let n = layout.placements.len();
-        let mut t = Self {
-            n,
-            shapes: vec![None; n],
-            sheet_shapes: (0..sheets.len())
-                .map(|s| prepare_shape_from_sheet(&sheets[s]).ok().map(Rc::new))
-                .collect(),
-            pair_loss: HashMap::new(),
-            pair_weight: HashMap::new(),
-            boundary_loss: vec![0.0; n],
-            boundary_weight: vec![1.0; n],
-            full_rebuilds: 0,
-            incremental_updates: 0,
-            unsupported: false,
-        };
-        for i in 0..n {
-            t.shapes[i] = Self::prepare_item(layout, instances, i);
-        }
-        t.full_rebuilds += 1;
-
-        let adapter = CdeAdapter::with_defaults();
-        for i in 0..n {
-            let Some(shape_i) = t.shapes[i].clone() else {
-                t.unsupported = true;
-                diag.unsupported_queries += 1;
-                continue;
-            };
-            let sheet_idx = layout.placements[i].sheet_index;
-            if let Some(sheet_shape) = t.sheet_shapes.get(sheet_idx).and_then(|s| s.clone()) {
-                match adapter.query_boundary(&shape_i, &sheet_shape) {
-                    CdeQueryResult::NoCollision => {}
-                    CdeQueryResult::Collision => {
-                        diag.quantified_boundary_queries += 1;
-                        t.boundary_loss[i] =
-                            polygon_boundary_surrogate_loss(&shape_i, &sheets[sheet_idx])
-                                .max(QUANT_FLOOR);
-                    }
-                    CdeQueryResult::Unsupported { .. } => {
-                        t.unsupported = true;
-                        diag.unsupported_queries += 1;
-                        t.boundary_loss[i] = BIG_UNSUPPORTED_LOSS;
-                    }
-                }
-            }
-        }
-
-        let mut checked = 0usize;
-        'pairs: for i in 0..n {
-            let Some(shape_i) = t.shapes[i].clone() else {
-                continue;
-            };
-            let sheet_idx = layout.placements[i].sheet_index;
-            let Some(sheet_shape) = t.sheet_shapes.get(sheet_idx).and_then(|s| s.clone()) else {
-                continue;
-            };
-            for j in (i + 1)..n {
-                if checked >= max_pair_checks {
-                    break 'pairs;
-                }
-                if layout.placements[j].sheet_index != sheet_idx {
-                    continue;
-                }
-                let Some(shape_j) = t.shapes[j].clone() else {
-                    continue;
-                };
-                if !bbox_may_overlap(&shape_i, &shape_j) {
-                    continue;
-                }
-                checked += 1;
-                let Some(session) = CdeCandidateSession::build(vec![(j, shape_j.clone())], &sheet_shape) else {
-                    continue;
-                };
-                let res = session.query(&shape_i);
-                if res.unsupported {
-                    t.unsupported = true;
-                    diag.unsupported_queries += 1;
-                    continue;
-                }
-                if res.boundary_collision || !res.colliding_layout_idxs.is_empty() {
-                    let dist = polygon_overlap_surrogate_loss(&shape_i, &shape_j);
-                    diag.quantified_pair_queries += 1;
-                    t.pair_loss.insert((i, j), dist.max(QUANT_FLOOR));
-                    t.pair_weight.entry((i, j)).or_insert(1.0);
-                }
-            }
-        }
-        t
-    }
-
     fn recompute_all(
         &mut self,
         layout: &SparrowLayout,
@@ -709,24 +614,21 @@ impl SparrowCollisionTracker {
         }
         self.unsupported = false;
         for i in 0..self.n {
-            self.recompute_item(i, layout, instances, sheets, false, diag);
+            self.recompute_boundary_for_item(i, layout, instances, sheets, diag);
+        }
+        for i in 0..self.n {
+            self.recompute_pairs_for_item(i, layout, diag);
         }
     }
 
-    /// Recompute quantified boundary + pair losses touching item `i`. When
-    /// `clear_old`, first drop existing pair entries that include `i`.
-    fn recompute_item(
+    fn recompute_boundary_for_item(
         &mut self,
         i: usize,
         layout: &SparrowLayout,
-        instances: &[SPInstance],
+        _instances: &[SPInstance],
         sheets: &[SheetShape],
-        clear_old: bool,
         diag: &mut SparrowDiagnostics,
     ) {
-        if clear_old {
-            self.pair_loss.retain(|&(a, b), _| a != i && b != i);
-        }
         self.boundary_loss[i] = 0.0;
         let Some(shape_i) = self.shapes[i].clone() else {
             self.unsupported = true;
@@ -742,7 +644,7 @@ impl SparrowCollisionTracker {
             match adapter.query_boundary(&shape_i, &sheet_shape) {
                 CdeQueryResult::NoCollision => {}
                 CdeQueryResult::Collision => {
-                    let dist = polygon_boundary_surrogate_loss(&shape_i, &sheets[si]);
+                    let dist = quantify_collision_poly_container_native(&shape_i, &sheets[si]);
                     diag.quantified_boundary_queries += 1;
                     self.boundary_loss[i] = dist.max(QUANT_FLOOR);
                 }
@@ -753,9 +655,21 @@ impl SparrowCollisionTracker {
                 }
             }
         }
+    }
 
-        // Pairs: query i against every other same-sheet item via one session.
-        let others: Vec<(usize, Rc<CdePreparedShape>)> = (0..self.n)
+    fn recompute_pairs_for_item(
+        &mut self,
+        i: usize,
+        layout: &SparrowLayout,
+        diag: &mut SparrowDiagnostics,
+    ) {
+        let Some(shape_i) = self.shapes[i].clone() else {
+            self.unsupported = true;
+            diag.unsupported_queries += 1;
+            return;
+        };
+        let si = layout.placements[i].sheet_index;
+        let others: Vec<(usize, Rc<CdePreparedShape>)> = ((i + 1)..self.n)
             .filter(|&j| j != i && layout.placements[j].sheet_index == si)
             .filter_map(|j| self.shapes[j].clone().map(|s| (j, s)))
             .filter(|(_, s)| bbox_may_overlap(&shape_i, s))
@@ -778,7 +692,7 @@ impl SparrowCollisionTracker {
                         Some((_, s)) => s.clone(),
                         None => continue,
                     };
-                    let dist = polygon_overlap_surrogate_loss(&shape_i, &fixed);
+                    let dist = quantify_collision_poly_poly_native(&shape_i, &fixed);
                     diag.quantified_pair_queries += 1;
                     self.pair_loss.insert(key, dist.max(QUANT_FLOOR));
                     self.pair_weight.entry(key).or_insert(1.0);
@@ -799,7 +713,46 @@ impl SparrowCollisionTracker {
         self.shapes[i] = Self::prepare_item(layout, instances, i);
         self.incremental_updates += 1;
         diag.native_tracker_incremental_updates += 1;
-        self.recompute_item(i, layout, instances, sheets, true, diag);
+        self.pair_loss.retain(|&(a, b), _| a != i && b != i);
+        self.recompute_boundary_for_item(i, layout, instances, sheets, diag);
+        self.recompute_pairs_for_item(i, layout, diag);
+        for j in 0..i {
+            if layout.placements[j].sheet_index != layout.placements[i].sheet_index {
+                continue;
+            }
+            let Some(shape_j) = self.shapes[j].clone() else {
+                continue;
+            };
+            let Some(shape_i) = self.shapes[i].clone() else {
+                continue;
+            };
+            if !bbox_may_overlap(&shape_i, &shape_j) {
+                continue;
+            }
+            let Some(sheet_shape) = self
+                .sheet_shapes
+                .get(layout.placements[i].sheet_index)
+                .and_then(|s| s.clone())
+            else {
+                continue;
+            };
+            let Some(session) = CdeCandidateSession::build(vec![(i, shape_i.clone())], &sheet_shape)
+            else {
+                continue;
+            };
+            let res = session.query(&shape_j);
+            if res.unsupported {
+                self.unsupported = true;
+                diag.unsupported_queries += 1;
+                continue;
+            }
+            if !res.colliding_layout_idxs.is_empty() {
+                let dist = quantify_collision_poly_poly_native(&shape_j, &shape_i);
+                diag.quantified_pair_queries += 1;
+                self.pair_loss.insert((j, i), dist.max(QUANT_FLOOR));
+                self.pair_weight.entry((j, i)).or_insert(1.0);
+            }
+        }
     }
 
     pub fn total_raw_loss(&self) -> f64 {
@@ -860,17 +813,35 @@ impl SparrowCollisionTracker {
         set.into_iter().map(|(i, _)| i).collect()
     }
 
-    /// GLS: bump weights on currently-colliding edges/items; floor at 1.0.
+    /// GLS Algorithm 8: decay clear entries and increase colliding entries
+    /// proportionally to their current loss relative to the maximum loss.
     pub fn update_weights(&mut self) {
+        let max_loss = self
+            .pair_loss
+            .values()
+            .copied()
+            .chain(self.boundary_loss.iter().copied())
+            .fold(0.0_f64, f64::max)
+            .max(1e-9);
+        const DECAY: f64 = 0.995;
+        const MIN_INC: f64 = 1.05;
+        const MAX_INC: f64 = 1.30;
         for (k, &loss) in self.pair_loss.iter() {
-            if loss > 0.0 {
-                let w = self.pair_weight.entry(*k).or_insert(1.0);
-                *w = (*w + 0.3).min(50.0);
-            }
+            let ratio = (loss / max_loss).clamp(0.0, 1.0);
+            let mult = MIN_INC + (MAX_INC - MIN_INC) * ratio;
+            let w = self.pair_weight.entry(*k).or_insert(1.0);
+            *w = (*w * mult).max(1.0).min(50.0);
+        }
+        for w in self.pair_weight.values_mut() {
+            *w = (*w * DECAY).max(1.0);
         }
         for i in 0..self.n {
             if self.boundary_loss[i] > 0.0 {
-                self.boundary_weight[i] = (self.boundary_weight[i] + 0.3).min(50.0);
+                let ratio = (self.boundary_loss[i] / max_loss).clamp(0.0, 1.0);
+                let mult = MIN_INC + (MAX_INC - MIN_INC) * ratio;
+                self.boundary_weight[i] = (self.boundary_weight[i] * mult).max(1.0).min(50.0);
+            } else {
+                self.boundary_weight[i] = (self.boundary_weight[i] * DECAY).max(1.0);
             }
         }
     }
@@ -909,15 +880,6 @@ impl SparrowCollisionTracker {
         SparrowCollisionTracker::build(layout, instances, sheets)
     }
 
-    pub fn final_validation_tracker_bounded(
-        layout: &SparrowLayout,
-        instances: &[SPInstance],
-        sheets: &[SheetShape],
-        diag: &mut SparrowDiagnostics,
-        max_pair_checks: usize,
-    ) -> Self {
-        SparrowCollisionTracker::build_bounded_with_diag(layout, instances, sheets, diag, max_pair_checks)
-    }
 }
 
 /// Minimum stored loss for any CDE-confirmed collision (so a confirmed positive
@@ -934,10 +896,6 @@ thread_local! {
     static QUANT_CFG: std::cell::RefCell<SparrowConfig> = std::cell::RefCell::new(
         SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, RotationResolveContext::legacy_default(), 0)
     );
-}
-
-fn is_dense_reference_case(instance_count: usize, sheet_count: usize) -> bool {
-    instance_count >= 100 && sheet_count == 1
 }
 
 #[derive(Clone)]
@@ -960,6 +918,7 @@ pub struct SparrowState {
     pub best_feasible: Option<SparrowLayout>,
     pub best_infeasible: Option<SparrowLayout>,
     pub best_infeasible_raw_loss: f64,
+    pub best_infeasible_pair_count: usize,
 }
 
 impl SparrowState {
@@ -985,26 +944,7 @@ impl SparrowState {
             best_feasible: if feasible { Some(layout.clone()) } else { None },
             best_infeasible: Some(layout.clone()),
             best_infeasible_raw_loss: raw,
-            layout,
-            tracker,
-        }
-    }
-    pub fn new_with_bounded_diag(
-        layout: SparrowLayout,
-        instances: &[SPInstance],
-        sheets: &[SheetShape],
-        diag: &mut SparrowDiagnostics,
-        max_pair_checks: usize,
-    ) -> Self {
-        let tracker =
-            SparrowCollisionTracker::build_bounded_with_diag(&layout, instances, sheets, diag, max_pair_checks);
-        diag.native_tracker_full_rebuilds += 1;
-        let raw = tracker.total_raw_loss();
-        let feasible = tracker.is_feasible();
-        Self {
-            best_feasible: if feasible { Some(layout.clone()) } else { None },
-            best_infeasible: Some(layout.clone()),
-            best_infeasible_raw_loss: raw,
+            best_infeasible_pair_count: tracker.colliding_pairs(),
             layout,
             tracker,
         }
@@ -1014,9 +954,14 @@ impl SparrowState {
             self.best_feasible = Some(self.layout.clone());
         } else {
             let raw = self.tracker.total_raw_loss();
-            if raw < self.best_infeasible_raw_loss || self.best_infeasible.is_none() {
+            let pairs = self.tracker.colliding_pairs();
+            if raw < self.best_infeasible_raw_loss
+                || pairs < self.best_infeasible_pair_count
+                || self.best_infeasible.is_none()
+            {
                 self.best_infeasible = Some(self.layout.clone());
                 self.best_infeasible_raw_loss = raw;
+                self.best_infeasible_pair_count = pairs;
             }
         }
     }
@@ -1047,101 +992,240 @@ fn fitting_rotation(inst: &SPInstance, sheets: &[SheetShape]) -> f64 {
     rots[0]
 }
 
-/// Native constructive (LBF/grid) initial solution: area-sorted coarse row/grid
-/// spread across sheets, in-bounds, mild overlap (near-feasible but with real
-/// separation work). Rotation-aware so oversized-at-0° parts get a fitting
-/// rotation. Plays Sparrow's `LBFBuilder::construct` role for fixed sheets.
+fn rect_min_from_anchor(x: f64, y: f64, width: f64, height: f64, rot_deg: f64) -> (f64, f64) {
+    let (ox, oy) = rotated_bbox_min_offset(width, height, rot_deg);
+    (x + ox, y + oy)
+}
+
+/// Native LBFBuilder equivalent: place instances in descending
+/// convex-hull-area/diameter order, using CDE-backed sample search against the
+/// already placed fixed-sheet layout. If no clear candidate exists, the
+/// least-infeasible candidate is placed honestly and separation resolves it.
 pub fn build_native_constructive_seed(problem: &SparrowProblem) -> SparrowLayout {
-    const PITCH_FACTOR: f64 = 0.92;
-    let sheets = &problem.container.sheets;
-    let mut order: Vec<usize> = (0..problem.instances.len()).collect();
-    order.sort_by(|&a, &b| {
-        let aa = problem.instances[a].part.width * problem.instances[a].part.height;
-        let ab = problem.instances[b].part.width * problem.instances[b].part.height;
-        ab.partial_cmp(&aa)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                problem.instances[a]
-                    .instance_id
-                    .cmp(&problem.instances[b].instance_id)
-            })
-    });
+    LBFBuilder::new(problem).construct()
+}
 
-    let mut cur_x = vec![0.0_f64; sheets.len()];
-    let mut cur_y = vec![0.0_f64; sheets.len()];
-    let mut row_h = vec![0.0_f64; sheets.len()];
-    let mut placements: Vec<SparrowPlacement> = Vec::with_capacity(problem.instances.len());
+pub struct LBFBuilder<'a> {
+    problem: &'a SparrowProblem,
+    rng: DeterministicRng,
+    started: Instant,
+    seed_budget_s: f64,
+}
 
-    for &oi in &order {
-        let inst = &problem.instances[oi];
-        let rot = fitting_rotation(inst, sheets);
-        let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
-        let mut placed = false;
+impl<'a> LBFBuilder<'a> {
+    pub fn new(problem: &'a SparrowProblem) -> Self {
+        Self {
+            problem,
+            rng: DeterministicRng::new(problem.config.seed ^ 0x4c42_4642),
+            started: Instant::now(),
+            seed_budget_s: if problem.instances.len() >= 100 {
+                (problem.config.time_limit_s * 0.03).clamp(1.0, 3.0)
+            } else {
+                (problem.config.time_limit_s * 0.20).clamp(2.0, 20.0)
+            },
+        }
+    }
+
+    pub fn construct(mut self) -> SparrowLayout {
+        let mut order: Vec<usize> = (0..self.problem.instances.len()).collect();
+        order.sort_by(|&a, &b| {
+            let ia = &self.problem.instances[a];
+            let ib = &self.problem.instances[b];
+            let da = (ia.part.width * ia.part.width + ia.part.height * ia.part.height).sqrt();
+            let db = (ib.part.width * ib.part.width + ib.part.height * ib.part.height).sqrt();
+            let ka = ia.part.width * ia.part.height * da;
+            let kb = ib.part.width * ib.part.height * db;
+            kb.partial_cmp(&ka)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| ia.instance_id.cmp(&ib.instance_id))
+        });
+
+        let mut layout = SparrowLayout {
+            placements: Vec::with_capacity(self.problem.instances.len()),
+        };
+        for instance_idx in order {
+            let placement = if self.started.elapsed().as_secs_f64() < self.seed_budget_s {
+                self.find_placement(&layout, instance_idx)
+                    .or_else(|| self.fallback_anchor(&layout, instance_idx))
+            } else {
+                self.fallback_anchor(&layout, instance_idx)
+            };
+            if let Some(p) = placement {
+                layout.placements.push(p);
+            }
+        }
+        layout.placements.sort_by_key(|p| p.instance_idx);
+        layout
+    }
+
+    fn find_placement(
+        &mut self,
+        layout: &SparrowLayout,
+        instance_idx: usize,
+    ) -> Option<SparrowPlacement> {
+        let inst = &self.problem.instances[instance_idx];
+        let sheets = &self.problem.container.sheets;
+        let mut best = BestSamples::new(8, inst.part.width.min(inst.part.height).max(1.0) * 0.10);
+        let rotations = if inst.allowed_rotations_deg.is_empty() {
+            vec![fitting_rotation(inst, sheets)]
+        } else {
+            inst.allowed_rotations_deg.clone()
+        };
+        for sheet_idx in 0..sheets.len() {
+            if self.started.elapsed().as_secs_f64() >= self.seed_budget_s {
+                break;
+            }
+            let sheet = &sheets[sheet_idx];
+            let Some(sheet_shape) = prepare_shape_from_sheet(sheet).ok().map(Rc::new) else {
+                continue;
+            };
+            let others: Vec<(usize, Rc<CdePreparedShape>)> = layout
+                .placements
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.sheet_index == sheet_idx)
+                .filter_map(|(idx, p)| {
+                    let other = &self.problem.instances[p.instance_idx];
+                    prepare_shape_native(&other.part, p.x, p.y, p.rotation_deg)
+                        .ok()
+                        .map(Rc::new)
+                        .map(|s| (idx, s))
+                })
+                .collect();
+            let Some(session) = CdeCandidateSession::build(others, &sheet_shape) else {
+                continue;
+            };
+            let evaluator = LBFEvaluator {
+                inst,
+                sheet,
+                sheet_idx,
+                session: &session,
+            };
+            let sampler = UniformBBoxSampler::new(sheet, inst);
+            for &rot in &rotations {
+                if self.started.elapsed().as_secs_f64() >= self.seed_budget_s {
+                    break;
+                }
+                for (rmx, rmy) in sampler.samples_for(rot, 1, &mut self.rng) {
+                    if let Some(scored) = evaluator.score_candidate(rmx, rmy, rot) {
+                        best.report(scored);
+                    }
+                }
+            }
+        }
+        best.best().map(|s| s.placement)
+    }
+
+    fn fallback_anchor(
+        &mut self,
+        layout: &SparrowLayout,
+        instance_idx: usize,
+    ) -> Option<SparrowPlacement> {
+        let inst = &self.problem.instances[instance_idx];
+        let sheets = &self.problem.container.sheets;
+        let mut best: Option<(f64, SparrowPlacement)> = None;
         for sheet_idx in 0..sheets.len() {
             let sheet = &sheets[sheet_idx];
+            let rot = fitting_rotation(inst, sheets);
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
             if rw > sheet.width + 1e-9 || rh > sheet.height + 1e-9 {
                 continue;
             }
-            if cur_x[sheet_idx] + rw > sheet.width + 1e-9 {
-                cur_x[sheet_idx] = 0.0;
-                cur_y[sheet_idx] += row_h[sheet_idx].max(rh) * PITCH_FACTOR;
-                row_h[sheet_idx] = 0.0;
-            }
-            if cur_y[sheet_idx] + rh > sheet.height + 1e-9 {
-                continue;
-            }
-            let (ax, ay) = placement_anchor_from_rect_min(
-                cur_x[sheet_idx],
-                cur_y[sheet_idx],
-                inst.part.width,
-                inst.part.height,
-                rot,
-            );
-            placements.push(SparrowPlacement {
-                instance_idx: oi,
-                sheet_index: sheet_idx,
-                x: ax,
-                y: ay,
-                rotation_deg: rot,
-            });
-            cur_x[sheet_idx] += rw * PITCH_FACTOR;
-            row_h[sheet_idx] = row_h[sheet_idx].max(rh);
-            placed = true;
-            break;
-        }
-        if !placed {
-            // Overlap-allowed fallback at origin of the first hosting sheet (with
-            // a fitting rotation). Separation resolves the residual overlap.
-            for sheet_idx in 0..sheets.len() {
-                let sheet = &sheets[sheet_idx];
-                if rw <= sheet.width + 1e-9 && rh <= sheet.height + 1e-9 {
-                    let (ax, ay) = placement_anchor_from_rect_min(
-                        0.0,
-                        0.0,
-                        inst.part.width,
-                        inst.part.height,
-                        rot,
-                    );
-                    placements.push(SparrowPlacement {
-                        instance_idx: oi,
-                        sheet_index: sheet_idx,
-                        x: ax,
-                        y: ay,
-                        rotation_deg: rot,
-                    });
+            let max_x = (sheet.max_x - rw).max(sheet.min_x);
+            let max_y = (sheet.max_y - rh).max(sheet.min_y);
+            let ordinal = layout.placements.len() as f64 + instance_idx as f64 * 0.618_033_988_75;
+            for k in 0..16 {
+                let dk = k as f64;
+                let fx = ((ordinal + dk * 0.414_213_562) * 0.754_877_666).fract();
+                let fy = ((ordinal + dk * 0.732_050_808) * 0.569_840_296).fract();
+                let rmx = sheet.min_x + fx * (max_x - sheet.min_x).max(0.0);
+                let rmy = sheet.min_y + fy * (max_y - sheet.min_y).max(0.0);
+                let mut overlap_score = 0.0;
+                for p in layout.placements.iter().filter(|p| p.sheet_index == sheet_idx) {
+                    let other = &self.problem.instances[p.instance_idx];
+                    let (ow, oh) =
+                        dims_for_rotation(other.part.width, other.part.height, p.rotation_deg);
+                    let (omin_x, omin_y) =
+                        rect_min_from_anchor(p.x, p.y, other.part.width, other.part.height, p.rotation_deg);
+                    let ix = (rmx + rw).min(omin_x + ow) - rmx.max(omin_x);
+                    let iy = (rmy + rh).min(omin_y + oh) - rmy.max(omin_y);
+                    if ix > 0.0 && iy > 0.0 {
+                        overlap_score += 1.0 + (ix * iy).sqrt();
+                    }
+                }
+                let (x, y) =
+                    placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
+                let cand = SparrowPlacement {
+                    instance_idx,
+                    sheet_index: sheet_idx,
+                    x,
+                    y,
+                    rotation_deg: rot,
+                };
+                if best
+                    .as_ref()
+                    .map(|(score, _)| overlap_score < *score)
+                    .unwrap_or(true)
+                {
+                    best = Some((overlap_score, cand));
+                }
+                if overlap_score <= 1e-9 {
                     break;
                 }
             }
         }
+        best.map(|(_, p)| p)
     }
-    // Keep placements ordered by instance index for stable tracker indexing.
-    placements.sort_by_key(|p| p.instance_idx);
-    SparrowLayout { placements }
 }
 
 // ---------------------------------------------------------------------------
 // native search (multi-sheet, multi-rotation, quantified)
 // ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SampleEval {
+    Clear { loss: f64 },
+    Collision { loss: f64 },
+    Invalid,
+}
+
+impl Eq for SampleEval {}
+
+impl Ord for SampleEval {
+    fn cmp(&self, other: &Self) -> Ordering {
+        use SampleEval::{Clear, Collision, Invalid};
+        match (*self, *other) {
+            (Invalid, Invalid) => Ordering::Equal,
+            (Invalid, _) => Ordering::Greater,
+            (_, Invalid) => Ordering::Less,
+            (Collision { .. }, Clear { .. }) => Ordering::Greater,
+            (Clear { .. }, Collision { .. }) => Ordering::Less,
+            (Collision { loss: a }, Collision { loss: b })
+            | (Clear { loss: a }, Clear { loss: b }) => {
+                a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+            }
+        }
+    }
+}
+
+impl PartialOrd for SampleEval {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+trait SampleEvaluator {
+    fn evaluate_sample(
+        &mut self,
+        x: f64,
+        y: f64,
+        rot: f64,
+        upper_bound: Option<SampleEval>,
+        diag: &mut SparrowDiagnostics,
+    ) -> Option<ScoredPlacement>;
+
+    fn n_evals(&self) -> usize;
+}
 
 /// One scored candidate produced by the search.
 #[derive(Clone)]
@@ -1152,17 +1236,129 @@ struct ScoredPlacement {
     placement: SparrowPlacement,
 }
 
-struct CandidateEvaluator<'a> {
+impl ScoredPlacement {
+    fn eval(&self) -> SampleEval {
+        if self.is_clear {
+            SampleEval::Clear { loss: self.score }
+        } else {
+            SampleEval::Collision {
+                loss: self.collision_loss,
+            }
+        }
+    }
+}
+
+pub struct BestSamples {
+    size: usize,
+    unique_thresh: f64,
+    samples: Vec<ScoredPlacement>,
+}
+
+impl BestSamples {
+    pub fn new(size: usize, unique_thresh: f64) -> Self {
+        Self {
+            size: size.max(1),
+            unique_thresh,
+            samples: Vec::new(),
+        }
+    }
+
+    fn report(&mut self, cand: ScoredPlacement) -> bool {
+        if cand.eval() >= self.upper_bound() {
+            return false;
+        }
+        if let Some(idx) = self.samples.iter().position(|s| {
+            (s.placement.x - cand.placement.x).abs() < self.unique_thresh
+                && (s.placement.y - cand.placement.y).abs() < self.unique_thresh
+                && (s.placement.rotation_deg - cand.placement.rotation_deg).abs() < 1.0
+                && s.placement.sheet_index == cand.placement.sheet_index
+        }) {
+            if cand.eval() < self.samples[idx].eval() {
+                self.samples.remove(idx);
+            } else {
+                return false;
+            }
+        }
+        self.samples.push(cand);
+        self.samples.sort_by(|a, b| a.eval().cmp(&b.eval()));
+        if self.samples.len() > self.size {
+            self.samples.pop();
+        }
+        true
+    }
+
+    fn best(&self) -> Option<ScoredPlacement> {
+        self.samples.first().cloned()
+    }
+
+    fn upper_bound(&self) -> SampleEval {
+        self.samples
+            .get(self.size.saturating_sub(1))
+            .map(|s| s.eval())
+            .unwrap_or(SampleEval::Invalid)
+    }
+}
+
+pub struct UniformBBoxSampler<'a> {
+    sheet: &'a SheetShape,
+    inst: &'a SPInstance,
+}
+
+impl<'a> UniformBBoxSampler<'a> {
+    pub fn new(sheet: &'a SheetShape, inst: &'a SPInstance) -> Self {
+        Self { sheet, inst }
+    }
+
+    pub fn samples_for(
+        &self,
+        rot: f64,
+        grid_n: usize,
+        rng: &mut DeterministicRng,
+    ) -> Vec<(f64, f64)> {
+        let (rw, rh) = dims_for_rotation(self.inst.part.width, self.inst.part.height, rot);
+        if rw > self.sheet.width + 1e-9 || rh > self.sheet.height + 1e-9 {
+            return Vec::new();
+        }
+        let max_x = (self.sheet.max_x - rw).max(self.sheet.min_x);
+        let max_y = (self.sheet.max_y - rh).max(self.sheet.min_y);
+        let mut out = vec![
+            (self.sheet.min_x, self.sheet.min_y),
+            (max_x, self.sheet.min_y),
+            (self.sheet.min_x, max_y),
+        ];
+        let n = grid_n.max(1);
+        let step_x = (max_x - self.sheet.min_x) / (n as f64 + 1.0);
+        let step_y = (max_y - self.sheet.min_y) / (n as f64 + 1.0);
+        for gy in 1..=n {
+            for gx in 1..=n {
+                out.push((
+                    self.sheet.min_x + step_x * gx as f64,
+                    self.sheet.min_y + step_y * gy as f64,
+                ));
+            }
+        }
+        for _ in 0..n {
+            out.push((
+                self.sheet.min_x + rng.next_f64() * (max_x - self.sheet.min_x).max(0.0),
+                self.sheet.min_y + rng.next_f64() * (max_y - self.sheet.min_y).max(0.0),
+            ));
+        }
+        out
+    }
+}
+
+struct SeparationEvaluator<'a> {
     inst: &'a SPInstance,
     sheet: &'a SheetShape,
     sheet_idx: usize,
     session: &'a CdeCandidateSession,
     fixed_shapes: &'a [Option<Rc<CdePreparedShape>>],
+    n_evals: usize,
 }
 
-impl<'a> CandidateEvaluator<'a> {
+impl<'a> SeparationEvaluator<'a> {
     fn score_candidate(
-        &self,
+        &mut self,
         rmx: f64,
         rmy: f64,
         rot: f64,
@@ -1184,6 +1380,7 @@ impl<'a> CandidateEvaluator<'a> {
             rot,
         );
         let shape = prepare_shape_native(&self.inst.part, ax, ay, rot).ok()?;
+        self.n_evals += 1;
         diag.search_position_samples += 1;
         let res = self.session.query(&shape);
         if res.unsupported {
@@ -1212,11 +1409,18 @@ impl<'a> CandidateEvaluator<'a> {
 
         let mut loss = 0.0;
         if res.boundary_collision {
-            loss += polygon_boundary_surrogate_loss(&shape, self.sheet);
+            loss += quantify_collision_poly_container_native(&shape, self.sheet);
         }
         for &layout_j in &res.colliding_layout_idxs {
             if let Some(Some(fixed)) = self.fixed_shapes.get(layout_j) {
-                loss += polygon_overlap_surrogate_loss(&shape, fixed);
+                let key = if layout_j < self.inst.idx {
+                    (layout_j, self.inst.idx)
+                } else {
+                    (self.inst.idx, layout_j)
+                };
+                let base = quantify_collision_poly_poly_native(&shape, fixed);
+                let weight = 1.0_f64.max(base).min(base + 1.0);
+                loss += base * weight + (key.0 + key.1) as f64 * 1e-12;
             } else {
                 loss += BIG_UNSUPPORTED_LOSS;
             }
@@ -1225,6 +1429,90 @@ impl<'a> CandidateEvaluator<'a> {
         Some(ScoredPlacement {
             score: 1_000_000.0 + quantified_loss + clear_quality,
             collision_loss: quantified_loss,
+            is_clear: false,
+            placement,
+        })
+    }
+}
+
+impl<'a> SampleEvaluator for SeparationEvaluator<'a> {
+    fn evaluate_sample(
+        &mut self,
+        x: f64,
+        y: f64,
+        rot: f64,
+        upper_bound: Option<SampleEval>,
+        diag: &mut SparrowDiagnostics,
+    ) -> Option<ScoredPlacement> {
+        let cand = self.score_candidate(x, y, rot, diag)?;
+        if upper_bound.map(|ub| cand.eval() >= ub).unwrap_or(false) {
+            None
+        } else {
+            Some(cand)
+        }
+    }
+
+    fn n_evals(&self) -> usize {
+        self.n_evals
+    }
+}
+
+struct LBFEvaluator<'a> {
+    inst: &'a SPInstance,
+    sheet: &'a SheetShape,
+    sheet_idx: usize,
+    session: &'a CdeCandidateSession,
+}
+
+impl<'a> LBFEvaluator<'a> {
+    fn score_candidate(&self, rmx: f64, rmy: f64, rot: f64) -> Option<ScoredPlacement> {
+        let (rw, rh) = dims_for_rotation(self.inst.part.width, self.inst.part.height, rot);
+        if rmx < self.sheet.min_x - 1e-9
+            || rmy < self.sheet.min_y - 1e-9
+            || rmx + rw > self.sheet.max_x + 1e-9
+            || rmy + rh > self.sheet.max_y + 1e-9
+        {
+            return None;
+        }
+        let (ax, ay) = placement_anchor_from_rect_min(
+            rmx,
+            rmy,
+            self.inst.part.width,
+            self.inst.part.height,
+            rot,
+        );
+        let shape = prepare_shape_native(&self.inst.part, ax, ay, rot).ok()?;
+        let res = self.session.query(&shape);
+        if res.unsupported {
+            return None;
+        }
+        let placement = SparrowPlacement {
+            instance_idx: self.inst.idx,
+            sheet_index: self.sheet_idx,
+            x: ax,
+            y: ay,
+            rotation_deg: rot,
+        };
+        let lbf_quality = (rmx - self.sheet.min_x).max(0.0) * 10.0
+            + (rmy - self.sheet.min_y).max(0.0)
+            + (self.sheet_idx as f64) * 1e-6;
+        if res.is_clear() {
+            return Some(ScoredPlacement {
+                score: lbf_quality,
+                collision_loss: 0.0,
+                is_clear: true,
+                placement,
+            });
+        }
+        let mut loss = if res.boundary_collision {
+            quantify_collision_poly_container_native(&shape, self.sheet)
+        } else {
+            0.0
+        };
+        loss += res.colliding_layout_idxs.len() as f64 * QUANT_FLOOR;
+        Some(ScoredPlacement {
+            score: 1_000_000.0 + loss + lbf_quality,
+            collision_loss: loss.max(QUANT_FLOOR),
             is_clear: false,
             placement,
         })
@@ -1274,63 +1562,31 @@ fn bbox_may_overlap(a: &CdePreparedShape, b: &CdePreparedShape) -> bool {
     !(a.max_x < b.min_x || b.max_x < a.min_x || a.max_y < b.min_y || b.max_y < a.min_y)
 }
 
-fn polygon_overlap_surrogate_loss(candidate: &CdePreparedShape, fixed: &CdePreparedShape) -> f64 {
-    let cand_area = polygon_area(&candidate.world_pts).max(1.0);
-    let fixed_area = polygon_area(&fixed.world_pts).max(1.0);
-    let cand_inside = candidate
-        .world_pts
-        .iter()
-        .filter(|&&p| point_inside_or_on_poly(p, &fixed.world_pts))
-        .count();
-    let fixed_inside = fixed
-        .world_pts
-        .iter()
-        .filter(|&&p| point_inside_or_on_poly(p, &candidate.world_pts))
-        .count();
-    let cand_frac = cand_inside as f64 / candidate.world_pts.len().max(1) as f64;
-    let fixed_frac = fixed_inside as f64 / fixed.world_pts.len().max(1) as f64;
-    let overlap_hint = cand_frac.max(fixed_frac).max(0.05);
-    let (cx, cy) = shape_center(candidate);
-    let (fx, fy) = shape_center(fixed);
-    let center_dist = ((cx - fx).powi(2) + (cy - fy).powi(2)).sqrt();
-    let min_span = (candidate.max_x - candidate.min_x)
-        .max(candidate.max_y - candidate.min_y)
-        .min((fixed.max_x - fixed.min_x).max(fixed.max_y - fixed.min_y))
-        .max(1.0);
-    let proximity = cand_area.min(fixed_area).sqrt() / (1.0 + center_dist / min_span);
-    cand_area.min(fixed_area).sqrt() * overlap_hint + proximity + QUANT_FLOOR
+fn shape_convex_area(s: &CdePreparedShape) -> f64 {
+    bbox_area(s)
 }
 
-fn polygon_boundary_surrogate_loss(candidate: &CdePreparedShape, sheet: &SheetShape) -> f64 {
-    let sheet_pts = if sheet.has_irregular_outer {
-        sheet.outer_vertices.clone()
-    } else {
-        vec![
-            Point {
-                x: sheet.min_x,
-                y: sheet.min_y,
-            },
-            Point {
-                x: sheet.max_x,
-                y: sheet.min_y,
-            },
-            Point {
-                x: sheet.max_x,
-                y: sheet.max_y,
-            },
-            Point {
-                x: sheet.min_x,
-                y: sheet.max_y,
-            },
-        ]
-    };
-    let outside = candidate
-        .world_pts
-        .iter()
-        .filter(|&&p| !point_inside_or_on_poly(p, &sheet_pts))
-        .count();
-    let frac = outside as f64 / candidate.world_pts.len().max(1) as f64;
-    polygon_area(&candidate.world_pts).max(1.0).sqrt() * frac.max(0.05) + QUANT_FLOOR
+fn bbox_area(s: &CdePreparedShape) -> f64 {
+    ((s.max_x - s.min_x).max(0.0) * (s.max_y - s.min_y).max(0.0)).max(1.0)
+}
+
+fn quantify_collision_poly_poly_native(candidate: &CdePreparedShape, fixed: &CdePreparedShape) -> f64 {
+    let ix = (candidate.max_x.min(fixed.max_x) - candidate.min_x.max(fixed.min_x)).max(0.0);
+    let iy = (candidate.max_y.min(fixed.max_y) - candidate.min_y.max(fixed.min_y)).max(0.0);
+    let overlap_proxy = (ix * iy).max(QUANT_FLOOR);
+    let p1 = shape_convex_area(candidate).sqrt();
+    let p2 = shape_convex_area(fixed).sqrt();
+    let penalty = (p1 * p2).sqrt().max(1.0);
+    (overlap_proxy.sqrt() * penalty).min(10.0 * penalty) + QUANT_FLOOR
+}
+
+fn quantify_collision_poly_container_native(candidate: &CdePreparedShape, sheet: &SheetShape) -> f64 {
+    let inside_x = (candidate.max_x.min(sheet.max_x) - candidate.min_x.max(sheet.min_x)).max(0.0);
+    let inside_y = (candidate.max_y.min(sheet.max_y) - candidate.min_y.max(sheet.min_y)).max(0.0);
+    let bbox = bbox_area(candidate);
+    let outside_proxy = (bbox - inside_x * inside_y).max(0.0001 * bbox);
+    let penalty = shape_convex_area(candidate).sqrt().max(1.0);
+    (2.0 * outside_proxy.sqrt() * penalty).min(20.0 * penalty) + QUANT_FLOOR
 }
 
 /// Build the fixed-other CDE session for `target` on `sheet_idx` from the tracker
@@ -1342,13 +1598,10 @@ fn build_sheet_session(
     tracker: &SparrowCollisionTracker,
     sheet_shape: &CdePreparedShape,
 ) -> Option<CdeCandidateSession> {
-    let mut others: Vec<(usize, Rc<CdePreparedShape>)> = (0..layout.placements.len())
+    let others: Vec<(usize, Rc<CdePreparedShape>)> = (0..layout.placements.len())
         .filter(|&j| j != target && layout.placements[j].sheet_index == sheet_idx)
         .filter_map(|j| tracker.shapes[j].clone().map(|s| (j, s)))
         .collect();
-    if layout.placements.len() >= 100 {
-        others.truncate(24);
-    }
     CdeCandidateSession::build(others, sheet_shape)
 }
 
@@ -1378,18 +1631,7 @@ fn native_search_placement(
 
     let fixed_shapes = tracker.shapes.clone();
 
-    let mut best: Option<ScoredPlacement> = None;
-    let consider = |c: Option<ScoredPlacement>, best: &mut Option<ScoredPlacement>| {
-        if let Some(cand) = c {
-            let better = match best {
-                None => true,
-                Some(b) => cand.score < b.score - 1e-9,
-            };
-            if better {
-                *best = Some(cand);
-            }
-        }
-    };
+    let mut best_samples = BestSamples::new(8, inst.part.width.min(inst.part.height).max(1.0) * 0.10);
 
     // Sheet search order: current sheet first, then the rest (cross-sheet).
     let mut sheet_order: Vec<usize> = vec![cur.sheet_index];
@@ -1412,27 +1654,44 @@ fn native_search_placement(
         else {
             continue;
         };
-        let evaluator = CandidateEvaluator {
+        let mut evaluator = SeparationEvaluator {
             inst,
             sheet,
             sheet_idx,
             session: &session,
             fixed_shapes: &fixed_shapes,
+            n_evals: 0,
         };
+        let sampler = UniformBBoxSampler::new(sheet, inst);
 
         // Focused samples around the current placement (only on the current sheet).
         if sheet_idx == cur.sheet_index {
             let span = (sheet.width.min(sheet.height)) * 0.15;
             for &rot in &rotations {
-                if let Some(c) = evaluator.score_candidate(cur.x, cur.y, rot, diag) {
-                    consider(Some(c), &mut best);
+                if let Some(c) = evaluator.evaluate_sample(
+                    cur.x,
+                    cur.y,
+                    rot,
+                    Some(best_samples.upper_bound()),
+                    diag,
+                ) {
+                    best_samples.report(c);
                 }
                 for _ in 0..cfg.focused_samples {
                     let nx = cur.x + rng.jitter(span);
                     let ny = cur.y + rng.jitter(span);
                     diag.search_focused_samples += 1;
-                    consider(evaluator.score_candidate(nx, ny, rot, diag), &mut best);
-                    if best
+                    if let Some(c) = evaluator.evaluate_sample(
+                        nx,
+                        ny,
+                        rot,
+                        Some(best_samples.upper_bound()),
+                        diag,
+                    ) {
+                        best_samples.report(c);
+                    }
+                    if best_samples
+                        .best()
                         .as_ref()
                         .map(|b| b.is_clear && b.placement.sheet_index == sheet_idx)
                         .unwrap_or(false)
@@ -1444,57 +1703,100 @@ fn native_search_placement(
         }
 
         // Coarse global grid on this sheet, every rotation.
-        let n = cfg.global_grid_n.max(1);
-        let step_x = sheet.width / (n as f64 + 1.0);
-        let step_y = sheet.height / (n as f64 + 1.0);
-        for gy in 1..=n {
-            for gx in 1..=n {
-                let rmx = sheet.min_x + step_x * gx as f64;
-                let rmy = sheet.min_y + step_y * gy as f64;
-                for &rot in &rotations {
-                    diag.search_global_samples += 1;
-                    consider(evaluator.score_candidate(rmx, rmy, rot, diag), &mut best);
+        for &rot in &rotations {
+            for (rmx, rmy) in sampler.samples_for(rot, cfg.global_grid_n, rng) {
+                diag.search_global_samples += 1;
+                if let Some(c) = evaluator.evaluate_sample(
+                    rmx,
+                    rmy,
+                    rot,
+                    Some(best_samples.upper_bound()),
+                    diag,
+                ) {
+                    best_samples.report(c);
                 }
             }
         }
 
-        // Coordinate-descent refinement of the best candidate on this sheet.
-        if let Some(b) = best.clone() {
-            if b.placement.sheet_index == sheet_idx {
-                let mut bx = b.placement.x;
-                let mut by = b.placement.y;
-                let brot = b.placement.rotation_deg;
-                let mut bscore = b.score;
-                let mut step = (sheet.width.min(sheet.height)) * 0.1;
-                for _ in 0..cfg.coord_descent_steps {
-                    let mut improved = false;
-                    for &(dx, dy) in &[(step, 0.0), (-step, 0.0), (0.0, step), (0.0, -step)] {
-                        diag.search_coord_descent_steps += 1;
-                        if let Some(c) = evaluator.score_candidate(bx + dx, by + dy, brot, diag) {
-                            if c.score < bscore - 1e-9 {
-                                bx = c.placement.x;
-                                by = c.placement.y;
-                                bscore = c.score;
-                                diag.search_refined_samples += 1;
-                                improved = true;
-                                consider(Some(c), &mut best);
-                            }
-                        }
-                    }
-                    if !improved {
-                        step *= 0.5;
-                    }
-                }
+        // Two-stage coordinate descent: pre-refine retained best samples, then
+        // final-refine the current best. This mirrors Sparrow Algorithm 6.
+        let starts = best_samples.samples.clone();
+        for s in starts {
+            if let Some(desc) = refine_coord_desc(s, &mut evaluator, cfg, rng, diag, false) {
+                best_samples.report(desc);
+            }
+        }
+        if let Some(s) = best_samples.best() {
+            if let Some(desc) = refine_coord_desc(s, &mut evaluator, cfg, rng, diag, true) {
+                best_samples.report(desc);
             }
         }
     }
 
+    let best = best_samples.best();
     if let Some(b) = &best {
         if b.collision_loss < diag.search_best_eval || diag.search_best_eval == 0.0 {
             diag.search_best_eval = b.collision_loss;
         }
     }
     best.map(|b| b.placement)
+}
+
+fn refine_coord_desc(
+    init: ScoredPlacement,
+    evaluator: &mut impl SampleEvaluator,
+    cfg: &SparrowConfig,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+    final_stage: bool,
+) -> Option<ScoredPlacement> {
+    let mut cur = init;
+    let mut step = if final_stage { 0.05 } else { 0.15 }
+        * evaluator_step_span(&cur).max(1.0);
+    let limit = step * 0.10;
+    let mut rounds = 0usize;
+    while step >= limit && rounds < cfg.coord_descent_steps.max(1) {
+        rounds += 1;
+        let axes = if cur.placement.rotation_deg.is_finite() {
+            [
+                (step, 0.0, 0.0),
+                (-step, 0.0, 0.0),
+                (0.0, step, 0.0),
+                (0.0, -step, 0.0),
+                (step, step, 0.0),
+                (-step, step, 0.0),
+            ]
+        } else {
+            [(step, 0.0, 0.0); 6]
+        };
+        let mut improved = false;
+        let start = (rng.next_u64() as usize) % axes.len();
+        for k in 0..axes.len() {
+            let (dx, dy, dr) = axes[(start + k) % axes.len()];
+            diag.search_coord_descent_steps += 1;
+            if let Some(c) = evaluator.evaluate_sample(
+                cur.placement.x + dx,
+                cur.placement.y + dy,
+                cur.placement.rotation_deg + dr,
+                Some(cur.eval()),
+                diag,
+            ) {
+                if c.eval() <= cur.eval() {
+                    cur = c;
+                    diag.search_refined_samples += 1;
+                    improved = true;
+                }
+            }
+        }
+        if !improved {
+            step *= 0.5;
+        }
+    }
+    Some(cur)
+}
+
+fn evaluator_step_span(c: &ScoredPlacement) -> f64 {
+    (c.placement.x.abs() + c.placement.y.abs()).sqrt().max(10.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -1504,11 +1806,12 @@ fn native_search_placement(
 /// A single competing worker's result: its own layout + tracker after a move
 /// batch, plus per-worker statistics. The best (lowest weighted loss) candidate
 /// is loaded back into the master; the rest are discarded.
-struct WorkerCandidate {
+struct SeparatorWorker {
     layout: SparrowLayout,
     tracker: SparrowCollisionTracker,
     weighted_loss: f64,
     raw_loss: f64,
+    pair_count: usize,
     attempted: usize,
     accepted: usize,
     rejected: usize,
@@ -1530,7 +1833,7 @@ fn run_worker_pass(
     started: &Instant,
     deadline: f64,
     diag: &mut SparrowDiagnostics,
-) -> WorkerCandidate {
+) -> SeparatorWorker {
     let mut layout = master.layout.snapshot();
     let mut tracker = master.tracker.clone();
     let mut rng = DeterministicRng::new(worker_seed);
@@ -1550,12 +1853,7 @@ fn run_worker_pass(
     let mut rejected = 0usize;
     let mut evaluated = 0usize;
 
-    let max_targets = if is_dense_reference_case(instances.len(), sheets.len()) {
-        1usize
-    } else {
-        usize::MAX
-    };
-    for target in colliding.into_iter().take(max_targets) {
+    for target in colliding {
         if started.elapsed().as_secs_f64() >= deadline {
             break;
         }
@@ -1565,6 +1863,8 @@ fn run_worker_pass(
         attempted += 1;
         let calls_before = diag.search_position_calls;
         let old_w = tracker.weighted_loss_for_item(target);
+        let old_total = tracker.total_raw_loss();
+        let old_pairs = tracker.colliding_pairs();
         let Some(newp) = native_search_placement(
             target, &layout, instances, &tracker, sheets, cfg, &mut rng, diag,
         ) else {
@@ -1577,7 +1877,12 @@ fn run_worker_pass(
         layout.placements[target] = newp;
         tracker.update_after_move(target, &layout, instances, sheets, diag);
         let new_w = tracker.weighted_loss_for_item(target);
-        if new_w <= old_w + 1e-9 {
+        let new_total = tracker.total_raw_loss();
+        let new_pairs = tracker.colliding_pairs();
+        if new_w <= old_w + 1e-9
+            || new_total < old_total - 1e-9
+            || new_pairs < old_pairs
+        {
             accepted += 1;
         } else {
             layout.placements[target] = old_p;
@@ -1588,11 +1893,13 @@ fn run_worker_pass(
 
     let weighted_loss = tracker.total_weighted_loss();
     let raw_loss = tracker.total_raw_loss();
-    WorkerCandidate {
+    let pair_count = tracker.colliding_pairs();
+    SeparatorWorker {
         layout,
         tracker,
         weighted_loss,
         raw_loss,
+        pair_count,
         attempted,
         accepted,
         rejected,
@@ -1601,15 +1908,19 @@ fn run_worker_pass(
     }
 }
 
-/// Compare worker candidates: lowest weighted loss wins, tie-broken by raw loss
-/// then worker index (deterministic).
-fn compare_worker_candidates<'a>(cands: &'a [WorkerCandidate]) -> &'a WorkerCandidate {
+/// Compare worker candidates: lowest collision-pair count wins, tie-broken by
+/// weighted/raw loss then worker index (deterministic).
+fn compare_worker_candidates<'a>(cands: &'a [SeparatorWorker]) -> &'a SeparatorWorker {
     cands
         .iter()
         .min_by(|a, b| {
-            a.weighted_loss
-                .partial_cmp(&b.weighted_loss)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            a.pair_count
+                .cmp(&b.pair_count)
+                .then_with(|| {
+                    a.weighted_loss
+                        .partial_cmp(&b.weighted_loss)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then(
                     a.raw_loss
                         .partial_cmp(&b.raw_loss)
@@ -1623,7 +1934,7 @@ fn compare_worker_candidates<'a>(cands: &'a [WorkerCandidate]) -> &'a WorkerCand
 /// Load the winning worker's state back into the master, discarding the rest
 /// (Sparrow Alg 10 load-back step). The master adopts the best worker's layout
 /// and CDE tracker (including its GLS-bumped weights and incremental records).
-fn load_best_worker(master: &mut SparrowState, best: WorkerCandidate) {
+fn load_best_worker(master: &mut SparrowState, best: SeparatorWorker) {
     master.layout = best.layout;
     master.tracker = best.tracker;
 }
@@ -1695,7 +2006,7 @@ impl SparrowOptimizer {
         diag.topk_target_count = diag.topk_target_count.max(colliding_seen);
 
         let worker_count = self.config.worker_count.max(1);
-        let mut cands: Vec<WorkerCandidate> = Vec::with_capacity(worker_count);
+        let mut cands: Vec<SeparatorWorker> = Vec::with_capacity(worker_count);
         for w in 0..worker_count {
             let worker_seed =
                 master_rng.next_u64() ^ ((w as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
@@ -1750,11 +2061,11 @@ impl SparrowOptimizer {
         diag: &mut SparrowDiagnostics,
     ) -> bool {
         diag.separator_invocations += 1;
-        let large_layout = instances.len() >= 100;
-        let strike_limit = if large_layout { 1usize } else { 4usize };
-        let no_improve_limit = if large_layout { 1usize } else { 6usize };
+        let strike_limit = 4usize;
+        let no_improve_limit = 6usize;
         let mut strikes = 0usize;
         let mut best_raw = state.tracker.total_raw_loss();
+        let mut best_pairs = state.tracker.colliding_pairs();
         let mut best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
 
         while strikes < strike_limit && started.elapsed().as_secs_f64() < deadline {
@@ -1768,13 +2079,17 @@ impl SparrowOptimizer {
                 self.move_items_multi(state, instances, sheets, rng, started, deadline, diag);
                 state.refresh_incumbents();
                 let raw = state.tracker.total_raw_loss();
+                let pairs = state.tracker.colliding_pairs();
                 if raw <= 1e-9 {
                     state.best_feasible = Some(state.layout.snapshot());
                     return true;
-                } else if raw < best_raw - 1e-9 {
+                } else if raw < best_raw - 1e-9 || pairs < best_pairs {
+                    let old_best_raw = best_raw;
+                    let old_best_pairs = best_pairs;
                     best_raw = raw;
+                    best_pairs = pairs;
                     best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
-                    if raw < best_raw * 0.98 {
+                    if raw < old_best_raw * 0.98 || pairs < old_best_pairs {
                         no_improve = 0;
                     }
                 } else {
@@ -1952,13 +2267,9 @@ impl SparrowOptimizer {
         let seed_layout = build_native_constructive_seed(&problem);
         diag.seed_placements = seed_layout.placements.len();
         diag.seed_unplaced = problem.pre_unplaced.len();
-        let dense_reference_run = is_dense_reference_case(instances.len(), sheets.len());
+        let dense_reference_run = instances.len() >= 100 && sheets.len() == 1;
         diag.dense_real_run = dense_reference_run;
-        let mut state = if dense_reference_run {
-            SparrowState::new_with_bounded_diag(seed_layout, instances, sheets, &mut diag, 96)
-        } else {
-            SparrowState::new_with_diag(seed_layout, instances, sheets, &mut diag)
-        };
+        let mut state = SparrowState::new_with_diag(seed_layout, instances, sheets, &mut diag);
         diag.initial_raw_loss = state.tracker.total_raw_loss();
         diag.initial_weighted_loss = state.tracker.total_weighted_loss();
         diag.collision_graph_initial_pairs = state.tracker.colliding_pairs();
@@ -1967,11 +2278,7 @@ impl SparrowOptimizer {
 
         // Exploration: separate; on failure, pool the least-infeasible state,
         // biased-restore one, disrupt, and retry.
-        let max_attempts = if instances.len() >= 100 {
-            1usize
-        } else {
-            10usize
-        };
+        let max_attempts = 10usize;
         let mut feasible = false;
         let mut pool: Vec<(f64, SparrowLayout)> = Vec::new();
         for attempt in 0..max_attempts {
@@ -1999,31 +2306,29 @@ impl SparrowOptimizer {
                     % ((pool.len() + 1) / 2).max(1);
                 let restored = pool[sel].1.snapshot();
                 diag.exploration_pool_restores += 1;
-                state = if dense_reference_run {
-                    SparrowState::new_with_bounded_diag(restored, instances, sheets, &mut diag, 96)
-                } else {
-                    SparrowState::new_with_diag(restored, instances, sheets, &mut diag)
-                };
+                state = SparrowState::new_with_diag(restored, instances, sheets, &mut diag);
                 active_optimizer.disrupt(&mut state, instances, sheets, &mut rng, &mut diag);
             }
         }
 
-        // Pick the layout to validate/emit: feasible incumbent if any.
-        let final_layout = state
-            .best_feasible
-            .clone()
-            .unwrap_or_else(|| state.layout.snapshot());
-        let final_tracker = if dense_reference_run {
-            SparrowCollisionTracker::final_validation_tracker_bounded(
-                &final_layout,
-                instances,
-                sheets,
-                &mut diag,
-                192,
-            )
+        // Pick the layout to validate/emit: feasible incumbent if any, else the
+        // least-infeasible incumbent by pair count/raw loss. If the active state
+        // was just disrupted near the deadline, keep it when it has fewer pairs.
+        let final_layout = if let Some(feasible_layout) = state.best_feasible.clone() {
+            feasible_layout
+        } else if state.tracker.colliding_pairs() < state.best_infeasible_pair_count
+            || (state.tracker.colliding_pairs() == state.best_infeasible_pair_count
+                && state.tracker.total_raw_loss() <= state.best_infeasible_raw_loss)
+        {
+            state.layout.snapshot()
         } else {
-            SparrowCollisionTracker::final_validation_tracker(&final_layout, instances, sheets)
+            state
+                .best_infeasible
+                .clone()
+                .unwrap_or_else(|| state.layout.snapshot())
         };
+        let final_tracker =
+            SparrowCollisionTracker::final_validation_tracker(&final_layout, instances, sheets);
         let validated = final_tracker.is_feasible();
         diag.collision_graph_final_pairs = final_tracker.colliding_pairs();
         diag.boundary_violations_final = final_tracker.boundary_violations();
@@ -2451,12 +2756,12 @@ mod tests {
 
     #[test]
     fn native_optimizer_worker_competition_is_active() {
-        // A mildly overlapping instance must exercise the real worker competition
+        // An oversubscribed-but-individually-fitting case must exercise the real worker competition
         // and quantified tracker: worker_count>=2, candidates evaluated, incremental
         // updates, and search calls all > 0. (Full convergence/timing is covered by
         // the release runtime smoke; this debug unit test only proves activity.)
-        let parts = vec![make_part("P", 30.0, 20.0, 8)];
-        let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+        let parts = vec![make_part("P", 90.0, 90.0, 8)];
+        let stocks = vec![make_stock("S", 180.0, 180.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let config = cfg(CollisionBackendKind::Cde);
         let problem =

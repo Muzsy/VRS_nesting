@@ -1,0 +1,44 @@
+id: fill_canvas_sgh_q24r8_full_native_sparrow_core_parity_no_compression
+kind: canvas_task
+slug: sgh_q24r8_full_native_sparrow_core_parity_no_compression
+title: SGH-Q24R8 Full native Sparrow core parity, compression excluded
+canvas_path: canvases/egyedi_solver/sgh_q24r8_full_native_sparrow_core_parity_no_compression.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r8_full_native_sparrow_core_parity_no_compression/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r8_full_native_sparrow_core_parity_no_compression.md
+status: ready
+primary_goal: Complete the production sparrow_cde implementation by porting/adapting the real jagua_rs/Sparrow native core logic into the VRS native Sparrow model, excluding compression.
+acceptance:
+  - q24r7r1_report_read_and_dense_weakness_understood
+  - upstream_sparrow_core_modules_read_from_cache_sparrow
+  - production_sparrow_cde_uses_native_problem_optimizer_solution
+  - old_vrs_core_not_used_inside_production_sparrow
+  - native_lbf_builder_equivalent_implemented
+  - native_collision_tracker_uses_real_cde_hazard_quantification_not_polygon_surrogates
+  - native_sample_eval_best_samples_uniform_sampler_coord_descent_search_placement_implemented
+  - native_separation_evaluator_implemented
+  - native_separator_worker_alg5_semantics_implemented
+  - native_separator_alg9_and_move_items_multi_alg10_semantics_implemented
+  - native_exploration_pool_restore_disruption_alg12_adapted_to_fixed_sheets_without_strip_shrink
+  - dense_instance_count_shortcuts_and_bounded_validation_removed_from_production_solve
+  - full_final_cde_validation_runs_for_dense_first_sheet_probe
+  - medium_cde_and_lv8_12types_x1_pass
+  - lv8_reference_sheet1_191_real_run_improves_loss_and_pairs_over_initial
+  - compression_disabled_and_unused
+reject_if:
+  - task_only_tunes_dense_constants_without_porting_sparrow_core_modules
+  - production_sparrow_uses_WorkingLayout_or_VrsCollisionTracker_or_legacy_core
+  - is_dense_reference_case_or_max_targets_1_or_others_truncate_24_remains_in_production_solve
+  - bounded_dense_validation_is_used_as_final_validity
+  - polygon_overlap_surrogate_loss_or_polygon_boundary_surrogate_loss_remains_primary_tracker_loss
+  - row_grid_seed_remains_primary_initial_constructor
+  - sample_search_is_still_fixed_grid_without_best_samples_and_two_stage_coord_descent
+  - worker_only_moves_one_dense_target_per_pass
+  - final_loss_on_191_is_greater_than_or_equal_to_initial_loss
+  - final_pairs_on_191_is_greater_than_or_equal_to_initial_pairs
+  - compression_is_implemented_or_enabled_as_part_of_this_task
+commands:
+  - cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+  - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+  - python3 scripts/smoke_sgh_q24r8_full_native_sparrow_core_parity_no_compression.py
+  - ./scripts/check.sh
+  - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q24r8_full_native_sparrow_core_parity_no_compression.md
