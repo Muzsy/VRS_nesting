@@ -267,6 +267,25 @@ pub(crate) fn prepare_shape_native(
     Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
 }
 
+/// SGH-Q24R9: translate an already-prepared shape by (dx, dy) and rebuild it.
+/// Used by the native tracker's CDE-truth resolution-distance probe to shift a
+/// candidate along a separation direction and re-query the CDE — without needing
+/// the original `Part`/transform. Returns `None` on a degenerate rebuild.
+pub(crate) fn translate_prepared(
+    shape: &CdePreparedShape,
+    dx: f64,
+    dy: f64,
+) -> Option<CdePreparedShape> {
+    let world_pts: Vec<Point> = shape
+        .world_pts
+        .iter()
+        .map(|p| Point { x: p.x + dx, y: p.y + dy })
+        .collect();
+    let (min_x, min_y, max_x, max_y) = polygon_bbox(&world_pts)?;
+    let spoly = to_jag_polygon(&world_pts, "cde_translated_shape").ok()?;
+    Some(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
+}
+
 /// Build a `CdePreparedShape` from a sheet boundary polygon.
 pub(crate) fn prepare_shape_from_sheet(sheet: &SheetShape) -> Result<CdePreparedShape, &'static str> {
     let pts: Vec<Point> = if sheet.has_irregular_outer {

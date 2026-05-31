@@ -1,0 +1,39 @@
+id: fill_canvas_sgh_q24r9_exact_upstream_style_tracker_evaluator_search_semantics
+kind: canvas_task
+slug: sgh_q24r9_exact_upstream_style_tracker_evaluator_search_semantics
+title: SGH-Q24R9 Exact upstream-style tracker/evaluator/search semantics, compression excluded
+canvas_path: canvases/egyedi_solver/sgh_q24r9_exact_upstream_style_tracker_evaluator_search_semantics.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r9_exact_upstream_style_tracker_evaluator_search_semantics/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r9_exact_upstream_style_tracker_evaluator_search_semantics.md
+status: ready
+primary_goal: Replace the remaining proxy native Sparrow core with exact upstream-style tracker/evaluator/search semantics, compression excluded.
+acceptance:
+  - upstream_sparrow_tracker_evaluator_search_files_read_and_mapped
+  - production_sparrow_cde_keeps_native_problem_optimizer_solution_path
+  - bbox_overlap_and_outside_area_are_not_primary_pair_or_container_loss
+  - cde_hazard_or_resolution_based_pair_and_container_quantification_is_primary
+  - sparrow_collision_tracker_is_evaluator_authority_for_weights_and_losses
+  - separation_evaluator_uses_tracker_weights_and_upper_bound_pruning
+  - lbf_evaluator_uses_cde_quantified_least_infeasible_candidates_not_aabb_fallback
+  - coordinate_descent_supports_nonzero_rotation_wiggle_where_policy_allows
+  - worker_acceptance_uses_upstream_weighted_loss_semantics_not_loose_global_pair_tie
+  - medium_cde_and_lv8_12types_x1_regressions_pass
+  - lv8_reference_sheet1_191_real_run_improves_over_q24r8_metrics_or_documents_blocker
+  - compression_disabled_and_unused
+reject_if:
+  - task_only_tunes_dense_constants_without_replacing_proxy_core_semantics
+  - cache_sparrow_was_not_read_or_upstream_parity_map_missing
+  - production_sparrow_uses_WorkingLayout_or_VrsCollisionTracker_or_legacy_core
+  - quantify_collision_poly_poly_native_still_uses_bbox_overlap_proxy_as_loss
+  - quantify_collision_poly_container_native_still_uses_bbox_outside_area_proxy_as_loss
+  - separation_evaluator_invents_local_weights_from_base_loss_instead_of_tracker_weights
+  - worker_accepts_moves_by_new_total_or_new_pairs_improvement_while_item_weighted_loss_gets_worse
+  - coord_descent_has_no_nonzero_rotation_path
+  - dense_191_probe_is_guarded_short_circuited_or_fake_placed_metric
+  - compression_is_implemented_or_enabled_as_part_of_this_task
+commands:
+  - cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+  - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+  - python3 scripts/smoke_sgh_q24r9_exact_upstream_style_tracker_evaluator_search_semantics.py
+  - ./scripts/check.sh
+  - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q24r9_exact_upstream_style_tracker_evaluator_search_semantics.md

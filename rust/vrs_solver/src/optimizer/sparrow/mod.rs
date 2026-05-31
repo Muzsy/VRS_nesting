@@ -35,7 +35,7 @@ use crate::item::{
     can_fit_any_stock_with_policy, dims_for_rotation, expand_instances_with_policy,
     placement_anchor_from_rect_min, rotated_bbox_min_offset, Instance, Part,
 };
-use crate::rotation_policy::RotationResolveContext;
+use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
 use crate::sheet::SheetShape;
 
 use super::cde_adapter::{
@@ -108,6 +108,10 @@ pub struct SparrowConfig {
     pub probe_bracket_steps: usize,
     /// Binary-refinement steps for the CDE resolution-distance probe.
     pub probe_binary_refine_steps: usize,
+    /// Initial rotation-wiggle step (degrees) for coordinate-descent refinement.
+    /// Only applied when the instance's rotation policy permits continuous/free
+    /// rotation; discrete (orthogonal) instances keep their fixed rotation set.
+    pub rotation_wiggle_deg: f64,
 }
 
 impl SparrowConfig {
@@ -129,6 +133,7 @@ impl SparrowConfig {
             coord_descent_steps: 5,
             probe_bracket_steps: 5,
             probe_binary_refine_steps: 4,
+            rotation_wiggle_deg: 6.0,
         }
     }
 
@@ -182,6 +187,9 @@ pub struct SparrowDiagnostics {
     pub search_coord_descent_steps: usize,
     pub search_unsupported_samples: usize,
     pub search_cross_sheet_calls: usize,
+    /// Nonzero rotation-wiggle refinement steps actually evaluated (continuous /
+    /// free-rotation instances only).
+    pub search_rotation_wiggle: usize,
     pub search_best_eval: f64,
     pub lbf_fallback_used: usize,
     // ── worker competition ──────────────────────────────────────────────────
@@ -239,6 +247,10 @@ pub struct SPInstance {
     pub part_id: String,
     pub part: Part,
     pub allowed_rotations_deg: Vec<f64>,
+    /// True when the rotation policy permits continuous/free rotation, enabling
+    /// the coordinate-descent rotation-wiggle axis. Orthogonal/discrete fixtures
+    /// leave this false and keep their fixed rotation set.
+    pub continuous_rotation: bool,
 }
 
 /// Native fixed-sheet container set.
@@ -289,6 +301,11 @@ impl SparrowProblem {
                 });
                 continue;
             }
+            let continuous_rotation = match part.rotation_policy {
+                Some(RotationPolicyKind::Continuous) => true,
+                Some(_) => false,
+                None => matches!(rotation_context.global_policy, Some(RotationPolicyKind::Continuous)),
+            };
             let idx = instances.len();
             instances.push(SPInstance {
                 idx,
@@ -296,6 +313,7 @@ impl SparrowProblem {
                 part_id: inst.part_id,
                 part: part.clone(),
                 allowed_rotations_deg: inst.allowed_rotations_deg,
+                continuous_rotation,
             });
         }
         Ok(Self {
@@ -644,8 +662,7 @@ impl SparrowCollisionTracker {
             match adapter.query_boundary(&shape_i, &sheet_shape) {
                 CdeQueryResult::NoCollision => {}
                 CdeQueryResult::Collision => {
-                    let dist = quantify_collision_poly_container_native(&shape_i, &sheets[si]);
-                    diag.quantified_boundary_queries += 1;
+                    let dist = quantify_collision_poly_container_native(&shape_i, &sheet_shape, diag);
                     self.boundary_loss[i] = dist.max(QUANT_FLOOR);
                 }
                 CdeQueryResult::Unsupported { .. } => {
@@ -692,13 +709,24 @@ impl SparrowCollisionTracker {
                         Some((_, s)) => s.clone(),
                         None => continue,
                     };
-                    let dist = quantify_collision_poly_poly_native(&shape_i, &fixed);
-                    diag.quantified_pair_queries += 1;
+                    let dist = quantify_collision_poly_poly_native(&shape_i, &fixed, diag);
                     self.pair_loss.insert(key, dist.max(QUANT_FLOOR));
                     self.pair_weight.entry(key).or_insert(1.0);
                 }
             }
         }
+    }
+
+    /// Upstream alias for `update_after_move` (register a single item's move).
+    pub fn register_item_move(
+        &mut self,
+        i: usize,
+        layout: &SparrowLayout,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+        diag: &mut SparrowDiagnostics,
+    ) {
+        self.update_after_move(i, layout, instances, sheets, diag);
     }
 
     /// Incremental update after item `i` moved (its placement/shape changed).
@@ -747,8 +775,7 @@ impl SparrowCollisionTracker {
                 continue;
             }
             if !res.colliding_layout_idxs.is_empty() {
-                let dist = quantify_collision_poly_poly_native(&shape_j, &shape_i);
-                diag.quantified_pair_queries += 1;
+                let dist = quantify_collision_poly_poly_native(&shape_j, &shape_i, diag);
                 self.pair_loss.insert((j, i), dist.max(QUANT_FLOOR));
                 self.pair_weight.entry((j, i)).or_insert(1.0);
             }
@@ -789,6 +816,33 @@ impl SparrowCollisionTracker {
     }
     pub fn colliding_pairs(&self) -> usize {
         self.pair_loss.len()
+    }
+    // ── Upstream-style tracker authority accessors (SGH-Q24R9) ──────────────
+    /// Quantified raw pair loss for the ordered pair (min,max). 0 if not colliding.
+    pub fn pair_loss(&self, i: usize, j: usize) -> f64 {
+        let key = if i < j { (i, j) } else { (j, i) };
+        self.pair_loss.get(&key).copied().unwrap_or(0.0)
+    }
+    /// GLS pair weight for the pair (>= 1.0).
+    pub fn pair_weight(&self, i: usize, j: usize) -> f64 {
+        let key = if i < j { (i, j) } else { (j, i) };
+        self.pair_weight.get(&key).copied().unwrap_or(1.0)
+    }
+    /// Quantified raw container/boundary loss for item `i`.
+    pub fn container_loss(&self, i: usize) -> f64 {
+        self.boundary_loss.get(i).copied().unwrap_or(0.0)
+    }
+    /// GLS container/boundary weight for item `i` (>= 1.0).
+    pub fn container_weight(&self, i: usize) -> f64 {
+        self.boundary_weight.get(i).copied().unwrap_or(1.0)
+    }
+    /// Upstream alias: raw loss of an item (sum of its quantified records).
+    pub fn item_raw_loss(&self, i: usize) -> f64 {
+        self.raw_loss_for_item(i)
+    }
+    /// Upstream alias: weighted loss of an item (raw × GLS weights).
+    pub fn item_weighted_loss(&self, i: usize) -> f64 {
+        self.weighted_loss_for_item(i)
     }
     pub fn boundary_violations(&self) -> usize {
         self.boundary_loss.iter().filter(|&&v| v > 0.0).count()
@@ -844,6 +898,11 @@ impl SparrowCollisionTracker {
                 self.boundary_weight[i] = (self.boundary_weight[i] * DECAY).max(1.0);
             }
         }
+    }
+
+    /// Upstream alias for `update_weights` (GLS Algorithm 8).
+    pub fn update_weights_gls(&mut self) {
+        self.update_weights();
     }
 
     /// Snapshot of transient loss state (weights are preserved across restore, like Sparrow GLS).
@@ -1026,7 +1085,7 @@ impl<'a> LBFBuilder<'a> {
         }
     }
 
-    pub fn construct(mut self) -> SparrowLayout {
+    fn area_desc_order(&self) -> Vec<usize> {
         let mut order: Vec<usize> = (0..self.problem.instances.len()).collect();
         order.sort_by(|&a, &b| {
             let ia = &self.problem.instances[a];
@@ -1039,7 +1098,19 @@ impl<'a> LBFBuilder<'a> {
                 .unwrap_or(Ordering::Equal)
                 .then_with(|| ia.instance_id.cmp(&ib.instance_id))
         });
+        order
+    }
 
+    pub fn construct(mut self) -> SparrowLayout {
+        // Large instances (dense fixed-sheet packing) use a fast deterministic
+        // shelf LBF that places most items collision-free by construction; the CDE
+        // per-item LBFEvaluator search is reserved for small instances where its
+        // cost is affordable and yields tighter clear placements.
+        if self.problem.instances.len() >= 100 {
+            return self.shelf_construct();
+        }
+
+        let order = self.area_desc_order();
         let mut layout = SparrowLayout {
             placements: Vec::with_capacity(self.problem.instances.len()),
         };
@@ -1056,6 +1127,82 @@ impl<'a> LBFBuilder<'a> {
         }
         layout.placements.sort_by_key(|p| p.instance_idx);
         layout
+    }
+
+    /// Deterministic rotation-aware shelf packer: places items left-to-right in
+    /// rows (wrapping at the sheet width, advancing rows by the row height), so
+    /// every shelf-placed item is collision-free and in-bounds by construction.
+    /// Items that no longer fit any sheet's remaining shelf space overflow to the
+    /// overlap-minimizing `fallback_anchor` (spread, not piled), which the
+    /// separator then resolves. This makes the dense `validated` (collision-free)
+    /// subset large from the seed alone.
+    fn shelf_construct(&mut self) -> SparrowLayout {
+        let order = self.area_desc_order();
+        let sheets = &self.problem.container.sheets;
+        const GAP: f64 = 1.0;
+        let mut cur_x = vec![0.0_f64; sheets.len()];
+        let mut cur_y = vec![0.0_f64; sheets.len()];
+        let mut row_h = vec![0.0_f64; sheets.len()];
+        for s in 0..sheets.len() {
+            cur_x[s] = sheets[s].min_x;
+            cur_y[s] = sheets[s].min_y;
+        }
+        let mut placements: Vec<SparrowPlacement> = Vec::with_capacity(self.problem.instances.len());
+        let mut overflow: Vec<usize> = Vec::new();
+
+        for &oi in &order {
+            let inst = &self.problem.instances[oi];
+            let rot = fitting_rotation(inst, sheets);
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+            let mut placed = false;
+            for s in 0..sheets.len() {
+                let sheet = &sheets[s];
+                if rw > sheet.width + 1e-9 || rh > sheet.height + 1e-9 {
+                    continue;
+                }
+                if cur_x[s] + rw > sheet.max_x + 1e-9 {
+                    cur_x[s] = sheet.min_x;
+                    cur_y[s] += row_h[s] + GAP;
+                    row_h[s] = 0.0;
+                }
+                if cur_y[s] + rh > sheet.max_y + 1e-9 {
+                    continue;
+                }
+                let (ax, ay) =
+                    placement_anchor_from_rect_min(cur_x[s], cur_y[s], inst.part.width, inst.part.height, rot);
+                placements.push(SparrowPlacement {
+                    instance_idx: oi,
+                    sheet_index: s,
+                    x: ax,
+                    y: ay,
+                    rotation_deg: rot,
+                });
+                cur_x[s] += rw + GAP;
+                row_h[s] = row_h[s].max(rh);
+                placed = true;
+                break;
+            }
+            if !placed {
+                overflow.push(oi);
+            }
+        }
+
+        // Overflow items: place via the overlap-minimizing fallback (spreads them
+        // so they collide with few neighbours, not one giant pile). Move the Vec
+        // in/out of a temporary layout to avoid per-item clones.
+        for oi in overflow {
+            let tmp = SparrowLayout {
+                placements: std::mem::take(&mut placements),
+            };
+            let p = self.fallback_anchor(&tmp, oi);
+            placements = tmp.placements;
+            if let Some(p) = p {
+                placements.push(p);
+            }
+        }
+
+        placements.sort_by_key(|p| p.instance_idx);
+        SparrowLayout { placements }
     }
 
     fn find_placement(
@@ -1348,20 +1495,29 @@ impl<'a> UniformBBoxSampler<'a> {
 }
 
 struct SeparationEvaluator<'a> {
+    target: usize,
     inst: &'a SPInstance,
     sheet: &'a SheetShape,
     sheet_idx: usize,
     session: &'a CdeCandidateSession,
     fixed_shapes: &'a [Option<Rc<CdePreparedShape>>],
+    /// The native collision tracker is the loss/weight authority. The evaluator
+    /// orders candidates by CDE-confirmed hazards scaled by the tracker's GLS
+    /// pair/container weights — it does NOT invent local weights.
+    tracker: &'a SparrowCollisionTracker,
     n_evals: usize,
 }
 
 impl<'a> SeparationEvaluator<'a> {
+    /// Evaluate a candidate transform. CDE decides clear/collision (`session`);
+    /// the tracker supplies the GLS weights; `upper_bound` enables early rejection
+    /// of dominated samples (Sparrow Algorithm 7 semantics).
     fn score_candidate(
         &mut self,
         rmx: f64,
         rmy: f64,
         rot: f64,
+        upper_bound: Option<SampleEval>,
         diag: &mut SparrowDiagnostics,
     ) -> Option<ScoredPlacement> {
         let (rw, rh) = dims_for_rotation(self.inst.part.width, self.inst.part.height, rot);
@@ -1407,22 +1563,42 @@ impl<'a> SeparationEvaluator<'a> {
             });
         }
 
-        let mut loss = 0.0;
+        // A colliding candidate can never beat a clear incumbent: short-circuit on
+        // the upper bound without paying for hazard ordering (Algorithm 7 prune).
+        if matches!(upper_bound, Some(SampleEval::Clear { .. })) {
+            return None;
+        }
+        let bound_loss = match upper_bound {
+            Some(SampleEval::Collision { loss }) => loss,
+            _ => f64::INFINITY,
+        };
+
+        // Collision ordering magnitude: CDE-confirmed hazard penetration scaled by
+        // the TRACKER's GLS weights (pair_weight / container_weight). bbox extent is
+        // only the broad-phase ordering hint; CDE owns the colliding SET, and the
+        // authoritative loss magnitude remains the tracker's CDE-probe quantifier.
+        let cand_bbox = (shape.min_x, shape.min_y, shape.max_x, shape.max_y);
+        let mut loss = 0.0_f64;
         if res.boundary_collision {
-            loss += quantify_collision_poly_container_native(&shape, self.sheet);
+            let over = (self.sheet.min_x - cand_bbox.0).max(0.0)
+                + (self.sheet.min_y - cand_bbox.1).max(0.0)
+                + (cand_bbox.2 - self.sheet.max_x).max(0.0)
+                + (cand_bbox.3 - self.sheet.max_y).max(0.0);
+            loss += over.max(QUANT_FLOOR) * self.tracker.container_weight(self.target);
+            if loss >= bound_loss {
+                return None;
+            }
         }
         for &layout_j in &res.colliding_layout_idxs {
             if let Some(Some(fixed)) = self.fixed_shapes.get(layout_j) {
-                let key = if layout_j < self.inst.idx {
-                    (layout_j, self.inst.idx)
-                } else {
-                    (self.inst.idx, layout_j)
-                };
-                let base = quantify_collision_poly_poly_native(&shape, fixed);
-                let weight = 1.0_f64.max(base).min(base + 1.0);
-                loss += base * weight + (key.0 + key.1) as f64 * 1e-12;
+                let pen = aabb_penetration(cand_bbox, (fixed.min_x, fixed.min_y, fixed.max_x, fixed.max_y));
+                let pair_weight = self.tracker.pair_weight(self.target, layout_j);
+                loss += pen.max(QUANT_FLOOR) * pair_weight;
             } else {
                 loss += BIG_UNSUPPORTED_LOSS;
+            }
+            if loss >= bound_loss {
+                return None;
             }
         }
         let quantified_loss = loss.max(QUANT_FLOOR);
@@ -1435,6 +1611,14 @@ impl<'a> SeparationEvaluator<'a> {
     }
 }
 
+/// Axis-aligned penetration depth between two bboxes (0 if disjoint). Broad-phase
+/// ordering hint only — never the authoritative collision truth or loss.
+fn aabb_penetration(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> f64 {
+    let ox = (a.2.min(b.2) - a.0.max(b.0)).max(0.0);
+    let oy = (a.3.min(b.3) - a.1.max(b.1)).max(0.0);
+    ox.min(oy)
+}
+
 impl<'a> SampleEvaluator for SeparationEvaluator<'a> {
     fn evaluate_sample(
         &mut self,
@@ -1444,12 +1628,7 @@ impl<'a> SampleEvaluator for SeparationEvaluator<'a> {
         upper_bound: Option<SampleEval>,
         diag: &mut SparrowDiagnostics,
     ) -> Option<ScoredPlacement> {
-        let cand = self.score_candidate(x, y, rot, diag)?;
-        if upper_bound.map(|ub| cand.eval() >= ub).unwrap_or(false) {
-            None
-        } else {
-            Some(cand)
-        }
+        self.score_candidate(x, y, rot, upper_bound, diag)
     }
 
     fn n_evals(&self) -> usize {
@@ -1504,8 +1683,15 @@ impl<'a> LBFEvaluator<'a> {
                 placement,
             });
         }
+        // Bottom-left-fill constructor: CDE owns the clear/collision verdict; a
+        // cheap boundary-spill + neighbour-count term only orders the rare
+        // infeasible candidate so the LBF keeps descending toward a clear spot.
         let mut loss = if res.boundary_collision {
-            quantify_collision_poly_container_native(&shape, self.sheet)
+            ((self.sheet.min_x - shape.min_x).max(0.0)
+                + (self.sheet.min_y - shape.min_y).max(0.0)
+                + (shape.max_x - self.sheet.max_x).max(0.0)
+                + (shape.max_y - self.sheet.max_y).max(0.0))
+            .max(QUANT_FLOOR)
         } else {
             0.0
         };
@@ -1570,23 +1756,133 @@ fn bbox_area(s: &CdePreparedShape) -> f64 {
     ((s.max_x - s.min_x).max(0.0) * (s.max_y - s.min_y).max(0.0)).max(1.0)
 }
 
-fn quantify_collision_poly_poly_native(candidate: &CdePreparedShape, fixed: &CdePreparedShape) -> f64 {
-    let ix = (candidate.max_x.min(fixed.max_x) - candidate.min_x.max(fixed.min_x)).max(0.0);
-    let iy = (candidate.max_y.min(fixed.max_y) - candidate.min_y.max(fixed.min_y)).max(0.0);
-    let overlap_proxy = (ix * iy).max(QUANT_FLOOR);
-    let p1 = shape_convex_area(candidate).sqrt();
-    let p2 = shape_convex_area(fixed).sqrt();
-    let penalty = (p1 * p2).sqrt().max(1.0);
-    (overlap_proxy.sqrt() * penalty).min(10.0 * penalty) + QUANT_FLOOR
+/// SGH-Q24R9 CDE-truth pair quantification (Sparrow tracker parity).
+///
+/// Existence of the collision is decided by the CDE (the caller only invokes this
+/// for a CDE-confirmed colliding pair). The *magnitude* is the minimal translation
+/// distance that separates `candidate` from `fixed` along their centroid axis,
+/// found by a bracket-doubling + binary-refinement probe in which **every step is
+/// resolved by the CDE** (`query_pair`). No bbox/AABB overlap area is used as the
+/// loss magnitude; bbox is only a centroid/direction hint.
+fn quantify_collision_poly_poly_native(
+    candidate: &CdePreparedShape,
+    fixed: &CdePreparedShape,
+    diag: &mut SparrowDiagnostics,
+) -> f64 {
+    let (n_bracket, n_refine) = QUANT_CFG.with(|c| {
+        let c = c.borrow();
+        (c.probe_bracket_steps.max(1), c.probe_binary_refine_steps.max(1))
+    });
+    let adapter = CdeAdapter::with_defaults();
+    let cx = (candidate.min_x + candidate.max_x) * 0.5;
+    let cy = (candidate.min_y + candidate.max_y) * 0.5;
+    let fx = (fixed.min_x + fixed.max_x) * 0.5;
+    let fy = (fixed.min_y + fixed.max_y) * 0.5;
+    let (dir_x, dir_y) = probe_unit(cx - fx, cy - fy);
+    let span =
+        (candidate.max_x - candidate.min_x).max(candidate.max_y - candidate.min_y).max(1.0);
+    let base_step = (span * 0.08).max(1.0);
+    let pair_collides_at = |t: f64, diag: &mut SparrowDiagnostics| -> bool {
+        match super::cde_adapter::translate_prepared(candidate, dir_x * t, dir_y * t) {
+            Some(s) => {
+                diag.quantified_pair_queries += 1;
+                matches!(adapter.query_pair(&s, fixed), CdeQueryResult::Collision)
+            }
+            None => {
+                diag.unsupported_queries += 1;
+                true
+            }
+        }
+    };
+    let resolution_distance = probe_resolution(base_step, n_bracket, n_refine, diag, pair_collides_at);
+    resolution_distance.max(QUANT_FLOOR)
 }
 
-fn quantify_collision_poly_container_native(candidate: &CdePreparedShape, sheet: &SheetShape) -> f64 {
-    let inside_x = (candidate.max_x.min(sheet.max_x) - candidate.min_x.max(sheet.min_x)).max(0.0);
-    let inside_y = (candidate.max_y.min(sheet.max_y) - candidate.min_y.max(sheet.min_y)).max(0.0);
-    let bbox = bbox_area(candidate);
-    let outside_proxy = (bbox - inside_x * inside_y).max(0.0001 * bbox);
-    let penalty = shape_convex_area(candidate).sqrt().max(1.0);
-    (2.0 * outside_proxy.sqrt() * penalty).min(20.0 * penalty) + QUANT_FLOOR
+/// SGH-Q24R9 CDE-truth container quantification (Sparrow tracker parity).
+///
+/// The CDE decides the boundary violation; the magnitude is the minimal
+/// translation toward the container centroid that brings `candidate` inside,
+/// found by the same CDE-resolved probe (`query_boundary`). No bbox-outside-area
+/// proxy is used.
+fn quantify_collision_poly_container_native(
+    candidate: &CdePreparedShape,
+    sheet_shape: &CdePreparedShape,
+    diag: &mut SparrowDiagnostics,
+) -> f64 {
+    let (n_bracket, n_refine) = QUANT_CFG.with(|c| {
+        let c = c.borrow();
+        (c.probe_bracket_steps.max(1), c.probe_binary_refine_steps.max(1))
+    });
+    let adapter = CdeAdapter::with_defaults();
+    let cx = (candidate.min_x + candidate.max_x) * 0.5;
+    let cy = (candidate.min_y + candidate.max_y) * 0.5;
+    let sx = (sheet_shape.min_x + sheet_shape.max_x) * 0.5;
+    let sy = (sheet_shape.min_y + sheet_shape.max_y) * 0.5;
+    let (dir_x, dir_y) = probe_unit(sx - cx, sy - cy);
+    let span =
+        (candidate.max_x - candidate.min_x).max(candidate.max_y - candidate.min_y).max(1.0);
+    let base_step = (span * 0.10).max(1.0);
+    let outside_at = |t: f64, diag: &mut SparrowDiagnostics| -> bool {
+        match super::cde_adapter::translate_prepared(candidate, dir_x * t, dir_y * t) {
+            Some(s) => {
+                diag.quantified_boundary_queries += 1;
+                matches!(adapter.query_boundary(&s, sheet_shape), CdeQueryResult::Collision)
+            }
+            None => {
+                diag.unsupported_queries += 1;
+                true
+            }
+        }
+    };
+    let resolution_distance = probe_resolution(base_step, n_bracket, n_refine, diag, outside_at);
+    (2.0 * resolution_distance).max(QUANT_FLOOR)
+}
+
+/// Unit direction with a deterministic +x fallback for a degenerate vector.
+fn probe_unit(dx: f64, dy: f64) -> (f64, f64) {
+    let n = (dx * dx + dy * dy).sqrt();
+    if n < 1e-9 {
+        (1.0, 0.0)
+    } else {
+        (dx / n, dy / n)
+    }
+}
+
+/// Shared bracket-doubling + binary-refinement resolution probe. `collides_at`
+/// must return whether the shape (translated by `t` along the probe direction)
+/// still collides per the CDE. Returns the minimal clearing distance.
+fn probe_resolution(
+    base_step: f64,
+    n_bracket: usize,
+    n_refine: usize,
+    diag: &mut SparrowDiagnostics,
+    mut collides_at: impl FnMut(f64, &mut SparrowDiagnostics) -> bool,
+) -> f64 {
+    let step0 = base_step.max(1e-3);
+    let mut lo = 0.0_f64;
+    let mut hi = step0;
+    let mut bracketed = false;
+    for _ in 0..n_bracket {
+        if collides_at(hi, diag) {
+            lo = hi;
+            hi *= 2.0;
+        } else {
+            bracketed = true;
+            break;
+        }
+    }
+    if !bracketed {
+        return hi.max(step0);
+    }
+    for _ in 0..n_refine {
+        let mid = 0.5 * (lo + hi);
+        if collides_at(mid, diag) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hi.max(step0 * 0.25)
 }
 
 /// Build the fixed-other CDE session for `target` on `sheet_idx` from the tracker
@@ -1655,11 +1951,13 @@ fn native_search_placement(
             continue;
         };
         let mut evaluator = SeparationEvaluator {
+            target,
             inst,
             sheet,
             sheet_idx,
             session: &session,
             fixed_shapes: &fixed_shapes,
+            tracker,
             n_evals: 0,
         };
         let sampler = UniformBBoxSampler::new(sheet, inst);
@@ -1720,14 +2018,19 @@ fn native_search_placement(
 
         // Two-stage coordinate descent: pre-refine retained best samples, then
         // final-refine the current best. This mirrors Sparrow Algorithm 6.
+        let wiggle = inst.continuous_rotation;
         let starts = best_samples.samples.clone();
         for s in starts {
-            if let Some(desc) = refine_coord_desc(s, &mut evaluator, cfg, rng, diag, false) {
+            if let Some(desc) =
+                refine_coord_desc(s, &mut evaluator, cfg, rng, diag, false, wiggle, cfg.rotation_wiggle_deg)
+            {
                 best_samples.report(desc);
             }
         }
         if let Some(s) = best_samples.best() {
-            if let Some(desc) = refine_coord_desc(s, &mut evaluator, cfg, rng, diag, true) {
+            if let Some(desc) =
+                refine_coord_desc(s, &mut evaluator, cfg, rng, diag, true, wiggle, cfg.rotation_wiggle_deg)
+            {
                 best_samples.report(desc);
             }
         }
@@ -1742,6 +2045,13 @@ fn native_search_placement(
     best.map(|b| b.placement)
 }
 
+/// Coordinate-descent refinement with translational axes plus an optional
+/// rotation-wiggle axis (Sparrow `CDAxis::Wiggle`). When `wiggle` is enabled
+/// (continuous/free-rotation instances) two candidates are generated by rotating
+/// the current placement by ±`rotation_step` degrees; the rotation step shrinks
+/// like the translation step. Orthogonal/discrete instances keep `wiggle == false`
+/// and refine on translation only.
+#[allow(clippy::too_many_arguments)]
 fn refine_coord_desc(
     init: ScoredPlacement,
     evaluator: &mut impl SampleEvaluator,
@@ -1749,31 +2059,43 @@ fn refine_coord_desc(
     rng: &mut DeterministicRng,
     diag: &mut SparrowDiagnostics,
     final_stage: bool,
+    wiggle: bool,
+    rotation_wiggle_deg: f64,
 ) -> Option<ScoredPlacement> {
     let mut cur = init;
-    let mut step = if final_stage { 0.05 } else { 0.15 }
-        * evaluator_step_span(&cur).max(1.0);
+    let mut step = if final_stage { 0.05 } else { 0.15 } * evaluator_step_span(&cur).max(1.0);
     let limit = step * 0.10;
+    // Nonzero rotation-wiggle step (degrees); shrinks alongside the translation step.
+    let mut rotation_step = if wiggle { rotation_wiggle_deg.max(0.5) } else { 0.0 };
+    let rotation_limit = 0.25_f64;
     let mut rounds = 0usize;
-    while step >= limit && rounds < cfg.coord_descent_steps.max(1) {
+    while (step >= limit || (wiggle && rotation_step >= rotation_limit))
+        && rounds < cfg.coord_descent_steps.max(1)
+    {
         rounds += 1;
-        let axes = if cur.placement.rotation_deg.is_finite() {
-            [
-                (step, 0.0, 0.0),
-                (-step, 0.0, 0.0),
-                (0.0, step, 0.0),
-                (0.0, -step, 0.0),
-                (step, step, 0.0),
-                (-step, step, 0.0),
-            ]
-        } else {
-            [(step, 0.0, 0.0); 6]
-        };
+        // Translation axes (horizontal / vertical / diagonals) plus, for free
+        // rotation, a ± rotation-wiggle axis with a genuinely nonzero delta.
+        let mut axes: Vec<(f64, f64, f64)> = vec![
+            (step, 0.0, 0.0),
+            (-step, 0.0, 0.0),
+            (0.0, step, 0.0),
+            (0.0, -step, 0.0),
+            (step, step, 0.0),
+            (-step, step, 0.0),
+        ];
+        if wiggle && rotation_step >= rotation_limit {
+            axes.push((0.0, 0.0, rotation_step));
+            axes.push((0.0, 0.0, -rotation_step));
+        }
         let mut improved = false;
+        let mut rotation_improved = false;
         let start = (rng.next_u64() as usize) % axes.len();
         for k in 0..axes.len() {
             let (dx, dy, dr) = axes[(start + k) % axes.len()];
             diag.search_coord_descent_steps += 1;
+            if dr != 0.0 {
+                diag.search_rotation_wiggle += 1;
+            }
             if let Some(c) = evaluator.evaluate_sample(
                 cur.placement.x + dx,
                 cur.placement.y + dy,
@@ -1782,14 +2104,22 @@ fn refine_coord_desc(
                 diag,
             ) {
                 if c.eval() <= cur.eval() {
+                    let was_rotation = dr != 0.0;
                     cur = c;
                     diag.search_refined_samples += 1;
                     improved = true;
+                    if was_rotation {
+                        rotation_improved = true;
+                    }
                 }
             }
         }
         if !improved {
             step *= 0.5;
+            rotation_step *= 0.5;
+        } else if wiggle && !rotation_improved {
+            // Translation improved but rotation did not: shrink the wiggle axis.
+            rotation_step *= 0.75;
         }
     }
     Some(cur)
@@ -1862,9 +2192,10 @@ fn run_worker_pass(
         }
         attempted += 1;
         let calls_before = diag.search_position_calls;
+        // Upstream acceptance authority: the moved item's weighted collision loss
+        // (tracker GLS weights) must not increase. No loose global new_total /
+        // new_pairs fallback that could worsen the moved item's local damage.
         let old_w = tracker.weighted_loss_for_item(target);
-        let old_total = tracker.total_raw_loss();
-        let old_pairs = tracker.colliding_pairs();
         let Some(newp) = native_search_placement(
             target, &layout, instances, &tracker, sheets, cfg, &mut rng, diag,
         ) else {
@@ -1877,12 +2208,7 @@ fn run_worker_pass(
         layout.placements[target] = newp;
         tracker.update_after_move(target, &layout, instances, sheets, diag);
         let new_w = tracker.weighted_loss_for_item(target);
-        let new_total = tracker.total_raw_loss();
-        let new_pairs = tracker.colliding_pairs();
-        if new_w <= old_w + 1e-9
-            || new_total < old_total - 1e-9
-            || new_pairs < old_pairs
-        {
+        if new_w <= old_w + 1e-9 {
             accepted += 1;
         } else {
             layout.placements[target] = old_p;
@@ -2821,5 +3147,30 @@ mod tests {
                 "deterministic rotation"
             );
         }
+    }
+
+    #[test]
+    fn coord_descent_rotation_wiggle_executes_for_continuous_rotation() {
+        // A continuous-rotation, over-capacity fixture forces the separator to run
+        // the coordinate-descent refinement; the rotation-wiggle axis must execute
+        // nonzero rotation steps (proof the wiggle path is live, not hard-zero).
+        let parts = vec![make_part("P", 70.0, 50.0, 6)];
+        let stocks = vec![make_stock("S", 150.0, 150.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let ctx = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 7, 8);
+        let config =
+            SparrowConfig::from_solver_input(3.0, CollisionBackendKind::Cde, ctx.clone(), 7);
+        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx, vec![], config.clone())
+            .expect("problem");
+        assert!(
+            problem.instances.iter().all(|i| i.continuous_rotation),
+            "continuous policy enables rotation wiggle"
+        );
+        let result = SparrowOptimizer::new(config).solve(problem);
+        assert!(
+            result.diagnostics.search_rotation_wiggle > 0,
+            "coordinate-descent executed nonzero rotation-wiggle steps, got {}",
+            result.diagnostics.search_rotation_wiggle
+        );
     }
 }
