@@ -1,0 +1,36 @@
+id: fill_canvas_sgh_q24r5_architectural_native_sparrow_cutover
+kind: canvas_task
+slug: sgh_q24r5_architectural_native_sparrow_cutover
+title: SGH-Q24R5 Architectural native Sparrow cutover
+canvas_path: canvases/egyedi_solver/sgh_q24r5_architectural_native_sparrow_cutover.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r5_architectural_native_sparrow_cutover/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r5_architectural_native_sparrow_cutover.md
+status: ready
+primary_goal: Architecturally cut production sparrow_cde over to a native Sparrow Problem/SPInstance/Layout/Solution/CollisionTracker/Optimizer core; compression remains excluded.
+acceptance:
+  - q24r4_revise_report_read_and_addressed
+  - cache_sparrow_reference_files_read
+  - production_sparrow_core_replaced_by_native_module_or_real_equivalent
+  - sparrow_problem_defined_and_used_by_run_sparrow_pipeline
+  - spinstance_defined_with_stable_native_index_and_external_identity
+  - sparrow_layout_uses_native_placements_not_io_placement
+  - sparrow_solution_projects_to_vrs_output_only_at_boundary
+  - sparrow_collision_tracker_replaces_vrs_collision_tracker_in_production_path
+  - native_tracker_owns_pair_boundary_gls_loss_state
+  - native_lifecycle_separate_worker_search_explore_operates_on_native_state
+  - run_sparrow_pipeline_no_working_layout_new_no_sparrow_separation_kernel
+  - cde_forced_and_decisive_in_production_sparrow_cde
+  - compression_disabled_or_zero_passes_in_default_gate
+  - q24r3_medium_cde_gate_passes_after_native_cutover
+  - static_anti_hybrid_q24r5_smoke_passes
+  - cargo_build_tests_check_evidence_written
+reject_if:
+  - working_layout_used_inside_production_sparrow_cde_core
+  - vrs_collision_tracker_used_inside_production_sparrow_cde_core
+  - native_types_wrap_or_alias_old_vrs_core
+  - io_placement_is_internal_layout_type
+  - old_sparrow_separation_kernel_remains_production_solver_engine
+  - q24r5_returns_map_only_revise
+  - main_diff_is_docs_reports_scripts_bbox_or_compression
+  - legacy_or_lbf_fallback_reachable_from_sparrow_cde
+  - medium_cde_gate_weakened_or_compression_required

@@ -293,6 +293,23 @@ pub struct OptimizerDiagnosticsOutput {
     /// Must be `false` for production `sparrow_cde`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loss_bbox_proxy_used_as_primary: Option<bool>,
+    // ── SGH-Q24R5 native-model cutover proof flags ──────────────────────────
+    /// True when production `sparrow_cde` ran on the native Sparrow model
+    /// (SparrowProblem/Layout/Solution/Optimizer), not the old VRS core.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_native_model_active: Option<bool>,
+    /// True when the native `SparrowCollisionTracker` was the production tracker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_native_tracker_active: Option<bool>,
+    /// Must be false: the old VRS core (WorkingLayout/VrsCollisionTracker) was not used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_old_core_used: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_native_problem_instances: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_native_tracker_full_rebuilds: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_native_tracker_incremental_updates: Option<usize>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

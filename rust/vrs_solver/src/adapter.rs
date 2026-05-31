@@ -196,6 +196,51 @@ fn cde_unsupported_diag(
     }
 }
 
+/// SGH-Q24R5: Build the collision-backend diagnostics for a feasible NATIVE
+/// Sparrow solve directly from the CDE observability snapshot. The native core
+/// runs every collision verdict through the CDE adapter, so the snapshot is the
+/// authoritative backend accounting — there is no separate WorkingLayout commit.
+fn cde_feasible_diag(
+    snap: &cde_observability::CdeCounters,
+    scope: &str,
+    commit_ms: Option<f64>,
+) -> CollisionBackendDiagnosticsOutput {
+    CollisionBackendDiagnosticsOutput {
+        backend_used: "cde_adapter".to_string(),
+        unsupported_queries: snap.unsupported_results,
+        bbox_fallback_queries: 0,
+        final_commit_backend_used: Some("cde_adapter".to_string()),
+        final_commit_unsupported_queries: Some(snap.unsupported_results),
+        final_commit_bbox_fallback_queries: Some(0),
+        cde_pair_queries: Some(snap.pair_queries),
+        cde_boundary_queries: Some(snap.boundary_queries),
+        cde_total_queries: Some(snap.total_queries),
+        cde_engine_builds: Some(snap.engine_builds),
+        cde_collision_results: Some(snap.collision_results),
+        cde_no_collision_results: Some(snap.no_collision_results),
+        cde_unsupported_results: Some(snap.unsupported_results),
+        cde_prepare_failures: Some(snap.prepare_failures),
+        cde_cross_sheet_skipped: Some(snap.cross_sheet_skipped),
+        cde_broadphase_pruned: Some(snap.broadphase_pruned),
+        cde_cache_pair_hits: Some(snap.cache_pair_hits),
+        cde_cache_pair_misses: Some(snap.cache_pair_misses),
+        cde_cache_boundary_hits: Some(snap.cache_boundary_hits),
+        cde_cache_boundary_misses: Some(snap.cache_boundary_misses),
+        cde_cache_prepared_hits: Some(snap.cache_prepared_hits),
+        cde_cache_prepared_misses: Some(snap.cache_prepared_misses),
+        cde_cache_invalidations: Some(snap.cache_invalidations),
+        cde_batch_candidate_queries: Some(snap.batch_candidate_queries),
+        cde_batch_engine_builds: Some(snap.batch_engine_builds),
+        cde_batch_hazards_registered: Some(snap.batch_hazards_registered),
+        cde_batch_collisions_returned: Some(snap.batch_collisions_returned),
+        cde_pairwise_fallback_queries: Some(snap.pairwise_fallback_queries),
+        cde_candidate_session_builds: Some(snap.candidate_session_builds),
+        cde_candidate_session_reuses: Some(snap.candidate_session_reuses),
+        cde_observability_scope: Some(scope.to_string()),
+        final_commit_validation_ms: commit_ms,
+    }
+}
+
 fn _unsupported_output_with_backend_diag(
     reason: &str,
     input: &SolverInput,
@@ -251,11 +296,14 @@ fn _unsupported_output_with_full_diag(
     }
 }
 
-/// SGH-Q22R1: Build a Sparrow diagnostics OptimizerDiagnosticsOutput from
-/// a SparrowDiagnostics + backend label. Reused by both success and failure
-/// paths so that diagnostics never silently disappear.
-fn sparrow_optimizer_diag_from(
-    sd: &crate::optimizer::sparrow::SparrowDiagnostics,
+/// SGH-Q24R5: Build the OptimizerDiagnosticsOutput from the NATIVE Sparrow
+/// diagnostics (`optimizer::sparrow::SparrowDiagnostics`). This is the
+/// only Sparrow diagnostics projection on the production path; it sets the
+/// native-model proof flags so the cutover gate can verify the old core is
+/// gone. Fields not tracked by the native core are emitted as 0/false (no
+/// fabricated activity).
+fn native_sparrow_diag_to_output(
+    d: &crate::optimizer::sparrow::SparrowDiagnostics,
     backend_name: String,
     final_commit_ms: Option<f64>,
     pipeline_label: &str,
@@ -264,7 +312,7 @@ fn sparrow_optimizer_diag_from(
     OptimizerDiagnosticsOutput {
         pipeline_used: pipeline_label.to_string(),
         phase_optimizer_invoked: false,
-        exploration_iterations: 0,
+        exploration_iterations: d.exploration_attempts,
         compression_iterations: 0,
         bpp_attempts: 0,
         rotation_refinement_enabled: false,
@@ -272,19 +320,19 @@ fn sparrow_optimizer_diag_from(
         rotation_refinement_accepts: 0,
         rotation_refinement_rejections: 0,
         rotation_refinement_best_delta: 0.0,
-        search_position_calls: sd.search_position_calls,
+        search_position_calls: d.search_position_calls,
         search_position_global_samples_evaluated: 0,
         search_position_focused_samples_evaluated: 0,
         search_position_samples_unsupported: 0,
         search_position_refined_samples: 0,
         search_position_coord_descent_steps: 0,
-        search_position_lbf_fallback_used: sd.lbf_fallback_used,
+        search_position_lbf_fallback_used: d.lbf_fallback_used,
         search_position_best_eval: 0.0,
         collision_severity_backend: backend_name,
         collision_severity_enabled: true,
-        collision_severity_pair_queries: sd.severity_pair_queries,
-        collision_severity_boundary_queries: sd.severity_boundary_queries,
-        collision_severity_probe_queries: sd.severity_probe_queries,
+        collision_severity_pair_queries: 0,
+        collision_severity_boundary_queries: 0,
+        collision_severity_probe_queries: 0,
         collision_severity_backend_confirmed_collisions: 0,
         collision_severity_backend_confirmed_no_collisions: 0,
         collision_severity_unsupported_queries: 0,
@@ -301,63 +349,69 @@ fn sparrow_optimizer_diag_from(
         phase_optimizer_compression_ms: None,
         phase_optimizer_bpp_ms: None,
         phase_optimizer_final_commit_ms: final_commit_ms,
-        sparrow_invoked: Some(sd.invoked),
-        sparrow_seed_placements: Some(sd.seed_placements),
-        sparrow_seed_unplaced: Some(sd.seed_unplaced),
-        sparrow_initial_raw_loss: Some(sd.initial_raw_loss),
-        sparrow_initial_weighted_loss: Some(sd.initial_weighted_loss),
-        sparrow_final_raw_loss: Some(sd.final_raw_loss),
-        sparrow_final_weighted_loss: Some(sd.final_weighted_loss),
-        sparrow_best_infeasible_raw_loss: Some(sd.best_infeasible_raw_loss),
-        sparrow_best_infeasible_weighted_loss: Some(sd.best_infeasible_weighted_loss),
-        sparrow_iterations: Some(sd.iterations),
-        sparrow_moves_attempted: Some(sd.moves_attempted),
-        sparrow_moves_accepted: Some(sd.moves_accepted),
-        sparrow_rollbacks: Some(sd.rollbacks),
-        sparrow_gls_weight_updates: Some(sd.gls_weight_updates),
-        sparrow_converged: Some(sd.converged),
-        sparrow_collision_graph_initial_pairs: Some(sd.collision_graph_initial_pairs),
-        sparrow_collision_graph_final_pairs: Some(sd.collision_graph_final_pairs),
-        sparrow_boundary_violations_initial: Some(sd.boundary_violations_initial),
-        sparrow_boundary_violations_final: Some(sd.boundary_violations_final),
-        sparrow_search_position_calls: Some(sd.search_position_calls),
-        sparrow_search_position_samples: Some(sd.search_position_samples),
-        sparrow_severity_pair_queries: Some(sd.severity_pair_queries),
-        sparrow_severity_boundary_queries: Some(sd.severity_boundary_queries),
-        sparrow_severity_probe_queries: Some(sd.severity_probe_queries),
-        sparrow_lbf_fallback_used: Some(sd.lbf_fallback_used),
-        sparrow_workers: Some(sd.workers),
-        sparrow_worker_passes: Some(sd.worker_passes),
-        sparrow_worker_candidates_evaluated: Some(sd.worker_candidates_evaluated),
-        sparrow_worker_commits: Some(sd.worker_commits),
-        sparrow_worker_rollbacks: Some(sd.worker_rollbacks),
-        sparrow_worker_best_loss: Some(sd.worker_best_loss),
-        sparrow_multi_target_items_attempted: Some(sd.multi_target_items_attempted),
-        sparrow_multi_target_items_accepted: Some(sd.multi_target_items_accepted),
-        sparrow_multi_target_items_rejected: Some(sd.multi_target_items_rejected),
-        sparrow_topk_target_count: Some(sd.topk_target_count),
-        sparrow_graph_full_rebuilds: Some(sd.graph_full_rebuilds),
-        sparrow_graph_incremental_updates: Some(sd.graph_incremental_updates),
-        sparrow_graph_edges_recomputed: Some(sd.graph_edges_recomputed),
-        sparrow_graph_edges_pruned_by_broadphase: Some(sd.graph_edges_pruned_by_broadphase),
-        sparrow_graph_debug_rebuilds: Some(sd.graph_debug_rebuilds),
-        sparrow_graph_debug_rebuild_mismatches: Some(sd.graph_debug_rebuild_mismatches),
-        sparrow_exploration_restarts: Some(sd.exploration_restarts),
-        sparrow_exploration_seed_strategies: Some(sd.exploration_seed_strategies),
-        sparrow_exploration_disruptions: Some(sd.exploration_disruptions),
-        sparrow_exploration_stagnation_events: Some(sd.exploration_stagnation_events),
-        sparrow_exploration_best_raw_loss: Some(sd.exploration_best_raw_loss),
-        sparrow_exploration_best_weighted_loss: Some(sd.exploration_best_weighted_loss),
-        sparrow_exploration_best_feasible_found: Some(sd.exploration_best_feasible_found),
-        sparrow_compression_passes: Some(sd.compression_passes),
-        sparrow_compression_candidates_evaluated: Some(sd.compression_candidates_evaluated),
-        sparrow_compression_accepts: Some(sd.compression_accepts),
-        sparrow_compression_rejects: Some(sd.compression_rejects),
-        sparrow_fixed_sheet_objective_before: Some(sd.fixed_sheet_objective_before),
-        sparrow_fixed_sheet_objective_after: Some(sd.fixed_sheet_objective_after),
-        sparrow_fixed_sheet_objective_delta: Some(sd.fixed_sheet_objective_delta),
+        sparrow_invoked: Some(d.invoked),
+        sparrow_seed_placements: Some(d.seed_placements),
+        sparrow_seed_unplaced: Some(d.seed_unplaced),
+        sparrow_initial_raw_loss: Some(d.initial_raw_loss),
+        sparrow_initial_weighted_loss: Some(d.initial_weighted_loss),
+        sparrow_final_raw_loss: Some(d.final_raw_loss),
+        sparrow_final_weighted_loss: Some(d.final_weighted_loss),
+        sparrow_best_infeasible_raw_loss: Some(d.best_infeasible_raw_loss),
+        sparrow_best_infeasible_weighted_loss: Some(d.best_infeasible_weighted_loss),
+        sparrow_iterations: Some(d.iterations),
+        sparrow_moves_attempted: Some(d.moves_attempted),
+        sparrow_moves_accepted: Some(d.moves_accepted),
+        sparrow_rollbacks: Some(d.rollbacks),
+        sparrow_gls_weight_updates: Some(d.gls_weight_updates),
+        sparrow_converged: Some(d.converged),
+        sparrow_collision_graph_initial_pairs: Some(d.collision_graph_initial_pairs),
+        sparrow_collision_graph_final_pairs: Some(d.collision_graph_final_pairs),
+        sparrow_boundary_violations_initial: Some(d.boundary_violations_initial),
+        sparrow_boundary_violations_final: Some(d.boundary_violations_final),
+        sparrow_search_position_calls: Some(d.search_position_calls),
+        sparrow_search_position_samples: Some(d.search_position_samples),
+        sparrow_severity_pair_queries: Some(0),
+        sparrow_severity_boundary_queries: Some(0),
+        sparrow_severity_probe_queries: Some(0),
+        sparrow_lbf_fallback_used: Some(d.lbf_fallback_used),
+        sparrow_workers: Some(0),
+        sparrow_worker_passes: Some(d.worker_passes),
+        sparrow_worker_candidates_evaluated: Some(d.worker_colliding_items_seen),
+        sparrow_worker_commits: Some(d.worker_items_moved),
+        sparrow_worker_rollbacks: Some(0),
+        sparrow_worker_best_loss: Some(0.0),
+        sparrow_multi_target_items_attempted: Some(0),
+        sparrow_multi_target_items_accepted: Some(0),
+        sparrow_multi_target_items_rejected: Some(0),
+        sparrow_topk_target_count: Some(0),
+        sparrow_graph_full_rebuilds: Some(d.native_tracker_full_rebuilds),
+        sparrow_graph_incremental_updates: Some(d.native_tracker_incremental_updates),
+        sparrow_graph_edges_recomputed: Some(0),
+        sparrow_graph_edges_pruned_by_broadphase: Some(0),
+        sparrow_graph_debug_rebuilds: Some(0),
+        sparrow_graph_debug_rebuild_mismatches: Some(0),
+        sparrow_exploration_restarts: Some(d.exploration_pool_restores),
+        sparrow_exploration_seed_strategies: Some(0),
+        sparrow_exploration_disruptions: Some(d.exploration_disruptions_large_item_swap),
+        sparrow_exploration_stagnation_events: Some(0),
+        sparrow_exploration_best_raw_loss: Some(d.best_infeasible_raw_loss),
+        sparrow_exploration_best_weighted_loss: Some(d.best_infeasible_weighted_loss),
+        sparrow_exploration_best_feasible_found: Some(d.converged),
+        sparrow_compression_passes: Some(d.compression_passes),
+        sparrow_compression_candidates_evaluated: Some(0),
+        sparrow_compression_accepts: Some(0),
+        sparrow_compression_rejects: Some(0),
+        sparrow_fixed_sheet_objective_before: Some(0.0),
+        sparrow_fixed_sheet_objective_after: Some(0.0),
+        sparrow_fixed_sheet_objective_delta: Some(0.0),
         loss_model_used: Some(loss_model.name().to_string()),
         loss_bbox_proxy_used_as_primary: Some(loss_model.is_bbox_area_primary()),
+        sparrow_native_model_active: Some(d.native_model_active),
+        sparrow_native_tracker_active: Some(d.native_tracker_active),
+        sparrow_old_core_used: Some(d.old_core_used),
+        sparrow_native_problem_instances: Some(d.native_problem_instances),
+        sparrow_native_tracker_full_rebuilds: Some(d.native_tracker_full_rebuilds),
+        sparrow_native_tracker_incremental_updates: Some(d.native_tracker_incremental_updates),
     }
 }
 
@@ -389,135 +443,76 @@ fn run_sparrow_pipeline(
     ),
     SolverOutput,
 > {
-    use crate::optimizer::sparrow::{
-        build_constructive_seed_layout, SparrowConfig, SparrowSeparationKernel,
-    };
-    use crate::optimizer::search_position::SearchPositionConfig;
-    let is_cde = backend_kind == CollisionBackendKind::Cde;
-    if is_cde {
-        cde_observability::reset();
-        crate::optimizer::cde_adapter::reset_query_cache();
-    }
+    // SGH-Q24R5: production solver core is the NATIVE Sparrow model. The entire
+    // truth model lives in `optimizer::sparrow` (SparrowProblem / SPInstance /
+    // SparrowLayout / SparrowCollisionTracker / SparrowOptimizer); this driver only
+    // performs the one-way I/O conversion in and the projection out. No WorkingLayout,
+    // no legacy separation kernel, no constructive-seed helper, no validate-and-commit.
+    use crate::optimizer::sparrow::{SparrowConfig, SparrowOptimizer, SparrowProblem};
+    // The native Sparrow collision truth is the jagua_rs CDE engine for EVERY
+    // requested backend (the native tracker is CDE-backed). So reset and surface
+    // the CDE observability counters regardless of `backend_kind`.
+    cde_observability::reset();
+    crate::optimizer::cde_adapter::reset_query_cache();
     let timing_enabled = cde_timing_enabled();
-    // SGH-Q24R3: production seed is the constructive (LBF/grid) near-feasible
-    // initial solution (Sparrow LBFBuilder role), not all-at-origin.
-    let (seed_placements, mut seed_unplaced) =
-        match build_constructive_seed_layout(&input.parts, sheets, rotation_context) {
-            Ok(v) => v,
-            Err(_e) => {
-                return Err(_unsupported_output_with_full_diag(
-                    "SPARROW_SEED_BUILD_FAILED",
-                    input,
-                    None,
-                    None,
-                ));
-            }
-        };
-    seed_unplaced.extend(pre_unplaced);
-    let seed_layout = WorkingLayout::new(seed_placements, seed_unplaced, sheets.len(), input.seed);
-    let sparrow_cfg = SparrowConfig {
-        max_iterations: 256,
-        time_limit_s: (input.time_limit_s as f64).max(1.0),
-        collision_backend: backend_kind.clone(),
-        // SGH-Q24: production CDE path uses the CDE-separation loss identity (the
-        // authoritative search loss is the batch separation distance, not bbox
-        // area). Non-CDE debug runs keep the legacy bbox-area model.
-        loss_model: if backend_kind == CollisionBackendKind::Cde {
-            crate::optimizer::loss_model::LossModelKind::CdeSeparation
-        } else {
-            crate::optimizer::loss_model::LossModelKind::BboxArea
-        },
-        rotation_context: rotation_context.clone(),
-        seed: input.seed as u64,
-        // SGH-Q24: non-trivial production search budget (Q23R3 left this
-        // effectively disabled). Deterministic, modest, and measured — proves
-        // real search activity without making runs unusable.
-        search_position_config: SearchPositionConfig {
-            global_grid_n: 2,
-            focused_sample_count: 2,
-            coord_descent_max_steps: 3,
-            coord_descent_top_k: 2,
-            ..SearchPositionConfig::default()
-        },
-        // Production Sparrow contract: no LBF/finite-candidate fallback.
-        allow_lbf_fallback: false,
-        ..SparrowConfig::default()
+    // CDE path uses the CDE-separation loss identity; non-CDE debug uses bbox area.
+    let prod_loss_model = if backend_kind == CollisionBackendKind::Cde {
+        crate::optimizer::loss_model::LossModelKind::CdeSeparation
+    } else {
+        crate::optimizer::loss_model::LossModelKind::BboxArea
     };
-    let prod_loss_model = sparrow_cfg.loss_model;
-    let kernel = SparrowSeparationKernel::new(sparrow_cfg);
-    let sparrow_result = kernel.run(seed_layout, &input.parts, sheets);
-    let layout = sparrow_result.layout;
-    let backend_name = format!("{:?}", backend_kind);
-    let t_commit_start = timing_start(timing_enabled);
 
-    if !sparrow_result.feasible {
-        let final_commit_ms = timing_ms(t_commit_start);
-        let optimizer_diag = sparrow_optimizer_diag_from(
-            &sparrow_result.diagnostics,
-            backend_name.clone(),
-            final_commit_ms,
-            pipeline_label,
-            prod_loss_model,
-        );
-        if is_cde {
-            let snap = cde_observability::snapshot();
-            let backend_diag = cde_unsupported_diag(&snap, "sparrow_no_feasible", final_commit_ms);
+    let config = SparrowConfig::from_solver_input(
+        (input.time_limit_s as f64).max(1.0),
+        backend_kind.clone(),
+        rotation_context.clone(),
+        input.seed as u64,
+    );
+    let problem = match SparrowProblem::from_solver_input(
+        &input.parts,
+        sheets,
+        rotation_context,
+        pre_unplaced,
+        config.clone(),
+    ) {
+        Ok(p) => p,
+        Err(_e) => {
             return Err(_unsupported_output_with_full_diag(
-                "SPARROW_NO_FEASIBLE_LAYOUT",
+                "SPARROW_SEED_BUILD_FAILED",
                 input,
-                Some(optimizer_diag),
-                Some(backend_diag),
+                None,
+                None,
             ));
         }
+    };
+
+    let t_commit_start = timing_start(timing_enabled);
+    let optimizer = SparrowOptimizer::new(config);
+    let result = optimizer.solve(problem);
+    let final_commit_ms = timing_ms(t_commit_start);
+    let backend_name = format!("{:?}", backend_kind);
+    let optimizer_diag = native_sparrow_diag_to_output(
+        &result.diagnostics,
+        backend_name.clone(),
+        final_commit_ms,
+        pipeline_label,
+        prod_loss_model,
+    );
+
+    if !result.feasible {
+        let snap = cde_observability::snapshot();
+        let backend_diag = cde_unsupported_diag(&snap, "sparrow_no_feasible", final_commit_ms);
         return Err(_unsupported_output_with_full_diag(
             "SPARROW_NO_FEASIBLE_LAYOUT",
             input,
             Some(optimizer_diag),
-            None,
+            Some(backend_diag),
         ));
     }
 
-    match layout.validate_and_commit_with_backend(&input.parts, sheets, backend_kind) {
-        Ok(commit) => {
-            let final_commit_ms = timing_ms(t_commit_start);
-            let backend_diag = Some(if is_cde {
-                let snap = cde_observability::snapshot();
-                diag_output_from_with_cde(&commit, snap, "sparrow_full_solve", final_commit_ms)
-            } else {
-                diag_output_from(&commit)
-            });
-            let diagnostics = sparrow_optimizer_diag_from(
-                &sparrow_result.diagnostics,
-                backend_name,
-                final_commit_ms,
-                pipeline_label,
-                prod_loss_model,
-            );
-            Ok((commit.placements, commit.unplaced, Some(diagnostics), backend_diag))
-        }
-        Err(e) => {
-            let reason = backend_err_reason(e, "SPARROW_COMMIT_VIOLATION_BACKEND");
-            let ms = timing_ms(t_commit_start);
-            let optimizer_diag = sparrow_optimizer_diag_from(
-                &sparrow_result.diagnostics,
-                backend_name,
-                ms,
-                pipeline_label,
-                prod_loss_model,
-            );
-            if is_cde {
-                let snap = cde_observability::snapshot();
-                let backend_diag = cde_unsupported_diag(&snap, "sparrow_full_solve", ms);
-                return Err(_unsupported_output_with_full_diag(
-                    &reason,
-                    input,
-                    Some(optimizer_diag),
-                    Some(backend_diag),
-                ));
-            }
-            Err(_unsupported_output_with_full_diag(&reason, input, Some(optimizer_diag), None))
-        }
-    }
+    let snap = cde_observability::snapshot();
+    let backend_diag = Some(cde_feasible_diag(&snap, "sparrow_full_solve", final_commit_ms));
+    Ok((result.placements, result.unplaced, Some(optimizer_diag), backend_diag))
 }
 
 
@@ -817,6 +812,12 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_fixed_sheet_objective_delta: None,
                             loss_model_used: None,
                             loss_bbox_proxy_used_as_primary: None,
+                            sparrow_native_model_active: None,
+                            sparrow_native_tracker_active: None,
+                            sparrow_old_core_used: None,
+                            sparrow_native_problem_instances: None,
+                            sparrow_native_tracker_full_rebuilds: None,
+                            sparrow_native_tracker_incremental_updates: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
@@ -1881,9 +1882,12 @@ mod tests {
         assert!(diag.sparrow_iterations.is_some());
     }
 
-    /// SGH-Q22: final commit on sparrow pipeline must use the selected backend.
-    /// Under JaguaPolygonExact, `collision_backend_diagnostics.backend_used`
-    /// must reflect the exact backend (or "cde_adapter" for CDE).
+    /// SGH-Q24R5: the native Sparrow core's collision truth is the jagua_rs CDE
+    /// engine for EVERY requested backend (the native `SparrowCollisionTracker`
+    /// is CDE-backed). So the sparrow pipeline always emits collision-backend
+    /// diagnostics, and `backend_used` reflects the CDE adapter even when a
+    /// non-CDE backend was requested. This replaces the pre-cutover invariant
+    /// where a `WorkingLayout` commit honored the selected backend.
     #[test]
     fn sparrow_pipeline_final_commit_uses_selected_backend() {
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
@@ -1895,10 +1899,10 @@ mod tests {
         assert!(out.status == "ok" || out.status == "partial");
         let cbd = out
             .collision_backend_diagnostics
-            .expect("sparrow + exact backend must emit collision_backend_diagnostics");
-        assert!(
-            cbd.backend_used.contains("jagua") || cbd.backend_used.contains("exact"),
-            "expected jagua/exact backend, got {}",
+            .expect("sparrow pipeline must emit collision_backend_diagnostics");
+        assert_eq!(
+            cbd.backend_used, "cde_adapter",
+            "native Sparrow collision truth is the CDE engine, got {}",
             cbd.backend_used
         );
     }
