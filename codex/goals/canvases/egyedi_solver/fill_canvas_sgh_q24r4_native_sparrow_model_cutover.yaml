@@ -1,0 +1,33 @@
+id: fill_canvas_sgh_q24r4_native_sparrow_model_cutover
+kind: canvas_task
+slug: sgh_q24r4_native_sparrow_model_cutover
+title: SGH-Q24R4 Native Sparrow model cutover
+canvas_path: canvases/egyedi_solver/sgh_q24r4_native_sparrow_model_cutover.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r4_native_sparrow_model_cutover/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r4_native_sparrow_model_cutover.md
+status: ready
+primary_goal: Replace the old VRS solver-core model inside production sparrow_cde with a native Sparrow Problem/SPInstance/Layout/Solution/CollisionTracker model, compression excluded.
+acceptance:
+  - cache_sparrow_reference_read_and_mapped
+  - native_sparrow_module_tree_created_or_equivalent_real_split
+  - sparrow_problem_defined_and_used_by_production_sparrow_cde
+  - spinstance_defined_with_stable_identity_and_geometry_metadata
+  - sparrow_layout_no_longer_uses_io_placement_as_internal_item
+  - sparrow_solution_and_incumbent_pool_are_native
+  - native_sparrow_collision_tracker_replaces_vrs_collision_tracker_in_production_path
+  - adapter_run_sparrow_pipeline_no_longer_constructs_working_layout_for_sparrow_cde
+  - conversion_limited_to_input_normalization_and_output_projection_boundary
+  - separation_worker_exploration_search_use_native_state
+  - cde_decisive_truth_preserved_in_native_tracker
+  - q24r3_medium_cde_gate_still_passes_without_compression
+  - static_anti_hybrid_smoke_passes
+  - cargo_build_tests_check_evidence_written
+reject_if:
+  - working_layout_used_inside_production_sparrow_cde_core
+  - vrs_collision_tracker_used_inside_production_sparrow_cde_core
+  - native_types_are_only_wrappers_around_old_vrs_types
+  - io_placement_is_internal_layout_type
+  - new_adapter_layer_preserves_old_core_dependency
+  - main_diff_is_docs_reports_scripts_bbox_or_compression
+  - legacy_fallback_reachable_from_sparrow_cde
+  - medium_cde_gate_weakened_or_compression_required

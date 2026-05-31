@@ -226,6 +226,18 @@ pub(crate) fn prepare_shape_from_placement(
     placement: &Placement,
     part: &Part,
 ) -> Result<CdePreparedShape, &'static str> {
+    prepare_shape_native(part, placement.x, placement.y, placement.rotation_deg)
+}
+
+/// SGH-Q24R4: prepare a CDE shape from native transform fields (part geometry +
+/// anchor x/y + rotation), WITHOUT a `crate::io::Placement`. This lets the native
+/// Sparrow tracker/search build CDE shapes without the old core placement type.
+pub(crate) fn prepare_shape_native(
+    part: &Part,
+    x: f64,
+    y: f64,
+    rotation_deg: f64,
+) -> Result<CdePreparedShape, &'static str> {
     let world_pts = match extract_polygon_from_part(part) {
         PolygonExtraction::Absent => {
             if part.width <= 0.0
@@ -241,12 +253,10 @@ pub(crate) fn prepare_shape_from_placement(
                 Point { x: part.width, y: part.height },
                 Point { x: 0.0, y: part.height },
             ];
-            transform_polygon(&local, placement.x, placement.y, placement.rotation_deg)
+            transform_polygon(&local, x, y, rotation_deg)
         }
         PolygonExtraction::Invalid { reason } => return Err(reason),
-        PolygonExtraction::Valid(local) => {
-            transform_polygon(&local, placement.x, placement.y, placement.rotation_deg)
-        }
+        PolygonExtraction::Valid(local) => transform_polygon(&local, x, y, rotation_deg),
     };
 
     let (min_x, min_y, max_x, max_y) =
