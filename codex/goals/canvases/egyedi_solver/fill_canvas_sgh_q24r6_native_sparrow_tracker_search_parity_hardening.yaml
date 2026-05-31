@@ -1,0 +1,36 @@
+id: fill_canvas_sgh_q24r6_native_sparrow_tracker_search_parity_hardening
+kind: canvas_task
+slug: sgh_q24r6_native_sparrow_tracker_search_parity_hardening
+title: SGH-Q24R6 Native Sparrow tracker + search parity hardening
+canvas_path: canvases/egyedi_solver/sgh_q24r6_native_sparrow_tracker_search_parity_hardening.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r6_native_sparrow_tracker_search_parity_hardening/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r6_native_sparrow_tracker_search_parity_hardening.md
+status: ready
+primary_goal: Harden the Q24R5 native Sparrow core toward jagua_rs/Sparrow tracker/search/separation parity, with compression excluded.
+acceptance:
+  - q24r5_pass_report_read_and_preserved
+  - cache_sparrow_reference_tracker_search_worker_explore_read
+  - production_sparrow_cde_still_uses_native_problem_optimizer_solution
+  - old_vrs_core_not_reintroduced_to_production_sparrow_cde
+  - sparrow_collision_tracker_uses_cde_truth_quantified_pair_and_container_loss
+  - tracker_loss_not_binary_count_only
+  - gls_weights_apply_to_quantified_pair_and_boundary_container_losses
+  - tracker_supports_full_rebuild_incremental_update_snapshot_restore_final_validation
+  - native_search_considers_eligible_sheets_or_containers_not_only_current_sheet
+  - native_search_combines_global_focused_rotation_and_coordinate_descent_candidates
+  - candidate_evaluation_reuses_cde_candidate_sessions_or_equivalent_batch_cde
+  - native_worker_snapshot_compete_best_worker_loadback_implemented
+  - exploration_pool_restore_disruption_improved_on_native_state
+  - diagnostics_truthfully_report_tracker_search_worker_counts
+  - medium_cde_native_gate_passes_without_compression
+  - lv8_12_types_x1_native_smoke_attempted_and_reported
+  - cargo_build_tests_check_smoke_evidence_written
+reject_if:
+  - working_layout_or_vrs_collision_tracker_reintroduced_to_production_sparrow_cde
+  - old_sparrow_separation_kernel_phase_optimizer_or_multisheet_manager_reachable_from_sparrow_cde
+  - tracker_remains_one_point_zero_per_collision_or_len_count_loss
+  - search_only_scores_current_sheet_candidates
+  - no_real_worker_snapshot_best_candidate_loadback
+  - compression_used_to_pass_any_gate
+  - bbox_truth_lbf_or_legacy_fallback_used
+  - q24r6_returns_docs_only_or_map_only_revise
