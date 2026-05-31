@@ -1,0 +1,35 @@
+id: fill_canvas_sgh_q24r7_native_sparrow_sampler_evaluator_first_sheet_lv8
+kind: canvas_task
+slug: sgh_q24r7_native_sparrow_sampler_evaluator_first_sheet_lv8
+title: SGH-Q24R7 Native Sparrow sampler/evaluator + LV8 first-sheet reference
+canvas_path: canvases/egyedi_solver/sgh_q24r7_native_sparrow_sampler_evaluator_first_sheet_lv8.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r7_native_sparrow_sampler_evaluator_first_sheet_lv8/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r7_native_sparrow_sampler_evaluator_first_sheet_lv8.md
+status: ready
+primary_goal: Strengthen native Sparrow sampler/evaluator/search behavior and run the real LV8 first-sheet reference subset from the Nest&Cut report, with compression excluded.
+acceptance:
+  - q24r6_pass_report_read_and_preserved
+  - cache_sparrow_sample_search_sep_evaluator_worker_separator_tracker_read
+  - production_sparrow_cde_still_uses_native_problem_optimizer_solution
+  - old_vrs_core_not_reintroduced_to_production_sparrow_cde
+  - native_sampler_evaluator_hardened_against_sparrow_reference
+  - aabb_not_used_as_main_infeasible_search_ordering_or_truth
+  - search_candidate_pool_considers_all_eligible_sheets_or_containers
+  - focused_sampling_uses_native_collision_neighborhood_or_high_loss_items
+  - coordinate_descent_refines_top_candidates_with_same_evaluator_semantics
+  - worker_search_budget_strengthened_deterministically
+  - diagnostics_truthfully_report_sampler_evaluator_worker_dense_probe_activity
+  - medium_cde_native_gate_passes_without_compression
+  - lv8_12types_x1_regression_passes_without_compression
+  - lv8_reference_sheet1_191_instance_input_generated_from_fixture_and_reported
+  - lv8_reference_sheet1_probe_uses_cde_no_bbox_truth_no_lbf_no_legacy_no_compression
+reject_if:
+  - working_layout_or_vrs_collision_tracker_reintroduced_to_production_sparrow_cde
+  - old_sparrow_separation_kernel_phase_optimizer_or_multisheet_manager_reachable_from_sparrow_cde
+  - q24r7_uses_artificial_12x4_subset_instead_of_reference_sheet1_quantities
+  - candidate_evaluator_still_orders_infeasible_samples_primarily_by_aabb_penetration
+  - multi_sheet_search_only_runs_as_last_ditch_current_sheet_fallback
+  - compression_used_to_pass_any_gate
+  - bbox_truth_lbf_or_legacy_fallback_used
+  - dense_lv8_probe_skipped_or_faked
+  - q24r7_returns_docs_only_or_report_only

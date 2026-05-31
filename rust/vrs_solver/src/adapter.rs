@@ -296,6 +296,39 @@ fn _unsupported_output_with_full_diag(
     }
 }
 
+fn _partial_output_with_full_diag(
+    reason: &str,
+    input: &SolverInput,
+    placements: Vec<Placement>,
+    unplaced: Vec<Unplaced>,
+    optimizer_diag: Option<OptimizerDiagnosticsOutput>,
+    backend_diag: Option<CollisionBackendDiagnosticsOutput>,
+) -> SolverOutput {
+    let placed_count = placements.len();
+    let requested_count: usize = input.parts.iter().map(|p| p.quantity as usize).sum();
+    let mut used_sheets: Vec<usize> = placements.iter().map(|p| p.sheet_index).collect();
+    used_sheets.sort_unstable();
+    used_sheets.dedup();
+    SolverOutput {
+        contract_version: "v1".to_string(),
+        status: "partial".to_string(),
+        unsupported_reason: Some(reason.to_string()),
+        placements,
+        unplaced,
+        metrics: Metrics {
+            placed_count,
+            unplaced_count: requested_count.saturating_sub(placed_count),
+            sheet_count_used: used_sheets.len(),
+            seed: input.seed,
+            time_limit_s: input.time_limit_s,
+            project_name: input.project_name.clone(),
+        },
+        score_breakdown: None,
+        optimizer_diagnostics: optimizer_diag,
+        collision_backend_diagnostics: backend_diag,
+    }
+}
+
 /// SGH-Q24R5: Build the OptimizerDiagnosticsOutput from the NATIVE Sparrow
 /// diagnostics (`optimizer::sparrow::SparrowDiagnostics`). This is the
 /// only Sparrow diagnostics projection on the production path; it sets the
@@ -506,9 +539,11 @@ fn run_sparrow_pipeline(
     if !result.feasible {
         let snap = cde_observability::snapshot();
         let backend_diag = cde_unsupported_diag(&snap, "sparrow_no_feasible", final_commit_ms);
-        return Err(_unsupported_output_with_full_diag(
+        return Err(_partial_output_with_full_diag(
             "SPARROW_NO_FEASIBLE_LAYOUT",
             input,
+            result.placements,
+            result.unplaced,
             Some(optimizer_diag),
             Some(backend_diag),
         ));
@@ -2101,8 +2136,8 @@ mod tests {
         let mut input = make_input(7, stocks, parts, None);
         input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowCde);
         input.time_limit_s = 1;
-        let out = super::solve(input).expect("solve returns Ok(unsupported)");
-        assert_eq!(out.status, "unsupported");
+        let out = super::solve(input).expect("solve returns Ok(partial)");
+        assert_eq!(out.status, "partial");
         assert_eq!(out.unsupported_reason.as_deref(), Some("SPARROW_NO_FEASIBLE_LAYOUT"));
         let diag = out
             .optimizer_diagnostics

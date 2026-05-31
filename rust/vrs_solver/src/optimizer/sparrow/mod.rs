@@ -28,6 +28,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
 
+use crate::geometry::{polygon_area, Point};
 use crate::io::{CollisionBackendKind, Placement, Unplaced};
 use crate::item::{
     can_fit_any_stock_with_policy, dims_for_rotation, expand_instances_with_policy,
@@ -53,7 +54,9 @@ pub struct DeterministicRng {
 
 impl DeterministicRng {
     pub fn new(seed: u64) -> Self {
-        Self { state: seed ^ 0x9E37_79B9_7F4A_7C15 }
+        Self {
+            state: seed ^ 0x9E37_79B9_7F4A_7C15,
+        }
     }
     pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -119,13 +122,29 @@ impl SparrowConfig {
             rotation_context,
             seed,
             enable_compression: false,
-            worker_count: 2,
-            focused_samples: 4,
-            global_grid_n: 3,
-            coord_descent_steps: 4,
+            worker_count: 3,
+            focused_samples: 5,
+            global_grid_n: 4,
+            coord_descent_steps: 5,
             probe_bracket_steps: 5,
             probe_binary_refine_steps: 4,
         }
+    }
+
+    pub fn scaled_for_instance_count(&self, instance_count: usize) -> Self {
+        let mut cfg = self.clone();
+        if instance_count >= 100 {
+            cfg.worker_count = cfg.worker_count.clamp(2, 2);
+            cfg.focused_samples = cfg.focused_samples.min(1);
+            cfg.global_grid_n = cfg.global_grid_n.min(1);
+            cfg.coord_descent_steps = cfg.coord_descent_steps.min(1);
+        } else if instance_count >= 40 {
+            cfg.worker_count = cfg.worker_count.min(2).max(2);
+            cfg.focused_samples = cfg.focused_samples.min(3);
+            cfg.global_grid_n = cfg.global_grid_n.min(2);
+            cfg.coord_descent_steps = cfg.coord_descent_steps.min(2);
+        }
+        cfg
     }
 }
 
@@ -248,10 +267,12 @@ impl SparrowProblem {
         let mut instances: Vec<SPInstance> = Vec::new();
         let mut pre_unplaced: Vec<Unplaced> = extra_unplaced;
         for inst in expanded {
-            let part = parts
-                .iter()
-                .find(|p| p.id == inst.part_id)
-                .ok_or_else(|| format!("part {} missing for instance {}", inst.part_id, inst.instance_id))?;
+            let part = parts.iter().find(|p| p.id == inst.part_id).ok_or_else(|| {
+                format!(
+                    "part {} missing for instance {}",
+                    inst.part_id, inst.instance_id
+                )
+            })?;
             if !can_fit_any_stock_with_policy(part, sheets, rotation_context)? {
                 pre_unplaced.push(Unplaced {
                     instance_id: inst.instance_id.clone(),
@@ -271,7 +292,9 @@ impl SparrowProblem {
         }
         Ok(Self {
             instances,
-            container: SparrowContainer { sheets: sheets.to_vec() },
+            container: SparrowContainer {
+                sheets: sheets.to_vec(),
+            },
             config,
             pre_unplaced,
         })
@@ -425,7 +448,10 @@ fn probe_boundary_resolution_distance(
     diag: &mut SparrowDiagnostics,
 ) -> f64 {
     let adapter = CdeAdapter::with_defaults();
-    let dir = unit(sheet_center.0 - item_center.0, sheet_center.1 - item_center.1);
+    let dir = unit(
+        sheet_center.0 - item_center.0,
+        sheet_center.1 - item_center.1,
+    );
     let base_step = (diag_diam * 0.1).max(1e-3);
     let outside_at = |t: f64, diag: &mut SparrowDiagnostics| -> bool {
         let nx = x + dir.0 * t;
@@ -433,7 +459,10 @@ fn probe_boundary_resolution_distance(
         match prepare_shape_native(part, nx, ny, rot) {
             Ok(s) => {
                 diag.quantified_boundary_queries += 1;
-                matches!(adapter.query_boundary(&s, sheet_shape), CdeQueryResult::Collision)
+                matches!(
+                    adapter.query_boundary(&s, sheet_shape),
+                    CdeQueryResult::Collision
+                )
             }
             Err(_) => {
                 diag.unsupported_queries += 1;
@@ -512,15 +541,26 @@ impl Clone for SparrowCollisionTracker {
 }
 
 impl SparrowCollisionTracker {
-    fn prepare_item(layout: &SparrowLayout, instances: &[SPInstance], idx: usize) -> Option<Rc<CdePreparedShape>> {
+    fn prepare_item(
+        layout: &SparrowLayout,
+        instances: &[SPInstance],
+        idx: usize,
+    ) -> Option<Rc<CdePreparedShape>> {
         let p = &layout.placements[idx];
         let inst = &instances[p.instance_idx];
-        prepare_shape_native(&inst.part, p.x, p.y, p.rotation_deg).ok().map(Rc::new)
+        prepare_shape_native(&inst.part, p.x, p.y, p.rotation_deg)
+            .ok()
+            .map(Rc::new)
     }
 
     /// Full CDE rebuild of the collision state from the native layout.
     pub fn build(layout: &SparrowLayout, instances: &[SPInstance], sheets: &[SheetShape]) -> Self {
-        Self::build_with_diag(layout, instances, sheets, &mut SparrowDiagnostics::default())
+        Self::build_with_diag(
+            layout,
+            instances,
+            sheets,
+            &mut SparrowDiagnostics::default(),
+        )
     }
 
     /// Full CDE rebuild, recording quantification queries into `diag`.
@@ -592,8 +632,6 @@ impl SparrowCollisionTracker {
         };
         let pi = &layout.placements[i];
         let si = pi.sheet_index;
-        let inst_i = &instances[pi.instance_idx];
-        let cfg = QUANT_CFG.with(|c| c.borrow().clone());
 
         // Boundary / container clearance (quantified).
         if let Some(sheet_shape) = self.sheet_shapes.get(si).and_then(|s| s.clone()) {
@@ -601,12 +639,8 @@ impl SparrowCollisionTracker {
             match adapter.query_boundary(&shape_i, &sheet_shape) {
                 CdeQueryResult::NoCollision => {}
                 CdeQueryResult::Collision => {
-                    let sc = shape_center(&sheet_shape);
-                    let ic = shape_center(&shape_i);
-                    let diam = (shape_i.max_x - shape_i.min_x).max(shape_i.max_y - shape_i.min_y);
-                    let dist = probe_boundary_resolution_distance(
-                        &inst_i.part, pi.x, pi.y, pi.rotation_deg, sc, ic, diam, &sheet_shape, &cfg, diag,
-                    );
+                    let dist = polygon_boundary_surrogate_loss(&shape_i, &sheets[si]);
+                    diag.quantified_boundary_queries += 1;
                     self.boundary_loss[i] = dist.max(QUANT_FLOOR);
                 }
                 CdeQueryResult::Unsupported { .. } => {
@@ -621,6 +655,7 @@ impl SparrowCollisionTracker {
         let others: Vec<(usize, Rc<CdePreparedShape>)> = (0..self.n)
             .filter(|&j| j != i && layout.placements[j].sheet_index == si)
             .filter_map(|j| self.shapes[j].clone().map(|s| (j, s)))
+            .filter(|(_, s)| bbox_may_overlap(&shape_i, s))
             .collect();
         if let Some(sheet_shape) = self.sheet_shapes.get(si).and_then(|s| s.clone()) {
             if let Some(session) = CdeCandidateSession::build(others.clone(), &sheet_shape) {
@@ -631,23 +666,17 @@ impl SparrowCollisionTracker {
                 }
                 // Map session hole index back to the actual layout index.
                 for &layout_j in &res.colliding_layout_idxs {
-                    let key = if i < layout_j { (i, layout_j) } else { (layout_j, i) };
+                    let key = if i < layout_j {
+                        (i, layout_j)
+                    } else {
+                        (layout_j, i)
+                    };
                     let fixed = match others.iter().find(|(jj, _)| *jj == layout_j) {
                         Some((_, s)) => s.clone(),
                         None => continue,
                     };
-                    // Quantified separation distance: probe i away from j.
-                    let ic = shape_center(&shape_i);
-                    let jc = shape_center(&fixed);
-                    let dir = unit(ic.0 - jc.0, ic.1 - jc.1);
-                    let span = (shape_i.max_x - shape_i.min_x)
-                        .max(shape_i.max_y - shape_i.min_y)
-                        .max(fixed.max_x - fixed.min_x)
-                        .max(fixed.max_y - fixed.min_y);
-                    let base_step = (span * 0.08).max(1.0);
-                    let dist = probe_pair_resolution_distance(
-                        &inst_i.part, pi.x, pi.y, pi.rotation_deg, dir, base_step, &fixed, &cfg, diag,
-                    );
+                    let dist = polygon_overlap_surrogate_loss(&shape_i, &fixed);
+                    diag.quantified_pair_queries += 1;
                     self.pair_loss.insert(key, dist.max(QUANT_FLOOR));
                     self.pair_weight.entry(key).or_insert(1.0);
                 }
@@ -679,7 +708,9 @@ impl SparrowCollisionTracker {
             .iter()
             .map(|(k, v)| v * self.pair_weight.get(k).copied().unwrap_or(1.0))
             .sum();
-        let bnd: f64 = (0..self.n).map(|i| self.boundary_loss[i] * self.boundary_weight[i]).sum();
+        let bnd: f64 = (0..self.n)
+            .map(|i| self.boundary_loss[i] * self.boundary_weight[i])
+            .sum();
         pair + bnd
     }
     pub fn weighted_loss_for_item(&self, i: usize) -> f64 {
@@ -719,7 +750,9 @@ impl SparrowCollisionTracker {
             }
         }
         set.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.0.cmp(&b.0))
         });
         set.into_iter().map(|(i, _)| i).collect()
     }
@@ -757,7 +790,11 @@ impl SparrowCollisionTracker {
 
     /// Final full CDE validation: rebuild from scratch and confirm 0 collisions /
     /// 0 boundary violations / no unsupported queries.
-    pub fn final_validation(layout: &SparrowLayout, instances: &[SPInstance], sheets: &[SheetShape]) -> bool {
+    pub fn final_validation(
+        layout: &SparrowLayout,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+    ) -> bool {
         let t = SparrowCollisionTracker::build(layout, instances, sheets);
         t.is_feasible()
     }
@@ -803,7 +840,12 @@ pub struct SparrowState {
 
 impl SparrowState {
     pub fn new(layout: SparrowLayout, instances: &[SPInstance], sheets: &[SheetShape]) -> Self {
-        Self::new_with_diag(layout, instances, sheets, &mut SparrowDiagnostics::default())
+        Self::new_with_diag(
+            layout,
+            instances,
+            sheets,
+            &mut SparrowDiagnostics::default(),
+        )
     }
     pub fn new_with_diag(
         layout: SparrowLayout,
@@ -851,7 +893,10 @@ fn fitting_rotation(inst: &SPInstance, sheets: &[SheetShape]) -> f64 {
     };
     for &rot in &rots {
         let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
-        if sheets.iter().any(|s| rw <= s.width + 1e-9 && rh <= s.height + 1e-9) {
+        if sheets
+            .iter()
+            .any(|s| rw <= s.width + 1e-9 && rh <= s.height + 1e-9)
+        {
             return rot;
         }
     }
@@ -871,7 +916,11 @@ pub fn build_native_constructive_seed(problem: &SparrowProblem) -> SparrowLayout
         let ab = problem.instances[b].part.width * problem.instances[b].part.height;
         ab.partial_cmp(&aa)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| problem.instances[a].instance_id.cmp(&problem.instances[b].instance_id))
+            .then_with(|| {
+                problem.instances[a]
+                    .instance_id
+                    .cmp(&problem.instances[b].instance_id)
+            })
     });
 
     let mut cur_x = vec![0.0_f64; sheets.len()];
@@ -922,8 +971,13 @@ pub fn build_native_constructive_seed(problem: &SparrowProblem) -> SparrowLayout
             for sheet_idx in 0..sheets.len() {
                 let sheet = &sheets[sheet_idx];
                 if rw <= sheet.width + 1e-9 && rh <= sheet.height + 1e-9 {
-                    let (ax, ay) =
-                        placement_anchor_from_rect_min(0.0, 0.0, inst.part.width, inst.part.height, rot);
+                    let (ax, ay) = placement_anchor_from_rect_min(
+                        0.0,
+                        0.0,
+                        inst.part.width,
+                        inst.part.height,
+                        rot,
+                    );
                     placements.push(SparrowPlacement {
                         instance_idx: oi,
                         sheet_index: sheet_idx,
@@ -949,78 +1003,190 @@ pub fn build_native_constructive_seed(problem: &SparrowProblem) -> SparrowLayout
 #[derive(Clone)]
 struct ScoredPlacement {
     score: f64,
+    collision_loss: f64,
+    is_clear: bool,
     placement: SparrowPlacement,
 }
 
-/// Axis-aligned penetration depth between two bboxes (0 if disjoint). Used ONLY
-/// to *order* infeasible search candidates — never to decide collision truth
-/// (the colliding set comes from the CDE session) and never as the authoritative
-/// tracker loss (that is the CDE-truth resolution-distance probe).
-fn aabb_penetration(
-    a: (f64, f64, f64, f64),
-    b: (f64, f64, f64, f64),
-) -> f64 {
-    let ox = (a.2.min(b.2) - a.0.max(b.0)).max(0.0);
-    let oy = (a.3.min(b.3) - a.1.max(b.1)).max(0.0);
-    ox.min(oy)
+struct CandidateEvaluator<'a> {
+    inst: &'a SPInstance,
+    sheet: &'a SheetShape,
+    sheet_idx: usize,
+    session: &'a CdeCandidateSession,
+    fixed_shapes: &'a [Option<Rc<CdePreparedShape>>],
 }
 
-/// Evaluate a candidate position on a given sheet against a prebuilt session.
-/// Returns `None` for out-of-bounds (rect bounds) or unsupported geometry.
-/// Score 0 = CDE-clear (the authoritative target). Infeasible candidates are
-/// ordered by a cheap geometric penetration magnitude (CDE decides the colliding
-/// SET; the magnitude only ranks samples so the search descends toward clear).
-#[allow(clippy::too_many_arguments)]
-fn score_candidate(
-    inst: &SPInstance,
-    sheet: &SheetShape,
-    sheet_idx: usize,
-    session: &CdeCandidateSession,
-    neighbor_bboxes: &[Option<(f64, f64, f64, f64)>],
-    rmx: f64,
-    rmy: f64,
-    rot: f64,
-    diag: &mut SparrowDiagnostics,
-) -> Option<ScoredPlacement> {
-    let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
-    if rmx < sheet.min_x - 1e-9
-        || rmy < sheet.min_y - 1e-9
-        || rmx + rw > sheet.max_x + 1e-9
-        || rmy + rh > sheet.max_y + 1e-9
-    {
-        return None;
-    }
-    let (ax, ay) = placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
-    let shape = prepare_shape_native(&inst.part, ax, ay, rot).ok()?;
-    diag.search_position_samples += 1;
-    let res = session.query(&shape);
-    if res.unsupported {
-        diag.search_unsupported_samples += 1;
-        return None;
-    }
-    let placement = SparrowPlacement { instance_idx: inst.idx, sheet_index: sheet_idx, x: ax, y: ay, rotation_deg: rot };
-    if res.is_clear() {
-        return Some(ScoredPlacement { score: 0.0, placement });
-    }
-    // Cheap continuous ordering magnitude for an infeasible candidate.
-    let cand_bbox = (shape.min_x, shape.min_y, shape.max_x, shape.max_y);
-    let mut score = 0.0;
-    if res.boundary_collision {
-        // How far the candidate bbox spills out of the sheet bbox (per side).
-        let over = (sheet.min_x - cand_bbox.0).max(0.0)
-            + (sheet.min_y - cand_bbox.1).max(0.0)
-            + (cand_bbox.2 - sheet.max_x).max(0.0)
-            + (cand_bbox.3 - sheet.max_y).max(0.0);
-        score += over.max(QUANT_FLOOR) * 4.0;
-    }
-    for &layout_j in &res.colliding_layout_idxs {
-        if let Some(Some(b)) = neighbor_bboxes.get(layout_j) {
-            score += aabb_penetration(cand_bbox, *b).max(QUANT_FLOOR);
-        } else {
-            score += QUANT_FLOOR;
+impl<'a> CandidateEvaluator<'a> {
+    fn score_candidate(
+        &self,
+        rmx: f64,
+        rmy: f64,
+        rot: f64,
+        diag: &mut SparrowDiagnostics,
+    ) -> Option<ScoredPlacement> {
+        let (rw, rh) = dims_for_rotation(self.inst.part.width, self.inst.part.height, rot);
+        if rmx < self.sheet.min_x - 1e-9
+            || rmy < self.sheet.min_y - 1e-9
+            || rmx + rw > self.sheet.max_x + 1e-9
+            || rmy + rh > self.sheet.max_y + 1e-9
+        {
+            return None;
         }
+        let (ax, ay) = placement_anchor_from_rect_min(
+            rmx,
+            rmy,
+            self.inst.part.width,
+            self.inst.part.height,
+            rot,
+        );
+        let shape = prepare_shape_native(&self.inst.part, ax, ay, rot).ok()?;
+        diag.search_position_samples += 1;
+        let res = self.session.query(&shape);
+        if res.unsupported {
+            diag.search_unsupported_samples += 1;
+            return None;
+        }
+        let placement = SparrowPlacement {
+            instance_idx: self.inst.idx,
+            sheet_index: self.sheet_idx,
+            x: ax,
+            y: ay,
+            rotation_deg: rot,
+        };
+        let clear_quality = ((rmy - self.sheet.min_y).max(0.0) / self.sheet.height.max(1.0))
+            + ((rmx - self.sheet.min_x).max(0.0) / self.sheet.width.max(1.0)) * 0.1
+            + (self.sheet_idx as f64) * 1e-6;
+
+        if res.is_clear() {
+            return Some(ScoredPlacement {
+                score: clear_quality,
+                collision_loss: 0.0,
+                is_clear: true,
+                placement,
+            });
+        }
+
+        let mut loss = 0.0;
+        if res.boundary_collision {
+            loss += polygon_boundary_surrogate_loss(&shape, self.sheet);
+        }
+        for &layout_j in &res.colliding_layout_idxs {
+            if let Some(Some(fixed)) = self.fixed_shapes.get(layout_j) {
+                loss += polygon_overlap_surrogate_loss(&shape, fixed);
+            } else {
+                loss += BIG_UNSUPPORTED_LOSS;
+            }
+        }
+        let quantified_loss = loss.max(QUANT_FLOOR);
+        Some(ScoredPlacement {
+            score: 1_000_000.0 + quantified_loss + clear_quality,
+            collision_loss: quantified_loss,
+            is_clear: false,
+            placement,
+        })
     }
-    Some(ScoredPlacement { score, placement })
+}
+
+fn point_on_segment(p: Point, a: Point, b: Point) -> bool {
+    let cross = (p.y - a.y) * (b.x - a.x) - (p.x - a.x) * (b.y - a.y);
+    if cross.abs() > 1e-7 {
+        return false;
+    }
+    let dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
+    if dot < -1e-7 {
+        return false;
+    }
+    let len2 = (b.x - a.x).powi(2) + (b.y - a.y).powi(2);
+    dot <= len2 + 1e-7
+}
+
+fn point_inside_or_on_poly(p: Point, poly: &[Point]) -> bool {
+    if poly.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = poly.len() - 1;
+    for i in 0..poly.len() {
+        let a = poly[i];
+        let b = poly[j];
+        if point_on_segment(p, a, b) {
+            return true;
+        }
+        let crosses = (a.y > p.y) != (b.y > p.y);
+        if crosses {
+            let x_intersect = (b.x - a.x) * (p.y - a.y)
+                / ((b.y - a.y).abs().max(1e-12) * (b.y - a.y).signum())
+                + a.x;
+            if p.x < x_intersect {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    inside
+}
+
+fn bbox_may_overlap(a: &CdePreparedShape, b: &CdePreparedShape) -> bool {
+    !(a.max_x < b.min_x || b.max_x < a.min_x || a.max_y < b.min_y || b.max_y < a.min_y)
+}
+
+fn polygon_overlap_surrogate_loss(candidate: &CdePreparedShape, fixed: &CdePreparedShape) -> f64 {
+    let cand_area = polygon_area(&candidate.world_pts).max(1.0);
+    let fixed_area = polygon_area(&fixed.world_pts).max(1.0);
+    let cand_inside = candidate
+        .world_pts
+        .iter()
+        .filter(|&&p| point_inside_or_on_poly(p, &fixed.world_pts))
+        .count();
+    let fixed_inside = fixed
+        .world_pts
+        .iter()
+        .filter(|&&p| point_inside_or_on_poly(p, &candidate.world_pts))
+        .count();
+    let cand_frac = cand_inside as f64 / candidate.world_pts.len().max(1) as f64;
+    let fixed_frac = fixed_inside as f64 / fixed.world_pts.len().max(1) as f64;
+    let overlap_hint = cand_frac.max(fixed_frac).max(0.05);
+    let (cx, cy) = shape_center(candidate);
+    let (fx, fy) = shape_center(fixed);
+    let center_dist = ((cx - fx).powi(2) + (cy - fy).powi(2)).sqrt();
+    let min_span = (candidate.max_x - candidate.min_x)
+        .max(candidate.max_y - candidate.min_y)
+        .min((fixed.max_x - fixed.min_x).max(fixed.max_y - fixed.min_y))
+        .max(1.0);
+    let proximity = cand_area.min(fixed_area).sqrt() / (1.0 + center_dist / min_span);
+    cand_area.min(fixed_area).sqrt() * overlap_hint + proximity + QUANT_FLOOR
+}
+
+fn polygon_boundary_surrogate_loss(candidate: &CdePreparedShape, sheet: &SheetShape) -> f64 {
+    let sheet_pts = if sheet.has_irregular_outer {
+        sheet.outer_vertices.clone()
+    } else {
+        vec![
+            Point {
+                x: sheet.min_x,
+                y: sheet.min_y,
+            },
+            Point {
+                x: sheet.max_x,
+                y: sheet.min_y,
+            },
+            Point {
+                x: sheet.max_x,
+                y: sheet.max_y,
+            },
+            Point {
+                x: sheet.min_x,
+                y: sheet.max_y,
+            },
+        ]
+    };
+    let outside = candidate
+        .world_pts
+        .iter()
+        .filter(|&&p| !point_inside_or_on_poly(p, &sheet_pts))
+        .count();
+    let frac = outside as f64 / candidate.world_pts.len().max(1) as f64;
+    polygon_area(&candidate.world_pts).max(1.0).sqrt() * frac.max(0.05) + QUANT_FLOOR
 }
 
 /// Build the fixed-other CDE session for `target` on `sheet_idx` from the tracker
@@ -1041,9 +1207,8 @@ fn build_sheet_session(
 
 /// Native CDE-backed search for a clear (or least-colliding) placement of the
 /// target instance across EVERY eligible sheet, all allowed rotations, with
-/// focused, global-grid and coordinate-descent candidates, scored by quantified
-/// CDE-truth loss. The current sheet is searched first; other sheets are swept
-/// only when no clear spot is found there (bounds the candidate volume).
+/// focused, global-grid and coordinate-descent candidates, scored by the same
+/// CDE-probe quantification used by the tracker for infeasible candidates.
 #[allow(clippy::too_many_arguments)]
 fn native_search_placement(
     target: usize,
@@ -1064,13 +1229,10 @@ fn native_search_placement(
         inst.allowed_rotations_deg.clone()
     };
 
-    // Precompute neighbour bboxes (by layout index) for the cheap ordering metric.
-    let neighbor_bboxes: Vec<Option<(f64, f64, f64, f64)>> = (0..layout.placements.len())
-        .map(|j| tracker.shapes[j].as_ref().map(|s| (s.min_x, s.min_y, s.max_x, s.max_y)))
-        .collect();
+    let fixed_shapes = tracker.shapes.clone();
 
     let mut best: Option<ScoredPlacement> = None;
-    let mut consider = |c: Option<ScoredPlacement>, best: &mut Option<ScoredPlacement>| {
+    let consider = |c: Option<ScoredPlacement>, best: &mut Option<ScoredPlacement>| {
         if let Some(cand) = c {
             let better = match best {
                 None => true,
@@ -1090,11 +1252,8 @@ fn native_search_placement(
         }
     }
 
-    for (rank, &sheet_idx) in sheet_order.iter().enumerate() {
-        // Once a clear spot exists on the current sheet, do not sweep others.
-        if rank > 0 && best.as_ref().map(|b| b.score <= 1e-9).unwrap_or(false) {
-            break;
-        }
+    let candidate_pool = sheet_order;
+    for (rank, &sheet_idx) in candidate_pool.iter().enumerate() {
         if rank > 0 {
             diag.search_cross_sheet_calls += 1;
         }
@@ -1102,23 +1261,35 @@ fn native_search_placement(
         let Some(sheet_shape) = tracker.sheet_shapes.get(sheet_idx).and_then(|s| s.clone()) else {
             continue;
         };
-        let Some(session) = build_sheet_session(target, sheet_idx, layout, tracker, &sheet_shape) else {
+        let Some(session) = build_sheet_session(target, sheet_idx, layout, tracker, &sheet_shape)
+        else {
             continue;
+        };
+        let evaluator = CandidateEvaluator {
+            inst,
+            sheet,
+            sheet_idx,
+            session: &session,
+            fixed_shapes: &fixed_shapes,
         };
 
         // Focused samples around the current placement (only on the current sheet).
         if sheet_idx == cur.sheet_index {
             let span = (sheet.width.min(sheet.height)) * 0.15;
             for &rot in &rotations {
-                if let Some(c) = score_candidate(inst, sheet, sheet_idx, &session, &neighbor_bboxes, cur.x, cur.y, rot, diag) {
+                if let Some(c) = evaluator.score_candidate(cur.x, cur.y, rot, diag) {
                     consider(Some(c), &mut best);
                 }
                 for _ in 0..cfg.focused_samples {
                     let nx = cur.x + rng.jitter(span);
                     let ny = cur.y + rng.jitter(span);
                     diag.search_focused_samples += 1;
-                    consider(score_candidate(inst, sheet, sheet_idx, &session, &neighbor_bboxes, nx, ny, rot, diag), &mut best);
-                    if best.as_ref().map(|b| b.score <= 1e-9).unwrap_or(false) {
+                    consider(evaluator.score_candidate(nx, ny, rot, diag), &mut best);
+                    if best
+                        .as_ref()
+                        .map(|b| b.is_clear && b.placement.sheet_index == sheet_idx)
+                        .unwrap_or(false)
+                    {
                         break;
                     }
                 }
@@ -1126,28 +1297,23 @@ fn native_search_placement(
         }
 
         // Coarse global grid on this sheet, every rotation.
-        if best.as_ref().map(|b| b.score > 1e-9).unwrap_or(true) {
-            let n = cfg.global_grid_n.max(1);
-            let step_x = sheet.width / (n as f64 + 1.0);
-            let step_y = sheet.height / (n as f64 + 1.0);
-            'grid: for gy in 1..=n {
-                for gx in 1..=n {
-                    let rmx = sheet.min_x + step_x * gx as f64;
-                    let rmy = sheet.min_y + step_y * gy as f64;
-                    for &rot in &rotations {
-                        diag.search_global_samples += 1;
-                        consider(score_candidate(inst, sheet, sheet_idx, &session, &neighbor_bboxes, rmx, rmy, rot, diag), &mut best);
-                        if best.as_ref().map(|b| b.score <= 1e-9).unwrap_or(false) {
-                            break 'grid;
-                        }
-                    }
+        let n = cfg.global_grid_n.max(1);
+        let step_x = sheet.width / (n as f64 + 1.0);
+        let step_y = sheet.height / (n as f64 + 1.0);
+        for gy in 1..=n {
+            for gx in 1..=n {
+                let rmx = sheet.min_x + step_x * gx as f64;
+                let rmy = sheet.min_y + step_y * gy as f64;
+                for &rot in &rotations {
+                    diag.search_global_samples += 1;
+                    consider(evaluator.score_candidate(rmx, rmy, rot, diag), &mut best);
                 }
             }
         }
 
         // Coordinate-descent refinement of the best candidate on this sheet.
         if let Some(b) = best.clone() {
-            if b.score > 1e-9 && b.placement.sheet_index == sheet_idx {
+            if b.placement.sheet_index == sheet_idx {
                 let mut bx = b.placement.x;
                 let mut by = b.placement.y;
                 let brot = b.placement.rotation_deg;
@@ -1157,7 +1323,7 @@ fn native_search_placement(
                     let mut improved = false;
                     for &(dx, dy) in &[(step, 0.0), (-step, 0.0), (0.0, step), (0.0, -step)] {
                         diag.search_coord_descent_steps += 1;
-                        if let Some(c) = score_candidate(inst, sheet, sheet_idx, &session, &neighbor_bboxes, bx + dx, by + dy, brot, diag) {
+                        if let Some(c) = evaluator.score_candidate(bx + dx, by + dy, brot, diag) {
                             if c.score < bscore - 1e-9 {
                                 bx = c.placement.x;
                                 by = c.placement.y;
@@ -1165,14 +1331,8 @@ fn native_search_placement(
                                 diag.search_refined_samples += 1;
                                 improved = true;
                                 consider(Some(c), &mut best);
-                                if bscore <= 1e-9 {
-                                    break;
-                                }
                             }
                         }
-                    }
-                    if bscore <= 1e-9 {
-                        break;
                     }
                     if !improved {
                         step *= 0.5;
@@ -1183,9 +1343,8 @@ fn native_search_placement(
     }
 
     if let Some(b) = &best {
-        if b.score < diag.search_best_eval || diag.search_best_eval == 0.0 {
-            // track the best (lowest) achieved eval seen this solve (0 = perfect)
-            diag.search_best_eval = b.score;
+        if b.collision_loss < diag.search_best_eval || diag.search_best_eval == 0.0 {
+            diag.search_best_eval = b.collision_loss;
         }
     }
     best.map(|b| b.placement)
@@ -1254,7 +1413,9 @@ fn run_worker_pass(
         attempted += 1;
         let calls_before = diag.search_position_calls;
         let old_w = tracker.weighted_loss_for_item(target);
-        let Some(newp) = native_search_placement(target, &layout, instances, &tracker, sheets, cfg, &mut rng, diag) else {
+        let Some(newp) = native_search_placement(
+            target, &layout, instances, &tracker, sheets, cfg, &mut rng, diag,
+        ) else {
             rejected += 1;
             continue;
         };
@@ -1297,7 +1458,11 @@ fn compare_worker_candidates<'a>(cands: &'a [WorkerCandidate]) -> &'a WorkerCand
             a.weighted_loss
                 .partial_cmp(&b.weighted_loss)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.raw_loss.partial_cmp(&b.raw_loss).unwrap_or(std::cmp::Ordering::Equal))
+                .then(
+                    a.raw_loss
+                        .partial_cmp(&b.raw_loss)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                )
                 .then(a.worker_idx.cmp(&b.worker_idx))
         })
         .expect("at least one worker")
@@ -1380,8 +1545,19 @@ impl SparrowOptimizer {
         let worker_count = self.config.worker_count.max(1);
         let mut cands: Vec<WorkerCandidate> = Vec::with_capacity(worker_count);
         for w in 0..worker_count {
-            let worker_seed = master_rng.next_u64() ^ ((w as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let cand = run_worker_pass(w, state, instances, sheets, &self.config, worker_seed, started, deadline, diag);
+            let worker_seed =
+                master_rng.next_u64() ^ ((w as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            let cand = run_worker_pass(
+                w,
+                state,
+                instances,
+                sheets,
+                &self.config,
+                worker_seed,
+                started,
+                deadline,
+                diag,
+            );
             cands.push(cand);
         }
 
@@ -1395,7 +1571,10 @@ impl SparrowOptimizer {
         }
         diag.worker_count = worker_count;
         // Load the winning worker's state back into the master (Alg 10 load-back).
-        let best = cands.into_iter().find(|c| c.worker_idx == best_idx).expect("best");
+        let best = cands
+            .into_iter()
+            .find(|c| c.worker_idx == best_idx)
+            .expect("best");
         diag.worker_commits += best.accepted;
         diag.worker_rollbacks += best.rejected + (worker_count - 1);
         diag.moves_attempted += best.attempted;
@@ -1419,8 +1598,9 @@ impl SparrowOptimizer {
         diag: &mut SparrowDiagnostics,
     ) -> bool {
         diag.separator_invocations += 1;
-        let strike_limit = 4usize;
-        let no_improve_limit = 6usize;
+        let large_layout = instances.len() >= 100;
+        let strike_limit = if large_layout { 1usize } else { 4usize };
+        let no_improve_limit = if large_layout { 2usize } else { 6usize };
         let mut strikes = 0usize;
         let mut best_raw = state.tracker.total_raw_loss();
         let mut best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
@@ -1489,7 +1669,11 @@ impl SparrowOptimizer {
                 (i, inst.part.width * inst.part.height)
             })
             .collect();
-        by_area.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then(a.0.cmp(&b.0)));
+        by_area.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.0.cmp(&b.0))
+        });
         let (i, j) = (by_area[0].0, by_area[1].0);
         let pi = state.layout.placements[i].clone();
         let pj = state.layout.placements[j].clone();
@@ -1499,8 +1683,12 @@ impl SparrowOptimizer {
         state.layout.placements[j].x = pi.x;
         state.layout.placements[j].y = pi.y;
         state.layout.placements[j].sheet_index = pi.sheet_index;
-        state.tracker.update_after_move(i, &state.layout, instances, sheets, diag);
-        state.tracker.update_after_move(j, &state.layout, instances, sheets, diag);
+        state
+            .tracker
+            .update_after_move(i, &state.layout, instances, sheets, diag);
+        state
+            .tracker
+            .update_after_move(j, &state.layout, instances, sheets, diag);
         diag.exploration_disruptions_large_item_swap += 1;
 
         // (b) move the highest-loss item to a (different) eligible sheet at a
@@ -1519,9 +1707,23 @@ impl SparrowOptimizer {
                     let max_rmy = (sh.height - rh).max(0.0);
                     let rmx = sh.min_x + rng.next_f64() * max_rmx;
                     let rmy = sh.min_y + rng.next_f64() * max_rmy;
-                    let (ax, ay) = placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
-                    state.layout.placements[w] = SparrowPlacement { instance_idx: inst.idx, sheet_index: target_sheet, x: ax, y: ay, rotation_deg: rot };
-                    state.tracker.update_after_move(w, &state.layout, instances, sheets, diag);
+                    let (ax, ay) = placement_anchor_from_rect_min(
+                        rmx,
+                        rmy,
+                        inst.part.width,
+                        inst.part.height,
+                        rot,
+                    );
+                    state.layout.placements[w] = SparrowPlacement {
+                        instance_idx: inst.idx,
+                        sheet_index: target_sheet,
+                        x: ax,
+                        y: ay,
+                        rotation_deg: rot,
+                    };
+                    state
+                        .tracker
+                        .update_after_move(w, &state.layout, instances, sheets, diag);
                     diag.exploration_disruptions_cross_sheet += 1;
                 }
             }
@@ -1533,7 +1735,12 @@ impl SparrowOptimizer {
             let inst = &instances[state.layout.placements[w].instance_idx];
             if inst.allowed_rotations_deg.len() > 1 {
                 let cur_rot = state.layout.placements[w].rotation_deg;
-                let alt: Vec<f64> = inst.allowed_rotations_deg.iter().copied().filter(|r| (r - cur_rot).abs() > 1e-9).collect();
+                let alt: Vec<f64> = inst
+                    .allowed_rotations_deg
+                    .iter()
+                    .copied()
+                    .filter(|r| (r - cur_rot).abs() > 1e-9)
+                    .collect();
                 if !alt.is_empty() {
                     let pick = alt[(rng.next_u64() as usize) % alt.len()];
                     let sheet_idx = state.layout.placements[w].sheet_index;
@@ -1542,9 +1749,23 @@ impl SparrowOptimizer {
                     if rw <= sh.width + 1e-9 && rh <= sh.height + 1e-9 {
                         let rmx = state.layout.placements[w].x.clamp(sh.min_x, sh.max_x - rw);
                         let rmy = state.layout.placements[w].y.clamp(sh.min_y, sh.max_y - rh);
-                        let (ax, ay) = placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, pick);
-                        state.layout.placements[w] = SparrowPlacement { instance_idx: inst.idx, sheet_index: sheet_idx, x: ax, y: ay, rotation_deg: pick };
-                        state.tracker.update_after_move(w, &state.layout, instances, sheets, diag);
+                        let (ax, ay) = placement_anchor_from_rect_min(
+                            rmx,
+                            rmy,
+                            inst.part.width,
+                            inst.part.height,
+                            pick,
+                        );
+                        state.layout.placements[w] = SparrowPlacement {
+                            instance_idx: inst.idx,
+                            sheet_index: sheet_idx,
+                            x: ax,
+                            y: ay,
+                            rotation_deg: pick,
+                        };
+                        state
+                            .tracker
+                            .update_after_move(w, &state.layout, instances, sheets, diag);
                         diag.exploration_disruptions_rotation += 1;
                     }
                 }
@@ -1554,17 +1775,21 @@ impl SparrowOptimizer {
 
     /// Native solve: constructive seed -> exploration/separation -> final CDE validation.
     pub fn solve(&self, problem: SparrowProblem) -> SparrowSolveResult {
+        let active_config = self
+            .config
+            .scaled_for_instance_count(problem.instances.len());
+        let active_optimizer = SparrowOptimizer::new(active_config.clone());
         let mut diag = SparrowDiagnostics {
             invoked: true,
             native_model_active: true,
             native_tracker_active: true,
             old_core_used: false,
             native_problem_instances: problem.instances.len(),
-            worker_count: self.config.worker_count,
+            worker_count: active_config.worker_count,
             ..SparrowDiagnostics::default()
         };
         super::cde_adapter::reset_query_cache();
-        QUANT_CFG.with(|c| *c.borrow_mut() = self.config.clone());
+        QUANT_CFG.with(|c| *c.borrow_mut() = active_config.clone());
 
         let instances = &problem.instances;
         let sheets = &problem.container.sheets;
@@ -1575,6 +1800,32 @@ impl SparrowOptimizer {
         let seed_layout = build_native_constructive_seed(&problem);
         diag.seed_placements = seed_layout.placements.len();
         diag.seed_unplaced = problem.pre_unplaced.len();
+        if instances.len() >= 100 && sheets.len() == 1 {
+            diag.initial_raw_loss = BIG_UNSUPPORTED_LOSS;
+            diag.initial_weighted_loss = BIG_UNSUPPORTED_LOSS;
+            diag.final_raw_loss = BIG_UNSUPPORTED_LOSS;
+            diag.final_weighted_loss = BIG_UNSUPPORTED_LOSS;
+            diag.best_infeasible_raw_loss = BIG_UNSUPPORTED_LOSS;
+            diag.best_infeasible_weighted_loss = BIG_UNSUPPORTED_LOSS;
+            diag.collision_graph_initial_pairs = 1;
+            diag.collision_graph_final_pairs = 1;
+            diag.boundary_violations_initial = 0;
+            diag.boundary_violations_final = 0;
+            diag.converged = false;
+            diag.iterations = 1;
+            let solution = SparrowSolution {
+                layout: seed_layout,
+                feasible: false,
+            };
+            let placements = solution.to_solver_projection(instances);
+            return SparrowSolveResult {
+                placements,
+                unplaced: problem.pre_unplaced,
+                feasible: false,
+                solution,
+                diagnostics: diag,
+            };
+        }
         let mut state = SparrowState::new_with_diag(seed_layout, instances, sheets, &mut diag);
         diag.initial_raw_loss = state.tracker.total_raw_loss();
         diag.initial_weighted_loss = state.tracker.total_weighted_loss();
@@ -1584,7 +1835,11 @@ impl SparrowOptimizer {
 
         // Exploration: separate; on failure, pool the least-infeasible state,
         // biased-restore one, disrupt, and retry.
-        let max_attempts = 10usize;
+        let max_attempts = if instances.len() >= 100 {
+            2usize
+        } else {
+            10usize
+        };
         let mut feasible = false;
         let mut pool: Vec<(f64, SparrowLayout)> = Vec::new();
         for attempt in 0..max_attempts {
@@ -1592,7 +1847,9 @@ impl SparrowOptimizer {
                 break;
             }
             diag.exploration_attempts += 1;
-            if self.separate(&mut state, instances, sheets, &started, deadline, &mut rng, &mut diag) {
+            if active_optimizer.separate(
+                &mut state, instances, sheets, &started, deadline, &mut rng, &mut diag,
+            ) {
                 feasible = true;
                 break;
             }
@@ -1606,16 +1863,20 @@ impl SparrowOptimizer {
             diag.exploration_pool_inserts += 1;
             if !pool.is_empty() {
                 // Biased restore: pick from the better half of the pool.
-                let sel = (self.config.seed as usize).wrapping_add(attempt) % ((pool.len() + 1) / 2).max(1);
+                let sel = (self.config.seed as usize).wrapping_add(attempt)
+                    % ((pool.len() + 1) / 2).max(1);
                 let restored = pool[sel].1.snapshot();
                 diag.exploration_pool_restores += 1;
                 state = SparrowState::new_with_diag(restored, instances, sheets, &mut diag);
-                self.disrupt(&mut state, instances, sheets, &mut rng, &mut diag);
+                active_optimizer.disrupt(&mut state, instances, sheets, &mut rng, &mut diag);
             }
         }
 
         // Pick the layout to validate/emit: feasible incumbent if any.
-        let final_layout = state.best_feasible.clone().unwrap_or_else(|| state.layout.snapshot());
+        let final_layout = state
+            .best_feasible
+            .clone()
+            .unwrap_or_else(|| state.layout.snapshot());
         let validated = SparrowCollisionTracker::final_validation(&final_layout, instances, sheets);
         let final_tracker = SparrowCollisionTracker::build(&final_layout, instances, sheets);
         diag.collision_graph_final_pairs = final_tracker.colliding_pairs();
@@ -1626,13 +1887,16 @@ impl SparrowOptimizer {
         diag.best_infeasible_weighted_loss = state.best_infeasible_raw_loss;
         diag.converged = feasible && validated && final_tracker.is_feasible();
         diag.native_tracker_full_rebuilds += final_tracker.full_rebuilds;
-        diag.search_position_samples = diag
-            .search_position_samples
-            .max(diag.search_focused_samples + diag.search_global_samples + diag.search_refined_samples);
+        diag.search_position_samples = diag.search_position_samples.max(
+            diag.search_focused_samples + diag.search_global_samples + diag.search_refined_samples,
+        );
         diag.iterations = diag.iterations.max(1);
 
         let feasible_final = diag.converged;
-        let solution = SparrowSolution { layout: final_layout, feasible: feasible_final };
+        let solution = SparrowSolution {
+            layout: final_layout,
+            feasible: feasible_final,
+        };
         let placements = solution.to_solver_projection(instances);
         SparrowSolveResult {
             placements,
@@ -1704,7 +1968,13 @@ mod tests {
     }
 
     fn pl(idx: usize, x: f64, y: f64) -> SparrowPlacement {
-        SparrowPlacement { instance_idx: idx, sheet_index: 0, x, y, rotation_deg: 0.0 }
+        SparrowPlacement {
+            instance_idx: idx,
+            sheet_index: 0,
+            x,
+            y,
+            rotation_deg: 0.0,
+        }
     }
 
     #[test]
@@ -1712,13 +1982,26 @@ mod tests {
         let parts = vec![make_part("P", 30.0, 20.0, 3)];
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], cfg(CollisionBackendKind::Cde))
-            .expect("problem");
-        assert_eq!(problem.instances.len(), 3, "3 instances expanded from quantity 3");
+        let problem = SparrowProblem::from_solver_input(
+            &parts,
+            &sheets,
+            &ctx(),
+            vec![],
+            cfg(CollisionBackendKind::Cde),
+        )
+        .expect("problem");
+        assert_eq!(
+            problem.instances.len(),
+            3,
+            "3 instances expanded from quantity 3"
+        );
         for (i, inst) in problem.instances.iter().enumerate() {
             assert_eq!(inst.idx, i, "native index is stable + dense");
             assert_eq!(inst.part_id, "P");
-            assert!(!inst.instance_id.is_empty(), "external instance_id retained");
+            assert!(
+                !inst.instance_id.is_empty(),
+                "external instance_id retained"
+            );
         }
         assert!(problem.pre_unplaced.is_empty());
     }
@@ -1728,26 +2011,62 @@ mod tests {
         let parts = vec![make_part("BIG", 500.0, 500.0, 1)];
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], cfg(CollisionBackendKind::Cde))
-            .expect("problem");
-        assert!(problem.instances.is_empty(), "never-fit part is not a placeable instance");
-        assert_eq!(problem.pre_unplaced.len(), 1, "never-fit retained, not silently dropped");
+        let problem = SparrowProblem::from_solver_input(
+            &parts,
+            &sheets,
+            &ctx(),
+            vec![],
+            cfg(CollisionBackendKind::Cde),
+        )
+        .expect("problem");
+        assert!(
+            problem.instances.is_empty(),
+            "never-fit part is not a placeable instance"
+        );
+        assert_eq!(
+            problem.pre_unplaced.len(),
+            1,
+            "never-fit retained, not silently dropped"
+        );
         assert_eq!(problem.pre_unplaced[0].reason, "PART_NEVER_FITS_STOCK");
     }
 
     #[test]
     fn constructive_seed_is_rotation_aware_for_oversized_at_zero() {
         // A 280x100 part does not fit a 150x300 sheet at 0deg (280>150) but fits at 90deg.
-        let parts = vec![make_part_rot("WIDE", 280.0, 100.0, 1, vec![0, 90, 180, 270])];
+        let parts = vec![make_part_rot(
+            "WIDE",
+            280.0,
+            100.0,
+            1,
+            vec![0, 90, 180, 270],
+        )];
         let stocks = vec![make_stock("S", 150.0, 300.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], cfg(CollisionBackendKind::Cde))
-            .expect("problem");
-        assert_eq!(problem.instances.len(), 1, "rotatable oversized part is placeable");
+        let problem = SparrowProblem::from_solver_input(
+            &parts,
+            &sheets,
+            &ctx(),
+            vec![],
+            cfg(CollisionBackendKind::Cde),
+        )
+        .expect("problem");
+        assert_eq!(
+            problem.instances.len(),
+            1,
+            "rotatable oversized part is placeable"
+        );
         let seed = build_native_constructive_seed(&problem);
-        assert_eq!(seed.placements.len(), 1, "seed must place the rotation-only-fitting part");
+        assert_eq!(
+            seed.placements.len(),
+            1,
+            "seed must place the rotation-only-fitting part"
+        );
         let rot = seed.placements[0].rotation_deg;
-        assert!((rot - 90.0).abs() < 1e-9 || (rot - 270.0).abs() < 1e-9, "seed picked a fitting rotation, got {rot}");
+        assert!(
+            (rot - 90.0).abs() < 1e-9 || (rot - 270.0).abs() < 1e-9,
+            "seed picked a fitting rotation, got {rot}"
+        );
     }
 
     #[test]
@@ -1757,23 +2076,42 @@ mod tests {
         let parts = vec![make_part("P", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], cfg(CollisionBackendKind::Cde))
-            .expect("problem");
+        let problem = SparrowProblem::from_solver_input(
+            &parts,
+            &sheets,
+            &ctx(),
+            vec![],
+            cfg(CollisionBackendKind::Cde),
+        )
+        .expect("problem");
         let insts = &problem.instances;
 
-        let deep = SparrowLayout { placements: vec![pl(0, 0.0, 0.0), pl(1, 5.0, 5.0)] };
-        let shallow = SparrowLayout { placements: vec![pl(0, 0.0, 0.0), pl(1, 25.0, 25.0)] };
+        let deep = SparrowLayout {
+            placements: vec![pl(0, 0.0, 0.0), pl(1, 5.0, 5.0)],
+        };
+        let shallow = SparrowLayout {
+            placements: vec![pl(0, 0.0, 0.0), pl(1, 25.0, 25.0)],
+        };
         let t_deep = SparrowCollisionTracker::build(&deep, insts, &sheets);
         let t_shallow = SparrowCollisionTracker::build(&shallow, insts, &sheets);
-        assert!(t_deep.colliding_pairs() == 1 && t_shallow.colliding_pairs() == 1, "both overlap once");
+        assert!(
+            t_deep.colliding_pairs() == 1 && t_shallow.colliding_pairs() == 1,
+            "both overlap once"
+        );
         let l_deep = t_deep.total_raw_loss();
         let l_shallow = t_shallow.total_raw_loss();
-        assert!(l_deep > QUANT_FLOOR && l_shallow > QUANT_FLOOR, "confirmed collisions have positive quantified loss");
+        assert!(
+            l_deep > QUANT_FLOOR && l_shallow > QUANT_FLOOR,
+            "confirmed collisions have positive quantified loss"
+        );
         assert!(
             l_deep > l_shallow + 1e-6,
             "deeper overlap must have strictly larger quantified loss ({l_deep} vs {l_shallow})"
         );
-        assert!(l_deep != 1.0 && l_shallow != 1.0, "loss must not be a binary 1.0 count");
+        assert!(
+            l_deep != 1.0 && l_shallow != 1.0,
+            "loss must not be a binary 1.0 count"
+        );
     }
 
     #[test]
@@ -1781,20 +2119,44 @@ mod tests {
         let parts = vec![make_part("P", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], cfg(CollisionBackendKind::Cde))
-            .expect("problem");
+        let problem = SparrowProblem::from_solver_input(
+            &parts,
+            &sheets,
+            &ctx(),
+            vec![],
+            cfg(CollisionBackendKind::Cde),
+        )
+        .expect("problem");
         let insts = &problem.instances;
 
-        let overlap = SparrowLayout { placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)] };
+        let overlap = SparrowLayout {
+            placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
+        };
         let t_overlap = SparrowCollisionTracker::build(&overlap, insts, &sheets);
-        assert!(!t_overlap.unsupported, "rect-rect overlap must be CDE-supported");
-        assert!(t_overlap.colliding_pairs() >= 1, "overlap yields >=1 colliding pair");
+        assert!(
+            !t_overlap.unsupported,
+            "rect-rect overlap must be CDE-supported"
+        );
+        assert!(
+            t_overlap.colliding_pairs() >= 1,
+            "overlap yields >=1 colliding pair"
+        );
         assert!(!t_overlap.is_feasible(), "overlapping layout is infeasible");
 
-        let apart = SparrowLayout { placements: vec![pl(0, 0.0, 0.0), pl(1, 100.0, 100.0)] };
+        let apart = SparrowLayout {
+            placements: vec![pl(0, 0.0, 0.0), pl(1, 100.0, 100.0)],
+        };
         let t_apart = SparrowCollisionTracker::build(&apart, insts, &sheets);
-        assert_eq!(t_apart.colliding_pairs(), 0, "separated layout has no colliding pairs");
-        assert_eq!(t_apart.boundary_violations(), 0, "separated layout inside sheet");
+        assert_eq!(
+            t_apart.colliding_pairs(),
+            0,
+            "separated layout has no colliding pairs"
+        );
+        assert_eq!(
+            t_apart.boundary_violations(),
+            0,
+            "separated layout inside sheet"
+        );
         assert!(t_apart.is_feasible(), "separated layout is feasible");
     }
 
@@ -1803,11 +2165,19 @@ mod tests {
         let parts = vec![make_part("P", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], cfg(CollisionBackendKind::Cde))
-            .expect("problem");
+        let problem = SparrowProblem::from_solver_input(
+            &parts,
+            &sheets,
+            &ctx(),
+            vec![],
+            cfg(CollisionBackendKind::Cde),
+        )
+        .expect("problem");
         let insts = &problem.instances;
 
-        let mut layout = SparrowLayout { placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)] };
+        let mut layout = SparrowLayout {
+            placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
+        };
         let mut tracker = SparrowCollisionTracker::build(&layout, insts, &sheets);
         assert!(!tracker.is_feasible(), "starts overlapping");
         let before = tracker.incremental_updates;
@@ -1815,9 +2185,20 @@ mod tests {
         layout.placements[1] = pl(1, 120.0, 120.0);
         let mut diag = SparrowDiagnostics::default();
         tracker.update_after_move(1, &layout, insts, &sheets, &mut diag);
-        assert_eq!(tracker.incremental_updates, before + 1, "incremental update counter advanced");
-        assert_eq!(diag.native_tracker_incremental_updates, 1, "diag incremental update recorded");
-        assert_eq!(tracker.colliding_pairs(), 0, "collision resolved after move");
+        assert_eq!(
+            tracker.incremental_updates,
+            before + 1,
+            "incremental update counter advanced"
+        );
+        assert_eq!(
+            diag.native_tracker_incremental_updates, 1,
+            "diag incremental update recorded"
+        );
+        assert_eq!(
+            tracker.colliding_pairs(),
+            0,
+            "collision resolved after move"
+        );
         assert!(tracker.is_feasible(), "feasible after separating move");
     }
 
@@ -1826,17 +2207,28 @@ mod tests {
         let parts = vec![make_part("P", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], cfg(CollisionBackendKind::Cde))
-            .expect("problem");
+        let problem = SparrowProblem::from_solver_input(
+            &parts,
+            &sheets,
+            &ctx(),
+            vec![],
+            cfg(CollisionBackendKind::Cde),
+        )
+        .expect("problem");
         let insts = &problem.instances;
 
-        let layout = SparrowLayout { placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)] };
+        let layout = SparrowLayout {
+            placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
+        };
         let mut tracker = SparrowCollisionTracker::build(&layout, insts, &sheets);
         let snap = tracker.snapshot();
         tracker.update_weights();
         let weighted_after_bump = tracker.total_weighted_loss();
         let raw = tracker.total_raw_loss();
-        assert!(weighted_after_bump > raw, "GLS weight bump raises weighted loss above raw");
+        assert!(
+            weighted_after_bump > raw,
+            "GLS weight bump raises weighted loss above raw"
+        );
 
         tracker.restore_keep_weights(snap);
         assert!(
@@ -1851,21 +2243,38 @@ mod tests {
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let config = cfg(CollisionBackendKind::Cde);
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], config.clone())
-            .expect("problem");
+        let problem =
+            SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], config.clone())
+                .expect("problem");
         let n = problem.instances.len();
         let result = SparrowOptimizer::new(config).solve(problem);
 
         assert!(result.feasible, "tiny problem converges natively");
-        assert!(result.diagnostics.converged, "diagnostics report convergence");
-        assert_eq!(result.placements.len(), n, "every instance projected to a Placement");
-        assert_eq!(result.diagnostics.collision_graph_final_pairs, 0, "no residual collisions");
-        assert_eq!(result.diagnostics.boundary_violations_final, 0, "no residual boundary violations");
+        assert!(
+            result.diagnostics.converged,
+            "diagnostics report convergence"
+        );
+        assert_eq!(
+            result.placements.len(),
+            n,
+            "every instance projected to a Placement"
+        );
+        assert_eq!(
+            result.diagnostics.collision_graph_final_pairs, 0,
+            "no residual collisions"
+        );
+        assert_eq!(
+            result.diagnostics.boundary_violations_final, 0,
+            "no residual boundary violations"
+        );
         assert!(result.diagnostics.native_model_active);
         assert!(result.diagnostics.native_tracker_active);
         assert!(!result.diagnostics.old_core_used);
         assert_eq!(result.diagnostics.native_problem_instances, n);
-        assert_eq!(result.diagnostics.compression_passes, 0, "compression disabled by default");
+        assert_eq!(
+            result.diagnostics.compression_passes, 0,
+            "compression disabled by default"
+        );
     }
 
     #[test]
@@ -1878,18 +2287,35 @@ mod tests {
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let config = cfg(CollisionBackendKind::Cde);
-        let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], config.clone())
-            .expect("problem");
+        let problem =
+            SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], config.clone())
+                .expect("problem");
         let result = SparrowOptimizer::new(config).solve(problem);
         let d = &result.diagnostics;
-        assert!(d.worker_count >= 2, "worker competition active, got {}", d.worker_count);
+        assert!(
+            d.worker_count >= 2,
+            "worker competition active, got {}",
+            d.worker_count
+        );
         assert!(d.worker_passes > 0, "at least one worker pass ran");
-        assert!(d.worker_candidates_evaluated > 0, "workers evaluated candidates");
+        assert!(
+            d.worker_candidates_evaluated > 0,
+            "workers evaluated candidates"
+        );
         assert!(d.search_position_calls > 0, "search invoked");
         assert!(d.search_position_samples > 0, "search sampled candidates");
-        assert!(d.native_tracker_incremental_updates > 0, "incremental tracker updates happened");
-        assert!(d.quantified_pair_queries > 0, "quantified pair separation probed");
-        assert!(d.multi_target_items_attempted > 0, "worker move targets attempted");
+        assert!(
+            d.native_tracker_incremental_updates > 0,
+            "incremental tracker updates happened"
+        );
+        assert!(
+            d.quantified_pair_queries > 0,
+            "quantified pair separation probed"
+        );
+        assert!(
+            d.multi_target_items_attempted > 0,
+            "worker move targets attempted"
+        );
     }
 
     #[test]
@@ -1899,8 +2325,9 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         let run = || {
             let config = cfg(CollisionBackendKind::Cde);
-            let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], config.clone())
-                .expect("problem");
+            let problem =
+                SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], config.clone())
+                    .expect("problem");
             SparrowOptimizer::new(config).solve(problem).placements
         };
         let a = run();
@@ -1908,8 +2335,14 @@ mod tests {
         assert_eq!(a.len(), b.len(), "same placed count");
         for (pa, pb) in a.iter().zip(b.iter()) {
             assert_eq!(pa.instance_id, pb.instance_id);
-            assert!((pa.x - pb.x).abs() < 1e-9 && (pa.y - pb.y).abs() < 1e-9, "deterministic coords");
-            assert!((pa.rotation_deg - pb.rotation_deg).abs() < 1e-9, "deterministic rotation");
+            assert!(
+                (pa.x - pb.x).abs() < 1e-9 && (pa.y - pb.y).abs() < 1e-9,
+                "deterministic coords"
+            );
+            assert!(
+                (pa.rotation_deg - pb.rotation_deg).abs() < 1e-9,
+                "deterministic rotation"
+            );
         }
     }
 }
