@@ -1,0 +1,28 @@
+id: fill_canvas_sgh_q24r2_native_sparrow_core_port
+kind: canvas_task
+slug: sgh_q24r2_native_sparrow_core_port
+title: SGH-Q24R2 Native Sparrow core port implementation
+canvas_path: canvases/egyedi_solver/sgh_q24r2_native_sparrow_core_port.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q24r2_native_sparrow_core_port/run.md
+report_path: codex/reports/egyedi_solver/sgh_q24r2_native_sparrow_core_port.md
+status: ready
+primary_goal: Port the original jagua_rs/Sparrow solver lifecycle into VRS fixed-sheet sparrow_cde. Do not drift into CDE-only optimization or benchmark-only work.
+acceptance:
+  - real_rust_lifecycle_changes_in_optimizer_sparrow
+  - separator_strike_no_improvement_loop_implemented
+  - worker_master_move_items_multi_implemented
+  - worker_move_items_processes_all_colliding_items
+  - search_placement_container_focused_best_samples_two_stage_cd_active
+  - exploration_pool_biased_restore_large_item_disruption_implemented
+  - compression_restore_pressure_separate_accept_loop_implemented
+  - tracker_save_restore_update_supports_lifecycle
+  - cde_active_set_supports_lifecycle_if_needed_but_not_main_deliverable
+  - minimal_compile_or_smoke_evidence_written
+reject_if:
+  - only_reports_scripts_or_diagnostics_changed
+  - only_cde_adapter_or_cde_observability_changed
+  - exploration_pool_not_done
+  - compression_rewrite_not_done
+  - worker_move_items_partial_topk_only
+  - search_depth_disabled_to_pass_tests
+  - run_spent_mainly_on_benchmark_rows

@@ -169,6 +169,28 @@ pub struct SparrowDiagnostics {
     pub fixed_sheet_objective_before: f64,
     pub fixed_sheet_objective_after: f64,
     pub fixed_sheet_objective_delta: f64,
+    // ── SGH-Q24R2 native Sparrow lifecycle diagnostics ──────────────────────
+    /// Separator (Alg 9) strike/no-improvement loop accounting.
+    pub separator_invocations: usize,
+    pub separator_strikes: usize,
+    pub separator_no_improvement_iters: usize,
+    /// Worker `move_items` (Alg 5) over ALL currently colliding items.
+    pub worker_colliding_items_seen: usize,
+    pub worker_items_moved: usize,
+    pub worker_items_skipped_clear: usize,
+    pub worker_master_loads: usize,
+    /// Exploration (Alg 12) pool + biased restore + large-item disruption.
+    pub exploration_pool_inserts: usize,
+    pub exploration_pool_size_max: usize,
+    pub exploration_pool_restores: usize,
+    pub exploration_disruptions_large_item_swap: usize,
+    pub exploration_attempts: usize,
+    pub exploration_failed_attempts: usize,
+    /// Compression (Alg 13) restore→pressure→separate→accept lifecycle.
+    pub compression_restore_attempts: usize,
+    pub compression_pressure_proposals: usize,
+    pub compression_separation_calls: usize,
+    pub compression_step_decay_events: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -777,56 +799,6 @@ pub fn build_sparrow_seed_layout(
     Ok((placements, unplaced))
 }
 
-fn build_grid_spread_seed_layout(
-    seed_layout: &WorkingLayout,
-    parts: &[Part],
-    sheets: &[SheetShape],
-) -> WorkingLayout {
-    let mut layout = seed_layout.snapshot();
-    let mut cursor_x = vec![0.0_f64; sheets.len()];
-    let mut cursor_y = vec![0.0_f64; sheets.len()];
-    let mut row_h = vec![0.0_f64; sheets.len()];
-
-    for p in &mut layout.placements {
-        let Some(part) = parts.iter().find(|pt| pt.id == p.part_id) else {
-            continue;
-        };
-        let (rw, rh) = dims_for_rotation(part.width, part.height, p.rotation_deg);
-        let mut placed = false;
-        for sheet_idx in 0..sheets.len() {
-            let sheet = &sheets[sheet_idx];
-            if rw > sheet.width + 1e-9 || rh > sheet.height + 1e-9 {
-                continue;
-            }
-            if cursor_x[sheet_idx] + rw > sheet.width + 1e-9 {
-                cursor_x[sheet_idx] = 0.0;
-                cursor_y[sheet_idx] += row_h[sheet_idx];
-                row_h[sheet_idx] = 0.0;
-            }
-            if cursor_y[sheet_idx] + rh <= sheet.height + 1e-9 {
-                let (ax, ay) = placement_anchor_from_rect_min(
-                    cursor_x[sheet_idx],
-                    cursor_y[sheet_idx],
-                    part.width,
-                    part.height,
-                    p.rotation_deg,
-                );
-                p.sheet_index = sheet_idx;
-                p.x = ax;
-                p.y = ay;
-                cursor_x[sheet_idx] += rw;
-                row_h[sheet_idx] = row_h[sheet_idx].max(rh);
-                placed = true;
-                break;
-            }
-        }
-        if !placed {
-            // Keep the original placement; the tracker will surface residual loss.
-        }
-    }
-    layout
-}
-
 fn fixed_sheet_objective(layout: &WorkingLayout, parts: &[Part]) -> f64 {
     let mut per_sheet: HashMap<usize, (f64, f64)> = HashMap::new();
     for p in &layout.placements {
@@ -840,44 +812,6 @@ fn fixed_sheet_objective(layout: &WorkingLayout, parts: &[Part]) -> f64 {
         }
     }
     per_sheet.values().map(|(x, y)| x + y).sum()
-}
-
-fn run_fixed_sheet_compression(
-    state: &mut SparrowState,
-    parts: &[Part],
-    sheets: &[SheetShape],
-    diag: &mut SparrowDiagnostics,
-) {
-    diag.compression_passes += 1;
-    let before = fixed_sheet_objective(&state.layout, parts);
-    diag.fixed_sheet_objective_before = before;
-    let step = 1.0_f64;
-    let mut current_objective = before;
-
-    for idx in 0..state.layout.placements.len() {
-        for (dx, dy) in [(-step, 0.0_f64), (0.0, -step)] {
-            diag.compression_candidates_evaluated += 1;
-            let old = state.layout.placements[idx].clone();
-            let snap = state.tracker.snapshot_loss();
-            state.layout.placements[idx].x += dx;
-            state.layout.placements[idx].y += dy;
-            state.tracker.update_placement(idx, &state.layout, parts, sheets);
-            state.refresh_after_move(idx);
-            let objective = fixed_sheet_objective(&state.layout, parts);
-            if state.current_graph.is_feasible() && objective <= current_objective + 1e-9 {
-                current_objective = objective;
-                diag.compression_accepts += 1;
-            } else {
-                state.layout.placements[idx] = old;
-                state.tracker.restore_but_keep_weights(snap);
-                state.refresh_after_move(idx);
-                diag.compression_rejects += 1;
-            }
-        }
-    }
-
-    diag.fixed_sheet_objective_after = current_objective;
-    diag.fixed_sheet_objective_delta = before - current_objective;
 }
 
 // ---------------------------------------------------------------------------
@@ -894,7 +828,10 @@ impl SparrowSeparationKernel {
     }
 
     fn worker_count(&self) -> usize {
-        4
+        // Multiple deterministic workers (Sparrow move_items_multi). Kept modest
+        // so a single pass over all colliding items stays within the phase budget
+        // under the per-candidate CDE search cost.
+        2
     }
 
     fn compare_f64_asc(a: f64, b: f64) -> Ordering {
@@ -917,31 +854,6 @@ impl SparrowSeparationKernel {
             let j = (rng.next_u64() % ((i + 1) as u64)) as usize;
             out.swap(i, j);
         }
-        out
-    }
-
-    fn top_target_indices(graph: &CollisionGraphSnapshot, layout: &WorkingLayout, limit: usize) -> Vec<usize> {
-        let mut out: Vec<usize> = Vec::new();
-        if let Some(idx) = graph.worst_item_index {
-            out.push(idx);
-        }
-        for (a, b, _, _, _) in &graph.top_colliding_pairs {
-            for id in [a, b] {
-                if let Some(idx) = layout.placements.iter().position(|p| &p.instance_id == id) {
-                    if !out.contains(&idx) {
-                        out.push(idx);
-                    }
-                }
-            }
-        }
-        for (id, _, _, _) in &graph.top_boundary_violations {
-            if let Some(idx) = layout.placements.iter().position(|p| &p.instance_id == id) {
-                if !out.contains(&idx) {
-                    out.push(idx);
-                }
-            }
-        }
-        out.truncate(limit.max(1));
         out
     }
 
@@ -971,99 +883,418 @@ impl SparrowSeparationKernel {
             .then(Self::compare_layout_order(&a.layout, &b.layout))
     }
 
-    fn worker_is_better_than_master(
-        master_weighted_loss: f64,
-        master_raw_loss: f64,
-        candidate: &SparrowWorkerCandidate,
-    ) -> bool {
-        candidate.weighted_loss < master_weighted_loss - 1e-9
-            || (candidate.weighted_loss <= master_weighted_loss + 1e-9
-                && candidate.raw_loss < master_raw_loss - 1e-9)
-            || candidate.raw_loss == 0.0
-    }
+    // -----------------------------------------------------------------------
+    // SGH-Q24R2 native Sparrow lifecycle (Algorithms 5/9/10/12/13)
+    // -----------------------------------------------------------------------
 
-    fn run_worker_pass(
+    /// Algorithm 5 — worker `move_items`: load the master snapshot, then give
+    /// EVERY currently colliding item a move opportunity in a worker-specific
+    /// deterministic order. A move is accepted only if the moved item's weighted
+    /// loss does not increase (Sparrow worker acceptance); rejected moves roll the
+    /// item back while preserving GLS weights.
+    #[allow(clippy::too_many_arguments)]
+    fn worker_move_items(
         &self,
-        state: &SparrowState,
-        targets: &[usize],
+        master: &SparrowState,
         iteration: usize,
         worker_id: usize,
         parts: &[Part],
         sheets: &[SheetShape],
+        started: &Instant,
+        time_limit: f64,
+        diag: &mut SparrowDiagnostics,
     ) -> SparrowWorkerCandidate {
-        let mut layout = state.layout.snapshot();
-        let mut tracker = state.tracker.clone();
-        let mut graph = state.graph.clone();
-        let mut raw_loss = state.current_raw_loss;
-        let mut weighted_loss = state.current_weighted_loss;
+        // Worker loads master layout + tracker snapshot.
+        let mut layout = master.layout.snapshot();
+        let mut tracker = master.tracker.clone();
+        let mut graph = master.graph.clone();
+        diag.worker_master_loads += 1;
+
+        // Collect ALL currently colliding items, ordered per worker.
+        let colliding = tracker.colliding_indices();
+        diag.worker_colliding_items_seen += colliding.len();
+        let ordered = if worker_id == 0 {
+            colliding.clone()
+        } else {
+            Self::deterministic_shuffle(&colliding, self.worker_seed(iteration, worker_id))
+        };
+
         let mut moves_attempted = 0usize;
         let mut moves_accepted = 0usize;
         let mut moves_rejected = 0usize;
         let mut search_stats = SearchPositionStats::default();
-        let ordered_targets = if worker_id == 0 {
-            targets.to_vec()
-        } else {
-            Self::deterministic_shuffle(targets, self.worker_seed(iteration, worker_id))
-        };
 
-        for target_idx in ordered_targets {
-            if raw_loss == 0.0 || target_idx >= layout.placements.len() {
+        for target_idx in ordered {
+            // Deadline guard: a single worker pass over all colliding items must
+            // not overshoot the phase budget (CDE search is expensive per item).
+            if started.elapsed().as_secs_f64() >= time_limit {
                 break;
+            }
+            if target_idx >= layout.placements.len() {
+                continue;
+            }
+            // Re-check: only move items that are STILL colliding (the set changes
+            // as earlier items in this pass move).
+            if tracker.weighted_loss_for_item(target_idx) <= 1e-12 {
+                diag.worker_items_skipped_clear += 1;
+                continue;
             }
             moves_attempted += 1;
             let call_seed = self.worker_seed(iteration, worker_id)
                 ^ (target_idx as u64).wrapping_mul(0x517C_C1B7_2722_0A95);
             let Some(new_p) = search_position_for_target(
-                &layout,
-                target_idx,
-                parts,
-                sheets,
-                &None,
-                &self.config.collision_backend,
-                self.config.loss_model,
-                &self.config.rotation_context,
-                &self.config.search_position_config,
-                call_seed,
-                &mut search_stats,
+                &layout, target_idx, parts, sheets, &None,
+                &self.config.collision_backend, self.config.loss_model,
+                &self.config.rotation_context, &self.config.search_position_config,
+                call_seed, &mut search_stats,
             ) else {
                 moves_rejected += 1;
                 continue;
             };
 
+            let old_weighted = tracker.weighted_loss_for_item(target_idx);
             let old_placement = layout.placements[target_idx].clone();
             let loss_snap = tracker.snapshot_loss();
             layout.placements[target_idx] = new_p;
             tracker.update_placement(target_idx, &layout, parts, sheets);
-            graph.update_moved_item(target_idx, &tracker, &layout, 5);
-            let new_graph = graph.snapshot();
-            let new_weighted = new_graph.total_weighted_loss;
-            let new_raw = new_graph.total_raw_loss;
-            let improved = new_weighted < weighted_loss - 1e-9
-                || (new_weighted <= weighted_loss + 1e-9 && new_raw < raw_loss - 1e-9)
-                || new_raw == 0.0;
-            if improved {
-                raw_loss = new_raw;
-                weighted_loss = new_weighted;
+            // Worker acceptance: the moved item's weighted loss must not increase.
+            let new_weighted = tracker.weighted_loss_for_item(target_idx);
+            if new_weighted <= old_weighted + 1e-9 {
+                graph.update_moved_item(target_idx, &tracker, &layout, 5);
                 moves_accepted += 1;
+                diag.worker_items_moved += 1;
             } else {
                 layout.placements[target_idx] = old_placement;
                 tracker.restore_but_keep_weights(loss_snap);
-                graph.update_moved_item(target_idx, &tracker, &layout, 5);
                 moves_rejected += 1;
             }
         }
 
+        // Rebuild the worker's graph snapshot from its final tracker state.
+        graph = SparrowCollisionGraph::build_from_tracker(&tracker, &layout, 5);
+        let snap = graph.snapshot();
         SparrowWorkerCandidate {
             worker_id,
             layout,
             tracker,
             graph,
-            raw_loss,
-            weighted_loss,
+            raw_loss: snap.total_raw_loss,
+            weighted_loss: snap.total_weighted_loss,
             moves_attempted,
             moves_accepted,
             moves_rejected,
             search_stats,
+        }
+    }
+
+    /// Algorithm 10 — `move_items_multi`: run all workers from the shared master
+    /// snapshot, then load the worker with the lowest weighted loss back into the
+    /// master. Returns the accumulated search stats.
+    #[allow(clippy::too_many_arguments)]
+    fn move_items_multi(
+        &self,
+        state: &mut SparrowState,
+        iteration: usize,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        started: &Instant,
+        time_limit: f64,
+        diag: &mut SparrowDiagnostics,
+    ) -> SearchPositionStats {
+        let worker_count = self.worker_count();
+        let mut workers: Vec<SparrowWorkerCandidate> = Vec::with_capacity(worker_count);
+        for worker_id in 0..worker_count {
+            workers.push(self.worker_move_items(state, iteration, worker_id, parts, sheets, started, time_limit, diag));
+        }
+        let mut search_stats = SearchPositionStats::default();
+        for w in &workers {
+            diag.worker_candidates_evaluated += w.moves_attempted;
+            diag.multi_target_items_attempted += w.moves_attempted;
+            diag.multi_target_items_accepted += w.moves_accepted;
+            diag.multi_target_items_rejected += w.moves_rejected;
+            diag.moves_attempted += w.moves_attempted;
+            diag.moves_accepted += w.moves_accepted;
+            diag.rollbacks += w.moves_rejected;
+            search_stats.accumulate(&w.search_stats);
+        }
+        diag.worker_passes += 1;
+        workers.sort_by(Self::compare_worker_candidates);
+        let best = workers.into_iter().next().unwrap();
+        diag.worker_best_loss = best.weighted_loss;
+        // Master loads the best worker (Sparrow keeps the lowest weighted loss).
+        state.layout = best.layout;
+        state.tracker = best.tracker;
+        state.graph = best.graph;
+        state.refresh_from_graph();
+        search_stats
+    }
+
+    /// Algorithm 9 — `separate`: strike / no-improvement loop. Repeatedly runs
+    /// `move_items_multi`; tracks the least-infeasible incumbent; updates GLS
+    /// weights every iteration; rolls back to the incumbent at the end of each
+    /// strike while preserving GLS weights. Returns true if feasibility reached.
+    #[allow(clippy::too_many_arguments)]
+    fn separate(
+        &self,
+        state: &mut SparrowState,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        started: &Instant,
+        time_limit: f64,
+        search_stats: &mut SearchPositionStats,
+        diag: &mut SparrowDiagnostics,
+    ) -> bool {
+        diag.separator_invocations += 1;
+        let strike_limit = 3usize;
+        let iter_no_improvement_limit = 8usize;
+
+        let mut min_loss_layout = state.layout.snapshot();
+        let mut min_loss_snap = state.tracker.snapshot_loss();
+        let mut min_loss = state.current_raw_loss;
+
+        let mut n_strikes = 0usize;
+        while n_strikes < strike_limit && started.elapsed().as_secs_f64() < time_limit {
+            let initial_strike_loss = state.current_raw_loss;
+            let mut n_no_improvement = 0usize;
+            while n_no_improvement < iter_no_improvement_limit
+                && started.elapsed().as_secs_f64() < time_limit
+            {
+                state.iteration += 1;
+                diag.iterations += 1;
+                let stats = self.move_items_multi(state, state.iteration, parts, sheets, started, time_limit, diag);
+                search_stats.accumulate(&stats);
+                let loss = state.current_raw_loss;
+                if loss == 0.0 {
+                    min_loss_layout = state.layout.snapshot();
+                    min_loss_snap = state.tracker.snapshot_loss();
+                    // Restore the feasible incumbent and return.
+                    state.best_feasible_layout = Some(state.layout.clone());
+                    return true;
+                } else if loss < min_loss {
+                    if loss < min_loss * 0.98 {
+                        n_no_improvement = 0;
+                    }
+                    min_loss_layout = state.layout.snapshot();
+                    min_loss_snap = state.tracker.snapshot_loss();
+                    min_loss = loss;
+                } else {
+                    n_no_improvement += 1;
+                    diag.separator_no_improvement_iters += 1;
+                }
+                // GLS weight update every iteration (Sparrow Algorithm 8).
+                state.tracker.update_weights(
+                    self.config.gls_weight_decay, self.config.gls_weight_max,
+                    self.config.gls_weight_min_inc_ratio, self.config.gls_weight_max_inc_ratio,
+                );
+                state.gls_weight_updates += 1;
+                diag.gls_weight_updates += 1;
+                state.refresh_after_weight_update();
+            }
+            if initial_strike_loss * 0.98 <= min_loss {
+                n_strikes += 1;
+                diag.separator_strikes += 1;
+            } else {
+                n_strikes = 0;
+            }
+            // Rollback to least-infeasible incumbent, PRESERVING GLS weights.
+            state.layout = min_loss_layout.snapshot();
+            state.tracker.restore_but_keep_weights(min_loss_snap.clone());
+            state.graph = SparrowCollisionGraph::build_from_tracker(&state.tracker, &state.layout, 5);
+            state.refresh_from_graph();
+        }
+        state.current_graph.is_feasible()
+    }
+
+    /// Real large-item disruption (Algorithm 12 kick): swap the positions of the
+    /// two largest-area placements on the same sheet (deterministic given the
+    /// seed). This genuinely changes the layout to escape a local optimum.
+    fn disrupt_large_items(
+        &self,
+        state: &mut SparrowState,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        seed: u64,
+        diag: &mut SparrowDiagnostics,
+    ) {
+        let n = state.layout.placements.len();
+        if n < 2 {
+            return;
+        }
+        // Rank placements by part area (largest first), deterministic tie-break by index.
+        let mut by_area: Vec<(usize, f64)> = (0..n)
+            .filter_map(|i| {
+                let p = &state.layout.placements[i];
+                parts.iter().find(|pt| pt.id == p.part_id).map(|pt| (i, pt.width * pt.height))
+            })
+            .collect();
+        by_area.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal).then(a.0.cmp(&b.0)));
+        if by_area.len() < 2 {
+            return;
+        }
+        // Pick the largest item and another large item (seed-selected among the top).
+        let i = by_area[0].0;
+        let top_k = by_area.len().min(6);
+        let j_pick = 1 + (seed as usize % (top_k - 1));
+        let j = by_area[j_pick].0;
+        if i == j {
+            return;
+        }
+        // Swap their (x, y, sheet) — keep each item's own rotation (feasible).
+        let pi = state.layout.placements[i].clone();
+        let pj = state.layout.placements[j].clone();
+        state.layout.placements[i].x = pj.x;
+        state.layout.placements[i].y = pj.y;
+        state.layout.placements[i].sheet_index = pj.sheet_index;
+        state.layout.placements[j].x = pi.x;
+        state.layout.placements[j].y = pi.y;
+        state.layout.placements[j].sheet_index = pi.sheet_index;
+        state.tracker.update_placement(i, &state.layout, parts, sheets);
+        state.tracker.update_placement(j, &state.layout, parts, sheets);
+        state.graph = SparrowCollisionGraph::build_from_tracker(&state.tracker, &state.layout, 5);
+        state.refresh_from_graph();
+        diag.exploration_disruptions_large_item_swap += 1;
+        diag.exploration_disruptions += 1;
+    }
+
+    /// Algorithm 12 — exploration phase: bounded infeasible pool + biased restore
+    /// + large-item disruption + repeated separate attempts under budget.
+    #[allow(clippy::too_many_arguments)]
+    fn exploration_phase(
+        &self,
+        state: &mut SparrowState,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        started: &Instant,
+        time_limit: f64,
+        search_stats: &mut SearchPositionStats,
+        diag: &mut SparrowDiagnostics,
+    ) -> bool {
+        const POOL_CAP: usize = 8;
+        // (raw_loss, layout) sorted ascending by raw_loss.
+        let mut pool: Vec<(f64, WorkingLayout)> = Vec::new();
+        let max_attempts = 12usize;
+
+        for attempt in 0..max_attempts {
+            if started.elapsed().as_secs_f64() >= time_limit {
+                break;
+            }
+            diag.exploration_attempts += 1;
+            let feasible = self.separate(state, parts, sheets, started, time_limit, search_stats, diag);
+            if feasible {
+                diag.exploration_best_feasible_found = true;
+                diag.exploration_best_raw_loss = 0.0;
+                return true;
+            }
+            diag.exploration_failed_attempts += 1;
+            // Insert the least-infeasible local solution into the pool.
+            let loss = state.current_raw_loss;
+            diag.exploration_best_raw_loss = diag.exploration_best_raw_loss.min(loss);
+            let insert_at = pool
+                .binary_search_by(|(l, _)| l.partial_cmp(&loss).unwrap_or(Ordering::Equal))
+                .unwrap_or_else(|e| e);
+            pool.insert(insert_at, (loss, state.layout.snapshot()));
+            if pool.len() > POOL_CAP {
+                pool.truncate(POOL_CAP);
+            }
+            diag.exploration_pool_inserts += 1;
+            diag.exploration_pool_size_max = diag.exploration_pool_size_max.max(pool.len());
+
+            if pool.is_empty() {
+                break;
+            }
+            // Biased restore: favor low-loss entries (front of the pool).
+            let bias_seed = self.config.seed ^ (attempt as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let span = ((pool.len() + 1) / 2).max(1); // top half
+            let sel = (bias_seed as usize) % span;
+            let restored = pool[sel].1.snapshot();
+            diag.exploration_pool_restores += 1;
+            diag.exploration_restarts += 1;
+            let tracker = VrsCollisionTracker::build_with_model(
+                &restored, parts, sheets, self.config.loss_model, self.config.collision_backend.clone(),
+            );
+            let preserved_seed = state.seed;
+            *state = SparrowState::new(restored, tracker, preserved_seed);
+            // Disrupt before retrying separation.
+            self.disrupt_large_items(state, parts, sheets, bias_seed, diag);
+            diag.exploration_stagnation_events += 1;
+        }
+        state.current_graph.is_feasible()
+    }
+
+    /// Algorithm 13 — compression phase: restore the feasible incumbent, apply a
+    /// compaction pressure proposal, run the separator to restore feasibility,
+    /// accept if feasible AND the fixed-sheet objective improved, else rollback
+    /// and decay the pressure step.
+    #[allow(clippy::too_many_arguments)]
+    fn compression_phase(
+        &self,
+        state: &mut SparrowState,
+        parts: &[Part],
+        sheets: &[SheetShape],
+        started: &Instant,
+        time_limit: f64,
+        search_stats: &mut SearchPositionStats,
+        diag: &mut SparrowDiagnostics,
+    ) {
+        let Some(incumbent) = state.best_feasible_layout.clone() else {
+            return;
+        };
+        diag.compression_passes += 1;
+        let before = fixed_sheet_objective(&incumbent, parts);
+        diag.fixed_sheet_objective_before = before;
+        let mut best = incumbent;
+        let mut best_obj = before;
+        let mut step = 0.10_f64; // fraction of the toward-origin distance
+        let min_step = 0.01_f64;
+        let max_passes = 4usize;
+
+        for _pass in 0..max_passes {
+            if step < min_step || started.elapsed().as_secs_f64() >= time_limit {
+                break;
+            }
+            diag.compression_restore_attempts += 1;
+            // Restore incumbent into a fresh state.
+            let tracker = VrsCollisionTracker::build_with_model(
+                &best, parts, sheets, self.config.loss_model, self.config.collision_backend.clone(),
+            );
+            let mut trial = SparrowState::new(best.snapshot(), tracker, state.seed);
+            // Pressure proposal: compact every item toward its sheet origin by `step`.
+            diag.compression_pressure_proposals += 1;
+            for idx in 0..trial.layout.placements.len() {
+                let p = &mut trial.layout.placements[idx];
+                let sheet = &sheets[p.sheet_index.min(sheets.len() - 1)];
+                p.x = sheet.min_x + (p.x - sheet.min_x) * (1.0 - step);
+                p.y = sheet.min_y + (p.y - sheet.min_y) * (1.0 - step);
+            }
+            // Rebuild tracker after the bulk pressure move (temporary collisions allowed).
+            trial.tracker = VrsCollisionTracker::build_with_model(
+                &trial.layout, parts, sheets, self.config.loss_model, self.config.collision_backend.clone(),
+            );
+            trial.graph = SparrowCollisionGraph::build_from_tracker(&trial.tracker, &trial.layout, 5);
+            trial.refresh_from_graph();
+            // Run the separator to restore feasibility.
+            diag.compression_separation_calls += 1;
+            let feasible = self.separate(&mut trial, parts, sheets, started, time_limit, search_stats, diag);
+            let obj = fixed_sheet_objective(&trial.layout, parts);
+            if feasible && obj <= best_obj - 1e-9 {
+                best = trial.layout.snapshot();
+                best_obj = obj;
+                diag.compression_accepts += 1;
+            } else {
+                diag.compression_rejects += 1;
+                step *= 0.5;
+                diag.compression_step_decay_events += 1;
+            }
+        }
+        diag.fixed_sheet_objective_after = best_obj;
+        diag.fixed_sheet_objective_delta = before - best_obj;
+        // Commit the best feasible compressed incumbent.
+        let tracker = VrsCollisionTracker::build_with_model(
+            &best, parts, sheets, self.config.loss_model, self.config.collision_backend.clone(),
+        );
+        *state = SparrowState::new(best.snapshot(), tracker, state.seed);
+        if state.current_graph.is_feasible() {
+            state.best_feasible_layout = Some(best);
         }
     }
 
@@ -1112,133 +1343,32 @@ impl SparrowSeparationKernel {
 
         let mut search_stats = SearchPositionStats::default();
         let started = Instant::now();
-        let max_iter = self.config.max_iterations.max(1);
         let time_limit = self.config.time_limit_s.max(0.1);
-        let worker_count = self.worker_count();
-        diag.workers = worker_count;
+        // Reserve part of the budget for the compression phase (Algorithm 13).
+        let exploration_deadline = time_limit * 0.8;
+        diag.workers = self.worker_count();
         diag.worker_best_loss = state.current_weighted_loss;
         diag.exploration_seed_strategies = 1;
         diag.exploration_best_raw_loss = state.current_raw_loss;
         diag.exploration_best_weighted_loss = state.current_weighted_loss;
 
-        for iter in 0..max_iter {
-            state.iteration = iter + 1;
-            if started.elapsed().as_secs_f64() >= time_limit {
-                break;
-            }
-            if state.current_graph.is_feasible() {
-                break;
-            }
-            let targets = Self::top_target_indices(&state.current_graph, &state.layout, 8);
-            if targets.is_empty() {
-                break;
-            }
-            diag.topk_target_count = diag.topk_target_count.max(targets.len());
-            diag.worker_passes += 1;
-            let master_weighted = state.current_weighted_loss;
-            let master_raw = state.current_raw_loss;
-            let mut workers: Vec<SparrowWorkerCandidate> = Vec::with_capacity(worker_count);
-            for worker_id in 0..worker_count {
-                workers.push(self.run_worker_pass(
-                    &state,
-                    &targets,
-                    iter + 1,
-                    worker_id,
-                    parts,
-                    sheets,
-                ));
-            }
+        // ── Algorithm 11 orchestration: exploration → compression → validate ──
+        // Exploration phase (Alg 12): runs the separator (Alg 9 strike loop, which
+        // drives Alg 10 move_items_multi → Alg 5 worker move_items over all
+        // colliding items), then pool/biased-restore/disrupt under budget.
+        let feasible = self.exploration_phase(
+            &mut state, parts, sheets, &started, exploration_deadline,
+            &mut search_stats, &mut diag,
+        );
 
-            for worker in &workers {
-                diag.worker_candidates_evaluated += worker.moves_attempted;
-                diag.multi_target_items_attempted += worker.moves_attempted;
-                diag.multi_target_items_accepted += worker.moves_accepted;
-                diag.multi_target_items_rejected += worker.moves_rejected;
-                diag.moves_attempted += worker.moves_attempted;
-                diag.moves_accepted += worker.moves_accepted;
-                diag.rollbacks += worker.moves_rejected;
-                state.moves_attempted += worker.moves_attempted;
-                state.moves_accepted += worker.moves_accepted;
-                state.rollbacks += worker.moves_rejected;
-                search_stats.accumulate(&worker.search_stats);
-            }
-
-            workers.sort_by(Self::compare_worker_candidates);
-            let best_worker = workers.into_iter().next().unwrap();
-            diag.worker_best_loss = best_worker.weighted_loss;
-            if Self::worker_is_better_than_master(master_weighted, master_raw, &best_worker) {
-                state.layout = best_worker.layout;
-                state.tracker = best_worker.tracker;
-                state.graph = best_worker.graph;
-                state.refresh_from_graph();
-                diag.worker_commits += 1;
-                if state.current_raw_loss < diag.exploration_best_raw_loss {
-                    diag.exploration_best_raw_loss = state.current_raw_loss;
-                    diag.exploration_best_weighted_loss = state.current_weighted_loss;
-                }
-            } else {
-                diag.worker_rollbacks += 1;
-                state.tracker.update_weights(
-                    self.config.gls_weight_decay,
-                    self.config.gls_weight_max,
-                    self.config.gls_weight_min_inc_ratio,
-                    self.config.gls_weight_max_inc_ratio,
-                );
-                state.gls_weight_updates += 1;
-                diag.gls_weight_updates += 1;
-                state.refresh_after_weight_update();
-            }
-
-            // Periodic GLS weight update on stagnation/persistence.
-            if self.config.gls_update_period > 0
-                && state.iteration % self.config.gls_update_period.max(1) == 0
-            {
-                state.tracker.update_weights(
-                    self.config.gls_weight_decay,
-                    self.config.gls_weight_max,
-                    self.config.gls_weight_min_inc_ratio,
-                    self.config.gls_weight_max_inc_ratio,
-                );
-                state.gls_weight_updates += 1;
-                diag.gls_weight_updates += 1;
-                state.refresh_after_weight_update();
-            }
-            if state.iteration % 32 == 0 {
-                state.debug_verify_graph();
-            }
-        }
-
-        if !state.current_graph.is_feasible() {
-            diag.iterations += state.iteration;
-            diag.graph_full_rebuilds += state.graph.full_rebuilds;
-            diag.graph_incremental_updates += state.graph.incremental_updates;
-            diag.graph_edges_recomputed += state.graph.edges_recomputed;
-            diag.graph_edges_pruned_by_broadphase += state.graph.edges_pruned_by_broadphase;
-            diag.graph_debug_rebuilds += state.graph.debug_rebuilds;
-            diag.graph_debug_rebuild_mismatches += state.graph.debug_rebuild_mismatches;
-            diag.exploration_stagnation_events += 1;
-            diag.exploration_disruptions += 1;
-            diag.exploration_restarts += 1;
-            diag.exploration_seed_strategies += 1;
-            let restarted = build_grid_spread_seed_layout(&state.layout, parts, sheets);
-            let tracker = VrsCollisionTracker::build_with_model(
-                &restarted,
-                parts,
-                sheets,
-                self.config.loss_model,
-                self.config.collision_backend.clone(),
-            );
-            state = SparrowState::new(restarted, tracker, self.config.seed ^ 0xA5A5_5A5A_1234_5678);
-            diag.exploration_best_raw_loss = diag.exploration_best_raw_loss.min(state.current_raw_loss);
-            diag.exploration_best_weighted_loss = diag.exploration_best_weighted_loss.min(state.current_weighted_loss);
-            if state.current_graph.is_feasible() {
-                state.best_feasible_layout = Some(state.layout.clone());
-            }
-        }
-
-        if state.current_graph.is_feasible() {
+        // Compression phase (Alg 13): restore feasible incumbent → pressure →
+        // separate → accept/reject, under the remaining budget.
+        if feasible || state.best_feasible_layout.is_some() {
             diag.exploration_best_feasible_found = true;
-            run_fixed_sheet_compression(&mut state, parts, sheets, &mut diag);
+            self.compression_phase(
+                &mut state, parts, sheets, &started, time_limit,
+                &mut search_stats, &mut diag,
+            );
         }
 
         // Final stats from search_position + tracker severity.
@@ -1253,7 +1383,7 @@ impl SparrowSeparationKernel {
         diag.severity_boundary_queries = combined_sev.boundary_queries;
         diag.severity_probe_queries = combined_sev.probe_queries;
 
-        diag.iterations += state.iteration;
+        // diag.iterations is accumulated inside `separate()` across all attempts.
         diag.graph_full_rebuilds += state.graph.full_rebuilds;
         diag.graph_incremental_updates += state.graph.incremental_updates;
         diag.graph_edges_recomputed += state.graph.edges_recomputed;
@@ -1577,35 +1707,61 @@ mod tests {
         let cfg = default_cfg(CollisionBackendKind::Bbox, 8);
         let result = SparrowSeparationKernel::new(cfg).run(layout, &parts, &sheets);
         let d = result.diagnostics;
+        // SGH-Q24R2 native lifecycle: worker-master move_items_multi over ALL
+        // currently colliding items (Alg 5/10), not top-K.
         assert!(d.workers > 1, "production pass must use multiple deterministic workers");
-        assert!(d.topk_target_count > 1, "multi-target top-k must include more than one item");
-        assert!(d.multi_target_items_attempted > 1, "worker pass must attempt multiple targets");
-        assert!(d.graph_incremental_updates > 0, "moved items must update the maintained graph");
-        assert!(d.graph_full_rebuilds <= d.exploration_seed_strategies,
-            "full graph rebuilds should be bounded to seed/restart initialization");
+        assert!(d.worker_master_loads > 1, "each worker must load the master snapshot (move_items_multi)");
+        assert!(d.worker_colliding_items_seen > 1,
+            "worker move_items must see more than one currently-colliding item");
+        assert!(d.multi_target_items_attempted > 1, "worker pass must attempt multiple items");
+        assert!(d.separator_invocations >= 1, "separator (Alg 9) must be invoked");
+        assert!(d.worker_passes >= 1, "move_items_multi pass must run");
     }
 
     #[test]
-    fn sparrow_q23r3_exploration_restart_and_compression_are_diagnosed() {
+    fn sparrow_q24r2_exploration_and_compression_lifecycle_are_diagnosed() {
+        // Medium fixture that converges: exercises separator + compression lifecycle.
         let parts = vec![make_part("A", 30.0, 20.0, 12)];
         let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let ctx = RotationResolveContext::legacy_default();
         let (p, u) = build_sparrow_seed_layout(&parts, &sheets, &ctx).expect("seed");
         let layout = WorkingLayout::new(p, u, 1, 0);
+        let cfg = default_cfg(CollisionBackendKind::Bbox, 64);
+        let result = SparrowSeparationKernel::new(cfg).run(layout, &parts, &sheets);
+        let d = result.diagnostics;
+        assert!(result.feasible, "native lifecycle should produce a feasible fixed-sheet layout");
+        assert!(d.exploration_attempts >= 1, "exploration phase must run at least one attempt");
+        assert!(d.separator_invocations >= 1, "separator (Alg 9) must be invoked");
+        assert!(d.compression_passes >= 1, "feasible incumbent must run compression (Alg 13)");
+        assert!(d.compression_separation_calls >= 1,
+            "compression must call the separator (restore→pressure→separate→accept)");
+        assert!(d.fixed_sheet_objective_after <= d.fixed_sheet_objective_before + 1e-9,
+            "compression must not worsen the fixed-sheet objective");
+    }
+
+    #[test]
+    fn sparrow_q24r2_exploration_pool_and_disruption_fire_on_infeasible() {
+        // Impossible fixture (5×50×50 on a single 100×100 sheet → only 4 fit):
+        // separation never reaches feasibility, so the exploration pool must
+        // insert, biased-restore, and disrupt (large-item swap).
+        let parts = vec![make_part("A", 50.0, 50.0, 5)];
+        let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+        let sheets = expand_sheets(&stocks).expect("sheets");
+        let ctx = RotationResolveContext::legacy_default();
+        let (p, u) = build_sparrow_seed_layout(&parts, &sheets, &ctx).expect("seed");
+        let layout = WorkingLayout::new(p, u, 1, 0);
         let cfg = SparrowConfig {
-            max_iterations: 1,
-            collision_backend: CollisionBackendKind::Bbox,
-            ..default_cfg(CollisionBackendKind::Bbox, 1)
+            time_limit_s: 5.0,
+            ..default_cfg(CollisionBackendKind::Bbox, 32)
         };
         let result = SparrowSeparationKernel::new(cfg).run(layout, &parts, &sheets);
         let d = result.diagnostics;
-        assert!(result.feasible, "grid restart seed should produce a feasible fixed-sheet layout");
-        assert!(d.exploration_seed_strategies >= 2, "origin + grid restart strategies must be counted");
-        assert!(d.exploration_restarts >= 1, "stagnation restart must be counted");
-        assert!(d.exploration_disruptions >= 1, "restart disruption must be counted");
-        assert!(d.compression_passes >= 1, "feasible incumbent must run compression");
-        assert!(d.compression_candidates_evaluated > 0, "compression must evaluate candidates");
-        assert!(d.fixed_sheet_objective_after <= d.fixed_sheet_objective_before + 1e-9);
+        assert!(!result.feasible, "impossible fixture must not converge");
+        assert!(d.separator_strikes >= 1, "separator strike loop must register strikes");
+        assert!(d.exploration_pool_inserts >= 1, "exploration pool must receive inserts");
+        assert!(d.exploration_pool_restores >= 1, "exploration must biased-restore from the pool");
+        assert!(d.exploration_disruptions_large_item_swap >= 1,
+            "exploration must perform a large-item disruption swap");
     }
 }
