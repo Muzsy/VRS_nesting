@@ -434,7 +434,7 @@ fn native_sparrow_diag_to_output(
         sparrow_exploration_best_raw_loss: Some(d.best_infeasible_raw_loss),
         sparrow_exploration_best_weighted_loss: Some(d.best_infeasible_weighted_loss),
         sparrow_exploration_best_feasible_found: Some(d.converged),
-        sparrow_compression_passes: Some(d.compression_passes),
+        sparrow_compression_passes: Some(d.excluded_phase_passes),
         sparrow_compression_candidates_evaluated: Some(0),
         sparrow_compression_accepts: Some(0),
         sparrow_compression_rejects: Some(0),

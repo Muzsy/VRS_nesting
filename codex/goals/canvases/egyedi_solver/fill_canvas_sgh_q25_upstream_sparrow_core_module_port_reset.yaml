@@ -1,0 +1,38 @@
+id: fill_canvas_sgh_q25_upstream_sparrow_core_module_port_reset
+kind: canvas_task
+slug: sgh_q25_upstream_sparrow_core_module_port_reset
+title: SGH-Q25 Upstream Sparrow core module-by-module port reset, compression excluded
+canvas_path: canvases/egyedi_solver/sgh_q25_upstream_sparrow_core_module_port_reset.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q25_upstream_sparrow_core_module_port_reset/run.md
+report_path: codex/reports/egyedi_solver/sgh_q25_upstream_sparrow_core_module_port_reset.md
+status: ready
+primary_goal: Replace the current monolithic/proxy native Sparrow implementation with a module-by-module upstream Sparrow core port, compression excluded.
+acceptance:
+  - upstream_sparrow_commit_is_pinned_and_required_source_files_are_read
+  - local_optimizer_sparrow_is_split_into_upstream_mapped_modules_not_monolithic_mod_rs
+  - upstream_to_local_mapping_table_covers_quantify_eval_sample_lbf_worker_separator_explore
+  - production_sparrow_cde_keeps_native_problem_optimizer_solution_path
+  - production_sparrow_core_does_not_use_WorkingLayout_VrsCollisionTracker_or_legacy_solver_core
+  - tracker_quantify_eval_sample_worker_separator_explore_are_ported_or_documented_fixed_sheet_adaptations
+  - lbf_builder_uses_upstream_search_lbf_evaluator_semantics_not_shelf_or_anchor_shortcuts
+  - separation_evaluator_uses_upstream_hazard_tracker_weighted_loss_not_aabb_penetration_ranking
+  - worker_and_separator_choose_and_accept_by_upstream_weighted_loss_semantics
+  - exploration_pool_restore_disruption_is_ported_with_fixed_sheet_adaptation_and_no_compression
+  - medium_cde_and_lv8_12types_x1_regressions_pass
+  - lv8_reference_sheet1_191_real_run_is_not_guarded_fake_or_proxy_shortcut_driven
+  - compression_disabled_and_unused
+reject_if:
+  - task_only_improves_runtime_metrics_without_module_by_module_upstream_port
+  - production_sparrow_logic_remains_primarily_inside_rust_vrs_solver_src_optimizer_sparrow_mod_rs
+  - upstream_to_local_mapping_table_missing_or_has_non_compression_missing_entries
+  - report_uses_words_like_sparrow_like_equivalent_future_work_instead_of_precise_port_or_fixed_sheet_adaptation
+  - shelf_construct_or_fallback_anchor_or_aabb_penetration_or_loose_pair_count_worker_selection_remain_in_production_sparrow_core
+  - q24r9_resolution_distance_or_other_non_upstream_primary_loss_model_remains_default_without_experimental_flag
+  - dense_191_probe_is_guarded_short_circuited_or_fake_placed_metric
+  - compression_is_implemented_enabled_or_hardened_as_part_of_this_task
+commands:
+  - cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+  - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+  - python3 scripts/smoke_sgh_q25_upstream_sparrow_core_module_port_reset.py
+  - ./scripts/check.sh
+  - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q25_upstream_sparrow_core_module_port_reset.md
