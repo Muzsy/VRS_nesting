@@ -187,4 +187,3 @@ pub struct SparrowDiagnostics {
     pub dense_unresolved_instances: Vec<String>,
     pub dense_final_validation_ran: bool,
 }
-

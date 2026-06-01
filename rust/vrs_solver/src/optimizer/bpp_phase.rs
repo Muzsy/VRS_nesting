@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use crate::item::Part;
-use crate::sheet::SheetShape;
 use super::multisheet::compute_sheet_count_used;
 use super::phase::PhaseConfig;
 use super::repair::validate_placements_for_backend;
@@ -9,6 +7,8 @@ use super::score::ScoreModel;
 use super::sheet_elimination::{SheetEliminationDiagnostics, SheetEliminationEngine};
 use super::stopping::StoppingPolicy;
 use super::working::WorkingLayout;
+use crate::item::Part;
+use crate::sheet::SheetShape;
 
 // ---------------------------------------------------------------------------
 // BppPhaseDiagnostics
@@ -62,7 +62,10 @@ pub struct BppPhase {
 impl BppPhase {
     pub fn new(config: PhaseConfig) -> Self {
         let score_model = ScoreModel::new(config.score_weights.clone());
-        Self { config, score_model }
+        Self {
+            config,
+            score_model,
+        }
     }
 
     /// Run the iterative BPP phase: repeatedly attempt sheet elimination until
@@ -94,7 +97,11 @@ impl BppPhase {
         let mut incumbent_sheet_count = initial_sheet_count;
 
         let initial_score = self.score_model.score_with_backend(
-            &incumbent_placements, &incumbent_unplaced, parts, sheets, &self.config.collision_backend,
+            &incumbent_placements,
+            &incumbent_unplaced,
+            parts,
+            sheets,
+            &self.config.collision_backend,
         );
         diag.initial_score = initial_score.total_cost;
         diag.best_score = initial_score.total_cost;
@@ -125,8 +132,7 @@ impl BppPhase {
                 self.config.rotation_context.clone(),
                 self.config.collision_backend.clone(),
             );
-            let mut policy =
-                StoppingPolicy::new(self.config.bpp_budget.max_iterations, f64::MAX);
+            let mut policy = StoppingPolicy::new(self.config.bpp_budget.max_iterations, f64::MAX);
 
             let (new_placements, new_unplaced, elim_diag) = engine.run(
                 incumbent_placements.clone(),
@@ -139,14 +145,21 @@ impl BppPhase {
             // Commit gate
             let new_sheet_count = compute_sheet_count_used(&new_placements);
             let violations = validate_placements_for_backend(
-                &new_placements, parts, sheets, &self.config.collision_backend,
+                &new_placements,
+                parts,
+                sheets,
+                &self.config.collision_backend,
             );
             let count_preserved = new_placements.len() == incumbent_placements.len();
             let ids_match = {
-                let orig: HashSet<&str> =
-                    incumbent_placements.iter().map(|p| p.instance_id.as_str()).collect();
-                let updated: HashSet<&str> =
-                    new_placements.iter().map(|p| p.instance_id.as_str()).collect();
+                let orig: HashSet<&str> = incumbent_placements
+                    .iter()
+                    .map(|p| p.instance_id.as_str())
+                    .collect();
+                let updated: HashSet<&str> = new_placements
+                    .iter()
+                    .map(|p| p.instance_id.as_str())
+                    .collect();
                 orig == updated
             };
 
@@ -208,7 +221,7 @@ mod tests {
     use crate::io::Placement;
     use crate::item::{expand_instances, Part};
     use crate::optimizer::initializer::build_initial_layout;
-    use crate::optimizer::phase::{PhaseConfig, PhaseBudget};
+    use crate::optimizer::phase::{PhaseBudget, PhaseConfig};
     use crate::optimizer::repair::{find_violations, run_repair};
     use crate::optimizer::score::{ScoreModel, ScoreWeights};
     use crate::optimizer::stopping::StoppingPolicy;
@@ -263,14 +276,36 @@ mod tests {
 
     /// Manually build layout with one 40×40 item per sheet (3 sheets).
     /// All three fit on a single 100×100 sheet, so 2 eliminations should succeed.
-    fn three_item_three_sheet_layout() -> (Vec<Placement>, Vec<crate::sheet::SheetShape>, Vec<Part>) {
+    fn three_item_three_sheet_layout() -> (Vec<Placement>, Vec<crate::sheet::SheetShape>, Vec<Part>)
+    {
         let parts = vec![make_part("A", 40.0, 40.0, 3)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 3)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 2, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0003".into(),
+                part_id: "A".into(),
+                sheet_index: 2,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         (placements, sheets, parts)
     }
@@ -304,8 +339,22 @@ mod tests {
         let stocks = vec![make_stock("S", 60.0, 60.0, 2)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements.clone(), vec![], sheets.len(), 0);
 
@@ -313,7 +362,10 @@ mod tests {
         let phase = BppPhase::new(config);
         let (result, diag) = phase.run(layout, &parts, &sheets);
 
-        assert_eq!(diag.successful_eliminations, 0, "no elimination should succeed");
+        assert_eq!(
+            diag.successful_eliminations, 0,
+            "no elimination should succeed"
+        );
         assert_eq!(diag.rollback_count, 1, "one rollback must occur");
         assert_eq!(result.placements.len(), placements.len());
         for (a, b) in result.placements.iter().zip(placements.iter()) {
@@ -356,7 +408,11 @@ mod tests {
         let (result, diag) = phase.run(layout, &parts, &sheets);
 
         let violations = find_violations(&result.placements, &parts, &sheets);
-        assert!(violations.is_empty(), "BPP output must be violation-free; diag={}", diag.summary());
+        assert!(
+            violations.is_empty(),
+            "BPP output must be violation-free; diag={}",
+            diag.summary()
+        );
     }
 
     #[test]
@@ -366,10 +422,38 @@ mod tests {
         let stocks = vec![make_stock("S", 100.0, 100.0, 4)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 2, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0004".into(), part_id: "A".into(), sheet_index: 3, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0003".into(),
+                part_id: "A".into(),
+                sheet_index: 2,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0004".into(),
+                part_id: "A".into(),
+                sheet_index: 3,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], sheets.len(), 0);
 
@@ -398,7 +482,11 @@ mod tests {
         let (r1, _) = BppPhase::new(config.clone()).run(make_layout(), &parts, &sheets);
         let (r2, _) = BppPhase::new(config).run(make_layout(), &parts, &sheets);
 
-        assert_eq!(r1.placements.len(), r2.placements.len(), "determinism: placement count");
+        assert_eq!(
+            r1.placements.len(),
+            r2.placements.len(),
+            "determinism: placement count"
+        );
         for (a, b) in r1.placements.iter().zip(r2.placements.iter()) {
             assert_eq!(a.instance_id, b.instance_id, "determinism: instance_id");
             assert_eq!(a.sheet_index, b.sheet_index, "determinism: sheet_index");
@@ -445,7 +533,12 @@ mod tests {
         let score_model = ScoreModel::new(ScoreWeights::default());
 
         let input_layout = WorkingLayout::new(placements.clone(), vec![], sheets.len(), 0);
-        let input_score = score_model.score(&input_layout.placements, &input_layout.unplaced, &parts, &sheets);
+        let input_score = score_model.score(
+            &input_layout.placements,
+            &input_layout.unplaced,
+            &parts,
+            &sheets,
+        );
 
         let config = bpp_test_config(3, 512);
         let (result, diag) = BppPhase::new(config).run(input_layout, &parts, &sheets);
@@ -465,7 +558,8 @@ mod tests {
                 diag.best_score,
                 diag.initial_score
             );
-            let final_score = score_model.score(&result.placements, &result.unplaced, &parts, &sheets);
+            let final_score =
+                score_model.score(&result.placements, &result.unplaced, &parts, &sheets);
             assert!(
                 (diag.best_score - final_score.total_cost).abs() < 1e-9,
                 "best_score must equal score(final committed layout): {} vs {}",

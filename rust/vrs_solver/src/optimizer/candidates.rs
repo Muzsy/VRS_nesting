@@ -73,8 +73,12 @@ impl CandidateGenerationStats {
     pub fn summary(&self) -> String {
         format!(
             "total={} origin={} neighbor={} vertex={} edge={} interior={}",
-            self.total, self.from_origin, self.from_neighbor,
-            self.from_vertex, self.from_edge, self.from_interior,
+            self.total,
+            self.from_origin,
+            self.from_neighbor,
+            self.from_vertex,
+            self.from_edge,
+            self.from_interior,
         )
     }
 }
@@ -108,15 +112,31 @@ pub fn generate_candidates_with_sheets(
 
     // Legacy: one origin per sheet.
     for s in 0..sheets.len() {
-        pts.push(CandidatePoint { sheet_index: s, x: 0.0, y: 0.0 });
+        pts.push(CandidatePoint {
+            sheet_index: s,
+            x: 0.0,
+            y: 0.0,
+        });
         stats.from_origin += 1;
     }
 
     // Legacy: placed bbox right/top/top-right corners (PlacedNeighbor).
     for pb in placed {
-        pts.push(CandidatePoint { sheet_index: pb.sheet_index, x: pb.x2, y: pb.y1 });
-        pts.push(CandidatePoint { sheet_index: pb.sheet_index, x: pb.x1, y: pb.y2 });
-        pts.push(CandidatePoint { sheet_index: pb.sheet_index, x: pb.x2, y: pb.y2 });
+        pts.push(CandidatePoint {
+            sheet_index: pb.sheet_index,
+            x: pb.x2,
+            y: pb.y1,
+        });
+        pts.push(CandidatePoint {
+            sheet_index: pb.sheet_index,
+            x: pb.x1,
+            y: pb.y2,
+        });
+        pts.push(CandidatePoint {
+            sheet_index: pb.sheet_index,
+            x: pb.x2,
+            y: pb.y2,
+        });
         stats.from_neighbor += 3;
     }
 
@@ -130,7 +150,11 @@ pub fn generate_candidates_with_sheets(
 
         // VertexNear: each polygon vertex is a candidate bbox-min.
         for v in verts {
-            pts.push(CandidatePoint { sheet_index: s, x: v.x, y: v.y });
+            pts.push(CandidatePoint {
+                sheet_index: s,
+                x: v.x,
+                y: v.y,
+            });
             stats.from_vertex += 1;
         }
 
@@ -154,7 +178,11 @@ pub fn generate_candidates_with_sheets(
         while y < sheet.max_y {
             let mut x = sheet.min_x + step_x;
             while x < sheet.max_x {
-                pts.push(CandidatePoint { sheet_index: s, x, y });
+                pts.push(CandidatePoint {
+                    sheet_index: s,
+                    x,
+                    y,
+                });
                 stats.from_interior += 1;
                 x += step_x;
             }
@@ -170,9 +198,7 @@ pub fn generate_candidates_with_sheets(
             .then_with(|| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
     });
     pts.dedup_by(|a, b| {
-        a.sheet_index == b.sheet_index
-            && (a.x - b.x).abs() < EPS
-            && (a.y - b.y).abs() < EPS
+        a.sheet_index == b.sheet_index && (a.x - b.x).abs() < EPS && (a.y - b.y).abs() < EPS
     });
 
     stats.total = pts.len();
@@ -190,12 +216,28 @@ pub fn generate_candidates_with_sheets(
 pub fn generate_candidates(sheet_count: usize, placed: &[PlacedBbox]) -> Vec<CandidatePoint> {
     let mut pts: Vec<CandidatePoint> = Vec::with_capacity(sheet_count + placed.len() * 3);
     for s in 0..sheet_count {
-        pts.push(CandidatePoint { sheet_index: s, x: 0.0, y: 0.0 });
+        pts.push(CandidatePoint {
+            sheet_index: s,
+            x: 0.0,
+            y: 0.0,
+        });
     }
     for pb in placed {
-        pts.push(CandidatePoint { sheet_index: pb.sheet_index, x: pb.x2, y: pb.y1 });
-        pts.push(CandidatePoint { sheet_index: pb.sheet_index, x: pb.x1, y: pb.y2 });
-        pts.push(CandidatePoint { sheet_index: pb.sheet_index, x: pb.x2, y: pb.y2 });
+        pts.push(CandidatePoint {
+            sheet_index: pb.sheet_index,
+            x: pb.x2,
+            y: pb.y1,
+        });
+        pts.push(CandidatePoint {
+            sheet_index: pb.sheet_index,
+            x: pb.x1,
+            y: pb.y2,
+        });
+        pts.push(CandidatePoint {
+            sheet_index: pb.sheet_index,
+            x: pb.x2,
+            y: pb.y2,
+        });
     }
     pts.sort_by(|a, b| {
         a.sheet_index
@@ -204,9 +246,7 @@ pub fn generate_candidates(sheet_count: usize, placed: &[PlacedBbox]) -> Vec<Can
             .then_with(|| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
     });
     pts.dedup_by(|a, b| {
-        a.sheet_index == b.sheet_index
-            && (a.x - b.x).abs() < EPS
-            && (a.y - b.y).abs() < EPS
+        a.sheet_index == b.sheet_index && (a.x - b.x).abs() < EPS && (a.y - b.y).abs() < EPS
     });
     pts
 }
@@ -257,8 +297,15 @@ mod tests {
         let (cands, stats) = generate_candidates_with_sheets(&sheets, &[]);
         assert!(stats.from_vertex > 0, "must have vertex-near candidates");
         assert!(stats.from_edge > 0, "must have edge-near candidates");
-        assert!(stats.from_interior > 0, "must have interior sample candidates");
-        assert_eq!(stats.total, cands.len(), "stats.total must match actual count");
+        assert!(
+            stats.from_interior > 0,
+            "must have interior sample candidates"
+        );
+        assert_eq!(
+            stats.total,
+            cands.len(),
+            "stats.total must match actual count"
+        );
         assert!(stats.total > 1, "must have more than just origin");
     }
 
@@ -267,26 +314,45 @@ mod tests {
         let sheets = l_shape_sheets();
         let legacy = generate_candidates(1, &[]);
         let (irregular, _) = generate_candidates_with_sheets(&sheets, &[]);
-        assert!(irregular.len() > legacy.len(),
+        assert!(
+            irregular.len() > legacy.len(),
             "irregular-aware must produce more candidates than legacy for L-shape: {} vs {}",
-            irregular.len(), legacy.len());
+            irregular.len(),
+            legacy.len()
+        );
     }
 
     #[test]
     fn rectangular_sheets_no_irregular_sources() {
         let sheets = rect_sheets(100.0, 80.0);
         let (cands, stats) = generate_candidates_with_sheets(&sheets, &[]);
-        assert_eq!(stats.from_vertex, 0, "rect stock: no vertex-near candidates");
+        assert_eq!(
+            stats.from_vertex, 0,
+            "rect stock: no vertex-near candidates"
+        );
         assert_eq!(stats.from_edge, 0, "rect stock: no edge-near candidates");
         assert_eq!(stats.from_interior, 0, "rect stock: no interior candidates");
-        assert_eq!(stats.from_origin, 1, "rect stock: exactly 1 origin candidate");
-        assert_eq!(cands.len(), 1, "rect stock with no placed items: exactly 1 candidate");
+        assert_eq!(
+            stats.from_origin, 1,
+            "rect stock: exactly 1 origin candidate"
+        );
+        assert_eq!(
+            cands.len(),
+            1,
+            "rect stock with no placed items: exactly 1 candidate"
+        );
     }
 
     #[test]
     fn irregular_candidates_deterministic() {
         let sheets = l_shape_sheets();
-        let placed = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 20.0, y2: 15.0 }];
+        let placed = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 20.0,
+            y2: 15.0,
+        }];
         let (c1, _) = generate_candidates_with_sheets(&sheets, &placed);
         let (c2, _) = generate_candidates_with_sheets(&sheets, &placed);
         assert_eq!(c1.len(), c2.len(), "deterministic: same count");
@@ -302,51 +368,109 @@ mod tests {
         let cands = generate_candidates(3, &[]);
         assert_eq!(cands.len(), 3);
         for s in 0..3 {
-            assert!(cands.iter().any(|c| c.sheet_index == s && c.x == 0.0 && c.y == 0.0));
+            assert!(cands
+                .iter()
+                .any(|c| c.sheet_index == s && c.x == 0.0 && c.y == 0.0));
         }
     }
 
     #[test]
     fn candidates_from_placed_bbox_adds_three_points() {
-        let placed = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 100.0, y2: 50.0 }];
+        let placed = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 50.0,
+        }];
         let cands = generate_candidates(1, &placed);
-        assert!(cands.iter().any(|c| c.sheet_index == 0 && (c.x - 100.0).abs() < 1e-6 && c.y.abs() < 1e-6));
-        assert!(cands.iter().any(|c| c.sheet_index == 0 && c.x.abs() < 1e-6 && (c.y - 50.0).abs() < 1e-6));
-        assert!(cands.iter().any(|c| c.sheet_index == 0 && (c.x - 100.0).abs() < 1e-6 && (c.y - 50.0).abs() < 1e-6));
+        assert!(cands
+            .iter()
+            .any(|c| c.sheet_index == 0 && (c.x - 100.0).abs() < 1e-6 && c.y.abs() < 1e-6));
+        assert!(cands
+            .iter()
+            .any(|c| c.sheet_index == 0 && c.x.abs() < 1e-6 && (c.y - 50.0).abs() < 1e-6));
+        assert!(cands.iter().any(|c| c.sheet_index == 0
+            && (c.x - 100.0).abs() < 1e-6
+            && (c.y - 50.0).abs() < 1e-6));
     }
 
     #[test]
     fn candidates_sorted_by_sheet_y_x() {
-        let placed = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 50.0, y2: 30.0 }];
+        let placed = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 50.0,
+            y2: 30.0,
+        }];
         let cands = generate_candidates(2, &placed);
         for w in cands.windows(2) {
             let a = &w[0];
             let b = &w[1];
             let ok = a.sheet_index < b.sheet_index
                 || (a.sheet_index == b.sheet_index && a.y < b.y + 1e-12)
-                || (a.sheet_index == b.sheet_index && (a.y - b.y).abs() < 1e-6 && a.x <= b.x + 1e-12);
+                || (a.sheet_index == b.sheet_index
+                    && (a.y - b.y).abs() < 1e-6
+                    && a.x <= b.x + 1e-12);
             assert!(ok, "not sorted: ({},{}) vs ({},{})", a.x, a.y, b.x, b.y);
         }
     }
 
     #[test]
     fn placed_bbox_overlap_same_sheet() {
-        let a = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 50.0, y2: 50.0 };
-        let b = PlacedBbox { sheet_index: 0, x1: 25.0, y1: 25.0, x2: 75.0, y2: 75.0 };
+        let a = PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 50.0,
+            y2: 50.0,
+        };
+        let b = PlacedBbox {
+            sheet_index: 0,
+            x1: 25.0,
+            y1: 25.0,
+            x2: 75.0,
+            y2: 75.0,
+        };
         assert!(a.overlaps(&b));
     }
 
     #[test]
     fn placed_bbox_no_overlap_adjacent() {
-        let a = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 50.0, y2: 50.0 };
-        let b = PlacedBbox { sheet_index: 0, x1: 50.0, y1: 0.0, x2: 100.0, y2: 50.0 };
+        let a = PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 50.0,
+            y2: 50.0,
+        };
+        let b = PlacedBbox {
+            sheet_index: 0,
+            x1: 50.0,
+            y1: 0.0,
+            x2: 100.0,
+            y2: 50.0,
+        };
         assert!(!a.overlaps(&b));
     }
 
     #[test]
     fn placed_bbox_no_overlap_different_sheets() {
-        let a = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 50.0, y2: 50.0 };
-        let b = PlacedBbox { sheet_index: 1, x1: 0.0, y1: 0.0, x2: 50.0, y2: 50.0 };
+        let a = PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 50.0,
+            y2: 50.0,
+        };
+        let b = PlacedBbox {
+            sheet_index: 1,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 50.0,
+            y2: 50.0,
+        };
         assert!(!a.overlaps(&b));
     }
 }

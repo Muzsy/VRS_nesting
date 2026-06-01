@@ -47,4 +47,3 @@ impl<'a> UniformBBoxSampler<'a> {
         out
     }
 }
-

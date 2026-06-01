@@ -52,7 +52,9 @@ fn rect_inside_outer_poly(rect: Rect, stock: &vrs_solver::sheet::SheetShape) -> 
     }
     let r_edges = rect_edges(rect);
     for (a, b) in r_edges {
-        let Some(re) = jag_edge_from_points(a, b) else { continue };
+        let Some(re) = jag_edge_from_points(a, b) else {
+            continue;
+        };
         for outer_edge in stock._outer_poly.edge_iter() {
             if re.collides_with(&outer_edge) {
                 return false;
@@ -73,12 +75,22 @@ fn main() {
     };
 
     // Positive control: item 20×20 at (10,10) — fully inside L-shape
-    let pos_rect = Rect { x1: 10.0, y1: 10.0, x2: 30.0, y2: 30.0 };
+    let pos_rect = Rect {
+        x1: 10.0,
+        y1: 10.0,
+        x2: 30.0,
+        y2: 30.0,
+    };
     let pos_bbox = rect_inside_sheet_shape(pos_rect, &sheet);
     let pos_l = rect_inside_outer_poly(pos_rect, &sheet);
 
     // Negative control: item 20×20 at (60,60) — in the notch (outside L-shape)
-    let neg_rect = Rect { x1: 60.0, y1: 60.0, x2: 80.0, y2: 80.0 };
+    let neg_rect = Rect {
+        x1: 60.0,
+        y1: 60.0,
+        x2: 80.0,
+        y2: 80.0,
+    };
     let neg_bbox = rect_inside_sheet_shape(neg_rect, &sheet);
     let neg_l = rect_inside_outer_poly(neg_rect, &sheet);
 
@@ -100,19 +112,31 @@ fn main() {
 
     // Custom validator using _outer_poly + CollidesWith works and is required.
     let own_validator_required = neg_bbox && !neg_l;
-    println!("OWN_BOUNDARY_VALIDATOR_REQUIRED: {}", if own_validator_required { "YES" } else { "NO" });
+    println!(
+        "OWN_BOUNDARY_VALIDATOR_REQUIRED: {}",
+        if own_validator_required { "YES" } else { "NO" }
+    );
 
     // The L-shape boundary violation is correctly detected by outer_poly check.
     let violation_detected = !neg_l;
-    println!("L_SHAPE_BOUNDARY_VIOLATION_DETECTED: {}", if violation_detected { "YES" } else { "NO" });
+    println!(
+        "L_SHAPE_BOUNDARY_VIOLATION_DETECTED: {}",
+        if violation_detected { "YES" } else { "NO" }
+    );
 
     // The current bbox-only check incorrectly passes the notch placement.
     let bbox_risk = neg_bbox;
-    println!("CURRENT_BBOX_ONLY_RISK_DETECTED: {}", if bbox_risk { "YES" } else { "NO" });
+    println!(
+        "CURRENT_BBOX_ONLY_RISK_DETECTED: {}",
+        if bbox_risk { "YES" } else { "NO" }
+    );
 
     // Positive control must pass both checks.
     let positive_ok = pos_bbox && pos_l;
-    println!("POSITIVE_CONTROL_PASS: {}", if positive_ok { "YES" } else { "NO" });
+    println!(
+        "POSITIVE_CONTROL_PASS: {}",
+        if positive_ok { "YES" } else { "NO" }
+    );
 
     let decision = if pos_l && !neg_l && neg_bbox {
         "OWN_BOUNDARY_VALIDATOR_PLUS_JAGUA_COLLISION"

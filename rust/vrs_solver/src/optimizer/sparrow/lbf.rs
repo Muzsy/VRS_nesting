@@ -51,12 +51,7 @@ impl<'a> LBFBuilder<'a> {
             placements: Vec::with_capacity(self.problem.instances.len()),
         };
         for instance_idx in order {
-            let placement = if self.started.elapsed().as_secs_f64() < self.seed_budget_s {
-                self.find_placement(&layout, instance_idx)
-                    .or_else(|| self.fixed_sheet_recovery_candidate(&layout, instance_idx))
-            } else {
-                self.fixed_sheet_recovery_candidate(&layout, instance_idx)
-            };
+            let placement = self.search_placement(&layout, instance_idx);
             if let Some(p) = placement {
                 layout.placements.push(p);
             }
@@ -65,7 +60,7 @@ impl<'a> LBFBuilder<'a> {
         layout
     }
 
-    fn find_placement(
+    fn search_placement(
         &mut self,
         layout: &SparrowLayout,
         instance_idx: usize,
@@ -114,7 +109,10 @@ impl<'a> LBFBuilder<'a> {
                     break;
                 }
                 for (rmx, rmy) in sampler.samples_for(rot, 1, &mut self.rng) {
-                    if let Some(scored) = evaluator.score_candidate(rmx, rmy, rot) {
+                    if self.started.elapsed().as_secs_f64() >= self.seed_budget_s {
+                        break;
+                    }
+                    if let Some(scored) = evaluator.score_lbf_candidate(rmx, rmy, rot) {
                         best.report(scored);
                     }
                 }
@@ -122,66 +120,4 @@ impl<'a> LBFBuilder<'a> {
         }
         best.best().map(|s| s.placement)
     }
-
-    fn fixed_sheet_recovery_candidate(
-        &mut self,
-        layout: &SparrowLayout,
-        instance_idx: usize,
-    ) -> Option<SparrowPlacement> {
-        let inst = &self.problem.instances[instance_idx];
-        let sheets = &self.problem.container.sheets;
-        let mut best: Option<(f64, SparrowPlacement)> = None;
-        for sheet_idx in 0..sheets.len() {
-            let sheet = &sheets[sheet_idx];
-            let rot = fitting_rotation(inst, sheets);
-            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
-            if rw > sheet.width + 1e-9 || rh > sheet.height + 1e-9 {
-                continue;
-            }
-            let max_x = (sheet.max_x - rw).max(sheet.min_x);
-            let max_y = (sheet.max_y - rh).max(sheet.min_y);
-            let ordinal = layout.placements.len() as f64 + instance_idx as f64 * 0.618_033_988_75;
-            for k in 0..16 {
-                let dk = k as f64;
-                let fx = ((ordinal + dk * 0.414_213_562) * 0.754_877_666).fract();
-                let fy = ((ordinal + dk * 0.732_050_808) * 0.569_840_296).fract();
-                let rmx = sheet.min_x + fx * (max_x - sheet.min_x).max(0.0);
-                let rmy = sheet.min_y + fy * (max_y - sheet.min_y).max(0.0);
-                let mut candidate_penalty = 0.0;
-                for p in layout.placements.iter().filter(|p| p.sheet_index == sheet_idx) {
-                    let other = &self.problem.instances[p.instance_idx];
-                    let (ow, oh) =
-                        dims_for_rotation(other.part.width, other.part.height, p.rotation_deg);
-                    let (omin_x, omin_y) =
-                        rect_min_from_anchor(p.x, p.y, other.part.width, other.part.height, p.rotation_deg);
-                    let ix = (rmx + rw).min(omin_x + ow) - rmx.max(omin_x);
-                    let iy = (rmy + rh).min(omin_y + oh) - rmy.max(omin_y);
-                    if ix > 0.0 && iy > 0.0 {
-                        candidate_penalty += 1.0 + (ix * iy).sqrt();
-                    }
-                }
-                let (x, y) =
-                    placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
-                let cand = SparrowPlacement {
-                    instance_idx,
-                    sheet_index: sheet_idx,
-                    x,
-                    y,
-                    rotation_deg: rot,
-                };
-                if best
-                    .as_ref()
-                    .map(|(score, _)| candidate_penalty < *score)
-                    .unwrap_or(true)
-                {
-                    best = Some((candidate_penalty, cand));
-                }
-                if candidate_penalty <= 1e-9 {
-                    break;
-                }
-            }
-        }
-        best.map(|(_, p)| p)
-    }
 }
-

@@ -140,7 +140,8 @@ impl SparrowCollisionTracker {
             match adapter.query_boundary(&shape_i, &sheet_shape) {
                 CdeQueryResult::NoCollision => {}
                 CdeQueryResult::Collision => {
-                    let dist = quantify_collision_poly_container_native(&shape_i, &sheet_shape, diag);
+                    let dist =
+                        quantify_collision_poly_container_native(&shape_i, &sheet_shape, diag);
                     self.boundary_loss[i] = dist.max(QUANT_FLOOR);
                 }
                 CdeQueryResult::Unsupported { .. } => {
@@ -242,7 +243,8 @@ impl SparrowCollisionTracker {
             else {
                 continue;
             };
-            let Some(session) = CdeCandidateSession::build(vec![(i, shape_i.clone())], &sheet_shape)
+            let Some(session) =
+                CdeCandidateSession::build(vec![(i, shape_i.clone())], &sheet_shape)
             else {
                 continue;
             };
@@ -416,27 +418,18 @@ impl SparrowCollisionTracker {
     ) -> Self {
         SparrowCollisionTracker::build(layout, instances, sheets)
     }
-
 }
 
-/// Minimum stored loss for any CDE-confirmed collision (so a confirmed positive
-/// never rounds to a feasible 0 because of probe resolution).
+/// Minimum stored loss for any CDE-confirmed collision.
 pub(crate) const QUANT_FLOOR: f64 = 1e-3;
 /// Loss assigned to an unsupported-geometry verdict (treated honestly as a hard,
 /// large violation — never as no-collision).
 pub(crate) const BIG_UNSUPPORTED_LOSS: f64 = 1.0e6;
 
-thread_local! {
-    /// Solve-scoped probe config so the tracker's `recompute_item` (which has no
-    /// `cfg` parameter on the public API surface used by callers/tests) can reach
-    /// the active probe budget. Set at the start of each `solve`.
-    static QUANT_CFG: std::cell::RefCell<SparrowConfig> = std::cell::RefCell::new(
-        SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, RotationResolveContext::legacy_default(), 0)
-    );
-}
-
-pub(crate) fn set_quant_config(cfg: SparrowConfig) {
-    QUANT_CFG.with(|c| *c.borrow_mut() = cfg);
+pub(crate) fn set_quant_config(_cfg: SparrowConfig) {
+    // The Q25-R1 production quantifier is the upstream overlap-proxy model and
+    // no longer reads solve-scoped probe budgets. Keep this hook for the stable
+    // optimizer call boundary.
 }
 
 #[derive(Clone)]
@@ -508,144 +501,26 @@ impl SparrowState {
     }
 }
 
-
 pub(crate) fn bbox_may_overlap(a: &CdePreparedShape, b: &CdePreparedShape) -> bool {
     !(a.max_x < b.min_x || b.max_x < a.min_x || a.max_y < b.min_y || b.max_y < a.min_y)
 }
 
-fn shape_convex_area(s: &CdePreparedShape) -> f64 {
-    bbox_area(s)
-}
-
-fn bbox_area(s: &CdePreparedShape) -> f64 {
-    ((s.max_x - s.min_x).max(0.0) * (s.max_y - s.min_y).max(0.0)).max(1.0)
-}
-
-/// SGH-Q24R9 CDE-truth pair quantification (Sparrow tracker parity).
-///
-/// Existence of the collision is decided by the CDE (the caller only invokes this
-/// for a CDE-confirmed colliding pair). The *magnitude* is the minimal translation
-/// distance that separates `candidate` from `fixed` along their centroid axis,
-/// found by a bracket-doubling + binary-refinement probe in which **every step is
-/// resolved by the CDE** (`query_pair`). No bbox/AABB overlap area is used as the
-/// loss magnitude; bbox is only a centroid/direction hint.
+/// Upstream pair quantification: overlap area proxy plus shape penalty.
+/// Collision existence remains decided by the local CDE session/query.
 pub(crate) fn quantify_collision_poly_poly_native(
     candidate: &CdePreparedShape,
     fixed: &CdePreparedShape,
     diag: &mut SparrowDiagnostics,
 ) -> f64 {
-    let (n_bracket, n_refine) = QUANT_CFG.with(|c| {
-        let c = c.borrow();
-        (c.probe_bracket_steps.max(1), c.probe_binary_refine_steps.max(1))
-    });
-    let adapter = CdeAdapter::with_defaults();
-    let cx = (candidate.min_x + candidate.max_x) * 0.5;
-    let cy = (candidate.min_y + candidate.max_y) * 0.5;
-    let fx = (fixed.min_x + fixed.max_x) * 0.5;
-    let fy = (fixed.min_y + fixed.max_y) * 0.5;
-    let (dir_x, dir_y) = probe_unit(cx - fx, cy - fy);
-    let span =
-        (candidate.max_x - candidate.min_x).max(candidate.max_y - candidate.min_y).max(1.0);
-    let base_step = (span * 0.08).max(1.0);
-    let pair_collides_at = |t: f64, diag: &mut SparrowDiagnostics| -> bool {
-        match translate_prepared(candidate, dir_x * t, dir_y * t) {
-            Some(s) => {
-                diag.quantified_pair_queries += 1;
-                matches!(adapter.query_pair(&s, fixed), CdeQueryResult::Collision)
-            }
-            None => {
-                diag.unsupported_queries += 1;
-                true
-            }
-        }
-    };
-    let resolution_distance = probe_resolution(base_step, n_bracket, n_refine, diag, pair_collides_at);
-    resolution_distance.max(QUANT_FLOOR)
+    quantify_collision_poly_poly(candidate, fixed, diag).max(QUANT_FLOOR)
 }
 
-/// SGH-Q24R9 CDE-truth container quantification (Sparrow tracker parity).
-///
-/// The CDE decides the boundary violation; the magnitude is the minimal
-/// translation toward the container centroid that brings `candidate` inside,
-/// found by the same CDE-resolved probe (`query_boundary`). No bbox-outside-area
-/// proxy is used.
+/// Upstream container quantification adapted to a fixed VRS sheet shape.
+/// Boundary violation existence remains decided by the local CDE query.
 pub(crate) fn quantify_collision_poly_container_native(
     candidate: &CdePreparedShape,
     sheet_shape: &CdePreparedShape,
     diag: &mut SparrowDiagnostics,
 ) -> f64 {
-    let (n_bracket, n_refine) = QUANT_CFG.with(|c| {
-        let c = c.borrow();
-        (c.probe_bracket_steps.max(1), c.probe_binary_refine_steps.max(1))
-    });
-    let adapter = CdeAdapter::with_defaults();
-    let cx = (candidate.min_x + candidate.max_x) * 0.5;
-    let cy = (candidate.min_y + candidate.max_y) * 0.5;
-    let sx = (sheet_shape.min_x + sheet_shape.max_x) * 0.5;
-    let sy = (sheet_shape.min_y + sheet_shape.max_y) * 0.5;
-    let (dir_x, dir_y) = probe_unit(sx - cx, sy - cy);
-    let span =
-        (candidate.max_x - candidate.min_x).max(candidate.max_y - candidate.min_y).max(1.0);
-    let base_step = (span * 0.10).max(1.0);
-    let outside_at = |t: f64, diag: &mut SparrowDiagnostics| -> bool {
-        match translate_prepared(candidate, dir_x * t, dir_y * t) {
-            Some(s) => {
-                diag.quantified_boundary_queries += 1;
-                matches!(adapter.query_boundary(&s, sheet_shape), CdeQueryResult::Collision)
-            }
-            None => {
-                diag.unsupported_queries += 1;
-                true
-            }
-        }
-    };
-    let resolution_distance = probe_resolution(base_step, n_bracket, n_refine, diag, outside_at);
-    (2.0 * resolution_distance).max(QUANT_FLOOR)
-}
-
-/// Unit direction with a deterministic +x fallback for a degenerate vector.
-fn probe_unit(dx: f64, dy: f64) -> (f64, f64) {
-    let n = (dx * dx + dy * dy).sqrt();
-    if n < 1e-9 {
-        (1.0, 0.0)
-    } else {
-        (dx / n, dy / n)
-    }
-}
-
-/// Shared bracket-doubling + binary-refinement resolution probe. `collides_at`
-/// must return whether the shape (translated by `t` along the probe direction)
-/// still collides per the CDE. Returns the minimal clearing distance.
-fn probe_resolution(
-    base_step: f64,
-    n_bracket: usize,
-    n_refine: usize,
-    diag: &mut SparrowDiagnostics,
-    mut collides_at: impl FnMut(f64, &mut SparrowDiagnostics) -> bool,
-) -> f64 {
-    let step0 = base_step.max(1e-3);
-    let mut lo = 0.0_f64;
-    let mut hi = step0;
-    let mut bracketed = false;
-    for _ in 0..n_bracket {
-        if collides_at(hi, diag) {
-            lo = hi;
-            hi *= 2.0;
-        } else {
-            bracketed = true;
-            break;
-        }
-    }
-    if !bracketed {
-        return hi.max(step0);
-    }
-    for _ in 0..n_refine {
-        let mid = 0.5 * (lo + hi);
-        if collides_at(mid, diag) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    hi.max(step0 * 0.25)
+    quantify_collision_poly_container(candidate, sheet_shape, diag).max(QUANT_FLOOR)
 }

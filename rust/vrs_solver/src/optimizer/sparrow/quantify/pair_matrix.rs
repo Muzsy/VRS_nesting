@@ -6,5 +6,7 @@ pub(crate) struct PairMatrix {
 }
 
 impl PairMatrix {
-    pub(crate) fn new(size: usize) -> Self { Self { size } }
+    pub(crate) fn new(size: usize) -> Self {
+        Self { size }
+    }
 }

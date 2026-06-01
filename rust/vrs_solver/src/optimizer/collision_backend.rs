@@ -1,9 +1,9 @@
+use super::boundary::rect_within_boundary;
+use super::initializer::bbox_from_placement;
 use crate::geometry::{polygon_area, to_jag_polygon, Point, Rect, EPS};
 use crate::io::Placement;
 use crate::item::Part;
 use crate::sheet::SheetShape;
-use super::boundary::rect_within_boundary;
-use super::initializer::bbox_from_placement;
 
 // ---------------------------------------------------------------------------
 // CollisionDecision
@@ -377,12 +377,11 @@ fn clean_valid_polygon(points: &[Point]) -> Result<Vec<Point>, &'static str> {
     Ok(out)
 }
 
-fn polygon_for_placement(
-    placement: &Placement,
-    part: &Part,
-) -> Result<Vec<Point>, &'static str> {
+fn polygon_for_placement(placement: &Placement, part: &Part) -> Result<Vec<Point>, &'static str> {
     match extract_polygon_from_part(part) {
-        PolygonExtraction::Absent => rect_polygon_from_placement(placement, part.width, part.height),
+        PolygonExtraction::Absent => {
+            rect_polygon_from_placement(placement, part.width, part.height)
+        }
         PolygonExtraction::Invalid { reason } => Err(reason),
         PolygonExtraction::Valid(local) => Ok(transform_polygon(
             &local,
@@ -404,7 +403,10 @@ fn rect_polygon_from_placement(
     let local = [
         Point { x: 0.0, y: 0.0 },
         Point { x: width, y: 0.0 },
-        Point { x: width, y: height },
+        Point {
+            x: width,
+            y: height,
+        },
         Point { x: 0.0, y: height },
     ];
     Ok(transform_polygon(
@@ -508,7 +510,10 @@ fn polygons_have_same_boundary_coverage(a: &[Point], b: &[Point]) -> bool {
 /// properly crosses any sheet edge (touching the boundary counts as within — NoCollision).
 /// Returns `Ok(false)` if any vertex is outside or any edge properly crosses the boundary.
 /// Returns `Err` if either polygon is degenerate.
-pub(crate) fn polygon_within_sheet_pts(item_pts: &[Point], sheet_pts: &[Point]) -> Result<bool, &'static str> {
+pub(crate) fn polygon_within_sheet_pts(
+    item_pts: &[Point],
+    sheet_pts: &[Point],
+) -> Result<bool, &'static str> {
     let item = clean_valid_polygon(item_pts)?;
     let sheet = clean_valid_polygon(sheet_pts)?;
 
@@ -564,10 +569,22 @@ fn sheet_polygon_points(sheet: &SheetShape) -> Vec<Point> {
         sheet.outer_vertices.clone()
     } else {
         vec![
-            Point { x: sheet.min_x, y: sheet.min_y },
-            Point { x: sheet.max_x, y: sheet.min_y },
-            Point { x: sheet.max_x, y: sheet.max_y },
-            Point { x: sheet.min_x, y: sheet.max_y },
+            Point {
+                x: sheet.min_x,
+                y: sheet.min_y,
+            },
+            Point {
+                x: sheet.max_x,
+                y: sheet.min_y,
+            },
+            Point {
+                x: sheet.max_x,
+                y: sheet.max_y,
+            },
+            Point {
+                x: sheet.min_x,
+                y: sheet.max_y,
+            },
         ]
     }
 }
@@ -740,21 +757,27 @@ mod tests {
         let p1 = pl("A", 0, 0.0, 0.0);
         let p2 = pl("A", 0, 15.0, 15.0); // overlaps p1 (30x30 bbox)
         assert!(
-            backend.placement_overlaps(&p1, &part, &p2, &part).is_collision(),
+            backend
+                .placement_overlaps(&p1, &part, &p2, &part)
+                .is_collision(),
             "bbox backend: overlapping rects → Collision"
         );
 
         // Two adjacent non-overlapping placements.
         let p3 = pl("A", 0, 30.0, 0.0); // adjacent, touching boundary
         assert!(
-            backend.placement_overlaps(&p1, &part, &p3, &part).is_no_collision(),
+            backend
+                .placement_overlaps(&p1, &part, &p3, &part)
+                .is_no_collision(),
             "bbox backend: adjacent (touching) rects → NoCollision"
         );
 
         // Different sheets → no collision.
         let p4 = pl("A", 1, 0.0, 0.0);
         assert!(
-            backend.placement_overlaps(&p1, &part, &p4, &part).is_no_collision(),
+            backend
+                .placement_overlaps(&p1, &part, &p4, &part)
+                .is_no_collision(),
             "bbox backend: different sheets → NoCollision"
         );
     }
@@ -772,24 +795,64 @@ mod tests {
 
         // Clean layout: no violations expected.
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 30.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
 
         let v_old = find_violations(&placements, &parts, &sheets);
         let backend = BboxCollisionBackend;
         let v_new = find_violations_with_backend(&placements, &parts, &sheets, &backend);
-        assert_eq!(v_old.len(), v_new.len(), "clean layout: old and new must agree");
+        assert_eq!(
+            v_old.len(),
+            v_new.len(),
+            "clean layout: old and new must agree"
+        );
 
         // Layout with overlap.
         let placements_overlap = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let v_old2 = find_violations(&placements_overlap, &parts, &sheets);
         let v_new2 = find_violations_with_backend(&placements_overlap, &parts, &sheets, &backend);
-        assert_eq!(v_old2.len(), v_new2.len(), "overlap layout: old and new must agree");
-        assert_eq!(v_old2.len(), 1, "overlap layout must produce exactly 1 violation");
+        assert_eq!(
+            v_old2.len(),
+            v_new2.len(),
+            "overlap layout: old and new must agree"
+        );
+        assert_eq!(
+            v_old2.len(),
+            1,
+            "overlap layout must produce exactly 1 violation"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -801,16 +864,34 @@ mod tests {
         // Two L-shapes placed such that they actually overlap.
         // L-shape: [(0,0),(40,0),(40,20),(20,20),(20,40),(0,40)]
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
 
         let part_a = make_part_with_polygon("L", 40.0, 40.0, l_json.clone());
         let part_b = make_part_with_polygon("L2", 40.0, 40.0, l_json);
 
         // Place B overlapping A's bottom-left region.
-        let p_a = Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
-        let p_b = Placement { instance_id: "L2__0001".into(), part_id: "L2".into(), sheet_index: 0, x: 5.0, y: 5.0, rotation_deg: 0.0 };
+        let p_a = Placement {
+            instance_id: "L__0001".into(),
+            part_id: "L".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
+        let p_b = Placement {
+            instance_id: "L2__0001".into(),
+            part_id: "L2".into(),
+            sheet_index: 0,
+            x: 5.0,
+            y: 5.0,
+            rotation_deg: 0.0,
+        };
 
         let backend = JaguaPolygonExactBackend;
         let result = backend.placement_overlaps(&p_a, &part_a, &p_b, &part_b);
@@ -832,16 +913,34 @@ mod tests {
         // Bounding box: (0,0,40,40).
         // Notch (missing region): (20,20,40,40).
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let part_a = make_part_with_polygon("L", 40.0, 40.0, l_json);
 
         // Rect item B: 15×15, placed at (22,22) — entirely inside A's notch.
         let part_b = make_part("B", 15.0, 15.0);
 
-        let p_a = Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
-        let p_b = Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 };
+        let p_a = Placement {
+            instance_id: "L__0001".into(),
+            part_id: "L".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
+        let p_b = Placement {
+            instance_id: "B__0001".into(),
+            part_id: "B".into(),
+            sheet_index: 0,
+            x: 22.0,
+            y: 22.0,
+            rotation_deg: 0.0,
+        };
 
         // --- Smoke matrix ---
 
@@ -884,24 +983,36 @@ mod tests {
         // Proof via L-shape notch fixture: BboxCollisionBackend gives Collision
         // (false positive) but CdeCollisionBackend gives NoCollision.
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let l_part = make_part_with_polygon("L", 40.0, 40.0, l_json);
         let small_part = make_part("B", 15.0, 15.0);
         let p_l = pl("L", 0, 0.0, 0.0);
         let p_small = pl("B", 0, 22.0, 22.0); // inside L-shape notch
 
-        let bbox_result = BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
-        let cde_result = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let bbox_result =
+            BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let cde_result =
+            CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
 
-        assert!(bbox_result.is_collision(), "Bbox must give false positive for L-notch fixture");
+        assert!(
+            bbox_result.is_collision(),
+            "Bbox must give false positive for L-notch fixture"
+        );
         assert!(
             cde_result.is_no_collision(),
             "CDE must not fallback to bbox; expected NoCollision for notch fixture, got {:?}",
             cde_result
         );
-        assert_ne!(bbox_result, cde_result, "CDE and bbox must disagree for notch fixture");
+        assert_ne!(
+            bbox_result, cde_result,
+            "CDE and bbox must disagree for notch fixture"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -915,10 +1026,21 @@ mod tests {
         let sheets = rect_sheet(100.0, 100.0);
 
         let inside = pl("A", 0, 0.0, 0.0);
-        assert!(backend.placement_within_sheet(&inside, &part, &sheets[0]).is_no_collision());
+        assert!(backend
+            .placement_within_sheet(&inside, &part, &sheets[0])
+            .is_no_collision());
 
-        let outside = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 };
-        assert!(backend.placement_within_sheet(&outside, &part, &sheets[0]).is_collision());
+        let outside = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 90.0,
+            y: 90.0,
+            rotation_deg: 0.0,
+        };
+        assert!(backend
+            .placement_within_sheet(&outside, &part, &sheets[0])
+            .is_collision());
     }
 
     #[test]
@@ -930,13 +1052,28 @@ mod tests {
 
         // Inside the L region: (10,10,30,30) → valid.
         let inside = pl("A", 0, 10.0, 10.0);
-        assert!(backend.placement_within_sheet(&inside, &part, &sheets[0]).is_no_collision(),
-            "item inside L-shape region must be valid");
+        assert!(
+            backend
+                .placement_within_sheet(&inside, &part, &sheets[0])
+                .is_no_collision(),
+            "item inside L-shape region must be valid"
+        );
 
         // In the notch: (60,60,80,80) → invalid.
-        let notch = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 60.0, y: 60.0, rotation_deg: 0.0 };
-        assert!(backend.placement_within_sheet(&notch, &part, &sheets[0]).is_collision(),
-            "item in L-shape notch must be a boundary violation");
+        let notch = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 60.0,
+            y: 60.0,
+            rotation_deg: 0.0,
+        };
+        assert!(
+            backend
+                .placement_within_sheet(&notch, &part, &sheets[0])
+                .is_collision(),
+            "item in L-shape notch must be a boundary violation"
+        );
     }
 
     #[test]
@@ -948,7 +1085,11 @@ mod tests {
         let p_rect = pl("R", 0, 1.0, 1.0);
 
         let result = backend.placement_overlaps(&p_bad, &malformed, &p_rect, &rect);
-        assert!(result.is_unsupported(), "malformed polygon must be Unsupported: {:?}", result);
+        assert!(
+            result.is_unsupported(),
+            "malformed polygon must be Unsupported: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -961,8 +1102,17 @@ mod tests {
             serde_json::json!([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]]),
         );
         let rect = make_part("R", 10.0, 10.0);
-        let result = backend.placement_overlaps(&pl("DEG", 0, 0.0, 0.0), &degenerate, &pl("R", 0, 1.0, 1.0), &rect);
-        assert!(result.is_unsupported(), "degenerate polygon must be Unsupported: {:?}", result);
+        let result = backend.placement_overlaps(
+            &pl("DEG", 0, 0.0, 0.0),
+            &degenerate,
+            &pl("R", 0, 1.0, 1.0),
+            &rect,
+        );
+        assert!(
+            result.is_unsupported(),
+            "degenerate polygon must be Unsupported: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -974,8 +1124,12 @@ mod tests {
         let rotated = pl_rot("A", 0, 0.0, 0.0, 45.0);
         let in_rotated_aabb_corner = pl("B", 0, -10.0, 70.0);
 
-        assert!(bbox_backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &small).is_collision());
-        assert!(backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &small).is_no_collision());
+        assert!(bbox_backend
+            .placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &small)
+            .is_collision());
+        assert!(backend
+            .placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &small)
+            .is_no_collision());
     }
 
     #[test]
@@ -992,8 +1146,12 @@ mod tests {
         let rotated = pl_rot("A", 0, 0.0, 0.0, 45.0);
         let in_rotated_aabb_corner = pl("P", 0, -10.0, 70.0);
 
-        assert!(bbox_backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &square).is_collision());
-        assert!(backend.placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &square).is_no_collision());
+        assert!(bbox_backend
+            .placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &square)
+            .is_collision());
+        assert!(backend
+            .placement_overlaps(&rotated, &long, &in_rotated_aabb_corner, &square)
+            .is_no_collision());
     }
 
     #[test]
@@ -1004,40 +1162,38 @@ mod tests {
         let placement = pl_rot("A", 0, std::f64::consts::SQRT_2 * 10.0, 0.0, 45.0);
 
         let result = backend.placement_within_sheet(&placement, &part, &sheets[0]);
-        assert!(result.is_no_collision(), "45-degree 100x20 rect should fit in 90x90: {:?}", result);
+        assert!(
+            result.is_no_collision(),
+            "45-degree 100x20 rect should fit in 90x90: {:?}",
+            result
+        );
     }
 
     #[test]
     fn touching_rect_edges_are_not_collision() {
         let backend = JaguaPolygonExactBackend;
         let part = make_part("A", 10.0, 10.0);
-        assert!(
-            backend
-                .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 0.0), &part)
-                .is_no_collision()
-        );
+        assert!(backend
+            .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 0.0), &part)
+            .is_no_collision());
     }
 
     #[test]
     fn touching_rect_corners_are_not_collision() {
         let backend = JaguaPolygonExactBackend;
         let part = make_part("A", 10.0, 10.0);
-        assert!(
-            backend
-                .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 10.0), &part)
-                .is_no_collision()
-        );
+        assert!(backend
+            .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 10.0), &part)
+            .is_no_collision());
     }
 
     #[test]
     fn positive_area_overlap_is_collision() {
         let backend = JaguaPolygonExactBackend;
         let part = make_part("A", 10.0, 10.0);
-        assert!(
-            backend
-                .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 9.999, 0.0), &part)
-                .is_collision()
-        );
+        assert!(backend
+            .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 9.999, 0.0), &part)
+            .is_collision());
     }
 
     #[test]
@@ -1091,7 +1247,12 @@ mod tests {
         let backend = JaguaPolygonExactBackend;
         let invalid = make_part_with_polygon("BAD", 40.0, 40.0, serde_json::json!("not-points"));
         let rect = make_part("R", 10.0, 10.0);
-        let result = backend.placement_overlaps(&pl("BAD", 0, 100.0, 100.0), &invalid, &pl("R", 0, 0.0, 0.0), &rect);
+        let result = backend.placement_overlaps(
+            &pl("BAD", 0, 100.0, 100.0),
+            &invalid,
+            &pl("R", 0, 0.0, 0.0),
+            &rect,
+        );
         assert!(result.is_unsupported());
         assert!(!result.is_no_collision());
     }
@@ -1100,8 +1261,12 @@ mod tests {
     fn bbox_backend_still_matches_existing_behavior() {
         let backend = BboxCollisionBackend;
         let part = make_part("A", 10.0, 10.0);
-        assert!(backend.placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 0.0), &part).is_no_collision());
-        assert!(backend.placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 9.0, 0.0), &part).is_collision());
+        assert!(backend
+            .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 10.0, 0.0), &part)
+            .is_no_collision());
+        assert!(backend
+            .placement_overlaps(&pl("A", 0, 0.0, 0.0), &part, &pl("A", 0, 9.0, 0.0), &part)
+            .is_collision());
     }
 
     #[test]
@@ -1112,10 +1277,16 @@ mod tests {
         let invalid = make_part_with_polygon("BAD", 40.0, 40.0, serde_json::json!("not-points"));
         let rect = make_part("R", 10.0, 10.0);
         let result = backend.placement_overlaps(
-            &pl("BAD", 0, 0.0, 0.0), &invalid,
-            &pl("R",   0, 1.0, 1.0), &rect,
+            &pl("BAD", 0, 0.0, 0.0),
+            &invalid,
+            &pl("R", 0, 1.0, 1.0),
+            &rect,
         );
-        assert!(result.is_unsupported(), "invalid polygon must be Unsupported: {:?}", result);
+        assert!(
+            result.is_unsupported(),
+            "invalid polygon must be Unsupported: {:?}",
+            result
+        );
         assert!(!result.is_no_collision());
         assert!(!result.is_collision());
     }
@@ -1142,13 +1313,23 @@ mod tests {
         crate::optimizer::cde_observability::reset();
         let part = make_part("A", 20.0, 20.0);
         let sheets = {
-            let stock = Stock { id: "R".into(), quantity: 1, width: Some(100.0), height: Some(100.0),
-                outer_points: None, holes_points: None, cost_per_use: None };
+            let stock = Stock {
+                id: "R".into(),
+                quantity: 1,
+                width: Some(100.0),
+                height: Some(100.0),
+                outer_points: None,
+                holes_points: None,
+                cost_per_use: None,
+            };
             expand_sheets(&[stock]).expect("sheets")
         };
         CdeCollisionBackend.placement_within_sheet(&pl("A", 0, 10.0, 10.0), &part, &sheets[0]);
         let snap = crate::optimizer::cde_observability::snapshot();
-        assert_eq!(snap.boundary_queries, 1, "one boundary query must be counted");
+        assert_eq!(
+            snap.boundary_queries, 1,
+            "one boundary query must be counted"
+        );
         assert_eq!(snap.pair_queries, 0);
         assert_eq!(snap.total_queries, 1);
     }
@@ -1165,7 +1346,10 @@ mod tests {
         let p2 = pl("A", 0, 10.0, 10.0); // 10×10 overlap → not broad-phase prunable
         CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
         let snap = crate::optimizer::cde_observability::snapshot();
-        assert!(snap.engine_builds >= 1, "at least one CDEngine must be built per overlapping pair query");
+        assert!(
+            snap.engine_builds >= 1,
+            "at least one CDEngine must be built per overlapping pair query"
+        );
     }
 
     #[test]
@@ -1173,13 +1357,23 @@ mod tests {
         crate::optimizer::cde_observability::reset();
         let part = make_part("A", 20.0, 20.0);
         let sheets = {
-            let stock = Stock { id: "R".into(), quantity: 1, width: Some(100.0), height: Some(100.0),
-                outer_points: None, holes_points: None, cost_per_use: None };
+            let stock = Stock {
+                id: "R".into(),
+                quantity: 1,
+                width: Some(100.0),
+                height: Some(100.0),
+                outer_points: None,
+                holes_points: None,
+                cost_per_use: None,
+            };
             expand_sheets(&[stock]).expect("sheets")
         };
         CdeCollisionBackend.placement_within_sheet(&pl("A", 0, 10.0, 10.0), &part, &sheets[0]);
         let snap = crate::optimizer::cde_observability::snapshot();
-        assert!(snap.engine_builds >= 1, "at least one CDEngine must be built per boundary query");
+        assert!(
+            snap.engine_builds >= 1,
+            "at least one CDEngine must be built per boundary query"
+        );
     }
 
     #[test]
@@ -1188,12 +1382,20 @@ mod tests {
         let invalid = make_part_with_polygon("BAD", 40.0, 40.0, serde_json::json!("not-points"));
         let rect = make_part("R", 10.0, 10.0);
         CdeCollisionBackend.placement_overlaps(
-            &pl("BAD", 0, 0.0, 0.0), &invalid,
-            &pl("R",   0, 1.0, 1.0), &rect,
+            &pl("BAD", 0, 0.0, 0.0),
+            &invalid,
+            &pl("R", 0, 1.0, 1.0),
+            &rect,
         );
         let snap = crate::optimizer::cde_observability::snapshot();
-        assert!(snap.prepare_failures >= 1, "prepare_failure must be counted for invalid polygon");
-        assert!(snap.unsupported_results >= 1, "unsupported_results must be counted for prepare failure");
+        assert!(
+            snap.prepare_failures >= 1,
+            "prepare_failure must be counted for invalid polygon"
+        );
+        assert!(
+            snap.unsupported_results >= 1,
+            "unsupported_results must be counted for prepare failure"
+        );
     }
 
     #[test]
@@ -1201,13 +1403,28 @@ mod tests {
         crate::optimizer::cde_observability::reset();
         let part = make_part("A", 20.0, 20.0);
         let p_sheet0 = pl("A", 0, 0.0, 0.0);
-        let p_sheet1 = Placement { instance_id: "A__0002".into(), part_id: "A".into(),
-            sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let p_sheet1 = Placement {
+            instance_id: "A__0002".into(),
+            part_id: "A".into(),
+            sheet_index: 1,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
         let result = CdeCollisionBackend.placement_overlaps(&p_sheet0, &part, &p_sheet1, &part);
         let snap = crate::optimizer::cde_observability::snapshot();
-        assert!(result.is_no_collision(), "cross-sheet items must be NoCollision");
-        assert_eq!(snap.cross_sheet_skipped, 1, "cross-sheet skip must be counted");
-        assert_eq!(snap.pair_queries, 0, "cross-sheet skip must not count as pair query");
+        assert!(
+            result.is_no_collision(),
+            "cross-sheet items must be NoCollision"
+        );
+        assert_eq!(
+            snap.cross_sheet_skipped, 1,
+            "cross-sheet skip must be counted"
+        );
+        assert_eq!(
+            snap.pair_queries, 0,
+            "cross-sheet skip must not count as pair query"
+        );
     }
 
     #[test]
@@ -1218,8 +1435,17 @@ mod tests {
         let p2 = pl("A", 0, 10.0, 10.0);
         BboxCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
         let snap = crate::optimizer::cde_observability::snapshot();
-        assert_eq!(snap.pair_queries, 0, "bbox backend must not increment CDE pair counter");
-        assert_eq!(snap.total_queries, 0, "bbox backend must not increment CDE total counter");
-        assert_eq!(snap.engine_builds, 0, "bbox backend must not increment CDE engine_builds");
+        assert_eq!(
+            snap.pair_queries, 0,
+            "bbox backend must not increment CDE pair counter"
+        );
+        assert_eq!(
+            snap.total_queries, 0,
+            "bbox backend must not increment CDE total counter"
+        );
+        assert_eq!(
+            snap.engine_builds, 0,
+            "bbox backend must not increment CDE engine_builds"
+        );
     }
 }

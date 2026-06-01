@@ -80,10 +80,7 @@ pub fn preprocess_polygon(points: &[Point]) -> Result<PreparedShape, String> {
 /// Returns Err if dimensions are not strictly positive.
 pub fn preprocess_rect(w: f64, h: f64) -> Result<PreparedShape, String> {
     if w <= 0.0 || h <= 0.0 {
-        return Err(format!(
-            "rect dimensions must be > 0, got {}×{}",
-            w, h
-        ));
+        return Err(format!("rect dimensions must be > 0, got {}×{}", w, h));
     }
     Ok(PreparedShape {
         vertex_count: 4,
@@ -170,7 +167,10 @@ mod tests {
         let result = preprocess_polygon(&pts).expect("valid polygon after dedup");
         assert_eq!(result.vertex_count, 4, "duplicate vertex must be removed");
         assert!((result.area - 100.0).abs() < 1e-9, "area must be preserved");
-        assert!(result.backend_readiness.jagua_polygon, "jagua_polygon must be ready");
+        assert!(
+            result.backend_readiness.jagua_polygon,
+            "jagua_polygon must be ready"
+        );
     }
 
     #[test]
@@ -203,11 +203,21 @@ mod tests {
         let result = preprocess_polygon(&pts).expect("valid L-shape polygon");
         assert_eq!(result.vertex_count, 6);
         assert!(result.has_irregular_shape);
-        assert!((result.area - 7500.0).abs() < 1e-6, "L-shape area must be 7500, got {}", result.area);
+        assert!(
+            (result.area - 7500.0).abs() < 1e-6,
+            "L-shape area must be 7500, got {}",
+            result.area
+        );
         assert!(result.backend_readiness.bbox);
         assert!(result.backend_readiness.jagua_polygon);
-        assert!(!result.backend_readiness.cde, "CDE backend not yet supported");
-        assert!(result.simplification_tolerance.is_none(), "no simplification applied");
+        assert!(
+            !result.backend_readiness.cde,
+            "CDE backend not yet supported"
+        );
+        assert!(
+            result.simplification_tolerance.is_none(),
+            "no simplification applied"
+        );
     }
 
     #[test]

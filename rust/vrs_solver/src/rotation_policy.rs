@@ -182,7 +182,8 @@ pub fn candidate_angles(
             let n = sample_count.max(4);
             let step = 360.0 / n as f64;
             // Uniform linspace base: deterministic coarse coverage.
-            let mut angles: Vec<AngleDeg> = (0..n).map(|i| normalize_angle(i as f64 * step)).collect();
+            let mut angles: Vec<AngleDeg> =
+                (0..n).map(|i| normalize_angle(i as f64 * step)).collect();
             // Always include canonical angles (already present for n divisible by 4).
             for &c in &CANONICAL {
                 if !angles.iter().any(|&x| (x - c).abs() < 1e-9) {
@@ -218,7 +219,9 @@ pub fn continuous_refinement_angles(
     'outer: for &offset in REFINEMENT_OFFSETS {
         for &delta in &[offset, -offset] {
             let candidate = normalize_angle(current_norm + delta);
-            let dup_base = base_candidates.iter().any(|&b| (b - candidate).abs() < 1e-9);
+            let dup_base = base_candidates
+                .iter()
+                .any(|&b| (b - candidate).abs() < 1e-9);
             let dup_result = result.iter().any(|&r| (r - candidate).abs() < 1e-9);
             if !dup_base && !dup_result {
                 result.push(candidate);
@@ -248,7 +251,10 @@ pub fn dims_for_rotation_f64(width: f64, height: f64, rot_deg: AngleDeg) -> (f64
     let theta = rot_deg.to_radians();
     let cos_t = theta.cos().abs();
     let sin_t = theta.sin().abs();
-    (width * cos_t + height * sin_t, width * sin_t + height * cos_t)
+    (
+        width * cos_t + height * sin_t,
+        width * sin_t + height * cos_t,
+    )
 }
 
 /// Compute (min_x_offset, min_y_offset) of the rotated bbox relative to the anchor (0,0).
@@ -303,12 +309,12 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::item::{expand_instances, Part, resolve_part_rotation_angles};
-    use crate::sheet::{expand_sheets, Stock};
-    use crate::optimizer::initializer::build_initial_layout;
+    use crate::item::{expand_instances, resolve_part_rotation_angles, Part};
     use crate::optimizer::compress::CompressionPhase;
+    use crate::optimizer::initializer::build_initial_layout;
     use crate::optimizer::phase::PhaseConfig;
     use crate::optimizer::working::WorkingLayout;
+    use crate::sheet::{expand_sheets, Stock};
 
     fn make_part(id: &str, w: f64, h: f64, qty: i64, rots: Vec<i64>) -> Part {
         Part {
@@ -325,7 +331,13 @@ mod tests {
         }
     }
 
-    fn make_part_with_policy(id: &str, w: f64, h: f64, qty: i64, policy: RotationPolicyKind) -> Part {
+    fn make_part_with_policy(
+        id: &str,
+        w: f64,
+        h: f64,
+        qty: i64,
+        policy: RotationPolicyKind,
+    ) -> Part {
         Part {
             id: id.to_string(),
             width: w,
@@ -416,7 +428,11 @@ mod tests {
         let part = make_part_with_policy("A", 30.0, 30.0, 1, RotationPolicyKind::Locked);
         let global = Some(RotationPolicyKind::Orthogonal);
         let angles = resolve_part_rotation_angles(&part, global.as_ref(), 0, 8);
-        assert_eq!(angles, vec![0.0], "Locked policy must override global Orthogonal");
+        assert_eq!(
+            angles,
+            vec![0.0],
+            "Locked policy must override global Orthogonal"
+        );
     }
 
     // 7. Global policy used when part has no explicit policy or allowed_rotations_deg
@@ -427,8 +443,8 @@ mod tests {
             width: 30.0,
             height: 30.0,
             quantity: 1,
-            allowed_rotations_deg: vec![],  // empty — no legacy list
-            rotation_policy: None,           // no part policy
+            allowed_rotations_deg: vec![], // empty — no legacy list
+            rotation_policy: None,         // no part policy
             holes_points: None,
             prepared_holes_points: None,
             outer_points: None,
@@ -463,10 +479,14 @@ mod tests {
     fn continuous_policy_generates_non_orthogonal_angles() {
         let angles = candidate_angles(&RotationPolicyKind::Continuous, 42, 12);
         let canonical = [0.0, 90.0, 180.0, 270.0];
-        let has_non_canonical = angles.iter().any(|&a| {
-            canonical.iter().all(|&c| (a - c).abs() > 0.5)
-        });
-        assert!(has_non_canonical, "Continuous must include non-orthogonal angles: {:?}", angles);
+        let has_non_canonical = angles
+            .iter()
+            .any(|&a| canonical.iter().all(|&c| (a - c).abs() > 0.5));
+        assert!(
+            has_non_canonical,
+            "Continuous must include non-orthogonal angles: {:?}",
+            angles
+        );
     }
 
     // 10. Continuous policy same seed → same angles (determinism)
@@ -488,8 +508,14 @@ mod tests {
         assert!(h90 > 90.0, "90° must not fit: h90={h90}");
         // At 45°: bbox ≈ 84.85 × 84.85 → fits in 90×90
         let (w45, h45) = dims_for_rotation_f64(100.0, 20.0, 45.0);
-        assert!(w45 < 90.0 + 1e-9, "45° bbox width must fit in 90: w45={w45}");
-        assert!(h45 < 90.0 + 1e-9, "45° bbox height must fit in 90: h45={h45}");
+        assert!(
+            w45 < 90.0 + 1e-9,
+            "45° bbox width must fit in 90: w45={w45}"
+        );
+        assert!(
+            h45 < 90.0 + 1e-9,
+            "45° bbox height must fit in 90: h45={h45}"
+        );
     }
 
     // 12. Separator uses rotation policy, not hardcoded orthogonal
@@ -508,12 +534,17 @@ mod tests {
         let rots = &instances[0].allowed_rotations_deg;
         assert!(
             rots.iter().any(|&r| (r - 45.0).abs() < 1e-9),
-            "Instance must have 45° angle: {:?}", rots
+            "Instance must have 45° angle: {:?}",
+            rots
         );
         let sheets = expand_sheets(&stocks).expect("sheets");
         let parts = vec![part];
         let (placed, unplaced, _) = build_initial_layout(&instances, &parts, &sheets);
-        assert_eq!(placed.len(), 1, "100×20 part must fit on 90×90 sheet with FortyFive policy");
+        assert_eq!(
+            placed.len(),
+            1,
+            "100×20 part must fit on 90×90 sheet with FortyFive policy"
+        );
         assert!(unplaced.is_empty());
         // Verify the placed rotation is non-orthogonal
         let rot = placed[0].rotation_deg;
@@ -543,7 +574,11 @@ mod tests {
         let compression = CompressionPhase::new(config);
         let (result_layout, _diag) = compression.run(working, &parts, &sheets);
         // After compression: part should still be placed (not broken)
-        assert_eq!(result_layout.placements.len(), 1, "compression must not lose the placed part");
+        assert_eq!(
+            result_layout.placements.len(),
+            1,
+            "compression must not lose the placed part"
+        );
     }
 
     // Bonus: verify bbox_min_offset for canonical angles matches legacy expectations
@@ -559,14 +594,8 @@ mod tests {
         ];
         for (rot, ex, ey) in cases {
             let (mx, my) = rotated_bbox_min_offset_f64(w, h, rot);
-            assert!(
-                approx_eq(mx, ex),
-                "rot={rot} min_x={mx} expected={ex}"
-            );
-            assert!(
-                approx_eq(my, ey),
-                "rot={rot} min_y={my} expected={ey}"
-            );
+            assert!(approx_eq(mx, ex), "rot={rot} min_x={mx} expected={ex}");
+            assert!(approx_eq(my, ey), "rot={rot} min_y={my} expected={ey}");
         }
     }
 
@@ -602,15 +631,41 @@ mod tests {
     fn continuous_candidate_generation_linspace_includes_coarse_diagonals() {
         // n=8 → step=45°: must include 45°, 135°, 225°, 315°
         let angles8 = candidate_angles(&RotationPolicyKind::Continuous, 0, 8);
-        assert!(angles8.iter().any(|&a| (a - 45.0).abs() < 1e-9), "45° must be in n=8 linspace: {:?}", angles8);
-        assert!(angles8.iter().any(|&a| (a - 135.0).abs() < 1e-9), "135° must be in n=8: {:?}", angles8);
-        assert_eq!(angles8.len(), 8, "n=8 gives exactly 8 angles: {:?}", angles8);
+        assert!(
+            angles8.iter().any(|&a| (a - 45.0).abs() < 1e-9),
+            "45° must be in n=8 linspace: {:?}",
+            angles8
+        );
+        assert!(
+            angles8.iter().any(|&a| (a - 135.0).abs() < 1e-9),
+            "135° must be in n=8: {:?}",
+            angles8
+        );
+        assert_eq!(
+            angles8.len(),
+            8,
+            "n=8 gives exactly 8 angles: {:?}",
+            angles8
+        );
 
         // n=16 → step=22.5°: must include 22.5°, 45°, 67.5°
         let angles16 = candidate_angles(&RotationPolicyKind::Continuous, 0, 16);
-        assert!(angles16.iter().any(|&a| (a - 22.5).abs() < 1e-9), "22.5° must be in n=16: {:?}", angles16);
-        assert!(angles16.iter().any(|&a| (a - 45.0).abs() < 1e-9), "45° must be in n=16: {:?}", angles16);
-        assert_eq!(angles16.len(), 16, "n=16 gives exactly 16 angles: {:?}", angles16);
+        assert!(
+            angles16.iter().any(|&a| (a - 22.5).abs() < 1e-9),
+            "22.5° must be in n=16: {:?}",
+            angles16
+        );
+        assert!(
+            angles16.iter().any(|&a| (a - 45.0).abs() < 1e-9),
+            "45° must be in n=16: {:?}",
+            angles16
+        );
+        assert_eq!(
+            angles16.len(),
+            16,
+            "n=16 gives exactly 16 angles: {:?}",
+            angles16
+        );
     }
 
     // Q20-2: Continuous always includes canonical angles
@@ -621,7 +676,8 @@ mod tests {
             for &c in &CANONICAL {
                 assert!(
                     angles.iter().any(|&a| (a - c).abs() < 1e-9),
-                    "canonical {c}° missing for n={n}: {:?}", angles
+                    "canonical {c}° missing for n={n}: {:?}",
+                    angles
                 );
             }
         }
@@ -632,34 +688,57 @@ mod tests {
     fn continuous_linspace_is_deterministic_regardless_of_seed() {
         let a1 = candidate_angles(&RotationPolicyKind::Continuous, 0, 16);
         let a2 = candidate_angles(&RotationPolicyKind::Continuous, 999_999, 16);
-        assert_eq!(a1, a2, "linspace is deterministic: seed must not affect output for n=16");
+        assert_eq!(
+            a1, a2,
+            "linspace is deterministic: seed must not affect output for n=16"
+        );
     }
 
     // Q20-4: Local refinement returns symmetric normalized candidates for Continuous
     #[test]
     fn continuous_refinement_symmetric_normalized_deduped() {
         let base = vec![0.0, 90.0, 180.0, 270.0];
-        let candidates = continuous_refinement_angles(45.0, &RotationPolicyKind::Continuous, &base, 10);
+        let candidates =
+            continuous_refinement_angles(45.0, &RotationPolicyKind::Continuous, &base, 10);
         // Smallest offset ±0.75° around 45°: expect 45.75° and 44.25°
-        assert!(candidates.iter().any(|&a| (a - 45.75).abs() < 1e-9), "45.75° expected: {:?}", candidates);
-        assert!(candidates.iter().any(|&a| (a - 44.25).abs() < 1e-9), "44.25° expected: {:?}", candidates);
+        assert!(
+            candidates.iter().any(|&a| (a - 45.75).abs() < 1e-9),
+            "45.75° expected: {:?}",
+            candidates
+        );
+        assert!(
+            candidates.iter().any(|&a| (a - 44.25).abs() < 1e-9),
+            "44.25° expected: {:?}",
+            candidates
+        );
         // No duplicates
         let mut seen = vec![];
         for &a in &candidates {
-            assert!(!seen.iter().any(|&x: &f64| (x - a).abs() < 1e-9), "duplicate {a} in {:?}", candidates);
+            assert!(
+                !seen.iter().any(|&x: &f64| (x - a).abs() < 1e-9),
+                "duplicate {a} in {:?}",
+                candidates
+            );
             seen.push(a);
         }
         // All normalized to [0, 360)
-        for &a in &candidates { assert!(a >= 0.0 && a < 360.0, "not normalized: {a}"); }
+        for &a in &candidates {
+            assert!(a >= 0.0 && a < 360.0, "not normalized: {a}");
+        }
     }
 
     // Q20-5: Refinement wraps correctly at 0°/360° boundary
     #[test]
     fn continuous_refinement_normalizes_at_boundary() {
         let base = vec![90.0, 180.0, 270.0];
-        let candidates = continuous_refinement_angles(1.0, &RotationPolicyKind::Continuous, &base, 10);
+        let candidates =
+            continuous_refinement_angles(1.0, &RotationPolicyKind::Continuous, &base, 10);
         // 1.0 - 15.0 = -14.0 → normalized to 346.0
-        assert!(candidates.iter().any(|&a| (a - 346.0).abs() < 1e-9), "346° expected for wrap: {:?}", candidates);
+        assert!(
+            candidates.iter().any(|&a| (a - 346.0).abs() < 1e-9),
+            "346° expected for wrap: {:?}",
+            candidates
+        );
     }
 
     // Q20-6: Non-continuous policies return no refinement candidates
@@ -674,7 +753,11 @@ mod tests {
             RotationPolicyKind::Discrete(vec![0.0, 45.0, 90.0]),
         ] {
             let result = continuous_refinement_angles(45.0, policy, &base, 10);
-            assert!(result.is_empty(), "{policy:?} must return no refinement candidates, got: {:?}", result);
+            assert!(
+                result.is_empty(),
+                "{policy:?} must return no refinement candidates, got: {:?}",
+                result
+            );
         }
     }
 
@@ -682,8 +765,13 @@ mod tests {
     #[test]
     fn continuous_refinement_candidate_count_capped() {
         let base = vec![];
-        let candidates = continuous_refinement_angles(90.0, &RotationPolicyKind::Continuous, &base, 4);
-        assert!(candidates.len() <= 4, "cap=4 must be respected: {:?}", candidates);
+        let candidates =
+            continuous_refinement_angles(90.0, &RotationPolicyKind::Continuous, &base, 4);
+        assert!(
+            candidates.len() <= 4,
+            "cap=4 must be respected: {:?}",
+            candidates
+        );
     }
 
     // Q20-8: Refinement does not produce base-duplicate candidates
@@ -691,9 +779,16 @@ mod tests {
     fn continuous_refinement_dedupes_against_base() {
         // Base includes exactly the offset values: refinement should skip them
         let base = vec![90.75, 89.25]; // == 90 ± 0.75
-        let candidates = continuous_refinement_angles(90.0, &RotationPolicyKind::Continuous, &base, 10);
-        assert!(!candidates.iter().any(|&a| (a - 90.75).abs() < 1e-9), "90.75° should be deduped against base");
-        assert!(!candidates.iter().any(|&a| (a - 89.25).abs() < 1e-9), "89.25° should be deduped against base");
+        let candidates =
+            continuous_refinement_angles(90.0, &RotationPolicyKind::Continuous, &base, 10);
+        assert!(
+            !candidates.iter().any(|&a| (a - 90.75).abs() < 1e-9),
+            "90.75° should be deduped against base"
+        );
+        assert!(
+            !candidates.iter().any(|&a| (a - 89.25).abs() < 1e-9),
+            "89.25° should be deduped against base"
+        );
     }
 
     #[test]
@@ -713,8 +808,8 @@ mod tests {
             let path = root.join(rel);
             let src = fs::read_to_string(&path).expect("read source");
             for (lineno, line) in src.lines().enumerate() {
-                let has_bad_call = line.contains("resolve_part_rotation_angles(")
-                    && line.contains("None, 0, 8");
+                let has_bad_call =
+                    line.contains("resolve_part_rotation_angles(") && line.contains("None, 0, 8");
                 assert!(
                     !has_bad_call,
                     "forbidden hardcoded policy resolution in {}:{}: {}",

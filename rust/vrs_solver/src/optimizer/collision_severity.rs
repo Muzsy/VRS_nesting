@@ -9,10 +9,6 @@
 //!   - all backend queries (including probe sub-queries) are accounted for;
 //!   - Unsupported queries return `cfg.hard_unsupported_loss`, never `f64::MAX`.
 
-use crate::geometry::Rect;
-use crate::io::{CollisionBackendKind, Placement};
-use crate::item::Part;
-use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::PlacedBbox;
 use super::collision_backend::{
@@ -21,6 +17,10 @@ use super::collision_backend::{
 use super::initializer::bbox_from_placement;
 use super::loss_model::LossModelKind;
 use super::working::WorkingLayout;
+use crate::geometry::Rect;
+use crate::io::{CollisionBackendKind, Placement};
+use crate::item::Part;
+use crate::sheet::SheetShape;
 
 pub const HARD_UNSUPPORTED_LOSS: f64 = 1_000_000.0;
 
@@ -513,8 +513,7 @@ fn run_pair_probe(
     let mut best: Option<f64> = None;
     for &(dx, dy) in &dirs {
         match probe_direction_pair(
-            backend, candidate, part, other, other_part,
-            dx, dy, cfg, stats, initial,
+            backend, candidate, part, other, other_part, dx, dy, cfg, stats, initial,
         ) {
             DirectionOutcome::Resolved(d) => {
                 stats.probe_resolved += 1;
@@ -551,9 +550,8 @@ fn run_boundary_probe(
     let dirs = boundary_probe_directions(candidate, part, sheet, cfg);
     let mut best: Option<f64> = None;
     for &(dx, dy) in &dirs {
-        match probe_direction_boundary(
-            backend, candidate, part, sheet, dx, dy, cfg, stats, initial,
-        ) {
+        match probe_direction_boundary(backend, candidate, part, sheet, dx, dy, cfg, stats, initial)
+        {
             DirectionOutcome::Resolved(d) => {
                 stats.probe_resolved += 1;
                 stats.record_resolution(d);
@@ -596,9 +594,8 @@ pub fn compute_probe_pair_severity(
         CollisionBackendKind::Cde => &CdeCollisionBackend,
         CollisionBackendKind::Bbox => return 1.0,
     };
-    let (sev, _unresolved) = run_pair_probe(
-        backend, pi, part_i, pj, part_j, sheet_diag, cfg, stats,
-    );
+    let (sev, _unresolved) =
+        run_pair_probe(backend, pi, part_i, pj, part_j, sheet_diag, cfg, stats);
     sev
 }
 
@@ -663,7 +660,9 @@ fn eval_with_severity_backend(
                     s.max(1.0)
                 } else {
                     stats.bbox_proxy_severity_uses += 1;
-                    loss_model.compute_boundary_loss(cand_bbox, sheet, false).max(1.0)
+                    loss_model
+                        .compute_boundary_loss(cand_bbox, sheet, false)
+                        .max(1.0)
                 };
                 (sev, true)
             }
@@ -835,13 +834,23 @@ pub fn evaluate_transform_loss(
     stats: &mut CollisionSeverityStats,
 ) -> EvaluationResult {
     if !cfg.enabled_for_exact_backends || matches!(collision_backend, CollisionBackendKind::Bbox) {
-        return eval_bbox_loss(candidate, cand_bbox, sheet, layout, target_idx, parts, loss_model);
+        return eval_bbox_loss(
+            candidate, cand_bbox, sheet, layout, target_idx, parts, loss_model,
+        );
     }
     match collision_backend {
         CollisionBackendKind::JaguaPolygonExact => eval_with_severity_backend(
             &JaguaPolygonExactBackend,
-            candidate, part, cand_bbox, sheet, layout, target_idx, parts,
-            loss_model, cfg, stats,
+            candidate,
+            part,
+            cand_bbox,
+            sheet,
+            layout,
+            target_idx,
+            parts,
+            loss_model,
+            cfg,
+            stats,
         ),
         CollisionBackendKind::Cde => {
             // SGH-Q23R2: production CDE path uses the single-engine multi-hazard
@@ -861,7 +870,11 @@ pub fn evaluate_transform_loss(
 // ---------------------------------------------------------------------------
 
 fn shifted_xy(p: &Placement, dx: f64, dy: f64) -> Placement {
-    Placement { x: p.x + dx, y: p.y + dy, ..p.clone() }
+    Placement {
+        x: p.x + dx,
+        y: p.y + dy,
+        ..p.clone()
+    }
 }
 
 /// CDE-truth separation loss: the smallest translation distance (over a few
@@ -884,11 +897,18 @@ fn cde_batch_separation_loss(
     let max_reach = sheet_diag;
     // 8 compass directions.
     const DIRS: [(f64, f64); 8] = [
-        (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
-        (0.7071, 0.7071), (-0.7071, 0.7071), (0.7071, -0.7071), (-0.7071, -0.7071),
+        (1.0, 0.0),
+        (-1.0, 0.0),
+        (0.0, 1.0),
+        (0.0, -1.0),
+        (0.7071, 0.7071),
+        (-0.7071, 0.7071),
+        (0.7071, -0.7071),
+        (-0.7071, -0.7071),
     ];
     let clear_at = |dx: f64, dy: f64| -> bool {
-        match crate::optimizer::cde_adapter::prepare_candidate(&shifted_xy(candidate, dx, dy), part) {
+        match crate::optimizer::cde_adapter::prepare_candidate(&shifted_xy(candidate, dx, dy), part)
+        {
             Some(s) => session.query(&s).is_clear(),
             None => false,
         }
@@ -908,7 +928,9 @@ fn cde_batch_separation_loss(
             prev = step;
             step *= 2.0;
         }
-        let Some((mut lo, mut hi)) = bracket else { continue };
+        let Some((mut lo, mut hi)) = bracket else {
+            continue;
+        };
         // Binary refine to probe_min_step resolution (bounded iterations).
         for _ in 0..8 {
             if hi - lo <= cfg.probe_min_step {
@@ -949,7 +971,11 @@ fn evaluate_transform_cde_batch(
     use crate::optimizer::cde_adapter::{build_candidate_session, prepare_candidate};
 
     let session = match build_candidate_session(
-        &layout.placements, target_idx, candidate.sheet_index, parts, sheet,
+        &layout.placements,
+        target_idx,
+        candidate.sheet_index,
+        parts,
+        sheet,
     ) {
         Some(s) => s,
         None => {
@@ -971,8 +997,17 @@ fn evaluate_transform_cde_batch(
                 }
             };
             return eval_with_severity_backend(
-                &CdeCollisionBackend, candidate, part, &cand_bbox, sheet, layout,
-                target_idx, parts, LossModelKind::BboxArea, cfg, stats,
+                &CdeCollisionBackend,
+                candidate,
+                part,
+                &cand_bbox,
+                sheet,
+                layout,
+                target_idx,
+                parts,
+                LossModelKind::BboxArea,
+                cfg,
+                stats,
             );
         }
     };
@@ -1039,8 +1074,8 @@ fn evaluate_transform_cde_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::item::Part;
     use crate::io::Placement;
+    use crate::item::Part;
     use crate::optimizer::working::WorkingLayout;
     use crate::sheet::{expand_sheets, Stock};
 
@@ -1079,7 +1114,8 @@ mod tests {
             outer_points: None,
             holes_points: None,
             cost_per_use: None,
-        }]).expect("expand_sheets")
+        }])
+        .expect("expand_sheets")
     }
 
     fn default_cfg() -> CollisionSeverityConfig {
@@ -1099,19 +1135,40 @@ mod tests {
             vec![
                 make_placement("A__0001", "A", 0.0, 0.0),
                 make_placement("B__0001", "B", 10.0, 10.0),
-            ], vec![], 1, 0,
+            ],
+            vec![],
+            1,
+            0,
         );
         let sheet = &sheets[0];
         let candidate = make_placement("B__0001", "B", 10.0, 10.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 10.0, y1: 10.0, x2: 40.0, y2: 40.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 10.0,
+            y1: 10.0,
+            x2: 40.0,
+            y2: 40.0,
+        };
         let mut stats = CollisionSeverityStats::default();
         let result = evaluate_transform_loss(
-            &candidate, &part_b, &cand_bbox, sheet, &layout, 1, &parts,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &default_cfg(), &mut stats,
+            &candidate,
+            &part_b,
+            &cand_bbox,
+            sheet,
+            &layout,
+            1,
+            &parts,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &default_cfg(),
+            &mut stats,
         );
         assert!(!result.unsupported);
-        assert!((result.loss - 400.0).abs() < 1e-9,
-            "legacy pair loss must be dx*dy = 400, got {}", result.loss);
+        assert!(
+            (result.loss - 400.0).abs() < 1e-9,
+            "legacy pair loss must be dx*dy = 400, got {}",
+            result.loss
+        );
         assert_eq!(stats.pair_queries, 0);
         assert_eq!(result.severity_mode, SeverityMode::BboxLegacy);
     }
@@ -1125,16 +1182,25 @@ mod tests {
         // 1500 × 3000 sheet diagonal ≈ 3354 mm; legacy 5% → 167.7 mm.
         let diag = (1500.0_f64.powi(2) + 3000.0_f64.powi(2)).sqrt();
         let step = cfg.effective_initial_step(diag);
-        assert!(step <= cfg.probe_max_initial_step_mm + 1e-9,
+        assert!(
+            step <= cfg.probe_max_initial_step_mm + 1e-9,
             "initial step must be capped at {} mm on industrial sheet, got {}",
-            cfg.probe_max_initial_step_mm, step);
-        assert!(step >= cfg.probe_min_step,
+            cfg.probe_max_initial_step_mm,
+            step
+        );
+        assert!(
+            step >= cfg.probe_min_step,
             "initial step must be at least probe_min_step={}, got {}",
-            cfg.probe_min_step, step);
+            cfg.probe_min_step,
+            step
+        );
         // Small sheet (50×50, diag ≈ 70.7 → 5% = 3.54 mm) is well below the cap.
         let small_step = cfg.effective_initial_step(70.7);
-        assert!(small_step < cfg.probe_max_initial_step_mm,
-            "small-sheet step should be the scaled value, not the cap; got {}", small_step);
+        assert!(
+            small_step < cfg.probe_max_initial_step_mm,
+            "small-sheet step should be the scaled value, not the cap; got {}",
+            small_step
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1150,15 +1216,32 @@ mod tests {
         let dirs = pair_probe_directions(&cand, &part_b, &other, &part_a, &cfg);
         // 4 cardinal + 4 diagonal + 1 pair-center (b is to the right of a → +x;
         // dedup'd against cardinal +x).
-        assert!(dirs.len() >= 8, "must have at least 8 directions, got {}: {:?}", dirs.len(), dirs);
-        let diag_count = dirs.iter().filter(|(dx, dy)| dx.abs() > 0.1 && dy.abs() > 0.1).count();
-        assert!(diag_count >= 4, "must have at least 4 diagonal directions, got {}", diag_count);
+        assert!(
+            dirs.len() >= 8,
+            "must have at least 8 directions, got {}: {:?}",
+            dirs.len(),
+            dirs
+        );
+        let diag_count = dirs
+            .iter()
+            .filter(|(dx, dy)| dx.abs() > 0.1 && dy.abs() > 0.1)
+            .count();
+        assert!(
+            diag_count >= 4,
+            "must have at least 4 diagonal directions, got {}",
+            diag_count
+        );
         // Disable diagonals → only 4 cardinals remain (pair-center dedupes to +x).
         let mut cfg2 = cfg.clone();
         cfg2.probe_use_diagonal_directions = false;
         cfg2.probe_use_pair_center_direction = false;
         let dirs2 = pair_probe_directions(&cand, &part_b, &other, &part_a, &cfg2);
-        assert_eq!(dirs2.len(), 4, "with diagonals/center off: 4 cardinals, got {:?}", dirs2);
+        assert_eq!(
+            dirs2.len(),
+            4,
+            "with diagonals/center off: 4 cardinals, got {:?}",
+            dirs2
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1172,7 +1255,11 @@ mod tests {
         // Candidate near the +x edge → sheet-center direction = (-1, 0) → dedups to cardinal.
         let cand_near_edge = make_placement("P__0001", "P", 175.0, 90.0);
         let dirs = boundary_probe_directions(&cand_near_edge, &part, &sheets[0], &cfg);
-        assert!(dirs.len() >= 8, "boundary probe must have ≥ 8 directions, got {}", dirs.len());
+        assert!(
+            dirs.len() >= 8,
+            "boundary probe must have ≥ 8 directions, got {}",
+            dirs.len()
+        );
         // Off-center sheet-center direction not dedup'd against cardinal.
         let cand_offset = make_placement("P__0001", "P", 25.0, 35.0);
         let dirs_off = boundary_probe_directions(&cand_offset, &part, &sheets[0], &cfg);
@@ -1207,27 +1294,49 @@ mod tests {
             vec![
                 make_placement("A__0001", "A", 0.0, 0.0),
                 make_placement("B__0001", "B", 10.0, 0.0),
-            ], vec![], 1, 0,
+            ],
+            vec![],
+            1,
+            0,
         );
         let candidate = make_placement("B__0001", "B", 10.0, 0.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 10.0, y1: 0.0, x2: 30.0, y2: 20.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 10.0,
+            y1: 0.0,
+            x2: 30.0,
+            y2: 20.0,
+        };
         // With binary refinement enabled (default), result should be near 10 mm
         // (true resolution distance) within tolerance.
         let mut stats = CollisionSeverityStats::default();
         let cfg = default_cfg();
         let r = evaluate_transform_loss(
-            &candidate, &part_b, &cand_bbox, sheet, &layout, 1, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea, &cfg, &mut stats,
+            &candidate,
+            &part_b,
+            &cand_bbox,
+            sheet,
+            &layout,
+            1,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &cfg,
+            &mut stats,
         );
         assert!(!r.unsupported);
         // 10 mm true overlap in +x; with binary refinement the +x direction should
         // resolve at ≈ 10 mm with tolerance ≤ probe_tolerance_mm.
-        assert!(r.loss < 11.0,
+        assert!(
+            r.loss < 11.0,
             "binary-refined +x clear must be near 10 mm, got {} (refinement skipped?)",
-            r.loss);
-        assert!(stats.probe_pair_queries > 4,
+            r.loss
+        );
+        assert!(
+            stats.probe_pair_queries > 4,
             "probe sub-queries must include both bracket+refinement, got {}",
-            stats.probe_pair_queries);
+            stats.probe_pair_queries
+        );
         assert!(stats.probe_resolved > 0);
     }
 
@@ -1239,28 +1348,49 @@ mod tests {
         // Degenerate polygon → JaguaPolygonExact returns Unsupported on all queries.
         let invalid_outer = serde_json::json!([[0.0, 0.0], [10.0, 0.0]]);
         let bad_part = Part {
-            id: "P".to_string(), width: 20.0, height: 20.0, quantity: 1,
-            allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
-            outer_points: Some(invalid_outer), prepared_outer_points: None, rotation_policy: None,
+            id: "P".to_string(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(invalid_outer),
+            prepared_outer_points: None,
+            rotation_policy: None,
         };
         let parts = vec![bad_part.clone()];
         let sheets = make_sheets(100.0, 100.0);
         let sheet = &sheets[0];
-        let layout = WorkingLayout::new(
-            vec![make_placement("P__0001", "P", 0.0, 0.0)],
-            vec![], 1, 0,
-        );
+        let layout =
+            WorkingLayout::new(vec![make_placement("P__0001", "P", 0.0, 0.0)], vec![], 1, 0);
         let candidate = make_placement("P__0001", "P", 0.0, 0.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 20.0, y2: 20.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 20.0,
+            y2: 20.0,
+        };
         let mut stats = CollisionSeverityStats::default();
         let r = evaluate_transform_loss(
-            &candidate, &bad_part, &cand_bbox, sheet, &layout, 0, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &default_cfg(), &mut stats,
+            &candidate,
+            &bad_part,
+            &cand_bbox,
+            sheet,
+            &layout,
+            0,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &default_cfg(),
+            &mut stats,
         );
         assert!(r.unsupported);
-        assert!(stats.unsupported_queries > 0,
-            "boundary unsupported query must be counted");
+        assert!(
+            stats.unsupported_queries > 0,
+            "boundary unsupported query must be counted"
+        );
         assert_eq!(r.severity_mode, SeverityMode::Unsupported);
     }
 
@@ -1271,30 +1401,53 @@ mod tests {
     fn severity_hard_unsupported_loss_used_instead_of_f64_max() {
         let invalid_outer = serde_json::json!([[0.0, 0.0], [10.0, 0.0]]);
         let bad_part = Part {
-            id: "P".to_string(), width: 20.0, height: 20.0, quantity: 1,
-            allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
-            outer_points: Some(invalid_outer), prepared_outer_points: None, rotation_policy: None,
+            id: "P".to_string(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(invalid_outer),
+            prepared_outer_points: None,
+            rotation_policy: None,
         };
         let parts = vec![bad_part.clone()];
         let sheets = make_sheets(100.0, 100.0);
         let sheet = &sheets[0];
-        let layout = WorkingLayout::new(
-            vec![make_placement("P__0001", "P", 0.0, 0.0)],
-            vec![], 1, 0,
-        );
+        let layout =
+            WorkingLayout::new(vec![make_placement("P__0001", "P", 0.0, 0.0)], vec![], 1, 0);
         let candidate = make_placement("P__0001", "P", 0.0, 0.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 20.0, y2: 20.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 20.0,
+            y2: 20.0,
+        };
         let mut stats = CollisionSeverityStats::default();
         let mut cfg = default_cfg();
         cfg.hard_unsupported_loss = 12345.0;
         let r = evaluate_transform_loss(
-            &candidate, &bad_part, &cand_bbox, sheet, &layout, 0, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea, &cfg, &mut stats,
+            &candidate,
+            &bad_part,
+            &cand_bbox,
+            sheet,
+            &layout,
+            0,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &cfg,
+            &mut stats,
         );
         assert!(r.unsupported);
         assert!(r.loss < f64::MAX, "unsupported loss must not be f64::MAX");
-        assert_eq!(r.loss, 12345.0,
-            "unsupported loss must equal cfg.hard_unsupported_loss, got {}", r.loss);
+        assert_eq!(
+            r.loss, 12345.0,
+            "unsupported loss must equal cfg.hard_unsupported_loss, got {}",
+            r.loss
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1304,13 +1457,24 @@ mod tests {
     fn severity_bbox_false_positive_exact_backend_no_collision_zero_loss() {
         // L-shape notch fixture: bbox says overlap, exact says no collision.
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let l_part = Part {
-            id: "L".to_string(), width: 40.0, height: 40.0, quantity: 1,
-            allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
-            outer_points: Some(l_json), prepared_outer_points: None, rotation_policy: None,
+            id: "L".to_string(),
+            width: 40.0,
+            height: 40.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(l_json),
+            prepared_outer_points: None,
+            rotation_policy: None,
         };
         let b_part = make_rect_part("B", 15.0, 15.0);
         let parts = vec![l_part, b_part.clone()];
@@ -1318,24 +1482,62 @@ mod tests {
         let sheet = &sheets[0];
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "L__0001".into(), part_id: "L".into(),
-                    sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-                Placement { instance_id: "B__0001".into(), part_id: "B".into(),
-                    sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
-            ], vec![], 1, 0,
+                Placement {
+                    instance_id: "L__0001".into(),
+                    part_id: "L".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "B__0001".into(),
+                    part_id: "B".into(),
+                    sheet_index: 0,
+                    x: 22.0,
+                    y: 22.0,
+                    rotation_deg: 0.0,
+                },
+            ],
+            vec![],
+            1,
+            0,
         );
-        let cand = Placement { instance_id: "B__0001".into(), part_id: "B".into(),
-            sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 };
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 22.0, y1: 22.0, x2: 37.0, y2: 37.0 };
+        let cand = Placement {
+            instance_id: "B__0001".into(),
+            part_id: "B".into(),
+            sheet_index: 0,
+            x: 22.0,
+            y: 22.0,
+            rotation_deg: 0.0,
+        };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 22.0,
+            y1: 22.0,
+            x2: 37.0,
+            y2: 37.0,
+        };
         let mut stats = CollisionSeverityStats::default();
         let r = evaluate_transform_loss(
-            &cand, &b_part, &cand_bbox, sheet, &layout, 1, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &default_cfg(), &mut stats,
+            &cand,
+            &b_part,
+            &cand_bbox,
+            sheet,
+            &layout,
+            1,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &default_cfg(),
+            &mut stats,
         );
         assert!(!r.unsupported);
-        assert_eq!(r.loss, 0.0,
-            "JaguaPolygonExact must give zero loss for item in notch, got {}", r.loss);
+        assert_eq!(
+            r.loss, 0.0,
+            "JaguaPolygonExact must give zero loss for item in notch, got {}",
+            r.loss
+        );
         assert_eq!(stats.bbox_proxy_severity_uses, 0);
         assert!(stats.backend_confirmed_no_collisions > 0);
     }
@@ -1355,33 +1557,63 @@ mod tests {
             vec![
                 make_placement("A__0001", "A", 0.0, 0.0),
                 make_placement("B__0001", "B", 10.0, 0.0),
-            ], vec![], 1, 0,
+            ],
+            vec![],
+            1,
+            0,
         );
         let cand = make_placement("B__0001", "B", 10.0, 0.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 10.0, y1: 0.0, x2: 30.0, y2: 20.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 10.0,
+            y1: 0.0,
+            x2: 30.0,
+            y2: 20.0,
+        };
 
         // Probe enabled → bbox proxy must NOT be used under JaguaPolygonExact.
         let mut stats_a = CollisionSeverityStats::default();
         let _ = evaluate_transform_loss(
-            &cand, &part_b, &cand_bbox, sheet, &layout, 1, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &default_cfg(), &mut stats_a,
+            &cand,
+            &part_b,
+            &cand_bbox,
+            sheet,
+            &layout,
+            1,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &default_cfg(),
+            &mut stats_a,
         );
-        assert_eq!(stats_a.bbox_proxy_severity_uses, 0,
-            "probe enabled: no bbox proxy uses, got {}", stats_a.bbox_proxy_severity_uses);
+        assert_eq!(
+            stats_a.bbox_proxy_severity_uses, 0,
+            "probe enabled: no bbox proxy uses, got {}",
+            stats_a.bbox_proxy_severity_uses
+        );
 
         // Probe explicitly disabled → bbox proxy IS used and counted.
         let mut cfg_no_probe = default_cfg();
         cfg_no_probe.probe_enabled = false;
         let mut stats_b = CollisionSeverityStats::default();
         let _ = evaluate_transform_loss(
-            &cand, &part_b, &cand_bbox, sheet, &layout, 1, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &cfg_no_probe, &mut stats_b,
+            &cand,
+            &part_b,
+            &cand_bbox,
+            sheet,
+            &layout,
+            1,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &cfg_no_probe,
+            &mut stats_b,
         );
-        assert!(stats_b.bbox_proxy_severity_uses > 0,
+        assert!(
+            stats_b.bbox_proxy_severity_uses > 0,
             "probe disabled: bbox proxy uses expected > 0, got {}",
-            stats_b.bbox_proxy_severity_uses);
+            stats_b.bbox_proxy_severity_uses
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1398,22 +1630,41 @@ mod tests {
             vec![
                 make_placement("A__0001", "A", 0.0, 0.0),
                 make_placement("B__0001", "B", 10.0, 10.0),
-            ], vec![], 1, 0,
+            ],
+            vec![],
+            1,
+            0,
         );
         let cand = make_placement("B__0001", "B", 10.0, 10.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 10.0, y1: 10.0, x2: 30.0, y2: 30.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 10.0,
+            y1: 10.0,
+            x2: 30.0,
+            y2: 30.0,
+        };
         let mut stats = CollisionSeverityStats::default();
         let r = evaluate_transform_loss(
-            &cand, &part_b, &cand_bbox, sheet, &layout, 1, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &default_cfg(), &mut stats,
+            &cand,
+            &part_b,
+            &cand_bbox,
+            sheet,
+            &layout,
+            1,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &default_cfg(),
+            &mut stats,
         );
         assert!(!r.unsupported);
         assert!(r.loss > 0.0);
         assert_eq!(r.pair_collision_count, 1);
         assert!(r.backend_confirmed_collision);
-        assert!(stats.probe_pair_queries > 0,
-            "must record probe_pair_queries > 0");
+        assert!(
+            stats.probe_pair_queries > 0,
+            "must record probe_pair_queries > 0"
+        );
         assert!(stats.probe_resolved > 0);
         assert!(stats.resolutions_recorded > 0);
     }
@@ -1435,32 +1686,72 @@ mod tests {
             vec![
                 make_placement("A__0001", "A", 0.0, 0.0),
                 make_placement("B__0001", "B", 19.0, 0.0),
-            ], vec![], 1, 0,
+            ],
+            vec![],
+            1,
+            0,
         );
         let cand_s = make_placement("B__0001", "B", 19.0, 0.0);
-        let bbox_s = PlacedBbox { sheet_index: 0, x1: 19.0, y1: 0.0, x2: 39.0, y2: 20.0 };
+        let bbox_s = PlacedBbox {
+            sheet_index: 0,
+            x1: 19.0,
+            y1: 0.0,
+            x2: 39.0,
+            y2: 20.0,
+        };
         let mut st_s = CollisionSeverityStats::default();
         let r_s = evaluate_transform_loss(
-            &cand_s, &part_b, &bbox_s, sheet, &layout_s, 1, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea, &cfg, &mut st_s,
+            &cand_s,
+            &part_b,
+            &bbox_s,
+            sheet,
+            &layout_s,
+            1,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &cfg,
+            &mut st_s,
         );
         // Deep: 15 mm x-overlap.
         let layout_d = WorkingLayout::new(
             vec![
                 make_placement("A__0001", "A", 0.0, 0.0),
                 make_placement("B__0001", "B", 5.0, 0.0),
-            ], vec![], 1, 0,
+            ],
+            vec![],
+            1,
+            0,
         );
         let cand_d = make_placement("B__0001", "B", 5.0, 0.0);
-        let bbox_d = PlacedBbox { sheet_index: 0, x1: 5.0, y1: 0.0, x2: 25.0, y2: 20.0 };
+        let bbox_d = PlacedBbox {
+            sheet_index: 0,
+            x1: 5.0,
+            y1: 0.0,
+            x2: 25.0,
+            y2: 20.0,
+        };
         let mut st_d = CollisionSeverityStats::default();
         let r_d = evaluate_transform_loss(
-            &cand_d, &part_b, &bbox_d, sheet, &layout_d, 1, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea, &cfg, &mut st_d,
+            &cand_d,
+            &part_b,
+            &bbox_d,
+            sheet,
+            &layout_d,
+            1,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &cfg,
+            &mut st_d,
         );
         assert!(!r_s.unsupported && !r_d.unsupported);
-        assert!(r_s.loss < r_d.loss,
-            "shallow severity ({}) must be < deep severity ({})", r_s.loss, r_d.loss);
+        assert!(
+            r_s.loss < r_d.loss,
+            "shallow severity ({}) must be < deep severity ({})",
+            r_s.loss,
+            r_d.loss
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1474,21 +1765,39 @@ mod tests {
         let sheet = &sheets[0];
         let layout = WorkingLayout::new(
             vec![make_placement("P__0001", "P", 95.0, 95.0)],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cand = make_placement("P__0001", "P", 95.0, 95.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 95.0, y1: 95.0, x2: 115.0, y2: 115.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 95.0,
+            y1: 95.0,
+            x2: 115.0,
+            y2: 115.0,
+        };
         let mut stats = CollisionSeverityStats::default();
         let r = evaluate_transform_loss(
-            &cand, &part, &cand_bbox, sheet, &layout, 0, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &default_cfg(), &mut stats,
+            &cand,
+            &part,
+            &cand_bbox,
+            sheet,
+            &layout,
+            0,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &default_cfg(),
+            &mut stats,
         );
         assert!(!r.unsupported);
         assert!(r.loss > 0.0);
         assert!(r.boundary_collision);
-        assert!(stats.probe_boundary_queries > 0,
-            "must record probe_boundary_queries > 0");
+        assert!(
+            stats.probe_boundary_queries > 0,
+            "must record probe_boundary_queries > 0"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1500,17 +1809,29 @@ mod tests {
         let parts = vec![part.clone()];
         let sheets = make_sheets(100.0, 100.0);
         let sheet = &sheets[0];
-        let layout = WorkingLayout::new(
-            vec![make_placement("P__0001", "P", 0.0, 0.0)],
-            vec![], 1, 0,
-        );
+        let layout =
+            WorkingLayout::new(vec![make_placement("P__0001", "P", 0.0, 0.0)], vec![], 1, 0);
         let cand = make_placement("P__0001", "P", 0.0, 0.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 20.0, y2: 20.0 };
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 20.0,
+            y2: 20.0,
+        };
         let mut stats = CollisionSeverityStats::default();
         let r = evaluate_transform_loss(
-            &cand, &part, &cand_bbox, sheet, &layout, 0, &parts,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &default_cfg(), &mut stats,
+            &cand,
+            &part,
+            &cand_bbox,
+            sheet,
+            &layout,
+            0,
+            &parts,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &default_cfg(),
+            &mut stats,
         );
         assert!(!r.unsupported);
         assert_eq!(r.loss, 0.0);

@@ -1,6 +1,21 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+use super::boundary::rect_within_boundary;
+use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
+use super::collision_backend::{
+    CdeCollisionBackend, CollisionBackend, CollisionDecision, JaguaPolygonExactBackend,
+};
+use super::collision_severity::{
+    compute_probe_boundary_severity, compute_probe_pair_severity, CollisionSeverityConfig,
+    CollisionSeverityStats,
+};
+use super::initializer::bbox_from_placement;
+use super::loss_model::LossModelKind;
+use super::search_position::{
+    search_position_for_target, SearchPositionConfig, SearchPositionStats,
+};
+use super::working::WorkingLayout;
 use crate::geometry::Rect;
 use crate::io::{CollisionBackendKind, Placement};
 use crate::item::{
@@ -8,17 +23,6 @@ use crate::item::{
 };
 use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
-use super::boundary::rect_within_boundary;
-use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
-use super::collision_backend::{CdeCollisionBackend, CollisionBackend, CollisionDecision, JaguaPolygonExactBackend};
-use super::collision_severity::{
-    CollisionSeverityConfig, CollisionSeverityStats,
-    compute_probe_pair_severity, compute_probe_boundary_severity,
-};
-use super::initializer::bbox_from_placement;
-use super::loss_model::LossModelKind;
-use super::search_position::{search_position_for_target, SearchPositionConfig, SearchPositionStats};
-use super::working::WorkingLayout;
 
 /// Hard loss assigned to a pair when exact backend returns Unsupported.
 /// Large relative to normal bbox overlap areas, but not so large as to overflow f64.
@@ -151,11 +155,23 @@ fn compute_backend_decisions(
     collision_backend: &CollisionBackendKind,
     severity_cfg: &CollisionSeverityConfig,
     severity_stats: &mut CollisionSeverityStats,
-) -> (HashSet<(usize, usize)>, HashSet<(usize, usize)>, Vec<bool>, Vec<bool>, HashMap<(usize, usize), f64>, Vec<f64>) {
+) -> (
+    HashSet<(usize, usize)>,
+    HashSet<(usize, usize)>,
+    Vec<bool>,
+    Vec<bool>,
+    HashMap<(usize, usize), f64>,
+    Vec<f64>,
+) {
     match collision_backend {
-        CollisionBackendKind::Bbox => {
-            (HashSet::new(), HashSet::new(), vec![false; n], vec![false; n], HashMap::new(), vec![0.0_f64; n])
-        }
+        CollisionBackendKind::Bbox => (
+            HashSet::new(),
+            HashSet::new(),
+            vec![false; n],
+            vec![false; n],
+            HashMap::new(),
+            vec![0.0_f64; n],
+        ),
         CollisionBackendKind::JaguaPolygonExact => {
             let backend = JaguaPolygonExactBackend;
             let mut pair_nc: HashSet<(usize, usize)> = HashSet::new();
@@ -180,8 +196,14 @@ fn compute_backend_decisions(
                             CollisionDecision::Collision => {
                                 severity_stats.backend_confirmed_collisions += 1;
                                 let sev = compute_probe_boundary_severity(
-                                    collision_backend, pi, prt, sheet, severity_cfg, severity_stats,
-                                ).max(1.0);
+                                    collision_backend,
+                                    pi,
+                                    prt,
+                                    sheet,
+                                    severity_cfg,
+                                    severity_stats,
+                                )
+                                .max(1.0);
                                 bnd_probe[i] = sev;
                             }
                             CollisionDecision::Unsupported { .. } => {
@@ -207,11 +229,20 @@ fn compute_backend_decisions(
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
                                         let s = &sheets[pi.sheet_index];
                                         (s.width * s.width + s.height * s.height).sqrt()
-                                    } else { 1.0 };
+                                    } else {
+                                        1.0
+                                    };
                                     let sev = compute_probe_pair_severity(
-                                        collision_backend, pi, prt, pj, prt_j, sheet_diag,
-                                        severity_cfg, severity_stats,
-                                    ).max(1.0);
+                                        collision_backend,
+                                        pi,
+                                        prt,
+                                        pj,
+                                        prt_j,
+                                        sheet_diag,
+                                        severity_cfg,
+                                        severity_stats,
+                                    )
+                                    .max(1.0);
                                     pair_probe.insert(key, sev);
                                 }
                                 CollisionDecision::Unsupported { .. } => {
@@ -223,7 +254,9 @@ fn compute_backend_decisions(
                     }
                 }
             }
-            (pair_nc, pair_unsup, bnd_valid, bnd_unsup, pair_probe, bnd_probe)
+            (
+                pair_nc, pair_unsup, bnd_valid, bnd_unsup, pair_probe, bnd_probe,
+            )
         }
         CollisionBackendKind::Cde => {
             let backend = CdeCollisionBackend;
@@ -248,8 +281,14 @@ fn compute_backend_decisions(
                             CollisionDecision::Collision => {
                                 severity_stats.backend_confirmed_collisions += 1;
                                 let sev = compute_probe_boundary_severity(
-                                    collision_backend, pi, prt, sheet, severity_cfg, severity_stats,
-                                ).max(1.0);
+                                    collision_backend,
+                                    pi,
+                                    prt,
+                                    sheet,
+                                    severity_cfg,
+                                    severity_stats,
+                                )
+                                .max(1.0);
                                 bnd_probe[i] = sev;
                             }
                             CollisionDecision::Unsupported { .. } => {
@@ -274,11 +313,20 @@ fn compute_backend_decisions(
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
                                         let s = &sheets[pi.sheet_index];
                                         (s.width * s.width + s.height * s.height).sqrt()
-                                    } else { 1.0 };
+                                    } else {
+                                        1.0
+                                    };
                                     let sev = compute_probe_pair_severity(
-                                        collision_backend, pi, prt, pj, prt_j, sheet_diag,
-                                        severity_cfg, severity_stats,
-                                    ).max(1.0);
+                                        collision_backend,
+                                        pi,
+                                        prt,
+                                        pj,
+                                        prt_j,
+                                        sheet_diag,
+                                        severity_cfg,
+                                        severity_stats,
+                                    )
+                                    .max(1.0);
                                     pair_probe.insert(key, sev);
                                 }
                                 CollisionDecision::Unsupported { .. } => {
@@ -290,7 +338,9 @@ fn compute_backend_decisions(
                     }
                 }
             }
-            (pair_nc, pair_unsup, bnd_valid, bnd_unsup, pair_probe, bnd_probe)
+            (
+                pair_nc, pair_unsup, bnd_valid, bnd_unsup, pair_probe, bnd_probe,
+            )
         }
     }
 }
@@ -317,7 +367,12 @@ impl VrsCollisionTracker {
             let bbox = part.and_then(|pt| bbox_from_placement(p, pt.width, pt.height));
             let valid = if let Some(ref bb) = bbox {
                 if p.sheet_index < sheets.len() {
-                    let rect = Rect { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
+                    let rect = Rect {
+                        x1: bb.x1,
+                        y1: bb.y1,
+                        x2: bb.x2,
+                        y2: bb.y2,
+                    };
                     rect_within_boundary(rect, &sheets[p.sheet_index])
                 } else {
                     false
@@ -329,10 +384,18 @@ impl VrsCollisionTracker {
                 if p.sheet_index < sheets.len() {
                     loss_model_kind.compute_boundary_loss(bb, &sheets[p.sheet_index], valid)
                 } else {
-                    if valid { 0.0 } else { 1.0 }
+                    if valid {
+                        0.0
+                    } else {
+                        1.0
+                    }
                 }
             } else {
-                if valid { 0.0 } else { 1.0 }
+                if valid {
+                    0.0
+                } else {
+                    1.0
+                }
             };
             bboxes.push(bbox);
             boundary_valid.push(valid);
@@ -341,8 +404,22 @@ impl VrsCollisionTracker {
 
         let severity_cfg = CollisionSeverityConfig::default();
         let mut severity_stats = CollisionSeverityStats::default();
-        let (pair_exact_no_collision, pair_exact_unsupported, boundary_exact_valid, boundary_exact_unsupported, pair_probe_severity, boundary_probe_severity) =
-            compute_backend_decisions(n, &layout.placements, parts, sheets, &collision_backend, &severity_cfg, &mut severity_stats);
+        let (
+            pair_exact_no_collision,
+            pair_exact_unsupported,
+            boundary_exact_valid,
+            boundary_exact_unsupported,
+            pair_probe_severity,
+            boundary_probe_severity,
+        ) = compute_backend_decisions(
+            n,
+            &layout.placements,
+            parts,
+            sheets,
+            &collision_backend,
+            &severity_cfg,
+            &mut severity_stats,
+        );
 
         Self {
             n,
@@ -368,11 +445,21 @@ impl VrsCollisionTracker {
     ///
     /// Backward-compatible with all pre-Q11 call sites.
     pub fn build(layout: &WorkingLayout, parts: &[Part], sheets: &[SheetShape]) -> Self {
-        Self::build_with_model(layout, parts, sheets, LossModelKind::BboxArea, CollisionBackendKind::Bbox)
+        Self::build_with_model(
+            layout,
+            parts,
+            sheets,
+            LossModelKind::BboxArea,
+            CollisionBackendKind::Bbox,
+        )
     }
 
     fn pair_key(i: usize, j: usize) -> (usize, usize) {
-        if i < j { (i, j) } else { (j, i) }
+        if i < j {
+            (i, j)
+        } else {
+            (j, i)
+        }
     }
 
     pub fn pair_weight(&self, i: usize, j: usize) -> f64 {
@@ -462,7 +549,9 @@ impl VrsCollisionTracker {
     pub fn weighted_loss_for_item(&self, idx: usize) -> f64 {
         let mut loss = self.boundary_weights[idx] * self.boundary_loss(idx);
         for j in 0..self.n {
-            if j == idx { continue; }
+            if j == idx {
+                continue;
+            }
             let (i, k) = if idx < j { (idx, j) } else { (j, idx) };
             loss += self.pair_weight(i, k) * self.pair_loss(i, k);
         }
@@ -523,13 +612,24 @@ impl VrsCollisionTracker {
         }
     }
 
-    pub fn update_placement(&mut self, idx: usize, layout: &WorkingLayout, parts: &[Part], sheets: &[SheetShape]) {
+    pub fn update_placement(
+        &mut self,
+        idx: usize,
+        layout: &WorkingLayout,
+        parts: &[Part],
+        sheets: &[SheetShape],
+    ) {
         let p = &layout.placements[idx];
         let part = parts.iter().find(|pt| pt.id == p.part_id);
         let bbox = part.and_then(|pt| bbox_from_placement(p, pt.width, pt.height));
         let valid = if let Some(ref bb) = bbox {
             if p.sheet_index < sheets.len() {
-                let rect = Rect { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
+                let rect = Rect {
+                    x1: bb.x1,
+                    y1: bb.y1,
+                    x2: bb.x2,
+                    y2: bb.y2,
+                };
                 rect_within_boundary(rect, &sheets[p.sheet_index])
             } else {
                 false
@@ -539,12 +639,21 @@ impl VrsCollisionTracker {
         };
         let bl = if let Some(ref bb) = bbox {
             if p.sheet_index < sheets.len() {
-                self.loss_model_kind.compute_boundary_loss(bb, &sheets[p.sheet_index], valid)
+                self.loss_model_kind
+                    .compute_boundary_loss(bb, &sheets[p.sheet_index], valid)
             } else {
-                if valid { 0.0 } else { 1.0 }
+                if valid {
+                    0.0
+                } else {
+                    1.0
+                }
             }
         } else {
-            if valid { 0.0 } else { 1.0 }
+            if valid {
+                0.0
+            } else {
+                1.0
+            }
         };
         self.bboxes[idx] = bbox;
         self.boundary_valid[idx] = valid;
@@ -564,11 +673,14 @@ impl VrsCollisionTracker {
         sheets: &[SheetShape],
     ) {
         // Clear existing decisions and probe severities for this item.
-        self.pair_exact_no_collision.retain(|&(a, b)| a != idx && b != idx);
-        self.pair_exact_unsupported.retain(|&(a, b)| a != idx && b != idx);
+        self.pair_exact_no_collision
+            .retain(|&(a, b)| a != idx && b != idx);
+        self.pair_exact_unsupported
+            .retain(|&(a, b)| a != idx && b != idx);
         self.boundary_exact_valid[idx] = false;
         self.boundary_exact_unsupported[idx] = false;
-        self.pair_probe_severity.retain(|&(a, b), _| a != idx && b != idx);
+        self.pair_probe_severity
+            .retain(|&(a, b), _| a != idx && b != idx);
         self.boundary_probe_severity[idx] = 0.0;
 
         let pi = &placements[idx];
@@ -597,8 +709,14 @@ impl VrsCollisionTracker {
                             CollisionDecision::Collision => {
                                 tmp_stats.backend_confirmed_collisions += 1;
                                 new_bnd_probe = compute_probe_boundary_severity(
-                                    &collision_backend, pi, prt, sheet, &severity_cfg, &mut tmp_stats,
-                                ).max(1.0);
+                                    &collision_backend,
+                                    pi,
+                                    prt,
+                                    sheet,
+                                    &severity_cfg,
+                                    &mut tmp_stats,
+                                )
+                                .max(1.0);
                             }
                             CollisionDecision::Unsupported { .. } => {
                                 self.boundary_exact_unsupported[idx] = true;
@@ -607,7 +725,9 @@ impl VrsCollisionTracker {
                         }
                     }
                     for j in 0..n {
-                        if j == idx { continue; }
+                        if j == idx {
+                            continue;
+                        }
                         let pj = &placements[j];
                         let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
                         if let Some(prt_j) = part_j {
@@ -623,11 +743,20 @@ impl VrsCollisionTracker {
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
                                         let s = &sheets[pi.sheet_index];
                                         (s.width * s.width + s.height * s.height).sqrt()
-                                    } else { 1.0 };
+                                    } else {
+                                        1.0
+                                    };
                                     let sev = compute_probe_pair_severity(
-                                        &collision_backend, pi, prt, pj, prt_j, sheet_diag,
-                                        &severity_cfg, &mut tmp_stats,
-                                    ).max(1.0);
+                                        &collision_backend,
+                                        pi,
+                                        prt,
+                                        pj,
+                                        prt_j,
+                                        sheet_diag,
+                                        &severity_cfg,
+                                        &mut tmp_stats,
+                                    )
+                                    .max(1.0);
                                     new_pair_probes.push((key, sev));
                                 }
                                 CollisionDecision::Unsupported { .. } => {
@@ -653,8 +782,14 @@ impl VrsCollisionTracker {
                             CollisionDecision::Collision => {
                                 tmp_stats.backend_confirmed_collisions += 1;
                                 new_bnd_probe = compute_probe_boundary_severity(
-                                    &collision_backend, pi, prt, sheet, &severity_cfg, &mut tmp_stats,
-                                ).max(1.0);
+                                    &collision_backend,
+                                    pi,
+                                    prt,
+                                    sheet,
+                                    &severity_cfg,
+                                    &mut tmp_stats,
+                                )
+                                .max(1.0);
                             }
                             CollisionDecision::Unsupported { .. } => {
                                 self.boundary_exact_unsupported[idx] = true;
@@ -663,7 +798,9 @@ impl VrsCollisionTracker {
                         }
                     }
                     for j in 0..n {
-                        if j == idx { continue; }
+                        if j == idx {
+                            continue;
+                        }
                         let pj = &placements[j];
                         let part_j = parts.iter().find(|pt| pt.id == pj.part_id);
                         if let Some(prt_j) = part_j {
@@ -679,11 +816,20 @@ impl VrsCollisionTracker {
                                     let sheet_diag = if pi.sheet_index < sheets.len() {
                                         let s = &sheets[pi.sheet_index];
                                         (s.width * s.width + s.height * s.height).sqrt()
-                                    } else { 1.0 };
+                                    } else {
+                                        1.0
+                                    };
                                     let sev = compute_probe_pair_severity(
-                                        &collision_backend, pi, prt, pj, prt_j, sheet_diag,
-                                        &severity_cfg, &mut tmp_stats,
-                                    ).max(1.0);
+                                        &collision_backend,
+                                        pi,
+                                        prt,
+                                        pj,
+                                        prt_j,
+                                        sheet_diag,
+                                        &severity_cfg,
+                                        &mut tmp_stats,
+                                    )
+                                    .max(1.0);
                                     new_pair_probes.push((key, sev));
                                 }
                                 CollisionDecision::Unsupported { .. } => {
@@ -706,7 +852,13 @@ impl VrsCollisionTracker {
         self.severity_stats.accumulate(&tmp_stats);
     }
 
-    pub fn restore_item(&mut self, idx: usize, bbox: Option<PlacedBbox>, valid: bool, boundary_loss: f64) {
+    pub fn restore_item(
+        &mut self,
+        idx: usize,
+        bbox: Option<PlacedBbox>,
+        valid: bool,
+        boundary_loss: f64,
+    ) {
         self.bboxes[idx] = bbox;
         self.boundary_valid[idx] = valid;
         self.boundary_losses[idx] = boundary_loss;
@@ -979,7 +1131,12 @@ impl VrsSeparator {
                 // severity unsupported sentinel (cfg.hard_unsupported_loss).
                 if !loss.is_finite()
                     || loss == f64::MAX
-                    || loss >= self.config.search_position_config.severity_cfg.hard_unsupported_loss
+                    || loss
+                        >= self
+                            .config
+                            .search_position_config
+                            .severity_cfg
+                            .hard_unsupported_loss
                 {
                     continue;
                 }
@@ -1032,10 +1189,17 @@ impl VrsSeparator {
         // Central engine: backend-confirmed severity, hard_unsupported_loss for Unsupported.
         let mut tmp_stats = CollisionSeverityStats::default();
         let r = super::collision_severity::evaluate_transform_loss(
-            candidate, part, cand_bbox, sheet,
-            layout, target_idx, parts,
-            &self.config.collision_backend, loss_model,
-            &self.config.search_position_config.severity_cfg, &mut tmp_stats,
+            candidate,
+            part,
+            cand_bbox,
+            sheet,
+            layout,
+            target_idx,
+            parts,
+            &self.config.collision_backend,
+            loss_model,
+            &self.config.search_position_config.severity_cfg,
+            &mut tmp_stats,
         );
         r.loss
     }
@@ -1205,21 +1369,30 @@ impl VrsSeparator {
             .as_ref()
             .map(|v| v.iter().copied().collect());
 
-        let mut tracker = VrsCollisionTracker::build_with_model(&layout, parts, sheets, self.config.loss_model, self.config.collision_backend.clone());
+        let mut tracker = VrsCollisionTracker::build_with_model(
+            &layout,
+            parts,
+            sheets,
+            self.config.loss_model,
+            self.config.collision_backend.clone(),
+        );
         let initial_loss = tracker.total_loss();
 
         if initial_loss == 0.0 {
-            return (layout, VrsSeparatorDiagnostics {
-                initial_loss,
-                best_loss: 0.0,
-                iterations: 0,
-                moves_attempted: 0,
-                moves_accepted: 0,
-                rollback_count: 0,
-                converged: true,
-                search_stats: SearchPositionStats::default(),
-                severity_stats: tracker.severity_stats.clone(),
-            });
+            return (
+                layout,
+                VrsSeparatorDiagnostics {
+                    initial_loss,
+                    best_loss: 0.0,
+                    iterations: 0,
+                    moves_attempted: 0,
+                    moves_accepted: 0,
+                    rollback_count: 0,
+                    converged: true,
+                    search_stats: SearchPositionStats::default(),
+                    severity_stats: tracker.severity_stats.clone(),
+                },
+            );
         }
 
         let mut current = layout;
@@ -1263,7 +1436,8 @@ impl VrsSeparator {
                 rollback_count += worker.rollback_count;
                 agg_search_stats.accumulate(&worker.search_stats);
 
-                if Self::is_better_than_master(current_loss, tracker.total_weighted_loss(), &worker) {
+                if Self::is_better_than_master(current_loss, tracker.total_weighted_loss(), &worker)
+                {
                     current = worker.layout;
                     tracker = worker.tracker;
                     current_loss = worker.raw_loss;
@@ -1338,17 +1512,20 @@ impl VrsSeparator {
         let converged = best_loss == 0.0;
         let mut combined_severity = agg_search_stats.severity_stats.clone();
         combined_severity.accumulate(&tracker.severity_stats);
-        (best_layout, VrsSeparatorDiagnostics {
-            initial_loss,
-            best_loss,
-            iterations,
-            moves_attempted,
-            moves_accepted,
-            rollback_count,
-            converged,
-            search_stats: agg_search_stats,
-            severity_stats: combined_severity,
-        })
+        (
+            best_layout,
+            VrsSeparatorDiagnostics {
+                initial_loss,
+                best_loss,
+                iterations,
+                moves_attempted,
+                moves_accepted,
+                rollback_count,
+                converged,
+                search_stats: agg_search_stats,
+                severity_stats: combined_severity,
+            },
+        )
     }
 }
 
@@ -1392,7 +1569,13 @@ mod tests {
         }
     }
 
-    fn placement(instance_id: &str, part_id: &str, sheet_index: usize, x: f64, y: f64) -> Placement {
+    fn placement(
+        instance_id: &str,
+        part_id: &str,
+        sheet_index: usize,
+        x: f64,
+        y: f64,
+    ) -> Placement {
         Placement {
             instance_id: instance_id.to_string(),
             part_id: part_id.to_string(),
@@ -1415,7 +1598,11 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
-        assert_eq!(tracker.total_loss(), 0.0, "valid layout must have zero total loss");
+        assert_eq!(
+            tracker.total_loss(),
+            0.0,
+            "valid layout must have zero total loss"
+        );
     }
 
     // Test 2: overlapping layout → pair loss > 0
@@ -1431,8 +1618,14 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
-        assert!(tracker.pair_loss(0, 1) > 0.0, "overlapping items must have positive pair loss");
-        assert!(tracker.total_loss() > 0.0, "total loss must be positive for overlapping layout");
+        assert!(
+            tracker.pair_loss(0, 1) > 0.0,
+            "overlapping items must have positive pair loss"
+        );
+        assert!(
+            tracker.total_loss() > 0.0,
+            "total loss must be positive for overlapping layout"
+        );
     }
 
     // Test 3: boundary/sheet violation → boundary loss > 0
@@ -1445,8 +1638,14 @@ mod tests {
         let placements = vec![placement("A__0001", "A", 0, 999.0, 999.0)];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
-        assert!(tracker.boundary_loss(0) > 0.0, "out-of-boundary item must have positive boundary loss");
-        assert!(tracker.total_loss() > 0.0, "total loss must be positive for boundary violation");
+        assert!(
+            tracker.boundary_loss(0) > 0.0,
+            "out-of-boundary item must have positive boundary loss"
+        );
+        assert!(
+            tracker.total_loss() > 0.0,
+            "total loss must be positive for boundary violation"
+        );
     }
 
     // Test 4: simple two-element overlap → separator produces valid layout
@@ -1470,7 +1669,11 @@ mod tests {
         assert!(diag.converged, "must report converged");
 
         let violations = find_violations(&result.placements, &parts, &sheets);
-        assert!(violations.is_empty(), "result layout must have no violations: {:?}", violations);
+        assert!(
+            violations.is_empty(),
+            "result layout must have no violations: {:?}",
+            violations
+        );
     }
 
     // Test 5: after fixing → WorkingLayout.validate_for_commit returns Ok
@@ -1490,7 +1693,11 @@ mod tests {
 
         assert!(diag.best_loss == 0.0, "separator must fix overlap");
         let commit_result = result.validate_for_commit(&parts, &sheets);
-        assert!(commit_result.is_ok(), "fixed layout must pass commit gate: {:?}", commit_result);
+        assert!(
+            commit_result.is_ok(),
+            "fixed layout must pass commit gate: {:?}",
+            commit_result
+        );
     }
 
     // Test 6: item count invariant maintained
@@ -1504,14 +1711,22 @@ mod tests {
             placement("A__0002", "A", 0, 0.0, 0.0),
             placement("A__0003", "A", 0, 0.0, 0.0),
         ];
-        let unplaced = vec![Unplaced { instance_id: "X__0001".to_string(), part_id: "X".to_string(), reason: "NO_CANDIDATE".to_string() }];
+        let unplaced = vec![Unplaced {
+            instance_id: "X__0001".to_string(),
+            part_id: "X".to_string(),
+            reason: "NO_CANDIDATE".to_string(),
+        }];
         let initial_count = placements.len() + unplaced.len();
         let layout = WorkingLayout::new(placements, unplaced, 1, 0);
 
         let sep = VrsSeparator::new(VrsSeparatorConfig::default());
         let (result, _diag) = sep.run(layout, &parts, &sheets);
 
-        assert_eq!(result.total_item_count(), initial_count, "item count must be preserved");
+        assert_eq!(
+            result.total_item_count(),
+            initial_count,
+            "item count must be preserved"
+        );
     }
 
     // Test 7: deterministic — two identical runs give same output
@@ -1532,7 +1747,11 @@ mod tests {
         let (r1, d1) = VrsSeparator::new(config1).run(make_layout(), &parts, &sheets);
         let (r2, d2) = VrsSeparator::new(config2).run(make_layout(), &parts, &sheets);
 
-        assert_eq!(d1.best_loss.to_bits(), d2.best_loss.to_bits(), "best_loss must be identical");
+        assert_eq!(
+            d1.best_loss.to_bits(),
+            d2.best_loss.to_bits(),
+            "best_loss must be identical"
+        );
         assert_eq!(r1.placements.len(), r2.placements.len());
         for (a, b) in r1.placements.iter().zip(r2.placements.iter()) {
             assert_eq!(a.instance_id, b.instance_id);
@@ -1564,8 +1783,12 @@ mod tests {
         let (_result, diag) = sep.run(layout, &parts, &sheets);
 
         // Must not panic, and must indicate non-convergence or residual loss.
-        assert!(!diag.converged || diag.best_loss > 0.0,
-            "non-fixable fixture: converged={} best_loss={}", diag.converged, diag.best_loss);
+        assert!(
+            !diag.converged || diag.best_loss > 0.0,
+            "non-fixable fixture: converged={} best_loss={}",
+            diag.converged,
+            diag.best_loss
+        );
     }
 
     // Test 9: allowed sheet filter excludes disallowed relocation target sheets.
@@ -1584,13 +1807,17 @@ mod tests {
         let layout = WorkingLayout::new(placements.clone(), vec![], 2, 0);
 
         let sep_unfiltered = VrsSeparator::new(VrsSeparatorConfig::default());
-        let (result_unfiltered, diag_unfiltered) = sep_unfiltered.run(layout.snapshot(), &parts, &sheets);
+        let (result_unfiltered, diag_unfiltered) =
+            sep_unfiltered.run(layout.snapshot(), &parts, &sheets);
         assert!(
             diag_unfiltered.best_loss == 0.0 || diag_unfiltered.converged,
             "without filter separator should be able to use sheet 1 and resolve overlap"
         );
         assert!(
-            result_unfiltered.placements.iter().any(|p| p.sheet_index == 1),
+            result_unfiltered
+                .placements
+                .iter()
+                .any(|p| p.sheet_index == 1),
             "without filter at least one placement should move to sheet 1"
         );
 
@@ -1604,7 +1831,10 @@ mod tests {
             "with filter=only sheet 0, overlap should remain non-fixable"
         );
         assert!(
-            result_filtered.placements.iter().all(|p| p.sheet_index == 0),
+            result_filtered
+                .placements
+                .iter()
+                .all(|p| p.sheet_index == 0),
             "filtered run must not place items on disallowed sheet 1"
         );
     }
@@ -1623,9 +1853,15 @@ mod tests {
 
         let sep = VrsSeparator::new(VrsSeparatorConfig::default());
         let (result, diag) = sep.run(layout, &parts, &sheets);
-        assert_eq!(diag.best_loss, 0.0, "default None filter should keep old behavior");
+        assert_eq!(
+            diag.best_loss, 0.0,
+            "default None filter should keep old behavior"
+        );
         let violations = find_violations(&result.placements, &parts, &sheets);
-        assert!(violations.is_empty(), "default None filter result must remain valid");
+        assert!(
+            violations.is_empty(),
+            "default None filter result must remain valid"
+        );
     }
 
     // ---------------------------------------------------------------------------
@@ -1654,15 +1890,29 @@ mod tests {
 
         let loss_01 = tracker.pair_loss(0, 1);
         let loss_02 = tracker.pair_loss(0, 2);
-        assert!(loss_01 > loss_02, "item 1 must overlap 0 more than item 2 does");
+        assert!(
+            loss_01 > loss_02,
+            "item 1 must overlap 0 more than item 2 does"
+        );
 
         let c = cfg();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
 
         let w_01 = tracker.pair_weight(0, 1);
         let w_02 = tracker.pair_weight(0, 2);
-        assert!(w_01 >= w_02, "larger loss pair must receive >= weight multiplier");
-        assert!(w_01 > 1.0, "colliding pair weight must exceed 1.0 after update");
+        assert!(
+            w_01 >= w_02,
+            "larger loss pair must receive >= weight multiplier"
+        );
+        assert!(
+            w_01 > 1.0,
+            "colliding pair weight must exceed 1.0 after update"
+        );
     }
 
     // Test 12: max-loss pair gets multiplier == max_inc_ratio (ratio = 1.0).
@@ -1680,11 +1930,19 @@ mod tests {
         let mut tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
 
         let c = cfg();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
 
         let w = tracker.pair_weight(0, 1);
         let expected = 1.0 * c.gls_weight_max_inc_ratio;
-        assert!((w - expected).abs() < 1e-12, "max-loss pair: weight={w} expected={expected}");
+        assert!(
+            (w - expected).abs() < 1e-12,
+            "max-loss pair: weight={w} expected={expected}"
+        );
     }
 
     // Test 13: non-colliding existing weight decays toward 1.0 but never below.
@@ -1701,7 +1959,12 @@ mod tests {
         let layout_overlap = WorkingLayout::new(lp_overlap, vec![], 1, 0);
         let mut tracker = VrsCollisionTracker::build(&layout_overlap, &parts, &sheets);
         let c = cfg();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
         let w_after_collision = tracker.pair_weight(0, 1);
         assert!(w_after_collision > 1.0, "weight must rise after collision");
 
@@ -1715,10 +1978,18 @@ mod tests {
         // but for this test we build a fresh tracker and manually insert the weight.
         let mut tracker2 = VrsCollisionTracker::build(&layout_apart, &parts, &sheets);
         tracker2.pair_weights.insert((0, 1), w_after_collision);
-        tracker2.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        tracker2.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
 
         let w_decayed = tracker2.pair_weight(0, 1);
-        assert!(w_decayed < w_after_collision, "weight must decay when no collision");
+        assert!(
+            w_decayed < w_after_collision,
+            "weight must decay when no collision"
+        );
         assert!(w_decayed >= 1.0, "weight must not decay below 1.0");
     }
 
@@ -1732,14 +2003,28 @@ mod tests {
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let mut tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
 
-        assert!(tracker.boundary_loss(0) > 0.0, "out-of-bounds item must have boundary loss");
+        assert!(
+            tracker.boundary_loss(0) > 0.0,
+            "out-of-bounds item must have boundary loss"
+        );
         let c = cfg();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
 
         let bw = tracker.boundary_weight(0);
-        assert!(bw > 1.0, "boundary weight must increase after boundary violation");
+        assert!(
+            bw > 1.0,
+            "boundary weight must increase after boundary violation"
+        );
         let expected = 1.0 * c.gls_weight_max_inc_ratio; // only one loss entry → ratio = 1.0
-        assert!((bw - expected).abs() < 1e-12, "boundary weight={bw} expected={expected}");
+        assert!(
+            (bw - expected).abs() < 1e-12,
+            "boundary weight={bw} expected={expected}"
+        );
     }
 
     // Test 15: restore_but_keep_weights — loss-state restored, weights intact.
@@ -1757,7 +2042,12 @@ mod tests {
         let mut tracker = VrsCollisionTracker::build(&layout_overlap, &parts, &sheets);
 
         let c = cfg();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
         let w_before = tracker.pair_weight(0, 1);
         assert!(w_before > 1.0, "weight must be > 1.0 before snapshot");
 
@@ -1765,10 +2055,15 @@ mod tests {
         let snap = tracker.snapshot_loss();
 
         // Simulate a tentative move: move item 1 far away (no overlap).
-        let layout_moved = WorkingLayout::new(vec![
-            placement("A__0001", "A", 0, 0.0, 0.0),
-            placement("A__0002", "A", 0, 300.0, 0.0),
-        ], vec![], 1, 0);
+        let layout_moved = WorkingLayout::new(
+            vec![
+                placement("A__0001", "A", 0, 0.0, 0.0),
+                placement("A__0002", "A", 0, 300.0, 0.0),
+            ],
+            vec![],
+            1,
+            0,
+        );
         tracker.update_placement(1, &layout_moved, &parts, &sheets);
 
         let loss_after_move = tracker.total_loss();
@@ -1780,9 +2075,13 @@ mod tests {
         let w_after_restore = tracker.pair_weight(0, 1);
         let loss_after_restore = tracker.total_loss();
 
-        assert!(loss_after_restore > 0.0, "loss must return to overlapping state after restore");
+        assert!(
+            loss_after_restore > 0.0,
+            "loss must return to overlapping state after restore"
+        );
         assert_eq!(
-            w_after_restore.to_bits(), w_before.to_bits(),
+            w_after_restore.to_bits(),
+            w_before.to_bits(),
             "GLS weight must be bit-identical after restore_but_keep_weights"
         );
     }
@@ -1802,9 +2101,17 @@ mod tests {
         let mut tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
 
         let c = cfg();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
 
-        assert!(tracker.pair_weights.is_empty(), "no weight entries must be created for non-colliding pairs");
+        assert!(
+            tracker.pair_weights.is_empty(),
+            "no weight entries must be created for non-colliding pairs"
+        );
     }
 
     // SGH-Q03 Test 1: worker_count=1 backward compatibility.
@@ -1824,7 +2131,10 @@ mod tests {
             ..VrsSeparatorConfig::default()
         });
         let (result, diag) = sep.run(layout, &parts, &sheets);
-        assert_eq!(diag.best_loss, 0.0, "worker_count=1 should keep single-worker behavior");
+        assert_eq!(
+            diag.best_loss, 0.0,
+            "worker_count=1 should keep single-worker behavior"
+        );
         assert!(find_violations(&result.placements, &parts, &sheets).is_empty());
     }
 
@@ -1845,7 +2155,10 @@ mod tests {
             ..VrsSeparatorConfig::default()
         });
         let (_result, diag) = sep.run(layout, &parts, &sheets);
-        assert_eq!(diag.best_loss, 0.0, "worker_count=0 should be treated as worker_count=1");
+        assert_eq!(
+            diag.best_loss, 0.0,
+            "worker_count=0 should be treated as worker_count=1"
+        );
     }
 
     // SGH-Q03 Test 3: worker_count=3 same seed determinism.
@@ -1867,8 +2180,12 @@ mod tests {
         };
 
         let (r1, d1) = VrsSeparator::new(cfg).run(layout.snapshot(), &parts, &sheets);
-        let (r2, d2) = VrsSeparator::new(VrsSeparatorConfig { worker_count: 3, seed: 4242, ..VrsSeparatorConfig::default() })
-            .run(layout, &parts, &sheets);
+        let (r2, d2) = VrsSeparator::new(VrsSeparatorConfig {
+            worker_count: 3,
+            seed: 4242,
+            ..VrsSeparatorConfig::default()
+        })
+        .run(layout, &parts, &sheets);
 
         assert_eq!(d1.best_loss.to_bits(), d2.best_loss.to_bits());
         assert_eq!(d1.iterations, d2.iterations);
@@ -1892,8 +2209,14 @@ mod tests {
         let s1 = VrsSeparator::deterministic_shuffle(&base, 11);
         let s2 = VrsSeparator::deterministic_shuffle(&base, 12);
         let s1_repeat = VrsSeparator::deterministic_shuffle(&base, 11);
-        assert_ne!(s1, s2, "different seeds should produce different order in this smoke fixture");
-        assert_eq!(s1, s1_repeat, "same seed should produce deterministic order");
+        assert_ne!(
+            s1, s2,
+            "different seeds should produce different order in this smoke fixture"
+        );
+        assert_eq!(
+            s1, s1_repeat,
+            "same seed should produce deterministic order"
+        );
     }
 
     fn dense_fixture_21() -> (Vec<Part>, Vec<SheetShape>, WorkingLayout) {
@@ -1926,7 +2249,8 @@ mod tests {
             max_inner_iterations: 600,
             ..VrsSeparatorConfig::default()
         };
-        let (_single_layout, single_diag) = VrsSeparator::new(single_cfg).run(layout.snapshot(), &parts, &sheets);
+        let (_single_layout, single_diag) =
+            VrsSeparator::new(single_cfg).run(layout.snapshot(), &parts, &sheets);
         let (_multi_layout, multi_diag) = VrsSeparator::new(multi_cfg).run(layout, &parts, &sheets);
         println!(
             "dense_fixture_21 single: best_loss={} iterations={} moves_attempted={} moves_accepted={} rollback_count={}",
@@ -1966,7 +2290,10 @@ mod tests {
         let (result, diag) = VrsSeparator::new(cfg).run(layout, &parts, &sheets);
         if diag.best_loss == 0.0 {
             let violations = find_violations(&result.placements, &parts, &sheets);
-            assert!(violations.is_empty(), "zero-loss output must have no violations");
+            assert!(
+                violations.is_empty(),
+                "zero-loss output must have no violations"
+            );
         }
     }
 
@@ -2006,7 +2333,10 @@ mod tests {
             rollback_count: 0,
             search_stats: SearchPositionStats::default(),
         };
-        assert_eq!(VrsSeparator::compare_worker_candidates(&c0, &c1), Ordering::Less);
+        assert_eq!(
+            VrsSeparator::compare_worker_candidates(&c0, &c1),
+            Ordering::Less
+        );
     }
 
     // ---------------------------------------------------------------------------
@@ -2061,14 +2391,20 @@ mod tests {
             "smooth model must detect non-zero initial loss for overlapping items"
         );
         assert_eq!(diag.best_loss, 0.0, "smooth model must achieve zero loss");
-        assert!(diag.converged, "smooth model must converge for this fixture");
+        assert!(
+            diag.converged,
+            "smooth model must converge for this fixture"
+        );
         assert!(find_violations(&result.placements, &parts, &sheets).is_empty());
     }
 
     // SGH-Q06 separator test 3: restore_but_keep_weights preserves GLS weights for any loss model
     #[test]
     fn restore_but_keep_weights_preserves_weights_with_loss_model() {
-        for &model in &[LossModelKind::BboxArea, LossModelKind::PolePenetrationSmooth] {
+        for &model in &[
+            LossModelKind::BboxArea,
+            LossModelKind::PolePenetrationSmooth,
+        ] {
             let parts = vec![make_part("A", 100.0, 100.0, 2, vec![0])];
             let stocks = vec![make_stock("S", 500.0, 200.0, 1)];
             let sheets = expand_sheets(&stocks).expect("sheets");
@@ -2077,7 +2413,13 @@ mod tests {
                 placement("A__0002", "A", 0, 0.0, 0.0),
             ];
             let layout = WorkingLayout::new(placements, vec![], 1, 0);
-            let mut tracker = VrsCollisionTracker::build_with_model(&layout, &parts, &sheets, model, CollisionBackendKind::Bbox);
+            let mut tracker = VrsCollisionTracker::build_with_model(
+                &layout,
+                &parts,
+                &sheets,
+                model,
+                CollisionBackendKind::Bbox,
+            );
 
             let c = VrsSeparatorConfig::default();
             tracker.update_weights(
@@ -2087,7 +2429,10 @@ mod tests {
                 c.gls_weight_max_inc_ratio,
             );
             let w_before = tracker.pair_weight(0, 1);
-            assert!(w_before > 1.0, "weight must build up from collision ({model:?})");
+            assert!(
+                w_before > 1.0,
+                "weight must build up from collision ({model:?})"
+            );
 
             let snap = tracker.snapshot_loss();
 
@@ -2124,7 +2469,10 @@ mod tests {
     // SGH-Q06 separator test 4: same seed + same loss model → bit-identical output
     #[test]
     fn same_seed_same_loss_model_determinism() {
-        for &model in &[LossModelKind::BboxArea, LossModelKind::PolePenetrationSmooth] {
+        for &model in &[
+            LossModelKind::BboxArea,
+            LossModelKind::PolePenetrationSmooth,
+        ] {
             let parts = vec![make_part("A", 30.0, 30.0, 3, vec![0])];
             let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
             let sheets = expand_sheets(&stocks).expect("sheets");
@@ -2179,8 +2527,12 @@ mod tests {
 
     fn l_shape_part_with_polygon() -> Part {
         let l_json = serde_json::json!([
-            [0.0, 0.0], [20.0, 0.0], [20.0, 10.0],
-            [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 10.0],
+            [10.0, 10.0],
+            [10.0, 20.0],
+            [0.0, 20.0]
         ]);
         Part {
             id: "L".to_string(),
@@ -2219,8 +2571,22 @@ mod tests {
         // Bbox: L=(0,0,20,20), S=(15,15,18,18) → bbox overlaps!
         // Exact: S is in the L-shape notch → NoCollision.
         let placements = vec![
-            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "S__0001".into(), part_id: "S".into(), sheet_index: 0, x: 15.0, y: 15.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "L__0001".into(),
+                part_id: "L".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "S__0001".into(),
+                part_id: "S".into(),
+                sheet_index: 0,
+                x: 15.0,
+                y: 15.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 
@@ -2233,7 +2599,9 @@ mod tests {
 
         // Exact tracker: pair_loss == 0 (no actual polygon overlap).
         let exact_tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             crate::optimizer::loss_model::LossModelKind::BboxArea,
             CollisionBackendKind::JaguaPolygonExact,
         );
@@ -2263,21 +2631,61 @@ mod tests {
         };
 
         // Bbox: two runs identical.
-        let (r1, d1) = VrsSeparator::new(make_cfg(CollisionBackendKind::Bbox)).run(make_layout(), &parts, &sheets);
-        let (r2, d2) = VrsSeparator::new(make_cfg(CollisionBackendKind::Bbox)).run(make_layout(), &parts, &sheets);
-        assert_eq!(d1.best_loss.to_bits(), d2.best_loss.to_bits(), "Bbox: best_loss must be bit-identical");
+        let (r1, d1) = VrsSeparator::new(make_cfg(CollisionBackendKind::Bbox)).run(
+            make_layout(),
+            &parts,
+            &sheets,
+        );
+        let (r2, d2) = VrsSeparator::new(make_cfg(CollisionBackendKind::Bbox)).run(
+            make_layout(),
+            &parts,
+            &sheets,
+        );
+        assert_eq!(
+            d1.best_loss.to_bits(),
+            d2.best_loss.to_bits(),
+            "Bbox: best_loss must be bit-identical"
+        );
         for (a, b) in r1.placements.iter().zip(r2.placements.iter()) {
-            assert_eq!(a.x.to_bits(), b.x.to_bits(), "Bbox: x must be bit-identical");
-            assert_eq!(a.y.to_bits(), b.y.to_bits(), "Bbox: y must be bit-identical");
+            assert_eq!(
+                a.x.to_bits(),
+                b.x.to_bits(),
+                "Bbox: x must be bit-identical"
+            );
+            assert_eq!(
+                a.y.to_bits(),
+                b.y.to_bits(),
+                "Bbox: y must be bit-identical"
+            );
         }
 
         // JaguaPolygonExact: two runs identical.
-        let (r3, d3) = VrsSeparator::new(make_cfg(CollisionBackendKind::JaguaPolygonExact)).run(make_layout(), &parts, &sheets);
-        let (r4, d4) = VrsSeparator::new(make_cfg(CollisionBackendKind::JaguaPolygonExact)).run(make_layout(), &parts, &sheets);
-        assert_eq!(d3.best_loss.to_bits(), d4.best_loss.to_bits(), "Exact: best_loss must be bit-identical");
+        let (r3, d3) = VrsSeparator::new(make_cfg(CollisionBackendKind::JaguaPolygonExact)).run(
+            make_layout(),
+            &parts,
+            &sheets,
+        );
+        let (r4, d4) = VrsSeparator::new(make_cfg(CollisionBackendKind::JaguaPolygonExact)).run(
+            make_layout(),
+            &parts,
+            &sheets,
+        );
+        assert_eq!(
+            d3.best_loss.to_bits(),
+            d4.best_loss.to_bits(),
+            "Exact: best_loss must be bit-identical"
+        );
         for (a, b) in r3.placements.iter().zip(r4.placements.iter()) {
-            assert_eq!(a.x.to_bits(), b.x.to_bits(), "Exact: x must be bit-identical");
-            assert_eq!(a.y.to_bits(), b.y.to_bits(), "Exact: y must be bit-identical");
+            assert_eq!(
+                a.x.to_bits(),
+                b.x.to_bits(),
+                "Exact: x must be bit-identical"
+            );
+            assert_eq!(
+                a.y.to_bits(),
+                b.y.to_bits(),
+                "Exact: y must be bit-identical"
+            );
         }
     }
 
@@ -2337,15 +2745,16 @@ mod tests {
     #[test]
     fn separator_exact_candidate_loss_ignores_bbox_false_positive() {
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let mut l_part = make_part("L", 40.0, 40.0, 1, vec![0]);
         l_part.outer_points = Some(l_json);
-        let parts = vec![
-            l_part,
-            make_part("T", 15.0, 15.0, 1, vec![0]),
-        ];
+        let parts = vec![l_part, make_part("T", 15.0, 15.0, 1, vec![0])];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let layout = WorkingLayout::new(
@@ -2358,8 +2767,20 @@ mod tests {
             0,
         );
         let candidate = placement("T__0001", "T", 0, 22.0, 22.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 22.0, y1: 22.0, x2: 37.0, y2: 37.0 };
-        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 40.0, y2: 40.0 }];
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 22.0,
+            y1: 22.0,
+            x2: 37.0,
+            y2: 37.0,
+        };
+        let placed_without = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 40.0,
+            y2: 40.0,
+        }];
         let exact_sep = VrsSeparator::new(VrsSeparatorConfig {
             collision_backend: CollisionBackendKind::JaguaPolygonExact,
             ..VrsSeparatorConfig::default()
@@ -2390,8 +2811,14 @@ mod tests {
             &placed_without,
         );
 
-        assert_eq!(exact_loss, 0.0, "exact backend must accept the exact-valid notch candidate");
-        assert!(bbox_loss > 0.0, "bbox backend should still see the overlapping bbox surrogate");
+        assert_eq!(
+            exact_loss, 0.0,
+            "exact backend must accept the exact-valid notch candidate"
+        );
+        assert!(
+            bbox_loss > 0.0,
+            "bbox backend should still see the overlapping bbox surrogate"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2411,7 +2838,9 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             LossModelKind::BboxArea,
             CollisionBackendKind::Cde,
         );
@@ -2440,28 +2869,47 @@ mod tests {
         ];
         let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let layout = WorkingLayout::new(
-            vec![placement("A__0001", "A", 0, 5.0, 5.0)],
-            vec![], 1, 0,
-        );
+        let layout = WorkingLayout::new(vec![placement("A__0001", "A", 0, 5.0, 5.0)], vec![], 1, 0);
         // Candidate placed clearly away from the only existing item and inside sheet.
         // Use y=5 to avoid CDE counting touching y=0 boundary as Collision.
         let candidate = placement("T__0001", "T", 0, 100.0, 5.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 100.0, y1: 5.0, x2: 115.0, y2: 20.0 };
-        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 30.0, y2: 30.0 }];
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 100.0,
+            y1: 5.0,
+            x2: 115.0,
+            y2: 20.0,
+        };
+        let placed_without = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 30.0,
+            y2: 30.0,
+        }];
 
         let cde_sep = VrsSeparator::new(VrsSeparatorConfig {
             collision_backend: CollisionBackendKind::Cde,
             ..VrsSeparatorConfig::default()
         });
         let loss = cde_sep.candidate_loss_for_backend(
-            &candidate, &parts[1], &cand_bbox, &sheets[0], &layout, 1, &parts, &placed_without,
+            &candidate,
+            &parts[1],
+            &cand_bbox,
+            &sheets[0],
+            &layout,
+            1,
+            &parts,
+            &placed_without,
         );
         assert!(
             loss < f64::MAX,
             "CDE candidate_loss must not return f64::MAX for valid non-overlapping candidate"
         );
-        assert_eq!(loss, 0.0, "non-overlapping candidate inside sheet must have zero loss");
+        assert_eq!(
+            loss, 0.0,
+            "non-overlapping candidate inside sheet must have zero loss"
+        );
     }
 
     /// CDE separator must repair a simple overlap or report a real Unsupported, not f64::MAX stub.
@@ -2484,8 +2932,14 @@ mod tests {
         let (_final_layout, diag) = sep.run(layout, &parts, &sheets);
         // After repair, loss should be 0 (overlap resolved) or result must have run without panic/crash
         // The key: CDE search path must actually attempt moves (loss tracked, not stuck at f64::MAX)
-        assert!(diag.best_loss.is_finite(), "separator must return a finite loss, not f64::MAX or NaN");
-        assert!(diag.moves_attempted > 0, "CDE separator must attempt moves, not be stuck at f64::MAX candidates");
+        assert!(
+            diag.best_loss.is_finite(),
+            "separator must return a finite loss, not f64::MAX or NaN"
+        );
+        assert!(
+            diag.moves_attempted > 0,
+            "CDE separator must attempt moves, not be stuck at f64::MAX candidates"
+        );
     }
 
     /// Bbox default must still behave identically to pre-Q13.
@@ -2501,10 +2955,23 @@ mod tests {
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build(&layout, &parts, &sheets);
         // Bbox default: no exact backend decisions; pair loss from bbox overlap model
-        assert!(tracker.pair_exact_no_collision.is_empty(), "bbox: no exact no-collision entries");
-        assert!(tracker.pair_exact_unsupported.is_empty(), "bbox: no exact unsupported entries");
-        assert!(!tracker.boundary_exact_valid.iter().any(|&v| v), "bbox: no exact boundary valid flags");
-        assert_eq!(tracker.total_loss(), 0.0, "non-overlapping valid bbox layout must have zero loss");
+        assert!(
+            tracker.pair_exact_no_collision.is_empty(),
+            "bbox: no exact no-collision entries"
+        );
+        assert!(
+            tracker.pair_exact_unsupported.is_empty(),
+            "bbox: no exact unsupported entries"
+        );
+        assert!(
+            !tracker.boundary_exact_valid.iter().any(|&v| v),
+            "bbox: no exact boundary valid flags"
+        );
+        assert_eq!(
+            tracker.total_loss(),
+            0.0,
+            "non-overlapping valid bbox layout must have zero loss"
+        );
     }
 
     /// JaguaPolygonExact path must be unchanged after Q13.
@@ -2521,16 +2988,31 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             LossModelKind::BboxArea,
             CollisionBackendKind::JaguaPolygonExact,
         );
         let any_no_collision = tracker.pair_exact_no_collision.contains(&(0, 1))
             || tracker.pair_exact_no_collision.contains(&(1, 0));
-        assert!(any_no_collision, "JaguaPolygonExact must record NoCollision for non-overlapping rects");
-        assert!(tracker.pair_exact_unsupported.is_empty(), "JaguaPolygonExact must have no Unsupported pairs");
-        assert!(tracker.boundary_exact_valid[0] && tracker.boundary_exact_valid[1], "boundary must be valid");
-        assert_eq!(tracker.total_loss(), 0.0, "valid layout with JaguaPolygonExact must be zero loss");
+        assert!(
+            any_no_collision,
+            "JaguaPolygonExact must record NoCollision for non-overlapping rects"
+        );
+        assert!(
+            tracker.pair_exact_unsupported.is_empty(),
+            "JaguaPolygonExact must have no Unsupported pairs"
+        );
+        assert!(
+            tracker.boundary_exact_valid[0] && tracker.boundary_exact_valid[1],
+            "boundary must be valid"
+        );
+        assert_eq!(
+            tracker.total_loss(),
+            0.0,
+            "valid layout with JaguaPolygonExact must be zero loss"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2547,24 +3029,44 @@ mod tests {
         let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         // Existing item at (5, 5), size 30x30 → occupies (5..35, 5..35).
-        let layout = WorkingLayout::new(
-            vec![placement("A__0001", "A", 0, 5.0, 5.0)],
-            vec![], 1, 0,
-        );
+        let layout = WorkingLayout::new(vec![placement("A__0001", "A", 0, 5.0, 5.0)], vec![], 1, 0);
         // Candidate at (35, 5): touching edge of existing item (x=35) and inside sheet.
         // Touching = NoCollision → candidate_loss must be 0.
         let candidate = placement("T__0001", "T", 0, 35.0, 5.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 35.0, y1: 5.0, x2: 50.0, y2: 20.0 };
-        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 5.0, y1: 5.0, x2: 35.0, y2: 35.0 }];
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 35.0,
+            y1: 5.0,
+            x2: 50.0,
+            y2: 20.0,
+        };
+        let placed_without = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 5.0,
+            y1: 5.0,
+            x2: 35.0,
+            y2: 35.0,
+        }];
 
         let cde_sep = VrsSeparator::new(VrsSeparatorConfig {
             collision_backend: CollisionBackendKind::Cde,
             ..VrsSeparatorConfig::default()
         });
         let loss = cde_sep.candidate_loss_for_backend(
-            &candidate, &parts[1], &cand_bbox, &sheets[0], &layout, 1, &parts, &placed_without,
+            &candidate,
+            &parts[1],
+            &cand_bbox,
+            &sheets[0],
+            &layout,
+            1,
+            &parts,
+            &placed_without,
         );
-        assert_eq!(loss, 0.0, "CDE: touching candidate loss must be 0 (touching ≠ overlap), got {}", loss);
+        assert_eq!(
+            loss, 0.0,
+            "CDE: touching candidate loss must be 0 (touching ≠ overlap), got {}",
+            loss
+        );
     }
 
     /// CDE candidate_backend_loss for a genuinely overlapping candidate must be positive.
@@ -2577,27 +3079,47 @@ mod tests {
         let stocks = vec![make_stock("S", 200.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         // Existing item at (5, 5), size 30x30 → occupies (5..35, 5..35).
-        let layout = WorkingLayout::new(
-            vec![placement("A__0001", "A", 0, 5.0, 5.0)],
-            vec![], 1, 0,
-        );
+        let layout = WorkingLayout::new(vec![placement("A__0001", "A", 0, 5.0, 5.0)], vec![], 1, 0);
         // Candidate at (20, 5): 10-unit positive overlap with existing item.
         let candidate = placement("T__0001", "T", 0, 20.0, 5.0);
-        let cand_bbox = PlacedBbox { sheet_index: 0, x1: 20.0, y1: 5.0, x2: 35.0, y2: 20.0 };
-        let placed_without = vec![PlacedBbox { sheet_index: 0, x1: 5.0, y1: 5.0, x2: 35.0, y2: 35.0 }];
+        let cand_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 20.0,
+            y1: 5.0,
+            x2: 35.0,
+            y2: 20.0,
+        };
+        let placed_without = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 5.0,
+            y1: 5.0,
+            x2: 35.0,
+            y2: 35.0,
+        }];
 
         let cde_sep = VrsSeparator::new(VrsSeparatorConfig {
             collision_backend: CollisionBackendKind::Cde,
             ..VrsSeparatorConfig::default()
         });
         let loss = cde_sep.candidate_loss_for_backend(
-            &candidate, &parts[1], &cand_bbox, &sheets[0], &layout, 1, &parts, &placed_without,
+            &candidate,
+            &parts[1],
+            &cand_bbox,
+            &sheets[0],
+            &layout,
+            1,
+            &parts,
+            &placed_without,
         );
         assert!(
             loss > 0.0,
-            "CDE: positive-overlap candidate loss must be > 0, got {}", loss
+            "CDE: positive-overlap candidate loss must be > 0, got {}",
+            loss
         );
-        assert!(loss < f64::MAX, "CDE: overlapping candidate loss must be finite, not f64::MAX");
+        assert!(
+            loss < f64::MAX,
+            "CDE: overlapping candidate loss must be finite, not f64::MAX"
+        );
     }
 
     // Q20R-S1: search_position is called (search_stats.calls > 0) when search_position_enabled.
@@ -2618,7 +3140,8 @@ mod tests {
         let (_result, diag) = sep.run(layout, &parts, &sheets);
         assert!(
             diag.search_stats.calls > 0,
-            "search_position must be called when enabled (calls={})", diag.search_stats.calls
+            "search_position must be called when enabled (calls={})",
+            diag.search_stats.calls
         );
     }
 
@@ -2639,9 +3162,18 @@ mod tests {
             ..VrsSeparatorConfig::default()
         });
         let (_result, diag) = sep.run(layout, &parts, &sheets);
-        assert_eq!(diag.best_loss, 0.0, "search_position must converge to zero loss");
-        assert!(diag.search_stats.calls > 0, "search_stats must show calls made");
-        assert_eq!(diag.search_stats.lbf_fallback_used, 0, "no LBF fallback when allow_lbf_fallback=false");
+        assert_eq!(
+            diag.best_loss, 0.0,
+            "search_position must converge to zero loss"
+        );
+        assert!(
+            diag.search_stats.calls > 0,
+            "search_stats must show calls made"
+        );
+        assert_eq!(
+            diag.search_stats.lbf_fallback_used, 0,
+            "no LBF fallback when allow_lbf_fallback=false"
+        );
     }
 
     // Q21-SEP-T1: tracker uses backend-confirmed probe severity for confirmed collision pair.
@@ -2660,19 +3192,30 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             LossModelKind::BboxArea,
             CollisionBackendKind::JaguaPolygonExact,
         );
         let loss = tracker.pair_loss(0, 1);
-        assert!(loss > 0.0, "JaguaPolygonExact confirmed collision must have positive pair_loss, got {}", loss);
-        assert!(tracker.severity_stats.backend_confirmed_collisions > 0,
-            "severity stats must record backend-confirmed collisions");
+        assert!(
+            loss > 0.0,
+            "JaguaPolygonExact confirmed collision must have positive pair_loss, got {}",
+            loss
+        );
+        assert!(
+            tracker.severity_stats.backend_confirmed_collisions > 0,
+            "severity stats must record backend-confirmed collisions"
+        );
         // Probe severity is in pair_probe_severity, not bbox area (10*20=200)
         let bbox_area_loss = 10.0 * 20.0; // 200 — what bbox would give
-        // Probe severity should be a resolution distance (much smaller than area), but this is backend-dependent
-        assert!(loss < bbox_area_loss || loss > 0.0,
-            "probe severity must differ from raw bbox area proxy; pair_loss={}", loss);
+                                          // Probe severity should be a resolution distance (much smaller than area), but this is backend-dependent
+        assert!(
+            loss < bbox_area_loss || loss > 0.0,
+            "probe severity must differ from raw bbox area proxy; pair_loss={}",
+            loss
+        );
     }
 
     // Q21-SEP-T2: GLS weight update uses backend-confirmed severity (not bbox proxy).
@@ -2690,15 +3233,27 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let mut tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             LossModelKind::BboxArea,
             CollisionBackendKind::JaguaPolygonExact,
         );
-        assert!(tracker.pair_loss(0, 1) > 0.0, "must have confirmed collision");
+        assert!(
+            tracker.pair_loss(0, 1) > 0.0,
+            "must have confirmed collision"
+        );
         let c = VrsSeparatorConfig::default();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max, c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
-        assert!(tracker.pair_weight(0, 1) > 1.0,
-            "GLS weight must increase for backend-confirmed collision pair");
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
+        assert!(
+            tracker.pair_weight(0, 1) > 1.0,
+            "GLS weight must increase for backend-confirmed collision pair"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2718,18 +3273,24 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             LossModelKind::BboxArea,
             CollisionBackendKind::JaguaPolygonExact,
         );
         // build_with_model issues 1 boundary query per placement (2 items → 2 bdry)
         // and 1 pair query per (i,j) pair (1 pair).
-        assert!(tracker.severity_stats.boundary_queries >= 2,
+        assert!(
+            tracker.severity_stats.boundary_queries >= 2,
             "tracker build must count >= 2 boundary queries, got {}",
-            tracker.severity_stats.boundary_queries);
-        assert!(tracker.severity_stats.pair_queries >= 1,
+            tracker.severity_stats.boundary_queries
+        );
+        assert!(
+            tracker.severity_stats.pair_queries >= 1,
             "tracker build must count >= 1 pair query, got {}",
-            tracker.severity_stats.pair_queries);
+            tracker.severity_stats.pair_queries
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2749,7 +3310,9 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let mut tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             LossModelKind::BboxArea,
             CollisionBackendKind::JaguaPolygonExact,
         );
@@ -2759,12 +3322,18 @@ mod tests {
         let mut moved_layout = layout.clone();
         moved_layout.placements[1] = placement("B__0001", "B", 0, 10.0, 0.0);
         tracker.update_placement(1, &moved_layout, &parts, &sheets);
-        assert!(tracker.severity_stats.boundary_queries > baseline_bnd,
+        assert!(
+            tracker.severity_stats.boundary_queries > baseline_bnd,
             "update must increment boundary_queries: was {}, now {}",
-            baseline_bnd, tracker.severity_stats.boundary_queries);
-        assert!(tracker.severity_stats.pair_queries > baseline_pair,
+            baseline_bnd,
+            tracker.severity_stats.boundary_queries
+        );
+        assert!(
+            tracker.severity_stats.pair_queries > baseline_pair,
             "update must increment pair_queries: was {}, now {}",
-            baseline_pair, tracker.severity_stats.pair_queries);
+            baseline_pair,
+            tracker.severity_stats.pair_queries
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2784,36 +3353,51 @@ mod tests {
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
         let mut tracker = VrsCollisionTracker::build_with_model(
-            &layout, &parts, &sheets,
+            &layout,
+            &parts,
+            &sheets,
             LossModelKind::BboxArea,
             CollisionBackendKind::JaguaPolygonExact,
         );
         let pair_sev = tracker.pair_loss(0, 1);
         // With improved adaptive probe: a 10 mm true overlap must resolve to a
         // refined distance much smaller than the bbox area surrogate (200 = 10×20).
-        assert!(pair_sev > 0.0, "confirmed collision must have positive pair_loss");
-        assert!(pair_sev < 50.0,
+        assert!(
+            pair_sev > 0.0,
+            "confirmed collision must have positive pair_loss"
+        );
+        assert!(
+            pair_sev < 50.0,
             "improved probe severity must be a refined resolution distance (<50), got {}",
-            pair_sev);
+            pair_sev
+        );
         let c = VrsSeparatorConfig::default();
-        tracker.update_weights(c.gls_weight_decay, c.gls_weight_max,
-                                c.gls_weight_min_inc_ratio, c.gls_weight_max_inc_ratio);
-        assert!(tracker.pair_weight(0, 1) > 1.0,
-            "GLS weight must increase using improved backend-confirmed severity");
+        tracker.update_weights(
+            c.gls_weight_decay,
+            c.gls_weight_max,
+            c.gls_weight_min_inc_ratio,
+            c.gls_weight_max_inc_ratio,
+        );
+        assert!(
+            tracker.pair_weight(0, 1) > 1.0,
+            "GLS weight must increase using improved backend-confirmed severity"
+        );
         // Probe stats must show resolved probe queries on at least one direction.
-        assert!(tracker.severity_stats.probe_resolved > 0,
+        assert!(
+            tracker.severity_stats.probe_resolved > 0,
             "GLS path must have probe_resolved > 0, got {}",
-            tracker.severity_stats.probe_resolved);
+            tracker.severity_stats.probe_resolved
+        );
     }
 
     // Q20R-S3: coordinate descent never returns a worse loss than the starting point.
     // Full-sheet blocker ensures ALL grid points have loss > 0 → coord descent is triggered.
     #[test]
     fn coord_descent_improves_or_preserves_candidate_eval() {
-        use crate::rotation_policy::RotationResolveContext;
         use crate::optimizer::search_position::{
-            SearchPositionConfig, SearchPositionStats, search_position_for_target,
+            search_position_for_target, SearchPositionConfig, SearchPositionStats,
         };
+        use crate::rotation_policy::RotationResolveContext;
         let parts = vec![
             make_part("A", 10.0, 8.0, 1, vec![0]),
             make_part("BLK", 200.0, 200.0, 1, vec![0]),
@@ -2822,7 +3406,7 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         // BLK covers the entire sheet — A always overlaps it at any grid point.
         let placements = vec![
-            placement("A__0001", "A", 0, 90.0, 90.0),  // target
+            placement("A__0001", "A", 0, 90.0, 90.0),   // target
             placement("BLK__0001", "BLK", 0, 0.0, 0.0), // full-sheet blocker
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
@@ -2836,10 +3420,17 @@ mod tests {
         };
         let mut stats = SearchPositionStats::default();
         let result = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
             &CollisionBackendKind::Bbox,
             crate::optimizer::loss_model::LossModelKind::BboxArea,
-            &ctx, &cfg, 0, &mut stats,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert!(
             stats.best_eval < f64::MAX || result.is_none(),
@@ -2851,7 +3442,8 @@ mod tests {
         );
         assert!(
             stats.coord_descent_steps > 0,
-            "coord descent must have taken at least 1 step (got {})", stats.coord_descent_steps
+            "coord descent must have taken at least 1 step (got {})",
+            stats.coord_descent_steps
         );
     }
 }

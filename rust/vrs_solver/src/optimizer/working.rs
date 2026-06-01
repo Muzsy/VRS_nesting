@@ -9,11 +9,13 @@
 //! `validate_and_commit`, which calls `repair::find_violations` and rejects
 //! any layout with violations.  There is no implicit conversion.
 
+use super::collision_backend::{
+    BackendValidationDiagnostics, CdeCollisionBackend, CollisionBackend, JaguaPolygonExactBackend,
+};
+use super::repair::{find_violations, validate_placements_with_backend_checked, ViolationType};
 use crate::io::{CollisionBackendKind, Placement, Unplaced};
 use crate::item::Part;
 use crate::sheet::SheetShape;
-use super::collision_backend::{BackendValidationDiagnostics, CdeCollisionBackend, CollisionBackend, JaguaPolygonExactBackend};
-use super::repair::{find_violations, validate_placements_with_backend_checked, ViolationType};
 
 // ---------------------------------------------------------------------------
 // Diagnostics and error
@@ -46,15 +48,24 @@ pub enum WorkingCommitError {
     Violations(WorkingCommitDiagnostics),
     /// The selected backend returned Unsupported for one or more placement queries.
     /// For jagua_polygon_exact: invalid/missing exact geometry. For cde: always.
-    UnsupportedBackend { reason: String, unsupported_queries: usize },
+    UnsupportedBackend {
+        reason: String,
+        unsupported_queries: usize,
+    },
 }
 
 impl std::fmt::Display for WorkingCommitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             WorkingCommitError::Violations(d) => write!(f, "commit blocked: {}", d.summary()),
-            WorkingCommitError::UnsupportedBackend { reason, unsupported_queries } => {
-                write!(f, "commit unsupported: {reason} (unsupported_queries={unsupported_queries})")
+            WorkingCommitError::UnsupportedBackend {
+                reason,
+                unsupported_queries,
+            } => {
+                write!(
+                    f,
+                    "commit unsupported: {reason} (unsupported_queries={unsupported_queries})"
+                )
             }
         }
     }
@@ -98,7 +109,12 @@ impl WorkingLayout {
         sheet_count: usize,
         seed: i64,
     ) -> Self {
-        Self { placements, unplaced, sheet_count, seed }
+        Self {
+            placements,
+            unplaced,
+            sheet_count,
+            seed,
+        }
     }
 
     /// Full clone of the current state for snapshot / rollback.
@@ -205,7 +221,8 @@ impl WorkingLayout {
         backend: &dyn CollisionBackend,
         unsupported_reason: &str,
     ) -> Result<BackendCommitResult, WorkingCommitError> {
-        let result = validate_placements_with_backend_checked(&self.placements, parts, sheets, backend);
+        let result =
+            validate_placements_with_backend_checked(&self.placements, parts, sheets, backend);
         if result.diagnostics.unsupported_queries > 0 {
             return Err(WorkingCommitError::UnsupportedBackend {
                 reason: unsupported_reason.to_string(),
@@ -245,9 +262,9 @@ impl WorkingLayout {
 mod tests {
     use super::*;
     use crate::item::expand_instances;
+    use crate::item::Part;
     use crate::optimizer::initializer::build_initial_layout;
     use crate::sheet::{expand_sheets, Stock};
-    use crate::item::Part;
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -279,10 +296,7 @@ mod tests {
     }
 
     /// Build a valid (violation-free) WorkingLayout using the real initializer.
-    fn valid_working(
-        parts: &[Part],
-        stocks: &[Stock],
-    ) -> (WorkingLayout, Vec<SheetShape>) {
+    fn valid_working(parts: &[Part], stocks: &[Stock]) -> (WorkingLayout, Vec<SheetShape>) {
         let instances = expand_instances(parts).expect("instances");
         let sheets = expand_sheets(stocks).expect("sheets");
         let (placed, unplaced, _) = build_initial_layout(&instances, parts, &sheets);
@@ -299,12 +313,30 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
 
         // Two placements at the exact same position — an impossible overlap.
-        let p1 = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
-        let p2 = Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let p1 = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
+        let p2 = Placement {
+            instance_id: "A__0002".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
 
         // WorkingLayout stores them without any validation.
         let wl = WorkingLayout::new(vec![p1, p2], vec![], sheets.len(), 0);
-        assert_eq!(wl.placements.len(), 2, "both overlapping placements must be stored");
+        assert_eq!(
+            wl.placements.len(),
+            2,
+            "both overlapping placements must be stored"
+        );
         drop(sheets); // sheets was only needed for context; wl does not validate on new()
     }
 
@@ -332,7 +364,10 @@ mod tests {
         };
         assert!(diag.overlap_count > 0, "overlap_count must be non-zero");
         assert_eq!(diag.boundary_count, 0, "no boundary violations expected");
-        assert_eq!(diag.violation_count, diag.overlap_count + diag.boundary_count);
+        assert_eq!(
+            diag.violation_count,
+            diag.overlap_count + diag.boundary_count
+        );
     }
 
     // ── 3. Boundary violation → commit error ──────────────────────────────────
@@ -373,7 +408,11 @@ mod tests {
         let result = wl.validate_and_commit(&parts, &sheets);
         assert!(result.is_ok(), "valid layout must commit: {:?}", result);
         let (placed, unplaced) = result.unwrap();
-        assert_eq!(placed.len() + unplaced.len(), total, "item count invariant preserved");
+        assert_eq!(
+            placed.len() + unplaced.len(),
+            total,
+            "item count invariant preserved"
+        );
     }
 
     // ── 5. validate_for_commit on valid layout returns Ok(zero diag) ──────────
@@ -426,8 +465,11 @@ mod tests {
             wl.placements[0].x = 99999.0;
         }
         if !snap.placements.is_empty() {
-            assert_ne!(snap.placements[0].x.to_bits(), 99999.0_f64.to_bits(),
-                "snapshot must be independent of original after mutation");
+            assert_ne!(
+                snap.placements[0].x.to_bits(),
+                99999.0_f64.to_bits(),
+                "snapshot must be independent of original after mutation"
+            );
         }
     }
 
@@ -440,11 +482,32 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
 
         // p0 valid at (0,0)
-        let p0 = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let p0 = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
         // p1 overlaps p0 (same position)
-        let p1 = Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let p1 = Placement {
+            instance_id: "A__0002".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
         // p2 out of boundary
-        let p2 = Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 0, x: 9999.0, y: 9999.0, rotation_deg: 0.0 };
+        let p2 = Placement {
+            instance_id: "A__0003".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 9999.0,
+            y: 9999.0,
+            rotation_deg: 0.0,
+        };
 
         let wl = WorkingLayout::new(vec![p0, p1, p2], vec![], sheets.len(), 0);
         let diag = match wl.validate_for_commit(&parts, &sheets).unwrap_err() {
@@ -488,8 +551,13 @@ mod tests {
         let parts = vec![make_part("A", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let (wl, sheets) = valid_working(&parts, &stocks);
-        let result = wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
-        assert!(result.is_ok(), "valid layout must commit with CDE backend: {:?}", result);
+        let result =
+            wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
+        assert!(
+            result.is_ok(),
+            "valid layout must commit with CDE backend: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -497,14 +565,21 @@ mod tests {
         let parts = vec![make_part("A", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let (wl, sheets) = valid_working(&parts, &stocks);
-        let result = wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde)
+        let result = wl
+            .validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde)
             .expect("valid layout must commit with CDE");
-        assert_eq!(result.backend_diagnostics.backend_name, "cde_adapter",
-            "backend_name must be cde_adapter");
-        assert_eq!(result.backend_diagnostics.unsupported_queries, 0,
-            "no unsupported queries for valid rect parts");
-        assert_eq!(result.backend_diagnostics.bbox_fallback_queries, 0,
-            "no bbox fallback queries in CDE commit");
+        assert_eq!(
+            result.backend_diagnostics.backend_name, "cde_adapter",
+            "backend_name must be cde_adapter"
+        );
+        assert_eq!(
+            result.backend_diagnostics.unsupported_queries, 0,
+            "no unsupported queries for valid rect parts"
+        );
+        assert_eq!(
+            result.backend_diagnostics.bbox_fallback_queries, 0,
+            "no bbox fallback queries in CDE commit"
+        );
     }
 
     #[test]
@@ -512,15 +587,33 @@ mod tests {
         let parts = vec![make_part("A", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let p1 = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
-        let p2 = Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 5.0, y: 5.0, rotation_deg: 0.0 }; // overlaps p1
+        let p1 = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
+        let p2 = Placement {
+            instance_id: "A__0002".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 5.0,
+            y: 5.0,
+            rotation_deg: 0.0,
+        }; // overlaps p1
         let wl = WorkingLayout::new(vec![p1, p2], vec![], sheets.len(), 0);
-        let result = wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
+        let result =
+            wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
         let diag = match result {
             Err(WorkingCommitError::Violations(d)) => d,
             other => panic!("expected Violations, got: {:?}", other),
         };
-        assert!(diag.overlap_count > 0, "CDE must detect positive-area overlap");
+        assert!(
+            diag.overlap_count > 0,
+            "CDE must detect positive-area overlap"
+        );
     }
 
     #[test]
@@ -528,14 +621,25 @@ mod tests {
         let parts = vec![make_part("A", 30.0, 30.0, 1)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let p = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 9999.0, y: 9999.0, rotation_deg: 0.0 };
+        let p = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 9999.0,
+            y: 9999.0,
+            rotation_deg: 0.0,
+        };
         let wl = WorkingLayout::new(vec![p], vec![], sheets.len(), 0);
-        let result = wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
+        let result =
+            wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
         let diag = match result {
             Err(WorkingCommitError::Violations(d)) => d,
             other => panic!("expected Violations, got: {:?}", other),
         };
-        assert!(diag.boundary_count > 0, "CDE must detect boundary violation");
+        assert!(
+            diag.boundary_count > 0,
+            "CDE must detect boundary violation"
+        );
     }
 
     #[test]
@@ -543,14 +647,28 @@ mod tests {
         let parts = vec![make_part_malformed("BAD", 30.0, 30.0)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
-        let p = Placement { instance_id: "BAD__0001".into(), part_id: "BAD".into(), sheet_index: 0, x: 10.0, y: 10.0, rotation_deg: 0.0 };
+        let p = Placement {
+            instance_id: "BAD__0001".into(),
+            part_id: "BAD".into(),
+            sheet_index: 0,
+            x: 10.0,
+            y: 10.0,
+            rotation_deg: 0.0,
+        };
         let wl = WorkingLayout::new(vec![p], vec![], sheets.len(), 0);
-        let result = wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
+        let result =
+            wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Cde);
         match result {
-            Err(WorkingCommitError::UnsupportedBackend { reason, unsupported_queries }) => {
+            Err(WorkingCommitError::UnsupportedBackend {
+                reason,
+                unsupported_queries,
+            }) => {
                 assert_eq!(reason, "CDE_BACKEND_UNSUPPORTED_QUERY",
                     "malformed geometry must produce CDE_BACKEND_UNSUPPORTED_QUERY, not bbox fallback");
-                assert!(unsupported_queries > 0, "unsupported_queries must reflect actual failures");
+                assert!(
+                    unsupported_queries > 0,
+                    "unsupported_queries must reflect actual failures"
+                );
             }
             other => panic!("expected UnsupportedBackend, got: {:?}", other),
         }
@@ -561,7 +679,8 @@ mod tests {
         let parts = vec![make_part("A", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let (wl, sheets) = valid_working(&parts, &stocks);
-        let result = wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Bbox)
+        let result = wl
+            .validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::Bbox)
             .expect("valid layout must commit with Bbox backend");
         assert_eq!(result.backend_diagnostics.backend_name, "bbox");
         assert_eq!(result.backend_diagnostics.unsupported_queries, 0);
@@ -573,9 +692,17 @@ mod tests {
         let parts = vec![make_part("A", 30.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let (wl, sheets) = valid_working(&parts, &stocks);
-        let result = wl.validate_and_commit_with_backend(&parts, &sheets, CollisionBackendKind::JaguaPolygonExact)
+        let result = wl
+            .validate_and_commit_with_backend(
+                &parts,
+                &sheets,
+                CollisionBackendKind::JaguaPolygonExact,
+            )
             .expect("valid layout must commit with JaguaPolygonExact backend");
-        assert_eq!(result.backend_diagnostics.backend_name, "jagua_polygon_exact");
+        assert_eq!(
+            result.backend_diagnostics.backend_name,
+            "jagua_polygon_exact"
+        );
         assert_eq!(result.backend_diagnostics.unsupported_queries, 0);
         assert_eq!(result.backend_diagnostics.bbox_fallback_queries, 0);
     }

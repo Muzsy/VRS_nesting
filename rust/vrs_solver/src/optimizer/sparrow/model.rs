@@ -69,7 +69,10 @@ impl SparrowProblem {
             let continuous_rotation = match part.rotation_policy {
                 Some(RotationPolicyKind::Continuous) => true,
                 Some(_) => false,
-                None => matches!(rotation_context.global_policy, Some(RotationPolicyKind::Continuous)),
+                None => matches!(
+                    rotation_context.global_policy,
+                    Some(RotationPolicyKind::Continuous)
+                ),
             };
             let idx = instances.len();
             instances.push(SPInstance {
@@ -136,7 +139,6 @@ impl SparrowLayout {
             .collect()
     }
 }
-
 
 pub struct SparrowSolution {
     pub layout: SparrowLayout,

@@ -3,14 +3,14 @@ use std::collections::BinaryHeap;
 
 use crate::io::{CollisionBackendKind, Placement};
 use crate::item::Part;
-use crate::rotation_policy::RotationResolveContext;
-use crate::sheet::{SheetShape, Stock};
-use crate::optimizer::moves::{MoveExecutor, MoveDiagnostics};
+use crate::optimizer::moves::{MoveDiagnostics, MoveExecutor};
 use crate::optimizer::phase::{PhaseConfig, PhaseDiagnostics, PhaseStopReason, PhaseType};
 use crate::optimizer::repair::{find_violations, validate_placements_for_backend};
 use crate::optimizer::score::ScoreModel;
 use crate::optimizer::separator::{VrsSeparator, VrsSeparatorConfig};
 use crate::optimizer::working::WorkingLayout;
+use crate::rotation_policy::RotationResolveContext;
+use crate::sheet::{SheetShape, Stock};
 
 #[derive(Debug, Clone)]
 pub struct InfeasibleCandidate {
@@ -23,10 +23,18 @@ pub struct InfeasibleCandidate {
 
 impl InfeasibleCandidate {
     fn new(layout: WorkingLayout, raw_loss: f64, score: f64, iteration: usize) -> Self {
-        let placement_order: Vec<String> = layout.placements.iter()
+        let placement_order: Vec<String> = layout
+            .placements
+            .iter()
             .map(|p| p.instance_id.clone())
             .collect();
-        Self { layout, raw_loss, score, iteration, placement_order }
+        Self {
+            layout,
+            raw_loss,
+            score,
+            iteration,
+            placement_order,
+        }
     }
 }
 
@@ -48,12 +56,22 @@ impl Eq for InfeasibleCandidateOrd {}
 
 impl Ord for InfeasibleCandidateOrd {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.candidate.raw_loss.partial_cmp(&other.candidate.raw_loss)
+        self.candidate
+            .raw_loss
+            .partial_cmp(&other.candidate.raw_loss)
             .unwrap_or(Ordering::Equal)
-            .then_with(|| self.candidate.score.partial_cmp(&other.candidate.score)
-                .unwrap_or(Ordering::Equal))
+            .then_with(|| {
+                self.candidate
+                    .score
+                    .partial_cmp(&other.candidate.score)
+                    .unwrap_or(Ordering::Equal)
+            })
             .then_with(|| self.candidate.iteration.cmp(&other.candidate.iteration))
-            .then_with(|| self.candidate.placement_order.cmp(&other.candidate.placement_order))
+            .then_with(|| {
+                self.candidate
+                    .placement_order
+                    .cmp(&other.candidate.placement_order)
+            })
     }
 }
 
@@ -103,7 +121,8 @@ impl InfeasibleSolutionPool {
     }
 
     pub fn best(&self) -> Option<&InfeasibleCandidate> {
-        self.candidates.iter()
+        self.candidates
+            .iter()
             .min_by(|a, b| a.cmp(b))
             .map(|ord| &ord.candidate)
     }
@@ -127,7 +146,12 @@ pub struct LargeItemSwapDisruption {
 
 impl LargeItemSwapDisruption {
     pub fn new(top_percentile: f64, max_attempts: usize, seed: i64) -> Self {
-        Self::new_with_rotation_context(top_percentile, max_attempts, seed, RotationResolveContext::legacy_default())
+        Self::new_with_rotation_context(
+            top_percentile,
+            max_attempts,
+            seed,
+            RotationResolveContext::legacy_default(),
+        )
     }
 
     pub fn new_with_rotation_context(
@@ -152,7 +176,13 @@ impl LargeItemSwapDisruption {
         rotation_context: RotationResolveContext,
         collision_backend: CollisionBackendKind,
     ) -> Self {
-        Self { top_percentile, max_attempts, seed, rotation_context, collision_backend }
+        Self {
+            top_percentile,
+            max_attempts,
+            seed,
+            rotation_context,
+            collision_backend,
+        }
     }
 
     fn select_top_items<'a>(
@@ -161,25 +191,30 @@ impl LargeItemSwapDisruption {
         parts: &'a [Part],
         top_count: usize,
     ) -> Vec<&'a Placement> {
-        let mut items_with_area: Vec<(&Placement, f64)> = placements.iter()
+        let mut items_with_area: Vec<(&Placement, f64)> = placements
+            .iter()
             .filter_map(|p| {
-                parts.iter()
+                parts
+                    .iter()
                     .find(|pt| pt.id == p.part_id)
                     .map(|pt| (p, pt.width * pt.height))
             })
             .collect();
 
-        items_with_area.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal)
-        });
+        items_with_area.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
 
-        items_with_area.into_iter()
+        items_with_area
+            .into_iter()
             .take(top_count)
             .map(|(p, _)| p)
             .collect()
     }
 
-    fn deterministic_pair<'a>(&self, iteration: usize, items: &'a [&Placement]) -> Option<(&'a Placement, &'a Placement)> {
+    fn deterministic_pair<'a>(
+        &self,
+        iteration: usize,
+        items: &'a [&Placement],
+    ) -> Option<(&'a Placement, &'a Placement)> {
         if items.len() < 2 {
             return None;
         }
@@ -228,7 +263,12 @@ impl LargeItemSwapDisruption {
                 &item_b.instance_id,
                 &mut move_diag,
             ) {
-                let violations = validate_placements_for_backend(&result, parts, sheets, &self.collision_backend);
+                let violations = validate_placements_for_backend(
+                    &result,
+                    parts,
+                    sheets,
+                    &self.collision_backend,
+                );
                 if violations.is_empty() {
                     return Some(result);
                 }
@@ -256,7 +296,12 @@ impl ExplorationPhase {
             config.collision_backend.clone(),
         );
         let score_model = ScoreModel::new(config.score_weights.clone());
-        Self { config, score_model, pool, disruption }
+        Self {
+            config,
+            score_model,
+            pool,
+            disruption,
+        }
     }
 
     pub fn run(
@@ -304,8 +349,10 @@ impl ExplorationPhase {
 
             // Accumulate search_position diagnostics from this separator run.
             diag.search_position_calls += sep_diag.search_stats.calls;
-            diag.search_position_global_samples_evaluated += sep_diag.search_stats.global_samples_evaluated;
-            diag.search_position_focused_samples_evaluated += sep_diag.search_stats.focused_samples_evaluated;
+            diag.search_position_global_samples_evaluated +=
+                sep_diag.search_stats.global_samples_evaluated;
+            diag.search_position_focused_samples_evaluated +=
+                sep_diag.search_stats.focused_samples_evaluated;
             diag.search_position_samples_unsupported += sep_diag.search_stats.samples_unsupported;
             diag.search_position_refined_samples += sep_diag.search_stats.refined_samples;
             diag.search_position_coord_descent_steps += sep_diag.search_stats.coord_descent_steps;
@@ -318,12 +365,18 @@ impl ExplorationPhase {
             diag.collision_severity_pair_queries += sep_diag.severity_stats.pair_queries;
             diag.collision_severity_boundary_queries += sep_diag.severity_stats.boundary_queries;
             diag.collision_severity_probe_queries += sep_diag.severity_stats.probe_queries;
-            diag.collision_severity_backend_confirmed_collisions += sep_diag.severity_stats.backend_confirmed_collisions;
-            diag.collision_severity_backend_confirmed_no_collisions += sep_diag.severity_stats.backend_confirmed_no_collisions;
-            diag.collision_severity_unsupported_queries += sep_diag.severity_stats.unsupported_queries;
-            diag.collision_severity_bbox_proxy_uses += sep_diag.severity_stats.bbox_proxy_severity_uses;
-            diag.collision_severity_probe_pair_queries += sep_diag.severity_stats.probe_pair_queries;
-            diag.collision_severity_probe_boundary_queries += sep_diag.severity_stats.probe_boundary_queries;
+            diag.collision_severity_backend_confirmed_collisions +=
+                sep_diag.severity_stats.backend_confirmed_collisions;
+            diag.collision_severity_backend_confirmed_no_collisions +=
+                sep_diag.severity_stats.backend_confirmed_no_collisions;
+            diag.collision_severity_unsupported_queries +=
+                sep_diag.severity_stats.unsupported_queries;
+            diag.collision_severity_bbox_proxy_uses +=
+                sep_diag.severity_stats.bbox_proxy_severity_uses;
+            diag.collision_severity_probe_pair_queries +=
+                sep_diag.severity_stats.probe_pair_queries;
+            diag.collision_severity_probe_boundary_queries +=
+                sep_diag.severity_stats.probe_boundary_queries;
             diag.collision_severity_probe_resolved += sep_diag.severity_stats.probe_resolved;
             diag.collision_severity_probe_unresolved += sep_diag.severity_stats.probe_unresolved;
             diag.collision_severity_probe_unsupported += sep_diag.severity_stats.probe_unsupported;
@@ -336,14 +389,15 @@ impl ExplorationPhase {
                         diag.collision_severity_min_resolution_mm.min(new_min)
                     };
             }
-            if sep_diag.severity_stats.max_resolution_mm > diag.collision_severity_max_resolution_mm {
+            if sep_diag.severity_stats.max_resolution_mm > diag.collision_severity_max_resolution_mm
+            {
                 diag.collision_severity_max_resolution_mm =
                     sep_diag.severity_stats.max_resolution_mm;
             }
             if sep_diag.severity_stats.resolutions_recorded > 0 {
                 // Running mean across separator runs in this phase.
-                let prior_count = diag.collision_severity_probe_resolved
-                    - sep_diag.severity_stats.probe_resolved;
+                let prior_count =
+                    diag.collision_severity_probe_resolved - sep_diag.severity_stats.probe_resolved;
                 let prior_sum = diag.collision_severity_avg_resolution_mm * prior_count as f64;
                 let new_total = prior_count + sep_diag.severity_stats.resolutions_recorded;
                 let new_sum = prior_sum + sep_diag.severity_stats.resolution_sum_mm;
@@ -363,7 +417,10 @@ impl ExplorationPhase {
             );
 
             let violations = validate_placements_for_backend(
-                &sep_layout.placements, parts, sheets, &self.config.collision_backend,
+                &sep_layout.placements,
+                parts,
+                sheets,
+                &self.config.collision_backend,
             );
 
             if violations.is_empty() {
@@ -387,7 +444,10 @@ impl ExplorationPhase {
             }
 
             if consecutive_no_improvement >= 5 {
-                if let Some(disrupted) = self.disruption.try_disrupt(&layout, parts, sheets, iteration) {
+                if let Some(disrupted) = self
+                    .disruption
+                    .try_disrupt(&layout, parts, sheets, iteration)
+                {
                     diag.disruption_attempts += 1;
                     let new_layout = WorkingLayout::new(
                         disrupted,
@@ -396,7 +456,10 @@ impl ExplorationPhase {
                         layout.seed,
                     );
                     let new_violations = validate_placements_for_backend(
-                        &new_layout.placements, parts, sheets, &self.config.collision_backend,
+                        &new_layout.placements,
+                        parts,
+                        sheets,
+                        &self.config.collision_backend,
                     );
                     if new_violations.is_empty() {
                         layout = new_layout;
@@ -462,7 +525,11 @@ mod tests {
 
         let best = pool.best();
         assert!(best.is_some());
-        assert_eq!(best.unwrap().raw_loss, 1.0, "best() must return lowest raw_loss");
+        assert_eq!(
+            best.unwrap().raw_loss,
+            1.0,
+            "best() must return lowest raw_loss"
+        );
     }
 
     #[test]
@@ -471,13 +538,22 @@ mod tests {
         let layout = WorkingLayout::new(vec![], vec![], 1, 0);
 
         for i in 0..5 {
-            pool.push(InfeasibleCandidate::new(layout.clone(), i as f64, i as f64, i));
+            pool.push(InfeasibleCandidate::new(
+                layout.clone(),
+                i as f64,
+                i as f64,
+                i,
+            ));
         }
 
         assert_eq!(pool.len(), 3, "pool must not exceed capacity");
         let best = pool.best();
         assert!(best.is_some());
-        assert_eq!(best.unwrap().raw_loss, 0.0, "pool must retain lowest losses; best must be 0.0");
+        assert_eq!(
+            best.unwrap().raw_loss,
+            0.0,
+            "pool must retain lowest losses; best must be 0.0"
+        );
     }
 
     #[test]
@@ -511,40 +587,83 @@ mod tests {
         ];
         let sheets = vec![make_test_sheet(), make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "B__0001".into(),
+                part_id: "B".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 2, 0);
 
         let result = disruption.try_disrupt(&layout, &parts, &sheets, 0);
         if let Some(new_placements) = result {
             let violations = find_violations(&new_placements, &parts, &sheets);
-            assert!(violations.is_empty(), "try_disrupt Some output must be violation-free");
+            assert!(
+                violations.is_empty(),
+                "try_disrupt Some output must be violation-free"
+            );
         }
     }
 
     #[test]
     fn large_item_swap_disruption_selects_deterministic_pair() {
         let disruption = LargeItemSwapDisruption::new(0.5, 3, 42);
-        let parts = vec![
-            crate::item::Part {
-                id: "A".into(),
-                width: 100.0,
-                height: 100.0,
-                quantity: 4,
-                allowed_rotations_deg: vec![0],
-                holes_points: None,
-                prepared_holes_points: None,
-                outer_points: None,
-                prepared_outer_points: None,
-                rotation_policy: None,
-            },
-        ];
+        let parts = vec![crate::item::Part {
+            id: "A".into(),
+            width: 100.0,
+            height: 100.0,
+            quantity: 4,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 10.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0003".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0004".into(), part_id: "A".into(), sheet_index: 0, x: 30.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 10.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0003".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 20.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0004".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 30.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let sheets = vec![make_test_sheet()];
 
@@ -564,32 +683,50 @@ mod tests {
         let config = PhaseConfig::deterministic_default();
         let mut phase = ExplorationPhase::new(config);
 
-        let parts = vec![
-            crate::item::Part {
-                id: "A".into(),
-                width: 20.0,
-                height: 20.0,
-                quantity: 2,
-                allowed_rotations_deg: vec![0],
-                holes_points: None,
-                prepared_holes_points: None,
-                outer_points: None,
-                prepared_outer_points: None,
-                rotation_policy: None,
-            },
-        ];
+        let parts = vec![crate::item::Part {
+            id: "A".into(),
+            width: 20.0,
+            height: 20.0,
+            quantity: 2,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "A__0002".into(), part_id: "A".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 20.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 
         let (result_layout, diag) = phase.run(layout, &parts, &sheets);
 
         let violations = find_violations(&result_layout.placements, &parts, &sheets);
-        assert!(violations.is_empty(), "exploration must not produce violations");
-        assert!(diag.incumbent_preserved, "feasible incumbent must be preserved");
+        assert!(
+            violations.is_empty(),
+            "exploration must not produce violations"
+        );
+        assert!(
+            diag.incumbent_preserved,
+            "feasible incumbent must be preserved"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -626,49 +763,64 @@ mod tests {
 
     #[test]
     fn exploration_separator_uses_phase_rotation_context() {
-        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
         use crate::item::resolve_instance_rotation_angles;
+        use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
 
-        let forty_five_context = RotationResolveContext::new(
-            Some(RotationPolicyKind::FortyFive), 42, 8
-        );
+        let forty_five_context =
+            RotationResolveContext::new(Some(RotationPolicyKind::FortyFive), 42, 8);
         let legacy_context = RotationResolveContext::legacy_default();
 
         let part = make_part_no_policy("A", 100.0, 20.0, 1);
 
-        let angles_fortyfive = resolve_instance_rotation_angles(&part, "A__0001", &forty_five_context);
+        let angles_fortyfive =
+            resolve_instance_rotation_angles(&part, "A__0001", &forty_five_context);
         let angles_legacy = resolve_instance_rotation_angles(&part, "A__0001", &legacy_context);
 
-        assert_eq!(angles_fortyfive.len(), 8,
-            "FortyFive context should yield 8 rotation candidates");
-        assert_eq!(angles_legacy.len(), 4,
-            "Legacy context should yield 4 orthogonal candidates");
+        assert_eq!(
+            angles_fortyfive.len(),
+            8,
+            "FortyFive context should yield 8 rotation candidates"
+        );
+        assert_eq!(
+            angles_legacy.len(),
+            4,
+            "Legacy context should yield 4 orthogonal candidates"
+        );
 
         let has_45 = angles_fortyfive.iter().any(|&r| (r - 45.0).abs() < 1e-6);
         let legacy_has_45 = angles_legacy.iter().any(|&r| (r - 45.0).abs() < 1e-6);
         assert!(has_45, "FortyFive context must include 45° candidate");
-        assert!(!legacy_has_45, "Legacy context must NOT include 45° candidate");
+        assert!(
+            !legacy_has_45,
+            "Legacy context must NOT include 45° candidate"
+        );
 
         // Verify ExplorationPhase is built with the correct context plumbing
         let mut config = PhaseConfig::deterministic_default();
         config.rotation_context = forty_five_context.clone();
         let phase = ExplorationPhase::new(config);
         // disruption must store the same context (FortyFive, not legacy_default)
-        let disruption_angles = resolve_instance_rotation_angles(&part, "A__0001", &phase.disruption.rotation_context);
-        assert_eq!(disruption_angles.len(), 8,
-            "disruption.rotation_context must carry the phase config's FortyFive context");
+        let disruption_angles =
+            resolve_instance_rotation_angles(&part, "A__0001", &phase.disruption.rotation_context);
+        assert_eq!(
+            disruption_angles.len(),
+            8,
+            "disruption.rotation_context must carry the phase config's FortyFive context"
+        );
     }
 
     #[test]
     fn exploration_disruption_uses_phase_rotation_context_for_move_executor() {
-        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
+        use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
 
         // Build a disruption with FortyFive context directly
-        let forty_five_context = RotationResolveContext::new(
-            Some(RotationPolicyKind::FortyFive), 0, 8
-        );
+        let forty_five_context =
+            RotationResolveContext::new(Some(RotationPolicyKind::FortyFive), 0, 8);
         let disruption = LargeItemSwapDisruption::new_with_rotation_context(
-            1.0, 3, 42, forty_five_context.clone()
+            1.0,
+            3,
+            42,
+            forty_five_context.clone(),
         );
 
         let parts = vec![
@@ -677,8 +829,22 @@ mod tests {
         ];
         let sheets = vec![make_test_sheet(), make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 1, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "B__0001".into(),
+                part_id: "B".into(),
+                sheet_index: 1,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 2, 0);
 
@@ -686,12 +852,17 @@ mod tests {
         let result = disruption.try_disrupt(&layout, &parts, &sheets, 0);
         if let Some(new_placements) = result {
             let violations = find_violations(&new_placements, &parts, &sheets);
-            assert!(violations.is_empty(), "disruption with FortyFive context must be violation-free");
+            assert!(
+                violations.is_empty(),
+                "disruption with FortyFive context must be violation-free"
+            );
         }
 
         // Verify the stored context is FortyFive (not legacy)
-        assert!(disruption.rotation_context.global_policy.is_some(),
-            "disruption rotation_context must carry the FortyFive global policy, not None (legacy)");
+        assert!(
+            disruption.rotation_context.global_policy.is_some(),
+            "disruption rotation_context must carry the FortyFive global policy, not None (legacy)"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -709,12 +880,20 @@ mod tests {
         let sheets = vec![make_test_sheet()];
         let placements = vec![
             Placement {
-                instance_id: "A__0001".into(), part_id: "A".into(),
-                sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+                instance_id: "A__0001".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
             },
             Placement {
-                instance_id: "A__0002".into(), part_id: "A".into(),
-                sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0,
+                instance_id: "A__0002".into(),
+                part_id: "A".into(),
+                sheet_index: 0,
+                x: 20.0,
+                y: 0.0,
+                rotation_deg: 0.0,
             },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
@@ -738,16 +917,34 @@ mod tests {
         use crate::optimizer::score::ScoreModel;
 
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let mut l_part = make_part_no_policy("L", 40.0, 40.0, 1);
         l_part.outer_points = Some(l_json);
         let parts = vec![l_part, make_part_no_policy("B", 15.0, 15.0, 1)];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "L__0001".into(),
+                part_id: "L".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "B__0001".into(),
+                part_id: "B".into(),
+                sheet_index: 0,
+                x: 22.0,
+                y: 22.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 
@@ -755,25 +952,30 @@ mod tests {
         config.exploration_budget = crate::optimizer::phase::PhaseBudget::new(0, 0.0);
         config.collision_backend = CollisionBackendKind::JaguaPolygonExact;
         let expected = ScoreModel::new(config.score_weights.clone()).score_with_backend(
-            &layout.placements, &layout.unplaced, &parts, &sheets, &config.collision_backend,
+            &layout.placements,
+            &layout.unplaced,
+            &parts,
+            &sheets,
+            &config.collision_backend,
         );
         let mut phase = ExplorationPhase::new(config);
 
         let (_result_layout, diag) = phase.run(layout, &parts, &sheets);
-        assert!((diag.initial_score - expected.total_cost).abs() < 1e-9,
-            "ExplorationPhase initial/incumbent score must use selected backend");
+        assert!(
+            (diag.initial_score - expected.total_cost).abs() < 1e-9,
+            "ExplorationPhase initial/incumbent score must use selected backend"
+        );
     }
 
     #[test]
     fn no_production_legacy_context_in_explore_or_compress_phase_paths() {
-        use crate::rotation_policy::{RotationResolveContext, RotationPolicyKind};
         use crate::item::resolve_instance_rotation_angles;
+        use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
 
         // Building ExplorationPhase with FortyFive context: disruption and separator both
         // must have received the non-legacy context.
-        let forty_five_context = RotationResolveContext::new(
-            Some(RotationPolicyKind::FortyFive), 0, 8
-        );
+        let forty_five_context =
+            RotationResolveContext::new(Some(RotationPolicyKind::FortyFive), 0, 8);
         let mut config = PhaseConfig::deterministic_default();
         config.rotation_context = forty_five_context;
 
@@ -782,13 +984,18 @@ mod tests {
         let part = make_part_no_policy("A", 100.0, 20.0, 1);
 
         // disruption.rotation_context must be FortyFive (8 angles), not legacy (4 angles)
-        let angles = resolve_instance_rotation_angles(&part, "A__0001", &phase.disruption.rotation_context);
+        let angles =
+            resolve_instance_rotation_angles(&part, "A__0001", &phase.disruption.rotation_context);
         assert_eq!(angles.len(), 8,
             "production path: ExplorationPhase disruption must NOT use legacy_default context; got {} angles instead of 8", angles.len());
 
         // config.rotation_context itself must be FortyFive
-        let config_angles = resolve_instance_rotation_angles(&part, "A__0001", &config.rotation_context);
-        assert_eq!(config_angles.len(), 8,
-            "PhaseConfig.rotation_context must carry FortyFive (8 angles)");
+        let config_angles =
+            resolve_instance_rotation_angles(&part, "A__0001", &config.rotation_context);
+        assert_eq!(
+            config_angles.len(),
+            8,
+            "PhaseConfig.rotation_context must carry FortyFive (8 angles)"
+        );
     }
 }

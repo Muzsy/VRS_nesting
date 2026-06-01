@@ -117,9 +117,11 @@ mod tests {
 
     #[test]
     fn cde_session_or_batch_matches_per_call_adapter_for_pair_matrix() {
-        use crate::optimizer::cde_adapter::{CdeAdapter, CdeQueryResult, prepare_shape_from_placement};
         use crate::io::Placement;
         use crate::item::Part;
+        use crate::optimizer::cde_adapter::{
+            prepare_shape_from_placement, CdeAdapter, CdeQueryResult,
+        };
 
         // Build two non-overlapping rect placements
         let p1 = Placement {
@@ -138,8 +140,30 @@ mod tests {
             y: 0.0,
             rotation_deg: 0.0,
         };
-        let part1 = Part { id: "p1".to_string(), width: 10.0, height: 10.0, outer_points: None, quantity: 1, allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None, prepared_outer_points: None, rotation_policy: None };
-        let part2 = Part { id: "p2".to_string(), width: 10.0, height: 10.0, outer_points: None, quantity: 1, allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None, prepared_outer_points: None, rotation_policy: None };
+        let part1 = Part {
+            id: "p1".to_string(),
+            width: 10.0,
+            height: 10.0,
+            outer_points: None,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
+        let part2 = Part {
+            id: "p2".to_string(),
+            width: 10.0,
+            height: 10.0,
+            outer_points: None,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
 
         let s1 = prepare_shape_from_placement(&p1, &part1).expect("shape1");
         let s2 = prepare_shape_from_placement(&p2, &part2).expect("shape2");
@@ -160,27 +184,53 @@ mod tests {
 
     #[test]
     fn no_silent_bbox_fallback_for_cde_search_path() {
-        use crate::optimizer::cde_adapter::{CdeAdapter, CdeQueryResult, prepare_shape_from_placement};
         use crate::io::Placement;
         use crate::item::Part;
+        use crate::optimizer::cde_adapter::{
+            prepare_shape_from_placement, CdeAdapter, CdeQueryResult,
+        };
 
         // Overlapping rects — CDE must return Collision, not silently fall back to bbox NoCollision
         let p1 = Placement {
             instance_id: "i1".to_string(),
             part_id: "p1".to_string(),
             sheet_index: 0,
-            x: 0.0, y: 0.0,
+            x: 0.0,
+            y: 0.0,
             rotation_deg: 0.0,
         };
         let p2 = Placement {
             instance_id: "i2".to_string(),
             part_id: "p2".to_string(),
             sheet_index: 0,
-            x: 5.0, y: 0.0,
+            x: 5.0,
+            y: 0.0,
             rotation_deg: 0.0,
         };
-        let part1 = Part { id: "p1".to_string(), width: 10.0, height: 10.0, outer_points: None, quantity: 1, allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None, prepared_outer_points: None, rotation_policy: None };
-        let part2 = Part { id: "p2".to_string(), width: 10.0, height: 10.0, outer_points: None, quantity: 1, allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None, prepared_outer_points: None, rotation_policy: None };
+        let part1 = Part {
+            id: "p1".to_string(),
+            width: 10.0,
+            height: 10.0,
+            outer_points: None,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
+        let part2 = Part {
+            id: "p2".to_string(),
+            width: 10.0,
+            height: 10.0,
+            outer_points: None,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        };
 
         let s1 = prepare_shape_from_placement(&p1, &part1).expect("shape1");
         let s2 = prepare_shape_from_placement(&p2, &part2).expect("shape2");

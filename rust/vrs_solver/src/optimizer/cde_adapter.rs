@@ -1,24 +1,24 @@
-use jagua_rs::collision_detection::{CDEConfig, CDEngine};
-use jagua_rs::collision_detection::hazards::{Hazard, HazardEntity};
-use jagua_rs::collision_detection::hazards::filter::NoFilter;
 use jagua_rs::collision_detection::hazards::collector::{BasicHazardCollector, HazardCollector};
-use jagua_rs::geometry::primitives::Rect as JagRect;
+use jagua_rs::collision_detection::hazards::filter::NoFilter;
+use jagua_rs::collision_detection::hazards::{Hazard, HazardEntity};
+use jagua_rs::collision_detection::{CDEConfig, CDEngine};
 use jagua_rs::geometry::fail_fast::SPSurrogateConfig;
+use jagua_rs::geometry::primitives::Rect as JagRect;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use crate::geometry::{polygon_bbox, to_jag_polygon, Point};
-use crate::io::Placement;
-use crate::item::Part;
-use crate::sheet::SheetShape;
 use super::collision_backend::{
     extract_polygon_from_part, polygon_within_sheet_pts, polygons_collide, transform_polygon,
     PolygonExtraction,
 };
+use crate::geometry::{polygon_bbox, to_jag_polygon, Point};
+use crate::io::Placement;
+use crate::item::Part;
+use crate::sheet::SheetShape;
 
 // ---------------------------------------------------------------------------
 // CdeAdapterConfig
@@ -33,7 +33,10 @@ pub struct CdeAdapterConfig {
 
 impl Default for CdeAdapterConfig {
     fn default() -> Self {
-        Self { quadtree_depth: 4, cd_threshold: 0 }
+        Self {
+            quadtree_depth: 4,
+            cd_threshold: 0,
+        }
     }
 }
 
@@ -75,9 +78,15 @@ pub enum CdeQueryResult {
 }
 
 impl CdeQueryResult {
-    pub fn is_collision(&self) -> bool { matches!(self, CdeQueryResult::Collision) }
-    pub fn is_no_collision(&self) -> bool { matches!(self, CdeQueryResult::NoCollision) }
-    pub fn is_unsupported(&self) -> bool { matches!(self, CdeQueryResult::Unsupported { .. }) }
+    pub fn is_collision(&self) -> bool {
+        matches!(self, CdeQueryResult::Collision)
+    }
+    pub fn is_no_collision(&self) -> bool {
+        matches!(self, CdeQueryResult::NoCollision)
+    }
+    pub fn is_unsupported(&self) -> bool {
+        matches!(self, CdeQueryResult::Unsupported { .. })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,9 +106,15 @@ pub(crate) struct CdeAdapter {
 }
 
 impl CdeAdapter {
-    pub(crate) fn new(config: CdeAdapterConfig) -> Self { Self { config } }
+    pub(crate) fn new(config: CdeAdapterConfig) -> Self {
+        Self { config }
+    }
 
-    pub(crate) fn with_defaults() -> Self { Self { config: CdeAdapterConfig::default() } }
+    pub(crate) fn with_defaults() -> Self {
+        Self {
+            config: CdeAdapterConfig::default(),
+        }
+    }
 
     /// Query whether two prepared shapes overlap.
     ///
@@ -130,18 +145,38 @@ impl CdeAdapter {
 
         let jag_bbox = match JagRect::try_new(ux1, uy1, ux2, uy2) {
             Ok(r) => r,
-            Err(_) => return CdeQueryResult::Unsupported { reason: "degenerate union bbox for pair query" },
+            Err(_) => {
+                return CdeQueryResult::Unsupported {
+                    reason: "degenerate union bbox for pair query",
+                }
+            }
         };
 
         let ext_pts = [
-            Point { x: ux1 as f64, y: uy1 as f64 },
-            Point { x: ux2 as f64, y: uy1 as f64 },
-            Point { x: ux2 as f64, y: uy2 as f64 },
-            Point { x: ux1 as f64, y: uy2 as f64 },
+            Point {
+                x: ux1 as f64,
+                y: uy1 as f64,
+            },
+            Point {
+                x: ux2 as f64,
+                y: uy1 as f64,
+            },
+            Point {
+                x: ux2 as f64,
+                y: uy2 as f64,
+            },
+            Point {
+                x: ux1 as f64,
+                y: uy2 as f64,
+            },
         ];
         let ext_spoly = match to_jag_polygon(&ext_pts, "cde_pair_exterior") {
             Ok(s) => s,
-            Err(_) => return CdeQueryResult::Unsupported { reason: "exterior polygon build failed" },
+            Err(_) => {
+                return CdeQueryResult::Unsupported {
+                    reason: "exterior polygon build failed",
+                }
+            }
         };
 
         let cde_config = CDEConfig {
@@ -174,7 +209,11 @@ impl CdeAdapter {
     ///
     /// Registers the sheet polygon as the Exterior hazard (items must be inside).
     /// Returns Collision if `item` goes fully or partially outside the sheet.
-    pub(crate) fn query_boundary(&self, item: &CdePreparedShape, sheet: &CdePreparedShape) -> CdeQueryResult {
+    pub(crate) fn query_boundary(
+        &self,
+        item: &CdePreparedShape,
+        sheet: &CdePreparedShape,
+    ) -> CdeQueryResult {
         let margin = 1.0_f64;
         let bx1 = (sheet.min_x - margin) as f32;
         let by1 = (sheet.min_y - margin) as f32;
@@ -183,7 +222,11 @@ impl CdeAdapter {
 
         let jag_bbox = match JagRect::try_new(bx1, by1, bx2, by2) {
             Ok(r) => r,
-            Err(_) => return CdeQueryResult::Unsupported { reason: "sheet bbox degenerate" },
+            Err(_) => {
+                return CdeQueryResult::Unsupported {
+                    reason: "sheet bbox degenerate",
+                }
+            }
         };
 
         let cde_config = CDEConfig {
@@ -249,9 +292,18 @@ pub(crate) fn prepare_shape_native(
             }
             let local = [
                 Point { x: 0.0, y: 0.0 },
-                Point { x: part.width, y: 0.0 },
-                Point { x: part.width, y: part.height },
-                Point { x: 0.0, y: part.height },
+                Point {
+                    x: part.width,
+                    y: 0.0,
+                },
+                Point {
+                    x: part.width,
+                    y: part.height,
+                },
+                Point {
+                    x: 0.0,
+                    y: part.height,
+                },
             ];
             transform_polygon(&local, x, y, rotation_deg)
         }
@@ -261,10 +313,17 @@ pub(crate) fn prepare_shape_native(
 
     let (min_x, min_y, max_x, max_y) =
         polygon_bbox(&world_pts).ok_or("empty polygon after transform")?;
-    let spoly =
-        to_jag_polygon(&world_pts, "cde_placement_shape").map_err(|_| "SPolygon build failed for placement")?;
+    let spoly = to_jag_polygon(&world_pts, "cde_placement_shape")
+        .map_err(|_| "SPolygon build failed for placement")?;
 
-    Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
+    Ok(CdePreparedShape {
+        spoly,
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+        world_pts,
+    })
 }
 
 /// SGH-Q24R9: translate an already-prepared shape by (dx, dy) and rebuild it.
@@ -279,33 +338,63 @@ pub(crate) fn translate_prepared(
     let world_pts: Vec<Point> = shape
         .world_pts
         .iter()
-        .map(|p| Point { x: p.x + dx, y: p.y + dy })
+        .map(|p| Point {
+            x: p.x + dx,
+            y: p.y + dy,
+        })
         .collect();
     let (min_x, min_y, max_x, max_y) = polygon_bbox(&world_pts)?;
     let spoly = to_jag_polygon(&world_pts, "cde_translated_shape").ok()?;
-    Some(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
+    Some(CdePreparedShape {
+        spoly,
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+        world_pts,
+    })
 }
 
 /// Build a `CdePreparedShape` from a sheet boundary polygon.
-pub(crate) fn prepare_shape_from_sheet(sheet: &SheetShape) -> Result<CdePreparedShape, &'static str> {
+pub(crate) fn prepare_shape_from_sheet(
+    sheet: &SheetShape,
+) -> Result<CdePreparedShape, &'static str> {
     let pts: Vec<Point> = if sheet.has_irregular_outer {
         sheet.outer_vertices.clone()
     } else {
         vec![
-            Point { x: sheet.min_x, y: sheet.min_y },
-            Point { x: sheet.max_x, y: sheet.min_y },
-            Point { x: sheet.max_x, y: sheet.max_y },
-            Point { x: sheet.min_x, y: sheet.max_y },
+            Point {
+                x: sheet.min_x,
+                y: sheet.min_y,
+            },
+            Point {
+                x: sheet.max_x,
+                y: sheet.min_y,
+            },
+            Point {
+                x: sheet.max_x,
+                y: sheet.max_y,
+            },
+            Point {
+                x: sheet.min_x,
+                y: sheet.max_y,
+            },
         ]
     };
 
-    let (min_x, min_y, max_x, max_y) =
-        polygon_bbox(&pts).ok_or("sheet polygon is empty")?;
+    let (min_x, min_y, max_x, max_y) = polygon_bbox(&pts).ok_or("sheet polygon is empty")?;
     let spoly =
         to_jag_polygon(&pts, "cde_sheet_shape").map_err(|_| "SPolygon build failed for sheet")?;
     let world_pts = pts;
 
-    Ok(CdePreparedShape { spoly, min_x, min_y, max_x, max_y, world_pts })
+    Ok(CdePreparedShape {
+        spoly,
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+        world_pts,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +424,11 @@ struct CdeQueryCache {
 
 impl CdeQueryCache {
     fn new() -> Self {
-        Self { prepared: HashMap::new(), pair: HashMap::new(), boundary: HashMap::new() }
+        Self {
+            prepared: HashMap::new(),
+            pair: HashMap::new(),
+            boundary: HashMap::new(),
+        }
     }
 }
 
@@ -371,7 +464,12 @@ fn part_geom_hash(part: &Part) -> u64 {
 }
 
 fn shape_key(p: &Placement, part_geom_hash: u64) -> ShapeKey {
-    (part_geom_hash, p.x.to_bits(), p.y.to_bits(), p.rotation_deg.to_bits())
+    (
+        part_geom_hash,
+        p.x.to_bits(),
+        p.y.to_bits(),
+        p.rotation_deg.to_bits(),
+    )
 }
 
 fn sheet_key(s: &SheetShape) -> u64 {
@@ -420,7 +518,10 @@ fn cached_prepared(p: &Placement, part: &Part) -> Result<Rc<CdePreparedShape>, &
 /// the verdict is memoised. Returns the raw `CdeQueryResult` (the backend caller
 /// owns the result histogram counters).
 pub(crate) fn cached_query_pair(
-    a: &Placement, a_part: &Part, b: &Placement, b_part: &Part,
+    a: &Placement,
+    a_part: &Part,
+    b: &Placement,
+    b_part: &Part,
 ) -> CdeQueryResult {
     let ka = shape_key(a, part_geom_hash(a_part));
     let kb = shape_key(b, part_geom_hash(b_part));
@@ -453,7 +554,9 @@ pub(crate) fn cached_query_pair(
 
 /// Solve-scoped cached boundary query.
 pub(crate) fn cached_query_boundary(
-    item: &Placement, item_part: &Part, sheet: &SheetShape,
+    item: &Placement,
+    item_part: &Part,
+    sheet: &SheetShape,
 ) -> CdeQueryResult {
     let ki = shape_key(item, part_geom_hash(item_part));
     let ks = sheet_key(sheet);
@@ -559,13 +662,25 @@ impl CdeCandidateSession {
             item_surrogate_config: SPSurrogateConfig::none(),
         };
         let mut hazards = Vec::with_capacity(others.len() + 1);
-        hazards.push(Hazard::new(HazardEntity::Exterior, sheet.spoly.clone(), false));
+        hazards.push(Hazard::new(
+            HazardEntity::Exterior,
+            sheet.spoly.clone(),
+            false,
+        ));
         for (i, (_, s)) in others.iter().enumerate() {
-            hazards.push(Hazard::new(HazardEntity::Hole { idx: i }, s.spoly.clone(), false));
+            hazards.push(Hazard::new(
+                HazardEntity::Hole { idx: i },
+                s.spoly.clone(),
+                false,
+            ));
         }
         super::cde_observability::inc_batch_engine_build(others.len());
         let cde = CDEngine::new(bbox, hazards, cde_config);
-        Some(Self { cde, holes: others, sheet_world_pts: sheet.world_pts.clone() })
+        Some(Self {
+            cde,
+            holes: others,
+            sheet_world_pts: sheet.world_pts.clone(),
+        })
     }
 
     pub(crate) fn hazard_count(&self) -> usize {
@@ -575,7 +690,8 @@ impl CdeCandidateSession {
     /// Query a candidate shape once against all registered hazards.
     pub(crate) fn query(&self, candidate: &CdePreparedShape) -> CdeBatchResult {
         let mut collector = BasicHazardCollector::default();
-        self.cde.collect_poly_collisions(&candidate.spoly, &mut collector);
+        self.cde
+            .collect_poly_collisions(&candidate.spoly, &mut collector);
 
         let mut boundary_collision = false;
         let mut colliding = Vec::new();
@@ -603,10 +719,12 @@ impl CdeCandidateSession {
                 _ => {}
             }
         }
-        super::cde_observability::record_batch_query(
-            colliding.len() + boundary_collision as usize,
-        );
-        CdeBatchResult { boundary_collision, colliding_layout_idxs: colliding, unsupported }
+        super::cde_observability::record_batch_query(colliding.len() + boundary_collision as usize);
+        CdeBatchResult {
+            boundary_collision,
+            colliding_layout_idxs: colliding,
+            unsupported,
+        }
     }
 }
 
@@ -655,7 +773,9 @@ pub(crate) fn build_candidate_session(
 ) -> Option<Rc<CdeCandidateSession>> {
     let fp = session_fingerprint(placements, target_idx, sheet_index, parts, sheet);
     if let Some(rc) = SESSION_CACHE.with(|c| {
-        c.borrow().as_ref().and_then(|(f, s)| if *f == fp { Some(s.clone()) } else { None })
+        c.borrow()
+            .as_ref()
+            .and_then(|(f, s)| if *f == fp { Some(s.clone()) } else { None })
     }) {
         super::cde_observability::inc_candidate_session(true);
         return Some(rc);
@@ -755,8 +875,12 @@ mod tests {
 
     fn l_shape_outer() -> serde_json::Value {
         serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ])
     }
 
@@ -769,11 +893,11 @@ mod tests {
         // Verifies that all jagua-rs CDE API symbols resolved at compile time.
         // Resolved symbols: CDEngine, CDEConfig, Hazard, HazardEntity,
         //   NoFilter, SPSurrogateConfig, SPolygon, Rect (JagRect).
-        use jagua_rs::collision_detection::{CDEConfig, CDEngine};
-        use jagua_rs::collision_detection::hazards::{Hazard, HazardEntity};
         use jagua_rs::collision_detection::hazards::filter::NoFilter;
-        use jagua_rs::geometry::primitives::Rect as JagRect;
+        use jagua_rs::collision_detection::hazards::{Hazard, HazardEntity};
+        use jagua_rs::collision_detection::{CDEConfig, CDEngine};
         use jagua_rs::geometry::fail_fast::SPSurrogateConfig;
+        use jagua_rs::geometry::primitives::Rect as JagRect;
 
         let _ = SPSurrogateConfig::none();
         let _ = CDEConfig {
@@ -803,16 +927,24 @@ mod tests {
         let p_l = pl("L", 0, 0.0, 0.0);
         let p_small = pl("B", 0, 22.0, 22.0); // in the L-shape notch
 
-        let bbox_result = BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
-        let cde_result = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let bbox_result =
+            BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let cde_result =
+            CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
 
-        assert!(bbox_result.is_collision(), "Bbox must give false positive for L-notch");
+        assert!(
+            bbox_result.is_collision(),
+            "Bbox must give false positive for L-notch"
+        );
         assert!(
             cde_result.is_no_collision(),
             "CDE must not fallback to bbox; expected NoCollision for notch fixture, got {:?}",
             cde_result
         );
-        assert_ne!(bbox_result, cde_result, "CDE and bbox must disagree for notch fixture");
+        assert_ne!(
+            bbox_result, cde_result,
+            "CDE and bbox must disagree for notch fixture"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -832,21 +964,32 @@ mod tests {
         let p_l = pl("L", 0, 0.0, 0.0);
         let p_small = pl("B", 0, 22.0, 22.0); // in the L-shape notch
 
-        let bbox_result = BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
-        let exact_result = JaguaPolygonExactBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
-        let cde_result = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let bbox_result =
+            BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let exact_result =
+            JaguaPolygonExactBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let cde_result =
+            CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
 
-        assert!(bbox_result.is_collision(), "bbox must give false positive for L-notch");
+        assert!(
+            bbox_result.is_collision(),
+            "bbox must give false positive for L-notch"
+        );
         assert!(
             exact_result.is_no_collision(),
-            "JaguaPolygonExact must give NoCollision for L-notch: {:?}", exact_result
+            "JaguaPolygonExact must give NoCollision for L-notch: {:?}",
+            exact_result
         );
         assert!(
             cde_result.is_no_collision(),
-            "CDE must give NoCollision for L-notch (not a bbox wrapper): {:?}", cde_result
+            "CDE must give NoCollision for L-notch (not a bbox wrapper): {:?}",
+            cde_result
         );
         // Both exact and CDE agree, but via different implementations — CDE uses CDEngine + VRS post-policy.
-        assert_eq!(exact_result, cde_result, "CDE and JaguaPolygonExact must agree on L-notch NoCollision");
+        assert_eq!(
+            exact_result, cde_result,
+            "CDE and JaguaPolygonExact must agree on L-notch NoCollision"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -857,23 +1000,35 @@ mod tests {
     fn cde_adapter_returns_unsupported_with_clear_reason_if_api_unavailable() {
         // When polygon data is malformed, prepare_shape_from_placement must Err,
         // and CdeCollisionBackend must return Unsupported with a non-empty reason.
-        let invalid_part = make_part_with_polygon("BAD", 30.0, 30.0, serde_json::json!("not-an-array"));
+        let invalid_part =
+            make_part_with_polygon("BAD", 30.0, 30.0, serde_json::json!("not-an-array"));
         let rect_part = make_part("R", 10.0, 10.0);
 
         let result = CdeCollisionBackend.placement_overlaps(
-            &pl("BAD", 0, 0.0, 0.0), &invalid_part,
-            &pl("R",   0, 1.0, 1.0), &rect_part,
+            &pl("BAD", 0, 0.0, 0.0),
+            &invalid_part,
+            &pl("R", 0, 1.0, 1.0),
+            &rect_part,
         );
         assert!(
             result.is_unsupported(),
-            "invalid polygon must return Unsupported: {:?}", result
+            "invalid polygon must return Unsupported: {:?}",
+            result
         );
         // Verify reason is non-empty (no silent, opaque failure).
-        if let crate::optimizer::collision_backend::CollisionDecision::Unsupported { reason } = &result {
+        if let crate::optimizer::collision_backend::CollisionDecision::Unsupported { reason } =
+            &result
+        {
             assert!(!reason.is_empty(), "Unsupported reason must not be empty");
         }
-        assert!(!result.is_no_collision(), "Unsupported must not masquerade as NoCollision");
-        assert!(!result.is_collision(),    "Unsupported must not masquerade as Collision");
+        assert!(
+            !result.is_no_collision(),
+            "Unsupported must not masquerade as NoCollision"
+        );
+        assert!(
+            !result.is_collision(),
+            "Unsupported must not masquerade as Collision"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -909,7 +1064,8 @@ mod tests {
         let rotated = pl_rot("A", 0, 0.0, 0.0, 45.0);
         let far_away = pl("B", 0, 100.0, 100.0); // clearly separate
 
-        let result = CdeCollisionBackend.placement_overlaps(&rotated, &long_part, &far_away, &small_part);
+        let result =
+            CdeCollisionBackend.placement_overlaps(&rotated, &long_part, &far_away, &small_part);
         assert!(
             result.is_no_collision(),
             "CDE must report NoCollision for non-overlapping rotated rect vs far rect: {:?}",
@@ -947,20 +1103,28 @@ mod tests {
         // Malformed outer_points → prepare_shape fails → Unsupported, NOT NoCollision.
         // This is the critical no-silent-fallback gate for invalid geometry.
         let degenerate = make_part_with_polygon(
-            "DEG", 40.0, 40.0,
+            "DEG",
+            40.0,
+            40.0,
             serde_json::json!([[0.0, 0.0], [1.0, 0.0], [1.0, 0.0]]), // collinear/degenerate
         );
         let rect_part = make_part("R", 10.0, 10.0);
 
         let result = CdeCollisionBackend.placement_overlaps(
-            &pl("DEG", 0, 0.0, 0.0), &degenerate,
-            &pl("R",   0, 5.0, 5.0), &rect_part,
+            &pl("DEG", 0, 0.0, 0.0),
+            &degenerate,
+            &pl("R", 0, 5.0, 5.0),
+            &rect_part,
         );
         assert!(
             result.is_unsupported(),
-            "degenerate polygon must be Unsupported, not NoCollision: {:?}", result
+            "degenerate polygon must be Unsupported, not NoCollision: {:?}",
+            result
         );
-        assert!(!result.is_no_collision(), "invalid geometry must not be treated as safe");
+        assert!(
+            !result.is_no_collision(),
+            "invalid geometry must not be treated as safe"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -981,24 +1145,41 @@ mod tests {
             pl("A", 0, 120.0, 120.0), // idx 2 fixed
         ];
         let parts = vec![part.clone()];
-        let session = build_candidate_session(&placements, 0, 0, &parts, &sheets[0])
-            .expect("session builds");
-        assert_eq!(session.hazard_count(), 2, "two fixed items registered as holes");
+        let session =
+            build_candidate_session(&placements, 0, 0, &parts, &sheets[0]).expect("session builds");
+        assert_eq!(
+            session.hazard_count(),
+            2,
+            "two fixed items registered as holes"
+        );
 
         // Candidate overlapping idx 1 (at 55,55 — overlaps the 50..70 item).
         let cand_overlap = prepare_candidate(&pl("A", 0, 55.0, 55.0), &part).expect("cand");
         let r1 = session.query(&cand_overlap);
-        assert!(r1.colliding_layout_idxs.contains(&1), "must report overlap with item idx 1");
+        assert!(
+            r1.colliding_layout_idxs.contains(&1),
+            "must report overlap with item idx 1"
+        );
         assert!(!r1.boundary_collision, "candidate is inside the sheet");
 
         // Candidate in free space → clear.
         let cand_clear = prepare_candidate(&pl("A", 0, 10.0, 150.0), &part).expect("cand");
         let r2 = session.query(&cand_clear);
-        assert!(r2.is_clear(), "free-space candidate must be clear: {:?}", r2.colliding_layout_idxs);
+        assert!(
+            r2.is_clear(),
+            "free-space candidate must be clear: {:?}",
+            r2.colliding_layout_idxs
+        );
 
         let snap = cde_observability::snapshot();
-        assert_eq!(snap.batch_engine_builds, 1, "ONE engine build for the whole session");
-        assert_eq!(snap.batch_candidate_queries, 2, "two candidate queries, no extra builds");
+        assert_eq!(
+            snap.batch_engine_builds, 1,
+            "ONE engine build for the whole session"
+        );
+        assert_eq!(
+            snap.batch_candidate_queries, 2,
+            "two candidate queries, no extra builds"
+        );
     }
 
     #[test]
@@ -1010,12 +1191,15 @@ mod tests {
         let sheets = rect_sheet(100.0, 100.0);
         let placements = vec![pl("A", 0, 0.0, 0.0)];
         let parts = vec![part.clone()];
-        let session = build_candidate_session(&placements, 0, 0, &parts, &sheets[0])
-            .expect("session builds");
+        let session =
+            build_candidate_session(&placements, 0, 0, &parts, &sheets[0]).expect("session builds");
         // Candidate at (95,10): extends to x=115 > 100 → boundary violation.
         let cand = prepare_candidate(&pl("A", 0, 95.0, 10.0), &part).expect("cand");
         let r = session.query(&cand);
-        assert!(r.boundary_collision, "candidate crossing sheet boundary must be flagged");
+        assert!(
+            r.boundary_collision,
+            "candidate crossing sheet boundary must be flagged"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1037,7 +1221,10 @@ mod tests {
         assert_eq!(r2, CdeQueryResult::Collision);
         assert_eq!(snap.cache_pair_misses, 1, "first call misses");
         assert_eq!(snap.cache_pair_hits, 1, "second identical call hits");
-        assert_eq!(snap.engine_builds, 1, "cache hit must NOT build a second CDEngine");
+        assert_eq!(
+            snap.engine_builds, 1,
+            "cache hit must NOT build a second CDEngine"
+        );
     }
 
     #[test]
@@ -1053,9 +1240,16 @@ mod tests {
         let p2 = pl("X", 0, 15.0, 15.0);
         let r_big = cached_query_pair(&p1, &big, &p2, &big);
         let r_small = cached_query_pair(&p1, &small, &p2, &small);
-        assert_eq!(r_big, CdeQueryResult::Collision, "30×30 at (0,0)/(15,15) overlap");
-        assert_eq!(r_small, CdeQueryResult::NoCollision,
-            "10×10 at (0,0)/(15,15) are separate — must NOT return the big part's cached verdict");
+        assert_eq!(
+            r_big,
+            CdeQueryResult::Collision,
+            "30×30 at (0,0)/(15,15) overlap"
+        );
+        assert_eq!(
+            r_small,
+            CdeQueryResult::NoCollision,
+            "10×10 at (0,0)/(15,15) are separate — must NOT return the big part's cached verdict"
+        );
     }
 
     #[test]
@@ -1071,7 +1265,10 @@ mod tests {
         cde_observability::reset();
         cached_query_pair(&p1, &part, &p2, &part);
         let snap = cde_observability::snapshot();
-        assert_eq!(snap.cache_pair_hits, 0, "after reset the verdict must be recomputed (miss)");
+        assert_eq!(
+            snap.cache_pair_hits, 0,
+            "after reset the verdict must be recomputed (miss)"
+        );
         assert_eq!(snap.cache_pair_misses, 1);
     }
 
@@ -1095,9 +1292,19 @@ mod tests {
         let result = adapter.query_pair(&s1, &s2);
         let snap = cde_observability::snapshot();
 
-        assert_eq!(result, CdeQueryResult::NoCollision, "separated rects must be NoCollision");
-        assert_eq!(snap.broadphase_pruned, 1, "separated pair must be broad-phase pruned");
-        assert_eq!(snap.engine_builds, 0, "broad-phase prune must NOT build a CDEngine");
+        assert_eq!(
+            result,
+            CdeQueryResult::NoCollision,
+            "separated rects must be NoCollision"
+        );
+        assert_eq!(
+            snap.broadphase_pruned, 1,
+            "separated pair must be broad-phase pruned"
+        );
+        assert_eq!(
+            snap.engine_builds, 0,
+            "broad-phase prune must NOT build a CDEngine"
+        );
     }
 
     #[test]
@@ -1116,9 +1323,19 @@ mod tests {
         let result = adapter.query_pair(&s1, &s2);
         let snap = cde_observability::snapshot();
 
-        assert_eq!(result, CdeQueryResult::Collision, "overlapping rects must be Collision");
-        assert_eq!(snap.broadphase_pruned, 0, "overlapping pair must not be broad-phase pruned");
-        assert_eq!(snap.engine_builds, 1, "overlapping pair must reach the CDEngine");
+        assert_eq!(
+            result,
+            CdeQueryResult::Collision,
+            "overlapping rects must be Collision"
+        );
+        assert_eq!(
+            snap.broadphase_pruned, 0,
+            "overlapping pair must not be broad-phase pruned"
+        );
+        assert_eq!(
+            snap.engine_builds, 1,
+            "overlapping pair must reach the CDEngine"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1131,7 +1348,11 @@ mod tests {
         let sheets = rect_sheet(100.0, 100.0);
         let inside = pl("A", 0, 10.0, 10.0);
         let result = CdeCollisionBackend.placement_within_sheet(&inside, &part, &sheets[0]);
-        assert!(result.is_no_collision(), "item fully inside sheet: {:?}", result);
+        assert!(
+            result.is_no_collision(),
+            "item fully inside sheet: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -1147,7 +1368,11 @@ mod tests {
             rotation_deg: 0.0,
         };
         let result = CdeCollisionBackend.placement_within_sheet(&outside, &part, &sheets[0]);
-        assert!(result.is_collision(), "item outside sheet must be Collision: {:?}", result);
+        assert!(
+            result.is_collision(),
+            "item outside sheet must be Collision: {:?}",
+            result
+        );
     }
 
     // =========================================================================
@@ -1158,11 +1383,15 @@ mod tests {
     #[test]
     fn cde_touching_rect_edges_are_no_collision() {
         let part = make_part("A", 10.0, 10.0);
-        let p_left  = pl("A", 0, 0.0, 0.0);
+        let p_left = pl("A", 0, 0.0, 0.0);
         let p_right = pl("A", 0, 10.0, 0.0); // shared edge at x=10
 
         let cde = CdeCollisionBackend.placement_overlaps(&p_left, &part, &p_right, &part);
-        assert!(cde.is_no_collision(), "touching rect edges must be NoCollision: {:?}", cde);
+        assert!(
+            cde.is_no_collision(),
+            "touching rect edges must be NoCollision: {:?}",
+            cde
+        );
     }
 
     /// Two rects sharing a corner must be NoCollision.
@@ -1173,7 +1402,11 @@ mod tests {
         let p2 = pl("A", 0, 10.0, 10.0); // corner touch at (10, 10)
 
         let cde = CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
-        assert!(cde.is_no_collision(), "touching rect corners must be NoCollision: {:?}", cde);
+        assert!(
+            cde.is_no_collision(),
+            "touching rect corners must be NoCollision: {:?}",
+            cde
+        );
     }
 
     /// Two rects with positive-area overlap must be Collision.
@@ -1184,7 +1417,11 @@ mod tests {
         let p2 = pl("A", 0, 10.0, 10.0); // 10×10 overlap
 
         let cde = CdeCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
-        assert!(cde.is_collision(), "positive-area rect overlap must be Collision: {:?}", cde);
+        assert!(
+            cde.is_collision(),
+            "positive-area rect overlap must be Collision: {:?}",
+            cde
+        );
     }
 
     /// Two L-shapes touching on their notch edge must be NoCollision.
@@ -1196,13 +1433,14 @@ mod tests {
         let rect_part = make_part("R", 10.0, 20.0);
         // The L goes 0..40 in x, 0..40 in y (with notch).
         // Place rect to the right of L, touching at x=40.
-        let p_l    = pl("L", 0, 0.0, 0.0);
+        let p_l = pl("L", 0, 0.0, 0.0);
         let p_rect = pl("R", 0, 40.0, 0.0); // touching at x=40
 
         let cde = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_rect, &rect_part);
         assert!(
             cde.is_no_collision(),
-            "irregular polygon touching at shared edge must be NoCollision: {:?}", cde
+            "irregular polygon touching at shared edge must be NoCollision: {:?}",
+            cde
         );
     }
 
@@ -1212,13 +1450,14 @@ mod tests {
         let l_part = make_part_with_polygon("L", 40.0, 40.0, l_shape_outer());
         let rect_part = make_part("R", 10.0, 10.0);
         // The L-shape goes to (20,20) at its inner corner. Place rect starting at (10,10) — inside L.
-        let p_l    = pl("L", 0, 0.0, 0.0);
+        let p_l = pl("L", 0, 0.0, 0.0);
         let p_rect = pl("R", 0, 5.0, 5.0); // genuinely inside the L polygon
 
         let cde = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_rect, &rect_part);
         assert!(
             cde.is_collision(),
-            "item inside L-polygon must be Collision: {:?}", cde
+            "item inside L-polygon must be Collision: {:?}",
+            cde
         );
     }
 
@@ -1232,7 +1471,8 @@ mod tests {
         let result = CdeCollisionBackend.placement_within_sheet(&touching, &part, &sheets[0]);
         assert!(
             result.is_no_collision(),
-            "item touching sheet boundary edge must be NoCollision (boundary touch allowed): {:?}", result
+            "item touching sheet boundary edge must be NoCollision (boundary touch allowed): {:?}",
+            result
         );
     }
 
@@ -1246,7 +1486,8 @@ mod tests {
         let result = CdeCollisionBackend.placement_within_sheet(&corner_touch, &part, &sheets[0]);
         assert!(
             result.is_no_collision(),
-            "item corner touching sheet corner must be NoCollision: {:?}", result
+            "item corner touching sheet corner must be NoCollision: {:?}",
+            result
         );
     }
 
@@ -1260,11 +1501,16 @@ mod tests {
             instance_id: "A__0001".into(),
             part_id: "A".into(),
             sheet_index: 0,
-            x: 95.0, y: 0.0,
+            x: 95.0,
+            y: 0.0,
             rotation_deg: 0.0,
         };
         let result = CdeCollisionBackend.placement_within_sheet(&crossing, &part, &sheets[0]);
-        assert!(result.is_collision(), "item crossing sheet boundary must be Collision: {:?}", result);
+        assert!(
+            result.is_collision(),
+            "item crossing sheet boundary must be Collision: {:?}",
+            result
+        );
     }
 
     /// Bbox backend touching semantics unchanged (adjacent rects still NoCollision).
@@ -1275,18 +1521,26 @@ mod tests {
         let p2 = pl("A", 0, 10.0, 0.0); // adjacent, touching edge
 
         let bbox = BboxCollisionBackend.placement_overlaps(&p1, &part, &p2, &part);
-        assert!(bbox.is_no_collision(), "bbox: adjacent touching rects still NoCollision: {:?}", bbox);
+        assert!(
+            bbox.is_no_collision(),
+            "bbox: adjacent touching rects still NoCollision: {:?}",
+            bbox
+        );
     }
 
     /// JaguaPolygonExact touching semantics unchanged after Q14.
     #[test]
     fn jagua_polygon_exact_touching_semantics_unchanged() {
         let part = make_part("A", 10.0, 10.0);
-        let p_left  = pl("A", 0, 0.0, 0.0);
+        let p_left = pl("A", 0, 0.0, 0.0);
         let p_right = pl("A", 0, 10.0, 0.0); // touching at x=10
 
         let exact = JaguaPolygonExactBackend.placement_overlaps(&p_left, &part, &p_right, &part);
-        assert!(exact.is_no_collision(), "JaguaPolygonExact: touching rects still NoCollision: {:?}", exact);
+        assert!(
+            exact.is_no_collision(),
+            "JaguaPolygonExact: touching rects still NoCollision: {:?}",
+            exact
+        );
     }
 
     /// No silent bbox fallback for CDE touching policy: L-notch shows CDE ≠ bbox.
@@ -1297,14 +1551,23 @@ mod tests {
         let p_l = pl("L", 0, 0.0, 0.0);
         let p_small = pl("B", 0, 22.0, 22.0); // in notch: bbox=Collision, CDE=NoCollision
 
-        let bbox_result = BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
-        let cde_result  = CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let bbox_result =
+            BboxCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
+        let cde_result =
+            CdeCollisionBackend.placement_overlaps(&p_l, &l_part, &p_small, &small_part);
 
-        assert!(bbox_result.is_collision(), "bbox must give false positive for L-notch");
+        assert!(
+            bbox_result.is_collision(),
+            "bbox must give false positive for L-notch"
+        );
         assert!(
             cde_result.is_no_collision(),
-            "CDE must NOT silently fall back to bbox: expected NoCollision for L-notch, got {:?}", cde_result
+            "CDE must NOT silently fall back to bbox: expected NoCollision for L-notch, got {:?}",
+            cde_result
         );
-        assert_ne!(bbox_result, cde_result, "CDE and bbox must disagree for L-notch (proof: not bbox fallback)");
+        assert_ne!(
+            bbox_result, cde_result,
+            "CDE and bbox must disagree for L-notch (proof: not bbox fallback)"
+        );
     }
 }

@@ -1,14 +1,14 @@
 pub mod boundary;
 pub mod bpp_phase;
+pub mod candidates;
 pub mod cde_adapter;
 pub mod cde_observability;
 pub mod cde_session;
 pub mod collision_backend;
 pub mod collision_severity;
-pub mod geometry_preprocessing;
-pub mod candidates;
 pub mod compress;
 pub mod explore;
+pub mod geometry_preprocessing;
 pub mod initializer;
 pub mod loss_model;
 pub mod moves;
@@ -24,7 +24,7 @@ pub mod state;
 pub mod stopping;
 pub mod working;
 
-use crate::geometry::{EPS, Rect};
+use crate::geometry::{Rect, EPS};
 use crate::io::Placement;
 use crate::item::{dims_for_rotation, placement_anchor_from_rect_min, Instance};
 use crate::sheet::SheetShape;

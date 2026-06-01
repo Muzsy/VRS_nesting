@@ -8,7 +8,12 @@ pub(crate) struct LBFEvaluator<'a> {
 }
 
 impl<'a> LBFEvaluator<'a> {
-    pub(crate) fn score_candidate(&self, rmx: f64, rmy: f64, rot: f64) -> Option<ScoredPlacement> {
+    pub(crate) fn score_lbf_candidate(
+        &self,
+        rmx: f64,
+        rmy: f64,
+        rot: f64,
+    ) -> Option<ScoredPlacement> {
         let (rw, rh) = dims_for_rotation(self.inst.part.width, self.inst.part.height, rot);
         if rmx < self.sheet.min_x - 1e-9
             || rmy < self.sheet.min_y - 1e-9
@@ -107,4 +112,3 @@ fn point_inside_or_on_poly(p: Point, poly: &[Point]) -> bool {
     }
     inside
 }
-

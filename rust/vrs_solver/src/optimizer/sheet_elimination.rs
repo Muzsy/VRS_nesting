@@ -376,12 +376,7 @@ impl<'a> SheetEliminationEngine<'a> {
             rotation_deg: seed_rot,
         });
 
-        let working = WorkingLayout::new(
-            working_placements,
-            vec![],
-            self.sheets.len(),
-            0,
-        );
+        let working = WorkingLayout::new(working_placements, vec![], self.sheets.len(), 0);
 
         let sep = VrsSeparator::new(VrsSeparatorConfig {
             allowed_sheet_indices: Some(allowed_receiving.to_vec()),
@@ -456,13 +451,8 @@ impl<'a> SheetEliminationEngine<'a> {
                     y2: cand.y + rh,
                 };
 
-                let (anchor_x, anchor_y) = placement_anchor_from_rect_min(
-                    cand.x,
-                    cand.y,
-                    width,
-                    height,
-                    rot,
-                );
+                let (anchor_x, anchor_y) =
+                    placement_anchor_from_rect_min(cand.x, cand.y, width, height, rot);
 
                 let candidate = Placement {
                     instance_id: item.instance_id.clone(),
@@ -526,10 +516,7 @@ impl<'a> SheetEliminationEngine<'a> {
         }
     }
 
-    fn lbf_key_better(
-        a: (bool, f64, f64, usize),
-        b: (bool, f64, f64, usize),
-    ) -> bool {
+    fn lbf_key_better(a: (bool, f64, f64, usize), b: (bool, f64, f64, usize)) -> bool {
         if a.0 != b.0 {
             return !a.0;
         }
@@ -583,7 +570,8 @@ impl<'a> SheetEliminationEngine<'a> {
     fn resolve_dims(&self, part_id: &str, instance_id: &str) -> (f64, f64, Vec<f64>) {
         match self.parts.iter().find(|pt| pt.id == part_id) {
             Some(pt) => {
-                let rots = resolve_instance_rotation_angles(pt, instance_id, &self.rotation_context);
+                let rots =
+                    resolve_instance_rotation_angles(pt, instance_id, &self.rotation_context);
                 (pt.width, pt.height, rots)
             }
             None => (0.0, 0.0, vec![]),
@@ -835,16 +823,14 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         let engine = SheetEliminationEngine::new(&parts, &sheets);
 
-        let current_placements = vec![
-            Placement {
-                instance_id: "A__0001".into(),
-                part_id: "A".into(),
-                sheet_index: 0,
-                x: 0.0,
-                y: 0.0,
-                rotation_deg: 0.0,
-            },
-        ];
+        let current_placements = vec![Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        }];
         let item = Placement {
             instance_id: "A__0002".into(),
             part_id: "A".into(),
@@ -868,7 +854,10 @@ mod tests {
             &mut diag,
         );
 
-        assert!(result.is_some(), "separator fallback helper should return a valid layout");
+        assert!(
+            result.is_some(),
+            "separator fallback helper should return a valid layout"
+        );
         let (placements_after, _) = result.expect("fallback result");
         assert!(placements_after.iter().all(|p| p.sheet_index < 1));
         assert!(find_violations(&placements_after, &parts, &sheets).is_empty());
@@ -968,15 +957,24 @@ mod tests {
             CollisionBackendKind::JaguaPolygonExact,
         );
 
-        assert!(matches!(engine.collision_backend, CollisionBackendKind::JaguaPolygonExact),
-            "SheetEliminationEngine must retain and pass the explicit backend policy");
+        assert!(
+            matches!(
+                engine.collision_backend,
+                CollisionBackendKind::JaguaPolygonExact
+            ),
+            "SheetEliminationEngine must retain and pass the explicit backend policy"
+        );
     }
 
     #[test]
     fn sheet_elimination_exact_lbf_candidate_does_not_reject_bbox_false_positive() {
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let mut l_part = make_part("L", 40.0, 40.0, 1);
         l_part.outer_points = Some(l_json);
@@ -995,36 +993,76 @@ mod tests {
             crate::rotation_policy::RotationResolveContext::legacy_default(),
             CollisionBackendKind::Bbox,
         );
-        let candidate = Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 };
-        let candidate_bbox = PlacedBbox { sheet_index: 0, x1: 22.0, y1: 22.0, x2: 37.0, y2: 37.0 };
-        let rect = Rect { x1: 22.0, y1: 22.0, x2: 37.0, y2: 37.0 };
-        let base = vec![Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 }];
-        let placed_bboxes = vec![PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 40.0, y2: 40.0 }];
+        let candidate = Placement {
+            instance_id: "B__0001".into(),
+            part_id: "B".into(),
+            sheet_index: 0,
+            x: 22.0,
+            y: 22.0,
+            rotation_deg: 0.0,
+        };
+        let candidate_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 22.0,
+            y1: 22.0,
+            x2: 37.0,
+            y2: 37.0,
+        };
+        let rect = Rect {
+            x1: 22.0,
+            y1: 22.0,
+            x2: 37.0,
+            y2: 37.0,
+        };
+        let base = vec![Placement {
+            instance_id: "L__0001".into(),
+            part_id: "L".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        }];
+        let placed_bboxes = vec![PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 40.0,
+            y2: 40.0,
+        }];
 
-        assert!(exact_engine.lbf_candidate_valid_for_backend(
-            &candidate,
-            &candidate_bbox,
-            rect,
-            &sheets[0],
-            &base,
-            &placed_bboxes,
-        ), "exact LBF must not reject a bbox-overlapping but exact-valid notch candidate");
-        assert!(!bbox_engine.lbf_candidate_valid_for_backend(
-            &candidate,
-            &candidate_bbox,
-            rect,
-            &sheets[0],
-            &base,
-            &placed_bboxes,
-        ), "bbox LBF keeps the legacy bbox rejection behavior");
+        assert!(
+            exact_engine.lbf_candidate_valid_for_backend(
+                &candidate,
+                &candidate_bbox,
+                rect,
+                &sheets[0],
+                &base,
+                &placed_bboxes,
+            ),
+            "exact LBF must not reject a bbox-overlapping but exact-valid notch candidate"
+        );
+        assert!(
+            !bbox_engine.lbf_candidate_valid_for_backend(
+                &candidate,
+                &candidate_bbox,
+                rect,
+                &sheets[0],
+                &base,
+                &placed_bboxes,
+            ),
+            "bbox LBF keeps the legacy bbox rejection behavior"
+        );
     }
-
 
     #[test]
     fn sheet_elimination_exact_commit_gate_no_silent_bbox_fallback() {
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let mut l_part = make_part("L", 40.0, 40.0, 1);
         l_part.outer_points = Some(l_json);
@@ -1032,8 +1070,22 @@ mod tests {
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "L__0001".into(),
+                part_id: "L".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "B__0001".into(),
+                part_id: "B".into(),
+                sheet_index: 0,
+                x: 22.0,
+                y: 22.0,
+                rotation_deg: 0.0,
+            },
         ];
 
         let bbox_violations = validate_placements_for_backend(
@@ -1049,9 +1101,14 @@ mod tests {
             &CollisionBackendKind::JaguaPolygonExact,
         );
 
-        assert!(!bbox_violations.is_empty(), "fixture must expose the legacy bbox false-positive");
-        assert!(exact_violations.is_empty(),
-            "exact commit gate must use exact backend and not silently fall back to bbox");
+        assert!(
+            !bbox_violations.is_empty(),
+            "fixture must expose the legacy bbox false-positive"
+        );
+        assert!(
+            exact_violations.is_empty(),
+            "exact commit gate must use exact backend and not silently fall back to bbox"
+        );
     }
 
     #[test]
@@ -1068,9 +1125,27 @@ mod tests {
             crate::rotation_policy::RotationResolveContext::legacy_default(),
             CollisionBackendKind::Cde,
         );
-        let candidate = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
-        let bbox = PlacedBbox { sheet_index: 0, x1: 0.0, y1: 0.0, x2: 10.0, y2: 10.0 };
-        let rect = Rect { x1: 0.0, y1: 0.0, x2: 10.0, y2: 10.0 };
+        let candidate = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
+        let bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 10.0,
+            y2: 10.0,
+        };
+        let rect = Rect {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 10.0,
+            y2: 10.0,
+        };
 
         // Boundary touching is NoCollision after Q14: lbf_candidate_valid_for_backend must return true.
         assert!(engine.lbf_candidate_valid_for_backend(
@@ -1083,17 +1158,37 @@ mod tests {
         ), "CDE must accept valid rect candidate touching sheet boundary (touching ≠ Collision after Q14)");
 
         // Verify out-of-bounds placement is still correctly rejected (not silently allowed).
-        let outside = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 95.0, y: 95.0, rotation_deg: 0.0 };
-        let outside_bbox = PlacedBbox { sheet_index: 0, x1: 95.0, y1: 95.0, x2: 105.0, y2: 105.0 };
-        let outside_rect = Rect { x1: 95.0, y1: 95.0, x2: 105.0, y2: 105.0 };
-        assert!(!engine.lbf_candidate_valid_for_backend(
-            &outside,
-            &outside_bbox,
-            outside_rect,
-            &sheets[0],
-            &[],
-            &[],
-        ), "CDE must reject item clearly outside sheet boundary");
+        let outside = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 95.0,
+            y: 95.0,
+            rotation_deg: 0.0,
+        };
+        let outside_bbox = PlacedBbox {
+            sheet_index: 0,
+            x1: 95.0,
+            y1: 95.0,
+            x2: 105.0,
+            y2: 105.0,
+        };
+        let outside_rect = Rect {
+            x1: 95.0,
+            y1: 95.0,
+            x2: 105.0,
+            y2: 105.0,
+        };
+        assert!(
+            !engine.lbf_candidate_valid_for_backend(
+                &outside,
+                &outside_bbox,
+                outside_rect,
+                &sheets[0],
+                &[],
+                &[],
+            ),
+            "CDE must reject item clearly outside sheet boundary"
+        );
     }
-
 }

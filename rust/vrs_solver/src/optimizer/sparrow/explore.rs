@@ -43,6 +43,9 @@ impl SparrowOptimizer {
             .update_after_move(j, &state.layout, instances, sheets, diag);
         diag.exploration_disruptions_large_item_swap += 1;
 
+        self.relocate_practically_contained_items(state, instances, sheets, i, Some(j), &pi, diag);
+        self.relocate_practically_contained_items(state, instances, sheets, j, Some(i), &pj, diag);
+
         // (b) move the highest-loss item to a (different) eligible sheet at a
         //     randomized in-bounds anchor — escapes a saturated sheet.
         if sheets.len() > 1 {
@@ -124,4 +127,190 @@ impl SparrowOptimizer {
             }
         }
     }
+
+    fn relocate_practically_contained_items(
+        &self,
+        state: &mut SparrowState,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+        moved_idx: usize,
+        excluded_idx: Option<usize>,
+        opened_space: &SparrowPlacement,
+        diag: &mut SparrowDiagnostics,
+    ) {
+        let contained = self.practically_contained_items(
+            &state.layout,
+            instances,
+            moved_idx,
+            excluded_idx,
+            diag,
+        );
+        if contained.is_empty() {
+            return;
+        }
+        let moved_now = state.layout.placements[moved_idx].clone();
+        let dx = opened_space.x - moved_now.x;
+        let dy = opened_space.y - moved_now.y;
+        for idx in contained {
+            let current = state.layout.placements[idx].clone();
+            let inst = &instances[current.instance_idx];
+            let relocated = closest_fixed_sheet_transform(
+                inst,
+                &current,
+                opened_space.sheet_index,
+                current.x + dx,
+                current.y + dy,
+                current.rotation_deg,
+                sheets,
+            );
+            if relocated.sheet_index != current.sheet_index {
+                diag.exploration_disruptions_cross_sheet += 1;
+            }
+            if (relocated.rotation_deg - current.rotation_deg).abs() > 1e-9 {
+                diag.exploration_disruptions_rotation += 1;
+            }
+            state.layout.placements[idx] = relocated;
+            state
+                .tracker
+                .update_after_move(idx, &state.layout, instances, sheets, diag);
+        }
+    }
+
+    fn practically_contained_items(
+        &self,
+        layout: &SparrowLayout,
+        instances: &[SPInstance],
+        moved_idx: usize,
+        excluded_idx: Option<usize>,
+        diag: &mut SparrowDiagnostics,
+    ) -> Vec<usize> {
+        let moved = &layout.placements[moved_idx];
+        let moved_inst = &instances[moved.instance_idx];
+        let Ok(moved_shape) =
+            prepare_shape_native(&moved_inst.part, moved.x, moved.y, moved.rotation_deg)
+        else {
+            diag.unsupported_queries += 1;
+            return Vec::new();
+        };
+        let adapter = CdeAdapter::with_defaults();
+        let mut out = Vec::new();
+        for (idx, placement) in layout.placements.iter().enumerate() {
+            if idx == moved_idx
+                || Some(idx) == excluded_idx
+                || placement.sheet_index != moved.sheet_index
+            {
+                continue;
+            }
+            let inst = &instances[placement.instance_idx];
+            let Ok(shape) =
+                prepare_shape_native(&inst.part, placement.x, placement.y, placement.rotation_deg)
+            else {
+                diag.unsupported_queries += 1;
+                continue;
+            };
+            match adapter.query_pair(&moved_shape, &shape) {
+                CdeQueryResult::Collision => {
+                    let center = Point {
+                        x: (shape.min_x + shape.max_x) * 0.5,
+                        y: (shape.min_y + shape.max_y) * 0.5,
+                    };
+                    if point_inside_or_on_polygon(center, &moved_shape.world_pts) {
+                        out.push(idx);
+                    }
+                }
+                CdeQueryResult::NoCollision => {}
+                CdeQueryResult::Unsupported { .. } => diag.unsupported_queries += 1,
+            }
+        }
+        out
+    }
+}
+
+fn closest_fixed_sheet_transform(
+    inst: &SPInstance,
+    current: &SparrowPlacement,
+    preferred_sheet: usize,
+    x: f64,
+    y: f64,
+    rotation_deg: f64,
+    sheets: &[SheetShape],
+) -> SparrowPlacement {
+    let mut sheet_index = preferred_sheet.min(sheets.len().saturating_sub(1));
+    let mut rot = rotation_deg;
+    if !fits_sheet(inst, &sheets[sheet_index], rot) {
+        rot = fitting_rotation(inst, sheets);
+        if !fits_sheet(inst, &sheets[sheet_index], rot) {
+            if let Some((idx, _)) = sheets
+                .iter()
+                .enumerate()
+                .find(|(_, sheet)| fits_sheet(inst, sheet, rot))
+            {
+                sheet_index = idx;
+            } else {
+                sheet_index = current.sheet_index;
+                rot = current.rotation_deg;
+            }
+        }
+    }
+    let sheet = &sheets[sheet_index];
+    let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+    let (rmx, rmy) = rect_min_from_anchor(x, y, inst.part.width, inst.part.height, rot);
+    let clamped_x = rmx.clamp(sheet.min_x, (sheet.max_x - rw).max(sheet.min_x));
+    let clamped_y = rmy.clamp(sheet.min_y, (sheet.max_y - rh).max(sheet.min_y));
+    let (ax, ay) = placement_anchor_from_rect_min(
+        clamped_x,
+        clamped_y,
+        inst.part.width,
+        inst.part.height,
+        rot,
+    );
+    SparrowPlacement {
+        instance_idx: current.instance_idx,
+        sheet_index,
+        x: ax,
+        y: ay,
+        rotation_deg: rot,
+    }
+}
+
+fn fits_sheet(inst: &SPInstance, sheet: &SheetShape, rot: f64) -> bool {
+    let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+    rw <= sheet.width + 1e-9 && rh <= sheet.height + 1e-9
+}
+
+fn point_inside_or_on_polygon(p: Point, poly: &[Point]) -> bool {
+    if poly.len() < 3 {
+        return false;
+    }
+    if (0..poly.len()).any(|i| point_on_segment(p, poly[i], poly[(i + 1) % poly.len()])) {
+        return true;
+    }
+    let mut inside = false;
+    let mut j = poly.len() - 1;
+    for i in 0..poly.len() {
+        let a = poly[i];
+        let b = poly[j];
+        let crosses = (a.y > p.y) != (b.y > p.y);
+        if crosses {
+            let x_intersect = (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x;
+            if p.x < x_intersect {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    inside
+}
+
+fn point_on_segment(p: Point, a: Point, b: Point) -> bool {
+    let cross = (p.y - a.y) * (b.x - a.x) - (p.x - a.x) * (b.y - a.y);
+    if cross.abs() > 1e-7 {
+        return false;
+    }
+    let dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
+    if dot < -1e-7 {
+        return false;
+    }
+    let len2 = (b.x - a.x).powi(2) + (b.y - a.y).powi(2);
+    dot <= len2 + 1e-7
 }

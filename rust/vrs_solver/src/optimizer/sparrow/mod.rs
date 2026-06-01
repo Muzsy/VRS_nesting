@@ -24,17 +24,17 @@ pub(crate) use super::cde_adapter::{
 };
 
 pub mod diagnostics;
-pub mod model;
-pub mod optimizer;
-pub mod lbf;
-pub mod worker;
-pub mod separator;
+pub mod eval;
 pub mod explore;
 pub mod fixed_sheet;
-pub mod sample;
-pub mod eval;
+pub mod lbf;
+pub mod model;
+pub mod optimizer;
 pub mod quantify;
+pub mod sample;
+pub mod separator;
 mod tests;
+pub mod worker;
 
 pub use diagnostics::{SparrowConfig, SparrowDiagnostics};
 pub use model::{

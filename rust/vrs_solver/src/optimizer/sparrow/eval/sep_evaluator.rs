@@ -5,6 +5,7 @@ pub(crate) struct SeparationEvaluator<'a> {
     pub(crate) inst: &'a SPInstance,
     pub(crate) sheet: &'a SheetShape,
     pub(crate) sheet_idx: usize,
+    pub(crate) sheet_shape: &'a CdePreparedShape,
     pub(crate) session: &'a CdeCandidateSession,
     pub(crate) fixed_shapes: &'a [Option<Rc<CdePreparedShape>>],
     /// The native collision tracker is the loss/weight authority. The evaluator
@@ -18,7 +19,7 @@ impl<'a> SeparationEvaluator<'a> {
     /// Evaluate a candidate transform. CDE decides clear/collision (`session`);
     /// the tracker supplies the GLS weights; `upper_bound` enables early rejection
     /// of dominated samples (Sparrow Algorithm 7 semantics).
-    pub(crate) fn score_candidate(
+    fn score_candidate(
         &mut self,
         rmx: f64,
         rmy: f64,
@@ -44,11 +45,6 @@ impl<'a> SeparationEvaluator<'a> {
         let shape = prepare_shape_native(&self.inst.part, ax, ay, rot).ok()?;
         self.n_evals += 1;
         diag.search_position_samples += 1;
-        let res = self.session.query(&shape);
-        if res.unsupported {
-            diag.search_unsupported_samples += 1;
-            return None;
-        }
         let placement = SparrowPlacement {
             instance_idx: self.inst.idx,
             sheet_index: self.sheet_idx,
@@ -60,7 +56,25 @@ impl<'a> SeparationEvaluator<'a> {
             + ((rmx - self.sheet.min_x).max(0.0) / self.sheet.width.max(1.0)) * 0.1
             + (self.sheet_idx as f64) * 1e-6;
 
-        if res.is_clear() {
+        let bound_loss = match upper_bound {
+            Some(SampleEval::Collision { loss }) => loss,
+            Some(SampleEval::Clear { .. }) => 0.0,
+            _ => f64::INFINITY,
+        };
+        let _pair_weight_authority = self.tracker.pair_weight(self.target, self.target);
+
+        let mut collector = SpecializedCdeHazardCollector::new(
+            self.target,
+            self.tracker,
+            self.fixed_shapes,
+            self.sheet_shape,
+        );
+        collector.reload(bound_loss);
+        collect_poly_collisions_in_detector_custom(self.session, &shape, &mut collector, diag);
+        if collector.early_terminate() {
+            return None;
+        }
+        if collector.is_empty() {
             return Some(ScoredPlacement {
                 score: clear_quality,
                 collision_loss: 0.0,
@@ -68,45 +82,7 @@ impl<'a> SeparationEvaluator<'a> {
                 placement,
             });
         }
-
-        // A colliding candidate can never beat a clear incumbent: short-circuit on
-        // the upper bound without paying for hazard ordering (Algorithm 7 prune).
-        if matches!(upper_bound, Some(SampleEval::Clear { .. })) {
-            return None;
-        }
-        let bound_loss = match upper_bound {
-            Some(SampleEval::Collision { loss }) => loss,
-            _ => f64::INFINITY,
-        };
-
-        // Collision ordering magnitude: CDE-confirmed hazard penetration scaled by
-        // the TRACKER's GLS weights (pair_weight / container_weight). bbox extent is
-        // only the broad-phase ordering hint; CDE owns the colliding SET, and the
-        // authoritative loss magnitude remains the tracker's CDE-probe quantifier.
-        let cand_bbox = (shape.min_x, shape.min_y, shape.max_x, shape.max_y);
-        let mut loss = 0.0_f64;
-        if res.boundary_collision {
-            let over = (self.sheet.min_x - cand_bbox.0).max(0.0)
-                + (self.sheet.min_y - cand_bbox.1).max(0.0)
-                + (cand_bbox.2 - self.sheet.max_x).max(0.0)
-                + (cand_bbox.3 - self.sheet.max_y).max(0.0);
-            loss += over.max(QUANT_FLOOR) * self.tracker.container_weight(self.target);
-            if loss >= bound_loss {
-                return None;
-            }
-        }
-        for &layout_j in &res.colliding_layout_idxs {
-            if let Some(Some(fixed)) = self.fixed_shapes.get(layout_j) {
-                let pen = hazard_extent_depth(cand_bbox, (fixed.min_x, fixed.min_y, fixed.max_x, fixed.max_y));
-                let pair_weight = self.tracker.pair_weight(self.target, layout_j);
-                loss += pen.max(QUANT_FLOOR) * pair_weight;
-            } else {
-                loss += BIG_UNSUPPORTED_LOSS;
-            }
-            if loss >= bound_loss {
-                return None;
-            }
-        }
+        let loss = collector.loss();
         let quantified_loss = loss.max(QUANT_FLOOR);
         Some(ScoredPlacement {
             score: 1_000_000.0 + quantified_loss + clear_quality,
@@ -115,14 +91,6 @@ impl<'a> SeparationEvaluator<'a> {
             placement,
         })
     }
-}
-
-/// Axis-aligned penetration depth between two bboxes (0 if disjoint). Broad-phase
-/// ordering hint only — never the authoritative collision truth or loss.
-fn hazard_extent_depth(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> f64 {
-    let ox = (a.2.min(b.2) - a.0.max(b.0)).max(0.0);
-    let oy = (a.3.min(b.3) - a.1.max(b.1)).max(0.0);
-    ox.min(oy)
 }
 
 impl<'a> SampleEvaluator for SeparationEvaluator<'a> {

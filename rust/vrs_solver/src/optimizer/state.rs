@@ -36,7 +36,12 @@ pub struct LayoutState {
 
 impl LayoutState {
     pub fn new(sheet_count: usize, seed: i64) -> Self {
-        Self { placed: vec![], unplaced: vec![], sheet_count, seed }
+        Self {
+            placed: vec![],
+            unplaced: vec![],
+            sheet_count,
+            seed,
+        }
     }
 }
 
@@ -45,7 +50,11 @@ mod tests {
     use super::*;
 
     fn transform(x: f64, y: f64, rot: i64) -> PlacementTransform {
-        PlacementTransform { x, y, rotation_deg: rot }
+        PlacementTransform {
+            x,
+            y,
+            rotation_deg: rot,
+        }
     }
 
     fn placed(id: &str, part: &str, sheet: usize, t: PlacementTransform) -> PlacedItem {
@@ -85,8 +94,12 @@ mod tests {
     #[test]
     fn layout_state_placed_unplaced_separation() {
         let mut state = LayoutState::new(3, 42);
-        state.placed.push(placed("A__0001", "A", 0, transform(0.0, 0.0, 0)));
-        state.placed.push(placed("B__0001", "B", 1, transform(10.0, 0.0, 90)));
+        state
+            .placed
+            .push(placed("A__0001", "A", 0, transform(0.0, 0.0, 0)));
+        state
+            .placed
+            .push(placed("B__0001", "B", 1, transform(10.0, 0.0, 90)));
         state.unplaced.push(unplaced("C__0001", "C", "NO_CAPACITY"));
         assert_eq!(state.placed.len(), 2);
         assert_eq!(state.unplaced.len(), 1);
@@ -95,7 +108,9 @@ mod tests {
     #[test]
     fn state_json_serialization() {
         let mut state = LayoutState::new(2, 7);
-        state.placed.push(placed("P__0001", "P", 0, transform(5.0, 3.0, 0)));
+        state
+            .placed
+            .push(placed("P__0001", "P", 0, transform(5.0, 3.0, 0)));
         let json = serde_json::to_string(&state).expect("serialize");
         assert!(json.contains("placed"));
         assert!(json.contains("P__0001"));
@@ -105,8 +120,10 @@ mod tests {
     fn deterministic_state_ordering() {
         let build = || {
             let mut s = LayoutState::new(1, 0);
-            s.placed.push(placed("A__0001", "A", 0, transform(0.0, 0.0, 0)));
-            s.placed.push(placed("B__0001", "B", 0, transform(50.0, 0.0, 0)));
+            s.placed
+                .push(placed("A__0001", "A", 0, transform(0.0, 0.0, 0)));
+            s.placed
+                .push(placed("B__0001", "B", 0, transform(50.0, 0.0, 0)));
             s
         };
         let json1 = serde_json::to_string(&build()).expect("s1");

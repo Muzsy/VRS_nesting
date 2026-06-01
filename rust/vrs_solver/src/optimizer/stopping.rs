@@ -25,7 +25,12 @@ pub struct StoppingPolicy {
 
 impl StoppingPolicy {
     pub fn new(max_iterations: usize, time_limit_s: f64) -> Self {
-        Self { max_iterations, time_limit_s, start: Instant::now(), iteration: 0 }
+        Self {
+            max_iterations,
+            time_limit_s,
+            start: Instant::now(),
+            iteration: 0,
+        }
     }
 
     /// Advance one iteration. Returns `true` if the policy says stop.
@@ -67,7 +72,7 @@ mod tests {
         let mut p = StoppingPolicy::new(3, 1000.0);
         assert!(!p.tick()); // iter=1, 1>=3 false
         assert!(!p.tick()); // iter=2, 2>=3 false
-        assert!(p.tick());  // iter=3, 3>=3 true → stop
+        assert!(p.tick()); // iter=3, 3>=3 true → stop
     }
 
     #[test]

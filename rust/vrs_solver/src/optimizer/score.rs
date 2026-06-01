@@ -9,12 +9,12 @@
 //! - Penalty hierarchy: overlap/boundary (1e9) >> unplaced (1e6) >> sheet_count (1e4)
 //!   >> placed_area_reward (1.0) >> compactness (0.001).
 
-use crate::io::{CollisionBackendKind, Placement, Unplaced};
-use crate::item::{dims_for_rotation, Part};
-use crate::sheet::SheetShape;
 use super::candidates::PlacedBbox;
 use super::initializer::bbox_from_placement;
 use super::repair::{find_violations, validate_placements_for_backend, ViolationType};
+use crate::io::{CollisionBackendKind, Placement, Unplaced};
+use crate::item::{dims_for_rotation, Part};
+use crate::sheet::SheetShape;
 
 // ---------------------------------------------------------------------------
 // ScoreWeights — default weight profile
@@ -56,12 +56,12 @@ pub struct ScoreWeights {
 impl Default for ScoreWeights {
     fn default() -> Self {
         Self {
-            placed_area_reward:               1.0,
-            unplaced_penalty_per_item:        1_000_000.0,
-            sheet_count_penalty_per_sheet:    10_000.0,
-            overlap_penalty_per_pair:         1_000_000_000.0,
-            boundary_penalty_per_item:        1_000_000_000.0,
-            compactness_weight:               0.001,
+            placed_area_reward: 1.0,
+            unplaced_penalty_per_item: 1_000_000.0,
+            sheet_count_penalty_per_sheet: 10_000.0,
+            overlap_penalty_per_pair: 1_000_000_000.0,
+            boundary_penalty_per_item: 1_000_000_000.0,
+            compactness_weight: 0.001,
         }
     }
 }
@@ -160,7 +160,14 @@ impl ScoreModel {
             return self.score(placements, unplaced, parts, sheets);
         }
         let violations = validate_placements_for_backend(placements, parts, sheets, backend_kind);
-        score_layout_from_violations(placements, unplaced, parts, sheets, &self.weights, &violations)
+        score_layout_from_violations(
+            placements,
+            unplaced,
+            parts,
+            sheets,
+            &self.weights,
+            &violations,
+        )
     }
 
     /// Returns `true` if `a` is strictly better (lower cost) than `b`.
@@ -426,7 +433,10 @@ mod tests {
         let model = ScoreModel::default();
         let r_one = model.score(&one_sheet, &[], &parts, &sheets);
         let r_two = model.score(&two_sheets, &[], &parts, &sheets);
-        assert!(r_two.total_cost > r_one.total_cost, "two sheets must cost more than one");
+        assert!(
+            r_two.total_cost > r_one.total_cost,
+            "two sheets must cost more than one"
+        );
         assert_eq!(r_one.breakdown.sheet_count_used, 1);
         assert_eq!(r_two.breakdown.sheet_count_used, 2);
     }
@@ -447,8 +457,14 @@ mod tests {
         let model = ScoreModel::default();
         let r_valid = model.score(&valid, &[], &parts, &sheets);
         let r_overlap = model.score(&overlapping, &[], &parts, &sheets);
-        assert!(r_overlap.total_cost > r_valid.total_cost, "overlap must worsen score");
-        assert!(r_overlap.breakdown.overlap_violations > 0, "overlap must be detected");
+        assert!(
+            r_overlap.total_cost > r_valid.total_cost,
+            "overlap must worsen score"
+        );
+        assert!(
+            r_overlap.breakdown.overlap_violations > 0,
+            "overlap must be detected"
+        );
         assert!(
             r_overlap.breakdown.overlap_contribution >= 1_000_000_000.0,
             "overlap penalty is large"
@@ -465,8 +481,14 @@ mod tests {
         let model = ScoreModel::default();
         let r_valid = model.score(&valid, &[], &parts, &sheets);
         let r_oob = model.score(&oob, &[], &parts, &sheets);
-        assert!(r_oob.total_cost > r_valid.total_cost, "boundary violation must worsen score");
-        assert!(r_oob.breakdown.boundary_violations > 0, "boundary violation must be detected");
+        assert!(
+            r_oob.total_cost > r_valid.total_cost,
+            "boundary violation must worsen score"
+        );
+        assert!(
+            r_oob.breakdown.boundary_violations > 0,
+            "boundary violation must be detected"
+        );
         assert!(
             r_oob.breakdown.boundary_contribution >= 1_000_000_000.0,
             "boundary penalty is large"
@@ -490,7 +512,10 @@ mod tests {
         let model = ScoreModel::default();
         let r_compact = model.score(&compact, &[], &parts, &sheets);
         let r_spread = model.score(&spread, &[], &parts, &sheets);
-        assert!(r_compact.total_cost < r_spread.total_cost, "compact must score better");
+        assert!(
+            r_compact.total_cost < r_spread.total_cost,
+            "compact must score better"
+        );
         // Difference is only from compactness: 35900 * 0.001 ≈ 35.9 — far below 1e6
         let diff = r_spread.total_cost - r_compact.total_cost;
         assert!(
@@ -563,8 +588,14 @@ mod tests {
                 total_cost: 1_000_000.0,
             },
         };
-        assert!(model.is_better(&better, &worse), "lower cost must be better");
-        assert!(!model.is_better(&worse, &better), "higher cost must not be better");
+        assert!(
+            model.is_better(&better, &worse),
+            "lower cost must be better"
+        );
+        assert!(
+            !model.is_better(&worse, &better),
+            "higher cost must not be better"
+        );
     }
 
     // --- JG-19: remnant preference and usable-area utilization ---
@@ -599,7 +630,8 @@ mod tests {
         assert!(
             r_remnant.total_cost < r_regular.total_cost,
             "remnant (cost=0.2) must score better than regular (cost=1.0): remnant={} regular={}",
-            r_remnant.total_cost, r_regular.total_cost
+            r_remnant.total_cost,
+            r_regular.total_cost
         );
         assert!(
             (r_regular.breakdown.sheet_cost_total - 1.0).abs() < 1e-9,
@@ -614,7 +646,7 @@ mod tests {
     #[test]
     fn test_usable_area_utilization_computed() {
         let parts = vec![make_part("A", 50.0, 50.0)]; // area = 2500
-        // Single 100×100 sheet (area=10000); place one 50×50 item → utilization = 2500/10000 = 0.25
+                                                      // Single 100×100 sheet (area=10000); place one 50×50 item → utilization = 2500/10000 = 0.25
         let sheets = make_sheets(100.0, 100.0, 1);
         let placements = vec![p("A__0001", "A", 0, 0.0, 0.0)];
         let model = ScoreModel::default();
@@ -643,9 +675,13 @@ mod tests {
         assert!(
             r_valid.total_cost < r_overlap.total_cost,
             "valid regular layout must beat overlapping remnant layout: valid={} overlap={}",
-            r_valid.total_cost, r_overlap.total_cost
+            r_valid.total_cost,
+            r_overlap.total_cost
         );
-        assert!(r_overlap.breakdown.overlap_violations > 0, "overlap must be detected");
+        assert!(
+            r_overlap.breakdown.overlap_violations > 0,
+            "overlap must be detected"
+        );
     }
 
     #[test]
@@ -677,8 +713,12 @@ mod tests {
 
     fn make_l_shape_part_with_polygon() -> Part {
         let l_json = serde_json::json!([
-            [0.0, 0.0], [20.0, 0.0], [20.0, 10.0],
-            [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 10.0],
+            [10.0, 10.0],
+            [10.0, 20.0],
+            [0.0, 20.0]
         ]);
         crate::item::Part {
             id: "L".to_string(),
@@ -706,7 +746,11 @@ mod tests {
         let model = ScoreModel::default();
         let legacy = model.score(&placements, &[], &parts, &sheets);
         let with_bbox = model.score_with_backend(
-            &placements, &[], &parts, &sheets, &CollisionBackendKind::Bbox,
+            &placements,
+            &[],
+            &parts,
+            &sheets,
+            &CollisionBackendKind::Bbox,
         );
         assert_eq!(
             legacy.total_cost.to_bits(),
@@ -748,7 +792,11 @@ mod tests {
 
         let bbox_score = model.score(&placements, &[], &parts, &sheets);
         let exact_score = model.score_with_backend(
-            &placements, &[], &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+            &placements,
+            &[],
+            &parts,
+            &sheets,
+            &CollisionBackendKind::JaguaPolygonExact,
         );
 
         assert!(
@@ -782,10 +830,18 @@ mod tests {
         ];
 
         let cde_result = model.score_with_backend(
-            &placements, &[], &parts, &sheets, &CollisionBackendKind::Cde,
+            &placements,
+            &[],
+            &parts,
+            &sheets,
+            &CollisionBackendKind::Cde,
         );
         let exact_result = model.score_with_backend(
-            &placements, &[], &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+            &placements,
+            &[],
+            &parts,
+            &sheets,
+            &CollisionBackendKind::JaguaPolygonExact,
         );
 
         // Both backends must agree: no overlaps, no boundary violations for valid non-overlapping rects
@@ -798,8 +854,7 @@ mod tests {
             "CDE must detect no boundary violations for items inside sheet"
         );
         assert_eq!(
-            cde_result.breakdown.overlap_violations,
-            exact_result.breakdown.overlap_violations,
+            cde_result.breakdown.overlap_violations, exact_result.breakdown.overlap_violations,
             "CDE and JaguaPolygonExact must agree on overlap count for non-overlapping rects"
         );
     }
@@ -818,7 +873,10 @@ mod tests {
         ];
 
         let violations = validate_placements_for_backend(
-            &placements, &parts, &sheets, &CollisionBackendKind::Cde,
+            &placements,
+            &parts,
+            &sheets,
+            &CollisionBackendKind::Cde,
         );
 
         // usize::MAX is the sentinel index for unsupported queries
@@ -828,7 +886,10 @@ mod tests {
             "CDE backend must have 0 unsupported queries for valid rect fixture"
         );
 
-        let violation_count = violations.iter().filter(|(idx, _)| *idx != usize::MAX).count();
+        let violation_count = violations
+            .iter()
+            .filter(|(idx, _)| *idx != usize::MAX)
+            .count();
         assert_eq!(
             violation_count, 0,
             "CDE backend must report no violations for non-overlapping rects inside sheet"

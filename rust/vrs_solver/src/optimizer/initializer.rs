@@ -1,17 +1,16 @@
 use std::collections::HashSet;
 
-use crate::geometry::Rect;
-use crate::io::{Placement, Unplaced};
-use crate::item::{
-    dims_for_rotation, placement_anchor_from_rect_min,
-    rotated_bbox_min_offset, Instance, Part,
-};
-use crate::rotation_policy::RotationResolveContext;
-use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, CandidatePoint, PlacedBbox};
 use super::separator::{VrsSeparator, VrsSeparatorConfig};
 use super::working::WorkingLayout;
+use crate::geometry::Rect;
+use crate::io::{Placement, Unplaced};
+use crate::item::{
+    dims_for_rotation, placement_anchor_from_rect_min, rotated_bbox_min_offset, Instance, Part,
+};
+use crate::rotation_policy::RotationResolveContext;
+use crate::sheet::SheetShape;
 
 // ---------------------------------------------------------------------------
 // ConstructionDiagnostics
@@ -79,17 +78,28 @@ impl ConstructionDiagnostics {
 // ---------------------------------------------------------------------------
 
 /// Sort instances for placement: descending area → descending max bbox dim → part_id asc → instance_id asc.
-pub fn sort_instances_for_placement<'a>(instances: &'a [Instance], parts: &[Part]) -> Vec<&'a Instance> {
+pub fn sort_instances_for_placement<'a>(
+    instances: &'a [Instance],
+    parts: &[Part],
+) -> Vec<&'a Instance> {
     let part_area = |inst: &&Instance| -> f64 {
-        parts.iter().find(|p| p.id == inst.part_id)
+        parts
+            .iter()
+            .find(|p| p.id == inst.part_id)
             .map(|p| p.width * p.height)
             .unwrap_or(0.0)
     };
     let max_dim = |inst: &&Instance| -> f64 { inst.width.max(inst.height) };
     let mut v: Vec<&Instance> = instances.iter().collect();
     v.sort_by(|a, b| {
-        part_area(b).partial_cmp(&part_area(a)).unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| max_dim(b).partial_cmp(&max_dim(a)).unwrap_or(std::cmp::Ordering::Equal))
+        part_area(b)
+            .partial_cmp(&part_area(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                max_dim(b)
+                    .partial_cmp(&max_dim(a))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| a.part_id.cmp(&b.part_id))
             .then_with(|| a.instance_id.cmp(&b.instance_id))
     });
@@ -106,7 +116,13 @@ pub fn bbox_from_placement(placement: &Placement, w: f64, h: f64) -> Option<Plac
     let (rw, rh) = dims_for_rotation(w, h, placement.rotation_deg);
     let x1 = placement.x + bx_off;
     let y1 = placement.y + by_off;
-    Some(PlacedBbox { sheet_index: placement.sheet_index, x1, y1, x2: x1 + rw, y2: y1 + rh })
+    Some(PlacedBbox {
+        sheet_index: placement.sheet_index,
+        x1,
+        y1,
+        x2: x1 + rw,
+        y2: y1 + rh,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +135,8 @@ pub fn bbox_from_placement(placement: &Placement, w: f64, h: f64) -> Option<Plac
 /// After a successful separator fallback the entire cache must be rebuilt because the
 /// separator may have moved items from earlier in the construction order.
 fn rebuild_placed_bboxes(placements: &[Placement], parts: &[Part]) -> Vec<PlacedBbox> {
-    placements.iter()
+    placements
+        .iter()
         .filter_map(|p| {
             let pt = parts.iter().find(|pt| pt.id == p.part_id)?;
             bbox_from_placement(p, pt.width, pt.height)
@@ -133,17 +150,24 @@ fn rebuild_placed_bboxes(placements: &[Placement], parts: &[Part]) -> Vec<Placed
 /// (sheet.area − sum of placed bbox areas on that sheet).
 /// Falls back to sheet index 0 if no sheet is currently in use.
 fn find_seed_sheet_index(placed_bboxes: &[PlacedBbox], sheets: &[SheetShape]) -> usize {
-    if sheets.is_empty() { return 0; }
+    if sheets.is_empty() {
+        return 0;
+    }
 
     let used: HashSet<usize> = placed_bboxes.iter().map(|pb| pb.sheet_index).collect();
-    if used.is_empty() { return 0; }
+    if used.is_empty() {
+        return 0;
+    }
 
     let mut best_sheet = 0usize;
     let mut best_free = f64::NEG_INFINITY;
 
     for &si in &used {
-        if si >= sheets.len() { continue; }
-        let placed_area: f64 = placed_bboxes.iter()
+        if si >= sheets.len() {
+            continue;
+        }
+        let placed_area: f64 = placed_bboxes
+            .iter()
             .filter(|pb| pb.sheet_index == si)
             .map(|pb| (pb.x2 - pb.x1) * (pb.y2 - pb.y1))
             .sum();
@@ -169,10 +193,16 @@ fn lbf_key_better_than(
     (ia, ya, xa, sia): (bool, f64, f64, usize),
     (ib, yb, xb, sib): (bool, f64, f64, usize),
 ) -> bool {
-    if ia != ib { return !ia; } // used (false) beats unused (true)
+    if ia != ib {
+        return !ia;
+    } // used (false) beats unused (true)
     const EPS: f64 = 1e-12;
-    if (ya - yb).abs() > EPS { return ya < yb; }
-    if (xa - xb).abs() > EPS { return xa < xb; }
+    if (ya - yb).abs() > EPS {
+        return ya < yb;
+    }
+    if (xa - xb).abs() > EPS {
+        return xa < xb;
+    }
     sia < sib
 }
 
@@ -243,7 +273,11 @@ fn lbf_select_clear_candidate(
 
             if is_better {
                 let (ax, ay) = placement_anchor_from_rect_min(
-                    candidate.x, candidate.y, part.width, part.height, rot,
+                    candidate.x,
+                    candidate.y,
+                    part.width,
+                    part.height,
+                    rot,
                 );
                 best_key = Some(score_key);
                 best_result = Some(LbfClear {
@@ -309,10 +343,17 @@ fn try_separator_fallback_for_instance(
     }
 
     // Prefer a rotation that fits at the sheet origin; fall back to any supported rotation.
-    let seed_rot = allowed_rotations.iter().copied()
+    let seed_rot = allowed_rotations
+        .iter()
+        .copied()
         .find(|&rot| {
             let (rw, rh) = dims_for_rotation(part.width, part.height, rot);
-            let rect = Rect { x1: 0.0, y1: 0.0, x2: rw, y2: rh };
+            let rect = Rect {
+                x1: 0.0,
+                y1: 0.0,
+                x2: rw,
+                y2: rh,
+            };
             rect_within_boundary(rect, &sheets[target_sheet])
         })
         .or_else(|| allowed_rotations.first().copied());
@@ -325,9 +366,8 @@ fn try_separator_fallback_for_instance(
         }
     };
 
-    let (anchor_x, anchor_y) = placement_anchor_from_rect_min(
-        0.0, 0.0, part.width, part.height, seed_rot,
-    );
+    let (anchor_x, anchor_y) =
+        placement_anchor_from_rect_min(0.0, 0.0, part.width, part.height, seed_rot);
 
     let seed_placement = Placement {
         instance_id: instance.instance_id.clone(),
@@ -512,7 +552,15 @@ mod tests {
     }
 
     fn make_stock(id: &str, w: f64, h: f64, qty: i64) -> Stock {
-        Stock { id: id.to_string(), quantity: qty, width: Some(w), height: Some(h), outer_points: None, holes_points: None, cost_per_use: None }
+        Stock {
+            id: id.to_string(),
+            quantity: qty,
+            width: Some(w),
+            height: Some(h),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }
     }
 
     // ── Existing tests (unchanged) ────────────────────────────────────────────
@@ -571,13 +619,23 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         let (placed, unplaced, _diag) = build_initial_layout(&instances, &parts, &sheets);
         assert_eq!(placed.len(), 1);
-        assert!((placed[0].rotation_deg - 90.0).abs() < 1e-9, "rotation must be 90°");
+        assert!(
+            (placed[0].rotation_deg - 90.0).abs() < 1e-9,
+            "rotation must be 90°"
+        );
         assert!(unplaced.is_empty());
     }
 
     #[test]
     fn bbox_from_placement_rot0() {
-        let p = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
+        let p = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
         let bb = bbox_from_placement(&p, 100.0, 40.0).expect("bbox");
         assert!((bb.x2 - 100.0).abs() < 1e-9);
         assert!((bb.y2 - 40.0).abs() < 1e-9);
@@ -586,7 +644,14 @@ mod tests {
     #[test]
     fn bbox_from_placement_rot90() {
         // anchor=(40,0), rot=90, w=100, h=40: offset=(-40,0) → bbox_min=(0,0), rw=40, rh=100
-        let p = Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 40.0, y: 0.0, rotation_deg: 90.0 };
+        let p = Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 40.0,
+            y: 0.0,
+            rotation_deg: 90.0,
+        };
         let bb = bbox_from_placement(&p, 100.0, 40.0).expect("bbox");
         assert!((bb.x1 - 0.0).abs() < 1e-9);
         assert!((bb.x2 - 40.0).abs() < 1e-9);
@@ -617,7 +682,8 @@ mod tests {
         // Both should be on sheet 0 (used-sheet preference).
         assert!(
             placed.iter().all(|p| p.sheet_index == 0),
-            "LBF must prefer used sheet 0 over unused sheet 1: {:?}", placed
+            "LBF must prefer used sheet 0 over unused sheet 1: {:?}",
+            placed
         );
         // LBF accepted both items via the clear path (no fallback needed).
         assert_eq!(diag.lbf_clear_accepts, 2);
@@ -635,7 +701,14 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         let (p1, u1, d1) = build_initial_layout(&instances, &parts, &sheets);
         let (p2, u2, d2) = build_initial_layout(&instances, &parts, &sheets);
-        let key = |p: &Placement| (p.instance_id.clone(), p.x.to_bits(), p.y.to_bits(), p.rotation_deg.to_bits());
+        let key = |p: &Placement| {
+            (
+                p.instance_id.clone(),
+                p.x.to_bits(),
+                p.y.to_bits(),
+                p.rotation_deg.to_bits(),
+            )
+        };
         assert_eq!(
             p1.iter().map(key).collect::<Vec<_>>(),
             p2.iter().map(key).collect::<Vec<_>>(),
@@ -694,13 +767,24 @@ mod tests {
             &RotationResolveContext::legacy_default(),
         );
 
-        assert!(result.is_some(), "separator fallback must succeed for two 30×30 items on a 200×100 sheet");
+        assert!(
+            result.is_some(),
+            "separator fallback must succeed for two 30×30 items on a 200×100 sheet"
+        );
         let (new_placements, _new_bboxes) = result.unwrap();
-        assert_eq!(new_placements.len(), 2, "both A and B must be in the result");
+        assert_eq!(
+            new_placements.len(),
+            2,
+            "both A and B must be in the result"
+        );
 
         // Result must be violation-free.
         let violations = find_violations(&new_placements, &parts, &sheets);
-        assert!(violations.is_empty(), "fallback result must be violation-free: {:?}", violations);
+        assert!(
+            violations.is_empty(),
+            "fallback result must be violation-free: {:?}",
+            violations
+        );
         assert_eq!(diag.separator_fallback_successes, 1);
         assert_eq!(diag.separator_fallback_failures, 0);
     }
@@ -720,7 +804,10 @@ mod tests {
         let p_a = Placement {
             instance_id: "A__0001".to_string(),
             part_id: "A".to_string(),
-            sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
         };
         let placed_a = vec![p_a.clone()];
         let placed_bboxes_a = rebuild_placed_bboxes(&placed_a, &parts);
@@ -742,8 +829,14 @@ mod tests {
         );
 
         // The fallback should fail — B cannot be placed alongside A on a 50×50 sheet.
-        assert!(result.is_none(), "fallback must fail when B cannot fit alongside A");
-        assert_eq!(diag.separator_fallback_failures, 1, "failure must be counted");
+        assert!(
+            result.is_none(),
+            "fallback must fail when B cannot fit alongside A"
+        );
+        assert_eq!(
+            diag.separator_fallback_failures, 1,
+            "failure must be counted"
+        );
 
         // The original placed_a slice is unchanged (rollback safety).
         assert_eq!(placed_a.len(), 1, "placed_a must remain untouched");
@@ -764,7 +857,11 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         let (placed, _, _) = build_initial_layout(&instances, &parts, &sheets);
         let violations = find_violations(&placed, &parts, &sheets);
-        assert!(violations.is_empty(), "construction output must be violation-free: {:?}", violations);
+        assert!(
+            violations.is_empty(),
+            "construction output must be violation-free: {:?}",
+            violations
+        );
     }
 
     // Test 7: diagnostics summary contains the new LBF/separator fields
@@ -776,12 +873,27 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         let (_, _, diag) = build_initial_layout(&instances, &parts, &sheets);
         let summary = diag.summary();
-        assert!(summary.contains("lbf_scored="), "summary must contain lbf_scored");
-        assert!(summary.contains("lbf_clear="), "summary must contain lbf_clear");
-        assert!(summary.contains("sep_attempts="), "summary must contain sep_attempts");
+        assert!(
+            summary.contains("lbf_scored="),
+            "summary must contain lbf_scored"
+        );
+        assert!(
+            summary.contains("lbf_clear="),
+            "summary must contain lbf_clear"
+        );
+        assert!(
+            summary.contains("sep_attempts="),
+            "summary must contain sep_attempts"
+        );
         assert!(summary.contains("sep_ok="), "summary must contain sep_ok");
-        assert!(summary.contains("sep_fail="), "summary must contain sep_fail");
-        assert!(summary.contains("sep_commit_reject="), "summary must contain sep_commit_reject");
+        assert!(
+            summary.contains("sep_fail="),
+            "summary must contain sep_fail"
+        );
+        assert!(
+            summary.contains("sep_commit_reject="),
+            "summary must contain sep_commit_reject"
+        );
     }
 
     // Test 8: rebuild_placed_bboxes produces consistent cache
@@ -793,7 +905,11 @@ mod tests {
         let sheets = expand_sheets(&stocks).expect("sheets");
         let (placed, _, _) = build_initial_layout(&instances, &parts, &sheets);
         let rebuilt = rebuild_placed_bboxes(&placed, &parts);
-        assert_eq!(rebuilt.len(), placed.len(), "rebuilt bboxes count must match placements");
+        assert_eq!(
+            rebuilt.len(),
+            placed.len(),
+            "rebuilt bboxes count must match placements"
+        );
         for (bb, p) in rebuilt.iter().zip(placed.iter()) {
             assert_eq!(bb.sheet_index, p.sheet_index);
         }

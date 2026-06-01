@@ -50,4 +50,3 @@ impl BestSamples {
             .unwrap_or(SampleEval::Invalid)
     }
 }
-

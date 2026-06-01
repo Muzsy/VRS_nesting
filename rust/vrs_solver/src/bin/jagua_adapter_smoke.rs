@@ -83,8 +83,18 @@ fn main() {
     };
     match stock_to_shape(&stock) {
         Ok(sheet) => {
-            let inside = Rect { x1: 50.0, y1: 50.0, x2: 100.0, y2: 100.0 };
-            let outside = Rect { x1: 180.0, y1: 180.0, x2: 220.0, y2: 220.0 };
+            let inside = Rect {
+                x1: 50.0,
+                y1: 50.0,
+                x2: 100.0,
+                y2: 100.0,
+            };
+            let outside = Rect {
+                x1: 180.0,
+                y1: 180.0,
+                x2: 220.0,
+                y2: 220.0,
+            };
             let inside_ok = JaguaAdapter::check_rect_in_sheet(inside, &sheet);
             let outside_rejected = !JaguaAdapter::check_rect_in_sheet(outside, &sheet);
             if inside_ok && outside_rejected {

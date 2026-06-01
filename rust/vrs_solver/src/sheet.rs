@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::geometry::{
     jag_edge_from_points, point_from_input, polygon_area, polygon_bbox, rect_corners, rect_edges,
-    to_jag_point, to_jag_polygon, EPS, Point, PointInput, Rect,
+    to_jag_point, to_jag_polygon, Point, PointInput, Rect, EPS,
 };
 
 #[derive(Debug, Deserialize, Clone)]
@@ -120,7 +120,11 @@ pub fn stock_to_shape(stock: &Stock) -> Result<SheetShape, String> {
         )?);
     }
 
-    let outer_vertices = if has_irregular_outer { outer.clone() } else { Vec::new() };
+    let outer_vertices = if has_irregular_outer {
+        outer.clone()
+    } else {
+        Vec::new()
+    };
     let cost_per_use = stock.cost_per_use.unwrap_or(1.0).max(0.0);
 
     Ok(SheetShape {
@@ -204,7 +208,11 @@ mod tests {
             rect_stock("B", 1, 200.0, 80.0),
         ];
         let sheets = expand_sheets(&stocks).expect("expand_sheets");
-        assert_eq!(sheets.len(), 3, "total expanded sheets must equal sum of quantities");
+        assert_eq!(
+            sheets.len(),
+            3,
+            "total expanded sheets must equal sum of quantities"
+        );
         for i in 0..2 {
             assert!((sheets[i].width - 100.0).abs() < 1e-9, "sheets[{i}] width");
             assert!((sheets[i].height - 50.0).abs() < 1e-9, "sheets[{i}] height");
@@ -228,8 +236,14 @@ mod tests {
     fn rect_stock_has_irregular_outer_false() {
         let stocks = vec![rect_stock("R", 1, 100.0, 80.0)];
         let sheets = expand_sheets(&stocks).expect("expand_sheets");
-        assert!(!sheets[0].has_irregular_outer, "rectangular stock must have has_irregular_outer=false");
-        assert!((sheets[0].area - 8000.0).abs() < 1e-6, "rect area=100*80=8000");
+        assert!(
+            !sheets[0].has_irregular_outer,
+            "rectangular stock must have has_irregular_outer=false"
+        );
+        assert!(
+            (sheets[0].area - 8000.0).abs() < 1e-6,
+            "rect area=100*80=8000"
+        );
     }
 
     #[test]
@@ -237,9 +251,16 @@ mod tests {
         let stocks = vec![l_shape_stock("L", 1)];
         let sheets = expand_sheets(&stocks).expect("expand_sheets");
         let s = &sheets[0];
-        assert!(s.has_irregular_outer, "L-shape stock must have has_irregular_outer=true");
+        assert!(
+            s.has_irregular_outer,
+            "L-shape stock must have has_irregular_outer=true"
+        );
         // L-shape area: 100*100 bbox minus 50*50 notch = 10000 - 2500 = 7500
-        assert!((s.area - 7500.0).abs() < 1e-4, "L-shape area must be ~7500, got {}", s.area);
+        assert!(
+            (s.area - 7500.0).abs() < 1e-4,
+            "L-shape area must be ~7500, got {}",
+            s.area
+        );
         assert!((s.width - 100.0).abs() < 1e-9);
         assert!((s.height - 100.0).abs() < 1e-9);
     }
@@ -250,8 +271,10 @@ mod tests {
         let stocks = vec![l_shape_stock("L", 1)];
         let sheets = expand_sheets(&stocks).expect("expand_sheets");
         let rect = make_rect(10.0, 10.0, 30.0, 30.0);
-        assert!(rect_inside_sheet_shape(rect, &sheets[0]),
-            "positive control inside L-shape must be accepted");
+        assert!(
+            rect_inside_sheet_shape(rect, &sheets[0]),
+            "positive control inside L-shape must be accepted"
+        );
     }
 
     #[test]
@@ -261,8 +284,10 @@ mod tests {
         let stocks = vec![l_shape_stock("L", 1)];
         let sheets = expand_sheets(&stocks).expect("expand_sheets");
         let rect = make_rect(0.0, 0.0, 20.0, 15.0);
-        assert!(rect_inside_sheet_shape(rect, &sheets[0]),
-            "origin placement with corner on poly vertex must be accepted");
+        assert!(
+            rect_inside_sheet_shape(rect, &sheets[0]),
+            "origin placement with corner on poly vertex must be accepted"
+        );
     }
 
     #[test]
@@ -271,8 +296,10 @@ mod tests {
         let stocks = vec![l_shape_stock("L", 1)];
         let sheets = expand_sheets(&stocks).expect("expand_sheets");
         let rect = make_rect(60.0, 60.0, 80.0, 80.0);
-        assert!(!rect_inside_sheet_shape(rect, &sheets[0]),
-            "notch placement must be rejected by outer polygon check");
+        assert!(
+            !rect_inside_sheet_shape(rect, &sheets[0]),
+            "notch placement must be rejected by outer polygon check"
+        );
     }
 
     #[test]
@@ -281,9 +308,15 @@ mod tests {
         let stocks = vec![rect_stock("R", 1, 100.0, 80.0)];
         let sheets = expand_sheets(&stocks).expect("expand_sheets");
         let inside = make_rect(10.0, 10.0, 50.0, 40.0);
-        assert!(rect_inside_sheet_shape(inside, &sheets[0]), "inside rect accepted");
+        assert!(
+            rect_inside_sheet_shape(inside, &sheets[0]),
+            "inside rect accepted"
+        );
         let outside = make_rect(90.0, 70.0, 110.0, 90.0);
-        assert!(!rect_inside_sheet_shape(outside, &sheets[0]), "outside rect rejected");
+        assert!(
+            !rect_inside_sheet_shape(outside, &sheets[0]),
+            "outside rect rejected"
+        );
     }
 
     #[test]

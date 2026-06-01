@@ -4,7 +4,7 @@ mod tests {
     mod tests {
         use super::*;
         use crate::sheet::{expand_sheets, Stock};
-    
+
         fn make_part(id: &str, w: f64, h: f64, qty: i64) -> Part {
             Part {
                 id: id.to_string(),
@@ -19,7 +19,7 @@ mod tests {
                 rotation_policy: None,
             }
         }
-    
+
         fn make_part_rot(id: &str, w: f64, h: f64, qty: i64, rots: Vec<i64>) -> Part {
             Part {
                 id: id.to_string(),
@@ -34,7 +34,7 @@ mod tests {
                 rotation_policy: None,
             }
         }
-    
+
         fn make_stock(id: &str, w: f64, h: f64, qty: i64) -> Stock {
             Stock {
                 id: id.to_string(),
@@ -46,15 +46,15 @@ mod tests {
                 cost_per_use: None,
             }
         }
-    
+
         fn ctx() -> RotationResolveContext {
             RotationResolveContext::legacy_default()
         }
-    
+
         fn cfg(backend: CollisionBackendKind) -> SparrowConfig {
             SparrowConfig::from_solver_input(3.0, backend, ctx(), 7)
         }
-    
+
         fn pl(idx: usize, x: f64, y: f64) -> SparrowPlacement {
             SparrowPlacement {
                 instance_idx: idx,
@@ -64,7 +64,7 @@ mod tests {
                 rotation_deg: 0.0,
             }
         }
-    
+
         #[test]
         fn from_solver_input_expands_instances_with_stable_indices() {
             let parts = vec![make_part("P", 30.0, 20.0, 3)];
@@ -93,7 +93,7 @@ mod tests {
             }
             assert!(problem.pre_unplaced.is_empty());
         }
-    
+
         #[test]
         fn from_solver_input_projects_never_fits_to_pre_unplaced() {
             let parts = vec![make_part("BIG", 500.0, 500.0, 1)];
@@ -118,7 +118,7 @@ mod tests {
             );
             assert_eq!(problem.pre_unplaced[0].reason, "PART_NEVER_FITS_STOCK");
         }
-    
+
         #[test]
         fn constructive_seed_is_rotation_aware_for_oversized_at_zero() {
             // A 280x100 part does not fit a 150x300 sheet at 0deg (280>150) but fits at 90deg.
@@ -156,7 +156,7 @@ mod tests {
                 "seed picked a fitting rotation, got {rot}"
             );
         }
-    
+
         #[test]
         fn native_tracker_quantified_loss_is_not_binary_count() {
             // Two overlapping 30x30 parts: a deep overlap must yield a LARGER quantified
@@ -173,7 +173,7 @@ mod tests {
             )
             .expect("problem");
             let insts = &problem.instances;
-    
+
             let deep = SparrowLayout {
                 placements: vec![pl(0, 0.0, 0.0), pl(1, 5.0, 5.0)],
             };
@@ -201,7 +201,7 @@ mod tests {
                 "loss must not be a binary 1.0 count"
             );
         }
-    
+
         #[test]
         fn native_tracker_cde_detects_overlap_and_separation() {
             let parts = vec![make_part("P", 30.0, 30.0, 2)];
@@ -216,7 +216,7 @@ mod tests {
             )
             .expect("problem");
             let insts = &problem.instances;
-    
+
             let overlap = SparrowLayout {
                 placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
             };
@@ -230,7 +230,7 @@ mod tests {
                 "overlap yields >=1 colliding pair"
             );
             assert!(!t_overlap.is_feasible(), "overlapping layout is infeasible");
-    
+
             let apart = SparrowLayout {
                 placements: vec![pl(0, 0.0, 0.0), pl(1, 100.0, 100.0)],
             };
@@ -247,7 +247,7 @@ mod tests {
             );
             assert!(t_apart.is_feasible(), "separated layout is feasible");
         }
-    
+
         #[test]
         fn native_tracker_update_after_move_resolves_collision_incrementally() {
             let parts = vec![make_part("P", 30.0, 30.0, 2)];
@@ -262,14 +262,14 @@ mod tests {
             )
             .expect("problem");
             let insts = &problem.instances;
-    
+
             let mut layout = SparrowLayout {
                 placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
             };
             let mut tracker = SparrowCollisionTracker::build(&layout, insts, &sheets);
             assert!(!tracker.is_feasible(), "starts overlapping");
             let before = tracker.incremental_updates;
-    
+
             layout.placements[1] = pl(1, 120.0, 120.0);
             let mut diag = SparrowDiagnostics::default();
             tracker.update_after_move(1, &layout, insts, &sheets, &mut diag);
@@ -289,7 +289,7 @@ mod tests {
             );
             assert!(tracker.is_feasible(), "feasible after separating move");
         }
-    
+
         #[test]
         fn native_tracker_snapshot_restore_preserves_gls_weights() {
             let parts = vec![make_part("P", 30.0, 30.0, 2)];
@@ -304,7 +304,7 @@ mod tests {
             )
             .expect("problem");
             let insts = &problem.instances;
-    
+
             let layout = SparrowLayout {
                 placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
             };
@@ -317,14 +317,14 @@ mod tests {
                 weighted_after_bump > raw,
                 "GLS weight bump raises weighted loss above raw"
             );
-    
+
             tracker.restore_keep_weights(snap);
             assert!(
                 (tracker.total_weighted_loss() - weighted_after_bump).abs() < 1e-6,
                 "weights survive snapshot/restore"
             );
         }
-    
+
         #[test]
         fn native_optimizer_solve_feasible_projects_all_placements() {
             let parts = vec![make_part("P", 30.0, 20.0, 4)];
@@ -336,7 +336,7 @@ mod tests {
                     .expect("problem");
             let n = problem.instances.len();
             let result = SparrowOptimizer::new(config).solve(problem);
-    
+
             assert!(result.feasible, "tiny problem converges natively");
             assert!(
                 result.diagnostics.converged,
@@ -364,7 +364,7 @@ mod tests {
                 "excluded phase disabled by default"
             );
         }
-    
+
         #[test]
         fn native_optimizer_worker_competition_is_active() {
             // An oversubscribed-but-individually-fitting case must exercise the real worker competition
@@ -405,7 +405,7 @@ mod tests {
                 "worker move targets attempted"
             );
         }
-    
+
         #[test]
         fn native_optimizer_solve_is_deterministic_for_same_seed() {
             let parts = vec![make_part("P", 25.0, 25.0, 5)];
@@ -413,9 +413,14 @@ mod tests {
             let sheets = expand_sheets(&stocks).expect("sheets");
             let run = || {
                 let config = cfg(CollisionBackendKind::Cde);
-                let problem =
-                    SparrowProblem::from_solver_input(&parts, &sheets, &ctx(), vec![], config.clone())
-                        .expect("problem");
+                let problem = SparrowProblem::from_solver_input(
+                    &parts,
+                    &sheets,
+                    &ctx(),
+                    vec![],
+                    config.clone(),
+                )
+                .expect("problem");
                 SparrowOptimizer::new(config).solve(problem).placements
             };
             let a = run();
@@ -433,7 +438,7 @@ mod tests {
                 );
             }
         }
-    
+
         #[test]
         fn coord_descent_rotation_wiggle_executes_for_continuous_rotation() {
             // A continuous-rotation, over-capacity fixture forces the separator to run
@@ -445,8 +450,9 @@ mod tests {
             let ctx = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 7, 8);
             let config =
                 SparrowConfig::from_solver_input(3.0, CollisionBackendKind::Cde, ctx.clone(), 7);
-            let problem = SparrowProblem::from_solver_input(&parts, &sheets, &ctx, vec![], config.clone())
-                .expect("problem");
+            let problem =
+                SparrowProblem::from_solver_input(&parts, &sheets, &ctx, vec![], config.clone())
+                    .expect("problem");
             assert!(
                 problem.instances.iter().all(|i| i.continuous_rotation),
                 "continuous policy enables rotation wiggle"

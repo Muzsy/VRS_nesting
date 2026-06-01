@@ -176,7 +176,10 @@ pub fn effective_policy_kind(part: &Part, context: &RotationResolveContext) -> R
     }
     if !part.allowed_rotations_deg.is_empty() {
         return RotationPolicyKind::Discrete(
-            part.allowed_rotations_deg.iter().map(|&a| normalize_angle(a as f64)).collect(),
+            part.allowed_rotations_deg
+                .iter()
+                .map(|&a| normalize_angle(a as f64))
+                .collect(),
         );
     }
     if let Some(policy) = &context.global_policy {
@@ -225,11 +228,12 @@ pub fn expand_instances_with_policy(
     for part in parts {
         for idx in 0..part.quantity {
             let instance_id = format!("{}__{:04}", part.id, idx + 1);
-            let allowed_rotations = if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
-                resolve_instance_rotation_angles(part, &instance_id, context)
-            } else {
-                normalize_allowed_rotations(&part.allowed_rotations_deg)?
-            };
+            let allowed_rotations =
+                if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
+                    resolve_instance_rotation_angles(part, &instance_id, context)
+                } else {
+                    normalize_allowed_rotations(&part.allowed_rotations_deg)?
+                };
             if allowed_rotations.is_empty() {
                 return Err(format!("part {} has no valid rotation angles", part.id));
             }
@@ -288,11 +292,12 @@ pub fn build_item_geometry_store_with_policy(
 ) -> Result<ItemGeometryStore, String> {
     let mut records = Vec::new();
     for part in parts {
-        let allowed_rotations = if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
-            resolve_part_rotation_angles_with_context(part, context)
-        } else {
-            normalize_allowed_rotations(&part.allowed_rotations_deg)?
-        };
+        let allowed_rotations =
+            if part.rotation_policy.is_some() || part.allowed_rotations_deg.is_empty() {
+                resolve_part_rotation_angles_with_context(part, context)
+            } else {
+                normalize_allowed_rotations(&part.allowed_rotations_deg)?
+            };
         if allowed_rotations.is_empty() {
             return Err(format!("part {} has no valid rotation angles", part.id));
         }
@@ -334,8 +339,7 @@ pub fn build_item_geometry_store(parts: &[Part]) -> Result<ItemGeometryStore, St
 mod tests {
     use super::{
         build_item_geometry_store, dims_for_rotation, expand_instances_with_policy,
-        normalize_allowed_rotations, placement_anchor_from_rect_min,
-        rotated_bbox_min_offset, Part,
+        normalize_allowed_rotations, placement_anchor_from_rect_min, rotated_bbox_min_offset, Part,
     };
     use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
 
@@ -549,11 +553,19 @@ mod tests {
         let ctx = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 1234, 8);
         let instances = expand_instances_with_policy(&parts, &ctx).expect("instances");
         let rots = &instances[0].allowed_rotations_deg;
-        assert!(rots.len() >= 5, "continuous must include canonical + sampled");
-        let has_non_canonical = rots
-            .iter()
-            .any(|&r| [0.0, 90.0, 180.0, 270.0].iter().all(|&c| (r - c).abs() > 0.5));
-        assert!(has_non_canonical, "continuous must include non-canonical angle");
+        assert!(
+            rots.len() >= 5,
+            "continuous must include canonical + sampled"
+        );
+        let has_non_canonical = rots.iter().any(|&r| {
+            [0.0, 90.0, 180.0, 270.0]
+                .iter()
+                .all(|&c| (r - c).abs() > 0.5)
+        });
+        assert!(
+            has_non_canonical,
+            "continuous must include non-canonical angle"
+        );
     }
 
     #[test]

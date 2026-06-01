@@ -68,7 +68,7 @@ pub(super) fn run_worker_pass(
         // new_pairs fallback that could worsen the moved item's local damage.
         let old_w = tracker.weighted_loss_for_item(target);
         let Some(newp) = native_search_placement(
-            target, &layout, instances, &tracker, sheets, cfg, &mut rng, diag,
+            target, &layout, instances, &tracker, sheets, cfg, &mut rng, started, deadline, diag,
         ) else {
             rejected += 1;
             continue;

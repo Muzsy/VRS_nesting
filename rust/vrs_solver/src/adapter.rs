@@ -6,6 +6,7 @@ use crate::io::{
     OptimizerPipelineKind, Placement, ScoreBreakdownOutput, SolverInput, SolverOutput, Unplaced,
 };
 use crate::item::{can_fit_any_stock_with_policy, expand_instances_with_policy, part_has_holes};
+use crate::optimizer::cde_observability;
 use crate::optimizer::score::ScoreModel;
 use crate::optimizer::{
     initializer::build_initial_layout_with_rotation_context,
@@ -16,7 +17,6 @@ use crate::optimizer::{
     working::{BackendCommitResult, WorkingCommitError, WorkingLayout},
     SheetCursor,
 };
-use crate::optimizer::cde_observability;
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
 use crate::sheet::{expand_sheets, stock_has_holes};
 
@@ -102,11 +102,17 @@ fn diag_output_from(result: &BackendCommitResult) -> CollisionBackendDiagnostics
 }
 
 fn cde_timing_enabled() -> bool {
-    std::env::var("VRS_CDE_OBSERVABILITY_TIMING").map(|v| v == "1").unwrap_or(false)
+    std::env::var("VRS_CDE_OBSERVABILITY_TIMING")
+        .map(|v| v == "1")
+        .unwrap_or(false)
 }
 
 fn timing_start(enabled: bool) -> Option<Instant> {
-    if enabled { Some(Instant::now()) } else { None }
+    if enabled {
+        Some(Instant::now())
+    } else {
+        None
+    }
 }
 
 fn timing_ms(start: Option<Instant>) -> Option<f64> {
@@ -405,7 +411,9 @@ fn native_sparrow_diag_to_output(
         sparrow_search_position_samples: Some(d.search_position_samples),
         sparrow_severity_pair_queries: Some(d.quantified_pair_queries),
         sparrow_severity_boundary_queries: Some(d.quantified_boundary_queries),
-        sparrow_severity_probe_queries: Some(d.quantified_pair_queries + d.quantified_boundary_queries),
+        sparrow_severity_probe_queries: Some(
+            d.quantified_pair_queries + d.quantified_boundary_queries,
+        ),
         sparrow_lbf_fallback_used: Some(d.lbf_fallback_used),
         sparrow_workers: Some(d.worker_count),
         sparrow_worker_passes: Some(d.worker_passes),
@@ -560,12 +568,22 @@ fn run_sparrow_pipeline(
     }
 
     let snap = cde_observability::snapshot();
-    let backend_diag = Some(cde_feasible_diag(&snap, "sparrow_full_solve", final_commit_ms));
-    Ok((result.placements, result.unplaced, Some(optimizer_diag), backend_diag))
+    let backend_diag = Some(cde_feasible_diag(
+        &snap,
+        "sparrow_full_solve",
+        final_commit_ms,
+    ));
+    Ok((
+        result.placements,
+        result.unplaced,
+        Some(optimizer_diag),
+        backend_diag,
+    ))
 }
 
-
-fn score_breakdown_from_result(result: crate::optimizer::score::ScoreResult) -> ScoreBreakdownOutput {
+fn score_breakdown_from_result(
+    result: crate::optimizer::score::ScoreResult,
+) -> ScoreBreakdownOutput {
     let bd = &result.breakdown;
     ScoreBreakdownOutput {
         total_cost: bd.total_cost,
@@ -693,7 +711,10 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 u.extend(pre_unplaced);
                 if backend_kind != CollisionBackendKind::Bbox {
                     let is_cde = backend_kind == CollisionBackendKind::Cde;
-                    if is_cde { cde_observability::reset(); crate::optimizer::cde_adapter::reset_query_cache(); }
+                    if is_cde {
+                        cde_observability::reset();
+                        crate::optimizer::cde_adapter::reset_query_cache();
+                    }
                     let timing_enabled = cde_timing_enabled();
                     let t_start = timing_start(timing_enabled);
                     let working = WorkingLayout::new(p, u, sheets.len(), input.seed);
@@ -713,12 +734,17 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             (commit.placements, commit.unplaced, None)
                         }
                         Err(e) => {
-                            let reason = backend_err_reason(e, "COLLISION_BACKEND_COMMIT_VIOLATION");
+                            let reason =
+                                backend_err_reason(e, "COLLISION_BACKEND_COMMIT_VIOLATION");
                             if is_cde {
                                 let snap = cde_observability::snapshot();
                                 let ms = timing_ms(t_start);
                                 let diag = cde_unsupported_diag(&snap, "final_commit_only", ms);
-                                return Ok(_unsupported_output_with_backend_diag(&reason, &input, Some(diag)));
+                                return Ok(_unsupported_output_with_backend_diag(
+                                    &reason,
+                                    &input,
+                                    Some(diag),
+                                ));
                             }
                             return Ok(_unsupported_output(&reason, &input));
                         }
@@ -729,7 +755,10 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
             }
             OptimizerPipelineKind::PhaseOptimizer => {
                 let is_cde = backend_kind == CollisionBackendKind::Cde;
-                if is_cde { cde_observability::reset(); crate::optimizer::cde_adapter::reset_query_cache(); }
+                if is_cde {
+                    cde_observability::reset();
+                    crate::optimizer::cde_adapter::reset_query_cache();
+                }
                 let timing_enabled = cde_timing_enabled();
                 let (init_p, mut init_u, _construction_diag) =
                     build_initial_layout_with_rotation_context(
@@ -745,11 +774,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 let layout = result.layout;
                 let t_commit_start = timing_start(timing_enabled);
                 let backend_name = format!("{:?}", backend_kind);
-                match layout.validate_and_commit_with_backend(
-                    &input.parts,
-                    &sheets,
-                    backend_kind,
-                ) {
+                match layout.validate_and_commit_with_backend(&input.parts, &sheets, backend_kind) {
                     Ok(commit) => {
                         let final_commit_ms = timing_ms(t_commit_start);
                         collision_backend_diag = Some(if is_cde {
@@ -768,38 +793,62 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             rotation_refinement_enabled: diag_ref.rotation_refinement_enabled,
                             rotation_refinement_attempts: diag_ref.rotation_refinement_attempts,
                             rotation_refinement_accepts: diag_ref.rotation_refinement_accepts,
-                            rotation_refinement_rejections: diag_ref.rotation_refinement_attempts
+                            rotation_refinement_rejections: diag_ref
+                                .rotation_refinement_attempts
                                 .saturating_sub(diag_ref.rotation_refinement_accepts),
                             rotation_refinement_best_delta: diag_ref.rotation_refinement_best_delta,
                             search_position_calls: diag_ref.search_position_calls,
-                            search_position_global_samples_evaluated: diag_ref.search_position_global_samples_evaluated,
-                            search_position_focused_samples_evaluated: diag_ref.search_position_focused_samples_evaluated,
-                            search_position_samples_unsupported: diag_ref.search_position_samples_unsupported,
-                            search_position_refined_samples: diag_ref.search_position_refined_samples,
-                            search_position_coord_descent_steps: diag_ref.search_position_coord_descent_steps,
-                            search_position_lbf_fallback_used: diag_ref.search_position_lbf_fallback_used,
-                            search_position_best_eval: if diag_ref.search_position_best_eval == f64::MAX {
+                            search_position_global_samples_evaluated: diag_ref
+                                .search_position_global_samples_evaluated,
+                            search_position_focused_samples_evaluated: diag_ref
+                                .search_position_focused_samples_evaluated,
+                            search_position_samples_unsupported: diag_ref
+                                .search_position_samples_unsupported,
+                            search_position_refined_samples: diag_ref
+                                .search_position_refined_samples,
+                            search_position_coord_descent_steps: diag_ref
+                                .search_position_coord_descent_steps,
+                            search_position_lbf_fallback_used: diag_ref
+                                .search_position_lbf_fallback_used,
+                            search_position_best_eval: if diag_ref.search_position_best_eval
+                                == f64::MAX
+                            {
                                 0.0
                             } else {
                                 diag_ref.search_position_best_eval
                             },
                             collision_severity_backend: backend_name,
                             collision_severity_enabled: diag_ref.collision_severity_enabled,
-                            collision_severity_pair_queries: diag_ref.collision_severity_pair_queries,
-                            collision_severity_boundary_queries: diag_ref.collision_severity_boundary_queries,
-                            collision_severity_probe_queries: diag_ref.collision_severity_probe_queries,
-                            collision_severity_backend_confirmed_collisions: diag_ref.collision_severity_backend_confirmed_collisions,
-                            collision_severity_backend_confirmed_no_collisions: diag_ref.collision_severity_backend_confirmed_no_collisions,
-                            collision_severity_unsupported_queries: diag_ref.collision_severity_unsupported_queries,
-                            collision_severity_bbox_proxy_uses: diag_ref.collision_severity_bbox_proxy_uses,
-                            collision_severity_probe_pair_queries: diag_ref.collision_severity_probe_pair_queries,
-                            collision_severity_probe_boundary_queries: diag_ref.collision_severity_probe_boundary_queries,
-                            collision_severity_probe_resolved: diag_ref.collision_severity_probe_resolved,
-                            collision_severity_probe_unresolved: diag_ref.collision_severity_probe_unresolved,
-                            collision_severity_probe_unsupported: diag_ref.collision_severity_probe_unsupported,
-                            collision_severity_min_resolution_mm: diag_ref.collision_severity_min_resolution_mm,
-                            collision_severity_max_resolution_mm: diag_ref.collision_severity_max_resolution_mm,
-                            collision_severity_avg_resolution_mm: diag_ref.collision_severity_avg_resolution_mm,
+                            collision_severity_pair_queries: diag_ref
+                                .collision_severity_pair_queries,
+                            collision_severity_boundary_queries: diag_ref
+                                .collision_severity_boundary_queries,
+                            collision_severity_probe_queries: diag_ref
+                                .collision_severity_probe_queries,
+                            collision_severity_backend_confirmed_collisions: diag_ref
+                                .collision_severity_backend_confirmed_collisions,
+                            collision_severity_backend_confirmed_no_collisions: diag_ref
+                                .collision_severity_backend_confirmed_no_collisions,
+                            collision_severity_unsupported_queries: diag_ref
+                                .collision_severity_unsupported_queries,
+                            collision_severity_bbox_proxy_uses: diag_ref
+                                .collision_severity_bbox_proxy_uses,
+                            collision_severity_probe_pair_queries: diag_ref
+                                .collision_severity_probe_pair_queries,
+                            collision_severity_probe_boundary_queries: diag_ref
+                                .collision_severity_probe_boundary_queries,
+                            collision_severity_probe_resolved: diag_ref
+                                .collision_severity_probe_resolved,
+                            collision_severity_probe_unresolved: diag_ref
+                                .collision_severity_probe_unresolved,
+                            collision_severity_probe_unsupported: diag_ref
+                                .collision_severity_probe_unsupported,
+                            collision_severity_min_resolution_mm: diag_ref
+                                .collision_severity_min_resolution_mm,
+                            collision_severity_max_resolution_mm: diag_ref
+                                .collision_severity_max_resolution_mm,
+                            collision_severity_avg_resolution_mm: diag_ref
+                                .collision_severity_avg_resolution_mm,
                             phase_optimizer_exploration_ms: result.exploration_ms,
                             phase_optimizer_compression_ms: result.compression_ms,
                             phase_optimizer_bpp_ms: result.bpp_ms,
@@ -877,15 +926,17 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
                     Err(e) => {
-                        let reason = backend_err_reason(
-                            e,
-                            "PHASE_OPTIMIZER_COMMIT_VIOLATION_BACKEND",
-                        );
+                        let reason =
+                            backend_err_reason(e, "PHASE_OPTIMIZER_COMMIT_VIOLATION_BACKEND");
                         if is_cde {
                             let snap = cde_observability::snapshot();
                             let ms = timing_ms(t_commit_start);
                             let diag = cde_unsupported_diag(&snap, "full_solve", ms);
-                            return Ok(_unsupported_output_with_backend_diag(&reason, &input, Some(diag)));
+                            return Ok(_unsupported_output_with_backend_diag(
+                                &reason,
+                                &input,
+                                Some(diag),
+                            ));
                         }
                         return Ok(_unsupported_output(&reason, &input));
                     }
@@ -1117,7 +1168,9 @@ impl JaguaAdapter {
 #[cfg(test)]
 mod tests {
     use super::{phase_commit_or_unsupported, solve};
-    use crate::io::{CollisionBackendKind, OptimizerPipelineKind, Placement, SolverInput, SolverOutput};
+    use crate::io::{
+        CollisionBackendKind, OptimizerPipelineKind, Placement, SolverInput, SolverOutput,
+    };
     use crate::item::Part;
     use crate::optimizer::repair::find_violations;
     use crate::optimizer::working::WorkingLayout;
@@ -1329,7 +1382,9 @@ mod tests {
         let diag = out.optimizer_diagnostics.expect("sparrow diagnostics");
         assert_eq!(diag.pipeline_used, "sparrow_cde");
         assert_eq!(diag.collision_severity_backend, "Cde");
-        let backend = out.collision_backend_diagnostics.expect("backend diagnostics");
+        let backend = out
+            .collision_backend_diagnostics
+            .expect("backend diagnostics");
         assert_eq!(backend.backend_used, "cde_adapter");
         assert_eq!(backend.bbox_fallback_queries, 0);
     }
@@ -1413,7 +1468,10 @@ mod tests {
             "parts": [{"id": "P", "width": 10.0, "height": 10.0, "quantity": 1}]
         }"#;
         let input: SolverInput = serde_json::from_str(json).expect("deserialize");
-        assert!(input.collision_backend.is_none(), "missing field must deserialize to None");
+        assert!(
+            input.collision_backend.is_none(),
+            "missing field must deserialize to None"
+        );
         assert_eq!(
             input.collision_backend.unwrap_or_default(),
             CollisionBackendKind::Bbox
@@ -1432,7 +1490,10 @@ mod tests {
             "collision_backend": "jagua_polygon_exact"
         }"#;
         let input: SolverInput = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(input.collision_backend, Some(CollisionBackendKind::JaguaPolygonExact));
+        assert_eq!(
+            input.collision_backend,
+            Some(CollisionBackendKind::JaguaPolygonExact)
+        );
     }
 
     #[test]
@@ -1493,8 +1554,10 @@ mod tests {
         }"#;
         let input: SolverInput = serde_json::from_str(json_exact).expect("deserialize exact");
         let out = solve(input).expect("solve");
-        assert_eq!(out.status, "unsupported",
-            "jagua_polygon_exact with invalid outer_points must be unsupported, not ok/partial");
+        assert_eq!(
+            out.status, "unsupported",
+            "jagua_polygon_exact with invalid outer_points must be unsupported, not ok/partial"
+        );
         assert_eq!(
             out.unsupported_reason.as_deref(),
             Some("JAGUA_POLYGON_EXACT_UNSUPPORTED_QUERY"),
@@ -1521,8 +1584,10 @@ mod tests {
         }"#;
         let input_bbox: SolverInput = serde_json::from_str(json_bbox).expect("deserialize bbox");
         let out_bbox = solve(input_bbox).expect("solve bbox");
-        assert_ne!(out_bbox.status, "unsupported",
-            "bbox default must not return unsupported for malformed outer_points");
+        assert_ne!(
+            out_bbox.status, "unsupported",
+            "bbox default must not return unsupported for malformed outer_points"
+        );
     }
 
     #[test]
@@ -1535,8 +1600,10 @@ mod tests {
         let mut input = make_input(1, stock, vec![bad_part], None);
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
-        assert_eq!(out.status, "unsupported",
-            "malformed geometry with cde backend must produce unsupported");
+        assert_eq!(
+            out.status, "unsupported",
+            "malformed geometry with cde backend must produce unsupported"
+        );
         assert_eq!(
             out.unsupported_reason.as_deref(),
             Some("CDE_BACKEND_UNSUPPORTED_QUERY"),
@@ -1558,8 +1625,10 @@ mod tests {
         let mut input = make_input(1, stock, parts, None);
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
-        assert_ne!(out.status, "unsupported",
-            "valid rect part with CDE backend must not produce unsupported output after Q16");
+        assert_ne!(
+            out.status, "unsupported",
+            "valid rect part with CDE backend must not produce unsupported output after Q16"
+        );
     }
 
     #[test]
@@ -1571,14 +1640,21 @@ mod tests {
         let mut input = make_input(1, stock, parts, None);
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
-        let diag = out.collision_backend_diagnostics
+        let diag = out
+            .collision_backend_diagnostics
             .expect("CDE commit must produce collision_backend_diagnostics");
-        assert_eq!(diag.backend_used, "cde_adapter",
-            "backend_used must be cde_adapter for CDE commit");
-        assert_eq!(diag.unsupported_queries, 0,
-            "no unsupported queries for valid rect part with CDE");
-        assert_eq!(diag.bbox_fallback_queries, 0,
-            "no bbox fallback for CDE final commit");
+        assert_eq!(
+            diag.backend_used, "cde_adapter",
+            "backend_used must be cde_adapter for CDE commit"
+        );
+        assert_eq!(
+            diag.unsupported_queries, 0,
+            "no unsupported queries for valid rect part with CDE"
+        );
+        assert_eq!(
+            diag.bbox_fallback_queries, 0,
+            "no bbox fallback for CDE final commit"
+        );
     }
 
     #[test]
@@ -1596,7 +1672,10 @@ mod tests {
             out.unsupported_reason.as_deref(),
             Some("CDE_BACKEND_UNSUPPORTED_QUERY"),
         );
-        assert!(out.placements.is_empty(), "malformed geometry must not produce placements");
+        assert!(
+            out.placements.is_empty(),
+            "malformed geometry must not produce placements"
+        );
     }
 
     #[test]
@@ -1626,18 +1705,37 @@ mod tests {
         let mut input = make_input(1, stock, parts, None);
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
-        let diag = out.collision_backend_diagnostics
+        let diag = out
+            .collision_backend_diagnostics
             .expect("CDE valid output must have collision_backend_diagnostics");
         assert_eq!(diag.backend_used, "cde_adapter");
         assert_eq!(diag.bbox_fallback_queries, 0, "no bbox fallback for CDE");
-        let total = diag.cde_total_queries.expect("cde_total_queries must be present");
-        let builds = diag.cde_engine_builds.expect("cde_engine_builds must be present");
-        assert!(total > 0, "CDE must have processed at least one query: total={}", total);
-        assert!(builds > 0, "CDE must have built at least one CDEngine: builds={}", builds);
-        assert_eq!(diag.cde_observability_scope.as_deref(), Some("final_commit_only"),
-            "legacy_multisheet CDE scope must be final_commit_only");
-        assert_eq!(diag.final_commit_backend_used.as_deref(), Some("cde_adapter"),
-            "final_commit_backend_used must be cde_adapter");
+        let total = diag
+            .cde_total_queries
+            .expect("cde_total_queries must be present");
+        let builds = diag
+            .cde_engine_builds
+            .expect("cde_engine_builds must be present");
+        assert!(
+            total > 0,
+            "CDE must have processed at least one query: total={}",
+            total
+        );
+        assert!(
+            builds > 0,
+            "CDE must have built at least one CDEngine: builds={}",
+            builds
+        );
+        assert_eq!(
+            diag.cde_observability_scope.as_deref(),
+            Some("final_commit_only"),
+            "legacy_multisheet CDE scope must be final_commit_only"
+        );
+        assert_eq!(
+            diag.final_commit_backend_used.as_deref(),
+            Some("cde_adapter"),
+            "final_commit_backend_used must be cde_adapter"
+        );
     }
 
     #[test]
@@ -1650,16 +1748,26 @@ mod tests {
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
         assert_eq!(out.status, "unsupported");
-        assert_eq!(out.unsupported_reason.as_deref(), Some("CDE_BACKEND_UNSUPPORTED_QUERY"));
-        let diag = out.collision_backend_diagnostics
+        assert_eq!(
+            out.unsupported_reason.as_deref(),
+            Some("CDE_BACKEND_UNSUPPORTED_QUERY")
+        );
+        let diag = out
+            .collision_backend_diagnostics
             .expect("CDE unsupported output must carry observability diagnostics");
         assert_eq!(diag.backend_used, "cde_adapter");
         assert_eq!(diag.bbox_fallback_queries, 0);
         // At least 1 unsupported/prepare-failure must be counted
-        let unsupported = diag.cde_unsupported_results.expect("cde_unsupported_results must be present");
-        let failures = diag.cde_prepare_failures.expect("cde_prepare_failures must be present");
-        assert!(unsupported > 0 || failures > 0,
-            "malformed geometry must register at least one unsupported or prepare_failure counter");
+        let unsupported = diag
+            .cde_unsupported_results
+            .expect("cde_unsupported_results must be present");
+        let failures = diag
+            .cde_prepare_failures
+            .expect("cde_prepare_failures must be present");
+        assert!(
+            unsupported > 0 || failures > 0,
+            "malformed geometry must register at least one unsupported or prepare_failure counter"
+        );
     }
 
     #[test]
@@ -1669,8 +1777,10 @@ mod tests {
         let parts = vec![make_part("P", 20.0, 20.0, 1, vec![0], None)];
         let input = make_input(1, stock, parts, None); // no collision_backend → defaults to Bbox
         let out = solve(input).expect("solve");
-        assert!(out.collision_backend_diagnostics.is_none(),
-            "bbox backend must not emit collision_backend_diagnostics");
+        assert!(
+            out.collision_backend_diagnostics.is_none(),
+            "bbox backend must not emit collision_backend_diagnostics"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1681,7 +1791,11 @@ mod tests {
     fn phase_optimizer_timing_fields_absent_by_default() {
         // Without VRS_CDE_OBSERVABILITY_TIMING=1, optimizer_diagnostics must not
         // contain timing fields (they're None → omitted by serde).
-        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING").ok().as_deref() == Some("1") {
+        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
             return; // skip when timing explicitly enabled by test runner
         }
         let stock = vec![make_stock("S", 160.0, 100.0, 1)];
@@ -1689,21 +1803,35 @@ mod tests {
         let mut input = make_input(21, stock, parts, None);
         input.optimizer_pipeline = Some(OptimizerPipelineKind::PhaseOptimizer);
         let out = solve(input).expect("solve");
-        let diag = out.optimizer_diagnostics.expect("must have optimizer_diagnostics");
-        assert!(diag.phase_optimizer_exploration_ms.is_none(),
-            "exploration_ms must be None by default");
-        assert!(diag.phase_optimizer_compression_ms.is_none(),
-            "compression_ms must be None by default");
-        assert!(diag.phase_optimizer_bpp_ms.is_none(),
-            "bpp_ms must be None by default");
-        assert!(diag.phase_optimizer_final_commit_ms.is_none(),
-            "final_commit_ms must be None by default");
+        let diag = out
+            .optimizer_diagnostics
+            .expect("must have optimizer_diagnostics");
+        assert!(
+            diag.phase_optimizer_exploration_ms.is_none(),
+            "exploration_ms must be None by default"
+        );
+        assert!(
+            diag.phase_optimizer_compression_ms.is_none(),
+            "compression_ms must be None by default"
+        );
+        assert!(
+            diag.phase_optimizer_bpp_ms.is_none(),
+            "bpp_ms must be None by default"
+        );
+        assert!(
+            diag.phase_optimizer_final_commit_ms.is_none(),
+            "final_commit_ms must be None by default"
+        );
     }
 
     #[test]
     fn cde_timing_field_absent_by_default_in_cde_output() {
         // Without VRS_CDE_OBSERVABILITY_TIMING=1, final_commit_validation_ms must be None.
-        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING").ok().as_deref() == Some("1") {
+        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
             return; // skip when timing explicitly enabled
         }
         let stock = vec![make_stock("S", 100.0, 100.0, 1)];
@@ -1711,9 +1839,13 @@ mod tests {
         let mut input = make_input(1, stock, parts, None);
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
-        let diag = out.collision_backend_diagnostics.expect("must have CDE diagnostics");
-        assert!(diag.final_commit_validation_ms.is_none(),
-            "final_commit_validation_ms must be None by default");
+        let diag = out
+            .collision_backend_diagnostics
+            .expect("must have CDE diagnostics");
+        assert!(
+            diag.final_commit_validation_ms.is_none(),
+            "final_commit_validation_ms must be None by default"
+        );
     }
 
     #[test]
@@ -1744,8 +1876,13 @@ mod tests {
         let mut input = make_input(1, stock.clone(), parts.clone(), None);
         input.collision_backend = Some(CollisionBackendKind::Cde);
         let out = solve(input).expect("solve");
-        assert_ne!(out.status, "unsupported", "Q16: valid CDE must not be unsupported");
-        let diag = out.collision_backend_diagnostics.expect("Q16: must have diagnostics");
+        assert_ne!(
+            out.status, "unsupported",
+            "Q16: valid CDE must not be unsupported"
+        );
+        let diag = out
+            .collision_backend_diagnostics
+            .expect("Q16: must have diagnostics");
         assert_eq!(diag.backend_used, "cde_adapter");
         assert_eq!(diag.unsupported_queries, 0);
         assert_eq!(diag.bbox_fallback_queries, 0);
@@ -1756,7 +1893,11 @@ mod tests {
         let stock = vec![make_stock("S", 160.0, 100.0, 1)];
         let parts = vec![make_part("P", 40.0, 20.0, 3, vec![0], None)];
 
-        for backend in [None, Some(CollisionBackendKind::Bbox), Some(CollisionBackendKind::JaguaPolygonExact)] {
+        for backend in [
+            None,
+            Some(CollisionBackendKind::Bbox),
+            Some(CollisionBackendKind::JaguaPolygonExact),
+        ] {
             let mut a = make_input(42, stock.clone(), parts.clone(), None);
             a.collision_backend = backend.clone();
             let mut b = make_input(42, stock.clone(), parts.clone(), None);
@@ -1781,10 +1922,16 @@ mod tests {
     fn jagua_polygon_exact_l_shape_notch_does_not_report_bbox_false_positive() {
         // Helper-level: JaguaPolygonExactBackend must report NoCollision when B sits in A's notch.
         // This test confirms the backend does not produce the bbox false-positive.
-        use crate::optimizer::collision_backend::{BboxCollisionBackend, JaguaPolygonExactBackend, CollisionBackend};
+        use crate::optimizer::collision_backend::{
+            BboxCollisionBackend, CollisionBackend, JaguaPolygonExactBackend,
+        };
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let part_a = crate::item::Part {
             id: "L".to_string(),
@@ -1810,15 +1957,36 @@ mod tests {
             prepared_outer_points: None,
             rotation_policy: None,
         };
-        let p_a = Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 };
-        let p_b = Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 };
+        let p_a = Placement {
+            instance_id: "L__0001".into(),
+            part_id: "L".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        };
+        let p_b = Placement {
+            instance_id: "B__0001".into(),
+            part_id: "B".into(),
+            sheet_index: 0,
+            x: 22.0,
+            y: 22.0,
+            rotation_deg: 0.0,
+        };
 
         let bbox = BboxCollisionBackend;
         let exact = JaguaPolygonExactBackend;
-        assert!(bbox.placement_overlaps(&p_a, &part_a, &p_b, &part_b).is_collision(),
-            "bbox must report false positive for notch");
-        assert!(exact.placement_overlaps(&p_a, &part_a, &p_b, &part_b).is_no_collision(),
-            "exact backend must report no collision for item in notch");
+        assert!(
+            bbox.placement_overlaps(&p_a, &part_a, &p_b, &part_b)
+                .is_collision(),
+            "bbox must report false positive for notch"
+        );
+        assert!(
+            exact
+                .placement_overlaps(&p_a, &part_a, &p_b, &part_b)
+                .is_no_collision(),
+            "exact backend must report no collision for item in notch"
+        );
     }
 
     #[test]
@@ -1868,8 +2036,12 @@ mod tests {
     #[test]
     fn adapter_score_breakdown_uses_selected_backend() {
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let mut l_part = make_part("L", 40.0, 40.0, 1, vec![0], None);
         l_part.outer_points = Some(l_json);
@@ -1877,19 +2049,43 @@ mod tests {
         let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
         let sheets = expand_sheets(&stocks).expect("sheets");
         let placements = vec![
-            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "L__0001".into(),
+                part_id: "L".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "B__0001".into(),
+                part_id: "B".into(),
+                sheet_index: 0,
+                x: 22.0,
+                y: 22.0,
+                rotation_deg: 0.0,
+            },
         ];
 
         let bbox = super::phase1_score_breakdown_for_backend(
-            &placements, &[], &parts, &sheets, &CollisionBackendKind::Bbox,
+            &placements,
+            &[],
+            &parts,
+            &sheets,
+            &CollisionBackendKind::Bbox,
         );
         let exact = super::phase1_score_breakdown_for_backend(
-            &placements, &[], &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+            &placements,
+            &[],
+            &parts,
+            &sheets,
+            &CollisionBackendKind::JaguaPolygonExact,
         );
 
-        assert!(bbox.overlap_contribution > 0.0,
-            "bbox score_breakdown must expose the fixture's bbox false-positive");
+        assert!(
+            bbox.overlap_contribution > 0.0,
+            "bbox score_breakdown must expose the fixture's bbox false-positive"
+        );
         assert_eq!(exact.overlap_contribution, 0.0,
             "exact score_breakdown must use selected backend and remove bbox false-positive overlap");
     }
@@ -1909,7 +2105,10 @@ mod tests {
         let cfg = super::phase_config_from_input(&input, rc);
 
         assert!(
-            matches!(cfg.collision_backend, CollisionBackendKind::JaguaPolygonExact),
+            matches!(
+                cfg.collision_backend,
+                CollisionBackendKind::JaguaPolygonExact
+            ),
             "phase_config_from_input must propagate collision_backend from SolverInput"
         );
     }
@@ -1927,8 +2126,11 @@ mod tests {
         let mut input = make_input(1, stocks, parts, None);
         input.optimizer_pipeline = Some(OptimizerPipelineKind::SparrowExperimental);
         let out = super::solve(input).expect("solve ok");
-        assert!(out.status == "ok" || out.status == "partial",
-                "status got {} for sparrow run", out.status);
+        assert!(
+            out.status == "ok" || out.status == "partial",
+            "status got {} for sparrow run",
+            out.status
+        );
         let diag = out
             .optimizer_diagnostics
             .expect("sparrow run must emit optimizer_diagnostics");
@@ -2096,7 +2298,10 @@ mod tests {
             "optimizer_pipeline": "sparrow_cde"
         }"#;
         let input: SolverInput = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(input.optimizer_pipeline, Some(OptimizerPipelineKind::SparrowCde));
+        assert_eq!(
+            input.optimizer_pipeline,
+            Some(OptimizerPipelineKind::SparrowCde)
+        );
     }
 
     #[test]
@@ -2109,19 +2314,34 @@ mod tests {
         assert!(
             out.status == "ok" || out.status == "partial",
             "sparrow_cde tiny must succeed; got status={} reason={:?}",
-            out.status, out.unsupported_reason
+            out.status,
+            out.unsupported_reason
         );
-        let diag = out.optimizer_diagnostics.expect("optimizer_diagnostics present");
-        assert_eq!(diag.pipeline_used, "sparrow_cde", "production label must be sparrow_cde");
+        let diag = out
+            .optimizer_diagnostics
+            .expect("optimizer_diagnostics present");
+        assert_eq!(
+            diag.pipeline_used, "sparrow_cde",
+            "production label must be sparrow_cde"
+        );
         assert_eq!(diag.sparrow_converged, Some(true));
         let cbd = out
             .collision_backend_diagnostics
             .expect("sparrow_cde must emit collision_backend_diagnostics");
         // CDE-first: the active backend is the CDE adapter, not bbox.
-        assert_eq!(cbd.backend_used, "cde_adapter", "sparrow_cde must use the CDE backend");
-        assert_eq!(cbd.bbox_fallback_queries, 0, "no bbox fallback in sparrow_cde");
+        assert_eq!(
+            cbd.backend_used, "cde_adapter",
+            "sparrow_cde must use the CDE backend"
+        );
+        assert_eq!(
+            cbd.bbox_fallback_queries, 0,
+            "no bbox fallback in sparrow_cde"
+        );
         // Q23 query-reduction evidence is surfaced (broad-phase counter present).
-        assert!(cbd.cde_broadphase_pruned.is_some(), "broadphase prune counter must be surfaced");
+        assert!(
+            cbd.cde_broadphase_pruned.is_some(),
+            "broadphase prune counter must be surfaced"
+        );
     }
 
     #[test]
@@ -2154,14 +2374,23 @@ mod tests {
         input.time_limit_s = 1;
         let out = super::solve(input).expect("solve returns Ok(partial)");
         assert_eq!(out.status, "partial");
-        assert_eq!(out.unsupported_reason.as_deref(), Some("SPARROW_NO_FEASIBLE_LAYOUT"));
+        assert_eq!(
+            out.unsupported_reason.as_deref(),
+            Some("SPARROW_NO_FEASIBLE_LAYOUT")
+        );
         let diag = out
             .optimizer_diagnostics
             .expect("failure must preserve optimizer_diagnostics");
         assert_eq!(diag.pipeline_used, "sparrow_cde");
         assert_eq!(diag.sparrow_converged, Some(false));
-        assert!(diag.sparrow_iterations.unwrap_or(0) > 0, "iterations must be recorded");
-        assert!(diag.sparrow_initial_raw_loss.unwrap_or(0.0) > 0.0, "initial loss must be recorded");
+        assert!(
+            diag.sparrow_iterations.unwrap_or(0) > 0,
+            "iterations must be recorded"
+        );
+        assert!(
+            diag.sparrow_initial_raw_loss.unwrap_or(0.0) > 0.0,
+            "initial loss must be recorded"
+        );
         // CDE-first failure must also preserve backend diagnostics.
         let cbd = out
             .collision_backend_diagnostics

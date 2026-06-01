@@ -7,18 +7,18 @@
 ///   4. Active backend evaluation — no silent bbox fallback for CDE/JaguaExact
 use std::collections::HashSet;
 
-use crate::io::{CollisionBackendKind, Placement};
-use crate::item::{
-    effective_policy_kind, dims_for_rotation, placement_anchor_from_rect_min,
-    resolve_instance_rotation_angles, Part,
-};
-use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
-use crate::sheet::SheetShape;
 use super::candidates::PlacedBbox;
 use super::collision_severity::{CollisionSeverityConfig, CollisionSeverityStats};
 use super::initializer::bbox_from_placement;
 use super::loss_model::LossModelKind;
 use super::working::WorkingLayout;
+use crate::io::{CollisionBackendKind, Placement};
+use crate::item::{
+    dims_for_rotation, effective_policy_kind, placement_anchor_from_rect_min,
+    resolve_instance_rotation_angles, Part,
+};
+use crate::rotation_policy::{RotationPolicyKind, RotationResolveContext};
+use crate::sheet::SheetShape;
 
 // ---------------------------------------------------------------------------
 // DeterministicRng (same xorshift as separator.rs — local copy to avoid dep)
@@ -30,7 +30,11 @@ struct DeterministicRng {
 
 impl DeterministicRng {
     fn new(seed: u64) -> Self {
-        let state = if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed };
+        let state = if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        };
         Self { state }
     }
 
@@ -164,7 +168,8 @@ struct TransformCandidate {
 
 fn mix_seed(base: u64, instance_id: &str, call_index: usize) -> u64 {
     let inst_hash = instance_id.bytes().fold(0u64, |acc, b| {
-        acc.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(b as u64)
+        acc.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add(b as u64)
     });
     base ^ inst_hash ^ (call_index as u64).wrapping_mul(0x517C_C1B7_2722_0A95)
 }
@@ -197,7 +202,8 @@ fn eval_at_point(
     stats: &mut SearchPositionStats,
 ) -> EvalResult {
     let (rw, rh) = dims_for_rotation(part.width, part.height, rot);
-    let (ax, ay) = placement_anchor_from_rect_min(rect_min_x, rect_min_y, part.width, part.height, rot);
+    let (ax, ay) =
+        placement_anchor_from_rect_min(rect_min_x, rect_min_y, part.width, part.height, rot);
     let candidate = Placement {
         instance_id: instance_id.to_string(),
         part_id: part_id.to_string(),
@@ -214,11 +220,23 @@ fn eval_at_point(
         y2: rect_min_y + rh,
     };
     let r = super::collision_severity::evaluate_transform_loss(
-        &candidate, part, &cand_bbox, sheet,
-        layout, target_idx, parts, collision_backend, loss_model,
-        &cfg.severity_cfg, &mut stats.severity_stats,
+        &candidate,
+        part,
+        &cand_bbox,
+        sheet,
+        layout,
+        target_idx,
+        parts,
+        collision_backend,
+        loss_model,
+        &cfg.severity_cfg,
+        &mut stats.severity_stats,
     );
-    EvalResult { loss: r.loss, placement: candidate, unsupported: r.unsupported }
+    EvalResult {
+        loss: r.loss,
+        placement: candidate,
+        unsupported: r.unsupported,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +245,11 @@ fn eval_at_point(
 
 fn normalize_deg(deg: f64) -> f64 {
     let d = deg % 360.0;
-    if d < 0.0 { d + 360.0 } else { d }
+    if d < 0.0 {
+        d + 360.0
+    } else {
+        d
+    }
 }
 
 /// Step-halving coordinate descent from `(start_x, start_y, start_rot)` on a single sheet.
@@ -254,7 +276,8 @@ fn coord_descent_from(
     stats: &mut SearchPositionStats,
 ) -> (f64, f64, f64, f64) {
     let sheet_diag = (sheet.width * sheet.width + sheet.height * sheet.height).sqrt();
-    let mut step = (cfg.coord_descent_initial_step_factor * sheet_diag).max(cfg.coord_descent_min_step);
+    let mut step =
+        (cfg.coord_descent_initial_step_factor * sheet_diag).max(cfg.coord_descent_min_step);
     let mut rot_step = cfg.coord_descent_rotation_step_deg;
 
     let mut best_x = start_x;
@@ -269,10 +292,21 @@ fn coord_descent_from(
         // x and y axes
         for &(dx, dy) in &[(step, 0.0_f64), (-step, 0.0), (0.0, step), (0.0, -step)] {
             let r = eval_at_point(
-                best_x + dx, best_y + dy, best_rot, sheet_idx,
-                instance_id, part_id, part, sheet, layout, target_idx, parts,
-                collision_backend, loss_model,
-                cfg, stats,
+                best_x + dx,
+                best_y + dy,
+                best_rot,
+                sheet_idx,
+                instance_id,
+                part_id,
+                part,
+                sheet,
+                layout,
+                target_idx,
+                parts,
+                collision_backend,
+                loss_model,
+                cfg,
+                stats,
             );
             total_steps += 1;
             stats.coord_descent_steps += 1;
@@ -292,10 +326,21 @@ fn coord_descent_from(
             for &dr in &[rot_step, -rot_step] {
                 let nr = normalize_deg(best_rot + dr);
                 let r = eval_at_point(
-                    best_x, best_y, nr, sheet_idx,
-                    instance_id, part_id, part, sheet, layout, target_idx, parts,
-                    collision_backend, loss_model,
-                    cfg, stats,
+                    best_x,
+                    best_y,
+                    nr,
+                    sheet_idx,
+                    instance_id,
+                    part_id,
+                    part,
+                    sheet,
+                    layout,
+                    target_idx,
+                    parts,
+                    collision_backend,
+                    loss_model,
+                    cfg,
+                    stats,
                 );
                 total_steps += 1;
                 stats.coord_descent_steps += 1;
@@ -350,11 +395,8 @@ pub fn search_position_for_target(
     let current_p = &layout.placements[target_idx];
     let part = parts.iter().find(|p| p.id == current_p.part_id)?;
 
-    let allowed_rotations = resolve_instance_rotation_angles(
-        part,
-        &current_p.instance_id,
-        rotation_context,
-    );
+    let allowed_rotations =
+        resolve_instance_rotation_angles(part, &current_p.instance_id, rotation_context);
     if allowed_rotations.is_empty() {
         return None;
     }
@@ -386,10 +428,21 @@ pub fn search_position_for_target(
             for _xi in 0..n {
                 for &rot in &allowed_rotations {
                     let r = eval_at_point(
-                        gx, gy, rot, sheet_idx,
-                        instance_id, part_id, part, sheet, layout, target_idx, parts,
-                        collision_backend, loss_model,
-                        cfg, stats,
+                        gx,
+                        gy,
+                        rot,
+                        sheet_idx,
+                        instance_id,
+                        part_id,
+                        part,
+                        sheet,
+                        layout,
+                        target_idx,
+                        parts,
+                        collision_backend,
+                        loss_model,
+                        cfg,
+                        stats,
                     );
                     stats.global_samples_evaluated += 1;
                     if r.unsupported {
@@ -398,7 +451,9 @@ pub fn search_position_for_target(
                     }
                     if r.loss < f64::MAX {
                         if r.loss == 0.0 {
-                            if r.loss < stats.best_eval { stats.best_eval = r.loss; }
+                            if r.loss < stats.best_eval {
+                                stats.best_eval = r.loss;
+                            }
                             return Some(r.placement);
                         }
                         candidates.push(TransformCandidate {
@@ -420,7 +475,8 @@ pub fn search_position_for_target(
             if let Some(cur_bbox) = bbox_from_placement(current_p, part.width, part.height) {
                 let sheet_diag = (sheet.width * sheet.width + sheet.height * sheet.height).sqrt();
                 let radius = cfg.focused_radius_factor * sheet_diag;
-                let focused_seed = seed ^ ((sheet_idx as u64 + 1).wrapping_mul(0x1234_5678_90AB_CDEF));
+                let focused_seed =
+                    seed ^ ((sheet_idx as u64 + 1).wrapping_mul(0x1234_5678_90AB_CDEF));
                 let mut rng = DeterministicRng::new(focused_seed);
 
                 for _ in 0..cfg.focused_sample_count {
@@ -428,10 +484,21 @@ pub fn search_position_for_target(
                     let fy = cur_bbox.y1 + rng.next_f64_range(-radius, radius);
                     for &rot in &allowed_rotations {
                         let r = eval_at_point(
-                            fx, fy, rot, sheet_idx,
-                            instance_id, part_id, part, sheet, layout, target_idx, parts,
-                            collision_backend, loss_model,
-                            cfg, stats,
+                            fx,
+                            fy,
+                            rot,
+                            sheet_idx,
+                            instance_id,
+                            part_id,
+                            part,
+                            sheet,
+                            layout,
+                            target_idx,
+                            parts,
+                            collision_backend,
+                            loss_model,
+                            cfg,
+                            stats,
                         );
                         stats.focused_samples_evaluated += 1;
                         if r.unsupported {
@@ -440,7 +507,9 @@ pub fn search_position_for_target(
                         }
                         if r.loss < f64::MAX {
                             if r.loss == 0.0 {
-                                if r.loss < stats.best_eval { stats.best_eval = r.loss; }
+                                if r.loss < stats.best_eval {
+                                    stats.best_eval = r.loss;
+                                }
                                 return Some(r.placement);
                             }
                             candidates.push(TransformCandidate {
@@ -463,7 +532,8 @@ pub fn search_position_for_target(
 
     // Sort deterministically: eval ASC, then sheet_index, rotation, x, y
     candidates.sort_by(|a, b| {
-        a.eval.total_cmp(&b.eval)
+        a.eval
+            .total_cmp(&b.eval)
             .then_with(|| a.sheet_index.cmp(&b.sheet_index))
             .then_with(|| a.rotation_deg.total_cmp(&b.rotation_deg))
             .then_with(|| a.rect_min_x.total_cmp(&b.rect_min_x))
@@ -478,15 +548,29 @@ pub fn search_position_for_target(
         let sheet = &sheets[cand.sheet_index];
         stats.refined_samples += 1;
         let (cd_x, cd_y, cd_rot, cd_loss) = coord_descent_from(
-            cand.rect_min_x, cand.rect_min_y, cand.rotation_deg, cand.eval,
-            cand.sheet_index, instance_id, part_id,
-            part, sheet, layout, target_idx, parts,
-            collision_backend, loss_model,
-            cfg, is_continuous, stats,
+            cand.rect_min_x,
+            cand.rect_min_y,
+            cand.rotation_deg,
+            cand.eval,
+            cand.sheet_index,
+            instance_id,
+            part_id,
+            part,
+            sheet,
+            layout,
+            target_idx,
+            parts,
+            collision_backend,
+            loss_model,
+            cfg,
+            is_continuous,
+            stats,
         );
         if best_refined.map_or(true, |(bl, ..)| cd_loss < bl) {
             best_refined = Some((cd_loss, cd_x, cd_y, cd_rot, cand.sheet_index));
-            if cd_loss == 0.0 { break; }
+            if cd_loss == 0.0 {
+                break;
+            }
         }
     }
 
@@ -495,7 +579,13 @@ pub fn search_position_for_target(
         Some((l, x, y, r, s)) => (l, x, y, r, s),
         None => {
             let c = &candidates[0]; // sorted, so [0] is best
-            (c.eval, c.rect_min_x, c.rect_min_y, c.rotation_deg, c.sheet_index)
+            (
+                c.eval,
+                c.rect_min_x,
+                c.rect_min_y,
+                c.rotation_deg,
+                c.sheet_index,
+            )
         }
     };
 
@@ -503,7 +593,8 @@ pub fn search_position_for_target(
         stats.best_eval = final_loss;
     }
 
-    let (ax, ay) = placement_anchor_from_rect_min(final_x, final_y, part.width, part.height, final_rot);
+    let (ax, ay) =
+        placement_anchor_from_rect_min(final_x, final_y, part.width, part.height, final_rot);
     Some(Placement {
         instance_id: instance_id.clone(),
         part_id: part_id.clone(),
@@ -565,7 +656,8 @@ pub(crate) mod tests {
             outer_points: None,
             holes_points: None,
             cost_per_use: None,
-        }]).expect("expand_sheets")
+        }])
+        .expect("expand_sheets")
     }
 
     fn default_ctx() -> RotationResolveContext {
@@ -583,28 +675,62 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![Placement {
-                instance_id: "P__0001".into(), part_id: "P".into(),
-                sheet_index: 0, x: 5.0, y: 5.0, rotation_deg: 0.0,
+                instance_id: "P__0001".into(),
+                part_id: "P".into(),
+                sheet_index: 0,
+                x: 5.0,
+                y: 5.0,
+                rotation_deg: 0.0,
             }],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig::default();
         let ctx = default_ctx();
         let mut s1 = SearchPositionStats::default();
         let mut s2 = SearchPositionStats::default();
         let p1 = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 42, &mut s1,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            42,
+            &mut s1,
         );
         let p2 = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 42, &mut s2,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            42,
+            &mut s2,
         );
         assert!(p1.is_some() && p2.is_some(), "must find candidate");
         let p1 = p1.unwrap();
         let p2 = p2.unwrap();
-        assert!((p1.x - p2.x).abs() < 1e-12, "x must be identical: {} vs {}", p1.x, p2.x);
-        assert!((p1.y - p2.y).abs() < 1e-12, "y must be identical: {} vs {}", p1.y, p2.y);
+        assert!(
+            (p1.x - p2.x).abs() < 1e-12,
+            "x must be identical: {} vs {}",
+            p1.x,
+            p2.x
+        );
+        assert!(
+            (p1.y - p2.y).abs() < 1e-12,
+            "y must be identical: {} vs {}",
+            p1.y,
+            p2.y
+        );
         assert!((p1.rotation_deg - p2.rotation_deg).abs() < 1e-12);
         assert_eq!(s1.global_samples_evaluated, s2.global_samples_evaluated);
     }
@@ -616,26 +742,57 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![Placement {
-                instance_id: "P__0001".into(), part_id: "P".into(),
-                sheet_index: 0, x: 80.0, y: 80.0, rotation_deg: 0.0,
+                instance_id: "P__0001".into(),
+                part_id: "P".into(),
+                sheet_index: 0,
+                x: 80.0,
+                y: 80.0,
+                rotation_deg: 0.0,
             }],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
-        let cfg = SearchPositionConfig { focused_sample_count: 12, ..Default::default() };
+        let cfg = SearchPositionConfig {
+            focused_sample_count: 12,
+            ..Default::default()
+        };
         let ctx = default_ctx();
         let mut s1 = SearchPositionStats::default();
         let mut s2 = SearchPositionStats::default();
         let r1 = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 99, &mut s1,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            99,
+            &mut s1,
         );
         let r2 = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 99, &mut s2,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            99,
+            &mut s2,
         );
         assert!(r1.is_some() && r2.is_some());
-        let r1 = r1.unwrap(); let r2 = r2.unwrap();
-        assert!((r1.x - r2.x).abs() < 1e-12, "focused sampling must be seed-deterministic");
+        let r1 = r1.unwrap();
+        let r2 = r2.unwrap();
+        assert!(
+            (r1.x - r2.x).abs() < 1e-12,
+            "focused sampling must be seed-deterministic"
+        );
         assert!((r1.y - r2.y).abs() < 1e-12);
         assert_eq!(s1.focused_samples_evaluated, s2.focused_samples_evaluated);
     }
@@ -647,17 +804,32 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![Placement {
-                instance_id: "P__0001".into(), part_id: "P".into(),
-                sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+                instance_id: "P__0001".into(),
+                part_id: "P".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
             }],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig::default();
         let ctx = RotationResolveContext::new(None, 0, 16);
         let mut stats = SearchPositionStats::default();
         let result = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert!(result.is_some(), "must find a placement");
         let rot = result.unwrap().rotation_deg;
@@ -676,29 +848,50 @@ pub(crate) mod tests {
         // Place a second part to create something to avoid (drives toward non-trivial rotation)
         let layout = WorkingLayout::new(
             vec![Placement {
-                instance_id: "P__0001".into(), part_id: "P".into(),
-                sheet_index: 0, x: 100.0, y: 100.0, rotation_deg: 45.0,
+                instance_id: "P__0001".into(),
+                part_id: "P".into(),
+                sheet_index: 0,
+                x: 100.0,
+                y: 100.0,
+                rotation_deg: 45.0,
             }],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let ctx = continuous_ctx();
-        let resolved = crate::item::resolve_instance_rotation_angles(
-            &parts[0], "P__0001", &ctx,
-        );
+        let resolved = crate::item::resolve_instance_rotation_angles(&parts[0], "P__0001", &ctx);
         // With linspace n=16: must include 22.5°, 45°, 67.5° etc.
         let has_non_canonical = resolved.iter().any(|&r| {
-            [0.0, 90.0, 180.0, 270.0].iter().all(|&c| (r - c).abs() > 1.0)
+            [0.0, 90.0, 180.0, 270.0]
+                .iter()
+                .all(|&c| (r - c).abs() > 1.0)
         });
-        assert!(has_non_canonical, "Continuous policy must produce non-orthogonal candidates");
+        assert!(
+            has_non_canonical,
+            "Continuous policy must produce non-orthogonal candidates"
+        );
         // The search must also evaluate those candidates
         let cfg = SearchPositionConfig::default();
         let mut stats = SearchPositionStats::default();
         let result = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert!(result.is_some(), "Continuous must find a candidate");
-        assert!(stats.global_samples_evaluated > 0, "must have evaluated global samples");
+        assert!(
+            stats.global_samples_evaluated > 0,
+            "must have evaluated global samples"
+        );
     }
 
     // Q20R-T5: Continuous coord descent steps include rotation axis.
@@ -715,15 +908,25 @@ pub(crate) mod tests {
         let layout = WorkingLayout::new(
             vec![
                 Placement {
-                    instance_id: "P__0001".into(), part_id: "P".into(),
-                    sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0,
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 90.0,
+                    y: 90.0,
+                    rotation_deg: 0.0,
                 },
                 Placement {
-                    instance_id: "BLK__0001".into(), part_id: "BLK".into(),
-                    sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+                    instance_id: "BLK__0001".into(),
+                    part_id: "BLK".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
                 },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 4,
@@ -736,8 +939,17 @@ pub(crate) mod tests {
         let ctx = continuous_ctx();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert!(
             stats.refined_samples > 0,
@@ -773,10 +985,16 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![Placement {
-                instance_id: "P__0001".into(), part_id: "P".into(),
-                sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+                instance_id: "P__0001".into(),
+                part_id: "P".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
             }],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 3,
@@ -788,8 +1006,17 @@ pub(crate) mod tests {
         let ctx = default_ctx();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert!(
             stats.samples_unsupported > 0,
@@ -805,24 +1032,55 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-                Placement { instance_id: "P__0002".into(), part_id: "P".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "P__0002".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 20.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
-        let cfg = SearchPositionConfig { global_grid_n: 3, focused_sample_count: 4, coord_descent_max_steps: 5, ..Default::default() };
+        let cfg = SearchPositionConfig {
+            global_grid_n: 3,
+            focused_sample_count: 4,
+            coord_descent_max_steps: 5,
+            ..Default::default()
+        };
         let ctx = continuous_ctx();
 
         cde_observability::reset();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Cde, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Cde,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         let snap = cde_observability::snapshot();
         // CDE counter structural invariant: pair+boundary == total (no bbox leak)
         assert_eq!(
-            snap.pair_queries + snap.boundary_queries, snap.total_queries,
+            snap.pair_queries + snap.boundary_queries,
+            snap.total_queries,
             "CDE total must equal pair+boundary (no bbox fallback leak)"
         );
     }
@@ -841,10 +1099,26 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
-                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 90.0,
+                    y: 90.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "BLK__0001".into(),
+                    part_id: "BLK".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 4,
@@ -857,15 +1131,27 @@ pub(crate) mod tests {
         let ctx = default_ctx();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert_eq!(
             stats.refined_samples, k,
             "refined_samples must equal coord_descent_top_k={k} (got {})",
             stats.refined_samples
         );
-        assert!(stats.coord_descent_steps > 0, "coord_descent_steps must be > 0");
+        assert!(
+            stats.coord_descent_steps > 0,
+            "coord_descent_steps must be > 0"
+        );
     }
 
     // Q20R-R1-T2: same seed always selects the same top-k candidates (sort is deterministic).
@@ -878,10 +1164,26 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
-                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 90.0,
+                    y: 90.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "BLK__0001".into(),
+                    part_id: "BLK".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 4,
@@ -894,19 +1196,57 @@ pub(crate) mod tests {
         let mut s1 = SearchPositionStats::default();
         let mut s2 = SearchPositionStats::default();
         let r1 = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 77, &mut s1,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            77,
+            &mut s1,
         );
         let r2 = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 77, &mut s2,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            77,
+            &mut s2,
         );
-        assert!(r1.is_some() && r2.is_some(), "both runs must find a candidate");
-        let r1 = r1.unwrap(); let r2 = r2.unwrap();
-        assert!((r1.x - r2.x).abs() < 1e-12, "top-k tie-break must be deterministic: x {} vs {}", r1.x, r2.x);
-        assert!((r1.y - r2.y).abs() < 1e-12, "top-k tie-break must be deterministic: y {} vs {}", r1.y, r2.y);
-        assert_eq!(s1.refined_samples, s2.refined_samples, "refined_samples must be identical");
-        assert_eq!(s1.coord_descent_steps, s2.coord_descent_steps, "coord_descent_steps must be identical");
+        assert!(
+            r1.is_some() && r2.is_some(),
+            "both runs must find a candidate"
+        );
+        let r1 = r1.unwrap();
+        let r2 = r2.unwrap();
+        assert!(
+            (r1.x - r2.x).abs() < 1e-12,
+            "top-k tie-break must be deterministic: x {} vs {}",
+            r1.x,
+            r2.x
+        );
+        assert!(
+            (r1.y - r2.y).abs() < 1e-12,
+            "top-k tie-break must be deterministic: y {} vs {}",
+            r1.y,
+            r2.y
+        );
+        assert_eq!(
+            s1.refined_samples, s2.refined_samples,
+            "refined_samples must be identical"
+        );
+        assert_eq!(
+            s1.coord_descent_steps, s2.coord_descent_steps,
+            "coord_descent_steps must be identical"
+        );
     }
 
     // Q20R-R1-T3: setting coord_descent_top_k=0 disables refinement (refined_samples == 0).
@@ -919,10 +1259,26 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
-                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 90.0,
+                    y: 90.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "BLK__0001".into(),
+                    part_id: "BLK".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 4,
@@ -934,12 +1290,32 @@ pub(crate) mod tests {
         let ctx = default_ctx();
         let mut stats = SearchPositionStats::default();
         let result = search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
-        assert!(result.is_some(), "k=0 must still return best unrefined candidate");
-        assert_eq!(stats.refined_samples, 0, "k=0 must produce refined_samples=0 (got {})", stats.refined_samples);
-        assert_eq!(stats.coord_descent_steps, 0, "k=0 must produce coord_descent_steps=0 (got {})", stats.coord_descent_steps);
+        assert!(
+            result.is_some(),
+            "k=0 must still return best unrefined candidate"
+        );
+        assert_eq!(
+            stats.refined_samples, 0,
+            "k=0 must produce refined_samples=0 (got {})",
+            stats.refined_samples
+        );
+        assert_eq!(
+            stats.coord_descent_steps, 0,
+            "k=0 must produce coord_descent_steps=0 (got {})",
+            stats.coord_descent_steps
+        );
     }
 
     // Q20R-R1-T4: diagnostic refined_samples exactly equals top_k when fixture forces nonzero loss.
@@ -954,10 +1330,26 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 90.0, y: 90.0, rotation_deg: 0.0 },
-                Placement { instance_id: "BLK__0001".into(), part_id: "BLK".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 90.0,
+                    y: 90.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "BLK__0001".into(),
+                    part_id: "BLK".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 4,
@@ -969,8 +1361,17 @@ pub(crate) mod tests {
         let ctx = default_ctx();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Bbox, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Bbox,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert_eq!(
             stats.refined_samples, k,
@@ -990,10 +1391,26 @@ pub(crate) mod tests {
         // A at (0,0) and B at (10,0) overlap → severity engine will confirm collision
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-                Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 10.0, y: 0.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "A__0001".into(),
+                    part_id: "A".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "B__0001".into(),
+                    part_id: "B".into(),
+                    sheet_index: 0,
+                    x: 10.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 3,
@@ -1005,17 +1422,29 @@ pub(crate) mod tests {
         let ctx = default_ctx();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 1, &parts, &sheets, &None,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            1,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         let sev = &stats.severity_stats;
         assert!(
             sev.pair_queries + sev.boundary_queries > 0,
             "JaguaPolygonExact must trigger severity engine queries: pair={}, boundary={}",
-            sev.pair_queries, sev.boundary_queries
+            sev.pair_queries,
+            sev.boundary_queries
         );
-        assert_eq!(sev.bbox_proxy_severity_uses, 0,
-            "JaguaPolygonExact must not use bbox proxy severity");
+        assert_eq!(
+            sev.bbox_proxy_severity_uses, 0,
+            "JaguaPolygonExact must not use bbox proxy severity"
+        );
     }
 
     // Q21-SP-T2: CDE path uses no bbox proxy as collision source-of-truth.
@@ -1025,10 +1454,26 @@ pub(crate) mod tests {
         let sheets = make_test_sheets(200.0, 200.0);
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "P__0001".into(), part_id: "P".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-                Placement { instance_id: "P__0002".into(), part_id: "P".into(), sheet_index: 0, x: 20.0, y: 0.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "P__0002".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 20.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 3,
@@ -1038,8 +1483,17 @@ pub(crate) mod tests {
         let ctx = continuous_ctx();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::Cde, LossModelKind::BboxArea, &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::Cde,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         assert_eq!(
             stats.severity_stats.bbox_proxy_severity_uses, 0,
@@ -1060,14 +1514,34 @@ pub(crate) mod tests {
         // Three placements with controlled overlaps → search_position must probe.
         let layout = WorkingLayout::new(
             vec![
-                Placement { instance_id: "P__0001".into(), part_id: "P".into(),
-                    sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-                Placement { instance_id: "P__0002".into(), part_id: "P".into(),
-                    sheet_index: 0, x: 18.0, y: 0.0, rotation_deg: 0.0 },
-                Placement { instance_id: "P__0003".into(), part_id: "P".into(),
-                    sheet_index: 0, x: 0.0, y: 8.0, rotation_deg: 0.0 },
+                Placement {
+                    instance_id: "P__0001".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "P__0002".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 18.0,
+                    y: 0.0,
+                    rotation_deg: 0.0,
+                },
+                Placement {
+                    instance_id: "P__0003".into(),
+                    part_id: "P".into(),
+                    sheet_index: 0,
+                    x: 0.0,
+                    y: 8.0,
+                    rotation_deg: 0.0,
+                },
             ],
-            vec![], 1, 0,
+            vec![],
+            1,
+            0,
         );
         let cfg = SearchPositionConfig {
             global_grid_n: 4,
@@ -1077,19 +1551,35 @@ pub(crate) mod tests {
         let ctx = continuous_ctx();
         let mut stats = SearchPositionStats::default();
         search_position_for_target(
-            &layout, 0, &parts, &sheets, &None,
-            &CollisionBackendKind::JaguaPolygonExact, LossModelKind::BboxArea,
-            &ctx, &cfg, 0, &mut stats,
+            &layout,
+            0,
+            &parts,
+            &sheets,
+            &None,
+            &CollisionBackendKind::JaguaPolygonExact,
+            LossModelKind::BboxArea,
+            &ctx,
+            &cfg,
+            0,
+            &mut stats,
         );
         // Stats must carry Q21R1 fields populated for at least some queries.
         let s = &stats.severity_stats;
-        assert!(s.pair_queries + s.boundary_queries > 0,
+        assert!(
+            s.pair_queries + s.boundary_queries > 0,
             "must have decisive queries, pair={} bnd={}",
-            s.pair_queries, s.boundary_queries);
-        assert_eq!(s.bbox_proxy_severity_uses, 0,
-            "exact backend with probe enabled must not use bbox proxy");
+            s.pair_queries,
+            s.boundary_queries
+        );
+        assert_eq!(
+            s.bbox_proxy_severity_uses, 0,
+            "exact backend with probe enabled must not use bbox proxy"
+        );
         // probe_queries = probe_pair_queries + probe_boundary_queries.
-        assert_eq!(s.probe_queries, s.probe_pair_queries + s.probe_boundary_queries,
-            "probe_queries must equal sum of pair+boundary probe sub-queries");
+        assert_eq!(
+            s.probe_queries,
+            s.probe_pair_queries + s.probe_boundary_queries,
+            "probe_queries must equal sum of pair+boundary probe sub-queries"
+        );
     }
 }

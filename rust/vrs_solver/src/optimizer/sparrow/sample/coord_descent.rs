@@ -15,7 +15,11 @@ pub(crate) fn refine_coord_desc(
     let mut step = if final_stage { 0.05 } else { 0.15 } * evaluator_step_span(&cur).max(1.0);
     let limit = step * 0.10;
     // Nonzero rotation-wiggle step (degrees); shrinks alongside the translation step.
-    let mut rotation_step = if wiggle { rotation_wiggle_deg.max(0.5) } else { 0.0 };
+    let mut rotation_step = if wiggle {
+        rotation_wiggle_deg.max(0.5)
+    } else {
+        0.0
+    };
     let rotation_limit = 0.25_f64;
     let mut rounds = 0usize;
     while (step >= limit || (wiggle && rotation_step >= rotation_limit))
@@ -77,4 +81,3 @@ pub(crate) fn refine_coord_desc(
 fn evaluator_step_span(c: &ScoredPlacement) -> f64 {
     (c.placement.x.abs() + c.placement.y.abs()).sqrt().max(10.0)
 }
-

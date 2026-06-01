@@ -1,12 +1,5 @@
 use std::collections::HashSet;
 
-use crate::geometry::Rect;
-use crate::io::{CollisionBackendKind, Placement, Unplaced};
-use crate::item::{
-    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
-};
-use crate::rotation_policy::RotationResolveContext;
-use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::collision_backend::{
@@ -15,6 +8,13 @@ use super::collision_backend::{
 };
 use super::initializer::bbox_from_placement;
 use super::stopping::StoppingPolicy;
+use crate::geometry::Rect;
+use crate::io::{CollisionBackendKind, Placement, Unplaced};
+use crate::item::{
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
+};
+use crate::rotation_policy::RotationResolveContext;
+use crate::sheet::SheetShape;
 
 /// Violation type detected during repair audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,7 +101,12 @@ pub fn find_violations(
             continue;
         }
         let sheet = &sheets[p.sheet_index];
-        let rect = Rect { x1: bbox.x1, y1: bbox.y1, x2: bbox.x2, y2: bbox.y2 };
+        let rect = Rect {
+            x1: bbox.x1,
+            y1: bbox.y1,
+            x2: bbox.x2,
+            y2: bbox.y2,
+        };
         if !rect_within_boundary(rect, sheet) {
             violations.push((idx, ViolationType::BoundaryOrSheet));
             continue;
@@ -157,7 +162,12 @@ pub fn find_violations_with_backend(
             CollisionDecision::Unsupported { .. } => {
                 match bbox_from_placement(p, part.width, part.height) {
                     Some(bbox) => {
-                        let rect = Rect { x1: bbox.x1, y1: bbox.y1, x2: bbox.x2, y2: bbox.y2 };
+                        let rect = Rect {
+                            x1: bbox.x1,
+                            y1: bbox.y1,
+                            x2: bbox.x2,
+                            y2: bbox.y2,
+                        };
                         !rect_within_boundary(rect, sheet)
                     }
                     None => true,
@@ -318,7 +328,10 @@ pub fn validate_placements_for_backend(
         CollisionBackendKind::Bbox => find_violations(placements, parts, sheets),
         CollisionBackendKind::JaguaPolygonExact => {
             let result = validate_placements_with_backend_checked(
-                placements, parts, sheets, &JaguaPolygonExactBackend,
+                placements,
+                parts,
+                sheets,
+                &JaguaPolygonExactBackend,
             );
             if result.diagnostics.unsupported_queries > 0 {
                 let mut v = result.violations;
@@ -330,7 +343,10 @@ pub fn validate_placements_for_backend(
         }
         CollisionBackendKind::Cde => {
             let result = validate_placements_with_backend_checked(
-                placements, parts, sheets, &CdeCollisionBackend,
+                placements,
+                parts,
+                sheets,
+                &CdeCollisionBackend,
             );
             if result.diagnostics.unsupported_queries > 0 {
                 let mut v = result.violations;
@@ -428,8 +444,7 @@ pub fn run_repair_with_rotation_context(
             out_unplaced.push(u.clone());
             continue;
         }
-        let (w, h, rots) =
-            resolve_part_dims(&u.part_id, &u.instance_id, parts, rotation_context);
+        let (w, h, rots) = resolve_part_dims(&u.part_id, &u.instance_id, parts, rotation_context);
         repair_items.push(RepairItem {
             instance_id: u.instance_id.clone(),
             part_id: u.part_id.clone(),
@@ -510,7 +525,11 @@ pub fn run_repair_with_rotation_context(
                     continue;
                 }
                 let (anchor_x, anchor_y) = placement_anchor_from_rect_min(
-                    candidate.x, candidate.y, item.width, item.height, rot,
+                    candidate.x,
+                    candidate.y,
+                    item.width,
+                    item.height,
+                    rot,
                 );
                 placed_bboxes.push(candidate_bbox);
                 valid_placements.push(Placement {
@@ -647,7 +666,10 @@ mod tests {
         assert_eq!(diag.overlap_detected, 1);
         assert_eq!(rep.len() + rep_unplaced.len(), 2);
         let v = find_violations(&rep, &parts, &sheets);
-        assert!(v.is_empty(), "repaired layout must have no violations: {diag:?}");
+        assert!(
+            v.is_empty(),
+            "repaired layout must have no violations: {diag:?}"
+        );
     }
 
     #[test]
@@ -743,14 +765,26 @@ mod tests {
         placed[1].y = placed[0].y;
 
         let old = find_violations(&placed, &parts, &sheets);
-        let checked = validate_placements_with_backend_checked(&placed, &parts, &sheets, &BboxCollisionBackend);
+        let checked = validate_placements_with_backend_checked(
+            &placed,
+            &parts,
+            &sheets,
+            &BboxCollisionBackend,
+        );
 
-        assert_eq!(old.len(), checked.violations.len(),
-            "bbox checked must match find_violations violation count");
-        assert_eq!(checked.diagnostics.unsupported_queries, 0,
-            "bbox backend has zero unsupported queries on valid geometry");
-        assert_eq!(checked.diagnostics.bbox_fallback_queries, 0,
-            "checked path never does bbox fallback");
+        assert_eq!(
+            old.len(),
+            checked.violations.len(),
+            "bbox checked must match find_violations violation count"
+        );
+        assert_eq!(
+            checked.diagnostics.unsupported_queries, 0,
+            "bbox backend has zero unsupported queries on valid geometry"
+        );
+        assert_eq!(
+            checked.diagnostics.bbox_fallback_queries, 0,
+            "checked path never does bbox fallback"
+        );
     }
 
     #[test]
@@ -765,17 +799,33 @@ mod tests {
         assert!(!placed.is_empty(), "need at least one placement");
 
         // CDE adapter works for rect parts (no outer_points) → 0 unsupported queries.
-        let cde_result = validate_placements_with_backend_checked(&placed, &parts, &sheets, &CdeCollisionBackend);
-        assert_eq!(cde_result.diagnostics.unsupported_queries, 0,
+        let cde_result = validate_placements_with_backend_checked(
+            &placed,
+            &parts,
+            &sheets,
+            &CdeCollisionBackend,
+        );
+        assert_eq!(
+            cde_result.diagnostics.unsupported_queries, 0,
             "CDE adapter must succeed for valid rect parts (got {} unsupported)",
-            cde_result.diagnostics.unsupported_queries);
-        assert_eq!(cde_result.diagnostics.bbox_fallback_queries, 0,
-            "checked path must not do bbox fallback");
+            cde_result.diagnostics.unsupported_queries
+        );
+        assert_eq!(
+            cde_result.diagnostics.bbox_fallback_queries, 0,
+            "checked path must not do bbox fallback"
+        );
 
         // Bbox backend also must have 0 unsupported queries for the same layout.
-        let bbox_result = validate_placements_with_backend_checked(&placed, &parts, &sheets, &BboxCollisionBackend);
-        assert_eq!(bbox_result.diagnostics.unsupported_queries, 0,
-            "BboxCollisionBackend must not return unsupported for rect parts");
+        let bbox_result = validate_placements_with_backend_checked(
+            &placed,
+            &parts,
+            &sheets,
+            &BboxCollisionBackend,
+        );
+        assert_eq!(
+            bbox_result.diagnostics.unsupported_queries, 0,
+            "BboxCollisionBackend must not return unsupported for rect parts"
+        );
     }
 
     #[test]
@@ -799,7 +849,10 @@ mod tests {
         let (rep, rep_unplaced, diag) =
             run_repair(placed, extra_unplaced, &parts, &sheets, &mut policy);
         assert_eq!(rep.len() + rep_unplaced.len(), total);
-        assert!(diag.stopped_by_policy > 0, "policy should have stopped some items");
+        assert!(
+            diag.stopped_by_policy > 0,
+            "policy should have stopped some items"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -817,25 +870,33 @@ mod tests {
         // validate_placements_for_backend(JaguaPolygonExact) must NOT silently fall back
         // to bbox: it must return the exact result (empty violations for this case).
         let l_json = serde_json::json!([
-            [0.0, 0.0], [20.0, 0.0], [20.0, 10.0],
-            [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 10.0],
+            [10.0, 10.0],
+            [10.0, 20.0],
+            [0.0, 20.0]
         ]);
         let l_part = Part {
             id: "L".to_string(),
-            width: 20.0, height: 20.0,
+            width: 20.0,
+            height: 20.0,
             quantity: 1,
             allowed_rotations_deg: vec![0],
-            holes_points: None, prepared_holes_points: None,
+            holes_points: None,
+            prepared_holes_points: None,
             outer_points: Some(l_json),
             prepared_outer_points: None,
             rotation_policy: None,
         };
         let s_part = Part {
             id: "S".to_string(),
-            width: 3.0, height: 3.0,
+            width: 3.0,
+            height: 3.0,
             quantity: 1,
             allowed_rotations_deg: vec![0],
-            holes_points: None, prepared_holes_points: None,
+            holes_points: None,
+            prepared_holes_points: None,
             outer_points: None,
             prepared_outer_points: None,
             rotation_policy: None,
@@ -855,12 +916,20 @@ mod tests {
 
         let placements = vec![
             Placement {
-                instance_id: "L__0001".to_string(), part_id: "L".to_string(),
-                sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0,
+                instance_id: "L__0001".to_string(),
+                part_id: "L".to_string(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
             },
             Placement {
-                instance_id: "S__0001".to_string(), part_id: "S".to_string(),
-                sheet_index: 0, x: 15.0, y: 15.0, rotation_deg: 0.0,
+                instance_id: "S__0001".to_string(),
+                part_id: "S".to_string(),
+                sheet_index: 0,
+                x: 15.0,
+                y: 15.0,
+                rotation_deg: 0.0,
             },
         ];
 
@@ -871,7 +940,10 @@ mod tests {
         );
 
         let exact_violations = validate_placements_for_backend(
-            &placements, &parts, &sheets, &CollisionBackendKind::JaguaPolygonExact,
+            &placements,
+            &parts,
+            &sheets,
+            &CollisionBackendKind::JaguaPolygonExact,
         );
         assert!(
             exact_violations.is_empty(),

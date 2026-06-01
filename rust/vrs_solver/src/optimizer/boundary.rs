@@ -116,7 +116,10 @@ mod tests {
     #[test]
     fn boundary_rect_stock_outside_fail() {
         let sheets = expand_sheets(&[rect_stock("R", 100.0, 80.0)]).unwrap();
-        assert!(!rect_within_boundary(r(90.0, 70.0, 110.0, 90.0), &sheets[0]));
+        assert!(!rect_within_boundary(
+            r(90.0, 70.0, 110.0, 90.0),
+            &sheets[0]
+        ));
     }
 
     // -------------------------------------------------------------------------
@@ -127,24 +130,30 @@ mod tests {
     fn boundary_l_shape_inside_pass() {
         // Item 20×20 at (10,10): fully inside L bottom-left region
         let sheets = expand_sheets(&[l_shape_stock()]).unwrap();
-        assert!(rect_within_boundary(r(10.0, 10.0, 30.0, 30.0), &sheets[0]),
-            "item inside L-shape must pass");
+        assert!(
+            rect_within_boundary(r(10.0, 10.0, 30.0, 30.0), &sheets[0]),
+            "item inside L-shape must pass"
+        );
     }
 
     #[test]
     fn boundary_l_shape_notch_fail() {
         // Item 20×20 at (60,60): in the top-right notch — bbox passes, outer poly fails
         let sheets = expand_sheets(&[l_shape_stock()]).unwrap();
-        assert!(!rect_within_boundary(r(60.0, 60.0, 80.0, 80.0), &sheets[0]),
-            "notch placement must fail boundary check");
+        assert!(
+            !rect_within_boundary(r(60.0, 60.0, 80.0, 80.0), &sheets[0]),
+            "notch placement must fail boundary check"
+        );
     }
 
     #[test]
     fn boundary_l_shape_origin_pass() {
         // Item at (0,0): corner on polygon vertex — interior is inside L, must be accepted.
         let sheets = expand_sheets(&[l_shape_stock()]).unwrap();
-        assert!(rect_within_boundary(r(0.0, 0.0, 20.0, 15.0), &sheets[0]),
-            "origin placement on polygon vertex must be accepted");
+        assert!(
+            rect_within_boundary(r(0.0, 0.0, 20.0, 15.0), &sheets[0]),
+            "origin placement on polygon vertex must be accepted"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -153,7 +162,8 @@ mod tests {
 
     #[test]
     fn sheet_index_valid_pass() {
-        let sheets = expand_sheets(&[rect_stock("A", 100.0, 100.0), rect_stock("B", 100.0, 100.0)]).unwrap();
+        let sheets =
+            expand_sheets(&[rect_stock("A", 100.0, 100.0), rect_stock("B", 100.0, 100.0)]).unwrap();
         assert!(sheet_index_valid(0, &sheets));
         assert!(sheet_index_valid(1, &sheets));
     }
@@ -172,8 +182,20 @@ mod tests {
     #[test]
     fn placement_boundary_valid_combined() {
         let sheets = expand_sheets(&[rect_stock("R", 100.0, 80.0)]).unwrap();
-        assert!(is_placement_boundary_valid(r(10.0, 10.0, 50.0, 40.0), 0, &sheets));
-        assert!(!is_placement_boundary_valid(r(10.0, 10.0, 50.0, 40.0), 1, &sheets));
-        assert!(!is_placement_boundary_valid(r(90.0, 70.0, 110.0, 90.0), 0, &sheets));
+        assert!(is_placement_boundary_valid(
+            r(10.0, 10.0, 50.0, 40.0),
+            0,
+            &sheets
+        ));
+        assert!(!is_placement_boundary_valid(
+            r(10.0, 10.0, 50.0, 40.0),
+            1,
+            &sheets
+        ));
+        assert!(!is_placement_boundary_valid(
+            r(90.0, 70.0, 110.0, 90.0),
+            0,
+            &sheets
+        ));
     }
 }

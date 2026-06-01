@@ -1,0 +1,41 @@
+id: fill_canvas_sgh_q25_r1_semantic_sparrow_core_parity_fix
+kind: canvas_task
+slug: sgh_q25_r1_semantic_sparrow_core_parity_fix
+title: SGH-Q25-R1 Semantic upstream Sparrow core parity fix, compression excluded
+canvas_path: canvases/egyedi_solver/sgh_q25_r1_semantic_sparrow_core_parity_fix.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q25_r1_semantic_sparrow_core_parity_fix/run.md
+report_path: codex/reports/egyedi_solver/sgh_q25_r1_semantic_sparrow_core_parity_fix.md
+status: ready
+primary_goal: Replace Q25's remaining stub/proxy/adapted-only modules with semantic upstream Sparrow core behavior, compression excluded.
+acceptance:
+  - upstream_sparrow_commit_is_pinned_and_required_source_files_are_read
+  - production_sparrow_cde_remains_native_problem_optimizer_solution_path
+  - q25_module_structure_is_preserved_and_not_collapsed_back_into_monolith
+  - specialized_cde_pipeline_is_real_collector_not_stub_or_noop
+  - separation_evaluator_uses_collector_tracker_weighted_loss_and_upper_bound_early_termination
+  - separation_evaluator_does_not_use_bbox_extent_or_aabb_penetration_as_candidate_loss_ranking
+  - default_quantification_matches_upstream_overlap_proxy_shape_penalty_semantics_or_nondefault_experimental_alt_is_marked_revise
+  - lbf_builder_has_no_fixed_sheet_recovery_candidate_shelf_anchor_or_aabb_overlap_success_path
+  - lbf_placement_goes_through_search_placement_and_lbf_evaluator_semantics
+  - worker_and_separator_accept_and_select_by_weighted_loss_semantics_not_pair_count_first
+  - exploration_disruption_has_fixed_sheet_equivalent_of_practically_contained_item_relocation
+  - medium_cde_and_lv8_12types_x1_regressions_pass
+  - lv8_reference_sheet1_191_real_run_is_not_guarded_fake_or_proxy_shortcut_driven
+  - compression_disabled_unused_and_not_hardened
+  - report_contains_semantic_mapping_table_and_honest_status
+reject_if:
+  - specialized_cde_hazard_collector_is_empty_or_reload_is_noop
+  - collect_poly_collisions_in_detector_custom_returns_empty_default_collector_only
+  - hazard_extent_depth_aabb_penetration_ox_min_oy_or_ix_times_iy_are_used_for_separation_loss_or_lbf_success_path
+  - fixed_sheet_recovery_candidate_shelf_construct_fallback_anchor_or_candidate_penalty_remain_in_production_lbf
+  - q24r9_resolution_distance_or_other_non_upstream_primary_loss_model_is_called_exact_upstream_parity
+  - worker_candidate_selection_is_pair_count_first_or_raw_loss_first_instead_of_weighted_loss
+  - exploration_disruption_lacks_contained_item_relocation_equivalent
+  - task_claims_pass_based_only_on_runtime_progress_or_dense_lv8_improvement
+  - compression_is_implemented_enabled_or_optimized
+commands:
+  - cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+  - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+  - python3 scripts/smoke_sgh_q25_r1_semantic_sparrow_core_parity_fix.py
+  - ./scripts/check.sh
+  - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q25_r1_semantic_sparrow_core_parity_fix.md

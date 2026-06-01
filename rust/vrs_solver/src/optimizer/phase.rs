@@ -10,11 +10,17 @@ use crate::rotation_policy::RotationResolveContext;
 use crate::sheet::SheetShape;
 
 fn phase_timing_enabled() -> bool {
-    std::env::var("VRS_CDE_OBSERVABILITY_TIMING").map(|v| v == "1").unwrap_or(false)
+    std::env::var("VRS_CDE_OBSERVABILITY_TIMING")
+        .map(|v| v == "1")
+        .unwrap_or(false)
 }
 
 fn phase_t_start(enabled: bool) -> Option<Instant> {
-    if enabled { Some(Instant::now()) } else { None }
+    if enabled {
+        Some(Instant::now())
+    } else {
+        None
+    }
 }
 
 fn phase_t_ms(start: Option<Instant>) -> Option<f64> {
@@ -450,7 +456,13 @@ impl PhaseOptimizer {
                 collision_severity_min_resolution_mm: {
                     let a = exploration_diag.collision_severity_min_resolution_mm;
                     let b = compression_diag.collision_severity_min_resolution_mm;
-                    if a == 0.0 { b } else if b == 0.0 { a } else { a.min(b) }
+                    if a == 0.0 {
+                        b
+                    } else if b == 0.0 {
+                        a
+                    } else {
+                        a.min(b)
+                    }
                 },
                 collision_severity_max_resolution_mm: exploration_diag
                     .collision_severity_max_resolution_mm
@@ -462,10 +474,8 @@ impl PhaseOptimizer {
                     if total == 0 {
                         0.0
                     } else {
-                        let sum = exploration_diag.collision_severity_avg_resolution_mm
-                            * ar as f64
-                            + compression_diag.collision_severity_avg_resolution_mm
-                                * br as f64;
+                        let sum = exploration_diag.collision_severity_avg_resolution_mm * ar as f64
+                            + compression_diag.collision_severity_avg_resolution_mm * br as f64;
                         sum / total as f64
                     }
                 },
@@ -583,15 +593,25 @@ mod tests {
         // Without VRS_CDE_OBSERVABILITY_TIMING=1, all timing fields must be None.
         // This test relies on the env var NOT being set in the normal test environment.
         // If the env var is set externally, this test is intentionally skipped via the guard below.
-        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING").ok().as_deref() == Some("1") {
+        if std::env::var("VRS_CDE_OBSERVABILITY_TIMING")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
             return; // skip when timing is explicitly enabled by the test runner
         }
         let config = small_budget_config();
         let optimizer = PhaseOptimizer::new(config);
         let (layout, parts, sheets) = make_simple_layout();
         let result = optimizer.run(layout, &parts, &sheets);
-        assert!(result.exploration_ms.is_none(), "exploration_ms must be None by default");
-        assert!(result.compression_ms.is_none(), "compression_ms must be None by default");
+        assert!(
+            result.exploration_ms.is_none(),
+            "exploration_ms must be None by default"
+        );
+        assert!(
+            result.compression_ms.is_none(),
+            "compression_ms must be None by default"
+        );
         assert!(result.bpp_ms.is_none(), "bpp_ms must be None by default");
     }
 
@@ -608,7 +628,10 @@ mod tests {
     fn phase_timing_helpers_present_when_enabled() {
         // phase_t_start(true) → Some; phase_t_ms(Some) → Some non-negative.
         let start = phase_t_start(true);
-        assert!(start.is_some(), "phase_t_start(true) must return Some(Instant)");
+        assert!(
+            start.is_some(),
+            "phase_t_start(true) must return Some(Instant)"
+        );
         let ms = phase_t_ms(start);
         assert!(ms.is_some(), "phase_t_ms(Some) must return Some(f64)");
         assert!(ms.unwrap() >= 0.0, "timing must be non-negative");
@@ -885,18 +908,41 @@ mod tests {
         use crate::optimizer::score::ScoreModel;
 
         let parts = vec![crate::item::Part {
-            id: "A".into(), width: 10.0, height: 10.0, quantity: 1,
-            allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
-            outer_points: None, prepared_outer_points: None, rotation_policy: None,
+            id: "A".into(),
+            width: 10.0,
+            height: 10.0,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
         }];
         let sheets = vec![make_test_sheet()];
-        let placements = vec![Placement { instance_id: "A__0001".into(), part_id: "A".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 }];
+        let placements = vec![Placement {
+            instance_id: "A__0001".into(),
+            part_id: "A".into(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        }];
         let model = ScoreModel::default();
         let legacy = model.score(&placements, &[], &parts, &sheets);
-        let bbox = model.score_with_backend(&placements, &[], &parts, &sheets, &CollisionBackendKind::Bbox);
+        let bbox = model.score_with_backend(
+            &placements,
+            &[],
+            &parts,
+            &sheets,
+            &CollisionBackendKind::Bbox,
+        );
 
-        assert_eq!(legacy.total_cost.to_bits(), bbox.total_cost.to_bits(),
-            "Bbox backend must remain bit-compatible with legacy score()");
+        assert_eq!(
+            legacy.total_cost.to_bits(),
+            bbox.total_cost.to_bits(),
+            "Bbox backend must remain bit-compatible with legacy score()"
+        );
     }
 
     #[test]
@@ -905,25 +951,57 @@ mod tests {
         use crate::optimizer::score::ScoreModel;
 
         let l_json = serde_json::json!([
-            [0.0, 0.0], [40.0, 0.0], [40.0, 20.0],
-            [20.0, 20.0], [20.0, 40.0], [0.0, 40.0]
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 20.0],
+            [20.0, 20.0],
+            [20.0, 40.0],
+            [0.0, 40.0]
         ]);
         let parts = vec![
             crate::item::Part {
-                id: "L".into(), width: 40.0, height: 40.0, quantity: 1,
-                allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
-                outer_points: Some(l_json), prepared_outer_points: None, rotation_policy: None,
+                id: "L".into(),
+                width: 40.0,
+                height: 40.0,
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: Some(l_json),
+                prepared_outer_points: None,
+                rotation_policy: None,
             },
             crate::item::Part {
-                id: "B".into(), width: 15.0, height: 15.0, quantity: 1,
-                allowed_rotations_deg: vec![0], holes_points: None, prepared_holes_points: None,
-                outer_points: None, prepared_outer_points: None, rotation_policy: None,
+                id: "B".into(),
+                width: 15.0,
+                height: 15.0,
+                quantity: 1,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: None,
+                prepared_outer_points: None,
+                rotation_policy: None,
             },
         ];
         let sheets = vec![make_test_sheet()];
         let placements = vec![
-            Placement { instance_id: "L__0001".into(), part_id: "L".into(), sheet_index: 0, x: 0.0, y: 0.0, rotation_deg: 0.0 },
-            Placement { instance_id: "B__0001".into(), part_id: "B".into(), sheet_index: 0, x: 22.0, y: 22.0, rotation_deg: 0.0 },
+            Placement {
+                instance_id: "L__0001".into(),
+                part_id: "L".into(),
+                sheet_index: 0,
+                x: 0.0,
+                y: 0.0,
+                rotation_deg: 0.0,
+            },
+            Placement {
+                instance_id: "B__0001".into(),
+                part_id: "B".into(),
+                sheet_index: 0,
+                x: 22.0,
+                y: 22.0,
+                rotation_deg: 0.0,
+            },
         ];
         let layout = WorkingLayout::new(placements, vec![], 1, 0);
 
@@ -935,16 +1013,27 @@ mod tests {
         config.collision_backend = CollisionBackendKind::JaguaPolygonExact;
 
         let expected = ScoreModel::new(config.score_weights.clone()).score_with_backend(
-            &layout.placements, &layout.unplaced, &parts, &sheets, &config.collision_backend,
+            &layout.placements,
+            &layout.unplaced,
+            &parts,
+            &sheets,
+            &config.collision_backend,
         );
         let bbox = ScoreModel::new(config.score_weights.clone()).score(
-            &layout.placements, &layout.unplaced, &parts, &sheets,
+            &layout.placements,
+            &layout.unplaced,
+            &parts,
+            &sheets,
         );
-        assert!(bbox.breakdown.overlap_violations > expected.breakdown.overlap_violations,
-            "fixture must expose a bbox false-positive that exact scoring removes");
+        assert!(
+            bbox.breakdown.overlap_violations > expected.breakdown.overlap_violations,
+            "fixture must expose a bbox false-positive that exact scoring removes"
+        );
 
         let result = PhaseOptimizer::new(config).run(layout, &parts, &sheets);
-        assert!((result.initial_score - expected.total_cost).abs() < 1e-9,
-            "PhaseOptimizer initial_score must use the selected exact backend");
+        assert!(
+            (result.initial_score - expected.total_cost).abs() < 1e-9,
+            "PhaseOptimizer initial_score must use the selected exact backend"
+        );
     }
 }

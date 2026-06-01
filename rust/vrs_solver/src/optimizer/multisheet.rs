@@ -5,16 +5,16 @@
 //! diagnostics. The underlying construction and repair algorithms are
 //! unchanged — this module adds a single, testable coordination boundary.
 
-use crate::io::{Placement, Unplaced};
-use crate::item::{Instance, Part};
-use crate::rotation_policy::RotationResolveContext;
-use crate::sheet::SheetShape;
 use super::initializer::{
     bbox_from_placement, build_initial_layout_with_rotation_context, ConstructionDiagnostics,
 };
 use super::repair::{run_repair_with_rotation_context, RepairDiagnostics};
 use super::sheet_elimination::{SheetEliminationDiagnostics, SheetEliminationEngine};
 use super::stopping::StoppingPolicy;
+use crate::io::{Placement, Unplaced};
+use crate::item::{Instance, Part};
+use crate::rotation_policy::RotationResolveContext;
+use crate::sheet::SheetShape;
 
 // ---------------------------------------------------------------------------
 // compute_sheet_count_used — stable helper, tested independently
@@ -157,8 +157,7 @@ impl<'a> MultiSheetManager<'a> {
             self.sheets,
             self.rotation_context.clone(),
         );
-        let (placements, unplaced, elim_diag) =
-            engine.run(rep_placements, rep_unplaced, policy);
+        let (placements, unplaced, elim_diag) = engine.run(rep_placements, rep_unplaced, policy);
 
         // Build per-sheet summaries from the final post-elimination layout.
         let sheet_count_used = compute_sheet_count_used(&placements);
@@ -167,7 +166,11 @@ impl<'a> MultiSheetManager<'a> {
                 sheet_index: i,
                 placed_count: 0,
                 placed_area: 0.0,
-                sheet_usable_area: if i < self.sheets.len() { self.sheets[i].area } else { 0.0 },
+                sheet_usable_area: if i < self.sheets.len() {
+                    self.sheets[i].area
+                } else {
+                    0.0
+                },
             })
             .collect();
 
@@ -206,11 +209,11 @@ impl<'a> MultiSheetManager<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::stopping::StoppingPolicy;
     use super::*;
     use crate::io::Placement;
     use crate::item::{expand_instances, Part};
     use crate::sheet::{expand_sheets, Stock};
-    use super::super::stopping::StoppingPolicy;
 
     fn make_part(id: &str, w: f64, h: f64, qty: i64) -> Part {
         Part {
@@ -346,10 +349,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_two_runs() {
-        let parts = vec![
-            make_part("A", 40.0, 40.0, 3),
-            make_part("B", 60.0, 30.0, 2),
-        ];
+        let parts = vec![make_part("A", 40.0, 40.0, 3), make_part("B", 60.0, 30.0, 2)];
         let stocks = vec![make_stock("S", 150.0, 100.0, 2)];
         let instances = expand_instances(&parts).expect("instances");
         let sheets = expand_sheets(&stocks).expect("sheets");

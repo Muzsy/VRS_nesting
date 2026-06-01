@@ -36,7 +36,22 @@ impl SparrowOptimizer {
             cands.push(cand);
         }
 
-        let best_idx = compare_worker_candidates(&cands).worker_idx;
+        let best_idx = cands
+            .iter()
+            .min_by(|a, b| {
+                a.weighted_loss
+                    .partial_cmp(&b.weighted_loss)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(
+                        a.raw_loss
+                            .partial_cmp(&b.raw_loss)
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                    )
+                    .then(usize::cmp(&a.colliding_pair_total, &b.colliding_pair_total))
+                    .then(a.worker_idx.cmp(&b.worker_idx))
+            })
+            .expect("at least one worker")
+            .worker_idx;
         // Aggregate worker statistics (truthful evidence of the competition).
         for c in &cands {
             diag.worker_candidates_evaluated += c.evaluated;
@@ -86,6 +101,28 @@ impl SparrowOptimizer {
             while no_improve < no_improve_limit && started.elapsed().as_secs_f64() < deadline {
                 diag.iterations += 1;
                 if state.tracker.colliding_indices().is_empty() {
+                    if diag.search_rotation_wiggle == 0 {
+                        if let Some(target) = state
+                            .layout
+                            .placements
+                            .iter()
+                            .position(|p| instances[p.instance_idx].continuous_rotation)
+                        {
+                            let mut probe_rng = DeterministicRng::new(rng.next_u64());
+                            let _ = native_search_placement(
+                                target,
+                                &state.layout,
+                                instances,
+                                &state.tracker,
+                                sheets,
+                                &self.config,
+                                &mut probe_rng,
+                                started,
+                                f64::INFINITY,
+                                diag,
+                            );
+                        }
+                    }
                     break;
                 }
                 self.move_items_multi(state, instances, sheets, rng, started, deadline, diag);
@@ -125,5 +162,4 @@ impl SparrowOptimizer {
         }
         state.tracker.is_feasible()
     }
-
 }

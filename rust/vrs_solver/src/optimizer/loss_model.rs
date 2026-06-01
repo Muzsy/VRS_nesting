@@ -1,6 +1,6 @@
-use std::f64::consts::PI;
 use super::candidates::PlacedBbox;
 use crate::sheet::SheetShape;
+use std::f64::consts::PI;
 
 /// Minimum penetration depth for smooth decay continuity (VRS units, typically mm).
 const SMOOTH_EPSILON: f64 = 1.0;
@@ -166,10 +166,16 @@ impl LossModelKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sheet::{Stock, expand_sheets};
+    use crate::sheet::{expand_sheets, Stock};
 
     fn bbox(sheet_index: usize, x1: f64, y1: f64, x2: f64, y2: f64) -> PlacedBbox {
-        PlacedBbox { sheet_index, x1, y1, x2, y2 }
+        PlacedBbox {
+            sheet_index,
+            x1,
+            y1,
+            x2,
+            y2,
+        }
     }
 
     fn make_sheet(w: f64, h: f64) -> SheetShape {
@@ -220,7 +226,10 @@ mod tests {
         assert_eq!(loss_valid, 0.0, "boundary_valid=true must give 0 loss");
 
         let loss_invalid = LossModelKind::BboxArea.compute_boundary_loss(&bb, &sheet, false);
-        assert_eq!(loss_invalid, 1.0, "boundary_valid=false must give 1.0 binary proxy");
+        assert_eq!(
+            loss_invalid, 1.0,
+            "boundary_valid=false must give 1.0 binary proxy"
+        );
     }
 
     // SGH-Q06 LossModel test 3: smooth_decay is continuous at epsilon
@@ -318,10 +327,10 @@ mod tests {
         // Large violation: item extends 30 units beyond right edge (x2=130, viol=30)
         let large_viol = bbox(0, 0.0, 0.0, 130.0, 30.0);
 
-        let loss_small = LossModelKind::PolePenetrationSmooth
-            .compute_boundary_loss(&small_viol, &sheet, false);
-        let loss_large = LossModelKind::PolePenetrationSmooth
-            .compute_boundary_loss(&large_viol, &sheet, false);
+        let loss_small =
+            LossModelKind::PolePenetrationSmooth.compute_boundary_loss(&small_viol, &sheet, false);
+        let loss_large =
+            LossModelKind::PolePenetrationSmooth.compute_boundary_loss(&large_viol, &sheet, false);
 
         assert!(
             loss_small > 0.0,

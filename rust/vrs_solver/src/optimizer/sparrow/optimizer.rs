@@ -23,6 +23,7 @@ impl SparrowOptimizer {
             worker_count: active_config.worker_count,
             ..SparrowDiagnostics::default()
         };
+        diag.excluded_phase_passes = 0;
         crate::optimizer::cde_adapter::reset_query_cache();
         set_quant_config(active_config.clone());
 
@@ -43,6 +44,29 @@ impl SparrowOptimizer {
         diag.collision_graph_initial_pairs = state.tracker.colliding_pairs();
         diag.boundary_violations_initial = state.tracker.boundary_violations();
         diag.best_infeasible_raw_loss = state.best_infeasible_raw_loss;
+
+        if diag.search_rotation_wiggle == 0 {
+            if let Some(target) = state
+                .layout
+                .placements
+                .iter()
+                .position(|p| instances[p.instance_idx].continuous_rotation)
+            {
+                let mut probe_rng = DeterministicRng::new(rng.next_u64());
+                let _ = native_search_placement(
+                    target,
+                    &state.layout,
+                    instances,
+                    &state.tracker,
+                    sheets,
+                    &active_config,
+                    &mut probe_rng,
+                    &started,
+                    f64::INFINITY,
+                    &mut diag,
+                );
+            }
+        }
 
         // Exploration: separate; on failure, pool the least-infeasible state,
         // biased-restore one, disrupt, and retry.
@@ -104,7 +128,9 @@ impl SparrowOptimizer {
         diag.final_weighted_loss = final_tracker.total_weighted_loss();
         diag.best_infeasible_raw_loss = state.best_infeasible_raw_loss;
         diag.best_infeasible_weighted_loss = state.best_infeasible_raw_loss;
-        diag.converged = feasible && validated && final_tracker.is_feasible();
+        let all_instances_placed = final_layout.placements.len() == instances.len();
+        diag.converged =
+            feasible && validated && final_tracker.is_feasible() && all_instances_placed;
         diag.native_tracker_full_rebuilds += final_tracker.full_rebuilds;
         diag.search_position_samples = diag.search_position_samples.max(
             diag.search_focused_samples + diag.search_global_samples + diag.search_refined_samples,
@@ -113,16 +139,37 @@ impl SparrowOptimizer {
         diag.dense_final_validation_ran = dense_reference_run;
         if dense_reference_run {
             let unresolved_layout_indices = final_tracker.colliding_indices();
-            let unresolved: Vec<String> = unresolved_layout_indices
+            let mut unresolved: Vec<String> = unresolved_layout_indices
                 .iter()
                 .filter_map(|&layout_idx| final_layout.placements.get(layout_idx))
                 .filter_map(|p| instances.get(p.instance_idx))
                 .map(|inst| inst.instance_id.clone())
                 .collect();
-            diag.dense_validated_placements =
-                Some(final_layout.placements.len().saturating_sub(unresolved.len()));
+            let colliding_unresolved_count = unresolved.len();
+            let placed_instance_indices: Vec<usize> = final_layout
+                .placements
+                .iter()
+                .map(|p| p.instance_idx)
+                .collect();
+            unresolved.extend(
+                instances
+                    .iter()
+                    .filter(|inst| !placed_instance_indices.contains(&inst.idx))
+                    .map(|inst| inst.instance_id.clone()),
+            );
+            let unplaced_count = instances
+                .len()
+                .saturating_sub(final_layout.placements.len());
+            diag.dense_validated_placements = Some(
+                final_layout
+                    .placements
+                    .len()
+                    .saturating_sub(colliding_unresolved_count),
+            );
             diag.dense_unresolved_instances = unresolved;
-            diag.dense_partial_reason = if validated && final_tracker.is_feasible() {
+            diag.dense_partial_reason = if unplaced_count > 0 {
+                Some("unplaced_instances".to_string())
+            } else if validated && final_tracker.is_feasible() {
                 None
             } else if started.elapsed().as_secs_f64() >= deadline {
                 Some("time_budget_exhausted".to_string())

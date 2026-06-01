@@ -1,7 +1,8 @@
 use super::*;
 
-pub mod pair_matrix;
 pub mod overlap_proxy;
+pub mod pair_matrix;
 pub mod tracker;
 
+pub(crate) use overlap_proxy::*;
 pub(crate) use tracker::*;

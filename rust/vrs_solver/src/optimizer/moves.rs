@@ -1,13 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use crate::geometry::Rect;
-use crate::io::{CollisionBackendKind, Placement};
-use crate::item::{
-    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
-};
-use crate::rotation_policy::RotationResolveContext;
-use crate::sheet::SheetShape;
 use super::boundary::rect_within_boundary;
 use super::candidates::{generate_candidates_with_sheets, PlacedBbox};
 use super::initializer::bbox_from_placement;
@@ -15,6 +8,13 @@ use super::repair::validate_placements_for_backend;
 use super::separator::{VrsSeparator, VrsSeparatorConfig};
 use super::state::PlacementTransform;
 use super::working::WorkingLayout;
+use crate::geometry::Rect;
+use crate::io::{CollisionBackendKind, Placement};
+use crate::item::{
+    dims_for_rotation, placement_anchor_from_rect_min, resolve_instance_rotation_angles, Part,
+};
+use crate::rotation_policy::RotationResolveContext;
+use crate::sheet::SheetShape;
 
 // ---------------------------------------------------------------------------
 // CandidateMove (skeleton, retained from pre-SGH-05)
@@ -191,15 +191,26 @@ impl<'a> MoveExecutor<'a> {
         if new_placements.len() != original_count {
             return false;
         }
-        let new_ids: HashSet<String> =
-            new_placements.iter().map(|p| p.instance_id.clone()).collect();
+        let new_ids: HashSet<String> = new_placements
+            .iter()
+            .map(|p| p.instance_id.clone())
+            .collect();
         if new_ids != *original_ids {
             return false;
         }
-        if new_placements.iter().any(|p| p.sheet_index >= self.sheets.len()) {
+        if new_placements
+            .iter()
+            .any(|p| p.sheet_index >= self.sheets.len())
+        {
             return false;
         }
-        validate_placements_for_backend(new_placements, self.parts, self.sheets, &self.collision_backend).is_empty()
+        validate_placements_for_backend(
+            new_placements,
+            self.parts,
+            self.sheets,
+            &self.collision_backend,
+        )
+        .is_empty()
     }
 
     /// Build WorkingLayout → VrsSeparator → validate; returns committed placements or None.
@@ -221,7 +232,10 @@ impl<'a> MoveExecutor<'a> {
         if !(sep_diag.best_loss == 0.0 || sep_diag.converged) {
             return None;
         }
-        if sep_layout.validate_for_commit(self.parts, self.sheets).is_err() {
+        if sep_layout
+            .validate_for_commit(self.parts, self.sheets)
+            .is_err()
+        {
             return None;
         }
         diag.separator_successes += 1;
@@ -259,15 +273,19 @@ impl<'a> MoveExecutor<'a> {
                 .find(|&r| {
                     let (rw, rh) = dims_for_rotation(width, height, r);
                     rect_within_boundary(
-                        Rect { x1: 0.0, y1: 0.0, x2: rw, y2: rh },
+                        Rect {
+                            x1: 0.0,
+                            y1: 0.0,
+                            x2: rw,
+                            y2: rh,
+                        },
                         sheet,
                     )
                 })
                 .or_else(|| rots.first().copied())?
         };
 
-        let (anchor_x, anchor_y) =
-            placement_anchor_from_rect_min(0.0, 0.0, width, height, rot);
+        let (anchor_x, anchor_y) = placement_anchor_from_rect_min(0.0, 0.0, width, height, rot);
         Some(Placement {
             instance_id: instance_id.to_string(),
             part_id: part_id.to_string(),
@@ -301,7 +319,10 @@ impl<'a> MoveExecutor<'a> {
         let mut best_key: Option<(f64, f64)> = None; // (y, x) — lower is better
         let mut best: Option<Placement> = None;
 
-        for cand in all_candidates.iter().filter(|c| c.sheet_index == target_sheet) {
+        for cand in all_candidates
+            .iter()
+            .filter(|c| c.sheet_index == target_sheet)
+        {
             for &rot in rots {
                 let (rw, rh) = dims_for_rotation(width, height, rot);
                 let rect = Rect {
@@ -355,7 +376,9 @@ impl<'a> MoveExecutor<'a> {
     fn resolve_part_dims(&self, part_id: &str, instance_id: &str) -> Option<(f64, f64, Vec<f64>)> {
         let pt = self.parts.iter().find(|pt| pt.id == part_id)?;
         let rots = resolve_instance_rotation_angles(pt, instance_id, &self.rotation_context);
-        if rots.is_empty() { return None; }
+        if rots.is_empty() {
+            return None;
+        }
         Some((pt.width, pt.height, rots))
     }
 
@@ -405,14 +428,21 @@ impl<'a> MoveExecutor<'a> {
             return None;
         }
 
-        let seed =
-            match self.seed_at_origin(instance_id, &part_id, width, height, &rots, to_sheet, Some(rot_norm)) {
-                Some(s) => s,
-                None => {
-                    diag.record_failure(MoveFailureReason::NoValidSeedPlacement);
-                    return None;
-                }
-            };
+        let seed = match self.seed_at_origin(
+            instance_id,
+            &part_id,
+            width,
+            height,
+            &rots,
+            to_sheet,
+            Some(rot_norm),
+        ) {
+            Some(s) => s,
+            None => {
+                diag.record_failure(MoveFailureReason::NoValidSeedPlacement);
+                return None;
+            }
+        };
 
         let original_count = placements.len();
         let original_ids = Self::instance_id_set(placements);
@@ -480,7 +510,10 @@ impl<'a> MoveExecutor<'a> {
         };
 
         if let Some(rot) = explicit_rotation {
-            if !rots.iter().any(|&r| (r - rot.rem_euclid(360.0)).abs() < 1e-6) {
+            if !rots
+                .iter()
+                .any(|&r| (r - rot.rem_euclid(360.0)).abs() < 1e-6)
+            {
                 diag.record_failure(MoveFailureReason::UnsupportedRotation);
                 return None;
             }
@@ -512,8 +545,7 @@ impl<'a> MoveExecutor<'a> {
             ) {
                 let mut candidate = without.clone();
                 candidate.push(seed);
-                if let Some(result) =
-                    self.run_separator_fix(candidate, Some(vec![to_sheet]), diag)
+                if let Some(result) = self.run_separator_fix(candidate, Some(vec![to_sheet]), diag)
                 {
                     if self.commit_gate_ok(&result, original_count, &original_ids) {
                         diag.record_success();
@@ -594,14 +626,20 @@ impl<'a> MoveExecutor<'a> {
     ) -> Option<Vec<Placement>> {
         diag.attempted += 1;
 
-        let idx_a = match placements.iter().position(|p| p.instance_id == instance_id_a) {
+        let idx_a = match placements
+            .iter()
+            .position(|p| p.instance_id == instance_id_a)
+        {
             Some(i) => i,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);
                 return None;
             }
         };
-        let idx_b = match placements.iter().position(|p| p.instance_id == instance_id_b) {
+        let idx_b = match placements
+            .iter()
+            .position(|p| p.instance_id == instance_id_b)
+        {
             Some(i) => i,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);
@@ -619,16 +657,18 @@ impl<'a> MoveExecutor<'a> {
             return Some(placements.to_vec());
         }
 
-        let (w_a, h_a, rots_a) =
-            match self.resolve_part_dims(&placements[idx_a].part_id, &placements[idx_a].instance_id) {
+        let (w_a, h_a, rots_a) = match self
+            .resolve_part_dims(&placements[idx_a].part_id, &placements[idx_a].instance_id)
+        {
             Some(d) => d,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);
                 return None;
             }
         };
-        let (w_b, h_b, rots_b) =
-            match self.resolve_part_dims(&placements[idx_b].part_id, &placements[idx_b].instance_id) {
+        let (w_b, h_b, rots_b) = match self
+            .resolve_part_dims(&placements[idx_b].part_id, &placements[idx_b].instance_id)
+        {
             Some(d) => d,
             None => {
                 diag.record_failure(MoveFailureReason::UnknownInstanceId);
@@ -642,16 +682,30 @@ impl<'a> MoveExecutor<'a> {
         // Try B's old rotation for A (if supported), otherwise A's first rotation.
         let rot_for_a = {
             let r = placements[idx_b].rotation_deg.rem_euclid(360.0);
-            if rots_a.iter().any(|&x| (x - r).abs() < 1e-6) { r } else { *rots_a.first().unwrap() }
+            if rots_a.iter().any(|&x| (x - r).abs() < 1e-6) {
+                r
+            } else {
+                *rots_a.first().unwrap()
+            }
         };
         // Try A's old rotation for B (if supported), otherwise B's first rotation.
         let rot_for_b = {
             let r = placements[idx_a].rotation_deg.rem_euclid(360.0);
-            if rots_b.iter().any(|&x| (x - r).abs() < 1e-6) { r } else { *rots_b.first().unwrap() }
+            if rots_b.iter().any(|&x| (x - r).abs() < 1e-6) {
+                r
+            } else {
+                *rots_b.first().unwrap()
+            }
         };
 
         let seed_a = match self.seed_at_origin(
-            instance_id_a, &placements[idx_a].part_id, w_a, h_a, &rots_a, sheet_b, Some(rot_for_a),
+            instance_id_a,
+            &placements[idx_a].part_id,
+            w_a,
+            h_a,
+            &rots_a,
+            sheet_b,
+            Some(rot_for_a),
         ) {
             Some(s) => s,
             None => {
@@ -660,7 +714,13 @@ impl<'a> MoveExecutor<'a> {
             }
         };
         let seed_b = match self.seed_at_origin(
-            instance_id_b, &placements[idx_b].part_id, w_b, h_b, &rots_b, sheet_a, Some(rot_for_b),
+            instance_id_b,
+            &placements[idx_b].part_id,
+            w_b,
+            h_b,
+            &rots_b,
+            sheet_a,
+            Some(rot_for_b),
         ) {
             Some(s) => s,
             None => {
@@ -678,17 +738,14 @@ impl<'a> MoveExecutor<'a> {
         new_placements.push(seed_a);
         new_placements.push(seed_b);
 
-        let result = match self.run_separator_fix(
-            new_placements,
-            Some(vec![sheet_a, sheet_b]),
-            diag,
-        ) {
-            Some(r) => r,
-            None => {
-                diag.record_failure(MoveFailureReason::SeparatorDidNotConverge);
-                return None;
-            }
-        };
+        let result =
+            match self.run_separator_fix(new_placements, Some(vec![sheet_a, sheet_b]), diag) {
+                Some(r) => r,
+                None => {
+                    diag.record_failure(MoveFailureReason::SeparatorDidNotConverge);
+                    return None;
+                }
+            };
 
         if !self.commit_gate_ok(&result, original_count, &original_ids) {
             diag.commit_gate_rejections += 1;
@@ -827,7 +884,11 @@ mod tests {
     }
 
     fn t(x: f64, y: f64, rot: i64) -> PlacementTransform {
-        PlacementTransform { x, y, rotation_deg: rot }
+        PlacementTransform {
+            x,
+            y,
+            rotation_deg: rot,
+        }
     }
 
     // ── Existing serialization tests (unchanged) ─────────────────────────────
@@ -876,8 +937,10 @@ mod tests {
 
     #[test]
     fn candidate_move_json_stable() {
-        let mv =
-            CandidateMove::Rotate { instance_id: "X__0001".to_string(), new_rotation_deg: 90.0 };
+        let mv = CandidateMove::Rotate {
+            instance_id: "X__0001".to_string(),
+            new_rotation_deg: 90.0,
+        };
         let j1 = serde_json::to_string(&mv).expect("s1");
         let j2 = serde_json::to_string(&mv).expect("s2");
         assert_eq!(j1, j2);
@@ -950,7 +1013,10 @@ mod tests {
         assert!(find_violations(&new, &parts, &sheets).is_empty());
         assert_eq!(new.len(), placements.len());
         // The transferred item must now be on sheet 1.
-        let moved = new.iter().find(|p| p.instance_id == iid).expect("item must exist");
+        let moved = new
+            .iter()
+            .find(|p| p.instance_id == iid)
+            .expect("item must exist");
         assert_eq!(moved.sheet_index, 1);
     }
 
@@ -1003,7 +1069,10 @@ mod tests {
         let exec = MoveExecutor::new(&parts, &sheets);
         let mut diag = MoveDiagnostics::default();
         let result = exec.try_swap(&placements, "A__0001", "B__0001", &mut diag);
-        assert!(result.is_some(), "cross-sheet swap of two fitting items must succeed");
+        assert!(
+            result.is_some(),
+            "cross-sheet swap of two fitting items must succeed"
+        );
         let new = result.unwrap();
         assert!(find_violations(&new, &parts, &sheets).is_empty());
         assert_eq!(new.len(), 2);
@@ -1103,8 +1172,7 @@ mod tests {
         let exec = MoveExecutor::new(&parts, &sheets);
         let mut diag = MoveDiagnostics::default();
         let iid = placements[0].instance_id.clone();
-        let orig_ids: HashSet<String> =
-            placements.iter().map(|p| p.instance_id.clone()).collect();
+        let orig_ids: HashSet<String> = placements.iter().map(|p| p.instance_id.clone()).collect();
         let result = exec
             .try_transfer(&placements, &iid, 1, None, &mut diag)
             .expect("transfer must succeed");
@@ -1203,8 +1271,7 @@ mod tests {
         }
         let exec = MoveExecutor::new(&parts, &sheets);
         let mut diag = MoveDiagnostics::default();
-        let result =
-            exec.resolve_by_transfers(placements.clone(), &[0], &[1], 10, &mut diag);
+        let result = exec.resolve_by_transfers(placements.clone(), &[0], &[1], 10, &mut diag);
         assert!(find_violations(&result, &parts, &sheets).is_empty());
         assert_eq!(result.len(), placements.len());
         // At least one item should now be on sheet 1.

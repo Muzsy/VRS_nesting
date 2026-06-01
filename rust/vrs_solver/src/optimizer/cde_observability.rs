@@ -138,21 +138,33 @@ pub(crate) fn inc_broadphase_pruned() {
 pub(crate) fn inc_cache_pair(hit: bool) {
     COUNTERS.with(|c| {
         let mut b = c.borrow_mut();
-        if hit { b.cache_pair_hits += 1; } else { b.cache_pair_misses += 1; }
+        if hit {
+            b.cache_pair_hits += 1;
+        } else {
+            b.cache_pair_misses += 1;
+        }
     });
 }
 
 pub(crate) fn inc_cache_boundary(hit: bool) {
     COUNTERS.with(|c| {
         let mut b = c.borrow_mut();
-        if hit { b.cache_boundary_hits += 1; } else { b.cache_boundary_misses += 1; }
+        if hit {
+            b.cache_boundary_hits += 1;
+        } else {
+            b.cache_boundary_misses += 1;
+        }
     });
 }
 
 pub(crate) fn inc_cache_prepared(hit: bool) {
     COUNTERS.with(|c| {
         let mut b = c.borrow_mut();
-        if hit { b.cache_prepared_hits += 1; } else { b.cache_prepared_misses += 1; }
+        if hit {
+            b.cache_prepared_hits += 1;
+        } else {
+            b.cache_prepared_misses += 1;
+        }
     });
 }
 
@@ -184,7 +196,11 @@ pub(crate) fn inc_pairwise_fallback() {
 pub(crate) fn inc_candidate_session(reused: bool) {
     COUNTERS.with(|c| {
         let mut b = c.borrow_mut();
-        if reused { b.candidate_session_reuses += 1; } else { b.candidate_session_builds += 1; }
+        if reused {
+            b.candidate_session_reuses += 1;
+        } else {
+            b.candidate_session_builds += 1;
+        }
     });
 }
 
