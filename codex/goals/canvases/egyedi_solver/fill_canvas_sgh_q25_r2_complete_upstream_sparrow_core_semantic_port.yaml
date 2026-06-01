@@ -1,0 +1,45 @@
+id: fill_canvas_sgh_q25_r2_complete_upstream_sparrow_core_semantic_port
+kind: canvas_task
+slug: sgh_q25_r2_complete_upstream_sparrow_core_semantic_port
+title: SGH-Q25-R2 Complete upstream Sparrow core semantic port, compression excluded
+canvas_path: canvases/egyedi_solver/sgh_q25_r2_complete_upstream_sparrow_core_semantic_port.md
+prompt_path: codex/prompts/egyedi_solver/sgh_q25_r2_complete_upstream_sparrow_core_semantic_port/run.md
+report_path: codex/reports/egyedi_solver/sgh_q25_r2_complete_upstream_sparrow_core_semantic_port.md
+status: ready
+primary_goal: Finish the upstream jagua_rs/Sparrow core semantic port after Q25/Q25-R1, without benchmark-driven shortcuts and with explicit dirty-repo scope control.
+acceptance:
+  - pre_task_git_status_and_pre_existing_dirty_files_are_recorded
+  - no_new_out_of_scope_changes_are_introduced
+  - upstream_sparrow_commit_is_pinned_and_source_files_are_mapped
+  - production_sparrow_cde_remains_native_problem_optimizer_solution_path
+  - q25_module_structure_is_preserved
+  - specialized_cde_hazard_collection_is_bounded_visitor_style_or_equivalent_not_post_query_only
+  - separation_evaluator_uses_collector_upper_bound_and_tracker_weighted_loss
+  - default_quantify_tracker_semantics_match_upstream_overlap_proxy_shape_penalty_and_gls
+  - lbf_builder_uses_search_placement_lbf_evaluator_only_and_does_not_treat_least_infeasible_as_constructive_success
+  - search_sampler_coord_descent_follow_upstream_algorithmic_semantics_including_rotation_refinement_where_allowed
+  - worker_separator_semantics_follow_moved_item_and_total_weighted_loss_not_pair_count
+  - exploration_pool_restore_disruption_and_contained_item_relocation_are_upstream_mapped
+  - compression_remains_disabled_and_deferred
+  - report_contains_complete_upstream_to_local_mapping_and_honest_status
+reject_if:
+  - task_modifies_files_outside_allowed_scope_without_revise_scope_blocked
+  - report_does_not_contain_pre_task_git_status_or_out_of_scope_change_assessment
+  - specialized_pipeline_collects_via_session_query_batch_only_and_claims_full_collector_parity
+  - separation_evaluator_uses_bbox_aabb_extent_or_pair_count_as_loss_ranking
+  - lbf_contains_shelf_anchor_recovery_fallback_candidate_penalty_overlap_score_or_least_infeasible_success_path
+  - search_or_lbf_is_optimized_for_dense_lv8_benchmark_instead_of_upstream_semantics
+  - worker_or_separator_uses_pair_count_first_raw_loss_first_or_benchmark_progress_as_acceptance
+  - exploration_disruption_lacks_geometry_or_cde_based_contained_item_relocation
+  - report_claims_pass_with_any_non_compression_revise_mapping_row
+  - compression_is_implemented_enabled_or_hardened
+commands:
+  - git status --porcelain=v1
+  - git diff --name-only
+  - test -d .cache/sparrow || ./scripts/ensure_sparrow.sh
+  - git -C .cache/sparrow rev-parse HEAD
+  - cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+  - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+  - python3 scripts/smoke_sgh_q25_r2_complete_upstream_sparrow_core_semantic_port.py
+  - ./scripts/check.sh
+  - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q25_r2_complete_upstream_sparrow_core_semantic_port.md

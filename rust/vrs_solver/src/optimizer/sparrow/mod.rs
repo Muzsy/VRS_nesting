@@ -20,7 +20,7 @@ pub(crate) use crate::sheet::SheetShape;
 
 pub(crate) use super::cde_adapter::{
     prepare_shape_from_sheet, prepare_shape_native, translate_prepared, CdeAdapter,
-    CdeCandidateSession, CdePreparedShape, CdeQueryResult,
+    CdeCandidateSession, CdePreparedShape, CdeQueryResult, SpecializedHazardSink,
 };
 
 pub mod diagnostics;
@@ -50,6 +50,7 @@ pub(crate) use eval::sep_evaluator::*;
 pub(crate) use eval::specialized_cde_pipeline::*;
 pub(crate) use fixed_sheet::*;
 pub(crate) use lbf::*;
+pub(crate) use quantify::overlap_proxy::*;
 pub(crate) use quantify::tracker::*;
 pub(crate) use sample::best_samples::*;
 pub(crate) use sample::coord_descent::*;

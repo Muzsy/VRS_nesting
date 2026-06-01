@@ -2,6 +2,62 @@ use super::*;
 
 // Explore pool/restore/disrupt logic mapped from upstream optimizer/explore.rs.
 impl SparrowOptimizer {
+    /// Upstream `exploration_phase` (Algorithm 12), adapted to fixed sheets.
+    ///
+    /// Upstream alternates separation with strip-width shrinking; on fixed sheets
+    /// the strip cannot shrink, so this drives repeated separation attempts and,
+    /// on each failure, maintains an infeasible-solution pool ordered by total
+    /// raw loss, performs a biased restore from the better half of that pool, and
+    /// disrupts the restored layout before retrying. Returns `true` as soon as a
+    /// fully separated (feasible) layout is found.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn exploration_phase(
+        &self,
+        state: &mut SparrowState,
+        instances: &[SPInstance],
+        sheets: &[SheetShape],
+        started: &Instant,
+        deadline: f64,
+        rng: &mut DeterministicRng,
+        diag: &mut SparrowDiagnostics,
+    ) -> bool {
+        let max_attempts = 10usize;
+        // Infeasible-solution pool, kept sorted ascending by total raw loss so the
+        // better (lower-loss) solutions are at the front for the biased restore.
+        let mut infeas_sol_pool: Vec<(f64, SparrowLayout)> = Vec::new();
+
+        for attempt in 0..max_attempts {
+            if started.elapsed().as_secs_f64() >= deadline {
+                break;
+            }
+            diag.exploration_attempts += 1;
+            if self.separate(state, instances, sheets, started, deadline, rng, diag) {
+                return true;
+            }
+            // Separation failed: pool the least-infeasible state, biased-restore one
+            // from the better half, disrupt it, and retry.
+            let raw = state.tracker.total_raw_loss();
+            let at = infeas_sol_pool
+                .binary_search_by(|(l, _)| {
+                    l.partial_cmp(&raw).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap_or_else(|e| e);
+            infeas_sol_pool.insert(at, (raw, state.layout.snapshot()));
+            infeas_sol_pool.truncate(8);
+            diag.exploration_pool_inserts += 1;
+            if !infeas_sol_pool.is_empty() {
+                // Biased restore: pick from the better (lower-loss) half of the pool.
+                let sel = (self.config.seed as usize).wrapping_add(attempt)
+                    % ((infeas_sol_pool.len() + 1) / 2).max(1);
+                let restored = infeas_sol_pool[sel].1.snapshot();
+                diag.exploration_pool_restores += 1;
+                *state = SparrowState::new_with_diag(restored, instances, sheets, diag);
+                self.disrupt(state, instances, sheets, rng, diag);
+            }
+        }
+        false
+    }
+
     pub(super) fn disrupt(
         &self,
         state: &mut SparrowState,

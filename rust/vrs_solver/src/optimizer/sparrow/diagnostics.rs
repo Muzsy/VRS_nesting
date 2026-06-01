@@ -58,10 +58,6 @@ pub struct SparrowConfig {
     pub global_grid_n: usize,
     /// Coordinate-descent refinement steps on the best candidate.
     pub coord_descent_steps: usize,
-    /// Bracket-doubling steps for the CDE resolution-distance probe.
-    pub probe_bracket_steps: usize,
-    /// Binary-refinement steps for the CDE resolution-distance probe.
-    pub probe_binary_refine_steps: usize,
     /// Initial rotation-wiggle step (degrees) for coordinate-descent refinement.
     /// Only applied when the instance's rotation policy permits continuous/free
     /// rotation; discrete (orthogonal) instances keep their fixed rotation set.
@@ -84,8 +80,6 @@ impl SparrowConfig {
             focused_samples: 5,
             global_grid_n: 4,
             coord_descent_steps: 5,
-            probe_bracket_steps: 5,
-            probe_binary_refine_steps: 4,
             rotation_wiggle_deg: 6.0,
         }
     }

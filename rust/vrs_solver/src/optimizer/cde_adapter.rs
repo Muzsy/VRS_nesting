@@ -1,6 +1,7 @@
 use jagua_rs::collision_detection::hazards::collector::{BasicHazardCollector, HazardCollector};
 use jagua_rs::collision_detection::hazards::filter::NoFilter;
-use jagua_rs::collision_detection::hazards::{Hazard, HazardEntity};
+use jagua_rs::collision_detection::hazards::{HazKey, Hazard, HazardEntity};
+use jagua_rs::collision_detection::quadtree::QTHazPresence;
 use jagua_rs::collision_detection::{CDEConfig, CDEngine};
 use jagua_rs::geometry::fail_fast::SPSurrogateConfig;
 use jagua_rs::geometry::primitives::Rect as JagRect;
@@ -726,6 +727,177 @@ impl CdeCandidateSession {
             unsupported,
         }
     }
+
+    /// Bounded / visitor-style collision collection (upstream
+    /// `collect_poly_collisions_in_detector_custom` semantics).
+    ///
+    /// Unlike [`query`](Self::query) — which returns a completed batch result that
+    /// the caller post-processes — this walks the candidate's edges against the
+    /// quadtree and reports every confirmed hazard to `sink` *as it is found*,
+    /// applying the VRS touching post-policy per hazard. After each edge (and each
+    /// containment hazard) the loop honours `sink.should_terminate()`, so the sink
+    /// can stop the collection as soon as its accumulated loss exceeds an upper
+    /// bound — exactly the early-termination point upstream relies on (over 90% of
+    /// search time is spent in this routine).
+    ///
+    /// Edges are visited in bit-reversed order to surface new hazards (and thus
+    /// raise the loss) as early as possible, matching upstream.
+    pub(crate) fn collect_poly_collisions_custom(
+        &self,
+        candidate: &CdePreparedShape,
+        sink: &mut impl SpecializedHazardSink,
+    ) {
+        let mut wrapper = SinkAdapter {
+            holes: &self.holes,
+            sheet_world_pts: &self.sheet_world_pts,
+            candidate,
+            sink,
+            seen: HashMap::new(),
+        };
+
+        // Start from the lowest quadtree node that fully surrounds the candidate's
+        // bbox, so we do not descend from the root for every edge.
+        let v_root = self.cde.get_virtual_root(candidate.spoly.bbox);
+
+        // Collect collisions for each edge of the candidate polygon. Bit-reversed
+        // edge order maximises detecting new hazards early (better fail-fast).
+        let n_vertices = candidate.spoly.n_vertices();
+        for i in bit_reversal_order(n_vertices) {
+            let edge = candidate.spoly.edge(i);
+            v_root.collect_collisions(&edge, &mut wrapper);
+            if wrapper.sink.should_terminate() {
+                return;
+            }
+        }
+
+        // Containment pass: hazards that fully contain / are contained by the
+        // candidate without an edge intersection (upstream `Partial` presence).
+        for qt_haz in v_root.hazards.iter() {
+            match &qt_haz.presence {
+                QTHazPresence::None | QTHazPresence::Entire => {}
+                QTHazPresence::Partial(_) => {
+                    if !wrapper.contains_key(qt_haz.hkey) {
+                        let h_shape = &self.cde.hazards_map[qt_haz.hkey].shape;
+                        if self.cde.detect_containment_collision(
+                            &candidate.spoly,
+                            h_shape,
+                            qt_haz.entity,
+                        ) {
+                            wrapper.insert(qt_haz.hkey, qt_haz.entity);
+                            if wrapper.sink.should_terminate() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        super::cde_observability::record_batch_query(wrapper.len());
+    }
+}
+
+/// Sink for [`CdeCandidateSession::collect_poly_collisions_custom`].
+///
+/// The session resolves each detected quadtree hazard to a concrete VRS target
+/// (a fixed item layout index, the sheet exterior, or an unsupported geometry)
+/// after applying the touching post-policy, then notifies the sink. The sink owns
+/// the incremental tracker-weighted loss accumulation and the loss-bound state;
+/// it decides when to stop via [`should_terminate`](Self::should_terminate).
+pub(crate) trait SpecializedHazardSink {
+    /// The candidate positively overlaps the fixed item at `layout_idx`.
+    fn accept_pair(&mut self, candidate: &CdePreparedShape, layout_idx: usize);
+    /// The candidate violates the sheet boundary (positive area outside).
+    fn accept_container(&mut self, candidate: &CdePreparedShape);
+    /// A detected hazard could not be resolved by the post-policy.
+    fn accept_unsupported(&mut self);
+    /// True once the accumulated weighted loss has exceeded the upper bound.
+    fn should_terminate(&self) -> bool;
+}
+
+/// Adapter that lets the sink ride jagua's `collect_collisions` traversal: it
+/// implements `HazardCollector`, applies the VRS touching post-policy in
+/// `insert`, and forwards confirmed hazards to the sink.
+struct SinkAdapter<'a, S: SpecializedHazardSink> {
+    holes: &'a [(usize, Rc<CdePreparedShape>)],
+    sheet_world_pts: &'a [crate::geometry::Point],
+    candidate: &'a CdePreparedShape,
+    sink: &'a mut S,
+    /// Hazards already reported by the traversal (so the containment pass and the
+    /// quadtree's own dedup skip them). Mirrors upstream's `detected` map.
+    seen: HashMap<HazKey, HazardEntity>,
+}
+
+impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
+    fn contains_key(&self, hkey: HazKey) -> bool {
+        self.seen.contains_key(&hkey)
+    }
+
+    fn insert(&mut self, hkey: HazKey, entity: HazardEntity) {
+        self.seen.insert(hkey, entity);
+        // Stop doing post-policy/quantification work once the bound is blown; the
+        // outer loop will return after the current edge.
+        if self.sink.should_terminate() {
+            return;
+        }
+        match entity {
+            HazardEntity::Exterior => {
+                // Re-check against the real sheet polygon (touching boundary is allowed).
+                match polygon_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
+                    Ok(true) => {}
+                    Ok(false) => self.sink.accept_container(self.candidate),
+                    Err(_) => self.sink.accept_unsupported(),
+                }
+            }
+            HazardEntity::Hole { idx } => {
+                if let Some((layout_idx, oshape)) = self.holes.get(idx) {
+                    // Touching post-policy: only positive-area overlap counts.
+                    match polygons_collide(&self.candidate.world_pts, &oshape.world_pts) {
+                        Ok(true) => self.sink.accept_pair(self.candidate, *layout_idx),
+                        Ok(false) => {}
+                        Err(_) => self.sink.accept_unsupported(),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn remove_by_key(&mut self, hkey: HazKey) {
+        self.seen.remove(&hkey);
+    }
+
+    fn len(&self) -> usize {
+        self.seen.len()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (HazKey, &HazardEntity)> {
+        self.seen.iter().map(|(k, e)| (*k, e))
+    }
+}
+
+/// Visit `0..n` in bit-reversed order (upstream `BitReversalIterator`): spreads
+/// successive indices across the range so new hazards are surfaced early.
+fn bit_reversal_order(n: usize) -> Vec<usize> {
+    if n <= 2 {
+        return (0..n).collect();
+    }
+    let bits = (usize::BITS - (n - 1).leading_zeros()) as usize;
+    let mut out = Vec::with_capacity(n);
+    let mut seen = vec![false; n];
+    for i in 0..(1usize << bits) {
+        // reverse the low `bits` bits of i
+        let mut r = 0usize;
+        for b in 0..bits {
+            if i & (1 << b) != 0 {
+                r |= 1 << (bits - 1 - b);
+            }
+        }
+        if r < n && !seen[r] {
+            seen[r] = true;
+            out.push(r);
+        }
+    }
+    out
 }
 
 /// Build a `CdeCandidateSession` for `target_idx` from a placement list, using the

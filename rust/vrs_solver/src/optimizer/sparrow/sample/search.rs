@@ -16,8 +16,9 @@ pub(crate) fn build_sheet_session(
 
 /// Native CDE-backed search for a clear (or least-colliding) placement of the
 /// target instance across EVERY eligible sheet, all allowed rotations, with
-/// focused, global-grid and coordinate-descent candidates, scored by the same
-/// CDE-probe quantification used by the tracker for infeasible candidates.
+/// focused, global-grid and coordinate-descent candidates, scored by the
+/// `SeparationEvaluator` (upstream overlap-proxy quantification × tracker GLS
+/// weights) — Sparrow Algorithm 6.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn native_search_placement(
     target: usize,
@@ -146,6 +147,7 @@ pub(crate) fn native_search_placement(
         // Two-stage coordinate descent: pre-refine retained best samples, then
         // final-refine the current best. This mirrors Sparrow Algorithm 6.
         let wiggle = inst.continuous_rotation;
+        let item_min_dim = inst.part.width.min(inst.part.height);
         let starts = best_samples.samples.clone();
         for s in starts {
             if deadline_reached(started, deadline) {
@@ -154,6 +156,7 @@ pub(crate) fn native_search_placement(
             if let Some(desc) = refine_coord_desc(
                 s,
                 &mut evaluator,
+                item_min_dim,
                 cfg,
                 rng,
                 diag,
@@ -169,6 +172,7 @@ pub(crate) fn native_search_placement(
                 if let Some(desc) = refine_coord_desc(
                     s,
                     &mut evaluator,
+                    item_min_dim,
                     cfg,
                     rng,
                     diag,

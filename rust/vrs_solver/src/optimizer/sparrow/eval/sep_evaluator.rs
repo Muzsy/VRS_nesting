@@ -16,9 +16,16 @@ pub(crate) struct SeparationEvaluator<'a> {
 }
 
 impl<'a> SeparationEvaluator<'a> {
-    /// Evaluate a candidate transform. CDE decides clear/collision (`session`);
-    /// the tracker supplies the GLS weights; `upper_bound` enables early rejection
-    /// of dominated samples (Sparrow Algorithm 7 semantics).
+    /// Evaluate a candidate transform — upstream `SeparationEvaluator::evaluate_sample`
+    /// (Algorithm 7). Steps:
+    /// 1. prepare the candidate transform (bbox-in-sheet is a broad-phase *fit*
+    ///    check only — never a ranking term);
+    /// 2. reload the specialized collector with the loss bound derived from the
+    ///    current upper bound;
+    /// 3. collect hazards through the bounded visitor path;
+    /// 4. early-terminate dominated samples (`Invalid`);
+    /// 5. score solely from the collector's tracker-weighted loss:
+    ///    `Clear { loss: 0.0 }` when no hazard, else `Collision { loss }`.
     fn score_candidate(
         &mut self,
         rmx: f64,
@@ -28,6 +35,8 @@ impl<'a> SeparationEvaluator<'a> {
         diag: &mut SparrowDiagnostics,
     ) -> Option<ScoredPlacement> {
         let (rw, rh) = dims_for_rotation(self.inst.part.width, self.inst.part.height, rot);
+        // Broad-phase fit check: a candidate whose bbox cannot lie inside the sheet
+        // is discarded before any CDE work. This is a fit gate, not separation loss.
         if rmx < self.sheet.min_x - 1e-9
             || rmy < self.sheet.min_y - 1e-9
             || rmx + rw > self.sheet.max_x + 1e-9
@@ -52,16 +61,15 @@ impl<'a> SeparationEvaluator<'a> {
             y: ay,
             rotation_deg: rot,
         };
-        let clear_quality = ((rmy - self.sheet.min_y).max(0.0) / self.sheet.height.max(1.0))
-            + ((rmx - self.sheet.min_x).max(0.0) / self.sheet.width.max(1.0)) * 0.1
-            + (self.sheet_idx as f64) * 1e-6;
 
-        let bound_loss = match upper_bound {
+        // Upper bound of quantification above which the sample is guaranteed to be
+        // rejected (dominated by a previous one): Collision -> its loss, Clear -> 0,
+        // none/Invalid -> +inf.
+        let loss_bound = match upper_bound {
             Some(SampleEval::Collision { loss }) => loss,
             Some(SampleEval::Clear { .. }) => 0.0,
             _ => f64::INFINITY,
         };
-        let _pair_weight_authority = self.tracker.pair_weight(self.target, self.target);
 
         let mut collector = SpecializedCdeHazardCollector::new(
             self.target,
@@ -69,23 +77,30 @@ impl<'a> SeparationEvaluator<'a> {
             self.fixed_shapes,
             self.sheet_shape,
         );
-        collector.reload(bound_loss);
+        collector.reload(loss_bound);
         collect_poly_collisions_in_detector_custom(self.session, &shape, &mut collector, diag);
+
         if collector.early_terminate() {
+            // The quantification exceeded the upper bound and collection stopped
+            // early. The sample will always be rejected, so report it as dominated.
             return None;
         }
         if collector.is_empty() {
+            // No collisions detected -> clear. Upstream returns Clear { loss: 0.0 };
+            // positional compaction is the (excluded) compression phase's job, not
+            // the separator's.
             return Some(ScoredPlacement {
-                score: clear_quality,
+                score: 0.0,
                 collision_loss: 0.0,
                 is_clear: true,
                 placement,
             });
         }
-        let loss = collector.loss();
-        let quantified_loss = loss.max(QUANT_FLOOR);
+        // Some collisions, within the upper bound -> collision with total tracker-
+        // weighted loss from the collector.
+        let quantified_loss = collector.loss().max(QUANT_FLOOR);
         Some(ScoredPlacement {
-            score: 1_000_000.0 + quantified_loss + clear_quality,
+            score: quantified_loss,
             collision_loss: quantified_loss,
             is_clear: false,
             placement,

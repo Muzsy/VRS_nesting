@@ -36,6 +36,10 @@ impl SparrowOptimizer {
             cands.push(cand);
         }
 
+        // Upstream Algorithm 10: the winning worker is the one with the lowest
+        // total *weighted* loss. Raw loss, colliding-pair count and worker index
+        // are deterministic tie-breakers / diagnostics only — never the primary
+        // selection criterion.
         let best_idx = cands
             .iter()
             .min_by(|a, b| {
@@ -91,8 +95,9 @@ impl SparrowOptimizer {
         let strike_limit = 4usize;
         let no_improve_limit = 6usize;
         let mut strikes = 0usize;
+        // Upstream Algorithm 9 drives improvement/strike decisions off the total
+        // RAW loss (`get_total_loss`). Colliding-pair count is a diagnostic only.
         let mut best_raw = state.tracker.total_raw_loss();
-        let mut best_pairs = state.tracker.colliding_pairs();
         let mut best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
 
         while strikes < strike_limit && started.elapsed().as_secs_f64() < deadline {
@@ -128,17 +133,16 @@ impl SparrowOptimizer {
                 self.move_items_multi(state, instances, sheets, rng, started, deadline, diag);
                 state.refresh_incumbents();
                 let raw = state.tracker.total_raw_loss();
-                let pairs = state.tracker.colliding_pairs();
                 if raw <= 1e-9 {
                     state.best_feasible = Some(state.layout.snapshot());
                     return true;
-                } else if raw < best_raw - 1e-9 || pairs < best_pairs {
+                } else if raw < best_raw - 1e-9 {
+                    // New best by total raw loss (upstream Algorithm 9 semantics).
                     let old_best_raw = best_raw;
-                    let old_best_pairs = best_pairs;
                     best_raw = raw;
-                    best_pairs = pairs;
                     best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
-                    if raw < old_best_raw * 0.98 || pairs < old_best_pairs {
+                    // Reset the no-improvement counter only on a substantial (>2%) drop.
+                    if raw < old_best_raw * 0.98 {
                         no_improve = 0;
                     }
                 } else {

@@ -14,11 +14,15 @@ pub(crate) enum SpecializedHazard {
     Unsupported,
 }
 
-/// Local counterpart of upstream `SpecializedHazardCollector`.
+/// Local counterpart of upstream `SpecializedHazardCollector`
+/// (`.cache/sparrow/src/eval/specialized_jaguars_pipeline.rs`).
 ///
-/// The VRS CDE adapter exposes batch query results rather than jagua's
-/// `HazardCollector` trait, so this collector owns the incremental loss cache
-/// and receives hazards from `collect_poly_collisions_in_detector_custom`.
+/// It computes the tracker-weighted loss incrementally *on the fly* as the CDE
+/// reports hazards (via the [`SpecializedHazardSink`] trait), caches the running
+/// total, and supports loss-bound early termination — so a sample that is already
+/// dominated by a previously found one can abort before all of its collisions are
+/// detected/quantified. This is the upstream behaviour, not a post-`query`
+/// batch accumulation.
 pub(crate) struct SpecializedCdeHazardCollector<'a> {
     pub(crate) target: usize,
     pub(crate) tracker: &'a SparrowCollisionTracker,
@@ -55,6 +59,7 @@ impl<'a> SpecializedCdeHazardCollector<'a> {
         }
     }
 
+    /// Reload for a new query against the given `loss_bound` (upstream `reload`).
     pub(crate) fn reload(&mut self, loss_bound: f64) {
         self.hazards.clear();
         self.accumulated_loss = 0.0;
@@ -84,9 +89,8 @@ impl<'a> SpecializedCdeHazardCollector<'a> {
         }
     }
 
-    fn add_container(&mut self, candidate: &CdePreparedShape, diag: &mut SparrowDiagnostics) {
-        let raw = quantify_collision_poly_container_native(candidate, self.sheet_shape, diag)
-            .max(QUANT_FLOOR);
+    fn add_container(&mut self, candidate: &CdePreparedShape) {
+        let raw = quantify_collision_poly_container_value(candidate, self.sheet_shape).max(QUANT_FLOOR);
         let weight = self.tracker.container_weight(self.target);
         self.container_hazard_count += 1;
         self.hazards
@@ -94,17 +98,12 @@ impl<'a> SpecializedCdeHazardCollector<'a> {
         self.add_loss(raw * weight);
     }
 
-    fn add_pair(
-        &mut self,
-        candidate: &CdePreparedShape,
-        layout_idx: usize,
-        diag: &mut SparrowDiagnostics,
-    ) {
+    fn add_pair(&mut self, candidate: &CdePreparedShape, layout_idx: usize) {
         let Some(Some(fixed)) = self.fixed_shapes.get(layout_idx) else {
             self.add_unsupported();
             return;
         };
-        let raw = quantify_collision_poly_poly_native(candidate, fixed, diag).max(QUANT_FLOOR);
+        let raw = quantify_collision_poly_poly_value(candidate, fixed).max(QUANT_FLOOR);
         let weight = self.tracker.pair_weight(self.target, layout_idx);
         self.pair_hazard_count += 1;
         self.hazards.push(SpecializedHazard::Pair {
@@ -122,30 +121,40 @@ impl<'a> SpecializedCdeHazardCollector<'a> {
     }
 }
 
+/// The collector receives hazards from the CDE traversal as they are found and
+/// accumulates tracker-weighted loss, terminating early once the loss bound is
+/// exceeded. This is the upstream `SpecializedHazardCollector` contract.
+impl<'a> SpecializedHazardSink for SpecializedCdeHazardCollector<'a> {
+    fn accept_pair(&mut self, candidate: &CdePreparedShape, layout_idx: usize) {
+        self.add_pair(candidate, layout_idx);
+    }
+
+    fn accept_container(&mut self, candidate: &CdePreparedShape) {
+        self.add_container(candidate);
+    }
+
+    fn accept_unsupported(&mut self) {
+        self.add_unsupported();
+    }
+
+    fn should_terminate(&self) -> bool {
+        self.early_terminated
+    }
+}
+
+/// Upstream `collect_poly_collisions_in_detector_custom`: run the bounded /
+/// visitor CDE collection so the collector is populated *during* hazard
+/// detection (with loss-bound early termination), not from a completed batch
+/// result. Quantification counts gathered by the collector are merged into the
+/// run diagnostics afterwards.
 pub(crate) fn collect_poly_collisions_in_detector_custom(
     session: &CdeCandidateSession,
     candidate: &CdePreparedShape,
     collector: &mut SpecializedCdeHazardCollector<'_>,
     diag: &mut SparrowDiagnostics,
 ) {
-    let res = session.query(candidate);
-    if res.unsupported {
-        diag.unsupported_queries += 1;
-        collector.add_unsupported();
-        if collector.early_terminate() {
-            return;
-        }
-    }
-    if res.boundary_collision {
-        collector.add_container(candidate, diag);
-        if collector.early_terminate() {
-            return;
-        }
-    }
-    for layout_idx in res.colliding_layout_idxs {
-        collector.add_pair(candidate, layout_idx, diag);
-        if collector.early_terminate() {
-            return;
-        }
-    }
+    session.collect_poly_collisions_custom(candidate, collector);
+    diag.quantified_pair_queries += collector.pair_hazard_count;
+    diag.quantified_boundary_queries += collector.container_hazard_count;
+    diag.unsupported_queries += collector.unsupported_hazard_count;
 }

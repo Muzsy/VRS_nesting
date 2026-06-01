@@ -4,21 +4,23 @@ use super::*;
 // tracker (native, CDE-backed, quantified loss)
 // ---------------------------------------------------------------------------
 
-/// Native CDE-backed collision tracker. Owns quantified pair/boundary records +
-/// GLS weights. Collision EXISTENCE is decided by the CDE adapter
-/// (`CdeCandidateSession` / jagua `CDEngine`); the stored loss is a CDE-truth
-/// quantified separation/resolution distance (never a binary count).
+/// Native CDE-backed collision tracker (upstream `CollisionTracker`). Owns the
+/// quantified pair/boundary loss records + GLS weights. Collision EXISTENCE is
+/// decided by the CDE adapter (`CdeCandidateSession` / jagua `CDEngine`); the
+/// stored loss is the upstream overlap-proxy quantification (Algorithm 3/4:
+/// `sqrt(overlap-proxy + epsilon²) × shape penalty` for pairs, outside-area for
+/// the container), never a binary count.
 pub struct SparrowCollisionTracker {
     pub(crate) n: usize,
     /// Prepared CDE shapes per instance index (rebuilt lazily after a move).
     pub(crate) shapes: Vec<Option<Rc<CdePreparedShape>>>,
     /// Prepared sheet shapes per sheet index.
     pub(crate) sheet_shapes: Vec<Option<Rc<CdePreparedShape>>>,
-    /// Quantified raw pair loss (resolution distance proxy), keyed i<j.
+    /// Quantified raw pair loss (overlap-area proxy + shape penalty), keyed i<j.
     pub(crate) pair_loss: HashMap<(usize, usize), f64>,
     /// GLS pair weights, i<j.
     pub(crate) pair_weight: HashMap<(usize, usize), f64>,
-    /// Quantified raw boundary/container loss per item (clearance distance).
+    /// Quantified raw boundary/container loss per item (upstream outside-area proxy).
     pub(crate) boundary_loss: Vec<f64>,
     /// GLS boundary/container weights per item.
     pub(crate) boundary_weight: Vec<f64>,
@@ -347,8 +349,10 @@ impl SparrowCollisionTracker {
         set.into_iter().map(|(i, _)| i).collect()
     }
 
-    /// GLS Algorithm 8: decay clear entries and increase colliding entries
-    /// proportionally to their current loss relative to the maximum loss.
+    /// GLS Algorithm 8 (upstream `CollisionTracker::update_weights`): for every
+    /// entry, EITHER decay its weight back toward 1.0 if it is currently clear,
+    /// OR increase it in proportion to how bad its collision is relative to the
+    /// worst collision — never both. Uses the upstream GLS constants.
     pub fn update_weights(&mut self) {
         let max_loss = self
             .pair_loss
@@ -357,26 +361,34 @@ impl SparrowCollisionTracker {
             .chain(self.boundary_loss.iter().copied())
             .fold(0.0_f64, f64::max)
             .max(1e-9);
-        const DECAY: f64 = 0.995;
-        const MIN_INC: f64 = 1.05;
-        const MAX_INC: f64 = 1.30;
-        for (k, &loss) in self.pair_loss.iter() {
-            let ratio = (loss / max_loss).clamp(0.0, 1.0);
-            let mult = MIN_INC + (MAX_INC - MIN_INC) * ratio;
-            let w = self.pair_weight.entry(*k).or_insert(1.0);
-            *w = (*w * mult).max(1.0).min(50.0);
-        }
-        for w in self.pair_weight.values_mut() {
-            *w = (*w * DECAY).max(1.0);
-        }
-        for i in 0..self.n {
-            if self.boundary_loss[i] > 0.0 {
-                let ratio = (self.boundary_loss[i] / max_loss).clamp(0.0, 1.0);
-                let mult = MIN_INC + (MAX_INC - MIN_INC) * ratio;
-                self.boundary_weight[i] = (self.boundary_weight[i] * mult).max(1.0).min(50.0);
+        // Pair weights: iterate the union of currently-colliding pairs and any pair
+        // that still carries a non-default weight (so resolved pairs decay back).
+        let pair_keys: Vec<(usize, usize)> = self
+            .pair_weight
+            .keys()
+            .copied()
+            .chain(self.pair_loss.keys().copied())
+            .collect();
+        for k in pair_keys {
+            let loss = self.pair_loss.get(&k).copied().unwrap_or(0.0);
+            let mult = if loss == 0.0 {
+                GLS_WEIGHT_DECAY
             } else {
-                self.boundary_weight[i] = (self.boundary_weight[i] * DECAY).max(1.0);
-            }
+                let ratio = (loss / max_loss).clamp(0.0, 1.0);
+                GLS_WEIGHT_MIN_INC_RATIO + (GLS_WEIGHT_MAX_INC_RATIO - GLS_WEIGHT_MIN_INC_RATIO) * ratio
+            };
+            let w = self.pair_weight.entry(k).or_insert(1.0);
+            *w = (*w * mult).max(1.0);
+        }
+        // Container / boundary weights.
+        for i in 0..self.n {
+            let mult = if self.boundary_loss[i] == 0.0 {
+                GLS_WEIGHT_DECAY
+            } else {
+                let ratio = (self.boundary_loss[i] / max_loss).clamp(0.0, 1.0);
+                GLS_WEIGHT_MIN_INC_RATIO + (GLS_WEIGHT_MAX_INC_RATIO - GLS_WEIGHT_MIN_INC_RATIO) * ratio
+            };
+            self.boundary_weight[i] = (self.boundary_weight[i] * mult).max(1.0);
         }
     }
 
@@ -422,6 +434,10 @@ impl SparrowCollisionTracker {
 
 /// Minimum stored loss for any CDE-confirmed collision.
 pub(crate) const QUANT_FLOOR: f64 = 1e-3;
+/// Upstream GLS weight-update constants (`.cache/sparrow/src/consts.rs`).
+const GLS_WEIGHT_MAX_INC_RATIO: f64 = 2.0;
+const GLS_WEIGHT_MIN_INC_RATIO: f64 = 1.2;
+const GLS_WEIGHT_DECAY: f64 = 0.95;
 /// Loss assigned to an unsupported-geometry verdict (treated honestly as a hard,
 /// large violation — never as no-collision).
 pub(crate) const BIG_UNSUPPORTED_LOSS: f64 = 1.0e6;

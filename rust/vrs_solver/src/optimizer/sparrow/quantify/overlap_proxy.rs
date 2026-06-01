@@ -11,15 +11,39 @@ struct PoleProxy {
     radius: f64,
 }
 
+/// Upstream Algorithm 4: pair collision loss = sqrt(overlap-proxy + epsilon²) ×
+/// shape penalty. Pure value (no diagnostics side effects); used by the bounded
+/// visitor collector which counts its own quantification calls.
+pub(crate) fn quantify_collision_poly_poly_value(
+    a: &CdePreparedShape,
+    b: &CdePreparedShape,
+) -> f64 {
+    let epsilon = a.spoly.diameter.max(b.spoly.diameter) as f64 * OVERLAP_PROXY_EPSILON_DIAM_RATIO;
+    let proxy = overlap_area_proxy(a, b, epsilon) + epsilon.powi(2);
+    proxy.max(1e-12).sqrt() * calc_shape_penalty(a, b)
+}
+
+/// Upstream container loss = 2 × sqrt(outside/intersection-area) × shape penalty.
+/// Pure value (no diagnostics side effects).
+pub(crate) fn quantify_collision_poly_container_value(
+    shape: &CdePreparedShape,
+    sheet: &CdePreparedShape,
+) -> f64 {
+    let shape_area = bbox_area(shape).max(1.0);
+    let overlap = match bbox_intersection_area(shape, sheet) {
+        Some(intersection) => (shape_area - intersection).max(0.0) + 0.0001 * shape_area,
+        None => shape_area + bbox_centroid_distance(shape, sheet),
+    };
+    2.0 * overlap.max(1e-12).sqrt() * calc_shape_penalty(shape, shape)
+}
+
 pub(crate) fn quantify_collision_poly_poly(
     a: &CdePreparedShape,
     b: &CdePreparedShape,
     diag: &mut SparrowDiagnostics,
 ) -> f64 {
     diag.quantified_pair_queries += 1;
-    let epsilon = a.spoly.diameter.max(b.spoly.diameter) as f64 * OVERLAP_PROXY_EPSILON_DIAM_RATIO;
-    let proxy = overlap_area_proxy(a, b, epsilon) + epsilon.powi(2);
-    proxy.max(1e-12).sqrt() * calc_shape_penalty(a, b)
+    quantify_collision_poly_poly_value(a, b)
 }
 
 pub(crate) fn quantify_collision_poly_container(
@@ -28,12 +52,7 @@ pub(crate) fn quantify_collision_poly_container(
     diag: &mut SparrowDiagnostics,
 ) -> f64 {
     diag.quantified_boundary_queries += 1;
-    let shape_area = bbox_area(shape).max(1.0);
-    let overlap = match bbox_intersection_area(shape, sheet) {
-        Some(intersection) => (shape_area - intersection).max(0.0) + 0.0001 * shape_area,
-        None => shape_area + bbox_centroid_distance(shape, sheet),
-    };
-    2.0 * overlap.max(1e-12).sqrt() * calc_shape_penalty(shape, shape)
+    quantify_collision_poly_container_value(shape, sheet)
 }
 
 /// Upstream Algorithm 3 overlap proxy, adapted to VRS prepared shapes.

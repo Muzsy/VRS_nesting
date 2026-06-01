@@ -68,40 +68,12 @@ impl SparrowOptimizer {
             }
         }
 
-        // Exploration: separate; on failure, pool the least-infeasible state,
-        // biased-restore one, disrupt, and retry.
-        let max_attempts = 10usize;
-        let mut feasible = false;
-        let mut pool: Vec<(f64, SparrowLayout)> = Vec::new();
-        for attempt in 0..max_attempts {
-            if started.elapsed().as_secs_f64() >= deadline {
-                break;
-            }
-            diag.exploration_attempts += 1;
-            if active_optimizer.separate(
-                &mut state, instances, sheets, &started, deadline, &mut rng, &mut diag,
-            ) {
-                feasible = true;
-                break;
-            }
-            // Pool insert (least-infeasible), biased restore, disrupt.
-            let raw = state.tracker.total_raw_loss();
-            let at = pool
-                .binary_search_by(|(l, _)| l.partial_cmp(&raw).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap_or_else(|e| e);
-            pool.insert(at, (raw, state.layout.snapshot()));
-            pool.truncate(8);
-            diag.exploration_pool_inserts += 1;
-            if !pool.is_empty() {
-                // Biased restore: pick from the better half of the pool.
-                let sel = (self.config.seed as usize).wrapping_add(attempt)
-                    % ((pool.len() + 1) / 2).max(1);
-                let restored = pool[sel].1.snapshot();
-                diag.exploration_pool_restores += 1;
-                state = SparrowState::new_with_diag(restored, instances, sheets, &mut diag);
-                active_optimizer.disrupt(&mut state, instances, sheets, &mut rng, &mut diag);
-            }
-        }
+        // Exploration phase (Algorithm 12, fixed-sheet adaptation): separate; on
+        // failure, pool the least-infeasible state, biased-restore one, disrupt,
+        // and retry. Owned by `explore.rs`.
+        let feasible = active_optimizer.exploration_phase(
+            &mut state, instances, sheets, &started, deadline, &mut rng, &mut diag,
+        );
 
         // Pick the layout to validate/emit: feasible incumbent if any, else the
         // least-infeasible incumbent by pair count/raw loss. If the active state
