@@ -20,8 +20,8 @@ impl BestSamples {
             return false;
         }
         if let Some(idx) = self.samples.iter().position(|s| {
-            (s.placement.x - cand.placement.x).abs() < self.unique_thresh
-                && (s.placement.y - cand.placement.y).abs() < self.unique_thresh
+            (s.rect_min_x - cand.rect_min_x).abs() < self.unique_thresh
+                && (s.rect_min_y - cand.rect_min_y).abs() < self.unique_thresh
                 && (s.placement.rotation_deg - cand.placement.rotation_deg).abs() < 1.0
                 && s.placement.sheet_index == cand.placement.sheet_index
         }) {

@@ -65,6 +65,59 @@ mod tests {
             }
         }
 
+        fn scored(
+            score: f64,
+            rect_min_x: f64,
+            rect_min_y: f64,
+            anchor_x: f64,
+            anchor_y: f64,
+            rotation_deg: f64,
+        ) -> ScoredPlacement {
+            ScoredPlacement {
+                score,
+                collision_loss: 0.0,
+                is_clear: true,
+                rect_min_x,
+                rect_min_y,
+                placement: SparrowPlacement {
+                    instance_idx: 0,
+                    sheet_index: 0,
+                    x: anchor_x,
+                    y: anchor_y,
+                    rotation_deg,
+                },
+            }
+        }
+
+        struct RecordingEvaluator {
+            samples: Vec<(f64, f64, f64)>,
+        }
+
+        impl SampleEvaluator for RecordingEvaluator {
+            fn evaluate_sample(
+                &mut self,
+                x: f64,
+                y: f64,
+                rot: f64,
+                _upper_bound: Option<SampleEval>,
+                _diag: &mut SparrowDiagnostics,
+            ) -> Option<ScoredPlacement> {
+                self.samples.push((x, y, rot));
+                Some(scored(
+                    1.0 + self.samples.len() as f64,
+                    x,
+                    y,
+                    x + 900.0,
+                    y + 800.0,
+                    rot,
+                ))
+            }
+
+            fn n_evals(&self) -> usize {
+                self.samples.len()
+            }
+        }
+
         #[test]
         fn from_solver_input_expands_instances_with_stable_indices() {
             let parts = vec![make_part("P", 30.0, 20.0, 3)];
@@ -362,6 +415,137 @@ mod tests {
             assert_eq!(
                 result.diagnostics.excluded_phase_passes, 0,
                 "excluded phase disabled by default"
+            );
+        }
+
+        #[test]
+        fn coord_descent_uses_rect_min_for_rotated_anchor_candidates() {
+            let init = scored(0.0, 10.0, 20.0, 910.0, 820.0, 45.0);
+            let mut evaluator = RecordingEvaluator {
+                samples: Vec::new(),
+            };
+            let mut rng = DeterministicRng::new(11);
+            let mut diag = SparrowDiagnostics::default();
+            let mut config = cfg(CollisionBackendKind::Cde);
+            config.coord_descent_steps = 1;
+
+            let _ = refine_coord_desc(
+                init,
+                &mut evaluator,
+                100.0,
+                &config,
+                &mut rng,
+                &mut diag,
+                false,
+                false,
+                config.rotation_wiggle_deg,
+            );
+
+            assert!(
+                !evaluator.samples.is_empty(),
+                "coordinate descent evaluated candidate samples"
+            );
+            assert!(
+                evaluator
+                    .samples
+                    .iter()
+                    .all(|(x, y, _)| (x - 10.0).abs() < 200.0 && (y - 20.0).abs() < 200.0),
+                "coordinate descent must mutate rect-min coordinates, not anchor output coordinates: {:?}",
+                evaluator.samples
+            );
+        }
+
+        #[test]
+        fn best_samples_deduplicates_in_rect_min_sample_space() {
+            let mut best = BestSamples::new(4, 0.1);
+            let first = scored(10.0, 12.0, 34.0, 100.0, 200.0, 45.0);
+            let better_same_sample = scored(5.0, 12.02, 34.01, 300.0, 400.0, 45.0);
+
+            assert!(best.report(first));
+            assert!(best.report(better_same_sample));
+            assert_eq!(
+                best.samples.len(),
+                1,
+                "same rect-min sample-space key deduplicates even when anchor differs"
+            );
+            assert_eq!(best.samples[0].score, 5.0);
+        }
+
+        #[test]
+        fn lbf_evaluator_rejects_colliding_candidates_as_invalid() {
+            let parts = vec![make_part("P", 50.0, 50.0, 2)];
+            let stocks = vec![make_stock("S", 120.0, 120.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let sheet = &problem.container.sheets[0];
+            let sheet_shape = prepare_shape_from_sheet(sheet).expect("sheet shape");
+            let placed = prepare_shape_native(&problem.instances[0].part, 0.0, 0.0, 0.0)
+                .expect("placed shape");
+            let session = CdeCandidateSession::build(vec![(0, Rc::new(placed))], &sheet_shape)
+                .expect("session");
+            let base = prepare_base_shape_native(&problem.instances[1].part).expect("base");
+            let evaluator = LBFEvaluator {
+                inst: &problem.instances[1],
+                sheet,
+                sheet_idx: 0,
+                session: &session,
+                base: &base,
+                n_evals: 0,
+            };
+
+            assert!(
+                evaluator.score_lbf_candidate(0.0, 0.0, 0.0).is_none(),
+                "colliding LBF sample must be rejected, not returned as is_clear=false"
+            );
+        }
+
+        #[test]
+        fn fixed_sheet_bootstrap_is_outside_lbf_and_marked_infeasible() {
+            let parts = vec![make_part("P", 100.0, 100.0, 2)];
+            let stocks = vec![make_stock("S", 100.0, 100.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+
+            let lbf_result = LBFBuilder::new(&problem).construct();
+            assert_eq!(
+                lbf_result.layout.placements.len(),
+                1,
+                "clear-only LBF places the first perfectly fitting item"
+            );
+            assert_eq!(
+                lbf_result.unresolved.len(),
+                1,
+                "second perfectly fitting item is unresolved on a fixed sheet"
+            );
+
+            let bootstrapped = build_native_constructive_seed(&problem);
+            assert_eq!(
+                bootstrapped.placements.len(),
+                2,
+                "fixed-sheet bootstrap seeds unresolved item outside LBF"
+            );
+            let tracker = SparrowCollisionTracker::build(
+                &bootstrapped,
+                &problem.instances,
+                &problem.container.sheets,
+            );
+            assert!(
+                !tracker.is_feasible(),
+                "bootstrap seed is honestly infeasible and left for separator resolution"
             );
         }
 

@@ -96,6 +96,8 @@ impl<'a> SeparationEvaluator<'a> {
                 score: 0.0,
                 collision_loss: 0.0,
                 is_clear: true,
+                rect_min_x: rmx,
+                rect_min_y: rmy,
                 placement,
             });
         }
@@ -106,6 +108,8 @@ impl<'a> SeparationEvaluator<'a> {
             score: quantified_loss,
             collision_loss: quantified_loss,
             is_clear: false,
+            rect_min_x: rmx,
+            rect_min_y: rmy,
             placement,
         })
     }

@@ -33,6 +33,8 @@ impl PartialOrd for SampleEval {
 }
 
 pub(crate) trait SampleEvaluator {
+    /// Evaluate a sample-space candidate. `x` and `y` are rect-min coordinates;
+    /// output placements remain anchor coordinates at the VRS boundary.
     fn evaluate_sample(
         &mut self,
         x: f64,
@@ -51,6 +53,8 @@ pub(crate) struct ScoredPlacement {
     pub(crate) score: f64,
     pub(crate) collision_loss: f64,
     pub(crate) is_clear: bool,
+    pub(crate) rect_min_x: f64,
+    pub(crate) rect_min_y: f64,
     pub(crate) placement: SparrowPlacement,
 }
 

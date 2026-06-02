@@ -1,0 +1,107 @@
+id: sgh_q25_r4_semantic_parity_audit_fix_no_benchmark
+title: SGH-Q25-R4 Semantic parity audit/fix — coordinate convention + LBF Invalid semantics
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow
+kind: implementation
+
+intent: >-
+  Fix concrete semantic mismatches discovered after Q25-R3: anchor-vs-rect-min
+  coordinate leakage in coordinate descent / sample deduplication, and LBF collision
+  handling that must be Invalid/rejected rather than a colliding candidate. This is
+  source-level semantic correction, not LV8 tuning and not compression work.
+
+must_not:
+  - add compression
+  - add LV8 benchmark quality acceptance
+  - reintroduce WorkingLayout or VrsCollisionTracker into optimizer/sparrow
+  - keep LBF colliding candidates as ScoredPlacement
+  - use anchor coordinates as sample-space translation state
+  - deduplicate samples by anchor coordinates where sampler/evaluator use rect-min
+  - edit unrelated repo files
+
+steps:
+  - name: "Felderítés és scope gate rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex szabályokat, a Q25-R3 reportot és a canvas
+      Source of truth szekciójában felsorolt upstream Sparrow fájlokat. Futtasd:
+      git status --porcelain=v1; git diff --name-only; git -C .cache/sparrow rev-parse HEAD.
+      Hozd létre a Q25-R4 report vázát a kötelező szekciókkal, külön rögzítve a
+      pre-task dirty állapotot. Ebben a stepben még ne módosíts solver kódot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+
+  - name: "Sample-space koordináta-konvenció javítása"
+    description: >
+      Tedd explicitté és egységessé a sampler/search/evaluator/coordinate-descent
+      koordináta-konvenciót: evaluate_sample(x,y,rot) rect-min koordinátát kap,
+      ScoredPlacement pedig az output anchor placement mellett tárolja a sample-space
+      rect-min koordinátát is, kötelezően `rect_min_x` és `rect_min_y` mezőkkel. Az LBFEvaluator
+      és SeparationEvaluator ezekkel a rect-min bemenetekkel töltse ki a ScoredPlacementet.
+      A CoordinateDescent a rect-min koordinátát mutálja, ne a SparrowPlacement anchor
+      x/y mezőit. A BestSamples deduplikáció rect-min sample-space alapján működjön.
+      Ne váltsd át az evaluátorokat anchor koordinátára a mismatch elrejtésére.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/sample_eval.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/lbf_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/sep_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/coord_descent.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/best_samples.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/uniform_sampler.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+
+  - name: "LBF Invalid szemantika és fixed-sheet bootstrap tisztítása"
+    description: >
+      Javítsd az LBFEvaluator collision szemantikáját: LBF esetén collision/boundary/
+      unsupported candidate Invalid/rejected legyen, ne Some(ScoredPlacement) is_clear=false.
+      Távolítsd el az artificial collision-ranking ágat az LBF evaluatorból. Az LBFBuilder
+      csak clear candidate-et fogadhat el; no-clear esetben unresolved legyen. A
+      fixed_sheet_separator_bootstrap maradjon LBF-en kívül, és a reportban ne upstream LBF
+      sikernek, hanem fixed-sheet separator bootstrap adaptációnak legyen dokumentálva.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/lbf_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/lbf.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/fixed_sheet.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+
+  - name: "Célzott szemantikai tesztek és smoke gate"
+    description: >
+      Adj hozzá célzott Rust teszteket a canvasban megadott nevekkel: rotated anchor-vs-rect-min
+      coordinate descent regresszió; BestSamples rect-min dedup; LBF collision invalid/rejected;
+      fixed-sheet bootstrap outside LBF. Frissítsd vagy hozd létre a Python smoke scriptet úgy,
+      hogy statikusan is fogja ezeket a regressziókat: no coord-descent anchor translation state,
+      ScoredPlacement rect-min mezők, BestSamples rect-min dedup, no is_clear:false LBF evaluator,
+      report correction section. A smoke nem lehet LV8 benchmark gate.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "scripts/smoke_sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.py"
+      - "codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+
+  - name: "Report és checklist lezárása"
+    description: >
+      Töltsd ki a report kötelező szekcióit. Külön tartalmazza: ANCHOR_RECT_MIN_CONVENTION_AUDIT,
+      BEST_SAMPLES_SAMPLE_SPACE_AUDIT, LBF_INVALID_SEMANTICS_AUDIT, FIXED_SHEET_BOOTSTRAP_AUDIT,
+      Q25_R3_REPORT_CLAIM_CORRECTION, LEGACY_CORE_REGRESSION_GATE. A Q25_R3 report claim correction
+      mondja ki egyértelműen, hogy a Q25-R3 LBF collision->Invalid állítása source-accurate volt-e.
+      Frissítsd a checklistet valós állapot szerint.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib; python3
+      scripts/smoke_sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.py; ./scripts/check.sh;
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md.
+      A report BUILD_TEST_RESULTS szekciójába írd be a parancsok eredményét. Ha bármely gate nem
+      futott, ne claimelj teljes PASS-t.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.md"
+      - "codex/reports/egyedi_solver/sgh_q25_r4_semantic_parity_audit_fix_no_benchmark.verify.log"

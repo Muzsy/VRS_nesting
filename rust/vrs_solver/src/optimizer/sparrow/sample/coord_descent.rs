@@ -26,7 +26,12 @@ pub(crate) struct CDConfig {
 impl CDConfig {
     /// Upstream `prerefine_cd_config` / `final_refine_cd_config`, parameterised by
     /// the item's minimum bbox dimension and the configured wiggle step.
-    fn for_stage(item_min_dim: f64, final_stage: bool, wiggle: bool, rotation_wiggle_deg: f64) -> Self {
+    fn for_stage(
+        item_min_dim: f64,
+        final_stage: bool,
+        wiggle: bool,
+        rotation_wiggle_deg: f64,
+    ) -> Self {
         let r_init = rotation_wiggle_deg.max(0.5);
         if final_stage {
             // Upstream SND_REFINE: (0.01, 0.001) of min dim; rotation (0.5°, 0.05°).
@@ -77,8 +82,8 @@ impl CDAxis {
 /// active axis, accept the best if not worse, scale the active axis' step up on
 /// success / down on failure, and reselect a random axis on any non-improvement.
 /// Stops when both translation steps and the rotation step fall below their
-/// limits. The translation/rotation deltas are passed to the evaluator in the
-/// same (anchor + delta) convention the rest of the search uses.
+/// limits. Translation deltas mutate the sample-space rect-min coordinates; the
+/// evaluator converts accepted candidates to anchor placements for layout output.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn refine_coord_desc(
     init: ScoredPlacement,
@@ -91,7 +96,12 @@ pub(crate) fn refine_coord_desc(
     wiggle: bool,
     rotation_wiggle_deg: f64,
 ) -> Option<ScoredPlacement> {
-    let cd_config = CDConfig::for_stage(item_min_dim.max(1.0), final_stage, wiggle, rotation_wiggle_deg);
+    let cd_config = CDConfig::for_stage(
+        item_min_dim.max(1.0),
+        final_stage,
+        wiggle,
+        rotation_wiggle_deg,
+    );
     let mut cd = CoordinateDescent {
         cur: init,
         axis: CDAxis::random(rng, cd_config.wiggle),
@@ -150,11 +160,14 @@ impl CoordinateDescent {
     fn ask(&self) -> Option<[(f64, f64, f64, bool); 2]> {
         let (sx, sy) = self.t_steps;
         let sr = self.r_step;
-        if sx < self.t_step_limit && sy < self.t_step_limit && (sr < self.r_step_limit || !self.wiggle) {
+        if sx < self.t_step_limit
+            && sy < self.t_step_limit
+            && (sr < self.r_step_limit || !self.wiggle)
+        {
             return None;
         }
-        let tx = self.cur.placement.x;
-        let ty = self.cur.placement.y;
+        let tx = self.cur.rect_min_x;
+        let ty = self.cur.rect_min_y;
         let r = self.cur.placement.rotation_deg;
         let c = match self.axis {
             CDAxis::Horizontal => [(tx + sx, ty, r, false), (tx - sx, ty, r, false)],
@@ -190,7 +203,11 @@ impl CoordinateDescent {
             }
         }
 
-        let m = if better { CD_STEP_SUCCESS } else { CD_STEP_FAIL };
+        let m = if better {
+            CD_STEP_SUCCESS
+        } else {
+            CD_STEP_FAIL
+        };
         match self.axis {
             CDAxis::Horizontal => self.t_steps.0 *= m,
             CDAxis::Vertical => self.t_steps.1 *= m,
