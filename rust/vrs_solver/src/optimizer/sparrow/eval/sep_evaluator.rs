@@ -8,6 +8,9 @@ pub(crate) struct SeparationEvaluator<'a> {
     pub(crate) sheet_shape: &'a CdePreparedShape,
     pub(crate) session: &'a CdeCandidateSession,
     pub(crate) fixed_shapes: &'a [Option<Rc<CdePreparedShape>>],
+    /// Per-instance base shape (POI + surrogate precomputed once); each candidate
+    /// is built from it by a cheap rigid transform.
+    pub(crate) base: &'a CdeBaseShape,
     /// The native collision tracker is the loss/weight authority. The evaluator
     /// orders candidates by CDE-confirmed hazards scaled by the tracker's GLS
     /// pair/container weights — it does NOT invent local weights.
@@ -51,7 +54,7 @@ impl<'a> SeparationEvaluator<'a> {
             self.inst.part.height,
             rot,
         );
-        let shape = prepare_shape_native(&self.inst.part, ax, ay, rot).ok()?;
+        let shape = transform_base_to_candidate(self.base, ax, ay, rot)?;
         self.n_evals += 1;
         diag.search_position_samples += 1;
         let placement = SparrowPlacement {

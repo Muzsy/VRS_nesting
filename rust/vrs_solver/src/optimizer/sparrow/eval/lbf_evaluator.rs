@@ -5,6 +5,31 @@ pub(crate) struct LBFEvaluator<'a> {
     pub(crate) sheet: &'a SheetShape,
     pub(crate) sheet_idx: usize,
     pub(crate) session: &'a CdeCandidateSession,
+    /// Per-instance base shape (POI + surrogate precomputed once).
+    pub(crate) base: &'a CdeBaseShape,
+    pub(crate) n_evals: usize,
+}
+
+/// Upstream `LBFEvaluator` implements `SampleEvaluator` so the shared
+/// `search_placement` (Algorithm 6) drives LBF construction with the same
+/// sampler + two-stage coordinate descent the separator uses. The LBF ignores the
+/// upper bound (it only distinguishes clear from collision) — exactly upstream.
+impl<'a> SampleEvaluator for LBFEvaluator<'a> {
+    fn evaluate_sample(
+        &mut self,
+        x: f64,
+        y: f64,
+        rot: f64,
+        _upper_bound: Option<SampleEval>,
+        _diag: &mut SparrowDiagnostics,
+    ) -> Option<ScoredPlacement> {
+        self.n_evals += 1;
+        self.score_lbf_candidate(x, y, rot)
+    }
+
+    fn n_evals(&self) -> usize {
+        self.n_evals
+    }
 }
 
 impl<'a> LBFEvaluator<'a> {
@@ -29,7 +54,7 @@ impl<'a> LBFEvaluator<'a> {
             self.inst.part.height,
             rot,
         );
-        let shape = prepare_shape_native(&self.inst.part, ax, ay, rot).ok()?;
+        let shape = transform_base_to_candidate(self.base, ax, ay, rot)?;
         let res = self.session.query(&shape);
         if res.unsupported {
             return None;

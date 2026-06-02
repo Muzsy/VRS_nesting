@@ -1,0 +1,69 @@
+id: sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark
+title: SGH-Q25-R3 Upstream Sparrow core port closure, no benchmark focus
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow
+kind: implementation
+
+intent: >-
+  Close the remaining non-compression semantic gaps between the local native
+  Sparrow core and upstream jagua_rs/Sparrow. This task is not LV8 tuning and
+  not another “Sparrow-like” approximation. It must finish source-level core
+  porting so later work can move on to validation and production hardening.
+
+must_not:
+  - tune dense LV8 as the primary goal
+  - add compression
+  - reintroduce WorkingLayout or VrsCollisionTracker into optimizer/sparrow
+  - accept batch-only CDE collector as specialized upstream pipeline
+  - skip pole pre-pass as perf-only or future work
+  - accept fake/least-infeasible LBF placements as constructive success
+  - use AABB/bbox/extent ranking for separation evaluator
+  - introduce out-of-scope file modifications
+
+allowed_scope:
+  implementation:
+    - rust/vrs_solver/src/optimizer/sparrow/**
+    - rust/vrs_solver/src/optimizer/cde_adapter.rs
+    - rust/vrs_solver/src/optimizer/cde_session.rs
+    - rust/vrs_solver/src/optimizer/cde_observability.rs
+    - rust/vrs_solver/src/optimizer/collision_severity.rs
+  task_artifacts:
+    - README_SGH_Q25_R3_UPSTREAM_SPARROW_PORT_CLOSURE_PACKAGE.md
+    - canvases/egyedi_solver/sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.md
+    - codex/codex_checklist/egyedi_solver/sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.md
+    - codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.yaml
+    - codex/prompts/egyedi_solver/sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark/run.md
+    - codex/reports/egyedi_solver/sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.md
+    - codex/reports/egyedi_solver/sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.verify.log
+    - scripts/smoke_sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.py
+
+acceptance:
+  required_status: SGH-Q25-R3_STATUS: PASS
+  required_sections:
+    - UPSTREAM_COMMIT
+    - PRE_TASK_GIT_STATUS
+    - PRE_TASK_DIRTY_FILES
+    - PRE_EXISTING_OUT_OF_SCOPE_DIRTY_FILES
+    - TASK_CHANGED_FILES
+    - OUT_OF_SCOPE_NEW_CHANGES
+    - PORT_CLOSURE_MAPPING_TABLE
+    - FIXED_SHEET_DEVIATIONS_WITH_NO_SEMANTIC_LOSS
+    - DEFERRED_COMPRESSION_ONLY
+    - BUILD_TEST_RESULTS
+  gates:
+    - cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+    - cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib
+    - python3 scripts/smoke_sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.py
+    - ./scripts/check.sh
+    - ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.md
+  pass_conditions:
+    - OUT_OF_SCOPE_NEW_CHANGES is NONE
+    - specialized CDE pipeline includes pole pre-pass, edge traversal, containment, and early termination
+    - LBF path is clear-only search_placement + LBFEvaluator with no fake success shortcut
+    - search/sampler follows upstream focused + container-wide + BestSamples + two-stage coordinate descent semantics
+    - mapping table has no open non-compression semantic gap
+
+report_path: codex/reports/egyedi_solver/sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.md
+smoke_path: scripts/smoke_sgh_q25_r3_upstream_sparrow_port_closure_no_benchmark.py

@@ -19,8 +19,10 @@ pub(crate) use crate::rotation_policy::{RotationPolicyKind, RotationResolveConte
 pub(crate) use crate::sheet::SheetShape;
 
 pub(crate) use super::cde_adapter::{
-    prepare_shape_from_sheet, prepare_shape_native, translate_prepared, CdeAdapter,
-    CdeCandidateSession, CdePreparedShape, CdeQueryResult, SpecializedHazardSink,
+    convex_hull_area_and_diameter, prepare_base_shape_native, prepare_shape_from_sheet,
+    prepare_shape_native, transform_base_to_candidate, translate_prepared, CandidatePole,
+    CdeAdapter, CdeBaseShape, CdeCandidateSession, CdePreparedShape, CdeQueryResult,
+    SpecializedCollectionCtx, SpecializedHazardSink,
 };
 
 pub mod diagnostics;

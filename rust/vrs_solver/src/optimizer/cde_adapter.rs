@@ -4,7 +4,11 @@ use jagua_rs::collision_detection::hazards::{HazKey, Hazard, HazardEntity};
 use jagua_rs::collision_detection::quadtree::QTHazPresence;
 use jagua_rs::collision_detection::{CDEConfig, CDEngine};
 use jagua_rs::geometry::fail_fast::SPSurrogateConfig;
+use jagua_rs::geometry::geo_traits::TransformableFrom;
+use jagua_rs::geometry::primitives::Circle;
+use jagua_rs::geometry::primitives::Point as JagPoint;
 use jagua_rs::geometry::primitives::Rect as JagRect;
+use jagua_rs::geometry::Transformation;
 
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
@@ -282,7 +286,33 @@ pub(crate) fn prepare_shape_native(
     y: f64,
     rotation_deg: f64,
 ) -> Result<CdePreparedShape, &'static str> {
-    let world_pts = match extract_polygon_from_part(part) {
+    let local = part_local_polygon(part)?;
+    let world_pts = transform_polygon(&local, x, y, rotation_deg);
+
+    let (min_x, min_y, max_x, max_y) =
+        polygon_bbox(&world_pts).ok_or("empty polygon after transform")?;
+    let mut spoly = to_jag_polygon(&world_pts, "cde_placement_shape")
+        .map_err(|_| "SPolygon build failed for placement")?;
+    // Generate the surrogate once here. Placed/fixed/sheet-session shapes are built
+    // via this function and reused (tracker pair quantification, pole pre-pass), so
+    // computing the surrogate once avoids regenerating it per quantified pair. The
+    // per-candidate search hot path does NOT use this function — it transforms a
+    // base shape (`transform_base_to_candidate`) — so this adds no per-sample cost.
+    let _ = spoly.generate_surrogate(pole_prepass_surrogate_config());
+
+    Ok(CdePreparedShape {
+        spoly,
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+        world_pts,
+    })
+}
+
+/// The part's polygon in local coordinates (anchor at origin, rotation 0).
+fn part_local_polygon(part: &Part) -> Result<Vec<Point>, &'static str> {
+    match extract_polygon_from_part(part) {
         PolygonExtraction::Absent => {
             if part.width <= 0.0
                 || part.height <= 0.0
@@ -291,33 +321,57 @@ pub(crate) fn prepare_shape_native(
             {
                 return Err("part dimensions must be positive and finite for CDE rect polygon");
             }
-            let local = [
+            Ok(vec![
                 Point { x: 0.0, y: 0.0 },
-                Point {
-                    x: part.width,
-                    y: 0.0,
-                },
-                Point {
-                    x: part.width,
-                    y: part.height,
-                },
-                Point {
-                    x: 0.0,
-                    y: part.height,
-                },
-            ];
-            transform_polygon(&local, x, y, rotation_deg)
+                Point { x: part.width, y: 0.0 },
+                Point { x: part.width, y: part.height },
+                Point { x: 0.0, y: part.height },
+            ])
         }
-        PolygonExtraction::Invalid { reason } => return Err(reason),
-        PolygonExtraction::Valid(local) => transform_polygon(&local, x, y, rotation_deg),
-    };
+        PolygonExtraction::Invalid { reason } => Err(reason),
+        PolygonExtraction::Valid(local) => Ok(local),
+    }
+}
 
-    let (min_x, min_y, max_x, max_y) =
-        polygon_bbox(&world_pts).ok_or("empty polygon after transform")?;
-    let spoly = to_jag_polygon(&world_pts, "cde_placement_shape")
-        .map_err(|_| "SPolygon build failed for placement")?;
+/// A part's shape prepared ONCE in local coordinates (POI + surrogate computed a
+/// single time). Reused by the search evaluators to build each candidate via a
+/// cheap rigid transform (`transform_base_to_candidate`) instead of rebuilding an
+/// `SPolygon` (which recomputes the expensive point-of-inaccessibility) per
+/// candidate — exactly upstream's `shape_buff.transform_from(item.shape_cd, ...)`.
+pub(crate) struct CdeBaseShape {
+    spoly: jagua_rs::geometry::primitives::SPolygon,
+    local_pts: Vec<Point>,
+}
 
-    Ok(CdePreparedShape {
+/// Build the per-instance base shape once (POI + surrogate computed here).
+pub(crate) fn prepare_base_shape_native(part: &Part) -> Result<CdeBaseShape, &'static str> {
+    let local_pts = part_local_polygon(part)?;
+    let mut spoly =
+        to_jag_polygon(&local_pts, "cde_base_shape").map_err(|_| "SPolygon build failed for base")?;
+    let _ = spoly.generate_surrogate(pole_prepass_surrogate_config());
+    Ok(CdeBaseShape { spoly, local_pts })
+}
+
+/// Build a candidate shape at `(anchor_x, anchor_y, rotation_deg)` from a base
+/// shape by a rigid transform: the f64 world points are produced with the same
+/// `transform_polygon` math as `prepare_shape_native` (so the touching post-policy
+/// is identical), while the CDE `SPolygon` (incl. its POI and surrogate) is carried
+/// over with `transform_from` — no POI recomputation.
+pub(crate) fn transform_base_to_candidate(
+    base: &CdeBaseShape,
+    anchor_x: f64,
+    anchor_y: f64,
+    rotation_deg: f64,
+) -> Option<CdePreparedShape> {
+    let world_pts = transform_polygon(&base.local_pts, anchor_x, anchor_y, rotation_deg);
+    let (min_x, min_y, max_x, max_y) = polygon_bbox(&world_pts)?;
+    // `rotate_translate` applies rotation-about-origin then translation, matching
+    // `transform_polygon` exactly.
+    let t = Transformation::empty()
+        .rotate_translate(rotation_deg.to_radians() as f32, (anchor_x as f32, anchor_y as f32));
+    let mut spoly = base.spoly.clone();
+    spoly.transform_from(&base.spoly, &t);
+    Some(CdePreparedShape {
         spoly,
         min_x,
         min_y,
@@ -728,63 +782,112 @@ impl CdeCandidateSession {
         }
     }
 
-    /// Bounded / visitor-style collision collection (upstream
-    /// `collect_poly_collisions_in_detector_custom` semantics).
-    ///
-    /// Unlike [`query`](Self::query) — which returns a completed batch result that
-    /// the caller post-processes — this walks the candidate's edges against the
-    /// quadtree and reports every confirmed hazard to `sink` *as it is found*,
-    /// applying the VRS touching post-policy per hazard. After each edge (and each
-    /// containment hazard) the loop honours `sink.should_terminate()`, so the sink
-    /// can stop the collection as soon as its accumulated loss exceeds an upper
-    /// bound — exactly the early-termination point upstream relies on (over 90% of
-    /// search time is spent in this routine).
-    ///
-    /// Edges are visited in bit-reversed order to surface new hazards (and thus
-    /// raise the loss) as early as possible, matching upstream.
-    pub(crate) fn collect_poly_collisions_custom(
+    /// Begin a bounded / visitor-style collision collection (upstream
+    /// `collect_poly_collisions_in_detector_custom`). The returned context owns the
+    /// "already-detected" hazard set (so the pole, edge and containment phases
+    /// share dedup) and the virtual quadtree root for the candidate's bbox. The
+    /// orchestration of the three phases lives in the sparrow specialized pipeline;
+    /// this layer only exposes the jagua-touching primitives.
+    pub(crate) fn begin_specialized_collection<'b>(
+        &'b self,
+        candidate: &CdePreparedShape,
+    ) -> SpecializedCollectionCtx<'b> {
+        SpecializedCollectionCtx {
+            // Lowest quadtree node fully surrounding the candidate's bbox, so the
+            // edge phase need not descend from the root every time.
+            v_root: self.cde.get_virtual_root(candidate.spoly.bbox),
+            seen: HashMap::new(),
+        }
+    }
+
+    /// The candidate's surrogate poles (inner-fit circles) plus the candidate area,
+    /// used by the upstream pole pre-pass. The surrogate is generated on a clone
+    /// (VRS prepared shapes do not persist a surrogate). Returns an empty pole list
+    /// only for a genuinely degenerate shape, in which case the edge phase still
+    /// detects every hazard.
+    pub(crate) fn candidate_poles_and_area(&self, candidate: &CdePreparedShape) -> (Vec<CandidatePole>, f64) {
+        let area = candidate.spoly.area as f64;
+        // Reuse the surrogate generated at preparation time; only regenerate (on a
+        // clone) for a shape that somehow lacks one.
+        let poles = match candidate.spoly.surrogate.as_ref() {
+            Some(s) => poles_from_surrogate(s),
+            None => {
+                let mut spoly = candidate.spoly.clone();
+                if spoly.generate_surrogate(pole_prepass_surrogate_config()).is_err() {
+                    return (Vec::new(), area);
+                }
+                poles_from_surrogate(spoly.surrogate())
+            }
+        };
+        (poles, area)
+    }
+
+    /// Number of candidate edges (= vertices) for the bit-reversed edge phase.
+    pub(crate) fn n_candidate_edges(&self, candidate: &CdePreparedShape) -> usize {
+        candidate.spoly.n_vertices()
+    }
+
+    /// Pole-phase primitive: query one surrogate pole (circle) against the quadtree
+    /// root and report every confirmed hazard to `sink` (touching post-policy
+    /// applied per hazard).
+    pub(crate) fn collect_pole_hazards(
         &self,
+        ctx: &mut SpecializedCollectionCtx<'_>,
+        pole: &CandidatePole,
         candidate: &CdePreparedShape,
         sink: &mut impl SpecializedHazardSink,
     ) {
-        let mut wrapper = SinkAdapter {
-            holes: &self.holes,
-            sheet_world_pts: &self.sheet_world_pts,
-            candidate,
-            sink,
-            seen: HashMap::new(),
+        let Ok(circle) = Circle::try_new(JagPoint(pole.cx as f32, pole.cy as f32), pole.radius as f32)
+        else {
+            return;
         };
+        let mut wrapper = SinkAdapter::new(&self.holes, &self.sheet_world_pts, candidate, &mut ctx.seen, sink);
+        self.cde.quadtree.collect_collisions(&circle, &mut wrapper);
+    }
 
-        // Start from the lowest quadtree node that fully surrounds the candidate's
-        // bbox, so we do not descend from the root for every edge.
-        let v_root = self.cde.get_virtual_root(candidate.spoly.bbox);
+    /// Edge-phase primitive: query one candidate edge against the virtual root and
+    /// report every confirmed hazard to `sink`.
+    pub(crate) fn collect_edge_hazards(
+        &self,
+        ctx: &mut SpecializedCollectionCtx<'_>,
+        candidate: &CdePreparedShape,
+        edge_index: usize,
+        sink: &mut impl SpecializedHazardSink,
+    ) {
+        let edge = candidate.spoly.edge(edge_index);
+        let mut wrapper = SinkAdapter::new(&self.holes, &self.sheet_world_pts, candidate, &mut ctx.seen, sink);
+        ctx.v_root.collect_collisions(&edge, &mut wrapper);
+    }
 
-        // Collect collisions for each edge of the candidate polygon. Bit-reversed
-        // edge order maximises detecting new hazards early (better fail-fast).
-        let n_vertices = candidate.spoly.n_vertices();
-        for i in bit_reversal_order(n_vertices) {
-            let edge = candidate.spoly.edge(i);
-            v_root.collect_collisions(&edge, &mut wrapper);
-            if wrapper.sink.should_terminate() {
-                return;
-            }
-        }
-
-        // Containment pass: hazards that fully contain / are contained by the
-        // candidate without an edge intersection (upstream `Partial` presence).
-        for qt_haz in v_root.hazards.iter() {
+    /// Containment-phase primitive: report hazards that contain / are contained by
+    /// the candidate without an edge intersection (upstream `Partial` presence),
+    /// honouring `sink.should_terminate()` after each one.
+    pub(crate) fn collect_containment_hazards(
+        &self,
+        ctx: &mut SpecializedCollectionCtx<'_>,
+        candidate: &CdePreparedShape,
+        sink: &mut impl SpecializedHazardSink,
+    ) {
+        for qt_haz in ctx.v_root.hazards.iter() {
             match &qt_haz.presence {
                 QTHazPresence::None | QTHazPresence::Entire => {}
                 QTHazPresence::Partial(_) => {
-                    if !wrapper.contains_key(qt_haz.hkey) {
+                    if !ctx.seen.contains_key(&qt_haz.hkey) {
                         let h_shape = &self.cde.hazards_map[qt_haz.hkey].shape;
                         if self.cde.detect_containment_collision(
                             &candidate.spoly,
                             h_shape,
                             qt_haz.entity,
                         ) {
+                            let mut wrapper = SinkAdapter::new(
+                                &self.holes,
+                                &self.sheet_world_pts,
+                                candidate,
+                                &mut ctx.seen,
+                                sink,
+                            );
                             wrapper.insert(qt_haz.hkey, qt_haz.entity);
-                            if wrapper.sink.should_terminate() {
+                            if sink.should_terminate() {
                                 return;
                             }
                         }
@@ -792,8 +895,67 @@ impl CdeCandidateSession {
                 }
             }
         }
-        super::cde_observability::record_batch_query(wrapper.len());
+        super::cde_observability::record_batch_query(ctx.seen.len());
     }
+}
+
+/// One surrogate pole of a candidate shape (inner-fit circle), exposed to the
+/// sparrow pole pre-pass without leaking jagua types.
+pub(crate) struct CandidatePole {
+    pub(crate) cx: f64,
+    pub(crate) cy: f64,
+    pub(crate) radius: f64,
+}
+
+/// Shared state for one candidate's three-phase specialized collection: the
+/// virtual quadtree root and the set of already-detected hazards (so the pole,
+/// edge and containment phases do not re-quantify the same hazard). Mirrors the
+/// role of upstream's collector `detected` map + virtual-root reuse.
+pub(crate) struct SpecializedCollectionCtx<'a> {
+    v_root: &'a jagua_rs::collision_detection::quadtree::QTNode,
+    seen: HashMap<HazKey, HazardEntity>,
+}
+
+/// Surrogate config for the candidate pole pre-pass (matches the quantifier's).
+fn pole_prepass_surrogate_config() -> SPSurrogateConfig {
+    SPSurrogateConfig {
+        n_pole_limits: [(64, 0.0), (16, 0.8), (8, 0.9)],
+        n_ff_poles: 1,
+        n_ff_piers: 0,
+    }
+}
+
+fn poles_from_surrogate(s: &jagua_rs::geometry::fail_fast::SPSurrogate) -> Vec<CandidatePole> {
+    s.poles
+        .iter()
+        .filter(|c| c.radius.is_finite() && c.radius > 0.0)
+        .map(|c| CandidatePole {
+            cx: c.center.0 as f64,
+            cy: c.center.1 as f64,
+            radius: c.radius as f64,
+        })
+        .collect()
+}
+
+/// Convex-hull area and diameter of a prepared shape (both rotation-invariant),
+/// used by the LBF upstream ordering key (`convex_hull_area × diameter`). The
+/// convex hull area comes from the shape's surrogate (generated on a clone, since
+/// VRS prepared shapes do not persist one); the diameter is intrinsic to the
+/// `SPolygon`. Falls back to the bbox area for a degenerate surrogate.
+pub(crate) fn convex_hull_area_and_diameter(shape: &CdePreparedShape) -> (f64, f64) {
+    let diameter = shape.spoly.diameter as f64;
+    let convex_hull_area = match shape.spoly.surrogate.as_ref() {
+        Some(s) => s.convex_hull_area as f64,
+        None => {
+            let mut spoly = shape.spoly.clone();
+            if spoly.generate_surrogate(pole_prepass_surrogate_config()).is_ok() {
+                spoly.surrogate().convex_hull_area as f64
+            } else {
+                ((shape.max_x - shape.min_x).max(0.0) * (shape.max_y - shape.min_y).max(0.0)).max(1.0)
+            }
+        }
+    };
+    (convex_hull_area, diameter)
 }
 
 /// Sink for [`CdeCandidateSession::collect_poly_collisions_custom`].
@@ -816,15 +978,33 @@ pub(crate) trait SpecializedHazardSink {
 
 /// Adapter that lets the sink ride jagua's `collect_collisions` traversal: it
 /// implements `HazardCollector`, applies the VRS touching post-policy in
-/// `insert`, and forwards confirmed hazards to the sink.
+/// `insert`, and forwards confirmed hazards to the sink. The `seen` set is borrowed
+/// from the collection context so it persists across the pole/edge/containment
+/// phases (upstream's `detected` map).
 struct SinkAdapter<'a, S: SpecializedHazardSink> {
     holes: &'a [(usize, Rc<CdePreparedShape>)],
     sheet_world_pts: &'a [crate::geometry::Point],
     candidate: &'a CdePreparedShape,
+    seen: &'a mut HashMap<HazKey, HazardEntity>,
     sink: &'a mut S,
-    /// Hazards already reported by the traversal (so the containment pass and the
-    /// quadtree's own dedup skip them). Mirrors upstream's `detected` map.
-    seen: HashMap<HazKey, HazardEntity>,
+}
+
+impl<'a, S: SpecializedHazardSink> SinkAdapter<'a, S> {
+    fn new(
+        holes: &'a [(usize, Rc<CdePreparedShape>)],
+        sheet_world_pts: &'a [crate::geometry::Point],
+        candidate: &'a CdePreparedShape,
+        seen: &'a mut HashMap<HazKey, HazardEntity>,
+        sink: &'a mut S,
+    ) -> Self {
+        Self {
+            holes,
+            sheet_world_pts,
+            candidate,
+            seen,
+            sink,
+        }
+    }
 }
 
 impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
@@ -873,31 +1053,6 @@ impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
     fn iter(&self) -> impl Iterator<Item = (HazKey, &HazardEntity)> {
         self.seen.iter().map(|(k, e)| (*k, e))
     }
-}
-
-/// Visit `0..n` in bit-reversed order (upstream `BitReversalIterator`): spreads
-/// successive indices across the range so new hazards are surfaced early.
-fn bit_reversal_order(n: usize) -> Vec<usize> {
-    if n <= 2 {
-        return (0..n).collect();
-    }
-    let bits = (usize::BITS - (n - 1).leading_zeros()) as usize;
-    let mut out = Vec::with_capacity(n);
-    let mut seen = vec![false; n];
-    for i in 0..(1usize << bits) {
-        // reverse the low `bits` bits of i
-        let mut r = 0usize;
-        for b in 0..bits {
-            if i & (1 << b) != 0 {
-                r |= 1 << (bits - 1 - b);
-            }
-        }
-        if r < n && !seen[r] {
-            seen[r] = true;
-            out.push(r);
-        }
-    }
-    out
 }
 
 /// Build a `CdeCandidateSession` for `target_idx` from a placement list, using the
