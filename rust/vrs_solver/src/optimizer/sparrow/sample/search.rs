@@ -26,7 +26,11 @@ pub(crate) fn build_sheet_session(
         .filter(|&j| j != target && layout.placements[j].sheet_index == sheet_idx)
         .filter_map(|j| tracker.shapes[j].clone().map(|s| (j, s)))
         .collect();
-    CdeCandidateSession::build(others, sheet_shape)
+    CdeCandidateSession::build_with_policy(
+        others,
+        sheet_shape,
+        crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+    )
 }
 
 /// Upstream `search_placement` (Algorithm 6 and Figure 7), run for one
@@ -160,13 +164,18 @@ pub(crate) fn search_placement(
 
 /// Separation sample budget derived from the solver config.
 pub(crate) fn separator_sample_config(cfg: &SparrowConfig) -> SampleConfig {
-    SampleConfig {
-        n_focused_samples: cfg.focused_samples.max(1),
-        // Container coverage scales with the configured grid resolution (a budget,
-        // not an algorithm switch); the range sampler draws this many random
-        // rect-min/rotation samples across the sheet.
-        n_container_samples: (cfg.global_grid_n * cfg.global_grid_n + 2 * cfg.global_grid_n).max(8),
-        n_coord_descents: 8,
+    if cfg.profile == SparrowProfile::SparrowStrictParity {
+        SampleConfig {
+            n_focused_samples: SPARROW_PARITY_SEPARATOR_FOCUSED_SAMPLES,
+            n_container_samples: SPARROW_PARITY_SEPARATOR_CONTAINER_SAMPLES,
+            n_coord_descents: SPARROW_PARITY_COORD_DESCENTS,
+        }
+    } else {
+        SampleConfig {
+            n_focused_samples: cfg.focused_samples.max(1),
+            n_container_samples: (cfg.global_grid_n * cfg.global_grid_n + 2 * cfg.global_grid_n).max(8),
+            n_coord_descents: 8,
+        }
     }
 }
 

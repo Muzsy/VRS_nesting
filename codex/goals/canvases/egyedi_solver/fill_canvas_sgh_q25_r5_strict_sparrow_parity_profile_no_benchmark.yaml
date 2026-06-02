@@ -1,0 +1,133 @@
+id: sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark
+title: SGH-Q25-R5 Strict Sparrow parity profile — touching policy, upstream budgets, worker/search/explore semantics
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow
+kind: implementation
+
+intent: >-
+  Fix the remaining non-compression, non-fixed-multisheet behavior-level gaps against
+  upstream jagua_rs/Sparrow by introducing an explicit strict Sparrow parity profile.
+  The strict profile must use Sparrow-strict touching semantics, upstream-like sample
+  budgets and loop limits, RNG-only worker ordering, and upstream-like exploration
+  restore/disruption semantics. This is not LV8 benchmark tuning and not compression.
+
+must_not:
+  - add compression
+  - add LV8 benchmark quality acceptance
+  - treat fixed multisheet adaptation as a defect or rollback to strip packing
+  - reintroduce WorkingLayout or VrsCollisionTracker into optimizer/sparrow
+  - use bbox/AABB/proxy ranking as separation or LBF quality truth
+  - keep touching-as-NoCollision implicit under Sparrow parity
+  - use instance-count budget downscaling in strict parity mode
+  - keep worker-index ordering bias in strict parity mode
+  - edit unrelated repo files
+
+steps:
+  - name: "Felderítés és scope gate rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex szabályokat, a Q25-R4 reportot és a canvas
+      Source of truth szekciójában felsorolt upstream Sparrow fájlokat. Futtasd:
+      git status --porcelain=v1; git diff --name-only; git -C .cache/sparrow rev-parse HEAD.
+      Hozd létre a Q25-R5 report vázát a kötelező szekciókkal, külön rögzítve a
+      pre-task dirty állapotot. Ebben a stepben még ne módosíts solver kódot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+
+  - name: "Strict profile és touching policy bevezetése"
+    description: >
+      Vezess be explicit strict parity profilt és explicit CDE touching policy-t.
+      Preferált nevek: SparrowStrictParity / VrsFast és CdeTouchingPolicy::SparrowStrict /
+      CdeTouchingPolicy::VrsTouchAllowed. Strict parity módban raw CDE touching collision
+      nem downgrade-elhető NoCollisionre. VRS touch-allowed viselkedés maradhat csak explicit
+      non-parity policyként. A policy-t drótozd végig a SparrowConfig -> CDE adapter/session ->
+      SparrowCollisionTracker/evaluator útvonalon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/optimizer.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/specialized_cde_pipeline.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/lbf_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/sep_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+
+  - name: "Upstream-like strict sample budgetek és loop limitek"
+    description: >
+      Add hozzá a canvasban megadott SPARROW_PARITY_* konstansokat. Strict profile alatt:
+      LBF 1000/0/3, separator 50/25/3, worker_count 3, separator iter_no_imprv_limit 200,
+      strike_limit 3. Strict parity módban ne legyen instance-count alapú budget shrink.
+      Fast mód, ha kell, maradhat külön explicit profilként, de nem nevezhető paritynek.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/lbf.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/separator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/optimizer.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+
+  - name: "Worker ordering strict upstream-parity módra"
+    description: >
+      Strict profile alatt minden worker a colliding item listát RNG shuffle-lel rendezze,
+      worker-index bias nélkül. Távolítsd el strict útból a worst-first/reverse/least-loss-first
+      sorrendeket. A multi-worker load-back továbbra is total weighted loss alapján válassza a
+      nyertes worker állapotát. Ha kísérleti ordering stratégia marad, csak explicit non-parity
+      fast profile alatt lehet.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/separator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+
+  - name: "Exploration/disruption upstream-szerűsítés fixed-sheet mellett"
+    description: >
+      Fixed-sheet modell marad, strip shrink/widen nincs. A failed separation utáni pool/restore/
+      disruption viszont legyen upstream-szerű: pool raw loss szerint rendezve, max consecutive
+      failed attempts 10, normal-distribution-like biased pool restore stddev 0.25, random large-item
+      pair selection a large-item candidate poolból, 0.75 convex-hull-area percentile cutoff, contained
+      relocation megtartva. Cross-sheet és rotation kick csak dokumentált fixed-sheet extension legyen,
+      az upstream-like large-item swap után.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/explore.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+
+  - name: "Célzott tesztek és smoke gate"
+    description: >
+      Adj hozzá célzott Rust teszteket a canvasban megadott nevekkel a touching policy-ra,
+      strict budgetekre, worker RNG-only orderingre, separator 200/3 limitekre, biased restore-ra
+      és random large-item disruptionre. Hozd létre/frissítsd a Python smoke scriptet úgy, hogy
+      statikusan is fogja a regressziókat: strict policy tokenek, upstream budget konstansok,
+      strict downscaling tiltás, worker-index ordering tiltás, hard-coded 6/4 separator limit tiltás,
+      deterministic better-half restore tiltás, top-two-only disruption tiltás. A smoke nem benchmark gate.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "scripts/smoke_sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.py"
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+
+  - name: "Report és checklist lezárása"
+    description: >
+      Töltsd ki a report kötelező Q25-R5 szekcióit. PASS csak akkor lehet, ha a report tartalmazza
+      az összes kötelező PASS tokent és a source/tests valóban igazolják. Külön dokumentáld a
+      fixed-sheet adaptation boundary-t: mi upstream-equivalent és mi fixed-sheet extension.
+      Frissítsd a checklistet valós állapot szerint.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib; python3 scripts/smoke_sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.py;
+      ./scripts/check.sh; ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md.
+      A report BUILD_TEST_RESULTS szekciójába írd be a parancsok eredményét. Ha bármely gate nem
+      futott, ne claimelj teljes PASS-t.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.md"
+      - "codex/reports/egyedi_solver/sgh_q25_r5_strict_sparrow_parity_profile_no_benchmark.verify.log"

@@ -271,7 +271,7 @@ mod tests {
             let insts = &problem.instances;
 
             let overlap = SparrowLayout {
-                placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
+                placements: vec![pl(0, 20.0, 20.0), pl(1, 30.0, 30.0)],
             };
             let t_overlap = SparrowCollisionTracker::build(&overlap, insts, &sheets);
             assert!(
@@ -285,7 +285,7 @@ mod tests {
             assert!(!t_overlap.is_feasible(), "overlapping layout is infeasible");
 
             let apart = SparrowLayout {
-                placements: vec![pl(0, 0.0, 0.0), pl(1, 100.0, 100.0)],
+                placements: vec![pl(0, 20.0, 20.0), pl(1, 100.0, 100.0)],
             };
             let t_apart = SparrowCollisionTracker::build(&apart, insts, &sheets);
             assert_eq!(
@@ -317,7 +317,7 @@ mod tests {
             let insts = &problem.instances;
 
             let mut layout = SparrowLayout {
-                placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
+                placements: vec![pl(0, 20.0, 20.0), pl(1, 30.0, 30.0)],
             };
             let mut tracker = SparrowCollisionTracker::build(&layout, insts, &sheets);
             assert!(!tracker.is_feasible(), "starts overlapping");
@@ -359,7 +359,7 @@ mod tests {
             let insts = &problem.instances;
 
             let layout = SparrowLayout {
-                placements: vec![pl(0, 0.0, 0.0), pl(1, 10.0, 10.0)],
+                placements: vec![pl(0, 20.0, 20.0), pl(1, 30.0, 30.0)],
             };
             let mut tracker = SparrowCollisionTracker::build(&layout, insts, &sheets);
             let snap = tracker.snapshot();
@@ -523,13 +523,13 @@ mod tests {
             let lbf_result = LBFBuilder::new(&problem).construct();
             assert_eq!(
                 lbf_result.layout.placements.len(),
-                1,
-                "clear-only LBF places the first perfectly fitting item"
+                0,
+                "strict clear-only LBF rejects exact boundary-touching fit"
             );
             assert_eq!(
                 lbf_result.unresolved.len(),
-                1,
-                "second perfectly fitting item is unresolved on a fixed sheet"
+                2,
+                "both perfectly fitting items are unresolved on a fixed sheet"
             );
 
             let bootstrapped = build_native_constructive_seed(&problem);
@@ -646,6 +646,182 @@ mod tests {
                 result.diagnostics.search_rotation_wiggle > 0,
                 "coordinate-descent executed nonzero rotation-wiggle steps, got {}",
                 result.diagnostics.search_rotation_wiggle
+            );
+        }
+
+        #[test]
+        fn cde_sparrow_strict_reports_touching_rectangles_as_collision() {
+            let part = make_part("P", 30.0, 20.0, 1);
+            let left = prepare_shape_native(&part, 0.0, 0.0, 0.0).expect("left shape");
+            let right = prepare_shape_native(&part, 30.0, 0.0, 0.0).expect("right shape");
+            let adapter = CdeAdapter::new(crate::optimizer::cde_adapter::CdeAdapterConfig {
+                touching_policy: crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+                ..crate::optimizer::cde_adapter::CdeAdapterConfig::default()
+            });
+            assert_eq!(adapter.query_pair(&left, &right), CdeQueryResult::Collision);
+        }
+
+        #[test]
+        fn cde_vrs_touch_allowed_reports_touching_rectangles_as_no_collision() {
+            let part = make_part("P", 30.0, 20.0, 1);
+            let left = prepare_shape_native(&part, 0.0, 0.0, 0.0).expect("left shape");
+            let right = prepare_shape_native(&part, 30.0, 0.0, 0.0).expect("right shape");
+            let adapter = CdeAdapter::with_vrs_touch_allowed();
+            assert_eq!(
+                adapter.query_pair(&left, &right),
+                CdeQueryResult::NoCollision
+            );
+        }
+
+        #[test]
+        fn sparrow_strict_boundary_touching_is_not_feasible() {
+            let parts = vec![make_part("P", 30.0, 30.0, 1)];
+            let stocks = vec![make_stock("S", 30.0, 30.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![pl(0, 0.0, 0.0)],
+            };
+            let tracker =
+                SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            assert_eq!(tracker.boundary_violations(), 1);
+            assert!(!tracker.is_feasible());
+        }
+
+        #[test]
+        fn strict_worker_orders_colliding_items_by_rng_shuffle_only() {
+            let parts = vec![make_part("P", 30.0, 30.0, 3)];
+            let stocks = vec![make_stock("S", 200.0, 200.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![pl(0, 0.0, 0.0), pl(1, 5.0, 5.0), pl(2, 10.0, 10.0)],
+            };
+            let tracker = SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            let config = cfg(CollisionBackendKind::Cde);
+            let mut expected = tracker.colliding_indices();
+            let mut expected_rng = DeterministicRng::new(123);
+            expected_rng.shuffle(&mut expected);
+            let mut worker_rng = DeterministicRng::new(123);
+            let ordered =
+                ordered_colliding_items_for_worker(&tracker, &config, 2, &mut worker_rng);
+            assert_eq!(ordered, expected);
+        }
+
+        #[test]
+        fn strict_separator_uses_upstream_loop_limits() {
+            let config = cfg(CollisionBackendKind::Cde).scaled_for_instance_count(500);
+            assert_eq!(config.worker_count, SPARROW_PARITY_WORKERS);
+            assert_eq!(
+                config.focused_samples,
+                SPARROW_PARITY_SEPARATOR_FOCUSED_SAMPLES
+            );
+            assert_eq!(config.coord_descent_steps, SPARROW_PARITY_COORD_DESCENTS);
+            let sample_config = separator_sample_config(&config);
+            assert_eq!(
+                sample_config.n_container_samples,
+                SPARROW_PARITY_SEPARATOR_CONTAINER_SAMPLES
+            );
+            assert_eq!(
+                sample_config.n_focused_samples,
+                SPARROW_PARITY_SEPARATOR_FOCUSED_SAMPLES
+            );
+            assert_eq!(
+                sample_config.n_coord_descents,
+                SPARROW_PARITY_COORD_DESCENTS
+            );
+            assert_eq!(SPARROW_PARITY_ITER_NO_IMPROVE_LIMIT, 200);
+            assert_eq!(SPARROW_PARITY_STRIKE_LIMIT, 3);
+        }
+
+        #[test]
+        fn strict_explore_uses_biased_pool_restore_not_seed_modulo() {
+            let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));
+            let mut rng = DeterministicRng::new(0x5150);
+            let selected = optimizer.select_biased_pool_index(8, &mut rng);
+            assert!(selected < 8);
+            assert_eq!(SPARROW_PARITY_SOLUTION_POOL_STDDEV, 0.25);
+        }
+
+        #[test]
+        fn strict_disruption_selects_random_large_item_pair_not_always_top_two() {
+            let parts = vec![
+                make_part("A", 80.0, 20.0, 1),
+                make_part("B", 30.0, 30.0, 1),
+                make_part("C", 10.0, 10.0, 1),
+                make_part("D", 10.0, 10.0, 1),
+            ];
+            let stocks = vec![make_stock("S", 240.0, 120.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![
+                    pl(0, 0.0, 0.0),
+                    pl(1, 90.0, 0.0),
+                    pl(2, 130.0, 0.0),
+                    pl(3, 150.0, 0.0),
+                ],
+            };
+            let mut diag = SparrowDiagnostics::default();
+            let state =
+                SparrowState::new_with_diag(layout, &problem.instances, &sheets, &mut diag);
+            let optimizer = SparrowOptimizer::new(problem.config.clone());
+            let mut saw_non_top_two = false;
+            for seed in 1..100 {
+                let mut rng = DeterministicRng::new(seed);
+                if let Some((a, b)) =
+                    optimizer.select_large_item_swap_pair(&state, &problem.instances, &mut rng)
+                {
+                    let mut pair = [a, b];
+                    pair.sort();
+                    if pair != [0, 1] {
+                        saw_non_top_two = true;
+                        break;
+                    }
+                }
+            }
+            assert!(saw_non_top_two);
+        }
+
+        #[test]
+        fn fixed_sheet_extensions_are_documented_after_upstream_swap() {
+            let parts = vec![make_part("P", 50.0, 50.0, 3)];
+            let stocks = vec![make_stock("S", 50.0, 50.0, 2)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            assert_eq!(problem.container.sheets.len(), 2);
+            let lbf_result = LBFBuilder::new(&problem).construct();
+            assert!(
+                !lbf_result.unresolved.is_empty(),
+                "fixed sheets cannot be widened; unresolved items stay explicit for separator/bootstrap"
             );
         }
     }

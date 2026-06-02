@@ -120,7 +120,11 @@ impl<'a> LBFBuilder<'a> {
                         .map(|s| (idx, s))
                 })
                 .collect();
-            let Some(session) = CdeCandidateSession::build(others, &sheet_shape) else {
+            let Some(session) = CdeCandidateSession::build_with_policy(
+                others,
+                &sheet_shape,
+                crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+            ) else {
                 continue;
             };
             let mut evaluator = LBFEvaluator {
@@ -161,9 +165,9 @@ impl<'a> LBFBuilder<'a> {
 /// a small set of coordinate descents (mirrors `LBF_SAMPLE_CONFIG`).
 fn lbf_sample_config() -> SampleConfig {
     SampleConfig {
-        n_focused_samples: 0,
-        n_container_samples: 128,
-        n_coord_descents: 3,
+        n_focused_samples: SPARROW_PARITY_LBF_FOCUSED_SAMPLES,
+        n_container_samples: SPARROW_PARITY_LBF_CONTAINER_SAMPLES,
+        n_coord_descents: SPARROW_PARITY_COORD_DESCENTS,
     }
 }
 

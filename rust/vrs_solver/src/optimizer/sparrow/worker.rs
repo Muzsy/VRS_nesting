@@ -39,15 +39,7 @@ pub(super) fn run_worker_pass(
     let mut tracker = master.tracker.clone();
     let mut rng = DeterministicRng::new(worker_seed);
 
-    let mut colliding = tracker.colliding_indices();
-    // Worker-unique ordering bias: even workers worst-first (as-ranked), odd
-    // workers shuffled — different exploration of the same master state.
-    if worker_idx % 2 == 1 {
-        rng.shuffle(&mut colliding);
-    } else if worker_idx >= 2 {
-        // higher even workers: reverse (least-loss first)
-        colliding.reverse();
-    }
+    let colliding = ordered_colliding_items_for_worker(&tracker, cfg, worker_idx, &mut rng);
 
     let mut attempted = 0usize;
     let mut accepted = 0usize;
@@ -103,6 +95,25 @@ pub(super) fn run_worker_pass(
         evaluated: evaluated.max(1),
         worker_idx,
     }
+}
+
+pub(super) fn ordered_colliding_items_for_worker(
+    tracker: &SparrowCollisionTracker,
+    cfg: &SparrowConfig,
+    worker_idx: usize,
+    rng: &mut DeterministicRng,
+) -> Vec<usize> {
+    let mut colliding = tracker.colliding_indices();
+    if cfg.profile == SparrowProfile::SparrowStrictParity {
+        rng.shuffle(&mut colliding);
+    } else {
+        if worker_idx.checked_rem(2) == Some(1) {
+            rng.shuffle(&mut colliding);
+        } else if worker_idx >= 2 {
+            colliding = colliding.into_iter().rev().collect();
+        }
+    }
+    colliding
 }
 
 /// Compare worker candidates by upstream weighted loss, then raw loss and pair

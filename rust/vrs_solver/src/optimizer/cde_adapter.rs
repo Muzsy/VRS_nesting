@@ -34,6 +34,13 @@ use crate::sheet::SheetShape;
 pub struct CdeAdapterConfig {
     pub quadtree_depth: u8,
     pub cd_threshold: u8,
+    pub touching_policy: CdeTouchingPolicy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CdeTouchingPolicy {
+    SparrowStrict,
+    VrsTouchAllowed,
 }
 
 impl Default for CdeAdapterConfig {
@@ -41,6 +48,7 @@ impl Default for CdeAdapterConfig {
         Self {
             quadtree_depth: 4,
             cd_threshold: 0,
+            touching_policy: CdeTouchingPolicy::VrsTouchAllowed,
         }
     }
 }
@@ -52,8 +60,7 @@ impl Default for CdeAdapterConfig {
 /// A shape pre-built for CDE queries: holds the jagua-rs SPolygon, an f64 bounding box,
 /// and the original f64 world-coordinate polygon points.
 ///
-/// `world_pts` is used by the VRS-side post-policy to distinguish touching (NoCollision)
-/// from positive-area overlap (Collision) — see `polygons_collide` / `polygon_within_sheet_pts`.
+/// `world_pts` is used only when the explicit VRS touch-allowed policy is selected.
 ///
 /// Jagua-rs types must not appear in the public optimizer API — this type is crate-internal only.
 pub(crate) struct CdePreparedShape {
@@ -118,6 +125,24 @@ impl CdeAdapter {
     pub(crate) fn with_defaults() -> Self {
         Self {
             config: CdeAdapterConfig::default(),
+        }
+    }
+
+    pub(crate) fn with_sparrow_strict() -> Self {
+        Self {
+            config: CdeAdapterConfig {
+                touching_policy: CdeTouchingPolicy::SparrowStrict,
+                ..CdeAdapterConfig::default()
+            },
+        }
+    }
+
+    pub(crate) fn with_vrs_touch_allowed() -> Self {
+        Self {
+            config: CdeAdapterConfig {
+                touching_policy: CdeTouchingPolicy::VrsTouchAllowed,
+                ..CdeAdapterConfig::default()
+            },
         }
     }
 
@@ -199,14 +224,13 @@ impl CdeAdapter {
             return CdeQueryResult::NoCollision;
         }
 
-        // CDE raw says Collision. Apply VRS-side post-policy to distinguish:
-        //   touching edge/corner → NoCollision
-        //   positive-area overlap / proper crossing → Collision
-        // polygons_collide uses segments_properly_intersect (no touching) + strict containment.
-        match polygons_collide(&a.world_pts, &b.world_pts) {
-            Ok(true) => CdeQueryResult::Collision,
-            Ok(false) => CdeQueryResult::NoCollision,
-            Err(reason) => CdeQueryResult::Unsupported { reason },
+        match self.config.touching_policy {
+            CdeTouchingPolicy::SparrowStrict => CdeQueryResult::Collision,
+            CdeTouchingPolicy::VrsTouchAllowed => match polygons_collide(&a.world_pts, &b.world_pts) {
+                Ok(true) => CdeQueryResult::Collision,
+                Ok(false) => CdeQueryResult::NoCollision,
+                Err(reason) => CdeQueryResult::Unsupported { reason },
+            },
         }
     }
 
@@ -248,17 +272,54 @@ impl CdeAdapter {
             return CdeQueryResult::NoCollision;
         }
 
-        // CDE raw says Collision. Apply VRS-side post-policy:
-        //   item fully inside or touching boundary → NoCollision
-        //   any vertex outside or proper crossing → Collision
-        // polygon_within_sheet_pts uses point_inside_or_on_polygon (boundary ok) +
-        // segments_properly_intersect (touching the boundary edge is not a crossing).
-        match polygon_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
-            Ok(true) => CdeQueryResult::NoCollision,
-            Ok(false) => CdeQueryResult::Collision,
-            Err(reason) => CdeQueryResult::Unsupported { reason },
+        match self.config.touching_policy {
+            CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
+                Ok(true) => CdeQueryResult::NoCollision,
+                Ok(false) => CdeQueryResult::Collision,
+                Err(reason) => CdeQueryResult::Unsupported { reason },
+            },
+            CdeTouchingPolicy::VrsTouchAllowed => match polygon_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
+                Ok(true) => CdeQueryResult::NoCollision,
+                Ok(false) => CdeQueryResult::Collision,
+                Err(reason) => CdeQueryResult::Unsupported { reason },
+            },
         }
     }
+}
+
+fn polygon_strictly_within_sheet_pts(
+    item_pts: &[Point],
+    sheet_pts: &[Point],
+) -> Result<bool, &'static str> {
+    if !polygon_within_sheet_pts(item_pts, sheet_pts)? {
+        return Ok(false);
+    }
+    for &pt in item_pts {
+        if point_on_polygon_boundary_cde(pt, sheet_pts) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn point_on_polygon_boundary_cde(p: Point, poly: &[Point]) -> bool {
+    if poly.len() < 2 {
+        return false;
+    }
+    (0..poly.len()).any(|i| point_on_segment_cde(p, poly[i], poly[(i + 1) % poly.len()]))
+}
+
+fn point_on_segment_cde(p: Point, a: Point, b: Point) -> bool {
+    let cross = (p.y - a.y) * (b.x - a.x) - (p.x - a.x) * (b.y - a.y);
+    if cross.abs() > 1e-7 {
+        return false;
+    }
+    let dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
+    if dot < -1e-7 {
+        return false;
+    }
+    let len2 = (b.x - a.x).powi(2) + (b.y - a.y).powi(2);
+    dot <= len2 + 1e-7
 }
 
 // ---------------------------------------------------------------------------
@@ -657,7 +718,7 @@ pub(crate) fn cached_query_boundary(
 //
 // CDE remains the sole source of positive collision truth; the bbox is only used
 // (inside `query_pair`) as broad-phase. The post-policy distinguishes touching
-// (NoCollision) from positive-area overlap.
+// (NoCollision under `VrsTouchAllowed`) from positive-area overlap.
 
 /// Result of one batch candidate query against a `CdeCandidateSession`.
 pub(crate) struct CdeBatchResult {
@@ -680,6 +741,7 @@ pub(crate) struct CdeCandidateSession {
     /// `holes[i]` is the (layout index, prepared shape) registered as `Hole { idx: i }`.
     holes: Vec<(usize, Rc<CdePreparedShape>)>,
     sheet_world_pts: Vec<Point>,
+    touching_policy: CdeTouchingPolicy,
 }
 
 impl CdeCandidateSession {
@@ -689,6 +751,14 @@ impl CdeCandidateSession {
     pub(crate) fn build(
         others: Vec<(usize, Rc<CdePreparedShape>)>,
         sheet: &CdePreparedShape,
+    ) -> Option<Self> {
+        Self::build_with_policy(others, sheet, CdeTouchingPolicy::VrsTouchAllowed)
+    }
+
+    pub(crate) fn build_with_policy(
+        others: Vec<(usize, Rc<CdePreparedShape>)>,
+        sheet: &CdePreparedShape,
+        touching_policy: CdeTouchingPolicy,
     ) -> Option<Self> {
         let mut min_x = sheet.min_x;
         let mut min_y = sheet.min_y;
@@ -735,6 +805,7 @@ impl CdeCandidateSession {
             cde,
             holes: others,
             sheet_world_pts: sheet.world_pts.clone(),
+            touching_policy,
         })
     }
 
@@ -754,20 +825,28 @@ impl CdeCandidateSession {
         for (_, ent) in collector.iter() {
             match ent {
                 HazardEntity::Exterior => {
-                    // Re-check against the real sheet polygon (touching boundary is allowed).
-                    match polygon_within_sheet_pts(&candidate.world_pts, &self.sheet_world_pts) {
-                        Ok(true) => {}
-                        Ok(false) => boundary_collision = true,
-                        Err(_) => unsupported = true,
+                    match self.touching_policy {
+                        CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(candidate.world_pts.as_slice(), &self.sheet_world_pts) {
+                            Ok(true) => {}
+                            Ok(false) => boundary_collision = true,
+                            Err(_) => unsupported = true,
+                        },
+                        CdeTouchingPolicy::VrsTouchAllowed => match polygon_within_sheet_pts(&candidate.world_pts, &self.sheet_world_pts) {
+                            Ok(true) => {}
+                            Ok(false) => boundary_collision = true,
+                            Err(_) => unsupported = true,
+                        },
                     }
                 }
                 HazardEntity::Hole { idx } => {
                     if let Some((layout_idx, oshape)) = self.holes.get(*idx) {
-                        // Touching post-policy: only positive-area overlap counts.
-                        match polygons_collide(&candidate.world_pts, &oshape.world_pts) {
-                            Ok(true) => colliding.push(*layout_idx),
-                            Ok(false) => {}
-                            Err(_) => unsupported = true,
+                        match self.touching_policy {
+                            CdeTouchingPolicy::SparrowStrict => colliding.push(*layout_idx),
+                            CdeTouchingPolicy::VrsTouchAllowed => match polygons_collide(&candidate.world_pts, &oshape.world_pts) {
+                                Ok(true) => colliding.push(*layout_idx),
+                                Ok(false) => {}
+                                Err(_) => unsupported = true,
+                            },
                         }
                     }
                 }
@@ -841,7 +920,14 @@ impl CdeCandidateSession {
         else {
             return;
         };
-        let mut wrapper = SinkAdapter::new(&self.holes, &self.sheet_world_pts, candidate, &mut ctx.seen, sink);
+        let mut wrapper = SinkAdapter::new(
+            &self.holes,
+            &self.sheet_world_pts,
+            self.touching_policy,
+            candidate,
+            &mut ctx.seen,
+            sink,
+        );
         self.cde.quadtree.collect_collisions(&circle, &mut wrapper);
     }
 
@@ -855,7 +941,14 @@ impl CdeCandidateSession {
         sink: &mut impl SpecializedHazardSink,
     ) {
         let edge = candidate.spoly.edge(edge_index);
-        let mut wrapper = SinkAdapter::new(&self.holes, &self.sheet_world_pts, candidate, &mut ctx.seen, sink);
+        let mut wrapper = SinkAdapter::new(
+            &self.holes,
+            &self.sheet_world_pts,
+            self.touching_policy,
+            candidate,
+            &mut ctx.seen,
+            sink,
+        );
         ctx.v_root.collect_collisions(&edge, &mut wrapper);
     }
 
@@ -882,6 +975,7 @@ impl CdeCandidateSession {
                             let mut wrapper = SinkAdapter::new(
                                 &self.holes,
                                 &self.sheet_world_pts,
+                                self.touching_policy,
                                 candidate,
                                 &mut ctx.seen,
                                 sink,
@@ -962,7 +1056,7 @@ pub(crate) fn convex_hull_area_and_diameter(shape: &CdePreparedShape) -> (f64, f
 ///
 /// The session resolves each detected quadtree hazard to a concrete VRS target
 /// (a fixed item layout index, the sheet exterior, or an unsupported geometry)
-/// after applying the touching post-policy, then notifies the sink. The sink owns
+/// after applying the configured touching policy, then notifies the sink. The sink owns
 /// the incremental tracker-weighted loss accumulation and the loss-bound state;
 /// it decides when to stop via [`should_terminate`](Self::should_terminate).
 pub(crate) trait SpecializedHazardSink {
@@ -984,6 +1078,7 @@ pub(crate) trait SpecializedHazardSink {
 struct SinkAdapter<'a, S: SpecializedHazardSink> {
     holes: &'a [(usize, Rc<CdePreparedShape>)],
     sheet_world_pts: &'a [crate::geometry::Point],
+    touching_policy: CdeTouchingPolicy,
     candidate: &'a CdePreparedShape,
     seen: &'a mut HashMap<HazKey, HazardEntity>,
     sink: &'a mut S,
@@ -993,6 +1088,7 @@ impl<'a, S: SpecializedHazardSink> SinkAdapter<'a, S> {
     fn new(
         holes: &'a [(usize, Rc<CdePreparedShape>)],
         sheet_world_pts: &'a [crate::geometry::Point],
+        touching_policy: CdeTouchingPolicy,
         candidate: &'a CdePreparedShape,
         seen: &'a mut HashMap<HazKey, HazardEntity>,
         sink: &'a mut S,
@@ -1000,6 +1096,7 @@ impl<'a, S: SpecializedHazardSink> SinkAdapter<'a, S> {
         Self {
             holes,
             sheet_world_pts,
+            touching_policy,
             candidate,
             seen,
             sink,
@@ -1021,20 +1118,30 @@ impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
         }
         match entity {
             HazardEntity::Exterior => {
-                // Re-check against the real sheet polygon (touching boundary is allowed).
-                match polygon_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
-                    Ok(true) => {}
-                    Ok(false) => self.sink.accept_container(self.candidate),
-                    Err(_) => self.sink.accept_unsupported(),
+                match self.touching_policy {
+                    CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
+                        Ok(true) => {}
+                        Ok(false) => self.sink.accept_container(self.candidate),
+                        Err(_) => self.sink.accept_unsupported(),
+                    },
+                    CdeTouchingPolicy::VrsTouchAllowed => match polygon_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
+                        Ok(true) => {}
+                        Ok(false) => self.sink.accept_container(self.candidate),
+                        Err(_) => self.sink.accept_unsupported(),
+                    },
                 }
             }
             HazardEntity::Hole { idx } => {
                 if let Some((layout_idx, oshape)) = self.holes.get(idx) {
-                    // Touching post-policy: only positive-area overlap counts.
-                    match polygons_collide(&self.candidate.world_pts, &oshape.world_pts) {
-                        Ok(true) => self.sink.accept_pair(self.candidate, *layout_idx),
-                        Ok(false) => {}
-                        Err(_) => self.sink.accept_unsupported(),
+                    match self.touching_policy {
+                        CdeTouchingPolicy::SparrowStrict => {
+                            self.sink.accept_pair(self.candidate, *layout_idx)
+                        }
+                        CdeTouchingPolicy::VrsTouchAllowed => match polygons_collide(&self.candidate.world_pts, &oshape.world_pts) {
+                            Ok(true) => self.sink.accept_pair(self.candidate, *layout_idx),
+                            Ok(false) => {}
+                            Err(_) => self.sink.accept_unsupported(),
+                        },
                     }
                 }
             }

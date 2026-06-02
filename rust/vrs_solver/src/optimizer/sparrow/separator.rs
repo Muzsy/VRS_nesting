@@ -92,8 +92,14 @@ impl SparrowOptimizer {
         diag: &mut SparrowDiagnostics,
     ) -> bool {
         diag.separator_invocations += 1;
-        let strike_limit = 4usize;
-        let no_improve_limit = 6usize;
+        let strike_limit = match self.config.profile {
+            SparrowProfile::SparrowStrictParity => SPARROW_PARITY_STRIKE_LIMIT,
+            SparrowProfile::VrsFast => 4usize,
+        };
+        let no_improve_limit = match self.config.profile {
+            SparrowProfile::SparrowStrictParity => SPARROW_PARITY_ITER_NO_IMPROVE_LIMIT,
+            SparrowProfile::VrsFast => 6usize,
+        };
         let mut strikes = 0usize;
         // Upstream Algorithm 9 drives improvement/strike decisions off the total
         // RAW loss (`get_total_loss`). Colliding-pair count is a diagnostic only.

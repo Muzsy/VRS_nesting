@@ -45,6 +45,7 @@ impl DeterministicRng {
 /// Native Sparrow solver configuration.
 #[derive(Debug, Clone)]
 pub struct SparrowConfig {
+    pub profile: SparrowProfile,
     pub time_limit_s: f64,
     pub collision_backend: CollisionBackendKind,
     pub rotation_context: RotationResolveContext,
@@ -64,6 +65,24 @@ pub struct SparrowConfig {
     pub rotation_wiggle_deg: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SparrowProfile {
+    SparrowStrictParity,
+    VrsFast,
+}
+
+pub const SPARROW_PARITY_SEPARATOR_CONTAINER_SAMPLES: usize = 50;
+pub const SPARROW_PARITY_SEPARATOR_FOCUSED_SAMPLES: usize = 25;
+pub const SPARROW_PARITY_COORD_DESCENTS: usize = 3;
+pub const SPARROW_PARITY_LBF_CONTAINER_SAMPLES: usize = 1000;
+pub const SPARROW_PARITY_LBF_FOCUSED_SAMPLES: usize = 0;
+pub const SPARROW_PARITY_ITER_NO_IMPROVE_LIMIT: usize = 200;
+pub const SPARROW_PARITY_STRIKE_LIMIT: usize = 3;
+pub const SPARROW_PARITY_WORKERS: usize = 3;
+pub const SPARROW_PARITY_MAX_CONSEC_FAILED_ATTEMPTS: usize = 10;
+pub const SPARROW_PARITY_SOLUTION_POOL_STDDEV: f64 = 0.25;
+pub const SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE: f64 = 0.75;
+
 impl SparrowConfig {
     pub fn from_solver_input(
         time_limit_s: f64,
@@ -72,20 +91,37 @@ impl SparrowConfig {
         seed: u64,
     ) -> Self {
         Self {
+            profile: SparrowProfile::SparrowStrictParity,
             time_limit_s: time_limit_s.max(0.1),
             collision_backend: backend,
             rotation_context,
             seed,
-            worker_count: 3,
-            focused_samples: 5,
+            worker_count: SPARROW_PARITY_WORKERS,
+            focused_samples: SPARROW_PARITY_SEPARATOR_FOCUSED_SAMPLES,
             global_grid_n: 4,
-            coord_descent_steps: 5,
+            coord_descent_steps: SPARROW_PARITY_COORD_DESCENTS,
             rotation_wiggle_deg: 6.0,
         }
     }
 
+    pub fn with_profile(mut self, profile: SparrowProfile) -> Self {
+        self.profile = profile;
+        if profile == SparrowProfile::SparrowStrictParity {
+            self.worker_count = SPARROW_PARITY_WORKERS;
+            self.focused_samples = SPARROW_PARITY_SEPARATOR_FOCUSED_SAMPLES;
+            self.coord_descent_steps = SPARROW_PARITY_COORD_DESCENTS;
+        }
+        self
+    }
+
     pub fn scaled_for_instance_count(&self, instance_count: usize) -> Self {
         let mut cfg = self.clone();
+        if cfg.profile == SparrowProfile::SparrowStrictParity {
+            cfg.worker_count = SPARROW_PARITY_WORKERS;
+            cfg.focused_samples = SPARROW_PARITY_SEPARATOR_FOCUSED_SAMPLES;
+            cfg.coord_descent_steps = SPARROW_PARITY_COORD_DESCENTS;
+            return cfg;
+        }
         if instance_count >= 100 {
             cfg.worker_count = cfg.worker_count.clamp(2, 3);
             cfg.focused_samples = cfg.focused_samples.min(4).max(3);

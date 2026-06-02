@@ -21,12 +21,12 @@ impl SparrowOptimizer {
         rng: &mut DeterministicRng,
         diag: &mut SparrowDiagnostics,
     ) -> bool {
-        let max_attempts = 10usize;
+        let max_attempts = SPARROW_PARITY_MAX_CONSEC_FAILED_ATTEMPTS;
         // Infeasible-solution pool, kept sorted ascending by total raw loss so the
         // better (lower-loss) solutions are at the front for the biased restore.
         let mut infeas_sol_pool: Vec<(f64, SparrowLayout)> = Vec::new();
 
-        for attempt in 0..max_attempts {
+        for _attempt in 0..max_attempts {
             if started.elapsed().as_secs_f64() >= deadline {
                 break;
             }
@@ -46,9 +46,7 @@ impl SparrowOptimizer {
             infeas_sol_pool.truncate(8);
             diag.exploration_pool_inserts += 1;
             if !infeas_sol_pool.is_empty() {
-                // Biased restore: pick from the better (lower-loss) half of the pool.
-                let sel = (self.config.seed as usize).wrapping_add(attempt)
-                    % ((infeas_sol_pool.len() + 1) / 2).max(1);
+                let sel = self.select_biased_pool_index(infeas_sol_pool.len(), rng);
                 let restored = infeas_sol_pool[sel].1.snapshot();
                 diag.exploration_pool_restores += 1;
                 *state = SparrowState::new_with_diag(restored, instances, sheets, diag);
@@ -70,19 +68,9 @@ impl SparrowOptimizer {
         if n < 2 {
             return;
         }
-        // (a) swap the two largest-area items.
-        let mut by_area: Vec<(usize, f64)> = (0..n)
-            .map(|i| {
-                let inst = &instances[state.layout.placements[i].instance_idx];
-                (i, inst.part.width * inst.part.height)
-            })
-            .collect();
-        by_area.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.0.cmp(&b.0))
-        });
-        let (i, j) = (by_area[0].0, by_area[1].0);
+        let Some((i, j)) = self.select_large_item_swap_pair(state, instances, rng) else {
+            return;
+        };
         let pi = state.layout.placements[i].clone();
         let pj = state.layout.placements[j].clone();
         state.layout.placements[i].x = pj.x;
@@ -184,6 +172,80 @@ impl SparrowOptimizer {
         }
     }
 
+    pub(super) fn select_biased_pool_index(
+        &self,
+        pool_len: usize,
+        rng: &mut DeterministicRng,
+    ) -> usize {
+        if pool_len == 0 {
+            return 0;
+        }
+        let sample = normal_abs_sample(rng, SPARROW_PARITY_SOLUTION_POOL_STDDEV).min(0.999);
+        (sample * pool_len as f64) as usize
+    }
+
+    pub(super) fn select_large_item_swap_pair(
+        &self,
+        state: &SparrowState,
+        instances: &[SPInstance],
+        rng: &mut DeterministicRng,
+    ) -> Option<(usize, usize)> {
+        let n = state.layout.placements.len();
+        if n < 2 {
+            return None;
+        }
+        let total_area: f64 = state
+            .layout
+            .placements
+            .iter()
+            .map(|p| {
+                let inst = &instances[p.instance_idx];
+                inst.part.width * inst.part.height
+            })
+            .sum();
+        let cutoff_target =
+            total_area * SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE;
+        let mut by_area: Vec<(usize, f64)> = (0..n)
+            .map(|i| {
+                let inst = &instances[state.layout.placements[i].instance_idx];
+                (i, inst.part.width * inst.part.height)
+            })
+            .collect();
+        by_area.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.0.cmp(&b.0))
+        });
+        let mut cumulative = 0.0;
+        let mut cutoff = 0.0;
+        for (_, area) in &by_area {
+            cumulative += *area;
+            if cumulative > cutoff_target {
+                cutoff = *area;
+                break;
+            }
+        }
+        let large: Vec<usize> = by_area
+            .iter()
+            .filter(|(_, area)| *area >= cutoff)
+            .map(|(idx, _)| *idx)
+            .collect();
+        let pool = if large.len() >= 3 {
+            large
+        } else {
+            (0..n).collect()
+        };
+        let first_pos = (rng.next_u64() as usize) % pool.len();
+        let first = pool[first_pos];
+        let mut second_candidates: Vec<usize> =
+            pool.iter().copied().filter(|idx| *idx != first).collect();
+        if second_candidates.is_empty() {
+            second_candidates = (0..n).filter(|idx| *idx != first).collect();
+        }
+        let second = second_candidates[(rng.next_u64() as usize) % second_candidates.len()];
+        Some((first, second))
+    }
+
     fn relocate_practically_contained_items(
         &self,
         state: &mut SparrowState,
@@ -248,7 +310,7 @@ impl SparrowOptimizer {
             diag.unsupported_queries += 1;
             return Vec::new();
         };
-        let adapter = CdeAdapter::with_defaults();
+        let adapter = CdeAdapter::with_sparrow_strict();
         let mut out = Vec::new();
         for (idx, placement) in layout.placements.iter().enumerate() {
             if idx == moved_idx
@@ -327,6 +389,13 @@ fn closest_fixed_sheet_transform(
         y: ay,
         rotation_deg: rot,
     }
+}
+
+fn normal_abs_sample(rng: &mut DeterministicRng, stddev: f64) -> f64 {
+    let u1 = rng.next_f64().clamp(f64::MIN_POSITIVE, 1.0);
+    let u2 = rng.next_f64();
+    let z0 = (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos();
+    (z0 * stddev).abs()
 }
 
 fn fits_sheet(inst: &SPInstance, sheet: &SheetShape, rot: f64) -> bool {

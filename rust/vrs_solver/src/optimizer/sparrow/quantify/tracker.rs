@@ -138,7 +138,7 @@ impl SparrowCollisionTracker {
 
         // Boundary / container clearance (quantified).
         if let Some(sheet_shape) = self.sheet_shapes.get(si).and_then(|s| s.clone()) {
-            let adapter = CdeAdapter::with_defaults();
+            let adapter = CdeAdapter::with_sparrow_strict();
             match adapter.query_boundary(&shape_i, &sheet_shape) {
                 CdeQueryResult::NoCollision => {}
                 CdeQueryResult::Collision => {
@@ -173,7 +173,11 @@ impl SparrowCollisionTracker {
             .filter(|(_, s)| bbox_may_overlap(&shape_i, s))
             .collect();
         if let Some(sheet_shape) = self.sheet_shapes.get(si).and_then(|s| s.clone()) {
-            if let Some(session) = CdeCandidateSession::build(others.clone(), &sheet_shape) {
+            if let Some(session) = CdeCandidateSession::build_with_policy(
+                others.clone(),
+                &sheet_shape,
+                crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+            ) {
                 let res = session.query(&shape_i);
                 if res.unsupported {
                     self.unsupported = true;
@@ -246,7 +250,11 @@ impl SparrowCollisionTracker {
                 continue;
             };
             let Some(session) =
-                CdeCandidateSession::build(vec![(i, shape_i.clone())], &sheet_shape)
+                CdeCandidateSession::build_with_policy(
+                    vec![(i, shape_i.clone())],
+                    &sheet_shape,
+                    crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+                )
             else {
                 continue;
             };
