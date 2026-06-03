@@ -1,0 +1,114 @@
+id: sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark
+title: SGH-Q25-R6 Strict parity semantic hardening — convex-hull disruption, touching edge-cases, upstream mapping
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow
+kind: implementation
+
+intent: >-
+  Close the remaining Q25-R5 yellow flags without starting another broad porting or
+  benchmark task. Harden strict Sparrow parity by replacing bbox-area large-item disruption
+  with convex-hull-area-based disruption, adding strict touching/boundary edge-case tests,
+  and documenting a source-level upstream .cache/sparrow mapping for the strict core.
+
+must_not:
+  - add compression
+  - add LV8 benchmark quality acceptance
+  - treat fixed multisheet adaptation as a defect or rollback to strip packing
+  - reintroduce WorkingLayout or VrsCollisionTracker into optimizer/sparrow
+  - use bbox/AABB/proxy ranking as separation or LBF quality truth
+  - weaken Q25-R5 strict profile budgets, loop limits, worker ordering, or touching policy
+  - use instance-count budget downscaling in strict parity mode
+  - edit unrelated repo files
+
+steps:
+  - name: "Felderítés és scope gate rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex szabályokat, a Q25-R5 reportot, a Q25-R6 canvas
+      Source of truth szekciójában felsorolt upstream Sparrow fájlokat, és a lokális
+      strict Sparrow modulokat. Futtasd: git status --porcelain=v1; git diff --name-only;
+      git -C .cache/sparrow rev-parse HEAD; git -C .cache/sparrow status --porcelain=v1.
+      Ha .cache/sparrow hiányzik, állj meg BLOCKED_UPSTREAM_MISSING státusszal. Hozd létre
+      a Q25-R6 report vázát a kötelező szekciókkal, külön rögzítve a pre-task dirty állapotot.
+      Ebben a stepben még ne módosíts solver kódot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+
+  - name: "Convex-hull large-item disruption key bevezetése"
+    description: >
+      Cseréld le a strict large-item disruption normál útvonalán a bbox-area
+      (`inst.part.width * inst.part.height`) alapú rangsorolást/cutoffot convex-hull-area
+      alapú kulcsra. Preferált helper: large_item_disruption_area_key(inst: &SPInstance) -> f64.
+      A helper használja a meglévő CDE shape/surrogate utat, például prepare_shape_native és
+      convex_hull_area_and_diameter, vagy egy ekvivalens lokális prepared-shape helper. A 0.75
+      cutoff cumulative convex hull area szerint működjön. Bbox fallback csak shape-preparation
+      hiba esetén maradhat, explicit kommenttel és reporttal.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/explore.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+
+  - name: "Strict touching és boundary edge-case tesztek keményítése"
+    description: >
+      Adj hozzá vagy erősíts meg célzott teszteket a strict CDE/tracker/evaluator útvonalon:
+      edge touching collision strict módban; corner touching collision strict módban; ugyanez
+      csak explicit VrsTouchAllowed módban clear; exact boundary fit strict módban nem feasible;
+      epsilon-inside feasible; epsilon-outside collision/infeasible. A tesztek ne puszta fake
+      helperen menjenek, hanem a production strict policy pathot érintsék.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/specialized_cde_pipeline.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/lbf_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/sep_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+
+  - name: "Upstream line/function mapping audit elkészítése"
+    description: >
+      A report UPSTREAM_LINE_MAPPING_AUDIT szekciójában készíts source-level mapping táblát
+      a canvasban felsorolt upstream .cache/sparrow függvényekhez és konstansokhoz. Minden sor
+      tartalmazza az upstream fájl:function vagy line range, lokális fájl:function vagy line range,
+      státusz és indoklás mezőket. A státusz csak PORTED, ADAPTED_FIXED_SHEET,
+      DEFERRED_COMPRESSION, NOT_RELEVANT_FIXED_SHEET vagy GAP lehet. Ne rejts core gapet
+      ADAPTED_FIXED_SHEET alá.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+
+  - name: "Q25-R5 invariant regression gate és célzott smoke"
+    description: >
+      Hozd létre/frissítsd a Python smoke scriptet úgy, hogy statikusan fogja a Q25-R6 célokat:
+      convex-hull helper/használat jelenléte; select_large_item_swap_pair normál útvonalán bbox
+      area tiltása; kötelező touching/boundary tesztnevek; upstream mapping report szekciók és
+      PASS tokenek; Q25-R5 strict budget/loop/worker/touching invariánsok; legacy/compression/LV8
+      regressziók tiltása. A smoke nem benchmark gate.
+    outputs:
+      - "scripts/smoke_sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.py"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+
+  - name: "Report és checklist lezárása"
+    description: >
+      Töltsd ki a report kötelező Q25-R6 szekcióit. PASS csak akkor lehet, ha a report tartalmazza
+      az összes kötelező PASS tokent és a source/tests/gate valóban igazolják. Külön dokumentáld,
+      hogy a compression deferred, a fixed multisheet adaptáció célzottan megmaradt, és LV8
+      benchmark nem volt acceptance gate. Frissítsd a checklistet valós állapot szerint.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib;
+      python3 scripts/smoke_sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.py;
+      ./scripts/check.sh;
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md.
+      A report BUILD_TEST_RESULTS szekciójába írd be a parancsok eredményét. Ha bármely gate nem
+      futott, ne claimelj teljes PASS-t.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.md"
+      - "codex/reports/egyedi_solver/sgh_q25_r6_strict_parity_semantic_hardening_no_benchmark.verify.log"

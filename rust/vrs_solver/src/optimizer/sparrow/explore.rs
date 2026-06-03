@@ -200,7 +200,7 @@ impl SparrowOptimizer {
             .iter()
             .map(|p| {
                 let inst = &instances[p.instance_idx];
-                inst.part.width * inst.part.height
+                self.large_item_disruption_area_key(inst)
             })
             .sum();
         let cutoff_target =
@@ -208,7 +208,7 @@ impl SparrowOptimizer {
         let mut by_area: Vec<(usize, f64)> = (0..n)
             .map(|i| {
                 let inst = &instances[state.layout.placements[i].instance_idx];
-                (i, inst.part.width * inst.part.height)
+                (i, self.large_item_disruption_area_key(inst))
             })
             .collect();
         by_area.sort_by(|a, b| {
@@ -244,6 +244,21 @@ impl SparrowOptimizer {
         }
         let second = second_candidates[(rng.next_u64() as usize) % second_candidates.len()];
         Some((first, second))
+    }
+
+    pub(super) fn large_item_disruption_area_key(&self, inst: &SPInstance) -> f64 {
+        match prepare_shape_native(&inst.part, 0.0, 0.0, 0.0) {
+            Ok(prepared) => {
+                let (convex_hull_area, _) = convex_hull_area_and_diameter(&prepared);
+                convex_hull_area.max(1.0)
+            }
+            Err(_) => {
+                // Exceptional fallback only: invalid/unprepared shapes cannot expose
+                // a CDE convex-hull surrogate, so disruption keeps a deterministic key.
+                let bbox_fallback_area = inst.part.width * inst.part.height;
+                bbox_fallback_area.max(1.0)
+            }
+        }
     }
 
     fn relocate_practically_contained_items(

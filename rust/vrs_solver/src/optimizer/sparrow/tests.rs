@@ -20,6 +20,27 @@ mod tests {
             }
         }
 
+        fn make_part_polygon(
+            id: &str,
+            w: f64,
+            h: f64,
+            qty: i64,
+            outer_points: serde_json::Value,
+        ) -> Part {
+            Part {
+                id: id.to_string(),
+                width: w,
+                height: h,
+                quantity: qty,
+                allowed_rotations_deg: vec![0],
+                holes_points: None,
+                prepared_holes_points: None,
+                outer_points: Some(outer_points),
+                prepared_outer_points: None,
+                rotation_policy: None,
+            }
+        }
+
         fn make_part_rot(id: &str, w: f64, h: f64, qty: i64, rots: Vec<i64>) -> Part {
             Part {
                 id: id.to_string(),
@@ -44,6 +65,17 @@ mod tests {
                 outer_points: None,
                 holes_points: None,
                 cost_per_use: None,
+            }
+        }
+
+        fn make_instance(idx: usize, part: Part) -> SPInstance {
+            SPInstance {
+                idx,
+                instance_id: format!("{}#{idx}", part.id),
+                part_id: part.id.clone(),
+                part,
+                allowed_rotations_deg: vec![0.0],
+                continuous_rotation: false,
             }
         }
 
@@ -87,6 +119,30 @@ mod tests {
                     rotation_deg,
                 },
             }
+        }
+
+        fn large_pool_from_keys(mut by_area: Vec<(usize, f64)>) -> Vec<usize> {
+            by_area.sort_by(|a, b| {
+                b.1.partial_cmp(&a.1)
+                    .unwrap_or(Ordering::Equal)
+                    .then(a.0.cmp(&b.0))
+            });
+            let total: f64 = by_area.iter().map(|(_, area)| *area).sum();
+            let target = total * SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE;
+            let mut cumulative = 0.0;
+            let mut cutoff = 0.0;
+            for (_, area) in &by_area {
+                cumulative += *area;
+                if cumulative > target {
+                    cutoff = *area;
+                    break;
+                }
+            }
+            by_area
+                .iter()
+                .filter(|(_, area)| *area >= cutoff)
+                .map(|(idx, _)| *idx)
+                .collect()
         }
 
         struct RecordingEvaluator {
@@ -662,6 +718,48 @@ mod tests {
         }
 
         #[test]
+        fn strict_pair_edge_touching_is_collision() {
+            let parts = vec![make_part("P", 30.0, 20.0, 2)];
+            let stocks = vec![make_stock("S", 120.0, 120.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![pl(0, 10.0, 10.0), pl(1, 40.0, 10.0)],
+            };
+            let tracker = SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            assert_eq!(tracker.colliding_pairs(), 1);
+            assert!(!tracker.is_feasible());
+        }
+
+        #[test]
+        fn strict_pair_corner_touching_is_collision() {
+            let parts = vec![make_part("P", 30.0, 20.0, 2)];
+            let stocks = vec![make_stock("S", 120.0, 120.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![pl(0, 10.0, 10.0), pl(1, 40.0, 30.0)],
+            };
+            let tracker = SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            assert_eq!(tracker.colliding_pairs(), 1);
+            assert!(!tracker.is_feasible());
+        }
+
+        #[test]
         fn cde_vrs_touch_allowed_reports_touching_rectangles_as_no_collision() {
             let part = make_part("P", 30.0, 20.0, 1);
             let left = prepare_shape_native(&part, 0.0, 0.0, 0.0).expect("left shape");
@@ -669,6 +767,20 @@ mod tests {
             let adapter = CdeAdapter::with_vrs_touch_allowed();
             assert_eq!(
                 adapter.query_pair(&left, &right),
+                CdeQueryResult::NoCollision
+            );
+        }
+
+        #[test]
+        fn vrs_touch_allowed_pair_edge_and_corner_touching_are_clear() {
+            let part = make_part("P", 30.0, 20.0, 1);
+            let left = prepare_shape_native(&part, 0.0, 0.0, 0.0).expect("left shape");
+            let edge = prepare_shape_native(&part, 30.0, 0.0, 0.0).expect("edge shape");
+            let corner = prepare_shape_native(&part, 30.0, 20.0, 0.0).expect("corner shape");
+            let adapter = CdeAdapter::with_vrs_touch_allowed();
+            assert_eq!(adapter.query_pair(&left, &edge), CdeQueryResult::NoCollision);
+            assert_eq!(
+                adapter.query_pair(&left, &corner),
                 CdeQueryResult::NoCollision
             );
         }
@@ -691,6 +803,71 @@ mod tests {
             };
             let tracker =
                 SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            assert_eq!(tracker.boundary_violations(), 1);
+            assert!(!tracker.is_feasible());
+        }
+
+        #[test]
+        fn strict_boundary_exact_fit_is_not_feasible() {
+            let parts = vec![make_part("P", 30.0, 30.0, 1)];
+            let stocks = vec![make_stock("S", 30.0, 30.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![pl(0, 0.0, 0.0)],
+            };
+            let tracker = SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            assert_eq!(tracker.boundary_violations(), 1);
+            assert!(!tracker.is_feasible());
+        }
+
+        #[test]
+        fn strict_boundary_epsilon_inside_is_feasible() {
+            let eps = 1e-4;
+            let parts = vec![make_part("P", 10.0, 10.0, 1)];
+            let stocks = vec![make_stock("S", 10.0 + 2.0 * eps, 10.0 + 2.0 * eps, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![pl(0, eps, eps)],
+            };
+            let tracker = SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            assert_eq!(tracker.boundary_violations(), 0);
+            assert!(tracker.is_feasible());
+        }
+
+        #[test]
+        fn strict_boundary_epsilon_outside_is_collision() {
+            let eps = 1e-4;
+            let parts = vec![make_part("P", 10.0, 10.0, 1)];
+            let stocks = vec![make_stock("S", 30.0, 30.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let problem = SparrowProblem::from_solver_input(
+                &parts,
+                &sheets,
+                &ctx(),
+                vec![],
+                cfg(CollisionBackendKind::Cde),
+            )
+            .expect("problem");
+            let layout = SparrowLayout {
+                placements: vec![pl(0, -eps, eps)],
+            };
+            let tracker = SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
             assert_eq!(tracker.boundary_violations(), 1);
             assert!(!tracker.is_feasible());
         }
@@ -802,6 +979,156 @@ mod tests {
                 }
             }
             assert!(saw_non_top_two);
+        }
+
+        #[test]
+        fn strict_large_item_disruption_uses_convex_hull_area_not_bbox_area() {
+            let triangle = serde_json::json!([[0.0, 0.0], [100.0, 0.0], [50.0, 10.0]]);
+            let parts = vec![
+                make_part_polygon("TRIANGLE", 100.0, 100.0, 1, triangle),
+                make_part("A", 80.0, 80.0, 1),
+                make_part("B", 75.0, 75.0, 1),
+                make_part("C", 70.0, 70.0, 1),
+                make_part("D", 20.0, 20.0, 1),
+            ];
+            let instances: Vec<SPInstance> = parts
+                .into_iter()
+                .enumerate()
+                .map(|(idx, part)| make_instance(idx, part))
+                .collect();
+            let stocks = vec![make_stock("S", 400.0, 400.0, 1)];
+            let sheets = expand_sheets(&stocks).expect("sheets");
+            let layout = SparrowLayout {
+                placements: vec![
+                    pl(0, 0.0, 0.0),
+                    pl(1, 120.0, 0.0),
+                    pl(2, 200.0, 0.0),
+                    pl(3, 270.0, 0.0),
+                    pl(4, 330.0, 0.0),
+                ],
+            };
+            let mut diag = SparrowDiagnostics::default();
+            let state = SparrowState::new_with_diag(layout, &instances, &sheets, &mut diag);
+            let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));
+            let convex_hull_pool = large_pool_from_keys(
+                instances
+                    .iter()
+                    .enumerate()
+                    .map(|(i, inst)| (i, optimizer.large_item_disruption_area_key(inst)))
+                    .collect(),
+            );
+            let bbox_pool = large_pool_from_keys(
+                instances
+                    .iter()
+                    .enumerate()
+                    .map(|(i, inst)| (i, inst.part.width * inst.part.height))
+                    .collect(),
+            );
+            let ch_only: Vec<usize> = convex_hull_pool
+                .iter()
+                .copied()
+                .filter(|idx| !bbox_pool.contains(idx))
+                .collect();
+            assert_ne!(
+                convex_hull_pool, bbox_pool,
+                "irregular/non-rectangular fixture must make convex-hull and bbox pools diverge"
+            );
+
+            let mut selected = Vec::new();
+            for seed in 1..200 {
+                let mut rng = DeterministicRng::new(seed);
+                if let Some((a, b)) =
+                    optimizer.select_large_item_swap_pair(&state, &instances, &mut rng)
+                {
+                    assert!(convex_hull_pool.contains(&a));
+                    assert!(convex_hull_pool.contains(&b));
+                    selected.push(a);
+                    selected.push(b);
+                }
+            }
+            assert!(
+                ch_only.iter().any(|idx| selected.contains(idx)),
+                "selector should reach at least one convex-hull-only large item"
+            );
+        }
+
+        #[test]
+        fn strict_large_item_cutoff_uses_cumulative_convex_hull_area_percentile() {
+            let triangle = serde_json::json!([[0.0, 0.0], [100.0, 0.0], [50.0, 10.0]]);
+            let parts = vec![
+                make_part_polygon("TRIANGLE", 100.0, 100.0, 1, triangle),
+                make_part("A", 80.0, 80.0, 1),
+                make_part("B", 75.0, 75.0, 1),
+                make_part("C", 70.0, 70.0, 1),
+                make_part("D", 20.0, 20.0, 1),
+            ];
+            let instances: Vec<SPInstance> = parts
+                .into_iter()
+                .enumerate()
+                .map(|(idx, part)| make_instance(idx, part))
+                .collect();
+            let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));
+            let convex_hull_pool = large_pool_from_keys(
+                instances
+                    .iter()
+                    .enumerate()
+                    .map(|(i, inst)| (i, optimizer.large_item_disruption_area_key(inst)))
+                    .collect(),
+            );
+            let bbox_pool = large_pool_from_keys(
+                instances
+                    .iter()
+                    .enumerate()
+                    .map(|(i, inst)| (i, inst.part.width * inst.part.height))
+                    .collect(),
+            );
+            let mut by_area: Vec<(usize, f64)> = instances
+                .iter()
+                .enumerate()
+                .map(|(i, inst)| (i, optimizer.large_item_disruption_area_key(inst)))
+                .collect();
+            by_area.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+            let total: f64 = by_area.iter().map(|(_, area)| *area).sum();
+            let target = total * SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE;
+            let mut cumulative = 0.0;
+            let mut cutoff = 0.0;
+            for (_, area) in &by_area {
+                cumulative += *area;
+                if cumulative > target {
+                    cutoff = *area;
+                    break;
+                }
+            }
+            let large: Vec<usize> = by_area
+                .iter()
+                .filter(|(_, area)| *area >= cutoff)
+                .map(|(idx, _)| *idx)
+                .collect();
+            assert_eq!(SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE, 0.75);
+            assert_eq!(large, convex_hull_pool);
+            assert_ne!(large, bbox_pool);
+        }
+
+        #[test]
+        fn strict_large_item_bbox_fallback_is_only_for_unprepared_shape() {
+            let invalid = make_part_polygon(
+                "INVALID",
+                40.0,
+                30.0,
+                1,
+                serde_json::json!([[0.0, 0.0], [40.0, 0.0]]),
+            );
+            let inst = SPInstance {
+                idx: 0,
+                instance_id: "INVALID#0".to_string(),
+                part_id: "INVALID".to_string(),
+                part: invalid,
+                allowed_rotations_deg: vec![0.0],
+                continuous_rotation: false,
+            };
+            let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));
+            assert!(prepare_shape_native(&inst.part, 0.0, 0.0, 0.0).is_err());
+            assert_eq!(optimizer.large_item_disruption_area_key(&inst), 1200.0);
         }
 
         #[test]
