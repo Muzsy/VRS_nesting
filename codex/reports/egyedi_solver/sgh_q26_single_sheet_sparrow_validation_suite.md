@@ -260,8 +260,31 @@ Some(false)`. No `optimizer/sparrow` production source was modified.
 | `python3 scripts/smoke_sgh_q26_single_sheet_validation_suite.py` | PASS | static gate green (see verify log) |
 | `python3 scripts/smoke_sgh_q26_lv8_derived_single_sheet_validation.py` | PASS | status ok, 63 placed, 0 unplaced, sheet 0 only, no sheet_002 |
 | `python3 scripts/smoke_real_dxf_sparrow_pipeline.py` | PASS | `[OK] real DXF + Sparrow pipeline smoke passed` |
-| `./scripts/check.sh` | see AUTO_VERIFY block | run via verify.sh |
-| `./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md` | see AUTO_VERIFY block | repo gate |
+| `./scripts/check.sh` | PASS | exit 0, ~183s; full repo suite incl. pytest, mypy (26 files), Sparrow IO smoketest, real-DXF pipeline smoke, nesting_engine determinism 10/10 (see AUTO_VERIFY block + verify.log) |
+| `./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md` | PASS | repo gate green (see AUTO_VERIFY block) |
 
 <!-- AUTO_VERIFY_START -->
+### Automatikus repo gate (verify.sh)
+
+- eredmény: **PASS**
+- check.sh exit kód: `0`
+- futás: 2026-06-03T23:56:45+02:00 → 2026-06-03T23:59:48+02:00 (183s)
+- parancs: `./scripts/check.sh`
+- log: `/home/muszy/projects/VRS_nesting/codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.verify.log`
+- git: `main@3c985e8`
+- módosított fájlok (git status): 1
+
+**git diff --stat**
+
+```text
+ ...ingle_sheet_sparrow_validation_suite.verify.log | 890 +++++++++++++++++++++
+ 1 file changed, 890 insertions(+)
+```
+
+**git status --porcelain (preview)**
+
+```text
+ M codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.verify.log
+```
+
 <!-- AUTO_VERIFY_END -->

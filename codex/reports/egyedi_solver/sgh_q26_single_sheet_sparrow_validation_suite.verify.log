@@ -7932,3 +7932,893 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; fini
 [NEST] determinism OK
 [NEST] placer=nfp fallback smoke (holes/hole_collapsed -> blf)
 warning: --placer nfp fallback to blf (hybrid gating: holes or hole_collapsed)
+[NEST] placer=nfp fallback hash OK
+[NEST] placer=nfp noholes determinism smoke
+[NEST] placer=nfp noholes determinism OK
+[NEST][F0] no-worse-than-BLF basic check
+[NEST][F0] no-worse-than-BLF OK: nfp=2, blf=2
+[NEST][F1] wrapper contract smoke (placed>=1)
+[NEST][F1] wrapper contract OK: placed=1
+[NEST][F2] touching stress smoke (placed>=1)
+[NEST][F2] touching stress OK: placed=3
+[NEST][F3] rotation coverage (critical part must be 90 deg)
+[NEST][F3] rotation coverage OK: critical part rotation=90
+[NEST][F0] placer=nfp determinism gate (3x hash)
+[NEST][F0] determinism 3x OK: sha256:b02aeb912a939c5c495c4f97bd55f13dfae1da0cf66165924059e66053e88d4e
+[NEST][F4] CFR order hardening determinism gate (3x hash)
+[NEST][F4] determinism 3x OK: sha256:18430e4b2122f04c58635031692d77e9e58b08fdeda152c2cbc78164837fb8e5
+[NEST][F2-3] NFP placer stats/perf counter gate
+[CHECK] f0_sanity: PASS (stats <= baseline max)
+[CHECK] f4_cfr_order: PASS (stats <= baseline max)
+[OK] NFP placer stats/perf gate passed
+[NEST] 0 out-of-bounds OK, placed=10
+[NEST] Validator FAIL smoke (expected non-zero on overlap fixture)
+FAIL: overlap detected: sheet=0 rect_100x50#0 vs rect_100x50#1
+[NEST] Validator PASS smoke (baseline output)
+PASS: nesting_engine_v2 solution is valid
+ input=/home/muszy/projects/VRS_nesting/poc/nesting_engine/sample_input_v2.json
+ output=/tmp/nesting_engine_baseline_out_ShWYCv.json
+[NEST] CLI smoke (nest-v2)
+[nesting-engine-runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260603T215940Z_bee76a99
+[nesting-engine-runner] cmd=/home/muszy/projects/VRS_nesting/rust/nesting_engine/target/release/nesting_engine nest
+[NEST] CLI determinism OK
+[NEST] Canonical JSON determinism smoke
+[BUILD] nesting_engine release
+warning: function `polygons_intersect_or_touch_geos` is never used
+  --> src/feasibility/narrow.rs:92:12
+   |
+92 |     pub fn polygons_intersect_or_touch_geos(
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `is_available` is never used
+  --> src/feasibility/narrow.rs:99:12
+   |
+99 |     pub fn is_available() -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: `nesting_engine` (lib) generated 2 warnings
+warning: unused import: `Duration`
+  --> src/bin/cfr_union_benchmark.rs:16:17
+   |
+16 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `cross_product_i128`
+  --> src/bin/cfr_union_benchmark.rs:29:39
+   |
+29 | use nesting_engine::geometry::types::{cross_product_i128, Point64, Polygon64};
+   |                                       ^^^^^^^^^^^^^^^^^^
+
+warning: value assigned to `recommendation` is never read
+   --> src/bin/cfr_union_benchmark.rs:627:30
+    |
+627 |     let mut recommendation = String::new();
+    |                              ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `polygon_area` is never used
+  --> src/bin/cfr_union_benchmark.rs:49:4
+   |
+49 | fn polygon_area(poly: &Polygon64) -> i128 {
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `name` is never read
+   --> src/bin/cfr_union_benchmark.rs:268:5
+    |
+267 | struct StrategyResult {
+    |        -------------- field in this struct
+268 |     name: StrategyName,
+    |     ^^^^
+    |
+    = note: `StrategyResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: unused import: `PlacedIndex`
+ --> src/feasibility/mod.rs:5:66
+  |
+5 | pub use narrow::{can_place, can_place_profiled, CanPlaceProfile, PlacedIndex, PlacedPart};
+  |                                                                  ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `narrow::own_polygons_intersect_or_touch`
+ --> src/feasibility/mod.rs:8:9
+  |
+8 | pub use narrow::own_polygons_intersect_or_touch;
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `narrow::i_overlay_narrow`
+  --> src/feasibility/mod.rs:11:9
+   |
+11 | pub use narrow::i_overlay_narrow;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NfpProvider`
+  --> src/placement/nfp_placer.rs:20:48
+   |
+20 |     provider::{create_nfp_provider, NfpKernel, NfpProvider, NfpProviderConfig},
+   |                                                ^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+    --> src/placement/nfp_placer.rs:1002:29
+     |
+1002 |                         let mut candidates_exhausted = true;
+     |                             ----^^^^^^^^^^^^^^^^^^^^
+     |                             |
+     |                             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `candidates_exhausted`
+    --> src/placement/nfp_placer.rs:1002:29
+     |
+1002 |                         let mut candidates_exhausted = true;
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_candidates_exhausted`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `cfr_elapsed_ms`
+    --> src/placement/nfp_placer.rs:1088:29
+     |
+1088 |                         let cfr_elapsed_ms = cfr_start.elapsed().as_secs_f64() * 1000.0;
+     |                             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cfr_elapsed_ms`
+
+warning: unused variable: `placed_state`
+    --> src/placement/nfp_placer.rs:1914:5
+     |
+1914 |     placed_state: &PlacedIndex,
+     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_placed_state`
+
+warning: unused variable: `moving_aabb`
+    --> src/placement/nfp_placer.rs:2059:5
+     |
+2059 |     moving_aabb: &crate::feasibility::aabb::Aabb,
+     |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_moving_aabb`
+
+warning: unused variable: `placed_state`
+    --> src/placement/nfp_placer.rs:2141:5
+     |
+2141 |     placed_state: &PlacedIndex,
+     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_placed_state`
+
+warning: unused variable: `ordered`
+    --> src/placement/nfp_placer.rs:2438:5
+     |
+2438 |     ordered: &[InflatedPartSpec],
+     |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_ordered`
+
+warning: unused variable: `part_idx`
+    --> src/placement/nfp_placer.rs:2439:5
+     |
+2439 |     part_idx: usize,
+     |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_part_idx`
+
+warning: unused variable: `instance`
+    --> src/placement/nfp_placer.rs:2440:5
+     |
+2440 |     instance: usize,
+     |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_instance`
+
+warning: method `add` is never used
+   --> src/feasibility/narrow.rs:391:12
+    |
+389 | impl NarrowPhaseCounters {
+    | ------------------------ method in this implementation
+390 |     #[inline]
+391 |     pub fn add(&mut self, other: &NarrowPhaseCounters) {
+    |            ^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `own_polygons_intersect_or_touch_counted` is never used
+   --> src/feasibility/narrow.rs:609:8
+    |
+609 | pub fn own_polygons_intersect_or_touch_counted(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `polygons_intersect_or_touch_geos` is never used
+  --> src/feasibility/narrow.rs:92:12
+   |
+92 |     pub fn polygons_intersect_or_touch_geos(
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `CleanupError` is never used
+ --> src/geometry/cleanup.rs:4:10
+  |
+4 | pub enum CleanupError {
+  |          ^^^^^^^^^^^^
+
+warning: struct `CleanupResult` is never constructed
+  --> src/geometry/cleanup.rs:11:12
+   |
+11 | pub struct CleanupResult {
+   |            ^^^^^^^^^^^^^
+
+warning: function `remove_duplicate_vertices` is never used
+  --> src/geometry/cleanup.rs:21:8
+   |
+21 | pub fn remove_duplicate_vertices(poly: &Polygon64) -> Result<CleanupResult, CleanupError> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `remove_null_edges` is never used
+  --> src/geometry/cleanup.rs:49:8
+   |
+49 | pub fn remove_null_edges(poly: &Polygon64) -> Result<CleanupResult, CleanupError> {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `merge_collinear_vertices` is never used
+  --> src/geometry/cleanup.rs:77:8
+   |
+77 | pub fn merge_collinear_vertices(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `normalize_orientation` is never used
+   --> src/geometry/cleanup.rs:114:8
+    |
+114 | pub fn normalize_orientation(poly: &Polygon64) -> Result<CleanupResult, CleanupError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `run_cleanup_pipeline` is never used
+   --> src/geometry/cleanup.rs:161:8
+    |
+161 | pub fn run_cleanup_pipeline(
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_ring_vertices` is never used
+   --> src/geometry/cleanup.rs:183:4
+    |
+183 | fn ensure_ring_vertices(ring: &[Point64]) -> Result<(), CleanupError> {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `dedup_ring` is never used
+   --> src/geometry/cleanup.rs:190:4
+    |
+190 | fn dedup_ring(ring: &[Point64], removed: &mut usize) -> Vec<Point64> {
+    |    ^^^^^^^^^^
+
+warning: function `remove_null_edges_ring` is never used
+   --> src/geometry/cleanup.rs:212:4
+    |
+212 | fn remove_null_edges_ring(ring: &[Point64], removed: &mut usize) -> Vec<Point64> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `merge_collinear_ring` is never used
+   --> src/geometry/cleanup.rs:231:4
+    |
+231 | fn merge_collinear_ring(ring: &[Point64], threshold_deg: f64, merged: &mut usize) -> Vec<Point64> {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_collinear` is never used
+   --> src/geometry/cleanup.rs:277:4
+    |
+277 | fn is_collinear(a: Point64, b: Point64, c: Point64) -> bool {
+    |    ^^^^^^^^^^^^
+
+warning: function `point_on_segment_inclusive` is never used
+   --> src/geometry/cleanup.rs:281:4
+    |
+281 | fn point_on_segment_inclusive(a: Point64, b: Point64, p: Point64) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `vertex_angle_deg` is never used
+   --> src/geometry/cleanup.rs:295:4
+    |
+295 | fn vertex_angle_deg(prev: Point64, curr: Point64, next: Point64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `rotate_to_lexicographic_min` is never used
+   --> src/geometry/cleanup.rs:311:4
+    |
+311 | fn rotate_to_lexicographic_min(points: &mut [Point64]) {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SimplifyResult` is never constructed
+ --> src/geometry/simplify.rs:7:12
+  |
+7 | pub struct SimplifyResult {
+  |            ^^^^^^^^^^^^^^
+
+warning: enum `SimplifyError` is never used
+  --> src/geometry/simplify.rs:21:10
+   |
+21 | pub enum SimplifyError {
+   |          ^^^^^^^^^^^^^
+
+warning: function `topology_preserving_rdp` is never used
+  --> src/geometry/simplify.rs:33:8
+   |
+33 | pub fn topology_preserving_rdp(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `count_reflex_vertices` is never used
+   --> src/geometry/simplify.rs:111:8
+    |
+111 | pub fn count_reflex_vertices(ring: &[Point64]) -> usize {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `rdp_simplify_polygon` is never used
+   --> src/geometry/simplify.rs:146:8
+    |
+146 | pub fn rdp_simplify_polygon(poly: &Polygon64, epsilon_mm: f64) -> Option<Polygon64> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `rdp_simplify_polygon_preserve_extremes` is never used
+   --> src/geometry/simplify.rs:165:8
+    |
+165 | pub fn rdp_simplify_polygon_preserve_extremes(poly: &Polygon64, epsilon_mm: f64) -> Option<Polygon64> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `extreme_vertex_mask` is never used
+   --> src/geometry/simplify.rs:182:4
+    |
+182 | fn extreme_vertex_mask(ring: &[Point64]) -> Vec<bool> {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `rdp_simplify_to_reflex_budget` is never used
+   --> src/geometry/simplify.rs:205:8
+    |
+205 | pub fn rdp_simplify_to_reflex_budget(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simplify_ring_by_distance` is never used
+   --> src/geometry/simplify.rs:237:4
+    |
+237 | fn simplify_ring_by_distance(ring: &[Point64], epsilon_mm: f64) -> Vec<Point64> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simplify_ring_by_distance_protected` is never used
+   --> src/geometry/simplify.rs:244:4
+    |
+244 | fn simplify_ring_by_distance_protected(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simplify_ring_conservative` is never used
+   --> src/geometry/simplify.rs:297:4
+    |
+297 | fn simplify_ring_conservative(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `polygon_area_mm2` is never used
+   --> src/geometry/simplify.rs:358:4
+    |
+358 | fn polygon_area_mm2(poly: &Polygon64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `ring_area_mm2` is never used
+   --> src/geometry/simplify.rs:364:4
+    |
+364 | fn ring_area_mm2(ring: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^
+
+warning: function `ring_perimeter_mm` is never used
+   --> src/geometry/simplify.rs:370:4
+    |
+370 | fn ring_perimeter_mm(ring: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `ring_bbox_mm` is never used
+   --> src/geometry/simplify.rs:385:4
+    |
+385 | fn ring_bbox_mm(ring: &[Point64]) -> (f64, f64) {
+    |    ^^^^^^^^^^^^
+
+warning: function `bbox_delta_mm` is never used
+   --> src/geometry/simplify.rs:401:4
+    |
+401 | fn bbox_delta_mm(before: &[Point64], after: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^
+
+warning: function `point_to_segment_distance_mm` is never used
+   --> src/geometry/simplify.rs:407:4
+    |
+407 | fn point_to_segment_distance_mm(p: Point64, a: Point64, b: Point64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ring_max_deviation_mm` is never used
+   --> src/geometry/simplify.rs:435:4
+    |
+435 | fn ring_max_deviation_mm(original: &[Point64], simplified: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `polygon_max_deviation_mm` is never used
+   --> src/geometry/simplify.rs:458:4
+    |
+458 | fn polygon_max_deviation_mm(original: &Polygon64, simplified: &Polygon64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `cfr_fallback_no_candidate_count` and `cfr_fallback_no_feasible_count` are never read
+  --> src/placement/nfp_placer.rs:62:9
+   |
+28 | pub struct NfpRuntimeDiagV1 {
+   |            ---------------- fields in this struct
+...
+62 |     pub cfr_fallback_no_candidate_count: u64,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+63 |     /// Candidate-driven: fast path no feasible count
+64 |     pub cfr_fallback_no_feasible_count: u64,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `NfpRuntimeDiagV1` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: constant `ACTIVE_SET_MAX_CANDIDATES_PER_LEVEL` is never used
+   --> src/placement/nfp_placer.rs:138:7
+    |
+138 | const ACTIVE_SET_MAX_CANDIDATES_PER_LEVEL: usize = 1024;
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CanPlaceProfile`, `PlacedIndex`, `PlacedPart`, `aabb::aabb_from_polygon64`, and `can_place`
+  --> src/bin/narrow_phase_bench.rs:15:5
+   |
+15 |     can_place, own_polygons_intersect_or_touch,
+   |     ^^^^^^^^^
+16 |     i_overlay_narrow,
+17 |     aabb::aabb_from_polygon64,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     CanPlaceProfile, PlacedIndex, PlacedPart,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/bin/narrow_phase_bench.rs:225:9
+    |
+225 |     let mut rng_state = 42u64;
+    |         ----^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `strategy`
+   --> src/bin/narrow_phase_bench.rs:222:19
+    |
+222 | fn run_microbench(strategy: &str, pair_count: usize) {
+    |                   ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_strategy`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nesting_engine` (bin "cfr_union_benchmark") generated 5 warnings (run `cargo fix --bin "cfr_union_benchmark" -p nesting_engine` to apply 2 suggestions)
+warning: `nesting_engine` (bin "nesting_engine") generated 53 warnings (1 duplicate) (run `cargo fix --bin "nesting_engine" -p nesting_engine` to apply 12 suggestions)
+warning: `nesting_engine` (bin "narrow_phase_bench") generated 3 warnings (run `cargo fix --bin "narrow_phase_bench" -p nesting_engine` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.06s
+[RUN] deterministic smoke (10 runs)
+[OK] determinism smoke passed (10/10 full outputs are byte-identical)
+[OK] determinism smoke hash check passed (python canonical hash == solver meta.determinism_hash)
+[NEST] Float-boundary determinism smoke
+[NEST][FLOAT] Determinism smoke on float-boundary fixture
+[BUILD] nesting_engine release
+warning: function `polygons_intersect_or_touch_geos` is never used
+  --> src/feasibility/narrow.rs:92:12
+   |
+92 |     pub fn polygons_intersect_or_touch_geos(
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `is_available` is never used
+  --> src/feasibility/narrow.rs:99:12
+   |
+99 |     pub fn is_available() -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: `nesting_engine` (lib) generated 2 warnings
+warning: unused import: `PlacedIndex`
+ --> src/feasibility/mod.rs:5:66
+  |
+5 | pub use narrow::{can_place, can_place_profiled, CanPlaceProfile, PlacedIndex, PlacedPart};
+  |                                                                  ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `narrow::own_polygons_intersect_or_touch`
+ --> src/feasibility/mod.rs:8:9
+  |
+8 | pub use narrow::own_polygons_intersect_or_touch;
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `narrow::i_overlay_narrow`
+  --> src/feasibility/mod.rs:11:9
+   |
+11 | pub use narrow::i_overlay_narrow;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NfpProvider`
+  --> src/placement/nfp_placer.rs:20:48
+   |
+20 |     provider::{create_nfp_provider, NfpKernel, NfpProvider, NfpProviderConfig},
+   |                                                ^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+    --> src/placement/nfp_placer.rs:1002:29
+     |
+1002 |                         let mut candidates_exhausted = true;
+     |                             ----^^^^^^^^^^^^^^^^^^^^
+     |                             |
+     |                             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `candidates_exhausted`
+    --> src/placement/nfp_placer.rs:1002:29
+     |
+1002 |                         let mut candidates_exhausted = true;
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_candidates_exhausted`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `cfr_elapsed_ms`
+    --> src/placement/nfp_placer.rs:1088:29
+     |
+1088 |                         let cfr_elapsed_ms = cfr_start.elapsed().as_secs_f64() * 1000.0;
+     |                             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cfr_elapsed_ms`
+
+warning: unused variable: `placed_state`
+    --> src/placement/nfp_placer.rs:1914:5
+     |
+1914 |     placed_state: &PlacedIndex,
+     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_placed_state`
+
+warning: unused variable: `moving_aabb`
+    --> src/placement/nfp_placer.rs:2059:5
+     |
+2059 |     moving_aabb: &crate::feasibility::aabb::Aabb,
+     |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_moving_aabb`
+
+warning: unused variable: `placed_state`
+    --> src/placement/nfp_placer.rs:2141:5
+     |
+2141 |     placed_state: &PlacedIndex,
+     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_placed_state`
+
+warning: unused variable: `ordered`
+    --> src/placement/nfp_placer.rs:2438:5
+     |
+2438 |     ordered: &[InflatedPartSpec],
+     |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_ordered`
+
+warning: unused variable: `part_idx`
+    --> src/placement/nfp_placer.rs:2439:5
+     |
+2439 |     part_idx: usize,
+     |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_part_idx`
+
+warning: unused variable: `instance`
+    --> src/placement/nfp_placer.rs:2440:5
+     |
+2440 |     instance: usize,
+     |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_instance`
+
+warning: method `add` is never used
+   --> src/feasibility/narrow.rs:391:12
+    |
+389 | impl NarrowPhaseCounters {
+    | ------------------------ method in this implementation
+390 |     #[inline]
+391 |     pub fn add(&mut self, other: &NarrowPhaseCounters) {
+    |            ^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `own_polygons_intersect_or_touch_counted` is never used
+   --> src/feasibility/narrow.rs:609:8
+    |
+609 | pub fn own_polygons_intersect_or_touch_counted(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `polygons_intersect_or_touch_geos` is never used
+  --> src/feasibility/narrow.rs:92:12
+   |
+92 |     pub fn polygons_intersect_or_touch_geos(
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `CleanupError` is never used
+ --> src/geometry/cleanup.rs:4:10
+  |
+4 | pub enum CleanupError {
+  |          ^^^^^^^^^^^^
+
+warning: struct `CleanupResult` is never constructed
+  --> src/geometry/cleanup.rs:11:12
+   |
+11 | pub struct CleanupResult {
+   |            ^^^^^^^^^^^^^
+
+warning: function `remove_duplicate_vertices` is never used
+  --> src/geometry/cleanup.rs:21:8
+   |
+21 | pub fn remove_duplicate_vertices(poly: &Polygon64) -> Result<CleanupResult, CleanupError> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `remove_null_edges` is never used
+  --> src/geometry/cleanup.rs:49:8
+   |
+49 | pub fn remove_null_edges(poly: &Polygon64) -> Result<CleanupResult, CleanupError> {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `merge_collinear_vertices` is never used
+  --> src/geometry/cleanup.rs:77:8
+   |
+77 | pub fn merge_collinear_vertices(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `normalize_orientation` is never used
+   --> src/geometry/cleanup.rs:114:8
+    |
+114 | pub fn normalize_orientation(poly: &Polygon64) -> Result<CleanupResult, CleanupError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `run_cleanup_pipeline` is never used
+   --> src/geometry/cleanup.rs:161:8
+    |
+161 | pub fn run_cleanup_pipeline(
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_ring_vertices` is never used
+   --> src/geometry/cleanup.rs:183:4
+    |
+183 | fn ensure_ring_vertices(ring: &[Point64]) -> Result<(), CleanupError> {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `dedup_ring` is never used
+   --> src/geometry/cleanup.rs:190:4
+    |
+190 | fn dedup_ring(ring: &[Point64], removed: &mut usize) -> Vec<Point64> {
+    |    ^^^^^^^^^^
+
+warning: function `remove_null_edges_ring` is never used
+   --> src/geometry/cleanup.rs:212:4
+    |
+212 | fn remove_null_edges_ring(ring: &[Point64], removed: &mut usize) -> Vec<Point64> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `merge_collinear_ring` is never used
+   --> src/geometry/cleanup.rs:231:4
+    |
+231 | fn merge_collinear_ring(ring: &[Point64], threshold_deg: f64, merged: &mut usize) -> Vec<Point64> {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_collinear` is never used
+   --> src/geometry/cleanup.rs:277:4
+    |
+277 | fn is_collinear(a: Point64, b: Point64, c: Point64) -> bool {
+    |    ^^^^^^^^^^^^
+
+warning: function `point_on_segment_inclusive` is never used
+   --> src/geometry/cleanup.rs:281:4
+    |
+281 | fn point_on_segment_inclusive(a: Point64, b: Point64, p: Point64) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `vertex_angle_deg` is never used
+   --> src/geometry/cleanup.rs:295:4
+    |
+295 | fn vertex_angle_deg(prev: Point64, curr: Point64, next: Point64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `rotate_to_lexicographic_min` is never used
+   --> src/geometry/cleanup.rs:311:4
+    |
+311 | fn rotate_to_lexicographic_min(points: &mut [Point64]) {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SimplifyResult` is never constructed
+ --> src/geometry/simplify.rs:7:12
+  |
+7 | pub struct SimplifyResult {
+  |            ^^^^^^^^^^^^^^
+
+warning: enum `SimplifyError` is never used
+  --> src/geometry/simplify.rs:21:10
+   |
+21 | pub enum SimplifyError {
+   |          ^^^^^^^^^^^^^
+
+warning: function `topology_preserving_rdp` is never used
+  --> src/geometry/simplify.rs:33:8
+   |
+33 | pub fn topology_preserving_rdp(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `count_reflex_vertices` is never used
+   --> src/geometry/simplify.rs:111:8
+    |
+111 | pub fn count_reflex_vertices(ring: &[Point64]) -> usize {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `rdp_simplify_polygon` is never used
+   --> src/geometry/simplify.rs:146:8
+    |
+146 | pub fn rdp_simplify_polygon(poly: &Polygon64, epsilon_mm: f64) -> Option<Polygon64> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `rdp_simplify_polygon_preserve_extremes` is never used
+   --> src/geometry/simplify.rs:165:8
+    |
+165 | pub fn rdp_simplify_polygon_preserve_extremes(poly: &Polygon64, epsilon_mm: f64) -> Option<Polygon64> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `extreme_vertex_mask` is never used
+   --> src/geometry/simplify.rs:182:4
+    |
+182 | fn extreme_vertex_mask(ring: &[Point64]) -> Vec<bool> {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `rdp_simplify_to_reflex_budget` is never used
+   --> src/geometry/simplify.rs:205:8
+    |
+205 | pub fn rdp_simplify_to_reflex_budget(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simplify_ring_by_distance` is never used
+   --> src/geometry/simplify.rs:237:4
+    |
+237 | fn simplify_ring_by_distance(ring: &[Point64], epsilon_mm: f64) -> Vec<Point64> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simplify_ring_by_distance_protected` is never used
+   --> src/geometry/simplify.rs:244:4
+    |
+244 | fn simplify_ring_by_distance_protected(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simplify_ring_conservative` is never used
+   --> src/geometry/simplify.rs:297:4
+    |
+297 | fn simplify_ring_conservative(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `polygon_area_mm2` is never used
+   --> src/geometry/simplify.rs:358:4
+    |
+358 | fn polygon_area_mm2(poly: &Polygon64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `ring_area_mm2` is never used
+   --> src/geometry/simplify.rs:364:4
+    |
+364 | fn ring_area_mm2(ring: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^
+
+warning: function `ring_perimeter_mm` is never used
+   --> src/geometry/simplify.rs:370:4
+    |
+370 | fn ring_perimeter_mm(ring: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `ring_bbox_mm` is never used
+   --> src/geometry/simplify.rs:385:4
+    |
+385 | fn ring_bbox_mm(ring: &[Point64]) -> (f64, f64) {
+    |    ^^^^^^^^^^^^
+
+warning: function `bbox_delta_mm` is never used
+   --> src/geometry/simplify.rs:401:4
+    |
+401 | fn bbox_delta_mm(before: &[Point64], after: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^
+
+warning: function `point_to_segment_distance_mm` is never used
+   --> src/geometry/simplify.rs:407:4
+    |
+407 | fn point_to_segment_distance_mm(p: Point64, a: Point64, b: Point64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ring_max_deviation_mm` is never used
+   --> src/geometry/simplify.rs:435:4
+    |
+435 | fn ring_max_deviation_mm(original: &[Point64], simplified: &[Point64]) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `polygon_max_deviation_mm` is never used
+   --> src/geometry/simplify.rs:458:4
+    |
+458 | fn polygon_max_deviation_mm(original: &Polygon64, simplified: &Polygon64) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `cfr_fallback_no_candidate_count` and `cfr_fallback_no_feasible_count` are never read
+  --> src/placement/nfp_placer.rs:62:9
+   |
+28 | pub struct NfpRuntimeDiagV1 {
+   |            ---------------- fields in this struct
+...
+62 |     pub cfr_fallback_no_candidate_count: u64,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+63 |     /// Candidate-driven: fast path no feasible count
+64 |     pub cfr_fallback_no_feasible_count: u64,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `NfpRuntimeDiagV1` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: constant `ACTIVE_SET_MAX_CANDIDATES_PER_LEVEL` is never used
+   --> src/placement/nfp_placer.rs:138:7
+    |
+138 | const ACTIVE_SET_MAX_CANDIDATES_PER_LEVEL: usize = 1024;
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Duration`
+  --> src/bin/cfr_union_benchmark.rs:16:17
+   |
+16 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `cross_product_i128`
+  --> src/bin/cfr_union_benchmark.rs:29:39
+   |
+29 | use nesting_engine::geometry::types::{cross_product_i128, Point64, Polygon64};
+   |                                       ^^^^^^^^^^^^^^^^^^
+
+warning: value assigned to `recommendation` is never read
+   --> src/bin/cfr_union_benchmark.rs:627:30
+    |
+627 |     let mut recommendation = String::new();
+    |                              ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `polygon_area` is never used
+  --> src/bin/cfr_union_benchmark.rs:49:4
+   |
+49 | fn polygon_area(poly: &Polygon64) -> i128 {
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `name` is never read
+   --> src/bin/cfr_union_benchmark.rs:268:5
+    |
+267 | struct StrategyResult {
+    |        -------------- field in this struct
+268 |     name: StrategyName,
+    |     ^^^^
+    |
+    = note: `StrategyResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: unused imports: `CanPlaceProfile`, `PlacedIndex`, `PlacedPart`, `aabb::aabb_from_polygon64`, and `can_place`
+  --> src/bin/narrow_phase_bench.rs:15:5
+   |
+15 |     can_place, own_polygons_intersect_or_touch,
+   |     ^^^^^^^^^
+16 |     i_overlay_narrow,
+17 |     aabb::aabb_from_polygon64,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     CanPlaceProfile, PlacedIndex, PlacedPart,
+   |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/bin/narrow_phase_bench.rs:225:9
+    |
+225 |     let mut rng_state = 42u64;
+    |         ----^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `strategy`
+   --> src/bin/narrow_phase_bench.rs:222:19
+    |
+222 | fn run_microbench(strategy: &str, pair_count: usize) {
+    |                   ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_strategy`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nesting_engine` (bin "nesting_engine") generated 53 warnings (1 duplicate) (run `cargo fix --bin "nesting_engine" -p nesting_engine` to apply 12 suggestions)
+warning: `nesting_engine` (bin "cfr_union_benchmark") generated 5 warnings (run `cargo fix --bin "cfr_union_benchmark" -p nesting_engine` to apply 2 suggestions)
+warning: `nesting_engine` (bin "narrow_phase_bench") generated 3 warnings (run `cargo fix --bin "narrow_phase_bench" -p nesting_engine` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.06s
+[RUN] deterministic smoke (10 runs)
+[OK] determinism smoke passed (10/10 full outputs are byte-identical)
+[OK] determinism smoke hash check passed (python canonical hash == solver meta.determinism_hash)
+[DONE] smoketest OK
