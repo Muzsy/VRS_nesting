@@ -1,0 +1,17 @@
+{
+  "contract_version": "v1",
+  "project_name": "q26_tiny_rectangles",
+  "seed": 0,
+  "time_limit_s": 5,
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "optimizer_pipeline": "sparrow_cde",
+  "collision_backend": "cde",
+  "margin_mm": 0.0,
+  "stocks": [
+    {"id": "S", "quantity": 1, "width": 300.0, "height": 300.0}
+  ],
+  "parts": [
+    {"id": "A", "width": 100.0, "height": 80.0, "quantity": 2, "allowed_rotations_deg": [0, 90]},
+    {"id": "B", "width": 120.0, "height": 70.0, "quantity": 2, "allowed_rotations_deg": [0, 90]}
+  ]
+}

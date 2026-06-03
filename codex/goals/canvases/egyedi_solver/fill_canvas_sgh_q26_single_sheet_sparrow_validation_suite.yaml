@@ -1,0 +1,139 @@
+id: sgh_q26_single_sheet_sparrow_validation_suite
+title: SGH-Q26 Single-sheet Sparrow validation test suite with LV8-derived one-sheet gate
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow
+kind: test_suite
+
+intent: >-
+  Add a staged single-sheet validation suite for the production native sparrow_cde
+  path, from tiny basics through serious synthetic fixtures and a concrete
+  LV8-derived 40-80 instance real-DXF one-sheet validation. This is validation only:
+  no compression, no multisheet acceptance, no first-sheet-191/full-276 LV8 benchmark
+  tuning, and no solver production refactor.
+
+must_not:
+  - add compression
+  - add first-sheet-191 or full-276 LV8 acceptance gates
+  - call the LV8-derived 40-80 validation a benchmark
+  - add multisheet fixtures or require sheet_count_used greater than 1
+  - modify production solver code to chase tests
+  - weaken Q25-R6 strict Sparrow parity invariants
+  - reintroduce WorkingLayout or VrsCollisionTracker into optimizer/sparrow
+  - use bbox/AABB/proxy ranking as Sparrow strict truth
+  - hide positive fixture failures behind PASS_WITH_NOTES
+  - edit unrelated repo files
+
+steps:
+  - name: "Felderítés és scope gate rögzítése"
+    description: >
+      Olvasd el az AGENTS.md-t, a Codex szabályokat, a Q25-R6 reportot, az adapter/SolverInput
+      API-kat, a meglévő Sparrow unit teszteket, a real-DXF pipeline smoke-ot, a run_real_dxf_sparrow_pipeline.py
+      kontraktust és a canvas Source of truth szekciójában felsorolt mintákat, különösen:
+      samples/real_work_dxf/0014-01H/lv8jav. Futtasd: git status --porcelain=v1 és git diff --name-only.
+      Rögzítsd a pre-task dirty állapotot a Q26 reportban. Ebben a stepben még ne módosíts solver
+      production kódot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+
+  - name: "Rust single-sheet integration test suite létrehozása"
+    description: >
+      Hozd létre a rust/vrs_solver/tests/sparrow_single_sheet_validation.rs integrációs tesztet.
+      A teszt a public crate boundary-n keresztül fusson: vrs_solver::adapter::solve és
+      serde_json::from_value::<SolverInput>. Készíts helper függvényeket: solve_json,
+      requested_count, assert_positive_single_sheet_ok, assert_native_sparrow_diagnostics,
+      assert_cde_backend_diagnostics, assert_same_ordered_output. Minden pozitív fixture pontosan
+      egy stockot használjon quantity=1 értékkel, optimizer_pipeline=sparrow_cde, collision_backend=cde,
+      solver_profile=jagua_optimizer_phase1_outer_only, margin_mm=0.0. A pozitív synthetic fixture-ök ne legyenek
+      near-perfect density benchmarkok.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_single_sheet_validation.rs"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/tiny_rectangles.json"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/rotation_90_required.json"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/irregular_l_shape_mix.json"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/medium_rect_mix.json"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/medium_mixed_rotations.json"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/serious_synthetic_single_sheet.json"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/negative_overcapacity.json"
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+
+  - name: "Kötelező Rust validációs lépcsők és diagnosztikai assert-ek"
+    description: >
+      Implementáld a kötelező Q26 Rust teszteket: tiny rectangles; 90-degree rotation required;
+      strict-CDE irregular L-shape mix; medium rectangle mix; medium mixed rotations; serious synthetic
+      40-80 instances; deterministic same-seed same-output; negative overcapacity. Pozitív fixture esetén
+      kötelező: status ok, unplaced 0, placed_count == requested_count, minden sheet_index 0,
+      sheet_count_used 1, pipeline sparrow_cde, sparrow_invoked true, sparrow_converged true,
+      native_model/tracker true, old_core false, compression passes 0, bbox proxy primary false,
+      cde_adapter backend, bbox_fallback_queries 0. A negatív fixture részletes diagnosztikát várjon,
+      ne ok státuszt.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_single_sheet_validation.rs"
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+
+  - name: "LV8-derived 40-80 darabos real-DXF one-sheet smoke létrehozása"
+    description: >
+      Hozd létre a scripts/smoke_sgh_q26_lv8_derived_single_sheet_validation.py scriptet. A script a meglévő
+      scripts/run_real_dxf_sparrow_pipeline.py vagy a repo legközelebbi dxf_v1 pipeline útvonalát használja.
+      Bemenet kizárólag: samples/real_work_dxf/0014-01H/lv8jav/*.dxf, backup *.dxf~ nélkül. Parse-old a darabszámokat
+      a fájlnévből (_Ndb), vagy használd a repo meglévő helperét. Készíts determinisztikus, több LV8 típust lefedő
+      subsetet 40-80 instance összdarabszámmal. Egyetlen 1500x3000 stock/sheet legyen quantity=1 értékkel,
+      javasolt spacing_mm=10.0 és margin_mm=10.0. Assertáld: status ok, unplaced_count 0, placements_count == selected_instance_count,
+      minden placement sheet 0/első sheet, nincs sheet_002.dxf, és ha elérhető, native Sparrow/CDE diagnosztika rendben.
+      Írd ki a kiválasztott fájlokat és mennyiségeket a lv8_derived_subset_manifest.json-ba. Ez nem LV8 benchmark:
+      first-sheet-191 és full-276 tilos.
+    outputs:
+      - "scripts/smoke_sgh_q26_lv8_derived_single_sheet_validation.py"
+      - "rust/vrs_solver/tests/fixtures/sgh_q26_single_sheet_validation/lv8_derived_subset_manifest.json"
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+
+  - name: "Q26 statikus smoke script hozzáadása"
+    description: >
+      Hozd létre/frissítsd a scripts/smoke_sgh_q26_single_sheet_validation_suite.py scriptet. A script statikusan
+      ellenőrizze a Q26 tesztcsomagot: required Rust test names; sparrow_cde/cde route; single-stock quantity=1;
+      positive fixture sheet 0 / sheet_count_used 1 assert-ek; native Sparrow diagnostic assert-ek;
+      negative overcapacity test; LV8-derived smoke megléte; LV8 directory hivatkozás; 40-80 instance gate;
+      1500x3000 one-sheet gate; status ok / unplaced 0 / no sheet_002 assert; kötelező report szekciók és PASS tokenek;
+      first-sheet-191/full-276/multisheet acceptance tiltása; compression és legacy-core regressziók tiltása.
+      A smoke ne futtasson benchmarkot; a solver futtatásért a cargo integration test és az LV8-derived Python smoke felel.
+    outputs:
+      - "scripts/smoke_sgh_q26_single_sheet_validation_suite.py"
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+
+  - name: "Small real-DXF one-sheet smoke futtatási bizonyíték"
+    description: >
+      Futtasd a meglévő python3 scripts/smoke_real_dxf_sparrow_pipeline.py scriptet, és rögzítsd a
+      REAL_DXF_ONE_SHEET_SMOKE_AUDIT szekcióban az eredményt. Ez meglévő kis real-DXF egytáblás smoke;
+      nem az LV8-derived gate, nem multisheet acceptance. Ha ezdxf vagy más dependency hiányzik, írd le az
+      exact hibát, és a report_standard szerint dönts PASS_WITH_NOTES vagy FAIL mellett; ne claimelj
+      teljes PASS-t lefedetlen real-DXF gate mellett.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+
+  - name: "Report, checklist és scope gate lezárása"
+    description: >
+      Töltsd ki a Q26 report kötelező szekcióit és a checklistet valós állapot szerint. PASS csak akkor
+      lehet, ha az összes pozitív Rust fixture zöld, a negatív fixture korrektül reportol, a Q26 static smoke zöld,
+      az LV8-derived 40-80 smoke zöld, és a report tartalmazza az összes kötelező PASS tokent. Rögzítsd:
+      git diff --stat, git status --porcelain=v1, TASK_CHANGED_FILES, OUT_OF_SCOPE_NEW_CHANGES. Ha bármely pozitív
+      fixture vagy az LV8-derived gate partial/unsupported, a report legyen FAIL és tartalmazza az exact fixture nevét és diagnosztikáját.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib;
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_single_sheet_validation -- --nocapture;
+      python3 scripts/smoke_sgh_q26_single_sheet_validation_suite.py;
+      python3 scripts/smoke_sgh_q26_lv8_derived_single_sheet_validation.py;
+      python3 scripts/smoke_real_dxf_sparrow_pipeline.py;
+      ./scripts/check.sh;
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md.
+      A BUILD_TEST_RESULTS szekcióba írd be minden parancs eredményét, és mentsd a verify logot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.md"
+      - "codex/reports/egyedi_solver/sgh_q26_single_sheet_sparrow_validation_suite.verify.log"

@@ -1,0 +1,17 @@
+{
+  "contract_version": "v1",
+  "project_name": "q26_serious_synthetic_single_sheet",
+  "seed": 0,
+  "time_limit_s": 30,
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "optimizer_pipeline": "sparrow_cde",
+  "collision_backend": "cde",
+  "margin_mm": 0.0,
+  "stocks": [
+    {"id": "S", "quantity": 1, "width": 1200.0, "height": 1000.0}
+  ],
+  "parts": [
+    {"id": "S100", "width": 100.0, "height": 100.0, "quantity": 48, "allowed_rotations_deg": [0, 90]},
+    {"id": "T100x50", "width": 100.0, "height": 50.0, "quantity": 16, "allowed_rotations_deg": [0, 90]}
+  ]
+}

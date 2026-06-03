@@ -1,0 +1,24 @@
+{
+  "contract_version": "v1",
+  "project_name": "q26_irregular_l_shape_mix",
+  "seed": 0,
+  "time_limit_s": 10,
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "optimizer_pipeline": "sparrow_cde",
+  "collision_backend": "cde",
+  "margin_mm": 0.0,
+  "stocks": [
+    {"id": "S", "quantity": 1, "width": 400.0, "height": 400.0}
+  ],
+  "parts": [
+    {
+      "id": "L",
+      "width": 200.0,
+      "height": 200.0,
+      "quantity": 1,
+      "allowed_rotations_deg": [0, 90],
+      "outer_points": [[0.0, 0.0], [200.0, 0.0], [200.0, 100.0], [100.0, 100.0], [100.0, 200.0], [0.0, 200.0]]
+    },
+    {"id": "R", "width": 100.0, "height": 100.0, "quantity": 2, "allowed_rotations_deg": [0, 90]}
+  ]
+}

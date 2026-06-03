@@ -1,0 +1,16 @@
+{
+  "contract_version": "v1",
+  "project_name": "q26_negative_overcapacity",
+  "seed": 0,
+  "time_limit_s": 3,
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "optimizer_pipeline": "sparrow_cde",
+  "collision_backend": "cde",
+  "margin_mm": 0.0,
+  "stocks": [
+    {"id": "S", "quantity": 1, "width": 300.0, "height": 300.0}
+  ],
+  "parts": [
+    {"id": "BIG", "width": 200.0, "height": 200.0, "quantity": 4, "allowed_rotations_deg": [0, 90]}
+  ]
+}

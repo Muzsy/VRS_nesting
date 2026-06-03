@@ -1,0 +1,46 @@
+[PYTEST] Unit tests
+........................................................................ [ 19%]
+........................................................................ [ 38%]
+........................................................................ [ 57%]
+........................................................................ [ 76%]
+........................................................................ [ 95%]
+................                                                         [100%]
+376 passed in 21.05s
+[MYPY] Type check
+Success: no issues found in 26 source files
+[3/3] Sparrow IO smoketest
+[1/2] Sparrow run via runner module
+[runner] run_dir=/home/muszy/projects/VRS_nesting/runs/20260603T215712Z_baba2f34
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /home/muszy/projects/VRS_nesting/runs/20260603T215712Z_baba2f34/instance.json -t 60 -s 0
+[INFO] run_dir: /home/muszy/projects/VRS_nesting/runs/20260603T215712Z_baba2f34
+[2/2] Validate: /home/muszy/projects/VRS_nesting/runs/20260603T215712Z_baba2f34/output/final_swim.json
+PASS ✅
+ strip_height=5752.0
+ strip_width =5927.389
+ placed_items=48 (demand_sum=48)
+ overlap-check: PASS
+[DXF] Import convention smoke
+[OK] DXF import convention smoke passed
+[GEO] Polygonize + offset robustness smoke
+[OK] geometry pipeline smoke passed
+[DOCS] Command references smoke
+[OK] docs command smoke passed
+[H3][T9] quality lane closure smoke
+PASS smoke_h3_quality_t9_quality_lane_audit_es_hibajavitas
+[DXF] Export --run-dir smoke
+[OK] exporter --run-dir smoke passed
+[DXF] Source geometry BLOCK/INSERT export smoke
+[OK] source geometry export smoke passed
+[DXF] Multi-sheet wrapper edge-cases smoke
+[runner] run_dir=/tmp/claude-1000/vrs_wrapper_edge_smoke_lfufwow9/run_a/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/claude-1000/vrs_wrapper_edge_smoke_lfufwow9/run_a/sheets/sheet_001/instance.json -t 4 -s 0
+[runner] run_dir=/tmp/claude-1000/vrs_wrapper_edge_smoke_lfufwow9/run_b/sheets/sheet_001
+[runner] cmd=/home/muszy/projects/VRS_nesting/.cache/sparrow/target/release/sparrow -i /tmp/claude-1000/vrs_wrapper_edge_smoke_lfufwow9/run_b/sheets/sheet_001/instance.json -t 4 -s 0
+[OK] multisheet wrapper edge-cases smoke passed
+[DXF] Real fixture import smoke
+[OK] real DXF fixture smoke passed
+[DXF] Real NFP pairs smoke
+[OK] real DXF NFP pairs smoke passed
+[DXF] Real Sparrow pipeline smoke
+[OK] real DXF + Sparrow pipeline smoke passed
+[DXF] SVG export artifact smoke

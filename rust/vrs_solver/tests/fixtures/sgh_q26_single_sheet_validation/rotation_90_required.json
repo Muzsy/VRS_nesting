@@ -1,0 +1,17 @@
+{
+  "contract_version": "v1",
+  "project_name": "q26_rotation_90_required",
+  "seed": 0,
+  "time_limit_s": 8,
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "optimizer_pipeline": "sparrow_cde",
+  "collision_backend": "cde",
+  "margin_mm": 0.0,
+  "stocks": [
+    {"id": "S", "quantity": 1, "width": 300.0, "height": 500.0}
+  ],
+  "parts": [
+    {"id": "P", "width": 350.0, "height": 150.0, "quantity": 1, "allowed_rotations_deg": [0, 90]},
+    {"id": "Q", "width": 80.0, "height": 80.0, "quantity": 3, "allowed_rotations_deg": [0, 90]}
+  ]
+}

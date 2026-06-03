@@ -1,0 +1,271 @@
+{
+  "contract_version": "q26_lv8_derived_single_sheet_v1",
+  "purpose": "deterministic LV8-derived single-sheet validation subset (NOT a benchmark)",
+  "lv8_source_directory": "samples/real_work_dxf/0014-01H/lv8jav",
+  "lv8_normalized_directory": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized",
+  "sheet": {
+    "width_mm": 1500.0,
+    "height_mm": 3000.0,
+    "quantity": 1
+  },
+  "spacing_mm": 10.0,
+  "margin_mm": 10.0,
+  "seed": 0,
+  "allowed_rotations_deg": [
+    0,
+    90
+  ],
+  "selection_rule": {
+    "sort": "by file name ascending",
+    "exclude": "bbox max dimension > min(sheet_w, sheet_h)",
+    "cap_large": {
+      "area_m2_threshold": 0.05,
+      "cap": 3
+    },
+    "cap_small": {
+      "cap": 6
+    },
+    "quantity": "min(cap, parsed _<N>db)"
+  },
+  "selected_part_types": 11,
+  "total_selected_instances": 63,
+  "selected_instance_count": 63,
+  "selected_area_m2": 1.106166,
+  "sheet_area_m2": 4.5,
+  "is_full_part_set": false,
+  "is_density_benchmark": false,
+  "selected_files": [
+    {
+      "file": "LV8_00035_28db_M_REV2_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_00035_28db_M_REV2_norm.dxf",
+      "parsed_db": 28,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 50.0,
+      "height_mm": 50.0,
+      "area_m2": 0.0025
+    },
+    {
+      "file": "LV8_00057-2_20db_REV8_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_00057-2_20db_REV8_norm.dxf",
+      "parsed_db": 20,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 112.609,
+      "height_mm": 50.0,
+      "area_m2": 0.00563
+    },
+    {
+      "file": "LV8_01170_10db_REV5_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_01170_10db_REV5_norm.dxf",
+      "parsed_db": 10,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 139.0,
+      "height_mm": 108.108,
+      "area_m2": 0.015027
+    },
+    {
+      "file": "LV8_02048_20db_L_REV5_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_02048_20db_L_REV5_norm.dxf",
+      "parsed_db": 20,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 45.0,
+      "height_mm": 106.208,
+      "area_m2": 0.004779
+    },
+    {
+      "file": "LV8_02049_50db_REV7_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_02049_50db_REV7_norm.dxf",
+      "parsed_db": 50,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 30.0,
+      "height_mm": 44.0,
+      "area_m2": 0.00132
+    },
+    {
+      "file": "Lv8_07919_16db_REV4_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_07919_16db_REV4_norm.dxf",
+      "parsed_db": 16,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 137.708,
+      "height_mm": 62.0,
+      "area_m2": 0.008538
+    },
+    {
+      "file": "Lv8_07920_50db_REV1_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_07920_50db_REV1_norm.dxf",
+      "parsed_db": 50,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 175.0,
+      "height_mm": 105.5,
+      "area_m2": 0.018463
+    },
+    {
+      "file": "Lv8_07921_50db_REV1_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_07921_50db_REV1_norm.dxf",
+      "parsed_db": 50,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 227.0,
+      "height_mm": 120.0,
+      "area_m2": 0.02724
+    },
+    {
+      "file": "Lv8_10059_10db_REV2_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_10059_10db_REV2_norm.dxf",
+      "parsed_db": 10,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 156.85,
+      "height_mm": 30.0,
+      "area_m2": 0.004705
+    },
+    {
+      "file": "Lv8_15348_6db_GRAVIR_REV1_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_15348_6db_GRAVIR_REV1_norm.dxf",
+      "parsed_db": 6,
+      "selected_quantity": 3,
+      "decision": "selected",
+      "width_mm": 600.0,
+      "height_mm": 290.0,
+      "area_m2": 0.174
+    },
+    {
+      "file": "Lv8_15435_10db_REV0_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_15435_10db_REV0_norm.dxf",
+      "parsed_db": 10,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 62.4,
+      "height_mm": 146.776,
+      "area_m2": 0.009159
+    }
+  ],
+  "files": [
+    {
+      "file": "LV8_00035_28db_M_REV2_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_00035_28db_M_REV2_norm.dxf",
+      "parsed_db": 28,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 50.0,
+      "height_mm": 50.0,
+      "area_m2": 0.0025
+    },
+    {
+      "file": "LV8_00057-2_20db_REV8_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_00057-2_20db_REV8_norm.dxf",
+      "parsed_db": 20,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 112.609,
+      "height_mm": 50.0,
+      "area_m2": 0.00563
+    },
+    {
+      "file": "LV8_01170_10db_REV5_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_01170_10db_REV5_norm.dxf",
+      "parsed_db": 10,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 139.0,
+      "height_mm": 108.108,
+      "area_m2": 0.015027
+    },
+    {
+      "file": "LV8_02048_20db_L_REV5_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_02048_20db_L_REV5_norm.dxf",
+      "parsed_db": 20,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 45.0,
+      "height_mm": 106.208,
+      "area_m2": 0.004779
+    },
+    {
+      "file": "LV8_02049_50db_REV7_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/LV8_02049_50db_REV7_norm.dxf",
+      "parsed_db": 50,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 30.0,
+      "height_mm": 44.0,
+      "area_m2": 0.00132
+    },
+    {
+      "file": "Lv8_07919_16db_REV4_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_07919_16db_REV4_norm.dxf",
+      "parsed_db": 16,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 137.708,
+      "height_mm": 62.0,
+      "area_m2": 0.008538
+    },
+    {
+      "file": "Lv8_07920_50db_REV1_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_07920_50db_REV1_norm.dxf",
+      "parsed_db": 50,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 175.0,
+      "height_mm": 105.5,
+      "area_m2": 0.018463
+    },
+    {
+      "file": "Lv8_07921_50db_REV1_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_07921_50db_REV1_norm.dxf",
+      "parsed_db": 50,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 227.0,
+      "height_mm": 120.0,
+      "area_m2": 0.02724
+    },
+    {
+      "file": "Lv8_10059_10db_REV2_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_10059_10db_REV2_norm.dxf",
+      "parsed_db": 10,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 156.85,
+      "height_mm": 30.0,
+      "area_m2": 0.004705
+    },
+    {
+      "file": "Lv8_11612_6db_REV3_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_11612_6db_REV3_norm.dxf",
+      "parsed_db": 6,
+      "selected_quantity": 0,
+      "decision": "excluded_oversized_for_single_1500x3000",
+      "width_mm": 2521.994,
+      "height_mm": 732.8,
+      "area_m2": 1.848117
+    },
+    {
+      "file": "Lv8_15348_6db_GRAVIR_REV1_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_15348_6db_GRAVIR_REV1_norm.dxf",
+      "parsed_db": 6,
+      "selected_quantity": 3,
+      "decision": "selected",
+      "width_mm": 600.0,
+      "height_mm": 290.0,
+      "area_m2": 0.174
+    },
+    {
+      "file": "Lv8_15435_10db_REV0_norm.dxf",
+      "path": "/home/muszy/projects/VRS_nesting/samples/real_work_dxf/0014-01H/lv8jav_normalized/Lv8_15435_10db_REV0_norm.dxf",
+      "parsed_db": 10,
+      "selected_quantity": 6,
+      "decision": "selected",
+      "width_mm": 62.4,
+      "height_mm": 146.776,
+      "area_m2": 0.009159
+    }
+  ]
+}
