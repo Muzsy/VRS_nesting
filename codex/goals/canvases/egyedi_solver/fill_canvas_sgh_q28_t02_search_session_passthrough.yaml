@@ -1,0 +1,76 @@
+id: sgh_q28_t02_search_session_passthrough
+title: native_search_placement opcionális session passthrough
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow/sample
+kind: implementation
+
+intent: >-
+  A native_search_placement függvény kap egy opcionális live_session paramétert.
+  Ha Some, a session-ből deregisztrálja a target-et, futtatja a keresést a live
+  session-nel, majd visszaregisztrálja az elfogadott (vagy visszautasított) shape-pel.
+  Ha None, a jelenlegi build_sheet_session fallback fut. Ez teszi lehetővé, hogy T03-ban
+  a worker pass egyetlen session-t éltessen végig.
+
+must_not:
+  - módosítani run_worker_pass-t (T03 feladata)
+  - módosítani tracker.rs-t (T04 feladata)
+  - megváltoztatni a keresési algoritmus logikáját (sampling, coord-descent, acceptance)
+  - eltávolítani a build_sheet_session fallback utat
+
+steps:
+  - name: "Felderítés — native_search_placement és hívói"
+    description: >
+      Olvasd el: rust/vrs_solver/src/optimizer/sparrow/sample/search.rs (native_search_placement L194–291,
+      build_sheet_session L18–34); rust/vrs_solver/src/optimizer/sparrow/optimizer.rs (probe hívás L66–79);
+      rust/vrs_solver/src/optimizer/sparrow/worker.rs (run_worker_pass-ban a hívás L62).
+      Futtasd cargo test és rögzítsd a baseline teszt-állapotot a reportban.
+      Előfeltétel: sgh_q28_t01 PASS (CdeCandidateSession::deregister_item / reregister_item létezik).
+    inputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/optimizer.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t02_search_session_passthrough.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q28_t02_search_session_passthrough.md"
+
+  - name: "native_search_placement szignatúra bővítése"
+    description: >
+      A search.rs-ben a native_search_placement szignatúrájához add hozzá utolsó paraméterként:
+        live_session: Option<&mut CdeCandidateSession>
+      A függvény törzse egyelőre csak None-ként kezeli (a tényleges logika a következő step-ben).
+      Frissítsd az összes hívási helyet (optimizer.rs probe: None; worker.rs: None egyelőre).
+      Győződj meg, hogy cargo build --release lefordul.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/optimizer.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+
+  - name: "Some(session) ág implementálása — deregister/search/reregister"
+    description: >
+      A search.rs native_search_placement-ben, az aktuális sheet (rank==0) keresési ágában:
+      Ha live_session == Some(session) ÉS a keresés a cur.sheet_index-en folyik:
+        1. session.deregister_item(target)
+        2. build_sheet_session helyett a session-t adja át az evaluator-nak
+           (az evaluator session: &session mezője már tartalmazza a többi darabot, de a target ki van véve)
+        3. A search lefut a session-nel
+        4. Ha az eredmény elfogadható (Some(newp)):
+           session.reregister_item(target, tracker.shapes[target].clone().unwrap_or_default())
+           — az új shape a moves utáni, a tracker.shapes alapján
+        5. Ha None (rejection): session.reregister_item(target, eredeti_shape) — visszaállítás
+
+      None esetén: jelenlegi build_sheet_session (változatlan fallback).
+      Cross-sheet (rank>0): mindig build_sheet_session fallback (session-passthrough nem támogatott).
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib 2>&1 | grep "test result"
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_single_sheet_validation
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q28_t02_search_session_passthrough.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t02_search_session_passthrough.md"
+      - "codex/reports/egyedi_solver/sgh_q28_t02_search_session_passthrough.verify.log"

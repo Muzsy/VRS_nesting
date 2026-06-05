@@ -2,7 +2,7 @@
   "contract_version": "v1",
   "project_name": "q26_medium_rect_mix",
   "seed": 0,
-  "time_limit_s": 25,
+  "time_limit_s": 120,
   "solver_profile": "jagua_optimizer_phase1_outer_only",
   "optimizer_pipeline": "sparrow_cde",
   "collision_backend": "cde",

@@ -1,0 +1,109 @@
+id: sgh_q28_t01_cde_session_incremental_api
+title: CdeCandidateSession inkrementális API — build_all_items + deregister/reregister
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/cde_adapter
+kind: implementation
+
+intent: >-
+  A CdeCandidateSession-höz hozzáadja a build_all_items konstruktort és a
+  deregister_item / reregister_item metódusokat, amelyek a jagua-rs CDEngine
+  meglévő register_hazard / deregister_hazard_by_entity API-ját használják.
+  Ez az alapja annak, hogy a worker pass során egyetlen session éljen végig
+  minden item-mozgatáson át.
+
+must_not:
+  - módosítani a build_with_policy vagy build meglévő metódusokat
+  - módosítani run_worker_pass, native_search_placement, tracker.rs-t (T02-T04 feladata)
+  - exportálni publikus API-t a crate boundary-n kívülre
+  - módosítani a jagua-rs crate-et
+
+steps:
+  - name: "Felderítés — CdeCandidateSession jelenlegi API és CDEngine hazard lifecycle"
+    description: >
+      Olvasd el a következő forrásokat és rögzítsd a releváns sorokat a reportban:
+      rust/vrs_solver/src/optimizer/cde_adapter.rs (CdeCandidateSession struct, build_with_policy,
+      query metódusok: L738–870);
+      ~/.cargo/registry/src/.../jagua-rs-0.6.4/src/collision_detection/cd_engine.rs
+      (register_hazard L59, deregister_hazard_by_entity L72, HazardEntity::Hole);
+      rust/vrs_solver/src/optimizer/sparrow/sample/search.rs (build_sheet_session L18–34).
+      Futtasd: cargo test --manifest-path rust/vrs_solver/Cargo.toml 2>&1 | grep "test result"
+      és rögzítsd a baseline teszt-számot a reportban.
+    inputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t01_cde_session_incremental_api.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q28_t01_cde_session_incremental_api.md"
+
+  - name: "build_all_items konstruktor implementálása"
+    description: >
+      A rust/vrs_solver/src/optimizer/cde_adapter.rs fájlban, a CdeCandidateSession impl blokkban,
+      add hozzá a build_all_items metódust közvetlenül a build_with_policy után:
+
+        pub(crate) fn build_all_items(
+            all: Vec<(usize, Rc<CdePreparedShape>)>,
+            sheet: &CdePreparedShape,
+            touching_policy: CdeTouchingPolicy,
+        ) -> Option<Self>
+
+      A metódus logikája azonos a build_with_policy-val, de a `others` lista tartalmaz minden
+      darabot (nem zár ki target-et). A Hole { idx } értékek 0..all.len() legyenek, az all[i]
+      layout_idx → holes[i] leképezéssel. A cde_observability::inc_batch_engine_build hívás
+      all.len() argumentummal marad.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+
+  - name: "lookup_hole_slot, deregister_item, reregister_item implementálása"
+    description: >
+      Ugyanabban az impl blokkban add hozzá:
+
+      1. `fn lookup_hole_slot(&self, layout_idx: usize) -> Option<usize>`:
+         self.holes.iter().position(|(idx, _)| *idx == layout_idx)
+
+      2. `pub(crate) fn deregister_item(&mut self, layout_idx: usize)`:
+         - Keresi a slot-ot lookup_hole_slot-tal (ha None: return, ne panic)
+         - Hívja: self.cde.deregister_hazard_by_entity(HazardEntity::Hole { idx: slot })
+         - self.holes.swap_remove(slot)
+         - Ha a swap_remove után a slot-ra lépett elem egy másik layout_idx, az ő
+           CDEngine bejegyzésén nincs teendő (a CDEngine HazKey alapon indexel, nem idx alapon)
+
+      3. `pub(crate) fn reregister_item(&mut self, layout_idx: usize, new_shape: Rc<CdePreparedShape>)`:
+         - Új slot = self.holes.len() (append előtt)
+         - self.cde.register_hazard(Hazard::new(HazardEntity::Hole { idx: new_slot }, new_shape.spoly.clone(), false))
+         - self.holes.push((layout_idx, new_shape))
+
+      Fontos: a HazardEntity::Hole { idx } csak a CDEngine belső keresőjének kell; a holes vektor
+      mindig az aktuális állapotot tükrözi.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+
+  - name: "Unit test — cde_session_incremental_eq_full_rebuild"
+    description: >
+      A cde_adapter.rs #[cfg(test)] moduljában (vagy egy új tests almodulban) implementáld a
+      cde_session_incremental_eq_full_rebuild unit tesztet:
+
+      1. Készíts 10 db egyszerű téglalap CdePreparedShape-et és egy sheet shape-et.
+      2. Épít egy build_all_items session-t mind a 10-gel.
+      3. Minden darabra (0..10):
+         a. session.deregister_item(layout_idx)
+         b. Épít egy referencia build_with_policy session-t (a maradék 9-gel, ugyanúgy mint build_sheet_session)
+         c. Egy próba query-t futtat mindkét session-nel ugyanarra a candidate shape-re
+         d. assert_eq!(incremental_result, full_rebuild_result) — CdeBatchResult PartialEq-vel
+         e. session.reregister_item(layout_idx, eredeti_shape) — visszarakja
+      4. A teszt végén a session state == kezdeti state (minden darab bent van).
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd sorrendben:
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib 2>&1 | grep "test result"
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib cde_session_incremental_eq_full_rebuild -- --nocapture
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_single_sheet_validation
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q28_t01_cde_session_incremental_api.md
+      Rögzítsd az összes eredményt a reportban.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t01_cde_session_incremental_api.md"
+      - "codex/reports/egyedi_solver/sgh_q28_t01_cde_session_incremental_api.verify.log"

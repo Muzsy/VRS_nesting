@@ -41,6 +41,25 @@ pub(super) fn run_worker_pass(
 
     let colliding = ordered_colliding_items_for_worker(&tracker, cfg, worker_idx, &mut rng);
 
+    // Build one CDE session per pass for the primary sheet (the sheet of the first
+    // colliding target). Each target is deregistered before search and reregistered
+    // after accept/reject, so the session stays consistent across the whole pass.
+    let primary_sheet_idx = colliding.first()
+        .map(|&t| layout.placements[t].sheet_index)
+        .unwrap_or(0);
+    let all_on_primary: Vec<(usize, Rc<CdePreparedShape>)> = (0..layout.placements.len())
+        .filter(|&j| layout.placements[j].sheet_index == primary_sheet_idx)
+        .filter_map(|j| tracker.shapes[j].clone().map(|s| (j, s)))
+        .collect();
+    let initial_session_size = all_on_primary.len();
+    let mut live_session: Option<CdeCandidateSession> =
+        tracker.sheet_shapes.get(primary_sheet_idx).and_then(|s| s.clone())
+            .and_then(|ss| CdeCandidateSession::build_all_items(
+                all_on_primary,
+                &ss,
+                crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+            ));
+
     let mut attempted = 0usize;
     let mut accepted = 0usize;
     let mut rejected = 0usize;
@@ -59,9 +78,21 @@ pub(super) fn run_worker_pass(
         // (tracker GLS weights) must not increase. No loose global new_total /
         // new_pairs fallback that could worsen the moved item's local damage.
         let old_w = tracker.weighted_loss_for_item(target);
+        // Pass the live session only when the target is on the primary sheet.
+        let use_session = live_session.is_some()
+            && layout.placements[target].sheet_index == primary_sheet_idx;
         let Some(newp) = native_search_placement(
             target, &layout, instances, &tracker, sheets, cfg, &mut rng, started, deadline, diag,
+            if use_session { live_session.as_mut() } else { None },
         ) else {
+            // No placement found; session was deregistered — restore it.
+            if use_session {
+                if let Some(ref mut s) = live_session {
+                    if let Some(shape) = tracker.shapes[target].clone() {
+                        s.reregister_item(target, shape);
+                    }
+                }
+            }
             rejected += 1;
             continue;
         };
@@ -69,16 +100,42 @@ pub(super) fn run_worker_pass(
         let old_p = layout.placements[target].clone();
         let snap = tracker.snapshot();
         layout.placements[target] = newp;
-        tracker.update_after_move(target, &layout, instances, sheets, diag);
+        tracker.update_after_move(
+            target, &layout, instances, sheets, diag,
+            if use_session { live_session.as_mut() } else { None },
+        );
         let new_w = tracker.weighted_loss_for_item(target);
         if new_w <= old_w + 1e-9 {
+            // Accepted: tracker.shapes[target] now holds the new shape.
+            if use_session {
+                if let Some(ref mut s) = live_session {
+                    if let Some(shape) = tracker.shapes[target].clone() {
+                        s.reregister_item(target, shape);
+                    }
+                }
+            }
             accepted += 1;
         } else {
             layout.placements[target] = old_p;
             tracker.restore_keep_weights(snap);
+            // Rejected: restore_keep_weights reset shapes[target] to the old shape.
+            if use_session {
+                if let Some(ref mut s) = live_session {
+                    if let Some(shape) = tracker.shapes[target].clone() {
+                        s.reregister_item(target, shape);
+                    }
+                }
+            }
             rejected += 1;
         }
     }
+
+    debug_assert!(
+        live_session.as_ref().map_or(true, |s| s.hazard_count() == initial_session_size),
+        "session hazard_count mismatch after pass: got {} expected {}",
+        live_session.as_ref().map_or(0, |s| s.hazard_count()),
+        initial_session_size,
+    );
 
     let weighted_loss = tracker.total_weighted_loss();
     let raw_loss = tracker.total_raw_loss();
@@ -104,13 +161,16 @@ pub(super) fn ordered_colliding_items_for_worker(
     rng: &mut DeterministicRng,
 ) -> Vec<usize> {
     let mut colliding = tracker.colliding_indices();
-    if cfg.profile == SparrowProfile::SparrowStrictParity {
-        rng.shuffle(&mut colliding);
-    } else {
-        if worker_idx.checked_rem(2) == Some(1) {
+    match cfg.profile {
+        SparrowProfile::SparrowStrictParity | SparrowProfile::SparrowDenseLargeScale => {
             rng.shuffle(&mut colliding);
-        } else if worker_idx >= 2 {
-            colliding = colliding.into_iter().rev().collect();
+        }
+        _ => {
+            if worker_idx.checked_rem(2) == Some(1) {
+                rng.shuffle(&mut colliding);
+            } else if worker_idx >= 2 {
+                colliding = colliding.into_iter().rev().collect();
+            }
         }
     }
     colliding

@@ -94,10 +94,12 @@ impl SparrowOptimizer {
         diag.separator_invocations += 1;
         let strike_limit = match self.config.profile {
             SparrowProfile::SparrowStrictParity => SPARROW_PARITY_STRIKE_LIMIT,
+            SparrowProfile::SparrowDenseLargeScale => SPARROW_PARITY_STRIKE_LIMIT,
             SparrowProfile::VrsFast => 4usize,
         };
         let no_improve_limit = match self.config.profile {
             SparrowProfile::SparrowStrictParity => SPARROW_PARITY_ITER_NO_IMPROVE_LIMIT,
+            SparrowProfile::SparrowDenseLargeScale => SPARROW_DENSE_NO_IMPROVE_LIMIT,
             SparrowProfile::VrsFast => 6usize,
         };
         let mut strikes = 0usize;
@@ -131,6 +133,7 @@ impl SparrowOptimizer {
                                 started,
                                 f64::INFINITY,
                                 diag,
+                                None,
                             );
                         }
                     }

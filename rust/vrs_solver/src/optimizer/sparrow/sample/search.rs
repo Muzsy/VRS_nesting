@@ -170,6 +170,12 @@ pub(crate) fn separator_sample_config(cfg: &SparrowConfig) -> SampleConfig {
             n_container_samples: SPARROW_PARITY_SEPARATOR_CONTAINER_SAMPLES,
             n_coord_descents: SPARROW_PARITY_COORD_DESCENTS,
         }
+    } else if cfg.profile == SparrowProfile::SparrowDenseLargeScale {
+        SampleConfig {
+            n_focused_samples: SPARROW_DENSE_FOCUSED_SAMPLES,
+            n_container_samples: SPARROW_DENSE_CONTAINER_SAMPLES,
+            n_coord_descents: SPARROW_DENSE_COORD_DESCENTS,
+        }
     } else {
         SampleConfig {
             n_focused_samples: cfg.focused_samples.max(1),
@@ -184,6 +190,11 @@ pub(crate) fn separator_sample_config(cfg: &SparrowConfig) -> SampleConfig {
 /// then the others. The sampler / evaluator / refinement logic is the shared
 /// upstream Algorithm 6 — only the per-sheet wrapper and the global-best pick are
 /// fixed-sheet additions. Returns the lowest-eval placement across all sheets.
+///
+/// `live_session`: when `Some`, the caller owns a long-lived `CdeCandidateSession`
+/// for the current sheet. On rank-0 the target is deregistered before search and
+/// left deregistered on return (the caller handles reregister based on accept/reject).
+/// Cross-sheet passes always build a fresh session regardless.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn native_search_placement(
     target: usize,
@@ -196,8 +207,17 @@ pub(crate) fn native_search_placement(
     started: &Instant,
     deadline: f64,
     diag: &mut SparrowDiagnostics,
+    live_session: Option<&mut CdeCandidateSession>,
 ) -> Option<SparrowPlacement> {
     diag.search_position_calls += 1;
+    // Deregister the target BEFORE any early-return or deadline check so that the
+    // invariant holds: when live_session is Some, the target is always deregistered
+    // when this function returns, regardless of early exits or deadline expiry.
+    // The caller (run_worker_pass) always reregisters after the call.
+    let mut live_session = live_session;
+    if let Some(ref mut ls) = live_session {
+        ls.deregister_item(target);
+    }
     let cur = &layout.placements[target];
     let inst = &instances[cur.instance_idx];
     let fixed_shapes = tracker.shapes.clone();
@@ -226,6 +246,60 @@ pub(crate) fn native_search_placement(
         let Some(sheet_shape) = tracker.sheet_shapes.get(sheet_idx).and_then(|s| s.clone()) else {
             continue;
         };
+        // Reference (current) placement only contributes its focused sampler on its
+        // own sheet, expressed in rect-min coordinates.
+        let ref_rect_min = if sheet_idx == cur.sheet_index {
+            let (rmx, rmy) = rect_min_from_anchor(
+                cur.x,
+                cur.y,
+                inst.part.width,
+                inst.part.height,
+                cur.rotation_deg,
+            );
+            Some((rmx, rmy, cur.rotation_deg))
+        } else {
+            None
+        };
+
+        // Rank-0 with a live session: target already deregistered above, search
+        // in-place, leave deregistered — caller reregisters based on accept/reject.
+        if rank == 0 {
+            if let Some(ref mut ls) = live_session {
+                let mut evaluator = SeparationEvaluator {
+                    target,
+                    inst,
+                    sheet,
+                    sheet_idx,
+                    sheet_shape: &sheet_shape,
+                    session: &**ls,
+                    fixed_shapes: &fixed_shapes,
+                    base: &base,
+                    tracker,
+                    n_evals: 0,
+                };
+                if let Some(local) = search_placement(
+                    &mut evaluator,
+                    inst,
+                    sheet,
+                    ref_rect_min,
+                    sample_config,
+                    cfg,
+                    rng,
+                    started,
+                    deadline,
+                    diag,
+                ) {
+                    global_best = match global_best {
+                        None => Some(local),
+                        Some(g) if local.eval() < g.eval() => Some(local),
+                        other => other,
+                    };
+                }
+                continue;
+            }
+        }
+
+        // Fallback: build a fresh session for this sheet (None case or cross-sheet).
         let Some(session) = build_sheet_session(target, sheet_idx, layout, tracker, &sheet_shape)
         else {
             continue;
@@ -241,20 +315,6 @@ pub(crate) fn native_search_placement(
             base: &base,
             tracker,
             n_evals: 0,
-        };
-        // Reference (current) placement only contributes its focused sampler on its
-        // own sheet, expressed in rect-min coordinates.
-        let ref_rect_min = if sheet_idx == cur.sheet_index {
-            let (rmx, rmy) = rect_min_from_anchor(
-                cur.x,
-                cur.y,
-                inst.part.width,
-                inst.part.height,
-                cur.rotation_deg,
-            );
-            Some((rmx, rmy, cur.rotation_deg))
-        } else {
-            None
         };
         if let Some(local) = search_placement(
             &mut evaluator,

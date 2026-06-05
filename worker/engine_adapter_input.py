@@ -272,6 +272,9 @@ def build_solver_input_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]
                 "allowed_rotations_deg": allowed_rotations_deg,
                 "outer_points": geometry["outer_points"],
                 "holes_points": geometry["holes_points"],
+                # _mm aliases required by cavity_prepack_v2 (same data, different key)
+                "outer_points_mm": geometry["outer_points"],
+                "holes_points_mm": geometry["holes_points"],
             }
         )
 
@@ -311,7 +314,7 @@ def build_solver_input_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]
     if not stocks:
         raise EngineAdapterInputError("sheets_manifest_jsonb is empty")
 
-    return {
+    result: dict[str, Any] = {
         "contract_version": "v1",
         "project_name": project_name,
         "seed": seed,
@@ -319,6 +322,52 @@ def build_solver_input_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]
         "stocks": stocks,
         "parts": parts,
     }
+    # Forward optional solver routing fields from solver_config so the native
+    # sparrow_cde path is activated when the snapshot carries these settings.
+    for field_name in ("solver_profile", "optimizer_pipeline", "collision_backend"):
+        value = str(solver_config.get(field_name) or "").strip()
+        if value:
+            result[field_name] = value
+    return result
+
+
+def cavity_prepack_parts_to_vrs_solver_v1(
+    prepack_parts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Convert cavity_prepack_v2 output parts (nesting_engine_v2 schema) to vrs_solver v1 schema.
+
+    cavity_prepack_v2 emits parts with outer_points_mm / holes_points_mm keys and
+    no width/height.  vrs_solver v1 needs outer_points / holes_points and explicit
+    width/height derived from the bounding box.
+    """
+    out: list[dict[str, Any]] = []
+    for idx, part in enumerate(prepack_parts):
+        outer_mm = part.get("outer_points_mm") or part.get("outer_points") or []
+        holes_mm = part.get("holes_points_mm") or part.get("holes_points") or []
+        if not outer_mm:
+            raise EngineAdapterInputError(
+                f"cavity_prepack output part[{idx}] missing outer_points_mm"
+            )
+        xs = [float(p[0]) for p in outer_mm]
+        ys = [float(p[1]) for p in outer_mm]
+        width = max(xs) - min(xs)
+        height = max(ys) - min(ys)
+        if width <= 0.0 or height <= 0.0:
+            raise EngineAdapterInputError(
+                f"cavity_prepack output part[{idx}] has degenerate bbox"
+            )
+        out.append(
+            {
+                "id": part["id"],
+                "width": width,
+                "height": height,
+                "quantity": part["quantity"],
+                "allowed_rotations_deg": list(part.get("allowed_rotations_deg") or [0]),
+                "outer_points": list(outer_mm),
+                "holes_points": [list(h) for h in holes_mm],
+            }
+        )
+    return out
 
 
 def build_nesting_engine_input_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:

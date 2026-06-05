@@ -1,0 +1,75 @@
+id: sgh_q28_t03_worker_single_session_lifecycle
+title: run_worker_pass single-session lifecycle — build_all_items + live passthrough
+status: ready
+priority: critical
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow
+kind: implementation
+
+intent: >-
+  A run_worker_pass pass elején egyszer épít CdeCandidateSession-t (build_all_items),
+  majd minden colliding item mozgatásakor a live session-t adja át native_search_placement-nek.
+  Elfogadás/visszautasítás után reregisztrálja a target-et a helyes shape-pel.
+  Ez az a lépés, ahol az O(N) per-item session-build O(1) deregister/reregister-re cserélődik.
+
+must_not:
+  - módosítani a GLS weight update logikát
+  - megváltoztatni az elfogadási kritériumot
+  - módosítani tracker.update_after_move session-kezelését (T04 feladata)
+  - módosítani az exploration vagy compression fázist
+
+steps:
+  - name: "Felderítés — run_worker_pass és tracker.update_after_move sorrendje"
+    description: >
+      Olvasd el a run_worker_pass teljes törzsét (worker.rs:27–98) és az
+      update_after_move-t (tracker.rs — keresd grep-pel). Rögzítsd: mi történik
+      az elfogadás után pontosan (tracker.update_after_move hívás helye, tracker.shapes
+      frissítése mikor történik). Ez meghatározza a reregister timing-ját.
+      Futtasd cargo test és rögzítsd a baseline-t.
+    inputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t03_worker_single_session_lifecycle.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q28_t03_worker_single_session_lifecycle.md"
+
+  - name: "run_worker_pass bővítése single-session lifecycle-lal"
+    description: >
+      A worker.rs run_worker_pass-ban, a `colliding` lista meghatározása UTÁN, add hozzá:
+
+      1. Határozd meg a domináns sheet_idx-et (az összes colliding target sheete — ha mix, vedd a leggyakoribbat;
+         egyszerűsítés: vedd a legelső colliding target sheet_index-ét, ha colliding üres: 0).
+      2. Gyűjtsd össze az all_on_sheet-et: (0..layout.placements.len())
+         .filter(sheet_index == sheet_idx).filter_map(tracker.shapes[j]).collect()
+      3. Épít live_session: CdeCandidateSession::build_all_items(all_on_sheet, sheet_shape, SparrowStrict)
+         → Option<CdeCandidateSession> (None ha degenerate bbox)
+
+      Az item-ciklusban (for target in colliding):
+      - Ha live_session.is_some() ÉS layout.placements[target].sheet_index == sheet_idx:
+        native_search_placement(..., live_session.as_mut())
+        - Elfogadás (new_w <= old_w): reregister a new tracker.shapes[target]-tel
+          (update_after_move lefutott, shapes[target] már az új shape)
+        - Visszautasítás: reregister az eredeti shape-pel (mentsd el old_shape = tracker.shapes[target].clone() ELŐRE)
+      - Ha live_session is None vagy cross-sheet: native_search_placement(..., None)
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+
+  - name: "Correctness smoke — session state konzisztencia"
+    description: >
+      Adj hozzá egy debug_assert-t (csak debug build-ben aktív) a ciklus végén:
+        debug_assert!(live_session.as_ref().map_or(true, |s| s.holes.len() == all_on_sheet_initial_count));
+      Ez igazolja, hogy minden deregister-t követett reregister.
+      (A all_on_sheet_initial_count-ot a session build előtt kell rögzíteni.)
+      Futtasd: cargo test --release és cargo test (debug) mindkettőt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib 2>&1 | grep "test result"
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_single_sheet_validation
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q28_t03_worker_single_session_lifecycle.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t03_worker_single_session_lifecycle.md"
+      - "codex/reports/egyedi_solver/sgh_q28_t03_worker_single_session_lifecycle.verify.log"

@@ -10,9 +10,20 @@ impl SparrowOptimizer {
     }
 
     pub fn solve(&self, problem: SparrowProblem) -> SparrowSolveResult {
-        let active_config = self
+        let mut active_config = self
             .config
             .scaled_for_instance_count(problem.instances.len());
+        // For dense (100+ instance) single-sheet runs, reduce the per-iteration
+        // search budget so the solver completes 4-5× more iterations within the
+        // same time budget. GLS semantics (shuffle ordering, weighted-loss
+        // selection, strike/exploration cycling) are preserved.
+        if problem.instances.len() >= 100 {
+            active_config.profile = SparrowProfile::SparrowDenseLargeScale;
+            active_config.worker_count = SPARROW_DENSE_WORKER_COUNT;
+            active_config.focused_samples = SPARROW_DENSE_FOCUSED_SAMPLES;
+            active_config.global_grid_n = SPARROW_DENSE_GLOBAL_GRID_N;
+            active_config.coord_descent_steps = SPARROW_DENSE_COORD_DESCENTS;
+        }
         let active_optimizer = SparrowOptimizer::new(active_config.clone());
         let mut diag = SparrowDiagnostics {
             invoked: true,
@@ -27,13 +38,13 @@ impl SparrowOptimizer {
         crate::optimizer::cde_adapter::reset_query_cache();
         set_quant_config(active_config.clone());
 
-        let instances = &problem.instances;
-        let sheets = &problem.container.sheets;
         let started = Instant::now();
         let deadline = self.config.time_limit_s.max(0.1);
         let mut rng = DeterministicRng::new(self.config.seed);
 
         let seed_layout = build_native_constructive_seed(&problem);
+        let instances = &problem.instances;
+        let sheets = &problem.container.sheets;
         diag.seed_placements = seed_layout.placements.len();
         diag.seed_unplaced = problem.pre_unplaced.len();
         let dense_reference_run = instances.len() >= 100 && sheets.len() == 1;
@@ -64,6 +75,7 @@ impl SparrowOptimizer {
                     &started,
                     f64::INFINITY,
                     &mut diag,
+                    None,
                 );
             }
         }

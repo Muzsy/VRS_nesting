@@ -211,10 +211,14 @@ impl SparrowCollisionTracker {
         sheets: &[SheetShape],
         diag: &mut SparrowDiagnostics,
     ) {
-        self.update_after_move(i, layout, instances, sheets, diag);
+        self.update_after_move(i, layout, instances, sheets, diag, None);
     }
 
     /// Incremental update after item `i` moved (its placement/shape changed).
+    ///
+    /// `live_session`: when `Some`, the backward-pair recompute uses the live session
+    /// (item `i` must NOT be in it — it was deregistered before search) instead of
+    /// building per-pair mini-sessions. When `None`: original mini-session fallback.
     pub fn update_after_move(
         &mut self,
         i: usize,
@@ -222,6 +226,7 @@ impl SparrowCollisionTracker {
         instances: &[SPInstance],
         sheets: &[SheetShape],
         diag: &mut SparrowDiagnostics,
+        live_session: Option<&mut CdeCandidateSession>,
     ) {
         self.shapes[i] = Self::prepare_item(layout, instances, i);
         self.incremental_updates += 1;
@@ -229,45 +234,70 @@ impl SparrowCollisionTracker {
         self.pair_loss.retain(|&(a, b), _| a != i && b != i);
         self.recompute_boundary_for_item(i, layout, instances, sheets, diag);
         self.recompute_pairs_for_item(i, layout, diag);
-        for j in 0..i {
-            if layout.placements[j].sheet_index != layout.placements[i].sheet_index {
-                continue;
+        if let Some(session) = live_session {
+            // Fast path: query the live session once with i's new shape to get all
+            // backward-pair collisions. Item i is NOT in the session (deregistered
+            // before search); all j items are at their current positions.
+            if let Some(shape_i) = self.shapes[i].clone() {
+                let res = session.query(&shape_i);
+                if res.unsupported {
+                    self.unsupported = true;
+                    diag.unsupported_queries += 1;
+                } else {
+                    for &j in &res.colliding_layout_idxs {
+                        if j >= i { continue; }
+                        if layout.placements[j].sheet_index != layout.placements[i].sheet_index {
+                            continue;
+                        }
+                        let Some(shape_j) = self.shapes[j].clone() else { continue; };
+                        let dist = quantify_collision_poly_poly_native(&shape_j, &shape_i, diag);
+                        self.pair_loss.insert((j, i), dist.max(QUANT_FLOOR));
+                        self.pair_weight.entry((j, i)).or_insert(1.0);
+                    }
+                }
             }
-            let Some(shape_j) = self.shapes[j].clone() else {
-                continue;
-            };
-            let Some(shape_i) = self.shapes[i].clone() else {
-                continue;
-            };
-            if !bbox_may_overlap(&shape_i, &shape_j) {
-                continue;
-            }
-            let Some(sheet_shape) = self
-                .sheet_shapes
-                .get(layout.placements[i].sheet_index)
-                .and_then(|s| s.clone())
-            else {
-                continue;
-            };
-            let Some(session) =
-                CdeCandidateSession::build_with_policy(
-                    vec![(i, shape_i.clone())],
-                    &sheet_shape,
-                    crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
-                )
-            else {
-                continue;
-            };
-            let res = session.query(&shape_j);
-            if res.unsupported {
-                self.unsupported = true;
-                diag.unsupported_queries += 1;
-                continue;
-            }
-            if !res.colliding_layout_idxs.is_empty() {
-                let dist = quantify_collision_poly_poly_native(&shape_j, &shape_i, diag);
-                self.pair_loss.insert((j, i), dist.max(QUANT_FLOOR));
-                self.pair_weight.entry((j, i)).or_insert(1.0);
+        } else {
+            // Fallback: per-pair mini-session build (backward compat, exploration phase).
+            for j in 0..i {
+                if layout.placements[j].sheet_index != layout.placements[i].sheet_index {
+                    continue;
+                }
+                let Some(shape_j) = self.shapes[j].clone() else {
+                    continue;
+                };
+                let Some(shape_i) = self.shapes[i].clone() else {
+                    continue;
+                };
+                if !bbox_may_overlap(&shape_i, &shape_j) {
+                    continue;
+                }
+                let Some(sheet_shape) = self
+                    .sheet_shapes
+                    .get(layout.placements[i].sheet_index)
+                    .and_then(|s| s.clone())
+                else {
+                    continue;
+                };
+                let Some(session) =
+                    CdeCandidateSession::build_with_policy(
+                        vec![(i, shape_i.clone())],
+                        &sheet_shape,
+                        crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+                    )
+                else {
+                    continue;
+                };
+                let res = session.query(&shape_j);
+                if res.unsupported {
+                    self.unsupported = true;
+                    diag.unsupported_queries += 1;
+                    continue;
+                }
+                if !res.colliding_layout_idxs.is_empty() {
+                    let dist = quantify_collision_poly_poly_native(&shape_j, &shape_i, diag);
+                    self.pair_loss.insert((j, i), dist.max(QUANT_FLOOR));
+                    self.pair_weight.entry((j, i)).or_insert(1.0);
+                }
             }
         }
     }

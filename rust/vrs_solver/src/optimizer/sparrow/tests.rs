@@ -381,7 +381,7 @@ mod tests {
 
             layout.placements[1] = pl(1, 120.0, 120.0);
             let mut diag = SparrowDiagnostics::default();
-            tracker.update_after_move(1, &layout, insts, &sheets, &mut diag);
+            tracker.update_after_move(1, &layout, insts, &sheets, &mut diag, None);
             assert_eq!(
                 tracker.incremental_updates,
                 before + 1,

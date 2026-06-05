@@ -31,6 +31,7 @@ from worker.engine_adapter_input import (
     EngineAdapterInputError,
     build_nesting_engine_input_from_snapshot,
     build_solver_input_from_snapshot,
+    cavity_prepack_parts_to_vrs_solver_v1,
     nesting_engine_input_sha256,
     nesting_engine_runtime_params,
     solver_input_sha256,
@@ -1708,6 +1709,22 @@ def _process_queue_item(client: WorkerSupabaseClient, settings: WorkerSettings, 
         try:
             if engine_backend == ENGINE_BACKEND_SPARROW_V1:
                 solver_input_payload = build_solver_input_from_snapshot(snapshot_row)
+                if profile_resolution.cavity_prepack_enabled:
+                    # cavity_prepack_v2 requires a "version" key; v1 solver input
+                    # uses "contract_version" instead, so inject a bridge key that
+                    # satisfies the prepack guard without altering the v1 contract.
+                    solver_input_payload.setdefault("version", solver_input_payload.get("contract_version", "v1"))
+                    solver_input_payload, cavity_plan_payload = build_cavity_prepacked_engine_input_v2(
+                        snapshot_row=snapshot_row,
+                        base_engine_input=solver_input_payload,
+                        enabled=True,
+                    )
+                    solver_input_payload["parts"] = cavity_prepack_parts_to_vrs_solver_v1(
+                        solver_input_payload["parts"]
+                    )
+                    if profile_resolution.requested_part_in_part_policy == "prepack":
+                        validate_prepack_solver_input_hole_free(solver_input_payload)
+                    cavity_prepack_summary = _summarize_cavity_plan(cavity_plan_payload)
                 solver_input_hash = solver_input_sha256(solver_input_payload)
                 engine_contract_version = str(solver_input_payload.get("contract_version", "v1"))
             elif engine_backend == ENGINE_BACKEND_NESTING_V2:

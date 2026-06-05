@@ -738,8 +738,10 @@ impl CdeBatchResult {
 /// A reusable single-engine multi-hazard session for one item's search.
 pub(crate) struct CdeCandidateSession {
     cde: CDEngine,
-    /// `holes[i]` is the (layout index, prepared shape) registered as `Hole { idx: i }`.
-    holes: Vec<(usize, Rc<CdePreparedShape>)>,
+    /// Slot-indexed: `holes[slot]` is `Some((layout_idx, shape))` when slot is active,
+    /// or `None` when deregistered. The CDEngine stores `HazardEntity::Hole { idx: slot }`
+    /// so slots must never be recycled — only appended on reregister.
+    holes: Vec<Option<(usize, Rc<CdePreparedShape>)>>,
     sheet_world_pts: Vec<Point>,
     touching_policy: CdeTouchingPolicy,
 }
@@ -803,14 +805,49 @@ impl CdeCandidateSession {
         let cde = CDEngine::new(bbox, hazards, cde_config);
         Some(Self {
             cde,
-            holes: others,
+            holes: others.into_iter().map(Some).collect(),
             sheet_world_pts: sheet.world_pts.clone(),
             touching_policy,
         })
     }
 
+    /// Build a session including ALL items on the sheet (including the future search target).
+    /// Use `deregister_item` / `reregister_item` to swap the target in/out during each search.
+    pub(crate) fn build_all_items(
+        all: Vec<(usize, Rc<CdePreparedShape>)>,
+        sheet: &CdePreparedShape,
+        touching_policy: CdeTouchingPolicy,
+    ) -> Option<Self> {
+        Self::build_with_policy(all, sheet, touching_policy)
+    }
+
+    /// Find the CDEngine slot (= index into `holes`) for a given layout index.
+    fn lookup_hole_slot(&self, layout_idx: usize) -> Option<usize> {
+        self.holes.iter().position(|e| matches!(e, Some((i, _)) if *i == layout_idx))
+    }
+
+    /// Remove `layout_idx` from the CDEngine and mark its slot as vacant.
+    /// No-op if the item is not found.
+    pub(crate) fn deregister_item(&mut self, layout_idx: usize) {
+        let Some(slot) = self.lookup_hole_slot(layout_idx) else { return };
+        self.cde.deregister_hazard_by_entity(HazardEntity::Hole { idx: slot });
+        self.holes[slot] = None;
+    }
+
+    /// Register `layout_idx` at a fresh slot (always appended, never recycled).
+    pub(crate) fn reregister_item(&mut self, layout_idx: usize, new_shape: Rc<CdePreparedShape>) {
+        let new_slot = self.holes.len();
+        self.cde.register_hazard(Hazard::new(
+            HazardEntity::Hole { idx: new_slot },
+            new_shape.spoly.clone(),
+            false,
+        ));
+        self.holes.push(Some((layout_idx, new_shape)));
+    }
+
+    /// Number of currently active (non-deregistered) hazard slots.
     pub(crate) fn hazard_count(&self) -> usize {
-        self.holes.len()
+        self.holes.iter().filter(|h| h.is_some()).count()
     }
 
     /// Query a candidate shape once against all registered hazards.
@@ -839,7 +876,7 @@ impl CdeCandidateSession {
                     }
                 }
                 HazardEntity::Hole { idx } => {
-                    if let Some((layout_idx, oshape)) = self.holes.get(*idx) {
+                    if let Some(Some((layout_idx, oshape))) = self.holes.get(*idx) {
                         match self.touching_policy {
                             CdeTouchingPolicy::SparrowStrict => colliding.push(*layout_idx),
                             CdeTouchingPolicy::VrsTouchAllowed => match polygons_collide(&candidate.world_pts, &oshape.world_pts) {
@@ -1076,7 +1113,7 @@ pub(crate) trait SpecializedHazardSink {
 /// from the collection context so it persists across the pole/edge/containment
 /// phases (upstream's `detected` map).
 struct SinkAdapter<'a, S: SpecializedHazardSink> {
-    holes: &'a [(usize, Rc<CdePreparedShape>)],
+    holes: &'a [Option<(usize, Rc<CdePreparedShape>)>],
     sheet_world_pts: &'a [crate::geometry::Point],
     touching_policy: CdeTouchingPolicy,
     candidate: &'a CdePreparedShape,
@@ -1086,7 +1123,7 @@ struct SinkAdapter<'a, S: SpecializedHazardSink> {
 
 impl<'a, S: SpecializedHazardSink> SinkAdapter<'a, S> {
     fn new(
-        holes: &'a [(usize, Rc<CdePreparedShape>)],
+        holes: &'a [Option<(usize, Rc<CdePreparedShape>)>],
         sheet_world_pts: &'a [crate::geometry::Point],
         touching_policy: CdeTouchingPolicy,
         candidate: &'a CdePreparedShape,
@@ -1132,7 +1169,7 @@ impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
                 }
             }
             HazardEntity::Hole { idx } => {
-                if let Some((layout_idx, oshape)) = self.holes.get(idx) {
+                if let Some(Some((layout_idx, oshape))) = self.holes.get(idx) {
                     match self.touching_policy {
                         CdeTouchingPolicy::SparrowStrict => {
                             self.sink.accept_pair(self.candidate, *layout_idx)
@@ -1978,6 +2015,72 @@ mod tests {
     }
 
     /// No silent bbox fallback for CDE touching policy: L-notch shows CDE ≠ bbox.
+    /// Incremental deregister/reregister gives identical query results to a fresh full-rebuild session.
+    #[test]
+    fn cde_session_incremental_eq_full_rebuild() {
+        // 10 non-overlapping 20×20 rects placed in a row on a 1000×200 sheet.
+        let sheet_shape = rect_sheet(1000.0, 200.0);
+        let sheet = prepare_shape_from_sheet(&sheet_shape[0]).expect("sheet shape");
+        let part = make_part("P", 20.0, 20.0);
+
+        // Build 10 items: layout_idx 0..9 at x = i*100, y = 10
+        let items: Vec<(usize, Rc<CdePreparedShape>)> = (0..10usize)
+            .map(|i| {
+                let p = pl("P", 0, (i * 100) as f64, 10.0);
+                let shape = prepare_shape_from_placement(&p, &part).expect("item shape");
+                (i, Rc::new(shape))
+            })
+            .collect();
+
+        // A candidate that overlaps item 5 (x=500..520, y=10..30)
+        let candidate_p = pl("P", 0, 510.0, 10.0); // overlaps item 5
+        let candidate = prepare_shape_from_placement(&candidate_p, &part).expect("candidate");
+
+        let mut session = CdeCandidateSession::build_all_items(
+            items.clone(),
+            &sheet,
+            CdeTouchingPolicy::SparrowStrict,
+        )
+        .expect("session");
+
+        for target_layout_idx in 0..10usize {
+            // Incremental: deregister target, query, reregister
+            session.deregister_item(target_layout_idx);
+            let incremental = session.query(&candidate);
+            session.reregister_item(target_layout_idx, items[target_layout_idx].1.clone());
+
+            // Full-rebuild reference: all items except target
+            let others: Vec<(usize, Rc<CdePreparedShape>)> = items
+                .iter()
+                .filter(|(i, _)| *i != target_layout_idx)
+                .cloned()
+                .collect();
+            let ref_session = CdeCandidateSession::build_with_policy(
+                others,
+                &sheet,
+                CdeTouchingPolicy::SparrowStrict,
+            )
+            .expect("ref session");
+            let reference = ref_session.query(&candidate);
+
+            assert_eq!(
+                incremental.boundary_collision, reference.boundary_collision,
+                "boundary_collision mismatch at target={target_layout_idx}"
+            );
+            let mut inc_col = incremental.colliding_layout_idxs.clone();
+            let mut ref_col = reference.colliding_layout_idxs.clone();
+            inc_col.sort();
+            ref_col.sort();
+            assert_eq!(
+                inc_col, ref_col,
+                "colliding_layout_idxs mismatch at target={target_layout_idx}: incremental={inc_col:?} ref={ref_col:?}"
+            );
+        }
+
+        // After 10 deregister/reregister cycles the active hazard count must be 10 again
+        assert_eq!(session.hazard_count(), 10, "hazard_count must be 10 after full round-trip");
+    }
+
     #[test]
     fn no_silent_bbox_fallback_for_cde_touching_policy() {
         let l_part = make_part_with_polygon("L", 40.0, 40.0, l_shape_outer());

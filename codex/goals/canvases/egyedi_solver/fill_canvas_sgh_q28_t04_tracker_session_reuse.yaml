@@ -1,0 +1,73 @@
+id: sgh_q28_t04_tracker_session_reuse
+title: tracker.update_after_move opcionális live session passthrough
+status: ready
+priority: high
+project: VRS_nesting
+area: rust/vrs_solver/optimizer/sparrow/quantify
+kind: implementation
+
+intent: >-
+  Az update_after_move backward-pair recompute jelenleg mini-session-öket épít.
+  T04 opcionális live_session paramétert ad hozzá; ha Some, a backward-pair recompute
+  a live session deregister/query/reregister ciklusát használja a mini-build helyett.
+  run_worker_pass (T03) átadja a session-t.
+
+must_not:
+  - módosítani a GLS weight update logikát
+  - módosítani a pair loss kalkuláció matematikáját
+  - módosítani az exploration/compression fázist
+  - eltávolítani a None fallback utat
+
+steps:
+  - name: "Felderítés — update_after_move backward-pair logika"
+    description: >
+      Keresd meg és olvasd el az update_after_move implementációját:
+      grep -n "fn update_after_move\|CdeCandidateSession\|build_with_policy" \
+        rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs
+      Azonosítsd pontosan, hol épít mini-session-öket a backward-pair recompute-hoz.
+      Rögzítsd a releváns sorokat a reportban.
+      Futtasd cargo test és rögzítsd baseline-t.
+    inputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t04_tracker_session_reuse.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q28_t04_tracker_session_reuse.md"
+
+  - name: "update_after_move opcionális live_session paraméter hozzáadása"
+    description: >
+      A tracker.rs update_after_move szignatúrájához add hozzá utolsó paraméterként:
+        live_session: Option<&mut CdeCandidateSession>
+      A törzsben egyelőre csak None-ként kezeli. Frissítsd az összes hívási helyet
+      (worker.rs: live_session.as_mut() átadása; egyéb hívók: None).
+      Ellenőrizd: cargo build --release ← zöld.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+
+  - name: "Some(session) ág — backward-pair recompute live session-nel"
+    description: >
+      Az update_after_move-ban, a backward-pair mini-session-build helyett, ha live_session Some:
+        for j in backward_items:
+          session.deregister_item(j)
+          query: session.query(target_shape) -> collision with j már nem akadályoz
+          VAGY: közvetlen pair query a cde_adapter query_pair-jével (nem session-nel)
+          session.reregister_item(j, tracker.shapes[j])
+      Pontosítás: a backward-pair recompute azt vizsgálja, hogy az ÚJ target és a j
+      darabok között van-e ütközés. A session-ben a target már az ÚJ pozícióban van
+      (T03 reregistrálta). Tehát: deregisztrálj j-t, queryeld a candidate target-et a
+      session-nel, reregistráld j-t — ez adja az ÚJ target + RÉGI j ütközési eredményt.
+
+      Ha None: meglévő mini-session build (változatlan fallback).
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib 2>&1 | grep "test result"
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_single_sheet_validation
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q28_t04_tracker_session_reuse.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t04_tracker_session_reuse.md"
+      - "codex/reports/egyedi_solver/sgh_q28_t04_tracker_session_reuse.verify.log"

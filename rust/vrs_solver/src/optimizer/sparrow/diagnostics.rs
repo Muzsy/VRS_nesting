@@ -69,6 +69,10 @@ pub struct SparrowConfig {
 pub enum SparrowProfile {
     SparrowStrictParity,
     VrsFast,
+    /// Reduced per-iteration budget for 100+ instance dense runs: same GLS
+    /// semantics as SparrowStrictParity but with fewer samples per search
+    /// call, allowing 4-5× more iterations within the same time budget.
+    SparrowDenseLargeScale,
 }
 
 pub const SPARROW_PARITY_SEPARATOR_CONTAINER_SAMPLES: usize = 50;
@@ -81,6 +85,21 @@ pub const SPARROW_PARITY_STRIKE_LIMIT: usize = 3;
 pub const SPARROW_PARITY_WORKERS: usize = 3;
 pub const SPARROW_PARITY_MAX_CONSEC_FAILED_ATTEMPTS: usize = 10;
 pub const SPARROW_PARITY_SOLUTION_POOL_STDDEV: f64 = 0.25;
+/// Dense large-scale (100+ instances) reduced search budget constants.
+pub const SPARROW_DENSE_WORKER_COUNT: usize = 2;
+pub const SPARROW_DENSE_FOCUSED_SAMPLES: usize = 8;
+pub const SPARROW_DENSE_CONTAINER_SAMPLES: usize = 8;
+pub const SPARROW_DENSE_GLOBAL_GRID_N: usize = 2;
+/// Keep 4 best samples for coord-descent — same depth as parity to maintain
+/// placement quality. The dominant cost per search call is the ~360ms CDE
+/// session build (O(N) items), making eval savings from fewer coord-descent
+/// rounds negligible. Good quality per call leads to faster collision resolution
+/// and therefore fewer colliding items in subsequent passes.
+pub const SPARROW_DENSE_COORD_DESCENTS: usize = 4;
+/// Use the same no-improve limit as parity: the deadline governs, not this
+/// counter (at ~40s/iter, 200 iterations >> 900s budget).
+pub const SPARROW_DENSE_NO_IMPROVE_LIMIT: usize = 200;
+pub const SPARROW_DENSE_MAX_CONSEC_FAILED_ATTEMPTS: usize = 15;
 pub const SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE: f64 = 0.75;
 
 impl SparrowConfig {

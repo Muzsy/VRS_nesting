@@ -1,0 +1,78 @@
+id: sgh_q28_t05_dense191_benchmark_gate
+title: Dense 191 benchmark gate + Q28 validation suite
+status: ready
+priority: high
+project: VRS_nesting
+area: rust/vrs_solver + scripts
+kind: test_and_benchmark
+
+intent: >-
+  Mérési bizonyíték az inkrementális session gyorsításáról: smoke script assertálja,
+  hogy 90 s budget alatt >= 10 iteráció fut (vs. korábbi ~2 iteráció) és final_pairs < 55.
+  Rust integration teszt rögzíti a dense profil aktivitását és az iteráció gate-et.
+
+must_not:
+  - módosítani az algoritmust convergencia érdekében
+  - megkövetelni 0 végső párt (PASS_WITH_NOTES elfogadható)
+  - módosítani a Q26 teszteket
+  - létrehozni 276-darabos vagy multisheet benchmark-ot
+
+steps:
+  - name: "Felderítés — meglévő 191-instance fixture és binary elérési út"
+    description: >
+      Keresd meg a meglévő 191-darabos LV8 JSON fixture-t vagy azt az eszközt, amivel generálható:
+      find rust/vrs_solver/tests/fixtures -name "*.json" | xargs grep -l '"quantity"' | xargs wc -l | sort -n | tail -5
+      ls scripts/smoke_sgh_q26_lv8_derived_single_sheet_validation.py
+      ls rust/vrs_solver/target/release/vrs_solver 2>/dev/null || echo "build needed"
+      cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+      Rögzítsd a releváns eredményeket a reportban.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t05_dense191_benchmark_gate.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q28_t05_dense191_benchmark_gate.md"
+
+  - name: "smoke_sgh_q28_dense191_benchmark.py létrehozása"
+    description: >
+      Hozd létre a scripts/smoke_sgh_q28_dense191_benchmark.py scriptet.
+      A script:
+      1. Megtalálja a vrs_solver binárist (rust/vrs_solver/target/release/vrs_solver)
+      2. Generál / megtalál egy 191-instance single-sheet JSON fixture-t
+         (ha nincs kész, a Q26 LV8-derived smoke mintájára készít egyet a samples/real_work_dxf alapján)
+      3. Futtatja: vrs_solver --input <fixture> --output <tmp>
+         time_limit_s=90, optimizer_pipeline=sparrow_cde, collision_backend=cde
+      4. Kiolvas a kimenetből: diagnostics.iterations, diagnostics.dense_real_run, dense_final_validation_ran
+      5. Assert: iterations >= 10 (inkrementális session gyorsítás gate)
+      6. Assert: dense_real_run == true
+      7. Assert: final_pairs < 55 (Q24R9 baseline volt 55)
+      8. Stdout: PASS vagy FAIL + mért értékek
+    outputs:
+      - "scripts/smoke_sgh_q28_dense191_benchmark.py"
+      - "codex/reports/egyedi_solver/sgh_q28_t05_dense191_benchmark_gate.md"
+
+  - name: "Rust integration teszt bővítése — q28_dense_191_incremental_session_speedup"
+    description: >
+      A rust/vrs_solver/tests/sparrow_single_sheet_validation.rs fájlban adj hozzá egy új tesztet:
+        #[test]
+        fn q28_dense_191_incremental_session_speedup() {
+          // 191-instance fixture, time_limit_s=60
+          // solve_json(...)
+          // assert: diagnostics.dense_real_run == true
+          // assert: diagnostics.iterations >= 5 (konzervatív gate)
+          // assert: diagnostics.dense_final_validation_ran == true
+        }
+      Ha a 191-instance fixture nem létezik tests/fixtures-ben, a teszt skipelhető
+      (#[ignore]) és a note rögzíti, hogy a smoke script alapján kell futtatni.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_single_sheet_validation.rs"
+      - "codex/reports/egyedi_solver/sgh_q28_t05_dense191_benchmark_gate.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd:
+      cargo build --manifest-path rust/vrs_solver/Cargo.toml --release
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib 2>&1 | grep "test result"
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_single_sheet_validation
+      python3 scripts/smoke_sgh_q28_dense191_benchmark.py
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q28_t05_dense191_benchmark_gate.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q28_t05_dense191_benchmark_gate.md"
+      - "codex/reports/egyedi_solver/sgh_q28_t05_dense191_benchmark_gate.verify.log"

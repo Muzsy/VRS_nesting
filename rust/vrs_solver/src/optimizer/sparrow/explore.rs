@@ -21,7 +21,10 @@ impl SparrowOptimizer {
         rng: &mut DeterministicRng,
         diag: &mut SparrowDiagnostics,
     ) -> bool {
-        let max_attempts = SPARROW_PARITY_MAX_CONSEC_FAILED_ATTEMPTS;
+        let max_attempts = match self.config.profile {
+            SparrowProfile::SparrowDenseLargeScale => SPARROW_DENSE_MAX_CONSEC_FAILED_ATTEMPTS,
+            _ => SPARROW_PARITY_MAX_CONSEC_FAILED_ATTEMPTS,
+        };
         // Infeasible-solution pool, kept sorted ascending by total raw loss so the
         // better (lower-loss) solutions are at the front for the biased restore.
         let mut infeas_sol_pool: Vec<(f64, SparrowLayout)> = Vec::new();
@@ -81,10 +84,10 @@ impl SparrowOptimizer {
         state.layout.placements[j].sheet_index = pi.sheet_index;
         state
             .tracker
-            .update_after_move(i, &state.layout, instances, sheets, diag);
+            .update_after_move(i, &state.layout, instances, sheets, diag, None);
         state
             .tracker
-            .update_after_move(j, &state.layout, instances, sheets, diag);
+            .update_after_move(j, &state.layout, instances, sheets, diag, None);
         diag.exploration_disruptions_large_item_swap += 1;
 
         self.relocate_practically_contained_items(state, instances, sheets, i, Some(j), &pi, diag);
@@ -122,7 +125,7 @@ impl SparrowOptimizer {
                     };
                     state
                         .tracker
-                        .update_after_move(w, &state.layout, instances, sheets, diag);
+                        .update_after_move(w, &state.layout, instances, sheets, diag, None);
                     diag.exploration_disruptions_cross_sheet += 1;
                 }
             }
@@ -164,7 +167,7 @@ impl SparrowOptimizer {
                         };
                         state
                             .tracker
-                            .update_after_move(w, &state.layout, instances, sheets, diag);
+                            .update_after_move(w, &state.layout, instances, sheets, diag, None);
                         diag.exploration_disruptions_rotation += 1;
                     }
                 }
@@ -305,7 +308,7 @@ impl SparrowOptimizer {
             state.layout.placements[idx] = relocated;
             state
                 .tracker
-                .update_after_move(idx, &state.layout, instances, sheets, diag);
+                .update_after_move(idx, &state.layout, instances, sheets, diag, None);
         }
     }
 
