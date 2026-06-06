@@ -40,11 +40,16 @@ impl<'a> SeparationEvaluator<'a> {
         let (rw, rh) = dims_for_rotation(self.inst.part.width, self.inst.part.height, rot);
         // Broad-phase fit check: a candidate whose bbox cannot lie inside the sheet
         // is discarded before any CDE work. This is a fit gate, not separation loss.
-        if rmx < self.sheet.min_x - 1e-9
+        let bbox_t0 = if diag.profiling_enabled { Some(std::time::Instant::now()) } else { None };
+        let bbox_reject = rmx < self.sheet.min_x - 1e-9
             || rmy < self.sheet.min_y - 1e-9
             || rmx + rw > self.sheet.max_x + 1e-9
-            || rmy + rh > self.sheet.max_y + 1e-9
-        {
+            || rmy + rh > self.sheet.max_y + 1e-9;
+        if let Some(t) = bbox_t0 {
+            diag.profile_boundary_check_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
+        if bbox_reject {
+            diag.profile_broadphase_reject_count += 1;
             return None;
         }
         let (ax, ay) = placement_anchor_from_rect_min(
@@ -54,7 +59,12 @@ impl<'a> SeparationEvaluator<'a> {
             self.inst.part.height,
             rot,
         );
-        let shape = transform_base_to_candidate(self.base, ax, ay, rot)?;
+        let transform_t0 = if diag.profiling_enabled { Some(std::time::Instant::now()) } else { None };
+        let shape = transform_base_to_candidate(self.base, ax, ay, rot);
+        if let Some(t) = transform_t0 {
+            diag.profile_candidate_transform_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
+        let shape = shape?;
         self.n_evals += 1;
         diag.search_position_samples += 1;
         let placement = SparrowPlacement {

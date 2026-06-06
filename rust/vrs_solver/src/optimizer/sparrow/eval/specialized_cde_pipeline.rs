@@ -169,6 +169,7 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     collector: &mut SpecializedCdeHazardCollector<'_>,
     diag: &mut SparrowDiagnostics,
 ) {
+    let cde_t0 = if diag.profiling_enabled { Some(std::time::Instant::now()) } else { None };
     let mut ctx = session.begin_specialized_collection(candidate);
 
     // Phase 1: pole pre-pass. Check poles until their cumulative area exceeds the
@@ -179,7 +180,9 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     for pole in &poles {
         session.collect_pole_hazards(&mut ctx, pole, candidate, collector);
         if collector.early_terminate() {
+            diag.profile_early_termination_count += 1;
             merge_quant_counts(collector, diag);
+            if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
             return;
         }
         area_sum += pole.radius * pole.radius;
@@ -193,7 +196,9 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     for edge_index in bit_reversal_order(n_edges) {
         session.collect_edge_hazards(&mut ctx, candidate, edge_index, collector);
         if collector.early_terminate() {
+            diag.profile_early_termination_count += 1;
             merge_quant_counts(collector, diag);
+            if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
             return;
         }
     }
@@ -201,6 +206,7 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     // Phase 3: containment pass (early termination handled inside).
     session.collect_containment_hazards(&mut ctx, candidate, collector);
     merge_quant_counts(collector, diag);
+    if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
 }
 
 fn merge_quant_counts(collector: &SpecializedCdeHazardCollector<'_>, diag: &mut SparrowDiagnostics) {

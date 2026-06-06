@@ -210,13 +210,18 @@ pub(crate) fn native_search_placement(
     live_session: Option<&mut CdeCandidateSession>,
 ) -> Option<SparrowPlacement> {
     diag.search_position_calls += 1;
+    let search_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
     // Deregister the target BEFORE any early-return or deadline check so that the
     // invariant holds: when live_session is Some, the target is always deregistered
     // when this function returns, regardless of early exits or deadline expiry.
     // The caller (run_worker_pass) always reregisters after the call.
     let mut live_session = live_session;
     if let Some(ref mut ls) = live_session {
+        let dereg_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
         ls.deregister_item(target);
+        if let Some(t) = dereg_t0 {
+            diag.profile_deregister_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
     }
     let cur = &layout.placements[target];
     let inst = &instances[cur.instance_idx];
@@ -300,10 +305,14 @@ pub(crate) fn native_search_placement(
         }
 
         // Fallback: build a fresh session for this sheet (None case or cross-sheet).
+        let sess_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
         let Some(session) = build_sheet_session(target, sheet_idx, layout, tracker, &sheet_shape)
         else {
             continue;
         };
+        if let Some(t) = sess_t0 {
+            diag.profile_session_build_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
         let mut evaluator = SeparationEvaluator {
             target,
             inst,
@@ -340,6 +349,9 @@ pub(crate) fn native_search_placement(
         if b.collision_loss < diag.search_best_eval || diag.search_best_eval == 0.0 {
             diag.search_best_eval = b.collision_loss;
         }
+    }
+    if let Some(t) = search_t0 {
+        diag.profile_search_total_ms += t.elapsed().as_secs_f64() * 1000.0;
     }
     global_best.map(|b| b.placement)
 }

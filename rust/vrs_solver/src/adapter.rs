@@ -467,6 +467,16 @@ fn native_sparrow_diag_to_output(
             Some(d.dense_unresolved_instances.clone())
         },
         sparrow_dense_final_validation_ran: Some(d.dense_final_validation_ran),
+        sparrow_profiling_enabled: Some(d.profiling_enabled),
+        sparrow_profile_search_total_ms: if d.profiling_enabled { Some(d.profile_search_total_ms) } else { None },
+        sparrow_profile_session_build_ms: if d.profiling_enabled { Some(d.profile_session_build_ms) } else { None },
+        sparrow_profile_deregister_ms: if d.profiling_enabled { Some(d.profile_deregister_ms) } else { None },
+        sparrow_profile_candidate_transform_ms: if d.profiling_enabled { Some(d.profile_candidate_transform_ms) } else { None },
+        sparrow_profile_cde_query_collect_ms: if d.profiling_enabled { Some(d.profile_cde_query_collect_ms) } else { None },
+        sparrow_profile_hazard_loss_ms: if d.profiling_enabled { Some(d.profile_hazard_loss_ms) } else { None },
+        sparrow_profile_boundary_check_ms: if d.profiling_enabled { Some(d.profile_boundary_check_ms) } else { None },
+        sparrow_profile_broadphase_reject_count: if d.profiling_enabled { Some(d.profile_broadphase_reject_count) } else { None },
+        sparrow_profile_early_termination_count: if d.profiling_enabled { Some(d.profile_early_termination_count) } else { None },
     }
 }
 
@@ -922,6 +932,16 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_dense_validated_placements: None,
                             sparrow_dense_unresolved_instances: None,
                             sparrow_dense_final_validation_ran: None,
+                            sparrow_profiling_enabled: None,
+                            sparrow_profile_search_total_ms: None,
+                            sparrow_profile_session_build_ms: None,
+                            sparrow_profile_deregister_ms: None,
+                            sparrow_profile_candidate_transform_ms: None,
+                            sparrow_profile_cde_query_collect_ms: None,
+                            sparrow_profile_hazard_loss_ms: None,
+                            sparrow_profile_boundary_check_ms: None,
+                            sparrow_profile_broadphase_reject_count: None,
+                            sparrow_profile_early_termination_count: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

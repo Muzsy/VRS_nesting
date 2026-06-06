@@ -1,0 +1,89 @@
+{
+  "task": "sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler",
+  "phase": "upstream_ab",
+  "status": "PASS",
+  "upstream_sparrow": {
+    "source_path": ".cache/sparrow",
+    "commit": "c95454e390276231b278c879d25b39708398b7d3",
+    "binary_or_entrypoint": ".cache/sparrow/target/release/sparrow",
+    "build_command": "cargo build --release --manifest-path .cache/sparrow/Cargo.toml"
+  },
+  "local_solver": {
+    "binary": "rust/vrs_solver/target/release/vrs_solver",
+    "commit_or_git_status": "main branch / d1a2ad2"
+  },
+  "cases": [
+    {
+      "case_id": "micro",
+      "input_provenance": "jakobs1.json from .cache/sparrow/data/input/",
+      "geometry_equivalence_notes": "Same polygon geometry. Upstream: SPP strip packing (minimize width, strip_h=40.004). Local: FSPP fixed sheet (120\u00d740). Objectives differ; search behavior / runtime comparable.",
+      "upstream": {
+        "status": "ok",
+        "runtime_ms": 12483.5,
+        "strip_width": 11.006435,
+        "density": 0.89029914,
+        "placed_count": 25,
+        "run_time_sec_reported": 10,
+        "iterations": null,
+        "collision_or_loss_metric": null
+      },
+      "local": {
+        "status": "ok",
+        "runtime_ms": 2384.6,
+        "placed_count": 25,
+        "final_pairs": 0,
+        "iterations": 1,
+        "search_calls": 0,
+        "search_samples": 0
+      }
+    },
+    {
+      "case_id": "medium",
+      "input_provenance": "jakobs2.json from .cache/sparrow/data/input/",
+      "geometry_equivalence_notes": "Same polygon geometry. Upstream: SPP strip packing (minimize width, strip_h=70.007). Local: FSPP fixed sheet (210\u00d770). Objectives differ; search behavior / runtime comparable.",
+      "upstream": {
+        "status": "ok",
+        "runtime_ms": 20252.5,
+        "strip_width": 24.437634,
+        "density": 0.7896865,
+        "placed_count": 25,
+        "run_time_sec_reported": 12,
+        "iterations": null,
+        "collision_or_loss_metric": null
+      },
+      "local": {
+        "status": "ok",
+        "runtime_ms": 2485.0,
+        "placed_count": 25,
+        "final_pairs": 0,
+        "iterations": 1,
+        "search_calls": 0,
+        "search_samples": 0
+      }
+    },
+    {
+      "case_id": "lv8_subset",
+      "input_provenance": "Dense-191 LV8 fixture, first 3 part types (67 instances)",
+      "geometry_equivalence_notes": "Same LV8 polygon geometry (outer_points \u2192 SPP simple_polygon). Upstream: SPP strip_h=3000. Local: fixed sheet 1500\u00d73000. Objectives differ; geometry identical.",
+      "upstream": {
+        "status": "ok",
+        "runtime_ms": 31304.4,
+        "strip_width": 108.1108,
+        "density": 0.7583975,
+        "placed_count": 67,
+        "run_time_sec_reported": 29,
+        "iterations": null,
+        "collision_or_loss_metric": null
+      },
+      "local": {
+        "status": "ok",
+        "runtime_ms": 15872.1,
+        "placed_count": 67,
+        "final_pairs": 0,
+        "iterations": 1,
+        "search_calls": 11,
+        "search_samples": 1664
+      }
+    }
+  ]
+}

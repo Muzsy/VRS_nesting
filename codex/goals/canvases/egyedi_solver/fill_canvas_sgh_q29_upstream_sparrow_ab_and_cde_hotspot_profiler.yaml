@@ -1,0 +1,105 @@
+steps:
+  - name: "Felderítés — repo, Q28 állapot és upstream Sparrow forrás"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/yaml_schema.md és docs/codex/report_standard.md fájlokat.
+      Rögzítsd a task eleji git status --short állapotot. Ellenőrizd a Q28 releváns reportokat és a
+      jelenlegi dense191 fixture/script állapotot. Ellenőrizd, hogy .cache/sparrow létezik-e, majd
+      rögzítsd: git -C .cache/sparrow rev-parse HEAD, git -C .cache/sparrow status --short,
+      valamint az upstream build/run entrypoint felderítésének eredményét. Ha .cache/sparrow nem
+      létezik vagy nem futtatható, a report Phase A szakasza legyen BLOCKED; tilos saját vrs_solver
+      vagy no-session buildet upstream referenciának nevezni.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+
+  - name: "Upstream A/B runner létrehozása"
+    description: >
+      Hozd létre a scripts/bench_sgh_q29_upstream_sparrow_ab.py scriptet. A script építse/futtassa a
+      valódi upstream Sparrowt a .cache/sparrow forrásból, és futtassa a saját vrs_solver binárist is
+      ekvivalens micro, medium és lehetőség szerint LV8-derived inputokon. A script hozza létre az
+      artifacts/benchmarks/sgh_q29/upstream_ab_summary.json és upstream_ab_report.md fájlokat. A
+      JSON tartalmazza az upstream commitot, entrypointot, build parancsot, case-enként upstream és
+      local runtime/iteration/placed/loss vagy collision adatokat. Ha upstream futás nem lehetséges,
+      a summary status=BLOCKED legyen, konkrét indokkal; ne adjon hamis PASS-t.
+    outputs:
+      - "scripts/bench_sgh_q29_upstream_sparrow_ab.py"
+      - "artifacts/benchmarks/sgh_q29/upstream_ab_summary.json"
+      - "artifacts/benchmarks/sgh_q29/upstream_ab_report.md"
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+
+  - name: "Local CDE/search profiling instrumentation"
+    description: >
+      Adj hozzá kizárólag mérési célú, default szemantikát nem módosító profiling instrumentationt a
+      saját sparrow_cde útvonalhoz. A profiling legyen explicit módhoz vagy env-flaghez kötve
+      (javaslat: SGH_Q29_CDE_PROFILE=1). Mérni kell legalább: native_search_placement calls/ms,
+      candidate count, session build ms, deregister/reregister ms, candidate transform/prepare ms,
+      CDE query/collect ms, specialized pipeline ms, hazard/loss ms, boundary check ms,
+      broadphase/bbox reject count és early termination count. Ha egy mező nem mérhető, azt
+      not_available értékkel és indokkal add vissza; ne hagyd ki. Ne módosíts algoritmust,
+      acceptance logikát, sample budgetet, worker orderingot, GLS-t vagy touching policyt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/coord_descent.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/sep_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/specialized_cde_pipeline.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+
+  - name: "Local profiler runner létrehozása"
+    description: >
+      Hozd létre a scripts/profile_sgh_q29_local_cde_hotspot.py scriptet. A script futtassa a saját
+      vrs_solver binárist SGH_Q29_CDE_PROFILE=1 módban legalább medium és LV8-derived case-en, és
+      ha praktikusan futtatható, dense191 case-en is. Hozza létre az
+      artifacts/benchmarks/sgh_q29/local_cde_hotspot_summary.json és local_cde_hotspot_report.md
+      fájlokat. A summary JSON-ban case-enként legyenek kötelezően a canvasban előírt profile mezők,
+      top_costs_percent bontással. A runner nem optimalizálhat, csak mérhet.
+    outputs:
+      - "scripts/profile_sgh_q29_local_cde_hotspot.py"
+      - "artifacts/benchmarks/sgh_q29/local_cde_hotspot_summary.json"
+      - "artifacts/benchmarks/sgh_q29/local_cde_hotspot_report.md"
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+
+  - name: "Q29 smoke validator létrehozása"
+    description: >
+      Hozd létre vagy frissítsd a scripts/smoke_sgh_q29_upstream_ab_and_cde_hotspot_profiler.py
+      scriptet. A smoke ne maga mérjen, hanem validálja a létrejött Q29 artifactokat: upstream
+      summary, local profiler summary, kötelező mezők, upstream vs local elkülönítés, BLOCKED/PASS
+      állapotok konzisztenciája, és hogy saját vrs_solver/no-session build nincs upstreamként
+      feltüntetve. A smoke akkor PASS, ha a Phase A valódi upstream futással PASS, vagy világosan
+      BLOCKED és ezt nem állítja upstream összehasonlításnak; valamint Phase B profiler PASS és
+      tartalmazza a kötelező költségbontást.
+    outputs:
+      - "scripts/smoke_sgh_q29_upstream_ab_and_cde_hotspot_profiler.py"
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+
+  - name: "Futtatás és mérési reportok"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      python3 scripts/bench_sgh_q29_upstream_sparrow_ab.py; python3
+      scripts/profile_sgh_q29_local_cde_hotspot.py; python3
+      scripts/smoke_sgh_q29_upstream_ab_and_cde_hotspot_profiler.py; cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml. A reportban külön szakaszban válaszold meg: (1) upstreamhez képest
+      hol állunk, (2) a saját CDE/search útvonalon mi viszi el az időt. Ne írj upstream-parity
+      állítást, ha Phase A BLOCKED volt.
+    outputs:
+      - "artifacts/benchmarks/sgh_q29/upstream_ab_summary.json"
+      - "artifacts/benchmarks/sgh_q29/upstream_ab_report.md"
+      - "artifacts/benchmarks/sgh_q29/local_cde_hotspot_summary.json"
+      - "artifacts/benchmarks/sgh_q29/local_cde_hotspot_report.md"
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést: ./scripts/verify.sh --report
+      codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md. A verify
+      logot a report mellé kell menteni. Ha csak Phase A upstream futás BLOCKED, de Phase B és a
+      repo gate rendben van, a reportban a task státusza legyen PASS_WITH_UPSTREAM_BLOCKED vagy
+      BLOCKED_UPSTREAM_ONLY, de ne legyen hamis upstream A/B PASS.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.md"
+      - "codex/reports/egyedi_solver/sgh_q29_upstream_sparrow_ab_and_cde_hotspot_profiler.verify.log"

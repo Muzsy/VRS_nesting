@@ -322,6 +322,27 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_dense_unresolved_instances: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_dense_final_validation_ran: Option<bool>,
+    // ── SGH-Q29 CDE hotspot profiler fields (present only when SGH_Q29_CDE_PROFILE=1) ──
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profiling_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_search_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_session_build_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_deregister_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_candidate_transform_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_cde_query_collect_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_hazard_loss_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_boundary_check_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_broadphase_reject_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_profile_early_termination_count: Option<usize>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

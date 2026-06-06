@@ -159,7 +159,10 @@ impl SparrowConfig {
 /// Native Sparrow diagnostics surfaced to the adapter output projection.
 /// Field names mirror the prior `sparrow_*` output contract plus the Q24R5
 /// native-model proof flags and the Q24R6 search/worker/tracker evidence.
-#[derive(Debug, Clone, Default)]
+///
+/// `Default` checks `SGH_Q29_CDE_PROFILE=1` to enable profiling fields.
+/// All profiling fields are zero when `profiling_enabled` is false.
+#[derive(Debug, Clone)]
 pub struct SparrowDiagnostics {
     pub invoked: bool,
     pub seed_placements: usize,
@@ -235,4 +238,111 @@ pub struct SparrowDiagnostics {
     pub dense_validated_placements: Option<usize>,
     pub dense_unresolved_instances: Vec<String>,
     pub dense_final_validation_ran: bool,
+    // ── SGH-Q29 CDE hotspot profiler (active only when SGH_Q29_CDE_PROFILE=1) ─
+    /// True when SGH_Q29_CDE_PROFILE=1 was set at solver startup.
+    pub profiling_enabled: bool,
+    /// Total wall-time spent inside `native_search_placement` calls (ms).
+    pub profile_search_total_ms: f64,
+    /// Wall-time for `build_sheet_session` (fallback fresh-session builds, ms).
+    pub profile_session_build_ms: f64,
+    /// Wall-time for `deregister_item` calls inside `native_search_placement` (ms).
+    pub profile_deregister_ms: f64,
+    /// Wall-time for `transform_base_to_candidate` (candidate shape prep, ms).
+    pub profile_candidate_transform_ms: f64,
+    /// Wall-time inside `collect_poly_collisions_in_detector_custom` (CDE query+collect, ms).
+    pub profile_cde_query_collect_ms: f64,
+    /// Wall-time for loss quantification inside the hazard collector (hazard_loss, ms).
+    /// In our impl quantification happens inside collect_poly_collisions; this is a
+    /// subset of profile_cde_query_collect_ms separated by timing the quantify calls.
+    pub profile_hazard_loss_ms: f64,
+    /// Wall-time for the bbox fit check (boundary/broadphase pre-check) in score_candidate (ms).
+    pub profile_boundary_check_ms: f64,
+    /// Number of candidates rejected by bbox fit check before any CDE work.
+    pub profile_broadphase_reject_count: usize,
+    /// Number of times `collect_poly_collisions_in_detector_custom` returned early due to loss bound.
+    pub profile_early_termination_count: usize,
+}
+
+impl Default for SparrowDiagnostics {
+    fn default() -> Self {
+        let profiling_enabled = std::env::var("SGH_Q29_CDE_PROFILE").as_deref() == Ok("1");
+        Self {
+            invoked: false,
+            seed_placements: 0,
+            seed_unplaced: 0,
+            initial_raw_loss: 0.0,
+            initial_weighted_loss: 0.0,
+            final_raw_loss: 0.0,
+            final_weighted_loss: 0.0,
+            best_infeasible_raw_loss: 0.0,
+            best_infeasible_weighted_loss: 0.0,
+            iterations: 0,
+            moves_attempted: 0,
+            moves_accepted: 0,
+            rollbacks: 0,
+            gls_weight_updates: 0,
+            converged: false,
+            collision_graph_initial_pairs: 0,
+            collision_graph_final_pairs: 0,
+            boundary_violations_initial: 0,
+            boundary_violations_final: 0,
+            search_position_calls: 0,
+            search_position_samples: 0,
+            search_global_samples: 0,
+            search_focused_samples: 0,
+            search_refined_samples: 0,
+            search_coord_descent_steps: 0,
+            search_unsupported_samples: 0,
+            search_cross_sheet_calls: 0,
+            search_rotation_wiggle: 0,
+            search_best_eval: 0.0,
+            lbf_fallback_used: 0,
+            worker_count: 0,
+            worker_passes: 0,
+            worker_candidates_evaluated: 0,
+            worker_commits: 0,
+            worker_rollbacks: 0,
+            worker_best_loss: 0.0,
+            worker_colliding_items_seen: 0,
+            worker_items_moved: 0,
+            multi_target_items_attempted: 0,
+            multi_target_items_accepted: 0,
+            multi_target_items_rejected: 0,
+            topk_target_count: 0,
+            separator_invocations: 0,
+            separator_strikes: 0,
+            exploration_attempts: 0,
+            exploration_pool_inserts: 0,
+            exploration_pool_restores: 0,
+            exploration_disruptions_large_item_swap: 0,
+            exploration_disruptions_cross_sheet: 0,
+            exploration_disruptions_rotation: 0,
+            excluded_phase_passes: 0,
+            quantified_pair_queries: 0,
+            quantified_boundary_queries: 0,
+            unsupported_queries: 0,
+            native_model_active: false,
+            native_tracker_active: false,
+            old_core_used: false,
+            native_problem_instances: 0,
+            native_tracker_full_rebuilds: 0,
+            native_tracker_incremental_updates: 0,
+            dense_guard_used: false,
+            dense_real_run: false,
+            dense_partial_reason: None,
+            dense_validated_placements: None,
+            dense_unresolved_instances: Vec::new(),
+            dense_final_validation_ran: false,
+            profiling_enabled,
+            profile_search_total_ms: 0.0,
+            profile_session_build_ms: 0.0,
+            profile_deregister_ms: 0.0,
+            profile_candidate_transform_ms: 0.0,
+            profile_cde_query_collect_ms: 0.0,
+            profile_hazard_loss_ms: 0.0,
+            profile_boundary_check_ms: 0.0,
+            profile_broadphase_reject_count: 0,
+            profile_early_termination_count: 0,
+        }
+    }
 }
