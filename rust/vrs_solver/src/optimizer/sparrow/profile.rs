@@ -2,97 +2,115 @@ use std::time::Instant;
 
 /// Reusable search-loop profiling module for the native Sparrow solver.
 ///
-/// Enabled by `SGH_Q30_SEARCH_PROFILE=1`. Zero overhead when disabled.
+/// Enabled by `SGH_Q30_R1_EXCLUSIVE_PROFILE=1` (R1 exclusive timing tree)
+/// or by `SGH_Q30_SEARCH_PROFILE=1` (Q30 mixed-with-notes mode, legacy).
+/// Zero overhead when disabled.
 ///
-/// # Timing accounting model (`timing_accounting_mode = "mixed_with_notes"`)
+/// # Timing accounting models
 ///
-/// **Exclusive** sub-buckets of `search_total_ms` (their sum ≤ search_total):
-///   - `session_build_ms`            fallback fresh-session builds only
-///   - `deregister_reregister_ms`    deregister_item calls (reregister is in worker.rs)
-///   - `evaluate_sample_total_ms`    ALL evaluate_sample calls, incl. from coord_descent
-///   - `sample_generation_ms`        UniformBBoxSampler.sample() calls
-///   - `best_samples_insert_dedup_ms` BestSamples.report() calls
+/// ## Q30-R1: `search_timing_accounting_mode = "exclusive"` (R1 exclusive flag)
 ///
-/// **Nested** (informational; NOT subtracted in `other_unaccounted_ms`):
-///   - `coord_descent_total_ms`           wraps evaluate_sample calls within
-///   - `cde_query_collect_ms`             sub of each evaluate_sample
-///   - `candidate_transform_prepare_ms`   sub of each evaluate_sample
-///   - `boundary_check_ms`               sub of each evaluate_sample
+/// All measured buckets in `search_accounted_ms` are mutually exclusive —
+/// no nested fields. `search_unaccounted_ms = search_total_ms - search_accounted_ms`.
+/// PASS requires `search_unaccounted_ratio_pct <= 15.0`.
 ///
-/// `other_unaccounted_ms` = search_total
-///   - session_build_ms - deregister_reregister_ms
-///   - evaluate_sample_total_ms - sample_generation_ms - best_samples_insert_dedup_ms
+/// ## Q30: `timing_accounting_mode = "mixed_with_notes"` (legacy flag only)
+///
+/// Some fields nested; `other_unaccounted_ms` uses the Q30 formula.
+///
+/// # Finalize
+///
+/// `finalize()` must be called on the solve path before the diagnostics are
+/// read. It populates all derived fields (unaccounted ratios, averages, aliases).
 ///
 /// # Future admin integration
 ///
-/// `finalize()` populates all derived fields. The snapshot can be exported via:
+/// After `finalize()` the snapshot can be exported via:
 ///   - `optimizer_diagnostics.sparrow_q30_profile_*` JSON fields (current path)
-///   - sidecar artifact file (call site writes `serde_json::to_string(profiler)`)
-///   - run-level admin observability stream (pass snapshot to a tracing subscriber)
+///   - sidecar artifact file (`serde_json::to_string(profiler)`)
+///   - run-level admin observability stream (tracing subscriber)
 #[derive(Debug, Clone, Default)]
 pub struct SearchProfiler {
-    /// True when `SGH_Q30_SEARCH_PROFILE=1` was set at solver startup.
+    /// True when `SGH_Q30_SEARCH_PROFILE=1` or `SGH_Q30_R1_EXCLUSIVE_PROFILE=1`.
     pub enabled: bool,
-    /// Set true by `native_search_placement` (separator path) before entering
-    /// `search_placement`, false afterwards. Prevents LBF seeding calls (via
-    /// `lbf.rs`) from contaminating separator-only timing buckets.
+    /// True when `SGH_Q30_R1_EXCLUSIVE_PROFILE=1` (strict exclusive timing).
+    pub r1_exclusive_enabled: bool,
+    /// Set true by `native_search_placement` before entering `search_placement`,
+    /// false afterwards. Prevents LBF seeding calls from contaminating separator
+    /// timing buckets.
     pub profiling_scope_active: bool,
 
     // ── counters ─────────────────────────────────────────────────────────────
-    /// Total `native_search_placement` invocations.
     pub native_search_calls: usize,
-    /// Total `evaluate_sample` calls (includes calls from coord_descent).
     pub evaluate_sample_calls: usize,
-    /// Candidates that passed the bbox broad-phase check (= `search_position_samples`).
+    pub evaluate_sample_calls_from_focused: usize,
+    pub evaluate_sample_calls_from_global: usize,
+    pub evaluate_sample_calls_from_coord_descent: usize,
+    /// Candidates that passed the bbox broad-phase check.
     pub candidates_evaluated: usize,
     pub global_samples_generated: usize,
     pub focused_samples_generated: usize,
-    /// Total `refine_coord_desc` invocations.
     pub coord_descent_runs: usize,
-    /// Total coord-descent axis-evaluation steps (each `ask()` produces 2 candidates).
     pub coord_descent_steps: usize,
+    pub coord_descent_ask_calls: usize,
+    pub coord_descent_tell_calls: usize,
     pub best_samples_insert_attempts: usize,
     pub best_samples_inserted: usize,
-    /// Attempts rejected because a spatial duplicate with better eval already exists.
-    /// Note: not separately measurable from upper-bound-exceeded rejects without an
-    /// enum return from `BestSamples::report()`. Populated by `best_samples.rs`.
     pub best_samples_dedup_rejects: usize,
-    /// = `global_samples_generated + focused_samples_generated` (derived at `finalize`).
+    pub best_samples_best_calls: usize,
+    pub best_samples_clone_calls: usize,
+    pub deadline_checks: usize,
+    pub sheet_loop_iterations: usize,
+    /// = `global_samples_generated + focused_samples_generated` (derived).
     pub rng_shuffle_or_sample_loop_count: usize,
     pub early_termination_count: usize,
     pub broadphase_reject_count: usize,
+    pub worker_passes: usize,
+    pub worker_candidates_evaluated: usize,
+    pub worker_candidates_accepted: usize,
 
-    // ── timing (ms) ──────────────────────────────────────────────────────────
-    /// Total wall-time inside all `native_search_placement` calls.
+    // ── search timing (ms) ───────────────────────────────────────────────────
     pub search_total_ms: f64,
-    /// Wall-time for `UniformBBoxSampler::sample()` calls (RNG + clip).
+    /// R1 exclusive: `prepare_base_shape_native` (once per search call).
+    pub prepare_base_shape_native_ms: f64,
+    /// R1 exclusive: `tracker.shapes.clone()` (once per search call).
+    pub fixed_shapes_clone_ms: f64,
+    /// R1 exclusive: sheet order vec construction inside native_search_placement.
+    pub sheet_order_build_ms: f64,
     pub sample_generation_ms: f64,
-    /// Wall-time for `BestSamples::report()` calls (insert + dedup + sort).
     pub best_samples_insert_dedup_ms: f64,
-    /// NESTED: total wall-time for all `refine_coord_desc` calls (incl. evaluate_sample within).
+    /// R1 exclusive: `BestSamples::best()` calls.
+    pub best_samples_best_ms: f64,
+    /// R1 exclusive: `best.samples.clone()` before pre-stage coord descent.
+    pub best_samples_clone_ms: f64,
+    /// NESTED (informational): all `refine_coord_desc` calls incl. evals within.
     pub coord_descent_total_ms: f64,
-    /// EXCLUSIVE: total wall-time for ALL `evaluate_sample` calls regardless of caller.
+    /// R1 exclusive: `CoordinateDescent::ask()` calls.
+    pub coord_descent_ask_ms: f64,
+    /// R1 exclusive: `CoordinateDescent::tell()` calls.
+    pub coord_descent_tell_ms: f64,
+    /// EXCLUSIVE: ALL `evaluate_sample` calls regardless of caller.
     pub evaluate_sample_total_ms: f64,
-    /// DERIVED: evaluate_sample_total - boundary_check - candidate_transform - cde_query.
+    /// DERIVED: evaluate_sample_total - boundary_check - transform - cde_query.
     pub evaluator_orchestration_ms: f64,
-    /// ALIAS: = `sample_generation_ms` (derived at `finalize`).
+    /// ALIAS: = `sample_generation_ms` (derived).
     pub rng_shuffle_sample_loop_ms: f64,
-    /// Sub of evaluate_sample: `transform_base_to_candidate` cost.
+    /// ALIAS: = `sample_generation_ms` (R1 naming, derived).
+    pub rng_sample_generation_ms: f64,
     pub candidate_transform_prepare_ms: f64,
-    /// Sub of evaluate_sample: `collect_poly_collisions_in_detector_custom` cost.
     pub cde_query_collect_ms: f64,
-    /// ALIAS: = `cde_query_collect_ms` (same code path; derived at `finalize`).
+    /// ALIAS: = `cde_query_collect_ms` (derived).
     pub specialized_pipeline_ms: f64,
-    /// Sub of cde_query: hazard quantification (not separately timed in current impl).
-    /// Currently always 0.0; future instrumentation point.
     pub hazard_loss_ms: f64,
-    /// Sub of evaluate_sample: bbox fit check (broad-phase, before CDE work).
     pub boundary_check_ms: f64,
-    /// Fallback fresh-session builds only (primary live session is built in `worker.rs`).
     pub session_build_ms: f64,
-    /// `deregister_item` calls inside `native_search_placement` (reregister is in worker.rs).
     pub deregister_reregister_ms: f64,
-    /// DERIVED: search_total minus all exclusive sub-buckets.
+
+    // ── R1 exclusive search accounting (derived in finalize) ─────────────────
+    pub search_accounted_ms: f64,
+    pub search_unaccounted_ms: f64,
+    pub search_unaccounted_ratio_pct: f64,
+    /// Q30 legacy unaccounted (Q30 formula, derived in finalize).
     pub other_unaccounted_ms: f64,
     /// DERIVED: evaluate_sample_total / candidates_evaluated.
     pub per_candidate_avg_ms: f64,
@@ -100,35 +118,99 @@ pub struct SearchProfiler {
     pub per_evaluate_sample_avg_ms: f64,
     /// DERIVED: search_total / native_search_calls.
     pub per_search_avg_ms: f64,
+
+    // ── total solver runtime timing (Q30-R1) ─────────────────────────────────
+    pub total_solver_runtime_ms: f64,
+    pub adapter_solve_total_ms: f64,
+    pub sparrow_optimizer_solve_total_ms: f64,
+    pub seed_lbf_total_ms: f64,
+    pub tracker_initial_build_ms: f64,
+    pub exploration_total_ms: f64,
+    pub separator_total_ms: f64,
+    pub separator_iteration_total_ms: f64,
+    pub worker_competition_total_ms: f64,
+    pub worker_pass_total_ms: f64,
+    pub tracker_final_validation_ms: f64,
+    pub output_mapping_ms: f64,
+    pub other_solver_unaccounted_ms: f64,
+    pub other_solver_unaccounted_ratio_pct: f64,
 }
 
 impl SearchProfiler {
-    /// Construct with env-var check. Checks `SGH_Q30_SEARCH_PROFILE=1`.
+    /// Construct with env-var check.
+    /// `SGH_Q30_R1_EXCLUSIVE_PROFILE=1` enables strict R1 exclusive timing.
+    /// `SGH_Q30_SEARCH_PROFILE=1` enables Q30 legacy mode (also enables R1 timers).
     pub fn new_from_env() -> Self {
-        let enabled = std::env::var("SGH_Q30_SEARCH_PROFILE").as_deref() == Ok("1");
+        let r1_exclusive = std::env::var("SGH_Q30_R1_EXCLUSIVE_PROFILE").as_deref() == Ok("1");
+        let q30_legacy = std::env::var("SGH_Q30_SEARCH_PROFILE").as_deref() == Ok("1");
+        let enabled = r1_exclusive || q30_legacy;
         Self {
             enabled,
+            r1_exclusive_enabled: r1_exclusive,
             ..Default::default()
         }
     }
 
-    /// Populate all derived / aliased fields. Call once after measurements complete.
+    /// True when R1 exclusive profiling is active and within a search scope.
+    #[inline(always)]
+    pub fn r1_active(&self) -> bool {
+        self.r1_exclusive_enabled && self.profiling_scope_active
+    }
+
+    /// Populate all derived / aliased fields. Must be called on the solve path
+    /// before the diagnostics are read.
     pub fn finalize(&mut self) {
         self.rng_shuffle_or_sample_loop_count =
             self.global_samples_generated + self.focused_samples_generated;
         self.rng_shuffle_sample_loop_ms = self.sample_generation_ms;
+        self.rng_sample_generation_ms = self.sample_generation_ms;
         self.specialized_pipeline_ms = self.cde_query_collect_ms;
         self.evaluator_orchestration_ms = (self.evaluate_sample_total_ms
             - self.boundary_check_ms
             - self.candidate_transform_prepare_ms
             - self.cde_query_collect_ms)
             .max(0.0);
-        let exclusive_measured = self.session_build_ms
+
+        // Q30 legacy other_unaccounted (mixed_with_notes formula).
+        let exclusive_q30 = self.session_build_ms
             + self.deregister_reregister_ms
             + self.evaluate_sample_total_ms
             + self.sample_generation_ms
             + self.best_samples_insert_dedup_ms;
-        self.other_unaccounted_ms = (self.search_total_ms - exclusive_measured).max(0.0);
+        self.other_unaccounted_ms = (self.search_total_ms - exclusive_q30).max(0.0);
+
+        // R1 exclusive accounting: all exclusive non-nested search buckets.
+        self.search_accounted_ms = self.prepare_base_shape_native_ms
+            + self.fixed_shapes_clone_ms
+            + self.sheet_order_build_ms
+            + self.deregister_reregister_ms
+            + self.session_build_ms
+            + self.evaluate_sample_total_ms
+            + self.sample_generation_ms
+            + self.best_samples_insert_dedup_ms
+            + self.best_samples_clone_ms
+            + self.best_samples_best_ms
+            + self.coord_descent_ask_ms
+            + self.coord_descent_tell_ms;
+        self.search_unaccounted_ms = (self.search_total_ms - self.search_accounted_ms).max(0.0);
+        if self.search_total_ms > 0.0 {
+            self.search_unaccounted_ratio_pct =
+                self.search_unaccounted_ms / self.search_total_ms * 100.0;
+        }
+
+        // Total solver runtime accounting (top-level exclusive buckets).
+        let runtime_accounted = self.seed_lbf_total_ms
+            + self.tracker_initial_build_ms
+            + self.exploration_total_ms
+            + self.tracker_final_validation_ms
+            + self.output_mapping_ms;
+        self.other_solver_unaccounted_ms =
+            (self.total_solver_runtime_ms - runtime_accounted).max(0.0);
+        if self.total_solver_runtime_ms > 0.0 {
+            self.other_solver_unaccounted_ratio_pct =
+                self.other_solver_unaccounted_ms / self.total_solver_runtime_ms * 100.0;
+        }
+
         if self.native_search_calls > 0 {
             self.per_search_avg_ms = self.search_total_ms / self.native_search_calls as f64;
         }

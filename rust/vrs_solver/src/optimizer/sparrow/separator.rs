@@ -13,6 +13,9 @@ impl SparrowOptimizer {
         diag: &mut SparrowDiagnostics,
     ) {
         diag.worker_passes += 1;
+        diag.q30_profile.worker_passes += 1;
+        let r1 = diag.q30_profile.r1_exclusive_enabled;
+        let t_competition = ProfileTimer::start_if(r1);
         let colliding_seen = state.tracker.colliding_indices().len();
         diag.worker_colliding_items_seen += colliding_seen;
         diag.topk_target_count = diag.topk_target_count.max(colliding_seen);
@@ -22,6 +25,7 @@ impl SparrowOptimizer {
         for w in 0..worker_count {
             let worker_seed =
                 master_rng.next_u64() ^ ((w as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            let t_pass = ProfileTimer::start_if(r1);
             let cand = run_worker_pass(
                 w,
                 state,
@@ -33,6 +37,7 @@ impl SparrowOptimizer {
                 deadline,
                 diag,
             );
+            t_pass.add_to(&mut diag.q30_profile.worker_pass_total_ms);
             cands.push(cand);
         }
 
@@ -59,6 +64,8 @@ impl SparrowOptimizer {
         // Aggregate worker statistics (truthful evidence of the competition).
         for c in &cands {
             diag.worker_candidates_evaluated += c.evaluated;
+            diag.q30_profile.worker_candidates_evaluated += c.evaluated;
+            diag.q30_profile.worker_candidates_accepted += c.accepted;
             diag.multi_target_items_attempted += c.attempted;
             diag.multi_target_items_accepted += c.accepted;
             diag.multi_target_items_rejected += c.rejected;
@@ -77,6 +84,7 @@ impl SparrowOptimizer {
         diag.worker_items_moved += best.accepted;
         diag.worker_best_loss = best.weighted_loss;
         load_best_worker(state, best);
+        t_competition.add_to(&mut diag.q30_profile.worker_competition_total_ms);
     }
 
     /// Algorithm 9 native port: strike / no-improvement separation loop driven by
@@ -92,6 +100,8 @@ impl SparrowOptimizer {
         diag: &mut SparrowDiagnostics,
     ) -> bool {
         diag.separator_invocations += 1;
+        let r1 = diag.q30_profile.r1_exclusive_enabled;
+        let t_sep = ProfileTimer::start_if(r1);
         let strike_limit = match self.config.profile {
             SparrowProfile::SparrowStrictParity => SPARROW_PARITY_STRIKE_LIMIT,
             SparrowProfile::SparrowDenseLargeScale => SPARROW_PARITY_STRIKE_LIMIT,
@@ -139,11 +149,14 @@ impl SparrowOptimizer {
                     }
                     break;
                 }
+                let t_iter = ProfileTimer::start_if(r1);
                 self.move_items_multi(state, instances, sheets, rng, started, deadline, diag);
                 state.refresh_incumbents();
                 let raw = state.tracker.total_raw_loss();
                 if raw <= 1e-9 {
+                    t_iter.add_to(&mut diag.q30_profile.separator_iteration_total_ms);
                     state.best_feasible = Some(state.layout.snapshot());
+                    t_sep.add_to(&mut diag.q30_profile.separator_total_ms);
                     return true;
                 } else if raw < best_raw - 1e-9 {
                     // New best by total raw loss (upstream Algorithm 9 semantics).
@@ -159,6 +172,7 @@ impl SparrowOptimizer {
                 }
                 state.tracker.update_weights();
                 diag.gls_weight_updates += 1;
+                t_iter.add_to(&mut diag.q30_profile.separator_iteration_total_ms);
             }
             if initial_strike_loss * 0.98 <= best_raw {
                 strikes += 1;
@@ -173,6 +187,7 @@ impl SparrowOptimizer {
                 break;
             }
         }
+        t_sep.add_to(&mut diag.q30_profile.separator_total_ms);
         state.tracker.is_feasible()
     }
 }

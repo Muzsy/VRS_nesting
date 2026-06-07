@@ -390,6 +390,79 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_q30_session_build_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_q30_deregister_reregister_ms: Option<f64>,
+    // ── SGH-Q30-R1 exclusive timing tree (present only when SGH_Q30_R1_EXCLUSIVE_PROFILE=1) ──
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_exclusive_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_prepare_base_shape_native_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_fixed_shapes_clone_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_sheet_order_build_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_best_samples_best_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_best_samples_clone_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_coord_descent_ask_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_coord_descent_tell_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_search_accounted_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_search_unaccounted_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_search_unaccounted_ratio_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_total_solver_runtime_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_adapter_solve_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_sparrow_optimizer_solve_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_seed_lbf_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_tracker_initial_build_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_exploration_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_separator_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_separator_iteration_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_worker_competition_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_worker_pass_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_tracker_final_validation_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_output_mapping_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_other_solver_unaccounted_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_other_solver_unaccounted_ratio_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_evaluate_sample_calls_from_focused: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_evaluate_sample_calls_from_global: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_evaluate_sample_calls_from_coord_descent: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_best_samples_best_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_best_samples_clone_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_coord_descent_ask_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_coord_descent_tell_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_sheet_loop_iterations: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_worker_passes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_worker_candidates_evaluated: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30r1_worker_candidates_accepted: Option<usize>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

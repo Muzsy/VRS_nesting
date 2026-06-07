@@ -500,6 +500,43 @@ fn native_sparrow_diag_to_output(
         sparrow_q30_boundary_check_ms: if d.q30_profile.enabled { Some(d.q30_profile.boundary_check_ms) } else { None },
         sparrow_q30_session_build_ms: if d.q30_profile.enabled { Some(d.q30_profile.session_build_ms) } else { None },
         sparrow_q30_deregister_reregister_ms: if d.q30_profile.enabled { Some(d.q30_profile.deregister_reregister_ms) } else { None },
+        // Q30-R1 exclusive fields
+        sparrow_q30r1_exclusive_enabled: Some(d.q30_profile.r1_exclusive_enabled),
+        sparrow_q30r1_prepare_base_shape_native_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.prepare_base_shape_native_ms) } else { None },
+        sparrow_q30r1_fixed_shapes_clone_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.fixed_shapes_clone_ms) } else { None },
+        sparrow_q30r1_sheet_order_build_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.sheet_order_build_ms) } else { None },
+        sparrow_q30r1_best_samples_best_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_best_ms) } else { None },
+        sparrow_q30r1_best_samples_clone_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_clone_ms) } else { None },
+        sparrow_q30r1_coord_descent_ask_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_ask_ms) } else { None },
+        sparrow_q30r1_coord_descent_tell_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_tell_ms) } else { None },
+        sparrow_q30r1_search_accounted_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.search_accounted_ms) } else { None },
+        sparrow_q30r1_search_unaccounted_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.search_unaccounted_ms) } else { None },
+        sparrow_q30r1_search_unaccounted_ratio_pct: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.search_unaccounted_ratio_pct) } else { None },
+        sparrow_q30r1_total_solver_runtime_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.total_solver_runtime_ms) } else { None },
+        sparrow_q30r1_adapter_solve_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.adapter_solve_total_ms) } else { None },
+        sparrow_q30r1_sparrow_optimizer_solve_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.sparrow_optimizer_solve_total_ms) } else { None },
+        sparrow_q30r1_seed_lbf_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.seed_lbf_total_ms) } else { None },
+        sparrow_q30r1_tracker_initial_build_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.tracker_initial_build_ms) } else { None },
+        sparrow_q30r1_exploration_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.exploration_total_ms) } else { None },
+        sparrow_q30r1_separator_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.separator_total_ms) } else { None },
+        sparrow_q30r1_separator_iteration_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.separator_iteration_total_ms) } else { None },
+        sparrow_q30r1_worker_competition_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_competition_total_ms) } else { None },
+        sparrow_q30r1_worker_pass_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_pass_total_ms) } else { None },
+        sparrow_q30r1_tracker_final_validation_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.tracker_final_validation_ms) } else { None },
+        sparrow_q30r1_output_mapping_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.output_mapping_ms) } else { None },
+        sparrow_q30r1_other_solver_unaccounted_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.other_solver_unaccounted_ms) } else { None },
+        sparrow_q30r1_other_solver_unaccounted_ratio_pct: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.other_solver_unaccounted_ratio_pct) } else { None },
+        sparrow_q30r1_evaluate_sample_calls_from_focused: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.evaluate_sample_calls_from_focused) } else { None },
+        sparrow_q30r1_evaluate_sample_calls_from_global: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.evaluate_sample_calls_from_global) } else { None },
+        sparrow_q30r1_evaluate_sample_calls_from_coord_descent: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.evaluate_sample_calls_from_coord_descent) } else { None },
+        sparrow_q30r1_best_samples_best_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_best_calls) } else { None },
+        sparrow_q30r1_best_samples_clone_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_clone_calls) } else { None },
+        sparrow_q30r1_coord_descent_ask_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_ask_calls) } else { None },
+        sparrow_q30r1_coord_descent_tell_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_tell_calls) } else { None },
+        sparrow_q30r1_sheet_loop_iterations: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.sheet_loop_iterations) } else { None },
+        sparrow_q30r1_worker_passes: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_passes) } else { None },
+        sparrow_q30r1_worker_candidates_evaluated: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_candidates_evaluated) } else { None },
+        sparrow_q30r1_worker_candidates_accepted: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_candidates_accepted) } else { None },
     }
 }
 
@@ -575,9 +612,13 @@ fn run_sparrow_pipeline(
     };
 
     let t_commit_start = timing_start(timing_enabled);
+    let t_adapter_solve = Instant::now();
     let optimizer = SparrowOptimizer::new(config);
-    let result = optimizer.solve(problem);
+    let mut result = optimizer.solve(problem);
     let final_commit_ms = timing_ms(t_commit_start);
+    // Record total adapter solve time (includes solve + projection, already done in optimizer).
+    result.diagnostics.q30_profile.adapter_solve_total_ms =
+        t_adapter_solve.elapsed().as_secs_f64() * 1000.0;
     let backend_name = format!("{:?}", backend_kind);
     let optimizer_diag = native_sparrow_diag_to_output(
         &result.diagnostics,
@@ -988,6 +1029,42 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_q30_boundary_check_ms: None,
                             sparrow_q30_session_build_ms: None,
                             sparrow_q30_deregister_reregister_ms: None,
+                            sparrow_q30r1_exclusive_enabled: None,
+                            sparrow_q30r1_prepare_base_shape_native_ms: None,
+                            sparrow_q30r1_fixed_shapes_clone_ms: None,
+                            sparrow_q30r1_sheet_order_build_ms: None,
+                            sparrow_q30r1_best_samples_best_ms: None,
+                            sparrow_q30r1_best_samples_clone_ms: None,
+                            sparrow_q30r1_coord_descent_ask_ms: None,
+                            sparrow_q30r1_coord_descent_tell_ms: None,
+                            sparrow_q30r1_search_accounted_ms: None,
+                            sparrow_q30r1_search_unaccounted_ms: None,
+                            sparrow_q30r1_search_unaccounted_ratio_pct: None,
+                            sparrow_q30r1_total_solver_runtime_ms: None,
+                            sparrow_q30r1_adapter_solve_total_ms: None,
+                            sparrow_q30r1_sparrow_optimizer_solve_total_ms: None,
+                            sparrow_q30r1_seed_lbf_total_ms: None,
+                            sparrow_q30r1_tracker_initial_build_ms: None,
+                            sparrow_q30r1_exploration_total_ms: None,
+                            sparrow_q30r1_separator_total_ms: None,
+                            sparrow_q30r1_separator_iteration_total_ms: None,
+                            sparrow_q30r1_worker_competition_total_ms: None,
+                            sparrow_q30r1_worker_pass_total_ms: None,
+                            sparrow_q30r1_tracker_final_validation_ms: None,
+                            sparrow_q30r1_output_mapping_ms: None,
+                            sparrow_q30r1_other_solver_unaccounted_ms: None,
+                            sparrow_q30r1_other_solver_unaccounted_ratio_pct: None,
+                            sparrow_q30r1_evaluate_sample_calls_from_focused: None,
+                            sparrow_q30r1_evaluate_sample_calls_from_global: None,
+                            sparrow_q30r1_evaluate_sample_calls_from_coord_descent: None,
+                            sparrow_q30r1_best_samples_best_calls: None,
+                            sparrow_q30r1_best_samples_clone_calls: None,
+                            sparrow_q30r1_coord_descent_ask_calls: None,
+                            sparrow_q30r1_coord_descent_tell_calls: None,
+                            sparrow_q30r1_sheet_loop_iterations: None,
+                            sparrow_q30r1_worker_passes: None,
+                            sparrow_q30r1_worker_candidates_evaluated: None,
+                            sparrow_q30r1_worker_candidates_accepted: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

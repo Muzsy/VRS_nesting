@@ -1,0 +1,150 @@
+steps:
+  - name: "Felderítés — Q30 audit, valós fájlok, régi mérési lyukak"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/yaml_schema.md és docs/codex/report_standard.md fájlokat.
+      Rögzítsd a task eleji git status --short állapotot. Olvasd el a Q30 canvas/report/artifactokat:
+      canvases/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md,
+      codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md,
+      artifacts/benchmarks/sgh_q30/local_search_profile_summary.json és local_search_profile_report.md.
+      A reportban explicit rögzítsd: Q30 dense191 other_unaccounted ~79% volt, ezért Q30-R1 nem adhat PASS-t
+      érdemi exkluzív bontás nélkül. Keresd meg a valós kódfájlokat: profile.rs, search.rs, best_samples.rs,
+      coord_descent.rs, sep_evaluator.rs, specialized_cde_pipeline.rs, separator.rs, worker.rs, optimizer.rs,
+      tracker.rs, adapter.rs, io.rs. Upstream Sparrowt most nem kell futtatni.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Q30 profiler bővítése exkluzív timing tree-re"
+    description: >
+      A meglévő rust/vrs_solver/src/optimizer/sparrow/profile.rs modult bővítsd, ne hozz létre ad-hoc println/timer
+      rendszert. Adj hozzá exkluzív scope API-t és Rust oldali finalize/snapshot logikát. A derived mezők Rust oldalon
+      is számolódjanak, ne csak Pythonban. A profiler maradjon explicit flag mögött: SGH_Q30_R1_EXCLUSIVE_PROFILE=1
+      vagy visszafelé kompatibilisen SGH_Q30_SEARCH_PROFILE=1 + r1 mode. Default módban ne változtassa a solver
+      szemantikáját. A finalize vagy ekvivalens lezáró függvény ténylegesen legyen meghívva a solve pathon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Total solver runtime exkluzív bontása"
+    description: >
+      Mérd exkluzív scope-okkal a teljes saját solver runtime fő szintjeit: adapter_solve_total_ms,
+      sparrow_optimizer_solve_total_ms, seed_lbf_total_ms, separator_total_ms, separator_iteration_total_ms,
+      worker_competition_total_ms, worker_pass_total_ms, exploration_total_ms, tracker_initial_build_ms,
+      tracker_final_validation_ms, output_mapping_ms és other_solver_unaccounted_ms. A dense191 case-nél a total
+      runtime accounted arány legalább 75% legyen, vagy a task PARTIAL/FAIL. Ne módosíts algoritmust, csak mérj.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/optimizer.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/separator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/lbf.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/explore.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "native_search_placement/search_placement exkluzív bontása"
+    description: >
+      Bontsd fel exkluzívan a search_total_ms költséget. Kötelező mezők: native_search_placement_total_ms,
+      native_search_setup_ms, prepare_base_shape_native_ms, fixed_shapes_clone_ms, sheet_order_build_ms,
+      sheet_loop_total_ms, sheet_loop_overhead_ms, global_loop_total_ms, focused_loop_total_ms,
+      sample_acceptance_loop_ms, best_samples_best_ms, best_samples_clone_ms, deadline_check_ms,
+      rng_shuffle_ms, rng_sample_generation_ms, search_unaccounted_ms, search_unaccounted_ratio_pct. A Q30-ban
+      nested/alias mezőként jelentett rng_shuffle_sample_loop_ms nem fogadható el. Ha a dense191
+      search_unaccounted_ratio_pct > 15%, a report nem lehet PASS.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/best_samples.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/uniform_sampler.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Coord descent és evaluator exkluzív részidők"
+    description: >
+      Bontsd szét a coord_descent_total_ms-t nested összeg helyett exkluzív részekre: coord_descent_eval_ms,
+      coord_descent_ask_ms, coord_descent_tell_ms, coord_descent_overhead_ms, coord_descent_runs,
+      coord_descent_steps, coord_descent_ask_calls, coord_descent_tell_calls. Bontsd az evaluate_sample útvonalat:
+      evaluate_sample_total_ms, evaluate_sample_exclusive_overhead_ms, evaluator_orchestration_ms,
+      candidate_transform_prepare_ms, cde_query_collect_ms, specialized_pipeline_ms, hazard_loss_ms,
+      boundary_check_ms, broadphase_reject_ms. A nested mezőket jelölni kell, de a PASS-hoz szükséges search
+      accounting exkluzív mezőkből álljon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/coord_descent.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/sep_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/specialized_cde_pipeline.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Counters és output schema keményítése"
+    description: >
+      Exportáld az új profiling számlálókat és timing tree-ket strukturáltan. Kötelező: native_search_calls,
+      evaluate_sample_calls, evaluate_sample_calls_from_global, evaluate_sample_calls_from_focused,
+      evaluate_sample_calls_from_coord_descent, candidates_evaluated, global_samples_generated,
+      focused_samples_generated, best_samples_insert_attempts, best_samples_inserted,
+      best_samples_dedup_rejects, best_samples_best_calls, best_samples_clone_calls, coord_descent_runs,
+      coord_descent_steps, deadline_checks, sheet_loop_iterations, worker_passes, worker_candidates_evaluated,
+      worker_candidates_accepted, early_termination_count, broadphase_reject_count. Az output legyen alkalmas
+      későbbi admin/observability felületre, ne csak report-szöveg legyen.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Q30-R1 local exclusive profile runner"
+    description: >
+      Hozd létre a scripts/profile_sgh_q30_r1_exclusive_search_runtime_breakdown.py scriptet. Csak a saját release
+      vrs_solver binárist futtassa SGH_Q30_R1_EXCLUSIVE_PROFILE=1 módban. Futtassa: medium sanity, LV8-derived subset,
+      dense191, és opcionálisan full276 diagnostic case. A dense191 a fő acceptance case, nem hagyható ki. Hozza létre
+      az artifacts/benchmarks/sgh_q30_r1/local_exclusive_profile_summary.json és local_exclusive_profile_report.md
+      fájlokat, plusz input snapshotokat az inputs/ alá. A runner ne írjon PASS-t, ha a dense191 search unaccounted
+      ratio > 15%.
+    outputs:
+      - "scripts/profile_sgh_q30_r1_exclusive_search_runtime_breakdown.py"
+      - "artifacts/benchmarks/sgh_q30_r1/inputs/medium.json"
+      - "artifacts/benchmarks/sgh_q30_r1/inputs/lv8_subset.json"
+      - "artifacts/benchmarks/sgh_q30_r1/inputs/dense191.json"
+      - "artifacts/benchmarks/sgh_q30_r1/inputs/full276_optional.json"
+      - "artifacts/benchmarks/sgh_q30_r1/local_exclusive_profile_summary.json"
+      - "artifacts/benchmarks/sgh_q30_r1/local_exclusive_profile_report.md"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Kemény Q30-R1 smoke validator"
+    description: >
+      Hozd létre a scripts/smoke_sgh_q30_r1_exclusive_search_runtime_breakdown.py scriptet. Ez validáljon, ne mérjen.
+      Bukjon, ha hiányzik a summary/report, nincs dense191, timing_accounting_mode nem exclusive, search_unaccounted_ratio_pct
+      > 15%, hiányzik bármely kötelező bucket/counter, a régi Q30 alias megoldás él tovább, nincs Rust-side finalize hívás,
+      vagy a report PASS-t ír megsértett acceptance mellett. A smoke bukjon, ha compression, sample budget, worker ordering,
+      touching policy vagy acceptance módosításra utaló nem engedélyezett változás látszik.
+    outputs:
+      - "scripts/smoke_sgh_q30_r1_exclusive_search_runtime_breakdown.py"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Futtatás — build, profile, smoke, tests"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      python3 scripts/profile_sgh_q30_r1_exclusive_search_runtime_breakdown.py;
+      python3 scripts/smoke_sgh_q30_r1_exclusive_search_runtime_breakdown.py;
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml. A reportban ne csak annyi legyen, hogy PASS, hanem táblázatos
+      eredmény: dense191 search_total, accounted, unaccounted ratio, total runtime accounted ratio, top 10 exclusive bucket,
+      és konkrét NEXT_HOTSPOT fájl+függvény.
+    outputs:
+      - "artifacts/benchmarks/sgh_q30_r1/local_exclusive_profile_summary.json"
+      - "artifacts/benchmarks/sgh_q30_r1/local_exclusive_profile_report.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+
+  - name: "Repo gate és végső verdikt"
+    description: >
+      Futtasd: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md.
+      A report végén kötelező a három marker: Q30_R1_STATUS, DENSE191_SEARCH_UNACCOUNTED_RATIO,
+      DENSE191_RUNTIME_UNACCOUNTED_RATIO, NEXT_HOTSPOT. Ha a feltételek nem teljesülnek, a marker legyen PARTIAL/FAIL,
+      ne PASS. DoD→Evidence Matrix minden sorhoz path + line bizonyíték kell.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.md"
+      - "codex/reports/egyedi_solver/sgh_q30_r1_exclusive_search_runtime_breakdown.verify.log"

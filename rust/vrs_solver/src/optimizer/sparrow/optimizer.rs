@@ -41,15 +41,20 @@ impl SparrowOptimizer {
         let started = Instant::now();
         let deadline = self.config.time_limit_s.max(0.1);
         let mut rng = DeterministicRng::new(self.config.seed);
+        let r1 = diag.q30_profile.r1_exclusive_enabled;
 
+        let t_lbf = ProfileTimer::start_if(r1);
         let seed_layout = build_native_constructive_seed(&problem);
+        t_lbf.add_to(&mut diag.q30_profile.seed_lbf_total_ms);
         let instances = &problem.instances;
         let sheets = &problem.container.sheets;
         diag.seed_placements = seed_layout.placements.len();
         diag.seed_unplaced = problem.pre_unplaced.len();
         let dense_reference_run = instances.len() >= 100 && sheets.len() == 1;
         diag.dense_real_run = dense_reference_run;
+        let t_tracker_init = ProfileTimer::start_if(r1);
         let mut state = SparrowState::new_with_diag(seed_layout, instances, sheets, &mut diag);
+        t_tracker_init.add_to(&mut diag.q30_profile.tracker_initial_build_ms);
         diag.initial_raw_loss = state.tracker.total_raw_loss();
         diag.initial_weighted_loss = state.tracker.total_weighted_loss();
         diag.collision_graph_initial_pairs = state.tracker.colliding_pairs();
@@ -83,9 +88,11 @@ impl SparrowOptimizer {
         // Exploration phase (Algorithm 12, fixed-sheet adaptation): separate; on
         // failure, pool the least-infeasible state, biased-restore one, disrupt,
         // and retry. Owned by `explore.rs`.
+        let t_explore = ProfileTimer::start_if(r1);
         let feasible = active_optimizer.exploration_phase(
             &mut state, instances, sheets, &started, deadline, &mut rng, &mut diag,
         );
+        t_explore.add_to(&mut diag.q30_profile.exploration_total_ms);
 
         // Pick the layout to validate/emit: feasible incumbent if any, else the
         // least-infeasible incumbent by pair count/raw loss. If the active state
@@ -103,8 +110,10 @@ impl SparrowOptimizer {
                 .clone()
                 .unwrap_or_else(|| state.layout.snapshot())
         };
+        let t_final_val = ProfileTimer::start_if(r1);
         let final_tracker =
             SparrowCollisionTracker::final_validation_tracker(&final_layout, instances, sheets);
+        t_final_val.add_to(&mut diag.q30_profile.tracker_final_validation_ms);
         let validated = final_tracker.is_feasible();
         diag.collision_graph_final_pairs = final_tracker.colliding_pairs();
         diag.boundary_violations_final = final_tracker.boundary_violations();
@@ -173,7 +182,15 @@ impl SparrowOptimizer {
             layout: final_layout,
             feasible: feasible_final,
         };
+        let t_output = ProfileTimer::start_if(r1);
         let placements = solution.to_solver_projection(instances);
+        t_output.add_to(&mut diag.q30_profile.output_mapping_ms);
+        diag.q30_profile.sparrow_optimizer_solve_total_ms =
+            started.elapsed().as_secs_f64() * 1000.0;
+        diag.q30_profile.total_solver_runtime_ms =
+            diag.q30_profile.sparrow_optimizer_solve_total_ms;
+        // Call finalize on the solve path before diagnostics are read.
+        diag.q30_profile.finalize();
         SparrowSolveResult {
             placements,
             unplaced: problem.pre_unplaced,

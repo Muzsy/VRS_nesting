@@ -1,0 +1,528 @@
+{
+  "task": "sgh_q30_r1_exclusive_search_runtime_breakdown",
+  "status": "PASS",
+  "profile_flag": "SGH_Q30_R1_EXCLUSIVE_PROFILE=1",
+  "timing_accounting_mode": "exclusive",
+  "non_goals_preserved": {
+    "no_solver_optimization": true,
+    "no_upstream_ab": true,
+    "no_compression": true,
+    "no_sample_budget_change": true,
+    "no_acceptance_change": true
+  },
+  "acceptance_thresholds": {
+    "search_unaccounted_ratio_pct_max": 15.0,
+    "runtime_accounted_ratio_pct_min": 75.0
+  },
+  "dense191_search_unaccounted_ratio_pct": 0.46,
+  "dense191_runtime_unaccounted_ratio_pct": 0.0,
+  "cases": [
+    {
+      "case_id": "medium",
+      "status": "ok",
+      "time_limit_s": 30,
+      "placed_count": 24,
+      "q30r1_profile_enabled": true,
+      "search_accounting": {
+        "mode": "exclusive",
+        "search_total_ms": 0.0,
+        "accounted_ms": 0.0,
+        "unaccounted_ms": 0.0,
+        "unaccounted_ratio_pct": 0.0,
+        "buckets": {
+          "native_search_setup_ms": 0.0,
+          "prepare_base_shape_native_ms": 0.0,
+          "fixed_shapes_clone_ms": 0.0,
+          "sheet_order_build_ms": 0.0,
+          "sheet_loop_total_ms": 0.0,
+          "sheet_loop_overhead_ms": 0.0,
+          "global_loop_total_ms": 0.0,
+          "focused_loop_total_ms": 0.0,
+          "sample_generation_ms": 0.0,
+          "sample_acceptance_loop_ms": 0.0,
+          "best_samples_insert_dedup_ms": 0.0,
+          "best_samples_best_ms": 0.0,
+          "best_samples_clone_ms": 0.0,
+          "coord_descent_total_ms": 0.0,
+          "coord_descent_eval_ms": 0.0,
+          "coord_descent_ask_ms": 0.0,
+          "coord_descent_tell_ms": 0.0,
+          "coord_descent_overhead_ms": 0.0,
+          "evaluate_sample_total_ms": 0.0,
+          "evaluate_sample_exclusive_overhead_ms": 0.0,
+          "evaluator_orchestration_ms": 0.0,
+          "candidate_transform_prepare_ms": 0.0,
+          "cde_query_collect_ms": 0.0,
+          "specialized_pipeline_ms": 0.0,
+          "hazard_loss_ms": 0.0,
+          "boundary_check_ms": 0.0,
+          "broadphase_reject_ms": 0.0,
+          "session_build_ms": 0.0,
+          "deregister_reregister_ms": 0.0,
+          "deadline_check_ms": 0.0,
+          "rng_shuffle_ms": 0.0,
+          "rng_sample_generation_ms": 0.0
+        }
+      },
+      "runtime_accounting": {
+        "mode": "exclusive",
+        "total_solver_runtime_ms": 1073.016,
+        "seed_lbf_total_ms": 936.444,
+        "tracker_initial_build_ms": 68.686,
+        "exploration_total_ms": 0.01,
+        "tracker_final_validation_ms": 67.858,
+        "output_mapping_ms": 0.007,
+        "accounted_ms": 1073.006,
+        "accounted_ratio_pct": 100.0,
+        "unaccounted_ms": 0.011,
+        "unaccounted_ratio_pct": 0.0,
+        "separator_total_ms": 0.006,
+        "separator_iteration_total_ms": 0.0,
+        "worker_competition_total_ms": 0.0,
+        "worker_pass_total_ms": 0.0,
+        "buckets": {
+          "adapter_solve_total_ms": 1073.05,
+          "sparrow_optimizer_solve_total_ms": 1073.016,
+          "seed_lbf_total_ms": 936.444,
+          "separator_total_ms": 0.006,
+          "separator_iteration_total_ms": 0.0,
+          "worker_competition_total_ms": 0.0,
+          "worker_pass_total_ms": 0.0,
+          "tracker_initial_build_ms": 68.686,
+          "tracker_final_validation_ms": 67.858,
+          "output_mapping_ms": 0.007
+        }
+      },
+      "search_buckets": {},
+      "top_exclusive_costs": [],
+      "counters": {
+        "native_search_calls": 0,
+        "evaluate_sample_calls": 0,
+        "evaluate_sample_calls_from_global": 0,
+        "evaluate_sample_calls_from_focused": 0,
+        "evaluate_sample_calls_from_coord_descent": 0,
+        "candidates_evaluated": 0,
+        "global_samples_generated": 0,
+        "focused_samples_generated": 0,
+        "best_samples_insert_attempts": 0,
+        "best_samples_inserted": 0,
+        "best_samples_dedup_rejects": 0,
+        "best_samples_best_calls": 0,
+        "best_samples_clone_calls": 0,
+        "coord_descent_runs": 0,
+        "coord_descent_steps": 0,
+        "deadline_checks": 0,
+        "sheet_loop_iterations": 0,
+        "worker_passes": 0,
+        "worker_candidates_evaluated": 0,
+        "worker_candidates_accepted": 0,
+        "coord_descent_ask_calls": 0,
+        "coord_descent_tell_calls": 0,
+        "broadphase_reject_count": 0,
+        "early_termination_count": 0
+      }
+    },
+    {
+      "case_id": "lv8_subset",
+      "status": "ok",
+      "time_limit_s": 60,
+      "placed_count": 67,
+      "q30r1_profile_enabled": true,
+      "search_accounting": {
+        "mode": "exclusive",
+        "search_total_ms": 0.0,
+        "accounted_ms": 0.0,
+        "unaccounted_ms": 0.0,
+        "unaccounted_ratio_pct": 0.0,
+        "buckets": {
+          "native_search_setup_ms": 0.0,
+          "prepare_base_shape_native_ms": 0.0,
+          "fixed_shapes_clone_ms": 0.0,
+          "sheet_order_build_ms": 0.0,
+          "sheet_loop_total_ms": 0.0,
+          "sheet_loop_overhead_ms": 0.0,
+          "global_loop_total_ms": 0.0,
+          "focused_loop_total_ms": 0.0,
+          "sample_generation_ms": 0.0,
+          "sample_acceptance_loop_ms": 0.0,
+          "best_samples_insert_dedup_ms": 0.0,
+          "best_samples_best_ms": 0.0,
+          "best_samples_clone_ms": 0.0,
+          "coord_descent_total_ms": 0.0,
+          "coord_descent_eval_ms": 0.0,
+          "coord_descent_ask_ms": 0.0,
+          "coord_descent_tell_ms": 0.0,
+          "coord_descent_overhead_ms": 0.0,
+          "evaluate_sample_total_ms": 0.0,
+          "evaluate_sample_exclusive_overhead_ms": 0.0,
+          "evaluator_orchestration_ms": 0.0,
+          "candidate_transform_prepare_ms": 0.0,
+          "cde_query_collect_ms": 0.0,
+          "specialized_pipeline_ms": 0.0,
+          "hazard_loss_ms": 0.0,
+          "boundary_check_ms": 0.0,
+          "broadphase_reject_ms": 0.0,
+          "session_build_ms": 0.0,
+          "deregister_reregister_ms": 0.0,
+          "deadline_check_ms": 0.0,
+          "rng_shuffle_ms": 0.0,
+          "rng_sample_generation_ms": 0.0
+        }
+      },
+      "runtime_accounting": {
+        "mode": "exclusive",
+        "total_solver_runtime_ms": 26905.86,
+        "seed_lbf_total_ms": 24875.892,
+        "tracker_initial_build_ms": 1034.671,
+        "exploration_total_ms": 0.014,
+        "tracker_final_validation_ms": 995.253,
+        "output_mapping_ms": 0.018,
+        "accounted_ms": 26905.848,
+        "accounted_ratio_pct": 100.0,
+        "unaccounted_ms": 0.012,
+        "unaccounted_ratio_pct": 0.0,
+        "separator_total_ms": 0.009,
+        "separator_iteration_total_ms": 0.0,
+        "worker_competition_total_ms": 0.0,
+        "worker_pass_total_ms": 0.0,
+        "buckets": {
+          "adapter_solve_total_ms": 26905.983,
+          "sparrow_optimizer_solve_total_ms": 26905.86,
+          "seed_lbf_total_ms": 24875.892,
+          "separator_total_ms": 0.009,
+          "separator_iteration_total_ms": 0.0,
+          "worker_competition_total_ms": 0.0,
+          "worker_pass_total_ms": 0.0,
+          "tracker_initial_build_ms": 1034.671,
+          "tracker_final_validation_ms": 995.253,
+          "output_mapping_ms": 0.018
+        }
+      },
+      "search_buckets": {},
+      "top_exclusive_costs": [],
+      "counters": {
+        "native_search_calls": 0,
+        "evaluate_sample_calls": 0,
+        "evaluate_sample_calls_from_global": 0,
+        "evaluate_sample_calls_from_focused": 0,
+        "evaluate_sample_calls_from_coord_descent": 0,
+        "candidates_evaluated": 0,
+        "global_samples_generated": 0,
+        "focused_samples_generated": 0,
+        "best_samples_insert_attempts": 0,
+        "best_samples_inserted": 0,
+        "best_samples_dedup_rejects": 0,
+        "best_samples_best_calls": 0,
+        "best_samples_clone_calls": 0,
+        "coord_descent_runs": 0,
+        "coord_descent_steps": 0,
+        "deadline_checks": 0,
+        "sheet_loop_iterations": 0,
+        "worker_passes": 0,
+        "worker_candidates_evaluated": 0,
+        "worker_candidates_accepted": 0,
+        "coord_descent_ask_calls": 0,
+        "coord_descent_tell_calls": 0,
+        "broadphase_reject_count": 0,
+        "early_termination_count": 0
+      }
+    },
+    {
+      "case_id": "dense191",
+      "status": "partial",
+      "time_limit_s": 120,
+      "placed_count": 191,
+      "q30r1_profile_enabled": true,
+      "search_accounting": {
+        "mode": "exclusive",
+        "search_total_ms": 27210.409,
+        "accounted_ms": 27085.213,
+        "unaccounted_ms": 125.197,
+        "unaccounted_ratio_pct": 0.46,
+        "buckets": {
+          "native_search_setup_ms": 1.543,
+          "prepare_base_shape_native_ms": 21433.102,
+          "fixed_shapes_clone_ms": 1.037,
+          "sheet_order_build_ms": 0.507,
+          "sheet_loop_total_ms": 0.0,
+          "sheet_loop_overhead_ms": 0.0,
+          "global_loop_total_ms": 0.0,
+          "focused_loop_total_ms": 0.0,
+          "sample_generation_ms": 5.003,
+          "sample_acceptance_loop_ms": 0.0,
+          "best_samples_insert_dedup_ms": 5.583,
+          "best_samples_best_ms": 0.295,
+          "best_samples_clone_ms": 0.367,
+          "coord_descent_total_ms": 4884.506,
+          "coord_descent_eval_ms": 0.0,
+          "coord_descent_ask_ms": 25.409,
+          "coord_descent_tell_ms": 23.712,
+          "coord_descent_overhead_ms": 0.0,
+          "evaluate_sample_total_ms": 5586.963,
+          "evaluate_sample_exclusive_overhead_ms": 0.0,
+          "evaluator_orchestration_ms": 0.0,
+          "candidate_transform_prepare_ms": 140.789,
+          "cde_query_collect_ms": 5139.737,
+          "specialized_pipeline_ms": 0.0,
+          "hazard_loss_ms": 0.0,
+          "boundary_check_ms": 52.737,
+          "broadphase_reject_ms": 0.0,
+          "session_build_ms": 0.0,
+          "deregister_reregister_ms": 3.235,
+          "deadline_check_ms": 0.0,
+          "rng_shuffle_ms": 0.0,
+          "rng_sample_generation_ms": 0.0
+        }
+      },
+      "runtime_accounting": {
+        "mode": "exclusive",
+        "total_solver_runtime_ms": 200437.622,
+        "seed_lbf_total_ms": 58015.383,
+        "tracker_initial_build_ms": 12993.15,
+        "exploration_total_ms": 116510.694,
+        "tracker_final_validation_ms": 12918.186,
+        "output_mapping_ms": 0.048,
+        "accounted_ms": 200437.461,
+        "accounted_ratio_pct": 100.0,
+        "unaccounted_ms": 0.161,
+        "unaccounted_ratio_pct": 0.0,
+        "separator_total_ms": 49026.864,
+        "separator_iteration_total_ms": 49026.637,
+        "worker_competition_total_ms": 49026.483,
+        "worker_pass_total_ms": 49026.148,
+        "buckets": {
+          "adapter_solve_total_ms": 200438.976,
+          "sparrow_optimizer_solve_total_ms": 200437.622,
+          "seed_lbf_total_ms": 58015.383,
+          "separator_total_ms": 49026.864,
+          "separator_iteration_total_ms": 49026.637,
+          "worker_competition_total_ms": 49026.483,
+          "worker_pass_total_ms": 49026.148,
+          "tracker_initial_build_ms": 12993.15,
+          "tracker_final_validation_ms": 12918.186,
+          "output_mapping_ms": 0.048
+        }
+      },
+      "search_buckets": {
+        "native_search_setup_ms": {
+          "ms": 1.543,
+          "pct_of_search": 0.01
+        },
+        "prepare_base_shape_native_ms": {
+          "ms": 21433.102,
+          "pct_of_search": 78.77
+        },
+        "fixed_shapes_clone_ms": {
+          "ms": 1.037,
+          "pct_of_search": 0.0
+        },
+        "sheet_order_build_ms": {
+          "ms": 0.507,
+          "pct_of_search": 0.0
+        },
+        "sheet_loop_total_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "sheet_loop_overhead_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "global_loop_total_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "focused_loop_total_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "sample_generation_ms": {
+          "ms": 5.003,
+          "pct_of_search": 0.02
+        },
+        "sample_acceptance_loop_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "best_samples_insert_dedup_ms": {
+          "ms": 5.583,
+          "pct_of_search": 0.02
+        },
+        "best_samples_best_ms": {
+          "ms": 0.295,
+          "pct_of_search": 0.0
+        },
+        "best_samples_clone_ms": {
+          "ms": 0.367,
+          "pct_of_search": 0.0
+        },
+        "coord_descent_total_ms": {
+          "ms": 4884.506,
+          "pct_of_search": 17.95
+        },
+        "coord_descent_eval_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "coord_descent_ask_ms": {
+          "ms": 25.409,
+          "pct_of_search": 0.09
+        },
+        "coord_descent_tell_ms": {
+          "ms": 23.712,
+          "pct_of_search": 0.09
+        },
+        "coord_descent_overhead_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "evaluate_sample_total_ms": {
+          "ms": 5586.963,
+          "pct_of_search": 20.53
+        },
+        "evaluate_sample_exclusive_overhead_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "evaluator_orchestration_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "candidate_transform_prepare_ms": {
+          "ms": 140.789,
+          "pct_of_search": 0.52
+        },
+        "cde_query_collect_ms": {
+          "ms": 5139.737,
+          "pct_of_search": 18.89
+        },
+        "specialized_pipeline_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "hazard_loss_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "boundary_check_ms": {
+          "ms": 52.737,
+          "pct_of_search": 0.19
+        },
+        "broadphase_reject_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "session_build_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "deregister_reregister_ms": {
+          "ms": 3.235,
+          "pct_of_search": 0.01
+        },
+        "deadline_check_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "rng_shuffle_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        },
+        "rng_sample_generation_ms": {
+          "ms": 0.0,
+          "pct_of_search": 0.0
+        }
+      },
+      "top_exclusive_costs": [
+        {
+          "bucket": "prepare_base_shape_native_ms",
+          "ms": 21433.102,
+          "pct_of_search": 78.77
+        },
+        {
+          "bucket": "evaluate_sample_total_ms",
+          "ms": 5586.963,
+          "pct_of_search": 20.53
+        },
+        {
+          "bucket": "cde_query_collect_ms",
+          "ms": 5139.737,
+          "pct_of_search": 18.89
+        },
+        {
+          "bucket": "coord_descent_total_ms",
+          "ms": 4884.506,
+          "pct_of_search": 17.95
+        },
+        {
+          "bucket": "candidate_transform_prepare_ms",
+          "ms": 140.789,
+          "pct_of_search": 0.52
+        },
+        {
+          "bucket": "boundary_check_ms",
+          "ms": 52.737,
+          "pct_of_search": 0.19
+        },
+        {
+          "bucket": "coord_descent_ask_ms",
+          "ms": 25.409,
+          "pct_of_search": 0.09
+        },
+        {
+          "bucket": "coord_descent_tell_ms",
+          "ms": 23.712,
+          "pct_of_search": 0.09
+        },
+        {
+          "bucket": "best_samples_insert_dedup_ms",
+          "ms": 5.583,
+          "pct_of_search": 0.02
+        },
+        {
+          "bucket": "sample_generation_ms",
+          "ms": 5.003,
+          "pct_of_search": 0.02
+        }
+      ],
+      "counters": {
+        "native_search_calls": 285,
+        "evaluate_sample_calls": 48253,
+        "evaluate_sample_calls_from_global": 898,
+        "evaluate_sample_calls_from_focused": 1707,
+        "evaluate_sample_calls_from_coord_descent": 43408,
+        "candidates_evaluated": 46878,
+        "global_samples_generated": 2280,
+        "focused_samples_generated": 2280,
+        "best_samples_insert_attempts": 4315,
+        "best_samples_inserted": 3796,
+        "best_samples_dedup_rejects": 159,
+        "best_samples_best_calls": 285,
+        "best_samples_clone_calls": 285,
+        "coord_descent_runs": 1425,
+        "coord_descent_steps": 43408,
+        "deadline_checks": 0,
+        "sheet_loop_iterations": 285,
+        "worker_passes": 1,
+        "worker_candidates_evaluated": 285,
+        "worker_candidates_accepted": 285,
+        "coord_descent_ask_calls": 23129,
+        "coord_descent_tell_calls": 21704,
+        "broadphase_reject_count": 1375,
+        "early_termination_count": 24916
+      }
+    },
+    {
+      "case_id": "full276_optional",
+      "status": "skipped",
+      "attempted": false,
+      "skipped_reason": "fixture not found in sgh_q27_dense_lv8/",
+      "q30r1_profile_enabled": false,
+      "search_accounting": {},
+      "runtime_accounting": {},
+      "search_buckets": {},
+      "top_exclusive_costs": [],
+      "counters": {}
+    }
+  ]
+}

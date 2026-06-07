@@ -116,8 +116,14 @@ pub(crate) fn refine_coord_desc(
     // step-limit condition in `ask`. Scales gently with the configured budget.
     let max_rounds = (cfg.coord_descent_steps.max(1) * 20).clamp(40, 500);
     let mut rounds = 0usize;
+    let r1 = diag.q30_profile.r1_active();
 
-    while let Some(cands) = cd.ask() {
+    loop {
+        let t_ask = ProfileTimer::start_if(r1);
+        let maybe_cands = cd.ask();
+        t_ask.add_to(&mut diag.q30_profile.coord_descent_ask_ms);
+        if r1 { diag.q30_profile.coord_descent_ask_calls += 1; }
+        let Some(cands) = maybe_cands else { break };
         rounds += 1;
         if rounds > max_rounds {
             break;
@@ -133,6 +139,7 @@ pub(crate) fn refine_coord_desc(
             if is_wiggle {
                 diag.search_rotation_wiggle += 1;
             }
+            let evals_before = diag.q30_profile.evaluate_sample_calls;
             if let Some(c) = evaluator.evaluate_sample(x, y, rot, upper, diag) {
                 best = match best {
                     None => Some(c),
@@ -140,8 +147,14 @@ pub(crate) fn refine_coord_desc(
                     other => other,
                 };
             }
+            if r1 && diag.q30_profile.evaluate_sample_calls > evals_before {
+                diag.q30_profile.evaluate_sample_calls_from_coord_descent += 1;
+            }
         }
+        let t_tell = ProfileTimer::start_if(r1);
         cd.tell(best, rng, diag);
+        t_tell.add_to(&mut diag.q30_profile.coord_descent_tell_ms);
+        if r1 { diag.q30_profile.coord_descent_tell_calls += 1; }
     }
     Some(cd.cur)
 }

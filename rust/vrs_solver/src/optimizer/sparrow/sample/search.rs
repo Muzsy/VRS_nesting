@@ -87,6 +87,8 @@ pub(crate) fn search_placement(
 
     let prof_active = diag.q30_profile.enabled && diag.q30_profile.profiling_scope_active;
 
+    let r1_active = diag.q30_profile.r1_active();
+
     // 2. Focused sampling.
     if let Some(fs) = &focused_sampler {
         for _ in 0..sample_config.n_focused_samples {
@@ -99,6 +101,7 @@ pub(crate) fn search_placement(
             diag.search_focused_samples += 1;
             if prof_active { diag.q30_profile.focused_samples_generated += 1; }
             if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
+                if r1_active { diag.q30_profile.evaluate_sample_calls_from_focused += 1; }
                 best.report(c, diag);
             }
         }
@@ -116,6 +119,7 @@ pub(crate) fn search_placement(
             diag.search_global_samples += 1;
             if prof_active { diag.q30_profile.global_samples_generated += 1; }
             if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
+                if r1_active { diag.q30_profile.evaluate_sample_calls_from_global += 1; }
                 best.report(c, diag);
             }
         }
@@ -128,7 +132,11 @@ pub(crate) fn search_placement(
     let wiggle = inst.continuous_rotation;
 
     // 5. First (pre-) coordinate descent over all retained best samples.
+    // R1: time best.samples.clone() — clones the small BestSamples vec for iteration.
+    let t_bclone = ProfileTimer::start_if(r1_active);
     let starts = best.samples.clone();
+    t_bclone.add_to(&mut diag.q30_profile.best_samples_clone_ms);
+    if r1_active { diag.q30_profile.best_samples_clone_calls += 1; }
     for s in starts {
         if deadline_reached(started) {
             break;
@@ -154,7 +162,12 @@ pub(crate) fn search_placement(
     }
 
     // 6. Second/final, finer coordinate descent over the single best sample.
-    if let Some(s) = best.best() {
+    // R1: time best.best() call — retrieves the current best sample.
+    let t_best = ProfileTimer::start_if(r1_active);
+    let best_sample = best.best();
+    t_best.add_to(&mut diag.q30_profile.best_samples_best_ms);
+    if r1_active { diag.q30_profile.best_samples_best_calls += 1; }
+    if let Some(s) = best_sample {
         if !deadline_reached(started) {
             if prof_active { diag.q30_profile.coord_descent_runs += 1; }
             let t_cd = ProfileTimer::start_if(prof_active);
@@ -248,12 +261,21 @@ pub(crate) fn native_search_placement(
     }
     let cur = &layout.placements[target];
     let inst = &instances[cur.instance_idx];
+    let r1 = diag.q30_profile.r1_active();
+    // R1: time tracker.shapes.clone() — Vec of Rc<CdePreparedShape> for all items.
+    let t_clone = ProfileTimer::start_if(r1);
     let fixed_shapes = tracker.shapes.clone();
+    t_clone.add_to(&mut diag.q30_profile.fixed_shapes_clone_ms);
     let sample_config = separator_sample_config(cfg);
+    // R1: time prepare_base_shape_native — builds CDE prepared shape from Part.
+    let t_base = ProfileTimer::start_if(r1);
     // Build the per-instance base shape once (POI + surrogate); every candidate is
     // a cheap rigid transform of it.
     let base = prepare_base_shape_native(&inst.part).ok()?;
+    t_base.add_to(&mut diag.q30_profile.prepare_base_shape_native_ms);
 
+    // R1: time sheet order construction.
+    let t_order = ProfileTimer::start_if(r1);
     // Sheet search order: current sheet first, then the rest (cross-sheet).
     let mut sheet_order: Vec<usize> = vec![cur.sheet_index];
     for sheet_idx in 0..sheets.len() {
@@ -261,12 +283,14 @@ pub(crate) fn native_search_placement(
             sheet_order.push(sheet_idx);
         }
     }
+    t_order.add_to(&mut diag.q30_profile.sheet_order_build_ms);
 
     let mut global_best: Option<ScoredPlacement> = None;
     for (rank, &sheet_idx) in sheet_order.iter().enumerate() {
         if started.elapsed().as_secs_f64() >= deadline {
             break;
         }
+        if r1 { diag.q30_profile.sheet_loop_iterations += 1; }
         if rank > 0 {
             diag.search_cross_sheet_calls += 1;
         }
