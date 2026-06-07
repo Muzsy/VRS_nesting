@@ -1,0 +1,89 @@
+steps:
+  - name: "Repo- és baseline-felderítés"
+    description: >
+      Olvasd el kötelezően: AGENTS.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, canvases/egyedi_solver/sgh_q31_cde_base_shape_cache_hotpath_speedup.md,
+      valamint a Q30-R1 artefaktumokat:
+      artifacts/benchmarks/sgh_q30_r1/local_exclusive_profile_summary.json és
+      artifacts/benchmarks/sgh_q30_r1/local_exclusive_profile_report.md. Rögzítsd a canvasba vagy reportba
+      a dense191 baseline értékeket: prepare_base_shape_native_ms, search_total_ms, placed, status, final_pairs.
+      Ellenőrizd valós grep/olvasás alapján a jelenlegi hot-path hívásokat: sample/search.rs,
+      lbf.rs, quantify/tracker.rs.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q31_cde_base_shape_cache_hotpath_speedup.md"
+
+  - name: "CdeBaseShape cache bevezetése a native Sparrow modellbe"
+    description: >
+      Vezess be part-level CdeBaseShape cache-t a native Sparrow problem conversion alatt.
+      Az SPInstance tároljon Rc<CdeBaseShape>-et. A cache építése egyszer történjen unique part id / geometry szerint,
+      a prepare_base_shape_native csak ezen a cache-build ponton futhat production úton. Ha a Debug derive miatt szükséges,
+      frissítsd a CdeBaseShape definícióját biztonságosan. A cache hibáit ne nyeld el csendben: ha egy part geometriája
+      nem készíthető elő CDE base shape-ként, a problem conversion adjon értelmes hibát vagy a már meglévő never-fit/unsupported
+      policy szerint dokumentáltan kezelje.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "Search, LBF és tracker hot-path átállítása cache-re"
+    description: >
+      Cseréld le a production Sparrow hot pathban a partból történő ismételt CDE base/prepared shape építést.
+      sample/search.rs a cél instance cache-elt base_shape-jét használja. lbf.rs a cél instance cache-elt base_shape-jét
+      használja. quantify/tracker.rs prepare_item / update_after_move / initial/final tracker rebuild útvonalon
+      transform_base_to_candidate(inst.base_shape, placement.x, placement.y, placement.rotation_deg) használatával dolgozzon,
+      ne prepare_shape_native(&inst.part, ...)-tal. A változtatás nem módosíthat sample budgetet, worker orderinget,
+      GLS weightet, touching policyt, acceptance conditiont vagy compressiont.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/lbf.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/tests.rs"
+
+  - name: "Profiler mezők és output contract bővítése"
+    description: >
+      Bővítsd a Q30/Q30-R1 SearchProfiler és diagnosztikai output mezőit úgy, hogy külön mérje:
+      base_shape_cache_build_ms, base_shape_cache_hits, base_shape_cache_misses, base_shape_cache_unique_parts,
+      base_shape_cache_reused_instances, prepare_base_shape_native_hotpath_calls,
+      prepare_base_shape_native_hotpath_ms, tracker_transform_from_base_ms, lbf_base_shape_cache_hits,
+      search_base_shape_cache_hits. A régi prepare_base_shape_native_ms jelentését tisztázd: ha megmarad,
+      akkor a reportban különítsd el cache-build és hot-path prepare időként. Ne írj alias/fake mezőt;
+      a hit/miss és hot-path call/ms valós Rust oldali mérés legyen.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+
+  - name: "Q31 mérőrunner és smoke validator"
+    description: >
+      Készíts vagy frissíts scriptet a Q31 visszaméréshez. A runner csak saját solverrel fusson, upstream A/B nélkül.
+      Kötelező case-ek: lv8_subset és dense191; medium opcionálisan maradhat sanity checknek. A runner írja ki:
+      artifacts/benchmarks/sgh_q31/base_shape_cache_summary.json,
+      artifacts/benchmarks/sgh_q31/base_shape_cache_report.md,
+      artifacts/benchmarks/sgh_q31/inputs/dense191.json,
+      artifacts/benchmarks/sgh_q31/inputs/lv8_subset.json. A smoke validator ellenőrizze a statikus kód-invariánsokat
+      és az artifact acceptance gate-eket is: dense191 placed 191, final_pairs <= 88, hot-path prepare calls 0,
+      hot-path prepare ms <= 2143.31, cache misses <= unique_part_count + 2, cache hits >= instance_count - unique_part_count.
+    outputs:
+      - "scripts/profile_sgh_q31_base_shape_cache_speedup.py"
+      - "scripts/smoke_sgh_q31_cde_base_shape_cache_hotpath_speedup.py"
+      - "artifacts/benchmarks/sgh_q31/base_shape_cache_summary.json"
+      - "artifacts/benchmarks/sgh_q31/base_shape_cache_report.md"
+      - "artifacts/benchmarks/sgh_q31/inputs/dense191.json"
+      - "artifacts/benchmarks/sgh_q31/inputs/lv8_subset.json"
+
+  - name: "Verifikáció és report lezárása"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml,
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml,
+      python3 scripts/profile_sgh_q31_base_shape_cache_speedup.py,
+      python3 scripts/smoke_sgh_q31_cde_base_shape_cache_hotpath_speedup.py,
+      majd ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q31_cde_base_shape_cache_hotpath_speedup.md.
+      A report Report Standard v2 szerint készüljön. PASS csak akkor adható, ha a smoke és a dense191 acceptance gate teljesül.
+      A report végén kötelező marker sorok: Q31_STATUS, DENSE191_BASE_SHAPE_HOTPATH_CALLS,
+      DENSE191_BASE_SHAPE_HOTPATH_MS, DENSE191_BASE_SHAPE_CACHE_MISSES, DENSE191_BASE_SHAPE_CACHE_HITS,
+      DENSE191_PREPARE_BASE_REDUCTION_PCT, DENSE191_FINAL_PAIRS, NEXT_HOTSPOT.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q31_cde_base_shape_cache_hotpath_speedup.md"
+      - "codex/reports/egyedi_solver/sgh_q31_cde_base_shape_cache_hotpath_speedup.md"
+      - "codex/reports/egyedi_solver/sgh_q31_cde_base_shape_cache_hotpath_speedup.verify.log"

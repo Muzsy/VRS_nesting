@@ -119,6 +119,24 @@ pub struct SearchProfiler {
     /// DERIVED: search_total / native_search_calls.
     pub per_search_avg_ms: f64,
 
+    // ── Q31 base-shape cache diagnostics (populated from SparrowProblem) ───────
+    /// Wall-time spent building the per-part base-shape cache in from_solver_input.
+    pub base_shape_cache_build_ms: f64,
+    /// Cache hits: instances that reused a pre-built base shape (exclusive, not hotpath).
+    pub base_shape_cache_hits: usize,
+    /// Cache misses: unique part IDs for which base shape was successfully built.
+    pub base_shape_cache_misses: usize,
+    pub base_shape_cache_unique_parts: usize,
+    /// = cache_hits (instances minus unique parts).
+    pub base_shape_cache_reused_instances: usize,
+    /// Hot-path calls to prepare_base_shape_native that should be 0 after Q31.
+    pub prepare_base_shape_native_hotpath_calls: usize,
+    /// Hot-path ms spent in prepare_base_shape_native (should be ~0 after Q31).
+    pub prepare_base_shape_native_hotpath_ms: f64,
+    pub tracker_transform_from_base_ms: f64,
+    pub lbf_base_shape_cache_hits: usize,
+    pub search_base_shape_cache_hits: usize,
+
     // ── total solver runtime timing (Q30-R1) ─────────────────────────────────
     pub total_solver_runtime_ms: f64,
     pub adapter_solve_total_ms: f64,

@@ -16,6 +16,10 @@ pub struct SPInstance {
     /// the coordinate-descent rotation-wiggle axis. Orthogonal/discrete fixtures
     /// leave this false and keep their fixed rotation set.
     pub continuous_rotation: bool,
+    /// Part-level cached CDE base shape (POI + surrogate computed once per unique
+    /// part geometry). Shared across all instances of the same part via `Rc`.
+    /// Eliminates repeated `prepare_base_shape_native` calls in search/LBF/tracker.
+    pub base_shape: Rc<CdeBaseShape>,
 }
 
 /// Native fixed-sheet container set.
@@ -37,10 +41,24 @@ pub struct SparrowProblem {
     pub config: SparrowConfig,
     /// Never-fit instances retained for output projection (no silent drops).
     pub pre_unplaced: Vec<Unplaced>,
+    // ── Q31 base-shape cache diagnostics (set by from_solver_input) ───────────
+    pub base_shape_cache_unique_parts: usize,
+    /// Cache misses = unique part IDs for which base shape was successfully built.
+    pub base_shape_cache_misses: usize,
+    /// Cache hits = instances that reused an already-built base shape.
+    pub base_shape_cache_hits: usize,
+    /// Wall-time (ms) spent building the per-part base shape cache.
+    pub base_shape_cache_build_ms: f64,
 }
 
 impl SparrowProblem {
     /// One-way I/O conversion: VRS parts/sheets/policy -> native problem.
+    ///
+    /// Builds a per-part `CdeBaseShape` cache keyed by `part.id`. Each unique part
+    /// geometry is prepared exactly once (cache miss); subsequent instances of the
+    /// same part reuse the shared `Rc<CdeBaseShape>` (cache hit). Parts whose
+    /// geometry cannot be prepared (degenerate polygons) are placed in `pre_unplaced`
+    /// with reason `PART_GEOMETRY_UNSUPPORTED`.
     pub fn from_solver_input(
         parts: &[Part],
         sheets: &[SheetShape],
@@ -51,6 +69,17 @@ impl SparrowProblem {
         let expanded: Vec<Instance> = expand_instances_with_policy(parts, rotation_context)?;
         let mut instances: Vec<SPInstance> = Vec::new();
         let mut pre_unplaced: Vec<Unplaced> = extra_unplaced;
+
+        // Q31: build per-part CdeBaseShape cache. prepare_base_shape_native is called
+        // exactly once per unique part.id; all instances sharing a part reuse the Rc.
+        let cache_build_start = Instant::now();
+        let mut base_shape_cache: HashMap<String, Rc<CdeBaseShape>> = HashMap::new();
+        let mut cache_hits: usize = 0;
+        let mut cache_misses: usize = 0;
+        // Track which part IDs failed to build (geometry unsupported).
+        let mut unsupported_parts: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
         for inst in expanded {
             let part = parts.iter().find(|p| p.id == inst.part_id).ok_or_else(|| {
                 format!(
@@ -66,6 +95,39 @@ impl SparrowProblem {
                 });
                 continue;
             }
+            // Resolve base shape from cache; build on first encounter.
+            let base_shape = if unsupported_parts.contains(&inst.part_id) {
+                pre_unplaced.push(Unplaced {
+                    instance_id: inst.instance_id.clone(),
+                    part_id: inst.part_id.clone(),
+                    reason: "PART_GEOMETRY_UNSUPPORTED".to_string(),
+                });
+                continue;
+            } else {
+                match base_shape_cache.entry(inst.part_id.clone()) {
+                    std::collections::hash_map::Entry::Occupied(e) => {
+                        cache_hits += 1;
+                        e.get().clone()
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        match prepare_base_shape_native(part) {
+                            Ok(bs) => {
+                                cache_misses += 1;
+                                e.insert(Rc::new(bs)).clone()
+                            }
+                            Err(_) => {
+                                unsupported_parts.insert(inst.part_id.clone());
+                                pre_unplaced.push(Unplaced {
+                                    instance_id: inst.instance_id.clone(),
+                                    part_id: inst.part_id.clone(),
+                                    reason: "PART_GEOMETRY_UNSUPPORTED".to_string(),
+                                });
+                                continue;
+                            }
+                        }
+                    }
+                }
+            };
             let continuous_rotation = match part.rotation_policy {
                 Some(RotationPolicyKind::Continuous) => true,
                 Some(_) => false,
@@ -82,8 +144,11 @@ impl SparrowProblem {
                 part: part.clone(),
                 allowed_rotations_deg: inst.allowed_rotations_deg,
                 continuous_rotation,
+                base_shape,
             });
         }
+        let base_shape_cache_build_ms = cache_build_start.elapsed().as_secs_f64() * 1000.0;
+        let base_shape_cache_unique_parts = base_shape_cache.len();
         Ok(Self {
             instances,
             container: SparrowContainer {
@@ -91,6 +156,10 @@ impl SparrowProblem {
             },
             config,
             pre_unplaced,
+            base_shape_cache_unique_parts,
+            base_shape_cache_misses: cache_misses,
+            base_shape_cache_hits: cache_hits,
+            base_shape_cache_build_ms,
         })
     }
 

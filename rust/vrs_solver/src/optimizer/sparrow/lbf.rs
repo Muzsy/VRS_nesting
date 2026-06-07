@@ -95,9 +95,8 @@ impl<'a> LBFBuilder<'a> {
         let sample_config = lbf_sample_config();
         let mut diag = SparrowDiagnostics::default();
         let mut best_clear: Option<ScoredPlacement> = None;
-        // Per-instance base shape built once (POI + surrogate); each candidate is a
-        // cheap rigid transform of it.
-        let base = prepare_base_shape_native(&inst.part).ok()?;
+        // Q31: use cached base shape from instance — no prepare_base_shape_native call.
+        let base = inst.base_shape.clone();
 
         for sheet_idx in 0..sheets.len() {
             if self.started.elapsed().as_secs_f64() >= self.deadline_s {
@@ -113,9 +112,9 @@ impl<'a> LBFBuilder<'a> {
                 .enumerate()
                 .filter(|(_, p)| p.sheet_index == sheet_idx)
                 .filter_map(|(idx, p)| {
+                    // Q31: use cached base shape for already-placed items too.
                     let other = &self.problem.instances[p.instance_idx];
-                    prepare_shape_native(&other.part, p.x, p.y, p.rotation_deg)
-                        .ok()
+                    transform_base_to_candidate(&other.base_shape, p.x, p.y, p.rotation_deg)
                         .map(Rc::new)
                         .map(|s| (idx, s))
                 })
@@ -173,15 +172,16 @@ fn lbf_sample_config() -> SampleConfig {
 
 /// Upstream ordering key: `convex_hull_area × diameter`, read from the item's
 /// shape surrogate (both quantities are rotation-invariant, so a canonical
-/// rotation-0 shape is used). Falls back to a bbox estimate only for a shape that
-/// cannot be prepared.
+/// rotation-0 shape is used). Falls back to a bbox estimate only when the
+/// canonical transform cannot be produced from the cached base shape.
 fn lbf_order_key(inst: &SPInstance) -> f64 {
-    match prepare_shape_native(&inst.part, 0.0, 0.0, 0.0) {
-        Ok(prepared) => {
+    // Q31: use cached base shape — no prepare_shape_native call.
+    match transform_base_to_candidate(&inst.base_shape, 0.0, 0.0, 0.0) {
+        Some(prepared) => {
             let (convex_hull_area, diameter) = convex_hull_area_and_diameter(&prepared);
             convex_hull_area * diameter
         }
-        Err(_) => {
+        None => {
             let diameter = (inst.part.width.powi(2) + inst.part.height.powi(2)).sqrt();
             (inst.part.width * inst.part.height).max(1.0) * diameter
         }

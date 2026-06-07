@@ -43,6 +43,14 @@ impl SparrowOptimizer {
         let mut rng = DeterministicRng::new(self.config.seed);
         let r1 = diag.q30_profile.r1_exclusive_enabled;
 
+        // Q31: transfer base-shape cache stats from problem-level build into profiler.
+        diag.q30_profile.base_shape_cache_build_ms = problem.base_shape_cache_build_ms;
+        diag.q30_profile.base_shape_cache_unique_parts = problem.base_shape_cache_unique_parts;
+        diag.q30_profile.base_shape_cache_misses = problem.base_shape_cache_misses;
+        diag.q30_profile.base_shape_cache_hits = problem.base_shape_cache_hits;
+        diag.q30_profile.base_shape_cache_reused_instances = problem.base_shape_cache_hits;
+        // hot-path calls are 0: prepare_base_shape_native is no longer in the hot path.
+
         let t_lbf = ProfileTimer::start_if(r1);
         let seed_layout = build_native_constructive_seed(&problem);
         t_lbf.add_to(&mut diag.q30_profile.seed_lbf_total_ms);

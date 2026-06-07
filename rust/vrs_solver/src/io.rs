@@ -463,6 +463,27 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_q30r1_worker_candidates_evaluated: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_q30r1_worker_candidates_accepted: Option<usize>,
+    // ── Q31 base-shape cache diagnostics ─────────────────────────────────────
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_base_shape_cache_build_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_base_shape_cache_hits: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_base_shape_cache_misses: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_base_shape_cache_unique_parts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_base_shape_cache_reused_instances: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_prepare_base_shape_native_hotpath_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_prepare_base_shape_native_hotpath_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_tracker_transform_from_base_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_search_base_shape_cache_hits: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q31_lbf_base_shape_cache_hits: Option<usize>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

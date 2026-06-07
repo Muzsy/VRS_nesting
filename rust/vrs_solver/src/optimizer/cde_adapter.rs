@@ -400,8 +400,16 @@ fn part_local_polygon(part: &Part) -> Result<Vec<Point>, &'static str> {
 /// `SPolygon` (which recomputes the expensive point-of-inaccessibility) per
 /// candidate — exactly upstream's `shape_buff.transform_from(item.shape_cd, ...)`.
 pub(crate) struct CdeBaseShape {
-    spoly: jagua_rs::geometry::primitives::SPolygon,
-    local_pts: Vec<Point>,
+    pub(crate) spoly: jagua_rs::geometry::primitives::SPolygon,
+    pub(crate) local_pts: Vec<Point>,
+}
+
+impl std::fmt::Debug for CdeBaseShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CdeBaseShape")
+            .field("local_pts_count", &self.local_pts.len())
+            .finish()
+    }
 }
 
 /// Build the per-instance base shape once (POI + surrogate computed here).

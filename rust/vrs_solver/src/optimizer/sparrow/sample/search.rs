@@ -267,12 +267,16 @@ pub(crate) fn native_search_placement(
     let fixed_shapes = tracker.shapes.clone();
     t_clone.add_to(&mut diag.q30_profile.fixed_shapes_clone_ms);
     let sample_config = separator_sample_config(cfg);
-    // R1: time prepare_base_shape_native — builds CDE prepared shape from Part.
-    let t_base = ProfileTimer::start_if(r1);
-    // Build the per-instance base shape once (POI + surrogate); every candidate is
-    // a cheap rigid transform of it.
-    let base = prepare_base_shape_native(&inst.part).ok()?;
-    t_base.add_to(&mut diag.q30_profile.prepare_base_shape_native_ms);
+    // Q31: use the per-instance cached CDE base shape (built once in from_solver_input).
+    // Every candidate is produced by transform_base_to_candidate (called in SeparationEvaluator).
+    let base = inst.base_shape.clone();
+    if r1 { diag.q30_profile.search_base_shape_cache_hits += 1; }
+    // Verify the current anchor is reachable; if the base shape is degenerate, skip.
+    if transform_base_to_candidate(&base, cur.x, cur.y, cur.rotation_deg).is_none() {
+        t_search.add_to(&mut diag.q30_profile.search_total_ms);
+        diag.q30_profile.profiling_scope_active = false;
+        return None;
+    }
 
     // R1: time sheet order construction.
     let t_order = ProfileTimer::start_if(r1);

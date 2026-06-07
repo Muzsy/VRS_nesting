@@ -537,6 +537,16 @@ fn native_sparrow_diag_to_output(
         sparrow_q30r1_worker_passes: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_passes) } else { None },
         sparrow_q30r1_worker_candidates_evaluated: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_candidates_evaluated) } else { None },
         sparrow_q30r1_worker_candidates_accepted: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_candidates_accepted) } else { None },
+        sparrow_q31_base_shape_cache_build_ms: Some(d.q30_profile.base_shape_cache_build_ms),
+        sparrow_q31_base_shape_cache_hits: Some(d.q30_profile.base_shape_cache_hits),
+        sparrow_q31_base_shape_cache_misses: Some(d.q30_profile.base_shape_cache_misses),
+        sparrow_q31_base_shape_cache_unique_parts: Some(d.q30_profile.base_shape_cache_unique_parts),
+        sparrow_q31_base_shape_cache_reused_instances: Some(d.q30_profile.base_shape_cache_reused_instances),
+        sparrow_q31_prepare_base_shape_native_hotpath_calls: Some(d.q30_profile.prepare_base_shape_native_hotpath_calls),
+        sparrow_q31_prepare_base_shape_native_hotpath_ms: Some(d.q30_profile.prepare_base_shape_native_hotpath_ms),
+        sparrow_q31_tracker_transform_from_base_ms: Some(d.q30_profile.tracker_transform_from_base_ms),
+        sparrow_q31_search_base_shape_cache_hits: Some(d.q30_profile.search_base_shape_cache_hits),
+        sparrow_q31_lbf_base_shape_cache_hits: Some(d.q30_profile.lbf_base_shape_cache_hits),
     }
 }
 
@@ -1065,6 +1075,16 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_q30r1_worker_passes: None,
                             sparrow_q30r1_worker_candidates_evaluated: None,
                             sparrow_q30r1_worker_candidates_accepted: None,
+                            sparrow_q31_base_shape_cache_build_ms: None,
+                            sparrow_q31_base_shape_cache_hits: None,
+                            sparrow_q31_base_shape_cache_misses: None,
+                            sparrow_q31_base_shape_cache_unique_parts: None,
+                            sparrow_q31_base_shape_cache_reused_instances: None,
+                            sparrow_q31_prepare_base_shape_native_hotpath_calls: None,
+                            sparrow_q31_prepare_base_shape_native_hotpath_ms: None,
+                            sparrow_q31_tracker_transform_from_base_ms: None,
+                            sparrow_q31_search_base_shape_cache_hits: None,
+                            sparrow_q31_lbf_base_shape_cache_hits: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

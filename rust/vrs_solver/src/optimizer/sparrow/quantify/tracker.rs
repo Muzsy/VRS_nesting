@@ -54,9 +54,8 @@ impl SparrowCollisionTracker {
     ) -> Option<Rc<CdePreparedShape>> {
         let p = &layout.placements[idx];
         let inst = &instances[p.instance_idx];
-        prepare_shape_native(&inst.part, p.x, p.y, p.rotation_deg)
-            .ok()
-            .map(Rc::new)
+        // Q31: use cached base shape — no prepare_shape_native call.
+        transform_base_to_candidate(&inst.base_shape, p.x, p.y, p.rotation_deg).map(Rc::new)
     }
 
     /// Full CDE rebuild of the collision state from the native layout.

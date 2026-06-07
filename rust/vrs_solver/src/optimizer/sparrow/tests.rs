@@ -69,6 +69,9 @@ mod tests {
         }
 
         fn make_instance(idx: usize, part: Part) -> SPInstance {
+            let base_shape = std::rc::Rc::new(
+                prepare_base_shape_native(&part).expect("test part must be preparable"),
+            );
             SPInstance {
                 idx,
                 instance_id: format!("{}#{idx}", part.id),
@@ -76,6 +79,7 @@ mod tests {
                 part,
                 allowed_rotations_deg: vec![0.0],
                 continuous_rotation: false,
+                base_shape,
             }
         }
 
@@ -1119,6 +1123,12 @@ mod tests {
                 1,
                 serde_json::json!([[0.0, 0.0], [40.0, 0.0]]),
             );
+            // base_shape uses a valid dummy because the invalid part cannot be prepared;
+            // the field is never accessed by large_item_disruption_area_key.
+            let dummy_base = std::rc::Rc::new(
+                prepare_base_shape_native(&make_part("_dummy", 10.0, 10.0, 1))
+                    .expect("dummy part"),
+            );
             let inst = SPInstance {
                 idx: 0,
                 instance_id: "INVALID#0".to_string(),
@@ -1126,6 +1136,7 @@ mod tests {
                 part: invalid,
                 allowed_rotations_deg: vec![0.0],
                 continuous_rotation: false,
+                base_shape: dummy_base,
             };
             let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));
             assert!(prepare_shape_native(&inst.part, 0.0, 0.0, 0.0).is_err());
