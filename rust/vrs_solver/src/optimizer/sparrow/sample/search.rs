@@ -71,7 +71,7 @@ pub(crate) fn search_placement(
     let focused_sampler = match ref_rect_min {
         Some((rmx, rmy, rot)) => {
             if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
-                best.report(c);
+                best.report(c, diag);
             }
             // Focused sample bbox = the item's current footprint at this rotation.
             let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
@@ -85,16 +85,21 @@ pub(crate) fn search_placement(
         sheet,
     );
 
+    let prof_active = diag.q30_profile.enabled && diag.q30_profile.profiling_scope_active;
+
     // 2. Focused sampling.
     if let Some(fs) = &focused_sampler {
         for _ in 0..sample_config.n_focused_samples {
             if deadline_reached(started) {
                 break;
             }
+            let t_sample = ProfileTimer::start_if(prof_active);
             let (rmx, rmy, rot) = fs.sample(rng);
+            t_sample.add_to(&mut diag.q30_profile.sample_generation_ms);
             diag.search_focused_samples += 1;
+            if prof_active { diag.q30_profile.focused_samples_generated += 1; }
             if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
-                best.report(c);
+                best.report(c, diag);
             }
         }
     }
@@ -105,10 +110,13 @@ pub(crate) fn search_placement(
             if deadline_reached(started) {
                 break;
             }
+            let t_sample = ProfileTimer::start_if(prof_active);
             let (rmx, rmy, rot) = cs.sample(rng);
+            t_sample.add_to(&mut diag.q30_profile.sample_generation_ms);
             diag.search_global_samples += 1;
+            if prof_active { diag.q30_profile.global_samples_generated += 1; }
             if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
-                best.report(c);
+                best.report(c, diag);
             }
         }
     }
@@ -125,6 +133,8 @@ pub(crate) fn search_placement(
         if deadline_reached(started) {
             break;
         }
+        if prof_active { diag.q30_profile.coord_descent_runs += 1; }
+        let t_cd = ProfileTimer::start_if(prof_active);
         if let Some(d) = refine_coord_desc(
             s,
             evaluator,
@@ -136,13 +146,18 @@ pub(crate) fn search_placement(
             wiggle,
             cfg.rotation_wiggle_deg,
         ) {
-            best.report(d);
+            t_cd.add_to(&mut diag.q30_profile.coord_descent_total_ms);
+            best.report(d, diag);
+        } else {
+            t_cd.add_to(&mut diag.q30_profile.coord_descent_total_ms);
         }
     }
 
     // 6. Second/final, finer coordinate descent over the single best sample.
     if let Some(s) = best.best() {
         if !deadline_reached(started) {
+            if prof_active { diag.q30_profile.coord_descent_runs += 1; }
+            let t_cd = ProfileTimer::start_if(prof_active);
             if let Some(d) = refine_coord_desc(
                 s,
                 evaluator,
@@ -154,7 +169,10 @@ pub(crate) fn search_placement(
                 wiggle,
                 cfg.rotation_wiggle_deg,
             ) {
-                best.report(d);
+                t_cd.add_to(&mut diag.q30_profile.coord_descent_total_ms);
+                best.report(d, diag);
+            } else {
+                t_cd.add_to(&mut diag.q30_profile.coord_descent_total_ms);
             }
         }
     }
@@ -210,7 +228,10 @@ pub(crate) fn native_search_placement(
     live_session: Option<&mut CdeCandidateSession>,
 ) -> Option<SparrowPlacement> {
     diag.search_position_calls += 1;
+    diag.q30_profile.native_search_calls += 1;
+    diag.q30_profile.profiling_scope_active = diag.q30_profile.enabled;
     let search_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
+    let t_search = ProfileTimer::start_if(diag.q30_profile.enabled);
     // Deregister the target BEFORE any early-return or deadline check so that the
     // invariant holds: when live_session is Some, the target is always deregistered
     // when this function returns, regardless of early exits or deadline expiry.
@@ -218,10 +239,12 @@ pub(crate) fn native_search_placement(
     let mut live_session = live_session;
     if let Some(ref mut ls) = live_session {
         let dereg_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
+        let t_dereg = ProfileTimer::start_if(diag.q30_profile.enabled);
         ls.deregister_item(target);
         if let Some(t) = dereg_t0 {
             diag.profile_deregister_ms += t.elapsed().as_secs_f64() * 1000.0;
         }
+        t_dereg.add_to(&mut diag.q30_profile.deregister_reregister_ms);
     }
     let cur = &layout.placements[target];
     let inst = &instances[cur.instance_idx];
@@ -306,6 +329,7 @@ pub(crate) fn native_search_placement(
 
         // Fallback: build a fresh session for this sheet (None case or cross-sheet).
         let sess_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
+        let t_sess = ProfileTimer::start_if(diag.q30_profile.enabled);
         let Some(session) = build_sheet_session(target, sheet_idx, layout, tracker, &sheet_shape)
         else {
             continue;
@@ -313,6 +337,7 @@ pub(crate) fn native_search_placement(
         if let Some(t) = sess_t0 {
             diag.profile_session_build_ms += t.elapsed().as_secs_f64() * 1000.0;
         }
+        t_sess.add_to(&mut diag.q30_profile.session_build_ms);
         let mut evaluator = SeparationEvaluator {
             target,
             inst,
@@ -353,5 +378,7 @@ pub(crate) fn native_search_placement(
     if let Some(t) = search_t0 {
         diag.profile_search_total_ms += t.elapsed().as_secs_f64() * 1000.0;
     }
+    t_search.add_to(&mut diag.q30_profile.search_total_ms);
+    diag.q30_profile.profiling_scope_active = false;
     global_best.map(|b| b.placement)
 }

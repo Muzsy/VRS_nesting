@@ -516,9 +516,10 @@ mod tests {
             let mut best = BestSamples::new(4, 0.1);
             let first = scored(10.0, 12.0, 34.0, 100.0, 200.0, 45.0);
             let better_same_sample = scored(5.0, 12.02, 34.01, 300.0, 400.0, 45.0);
+            let mut diag = SparrowDiagnostics::default();
 
-            assert!(best.report(first));
-            assert!(best.report(better_same_sample));
+            assert!(best.report(first, &mut diag));
+            assert!(best.report(better_same_sample, &mut diag));
             assert_eq!(
                 best.samples.len(),
                 1,

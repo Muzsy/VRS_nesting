@@ -1,0 +1,131 @@
+steps:
+  - name: "Felderítés — Q29 profil, LV8 fixture-ek és érintett search modulok"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/yaml_schema.md és docs/codex/report_standard.md fájlokat.
+      Rögzítsd a task eleji git status --short állapotot. Olvasd el a Q29 reportokat és artifactokat:
+      artifacts/benchmarks/sgh_q29/local_cde_hotspot_summary.json, local_cde_hotspot_report.md,
+      upstream_ab_summary.json és upstream_ab_report.md. Keresd meg a Q28 dense191 fixture-t és a Q26/Q29
+      LV8-derived inputokat. Keresd meg a saját search/CDE útvonal valós fájljait: search.rs,
+      best_samples.rs, coord_descent.rs, sep_evaluator.rs, specialized_cde_pipeline.rs, tracker.rs,
+      cde_adapter.rs, diagnostics.rs, adapter.rs és io.rs. Rögzítsd a reportban, melyik fájlban milyen
+      mérőpontot kell bevezetni. Upstream Sparrowt most nem kell futtatni és nem kell említeni referenciaként.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Újrahasználható Rust search profiling modul bevezetése"
+    description: >
+      Hozz létre külön, bővíthető Rust profiling modult a Sparrow solverhez, például
+      rust/vrs_solver/src/optimizer/sparrow/profile.rs néven, és kösd be a mod.rs-be. A modul ne ad-hoc
+      println gyűjtemény legyen, hanem tartalmazzon strukturált adatmodelleket és helper API-t: SearchProfiler,
+      SearchProfileSnapshot, scoped timer/helper, counter update függvények, JSON/diagnosztikai exporthoz
+      használható snapshot. A profiler legyen explicit flag mögött, javasolt env flag:
+      SGH_Q30_SEARCH_PROFILE=1. Default futásban ne változtassa a solver szemantikáját, és minimalizálja az
+      overheadet. A modul legyen bővíthető későbbi admin/observability integrációra.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Search-loop és sample-kezelés instrumentálása"
+    description: >
+      Instrumentáld a search-loopot algoritmusváltoztatás nélkül. Mérni kell legalább: native_search_calls,
+      search_total_ms, sample_generation_ms, global_samples_generated, focused_samples_generated,
+      rng_shuffle_sample_loop_ms, rng_shuffle_or_sample_loop_count, BestSamples insert/dedup idő és számlálók,
+      evaluate_sample_calls, evaluate_sample_total_ms, evaluator_orchestration_ms, coord_descent_total_ms,
+      coord_descent_runs, coord_descent_steps, per_candidate_avg_ms, per_evaluate_sample_avg_ms és
+      per_search_avg_ms. Ne módosíts sample budgetet, search acceptance logikát, worker orderingot, GLS-t,
+      touching policyt vagy collision semanticsot. Ha bármely mező nested/overlap timing, jelöld a snapshotban
+      vagy reportban.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/search.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/best_samples.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/coord_descent.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Evaluator és CDE pipeline timing tovább bontása"
+    description: >
+      Instrumentáld az evaluator/CDE útvonalat algoritmusváltoztatás nélkül. Mérni kell: candidate_transform_prepare_ms,
+      cde_query_collect_ms, specialized_pipeline_ms, hazard_loss_ms, boundary_check_ms, broadphase_reject_count,
+      early_termination_count, session_build_ms, deregister_reregister_ms. Ha a jelenlegi kódban egy mező nem
+      mérhető megbízhatóan, szerepeljen not_available + konkrét indok a summary JSON-ban és reportban. A cél az,
+      hogy a Q29-ben megmaradt other_unaccounted blokkot lényegesen tovább bontsuk.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/sep_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/specialized_cde_pipeline.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/cde_adapter.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Profil adatok exportja solver outputba vagy sidecar artifactba"
+    description: >
+      Kösd be a SearchProfileSnapshot exportját úgy, hogy a profile runner futtatás után strukturáltan elérje az
+      adatokat. Elfogadható út: optimizer_diagnostics új opcionális mezői, vagy külön sidecar JSON, ha az jobban
+      illeszkedik a repo mintáihoz. A JSON minimum séma egyezzen a canvasban megadott mezőkkel. A timing_accounting_mode
+      mező kötelező: exclusive, nested_with_notes vagy mixed_with_notes. Dokumentáld, hogyan lehet ezt később run
+      artifactba/admin felületre továbbítani.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/profile.rs"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Q30 local LV8 profile runner létrehozása"
+    description: >
+      Hozd létre a scripts/profile_sgh_q30_local_search_breakdown.py scriptet. A script kizárólag a saját release
+      vrs_solver binárist futtassa SGH_Q30_SEARCH_PROFILE=1 módban. Futtassa legalább: medium sanity case,
+      LV8-derived subset case és dense191 LV8 case. Preferált dense input:
+      rust/vrs_solver/tests/fixtures/sgh_q28_dense191_benchmark/dense_191_lv8_derived.json. Ha full276 futás is
+      reális, add hozzá opcionális diagnostic case-ként, de ne legyen acceptance gate. A runner hozza létre:
+      artifacts/benchmarks/sgh_q30/local_search_profile_summary.json és local_search_profile_report.md. A runner
+      készítsen input snapshotokat az artifacts/benchmarks/sgh_q30/inputs/ alá, hogy a mérés reprodukálható legyen.
+    outputs:
+      - "scripts/profile_sgh_q30_local_search_breakdown.py"
+      - "artifacts/benchmarks/sgh_q30/inputs/medium.json"
+      - "artifacts/benchmarks/sgh_q30/inputs/lv8_subset.json"
+      - "artifacts/benchmarks/sgh_q30/inputs/dense191.json"
+      - "artifacts/benchmarks/sgh_q30/inputs/full276_optional.json"
+      - "artifacts/benchmarks/sgh_q30/local_search_profile_summary.json"
+      - "artifacts/benchmarks/sgh_q30/local_search_profile_report.md"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Q30 smoke validator létrehozása"
+    description: >
+      Hozd létre a scripts/smoke_sgh_q30_local_search_profiler_module.py scriptet. Ez ne mérjen, hanem validálja
+      a Q30 artifactokat: summary JSON, markdown report, kötelező case-ek, kötelező mérőpontok, dense191 jelenlét
+      vagy reprodukálható skipped_reason, top_costs_percent, timing_accounting_mode, other_unaccounted_ms és
+      admin/future integration notes. A smoke akkor PASS, ha a mérési modul és artifactok szerkezete teljes, és
+      nem hiányzik a user által kért új bontás: sample generation, BestSamples insert/dedup, coord_descent,
+      evaluate_sample count, evaluator orchestration, RNG/sample-loop overhead, per-candidate average.
+    outputs:
+      - "scripts/smoke_sgh_q30_local_search_profiler_module.py"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Futtatás és mérési reportok"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      python3 scripts/profile_sgh_q30_local_search_breakdown.py; python3
+      scripts/smoke_sgh_q30_local_search_profiler_module.py; cargo test --manifest-path rust/vrs_solver/Cargo.toml.
+      A local_search_profile_report.md és a Codex report végén legyen egyértelmű válasz: medium, LV8 subset és
+      dense191 esetben mi viszi el az időt; mekkora az other_unaccounted; és pontosan hol kell tovább mérni, ha
+      még mindig jelentős névtelen blokk maradt. Optimalizációt ne végezz.
+    outputs:
+      - "artifacts/benchmarks/sgh_q30/local_search_profile_summary.json"
+      - "artifacts/benchmarks/sgh_q30/local_search_profile_report.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést: ./scripts/verify.sh --report
+      codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md. A verify logot a report mellé
+      kell menteni. A reportban a DoD → Evidence Matrix minden pontjához adj path + line bizonyítékot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.md"
+      - "codex/reports/egyedi_solver/sgh_q30_local_sparrow_search_profiler_module.verify.log"

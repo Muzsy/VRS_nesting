@@ -1,4 +1,5 @@
 use super::*;
+use crate::optimizer::sparrow::profile::SearchProfiler;
 
 // ---------------------------------------------------------------------------
 // rng
@@ -261,6 +262,8 @@ pub struct SparrowDiagnostics {
     pub profile_broadphase_reject_count: usize,
     /// Number of times `collect_poly_collisions_in_detector_custom` returned early due to loss bound.
     pub profile_early_termination_count: usize,
+    // ── SGH-Q30 reusable search profiler (active only when SGH_Q30_SEARCH_PROFILE=1) ──
+    pub q30_profile: SearchProfiler,
 }
 
 impl Default for SparrowDiagnostics {
@@ -343,6 +346,7 @@ impl Default for SparrowDiagnostics {
             profile_boundary_check_ms: 0.0,
             profile_broadphase_reject_count: 0,
             profile_early_termination_count: 0,
+            q30_profile: SearchProfiler::new_from_env(),
         }
     }
 }

@@ -15,8 +15,25 @@ impl BestSamples {
         }
     }
 
-    pub(crate) fn report(&mut self, cand: ScoredPlacement) -> bool {
+    /// Insert `cand` into the best-sample set.
+    ///
+    /// When `diag` is provided and Q30 profiling is enabled, tracks:
+    /// - `best_samples_insert_attempts` (every call)
+    /// - `best_samples_inserted` (accepted / replaced a dedup)
+    /// - `best_samples_dedup_rejects` (position found but cand was worse)
+    /// - `best_samples_insert_dedup_ms` (wall-time of the whole call)
+    pub(crate) fn report(
+        &mut self,
+        cand: ScoredPlacement,
+        diag: &mut SparrowDiagnostics,
+    ) -> bool {
+        let p = &mut diag.q30_profile;
+        let scope_active = p.enabled && p.profiling_scope_active;
+        let t = ProfileTimer::start_if(scope_active);
+        if scope_active { p.best_samples_insert_attempts += 1; }
+
         if cand.eval() >= self.upper_bound() {
+            t.add_to(&mut p.best_samples_insert_dedup_ms);
             return false;
         }
         if let Some(idx) = self.samples.iter().position(|s| {
@@ -27,7 +44,10 @@ impl BestSamples {
         }) {
             if cand.eval() < self.samples[idx].eval() {
                 self.samples.remove(idx);
+                // falls through to push below
             } else {
+                if scope_active { p.best_samples_dedup_rejects += 1; }
+                t.add_to(&mut p.best_samples_insert_dedup_ms);
                 return false;
             }
         }
@@ -36,6 +56,8 @@ impl BestSamples {
         if self.samples.len() > self.size {
             self.samples.pop();
         }
+        if scope_active { p.best_samples_inserted += 1; }
+        t.add_to(&mut p.best_samples_insert_dedup_ms);
         true
     }
 

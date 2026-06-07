@@ -1,0 +1,272 @@
+{
+  "task": "sgh_q30_local_sparrow_search_profiler_module",
+  "status": "PASS",
+  "profile_flag": "SGH_Q30_SEARCH_PROFILE=1",
+  "timing_accounting_mode": "mixed_with_notes",
+  "module": {
+    "rust_path": "rust/vrs_solver/src/optimizer/sparrow/profile.rs",
+    "enabled_by": "SGH_Q30_SEARCH_PROFILE=1",
+    "export_path": "optimizer_diagnostics.sparrow_q30_*",
+    "future_admin_integration_notes": "Call SearchProfiler::finalize() in optimizer.rs after solve, then serialize to sidecar JSON or pipe sparrow_q30_* fields to tracing subscriber."
+  },
+  "full276_optional": {
+    "status": "skipped",
+    "skipped_reason": "skipped: full 276-instance LV8 run exceeds routine profiling budget (900s+)"
+  },
+  "cases": [
+    {
+      "case_id": "medium",
+      "input_path": "/home/muszy/projects/VRS_nesting/artifacts/benchmarks/sgh_q30/inputs/medium.json",
+      "status": "ok",
+      "runtime_ms": 1216.6,
+      "placed_count": 24,
+      "unplaced_count": 0,
+      "final_pairs": 0,
+      "iterations": 1,
+      "q30_profiling_enabled": true,
+      "profile": {
+        "native_search_calls": 0,
+        "evaluate_sample_calls": 0,
+        "candidates_evaluated": 0,
+        "global_samples_generated": 0,
+        "focused_samples_generated": 0,
+        "coord_descent_runs": 0,
+        "coord_descent_steps": 0,
+        "best_samples_insert_attempts": 0,
+        "best_samples_inserted": 0,
+        "best_samples_dedup_rejects": 0,
+        "early_termination_count": 0,
+        "broadphase_reject_count": 0,
+        "search_total_ms": 0.0,
+        "sample_generation_ms": 0.0,
+        "best_samples_insert_dedup_ms": 0.0,
+        "coord_descent_total_ms": 0.0,
+        "evaluate_sample_total_ms": 0.0,
+        "candidate_transform_prepare_ms": 0.0,
+        "cde_query_collect_ms": 0.0,
+        "boundary_check_ms": 0.0,
+        "session_build_ms": 0.0,
+        "deregister_reregister_ms": 0.0,
+        "other_unaccounted_ms": 0.0,
+        "evaluator_orchestration_ms": 0.0,
+        "specialized_pipeline_ms": 0.0,
+        "rng_shuffle_sample_loop_ms": 0.0,
+        "rng_shuffle_or_sample_loop_count": 0,
+        "per_search_avg_ms": 0.0,
+        "per_evaluate_sample_avg_ms": 0.0,
+        "per_candidate_avg_ms": 0.0,
+        "_timing_note": "evaluate_sample_total_ms is EXCLUSIVE (all eval calls). coord_descent_total_ms is NESTED (includes eval calls within). other_unaccounted_ms = search_total - evaluate_sample_total - sample_generation - best_samples_insert_dedup - deregister - session_build.",
+        "hazard_loss_ms": 0.0,
+        "hazard_loss_note": "not_available: hazard quantification is inside cde_query_collect_ms, not separately timed in current impl"
+      },
+      "top_costs_percent": [],
+      "notes": []
+    },
+    {
+      "case_id": "lv8_subset",
+      "input_path": "/home/muszy/projects/VRS_nesting/artifacts/benchmarks/sgh_q30/inputs/lv8_subset.json",
+      "status": "ok",
+      "runtime_ms": 15887.8,
+      "placed_count": 67,
+      "unplaced_count": 0,
+      "final_pairs": 0,
+      "iterations": 1,
+      "q30_profiling_enabled": true,
+      "profile": {
+        "native_search_calls": 11,
+        "evaluate_sample_calls": 1664,
+        "candidates_evaluated": 1664,
+        "global_samples_generated": 550,
+        "focused_samples_generated": 275,
+        "coord_descent_runs": 44,
+        "coord_descent_steps": 828,
+        "best_samples_insert_attempts": 650,
+        "best_samples_inserted": 100,
+        "best_samples_dedup_rejects": 0,
+        "early_termination_count": 231,
+        "broadphase_reject_count": 0,
+        "search_total_ms": 141.02351,
+        "sample_generation_ms": 0.8861850000000036,
+        "best_samples_insert_dedup_ms": 0.6911920000000042,
+        "coord_descent_total_ms": 10.745631999999997,
+        "evaluate_sample_total_ms": 22.962005000000097,
+        "candidate_transform_prepare_ms": 2.9557609999999572,
+        "cde_query_collect_ms": 10.203421999999986,
+        "boundary_check_ms": 1.7729389999999932,
+        "session_build_ms": 0.0,
+        "deregister_reregister_ms": 0.05741,
+        "other_unaccounted_ms": 116.42671799999988,
+        "evaluator_orchestration_ms": 8.029883000000162,
+        "specialized_pipeline_ms": 10.203421999999986,
+        "rng_shuffle_sample_loop_ms": 0.8861850000000036,
+        "rng_shuffle_or_sample_loop_count": 825,
+        "per_search_avg_ms": 12.8203,
+        "per_evaluate_sample_avg_ms": 0.013799,
+        "per_candidate_avg_ms": 0.013799,
+        "_timing_note": "evaluate_sample_total_ms is EXCLUSIVE (all eval calls). coord_descent_total_ms is NESTED (includes eval calls within). other_unaccounted_ms = search_total - evaluate_sample_total - sample_generation - best_samples_insert_dedup - deregister - session_build.",
+        "hazard_loss_ms": 0.0,
+        "hazard_loss_note": "not_available: hazard quantification is inside cde_query_collect_ms, not separately timed in current impl"
+      },
+      "top_costs_percent": [
+        {
+          "name": "other_unaccounted_ms",
+          "ms": 116.427,
+          "percent_of_search_total": 82.6
+        },
+        {
+          "name": "evaluate_sample_total_ms",
+          "ms": 22.962,
+          "percent_of_search_total": 16.3
+        },
+        {
+          "name": "  \u2514\u2500 cde_query_collect_ms (nested)",
+          "ms": 10.203,
+          "percent_of_search_total": 7.2,
+          "type": "nested_sub"
+        },
+        {
+          "name": "  \u2514\u2500 candidate_transform_ms (nested)",
+          "ms": 2.956,
+          "percent_of_search_total": 2.1,
+          "type": "nested_sub"
+        },
+        {
+          "name": "  \u2514\u2500 boundary_check_ms (nested)",
+          "ms": 1.773,
+          "percent_of_search_total": 1.3,
+          "type": "nested_sub"
+        },
+        {
+          "name": "  \u2514\u2500 evaluator_orchestration_ms (nested)",
+          "ms": 8.03,
+          "percent_of_search_total": 5.7,
+          "type": "nested_sub"
+        },
+        {
+          "name": "sample_generation_ms",
+          "ms": 0.886,
+          "percent_of_search_total": 0.6
+        },
+        {
+          "name": "best_samples_insert_dedup_ms",
+          "ms": 0.691,
+          "percent_of_search_total": 0.5
+        },
+        {
+          "name": "deregister_reregister_ms",
+          "ms": 0.057,
+          "percent_of_search_total": 0.0
+        },
+        {
+          "name": "session_build_ms",
+          "ms": 0.0,
+          "percent_of_search_total": 0.0
+        }
+      ],
+      "notes": []
+    },
+    {
+      "case_id": "dense191",
+      "input_path": "/home/muszy/projects/VRS_nesting/artifacts/benchmarks/sgh_q30/inputs/dense191.json",
+      "status": "partial",
+      "runtime_ms": 202907.3,
+      "placed_count": 191,
+      "unplaced_count": 0,
+      "final_pairs": 80,
+      "iterations": 1,
+      "q30_profiling_enabled": true,
+      "profile": {
+        "native_search_calls": 272,
+        "evaluate_sample_calls": 45729,
+        "candidates_evaluated": 44484,
+        "global_samples_generated": 2168,
+        "focused_samples_generated": 2171,
+        "coord_descent_runs": 1355,
+        "coord_descent_steps": 41118,
+        "best_samples_insert_attempts": 4107,
+        "best_samples_inserted": 3609,
+        "best_samples_dedup_rejects": 148,
+        "early_termination_count": 23537,
+        "broadphase_reject_count": 1245,
+        "search_total_ms": 26176.31668099999,
+        "sample_generation_ms": 5.175438999999694,
+        "best_samples_insert_dedup_ms": 5.504419999999705,
+        "coord_descent_total_ms": 4605.380144000002,
+        "evaluate_sample_total_ms": 5378.374876999913,
+        "candidate_transform_prepare_ms": 138.70045500001106,
+        "cde_query_collect_ms": 4949.984045000078,
+        "boundary_check_ms": 50.82633799999872,
+        "session_build_ms": 0.0,
+        "deregister_reregister_ms": 3.427911,
+        "other_unaccounted_ms": 20783.83403400008,
+        "evaluator_orchestration_ms": 238.86403899982452,
+        "specialized_pipeline_ms": 4949.984045000078,
+        "rng_shuffle_sample_loop_ms": 5.175438999999694,
+        "rng_shuffle_or_sample_loop_count": 4339,
+        "per_search_avg_ms": 96.2365,
+        "per_evaluate_sample_avg_ms": 0.117614,
+        "per_candidate_avg_ms": 0.120906,
+        "_timing_note": "evaluate_sample_total_ms is EXCLUSIVE (all eval calls). coord_descent_total_ms is NESTED (includes eval calls within). other_unaccounted_ms = search_total - evaluate_sample_total - sample_generation - best_samples_insert_dedup - deregister - session_build.",
+        "hazard_loss_ms": 0.0,
+        "hazard_loss_note": "not_available: hazard quantification is inside cde_query_collect_ms, not separately timed in current impl"
+      },
+      "top_costs_percent": [
+        {
+          "name": "other_unaccounted_ms",
+          "ms": 20783.834,
+          "percent_of_search_total": 79.4
+        },
+        {
+          "name": "evaluate_sample_total_ms",
+          "ms": 5378.375,
+          "percent_of_search_total": 20.5
+        },
+        {
+          "name": "  \u2514\u2500 cde_query_collect_ms (nested)",
+          "ms": 4949.984,
+          "percent_of_search_total": 18.9,
+          "type": "nested_sub"
+        },
+        {
+          "name": "  \u2514\u2500 candidate_transform_ms (nested)",
+          "ms": 138.7,
+          "percent_of_search_total": 0.5,
+          "type": "nested_sub"
+        },
+        {
+          "name": "  \u2514\u2500 boundary_check_ms (nested)",
+          "ms": 50.826,
+          "percent_of_search_total": 0.2,
+          "type": "nested_sub"
+        },
+        {
+          "name": "  \u2514\u2500 evaluator_orchestration_ms (nested)",
+          "ms": 238.864,
+          "percent_of_search_total": 0.9,
+          "type": "nested_sub"
+        },
+        {
+          "name": "best_samples_insert_dedup_ms",
+          "ms": 5.504,
+          "percent_of_search_total": 0.0
+        },
+        {
+          "name": "sample_generation_ms",
+          "ms": 5.175,
+          "percent_of_search_total": 0.0
+        },
+        {
+          "name": "deregister_reregister_ms",
+          "ms": 3.428,
+          "percent_of_search_total": 0.0
+        },
+        {
+          "name": "session_build_ms",
+          "ms": 0.0,
+          "percent_of_search_total": 0.0
+        }
+      ],
+      "notes": []
+    }
+  ]
+}

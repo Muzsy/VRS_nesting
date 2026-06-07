@@ -343,6 +343,53 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_profile_broadphase_reject_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_profile_early_termination_count: Option<usize>,
+    // ── SGH-Q30 reusable search profiler (present only when SGH_Q30_SEARCH_PROFILE=1) ──
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_profile_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_native_search_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_evaluate_sample_calls: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_candidates_evaluated: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_global_samples_generated: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_focused_samples_generated: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_coord_descent_runs: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_coord_descent_steps: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_best_samples_insert_attempts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_best_samples_inserted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_best_samples_dedup_rejects: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_early_termination_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_broadphase_reject_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_search_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_sample_generation_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_best_samples_insert_dedup_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_coord_descent_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_evaluate_sample_total_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_candidate_transform_prepare_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_cde_query_collect_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_boundary_check_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_session_build_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_q30_deregister_reregister_ms: Option<f64>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

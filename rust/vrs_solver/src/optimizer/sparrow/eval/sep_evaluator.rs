@@ -41,6 +41,8 @@ impl<'a> SeparationEvaluator<'a> {
         // Broad-phase fit check: a candidate whose bbox cannot lie inside the sheet
         // is discarded before any CDE work. This is a fit gate, not separation loss.
         let bbox_t0 = if diag.profiling_enabled { Some(std::time::Instant::now()) } else { None };
+        let prof_scope = diag.q30_profile.enabled && diag.q30_profile.profiling_scope_active;
+        let t_bbox = ProfileTimer::start_if(prof_scope);
         let bbox_reject = rmx < self.sheet.min_x - 1e-9
             || rmy < self.sheet.min_y - 1e-9
             || rmx + rw > self.sheet.max_x + 1e-9
@@ -48,8 +50,10 @@ impl<'a> SeparationEvaluator<'a> {
         if let Some(t) = bbox_t0 {
             diag.profile_boundary_check_ms += t.elapsed().as_secs_f64() * 1000.0;
         }
+        t_bbox.add_to(&mut diag.q30_profile.boundary_check_ms);
         if bbox_reject {
             diag.profile_broadphase_reject_count += 1;
+            if prof_scope { diag.q30_profile.broadphase_reject_count += 1; }
             return None;
         }
         let (ax, ay) = placement_anchor_from_rect_min(
@@ -60,13 +64,16 @@ impl<'a> SeparationEvaluator<'a> {
             rot,
         );
         let transform_t0 = if diag.profiling_enabled { Some(std::time::Instant::now()) } else { None };
+        let t_transform = ProfileTimer::start_if(prof_scope);
         let shape = transform_base_to_candidate(self.base, ax, ay, rot);
         if let Some(t) = transform_t0 {
             diag.profile_candidate_transform_ms += t.elapsed().as_secs_f64() * 1000.0;
         }
+        t_transform.add_to(&mut diag.q30_profile.candidate_transform_prepare_ms);
         let shape = shape?;
         self.n_evals += 1;
         diag.search_position_samples += 1;
+        if prof_scope { diag.q30_profile.candidates_evaluated += 1; }
         let placement = SparrowPlacement {
             instance_idx: self.inst.idx,
             sheet_index: self.sheet_idx,
@@ -134,7 +141,12 @@ impl<'a> SampleEvaluator for SeparationEvaluator<'a> {
         upper_bound: Option<SampleEval>,
         diag: &mut SparrowDiagnostics,
     ) -> Option<ScoredPlacement> {
-        self.score_candidate(x, y, rot, upper_bound, diag)
+        let prof_scope = diag.q30_profile.enabled && diag.q30_profile.profiling_scope_active;
+        let t_eval = ProfileTimer::start_if(prof_scope);
+        if prof_scope { diag.q30_profile.evaluate_sample_calls += 1; }
+        let result = self.score_candidate(x, y, rot, upper_bound, diag);
+        t_eval.add_to(&mut diag.q30_profile.evaluate_sample_total_ms);
+        result
     }
 
     fn n_evals(&self) -> usize {

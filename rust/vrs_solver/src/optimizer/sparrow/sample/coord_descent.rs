@@ -127,6 +127,9 @@ pub(crate) fn refine_coord_desc(
         let mut best: Option<ScoredPlacement> = None;
         for &(x, y, rot, is_wiggle) in &cands {
             diag.search_coord_descent_steps += 1;
+            if diag.q30_profile.enabled && diag.q30_profile.profiling_scope_active {
+                diag.q30_profile.coord_descent_steps += 1;
+            }
             if is_wiggle {
                 diag.search_rotation_wiggle += 1;
             }

@@ -170,6 +170,8 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     diag: &mut SparrowDiagnostics,
 ) {
     let cde_t0 = if diag.profiling_enabled { Some(std::time::Instant::now()) } else { None };
+    let prof_scope = diag.q30_profile.enabled && diag.q30_profile.profiling_scope_active;
+    let t_cde = ProfileTimer::start_if(prof_scope);
     let mut ctx = session.begin_specialized_collection(candidate);
 
     // Phase 1: pole pre-pass. Check poles until their cumulative area exceeds the
@@ -181,8 +183,10 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
         session.collect_pole_hazards(&mut ctx, pole, candidate, collector);
         if collector.early_terminate() {
             diag.profile_early_termination_count += 1;
+            if prof_scope { diag.q30_profile.early_termination_count += 1; }
             merge_quant_counts(collector, diag);
             if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
+            t_cde.add_to(&mut diag.q30_profile.cde_query_collect_ms);
             return;
         }
         area_sum += pole.radius * pole.radius;
@@ -197,8 +201,10 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
         session.collect_edge_hazards(&mut ctx, candidate, edge_index, collector);
         if collector.early_terminate() {
             diag.profile_early_termination_count += 1;
+            if prof_scope { diag.q30_profile.early_termination_count += 1; }
             merge_quant_counts(collector, diag);
             if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
+            t_cde.add_to(&mut diag.q30_profile.cde_query_collect_ms);
             return;
         }
     }
@@ -207,6 +213,7 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     session.collect_containment_hazards(&mut ctx, candidate, collector);
     merge_quant_counts(collector, diag);
     if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
+    t_cde.add_to(&mut diag.q30_profile.cde_query_collect_ms);
 }
 
 fn merge_quant_counts(collector: &SpecializedCdeHazardCollector<'_>, diag: &mut SparrowDiagnostics) {

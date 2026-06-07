@@ -32,6 +32,7 @@ pub mod fixed_sheet;
 pub mod lbf;
 pub mod model;
 pub mod optimizer;
+pub mod profile;
 pub mod quantify;
 pub mod sample;
 pub mod separator;
@@ -46,6 +47,7 @@ pub use model::{
 pub use optimizer::SparrowOptimizer;
 
 pub(crate) use diagnostics::*;
+pub(crate) use profile::{ProfileTimer, SearchProfiler};
 pub(crate) use eval::lbf_evaluator::*;
 pub(crate) use eval::sample_eval::*;
 pub(crate) use eval::sep_evaluator::*;
