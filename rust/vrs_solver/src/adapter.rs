@@ -1514,13 +1514,30 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
     // Compute score breakdown for Phase1 profile (JG-19 — backward-compatible optional output field).
     let score_breakdown = if input.solver_profile.as_deref() == Some(PROFILE_PHASE1) {
         let backend_kind = resolve_backend_kind(&input);
-        Some(phase1_score_breakdown_for_backend(
+        let mut bd = phase1_score_breakdown_for_backend(
             &placements,
             &unplaced,
             &input.parts,
             &sheets,
             &backend_kind,
-        ))
+        );
+        // For the multisheet pipeline, the bbox-based placed_area used internally by the
+        // optimizer overstates true area for complex polygons. Override usable_area_utilization
+        // with the polygon-based value from multisheet diagnostics so it matches
+        // sparrow_ms_utilization_pct and is not misleading.
+        if pipeline == OptimizerPipelineKind::SparrowCdeMultisheet {
+            if let Some(ref diag) = optimizer_diagnostics {
+                if let (Some(poly_area), Some(sheet_area)) = (
+                    diag.sparrow_ms_placed_part_area,
+                    diag.sparrow_ms_used_sheet_area,
+                ) {
+                    if sheet_area > 0.0 {
+                        bd.usable_area_utilization = (poly_area / sheet_area).min(1.0);
+                    }
+                }
+            }
+        }
+        Some(bd)
     } else {
         None
     };

@@ -556,9 +556,10 @@ pub fn run_finite_stock_multisheet(
         //              The Sparrow GLS checks the deadline at iteration START, so the
         //              last iteration can overrun by one iter time (~27s for LV8-dense).
         //              Per-attempt overhead (LBF seed + tracker init + final validation)
-        //              adds ~39s for LV8-dense. Together: GUARD ≥ 27+39-5 = 61s.
-        //              Using 65s gives a comfortable 4s safety margin.
-        const FULL_POOL_GUARD_S: f64 = 65.0;
+        //              adds ~39s for LV8-dense. I/O overhead outside sparrow_ms_runtime
+        //              (JSON parse + output serialise) adds ~20s for LV8-dense.
+        //              Together: GUARD ≥ 27+39+20-5 = 81s. Using 90s for 9s margin.
+        const FULL_POOL_GUARD_S: f64 = 90.0;
 
         let probe_cap = (config.time_limit_s / candidate_subsets.max(1) as f64 / 2.0)
             .min(30.0)

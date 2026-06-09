@@ -2,7 +2,7 @@
 
 ## Status
 
-**PASS**
+**SUPERSEDED by Q32-R2** — R1 smoke was FAIL (corrupted Q32 marker), wall_s overrun, score_breakdown.usable_area_utilization misleading. See `sgh_q32_r2_finite_stock_correctness_fix.md`.
 
 ---
 

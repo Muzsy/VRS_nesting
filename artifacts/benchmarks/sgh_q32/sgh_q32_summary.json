@@ -30,12 +30,12 @@
         "sparrow_ms_stock_exhausted": false,
         "sparrow_ms_final_pairs": 0,
         "sparrow_ms_boundary_violations": 0,
-        "sparrow_ms_runtime_ms": 663890.65197,
+        "sparrow_ms_runtime_ms": 661496.9253850001,
         "sparrow_ms_best_score": 9000000.002,
-        "sparrow_q31_base_shape_cache_build_ms": 1334.202204,
+        "sparrow_q31_base_shape_cache_build_ms": 1403.309127,
         "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
         "unplaced": [],
-        "_wall_s": 689.68
+        "_wall_s": 687.27
       },
       "fails": []
     },
@@ -67,12 +67,12 @@
         "sparrow_ms_stock_exhausted": false,
         "sparrow_ms_final_pairs": 0,
         "sparrow_ms_boundary_violations": 0,
-        "sparrow_ms_runtime_ms": 651511.879767,
+        "sparrow_ms_runtime_ms": 675206.6505110001,
         "sparrow_ms_best_score": 9000000.002,
-        "sparrow_q31_base_shape_cache_build_ms": 1369.842959,
+        "sparrow_q31_base_shape_cache_build_ms": 1437.470335,
         "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
         "unplaced": [],
-        "_wall_s": 676.56
+        "_wall_s": 701.42
       },
       "fails": []
     },
@@ -81,8 +81,8 @@
       "case_status": "PASS",
       "ms": {
         "status": "partial",
-        "placed_count": 271,
-        "unplaced_count": 5,
+        "placed_count": 272,
+        "unplaced_count": 4,
         "pipeline_used": "sparrow_cde_multisheet",
         "sparrow_ms_active": true,
         "sparrow_ms_status": "partial",
@@ -94,32 +94,22 @@
           2
         ],
         "sparrow_ms_used_sheet_area": 8500000.0,
-        "sparrow_ms_placed_part_area": 4257370.236496182,
-        "sparrow_ms_utilization_pct": 50.08670866466097,
+        "sparrow_ms_placed_part_area": 4279625.868389252,
+        "sparrow_ms_utilization_pct": 50.348539628108846,
         "sparrow_ms_total_instances": 276,
-        "sparrow_ms_placed_instances": 271,
-        "sparrow_ms_unplaced_instances": 5,
+        "sparrow_ms_placed_instances": 272,
+        "sparrow_ms_unplaced_instances": 4,
         "sparrow_ms_attempts": 5,
         "sparrow_ms_candidate_subsets": 5,
         "sparrow_ms_best_full_solution_found": false,
         "sparrow_ms_stock_exhausted": true,
         "sparrow_ms_final_pairs": 0,
         "sparrow_ms_boundary_violations": 0,
-        "sparrow_ms_runtime_ms": 1193910.730652,
-        "sparrow_ms_best_score": 999999995742629.8,
-        "sparrow_q31_base_shape_cache_build_ms": 1341.1800030000002,
+        "sparrow_ms_runtime_ms": 1176057.826667,
+        "sparrow_ms_best_score": 999999995720374.1,
+        "sparrow_q31_base_shape_cache_build_ms": 1431.166153,
         "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
         "unplaced": [
-          {
-            "instance_id": "Lv8_07921_50db__0018",
-            "part_id": "Lv8_07921_50db",
-            "reason": "STOCK_EXHAUSTED_PARTIAL"
-          },
-          {
-            "instance_id": "Lv8_11612_6db__0001",
-            "part_id": "Lv8_11612_6db",
-            "reason": "STOCK_EXHAUSTED_PARTIAL"
-          },
           {
             "instance_id": "Lv8_11612_6db__0002",
             "part_id": "Lv8_11612_6db",
@@ -131,12 +121,17 @@
             "reason": "STOCK_EXHAUSTED_PARTIAL"
           },
           {
-            "instance_id": "Lv8_11612_6db__0004",
+            "instance_id": "Lv8_11612_6db__0005",
+            "part_id": "Lv8_11612_6db",
+            "reason": "STOCK_EXHAUSTED_PARTIAL"
+          },
+          {
+            "instance_id": "Lv8_11612_6db__0006",
             "part_id": "Lv8_11612_6db",
             "reason": "STOCK_EXHAUSTED_PARTIAL"
           }
         ],
-        "_wall_s": 1214.19
+        "_wall_s": 1198.2
       },
       "fails": []
     }

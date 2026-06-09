@@ -155,6 +155,9 @@ def evaluate_case01(ms: dict) -> tuple[str, list[str]]:
     runtime_ms = ms["sparrow_ms_runtime_ms"] or 0.0
     if runtime_ms > TIME_LIMIT_S * 1000 + 5000:
         fails.append(f"sparrow_ms_runtime_ms={runtime_ms:.0f} > {TIME_LIMIT_S * 1000 + 5000} (time limit exceeded)")
+    wall_s = ms.get("_wall_s") or 0.0
+    if wall_s > TIME_LIMIT_S + 5:
+        fails.append(f"wall_s={wall_s:.1f} > {TIME_LIMIT_S + 5} (wall time exceeded)")
     return ("PASS" if not fails else "FAIL"), fails
 
 
@@ -187,6 +190,9 @@ def evaluate_case02(ms: dict) -> tuple[str, list[str]]:
     runtime_ms = ms["sparrow_ms_runtime_ms"] or 0.0
     if runtime_ms > TIME_LIMIT_S * 1000 + 5000:
         fails.append(f"sparrow_ms_runtime_ms={runtime_ms:.0f} > {TIME_LIMIT_S * 1000 + 5000} (time limit exceeded)")
+    wall_s = ms.get("_wall_s") or 0.0
+    if wall_s > TIME_LIMIT_S + 5:
+        fails.append(f"wall_s={wall_s:.1f} > {TIME_LIMIT_S + 5} (wall time exceeded)")
     return ("PASS" if not fails else "FAIL"), fails
 
 
@@ -253,6 +259,9 @@ def evaluate_case03(ms: dict) -> tuple[str, list[str]]:
     runtime_ms = ms["sparrow_ms_runtime_ms"] or 0.0
     if runtime_ms > TIME_LIMIT_S * 1000 + 5000:
         fails.append(f"sparrow_ms_runtime_ms={runtime_ms:.0f} > {TIME_LIMIT_S * 1000 + 5000} (time limit exceeded)")
+    wall_s = ms.get("_wall_s") or 0.0
+    if wall_s > TIME_LIMIT_S + 5:
+        fails.append(f"wall_s={wall_s:.1f} > {TIME_LIMIT_S + 5} (wall time exceeded)")
 
     return ("PASS" if not fails else "FAIL"), fails
 
