@@ -531,6 +531,10 @@ pub struct OptimizerDiagnosticsOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_ms_runtime_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_requested_time_limit_s: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_deadline_hit: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_ms_best_score: Option<f64>,
 }
 

@@ -19,8 +19,8 @@
           1
         ],
         "sparrow_ms_used_sheet_area": 9000000.0,
-        "sparrow_ms_placed_part_area": 15187542.384728197,
-        "sparrow_ms_utilization_pct": 168.75047094142442,
+        "sparrow_ms_placed_part_area": 6669497.664386982,
+        "sparrow_ms_utilization_pct": 74.1055296042998,
         "sparrow_ms_total_instances": 276,
         "sparrow_ms_placed_instances": 276,
         "sparrow_ms_unplaced_instances": 0,
@@ -30,12 +30,12 @@
         "sparrow_ms_stock_exhausted": false,
         "sparrow_ms_final_pairs": 0,
         "sparrow_ms_boundary_violations": 0,
-        "sparrow_ms_runtime_ms": 685340.616114,
+        "sparrow_ms_runtime_ms": 663890.65197,
         "sparrow_ms_best_score": 9000000.002,
-        "sparrow_q31_base_shape_cache_build_ms": 1367.560288,
+        "sparrow_q31_base_shape_cache_build_ms": 1334.202204,
         "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
         "unplaced": [],
-        "_wall_s": 712.05
+        "_wall_s": 689.68
       },
       "fails": []
     },
@@ -56,8 +56,8 @@
           1
         ],
         "sparrow_ms_used_sheet_area": 9000000.0,
-        "sparrow_ms_placed_part_area": 15187542.384728197,
-        "sparrow_ms_utilization_pct": 168.75047094142442,
+        "sparrow_ms_placed_part_area": 6669497.664386982,
+        "sparrow_ms_utilization_pct": 74.1055296042998,
         "sparrow_ms_total_instances": 276,
         "sparrow_ms_placed_instances": 276,
         "sparrow_ms_unplaced_instances": 0,
@@ -67,12 +67,12 @@
         "sparrow_ms_stock_exhausted": false,
         "sparrow_ms_final_pairs": 0,
         "sparrow_ms_boundary_violations": 0,
-        "sparrow_ms_runtime_ms": 683516.125627,
+        "sparrow_ms_runtime_ms": 651511.879767,
         "sparrow_ms_best_score": 9000000.002,
-        "sparrow_q31_base_shape_cache_build_ms": 1383.768503,
+        "sparrow_q31_base_shape_cache_build_ms": 1369.842959,
         "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
         "unplaced": [],
-        "_wall_s": 710.19
+        "_wall_s": 676.56
       },
       "fails": []
     },
@@ -94,8 +94,8 @@
           2
         ],
         "sparrow_ms_used_sheet_area": 8500000.0,
-        "sparrow_ms_placed_part_area": 7767834.744408203,
-        "sparrow_ms_utilization_pct": 91.38629111068475,
+        "sparrow_ms_placed_part_area": 4257370.236496182,
+        "sparrow_ms_utilization_pct": 50.08670866466097,
         "sparrow_ms_total_instances": 276,
         "sparrow_ms_placed_instances": 271,
         "sparrow_ms_unplaced_instances": 5,
@@ -105,9 +105,9 @@
         "sparrow_ms_stock_exhausted": true,
         "sparrow_ms_final_pairs": 0,
         "sparrow_ms_boundary_violations": 0,
-        "sparrow_ms_runtime_ms": 1266327.917561,
-        "sparrow_ms_best_score": 999999992232165.2,
-        "sparrow_q31_base_shape_cache_build_ms": 1415.249671,
+        "sparrow_ms_runtime_ms": 1193910.730652,
+        "sparrow_ms_best_score": 999999995742629.8,
+        "sparrow_q31_base_shape_cache_build_ms": 1341.1800030000002,
         "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
         "unplaced": [
           {
@@ -121,22 +121,22 @@
             "reason": "STOCK_EXHAUSTED_PARTIAL"
           },
           {
+            "instance_id": "Lv8_11612_6db__0002",
+            "part_id": "Lv8_11612_6db",
+            "reason": "STOCK_EXHAUSTED_PARTIAL"
+          },
+          {
             "instance_id": "Lv8_11612_6db__0003",
             "part_id": "Lv8_11612_6db",
             "reason": "STOCK_EXHAUSTED_PARTIAL"
           },
           {
-            "instance_id": "Lv8_11612_6db__0005",
-            "part_id": "Lv8_11612_6db",
-            "reason": "STOCK_EXHAUSTED_PARTIAL"
-          },
-          {
-            "instance_id": "Lv8_11612_6db__0006",
+            "instance_id": "Lv8_11612_6db__0004",
             "part_id": "Lv8_11612_6db",
             "reason": "STOCK_EXHAUSTED_PARTIAL"
           }
         ],
-        "_wall_s": 1288.08
+        "_wall_s": 1214.19
       },
       "fails": []
     }

@@ -145,7 +145,16 @@ def evaluate_case01(ms: dict) -> tuple[str, list[str]]:
         fails.append(f"sparrow_ms_used_sheet_count={used} > 2")
     util = ms["sparrow_ms_utilization_pct"] or 0.0
     if util <= 0.0:
-        fails.append(f"sparrow_ms_utilization_pct={util} <= 0")
+        fails.append(f"sparrow_ms_utilization_pct={util} <= 0 (must be positive)")
+    if util > 100.0:
+        fails.append(f"sparrow_ms_utilization_pct={util:.2f} > 100 (polygon area basis required)")
+    placed_area = ms["sparrow_ms_placed_part_area"] or 0.0
+    sheet_area = ms["sparrow_ms_used_sheet_area"] or 0.0
+    if sheet_area > 0 and placed_area > sheet_area + 1.0:
+        fails.append(f"placed_part_area={placed_area:.0f} > used_sheet_area={sheet_area:.0f}")
+    runtime_ms = ms["sparrow_ms_runtime_ms"] or 0.0
+    if runtime_ms > TIME_LIMIT_S * 1000 + 5000:
+        fails.append(f"sparrow_ms_runtime_ms={runtime_ms:.0f} > {TIME_LIMIT_S * 1000 + 5000} (time limit exceeded)")
     return ("PASS" if not fails else "FAIL"), fails
 
 
@@ -169,7 +178,15 @@ def evaluate_case02(ms: dict) -> tuple[str, list[str]]:
         fails.append(f"sparrow_ms_used_sheet_area={used_area:.0f} > 9000000")
     util = ms["sparrow_ms_utilization_pct"] or 0.0
     if util <= 0.0:
-        fails.append(f"sparrow_ms_utilization_pct={util} <= 0")
+        fails.append(f"sparrow_ms_utilization_pct={util} <= 0 (must be positive)")
+    if util > 100.0:
+        fails.append(f"sparrow_ms_utilization_pct={util:.2f} > 100 (polygon area basis required)")
+    placed_area = ms["sparrow_ms_placed_part_area"] or 0.0
+    if used_area > 0 and placed_area > used_area + 1.0:
+        fails.append(f"placed_part_area={placed_area:.0f} > used_sheet_area={used_area:.0f}")
+    runtime_ms = ms["sparrow_ms_runtime_ms"] or 0.0
+    if runtime_ms > TIME_LIMIT_S * 1000 + 5000:
+        fails.append(f"sparrow_ms_runtime_ms={runtime_ms:.0f} > {TIME_LIMIT_S * 1000 + 5000} (time limit exceeded)")
     return ("PASS" if not fails else "FAIL"), fails
 
 
@@ -224,6 +241,18 @@ def evaluate_case03(ms: dict) -> tuple[str, list[str]]:
                 fails.append(f"unplaced {u.get('part_id')!r} has invalid reason: {r!r}")
     else:
         fails.append(f"status={status!r} is neither ok nor partial")
+
+    # Cross-status: utilization and time-limit gates always apply
+    util = ms["sparrow_ms_utilization_pct"] or 0.0
+    if util > 100.0:
+        fails.append(f"sparrow_ms_utilization_pct={util:.2f} > 100 (polygon area basis required)")
+    placed_area = ms["sparrow_ms_placed_part_area"] or 0.0
+    sheet_area = ms["sparrow_ms_used_sheet_area"] or 0.0
+    if sheet_area > 0 and placed_area > sheet_area + 1.0:
+        fails.append(f"placed_part_area={placed_area:.0f} > used_sheet_area={sheet_area:.0f}")
+    runtime_ms = ms["sparrow_ms_runtime_ms"] or 0.0
+    if runtime_ms > TIME_LIMIT_S * 1000 + 5000:
+        fails.append(f"sparrow_ms_runtime_ms={runtime_ms:.0f} > {TIME_LIMIT_S * 1000 + 5000} (time limit exceeded)")
 
     return ("PASS" if not fails else "FAIL"), fails
 

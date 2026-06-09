@@ -23,7 +23,7 @@
 | sparrow_ms_used_sheet_count | 2 |
 | sparrow_ms_used_sheet_indices | [0, 1] |
 | sparrow_ms_used_sheet_area | 9000000.0 |
-| sparrow_ms_utilization_pct | 168.75047094142442 |
+| sparrow_ms_utilization_pct | 74.1055296042998 |
 | sparrow_ms_total_instances | 276 |
 | sparrow_ms_placed_instances | 276 |
 | sparrow_ms_unplaced_instances | 0 |
@@ -33,10 +33,10 @@
 | sparrow_ms_stock_exhausted | False |
 | sparrow_ms_final_pairs | 0 |
 | sparrow_ms_boundary_violations | 0 |
-| sparrow_ms_runtime_ms | 685340.616114 |
-| sparrow_q31_cache_build_ms | 1367.560288 |
+| sparrow_ms_runtime_ms | 663890.65197 |
+| sparrow_q31_cache_build_ms | 1334.202204 |
 | sparrow_q31_hotpath_calls | 0 |
-| wall_s | 712.05 |
+| wall_s | 689.68 |
 
 ## case_02 — PASS
 
@@ -51,7 +51,7 @@
 | sparrow_ms_used_sheet_count | 2 |
 | sparrow_ms_used_sheet_indices | [0, 1] |
 | sparrow_ms_used_sheet_area | 9000000.0 |
-| sparrow_ms_utilization_pct | 168.75047094142442 |
+| sparrow_ms_utilization_pct | 74.1055296042998 |
 | sparrow_ms_total_instances | 276 |
 | sparrow_ms_placed_instances | 276 |
 | sparrow_ms_unplaced_instances | 0 |
@@ -61,10 +61,10 @@
 | sparrow_ms_stock_exhausted | False |
 | sparrow_ms_final_pairs | 0 |
 | sparrow_ms_boundary_violations | 0 |
-| sparrow_ms_runtime_ms | 683516.125627 |
-| sparrow_q31_cache_build_ms | 1383.768503 |
+| sparrow_ms_runtime_ms | 651511.879767 |
+| sparrow_q31_cache_build_ms | 1369.842959 |
 | sparrow_q31_hotpath_calls | 0 |
-| wall_s | 710.19 |
+| wall_s | 676.56 |
 
 ## case_03 — PASS
 
@@ -79,7 +79,7 @@
 | sparrow_ms_used_sheet_count | 3 |
 | sparrow_ms_used_sheet_indices | [0, 1, 2] |
 | sparrow_ms_used_sheet_area | 8500000.0 |
-| sparrow_ms_utilization_pct | 91.38629111068475 |
+| sparrow_ms_utilization_pct | 50.08670866466097 |
 | sparrow_ms_total_instances | 276 |
 | sparrow_ms_placed_instances | 271 |
 | sparrow_ms_unplaced_instances | 5 |
@@ -89,10 +89,10 @@
 | sparrow_ms_stock_exhausted | True |
 | sparrow_ms_final_pairs | 0 |
 | sparrow_ms_boundary_violations | 0 |
-| sparrow_ms_runtime_ms | 1266327.917561 |
-| sparrow_q31_cache_build_ms | 1415.249671 |
+| sparrow_ms_runtime_ms | 1193910.730652 |
+| sparrow_q31_cache_build_ms | 1341.1800030000002 |
 | sparrow_q31_hotpath_calls | 0 |
-| wall_s | 1288.08 |
+| wall_s | 1214.19 |
 
 ---
 

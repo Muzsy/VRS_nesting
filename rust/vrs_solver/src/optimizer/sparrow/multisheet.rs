@@ -60,8 +60,11 @@ pub struct FiniteStockRunResult {
     pub candidate_subsets: usize,
     /// True when at least one full feasible solution (all placed, pairs=0) was found.
     pub best_full_solution_found: bool,
-    /// True when solver tried all available sheets but not all parts placed.
     pub runtime_ms: f64,
+    /// Configured time limit (seconds) passed in via FiniteStockRunConfig.
+    pub time_limit_s: f64,
+    /// True if the global deadline was reached before all subsets were tried.
+    pub deadline_hit: bool,
     /// Best incumbent score (lower is better for feasible; for partial: covered area).
     pub best_score: f64,
     /// Diagnostics from the best core attempt.
@@ -200,9 +203,36 @@ fn generate_sheet_subsets(all_sheets: &[SheetShape], _seed: u64) -> Vec<Vec<usiz
 
 // ── Part area computation ────────────────────────────────────────────────────
 
-/// Bounding-box area for a part (width * height).
-/// LV8 parts have rectangular outer contours so this equals the polygon area.
-fn part_area(part: &crate::item::Part) -> f64 {
+/// Polygon area for a part using the shoelace formula on `outer_points`.
+/// Falls back to bounding-box area (width×height) when `outer_points` is
+/// absent, malformed, or has fewer than 3 vertices.
+fn part_polygon_area(part: &crate::item::Part) -> f64 {
+    let json_pts = part.outer_points.as_ref().or(part.prepared_outer_points.as_ref());
+    if let Some(val) = json_pts {
+        if let Some(arr) = val.as_array() {
+            let pts: Vec<(f64, f64)> = arr
+                .iter()
+                .filter_map(|v| {
+                    let pair = v.as_array()?;
+                    if pair.len() >= 2 {
+                        Some((pair[0].as_f64()?, pair[1].as_f64()?))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if pts.len() >= 3 {
+                let n = pts.len();
+                let mut signed = 0.0f64;
+                for i in 0..n {
+                    let j = (i + 1) % n;
+                    signed += pts[i].0 * pts[j].1;
+                    signed -= pts[j].0 * pts[i].1;
+                }
+                return (signed / 2.0).abs();
+            }
+        }
+    }
     part.width * part.height
 }
 
@@ -235,14 +265,14 @@ fn compute_utilization(
         })
         .sum();
 
-    // Sum of placed part areas.
+    // Sum of placed part areas (polygon-based via shoelace formula).
     let placed_part_area: f64 = placements
         .iter()
         .map(|pl| {
             parts
                 .iter()
                 .find(|p| p.id == pl.part_id)
-                .map(|p| part_area(p))
+                .map(|p| part_polygon_area(p))
                 .unwrap_or(0.0)
         })
         .sum();
@@ -460,6 +490,8 @@ pub fn run_finite_stock_multisheet(
                 candidate_subsets: 0,
                 best_full_solution_found: false,
                 runtime_ms: t_start.elapsed().as_secs_f64() * 1000.0,
+                time_limit_s: config.time_limit_s,
+                deadline_hit: false,
                 best_score: f64::MAX,
                 best_core_diag: None,
                 available_sheet_count: 0,
@@ -520,13 +552,20 @@ pub fn run_finite_stock_multisheet(
         //              If it finds a full feasible solution, the loop breaks early and
         //              the full pool never runs — this is the desired behaviour.
         //
-        // full pool:   all remaining time.
+        // full pool:   remaining time minus FULL_POOL_GUARD_S.
+        //              The Sparrow GLS checks the deadline at iteration START, so the
+        //              last iteration can overrun by one iter time (~27s for LV8-dense).
+        //              Per-attempt overhead (LBF seed + tracker init + final validation)
+        //              adds ~39s for LV8-dense. Together: GUARD ≥ 27+39-5 = 61s.
+        //              Using 65s gives a comfortable 4s safety margin.
+        const FULL_POOL_GUARD_S: f64 = 65.0;
+
         let probe_cap = (config.time_limit_s / candidate_subsets.max(1) as f64 / 2.0)
             .min(30.0)
             .max(5.0);
         let is_second_to_last = subset_ord + 1 == full_pool_idx;
         let attempt_time = if subset_ord == full_pool_idx {
-            remaining_s
+            (remaining_s - FULL_POOL_GUARD_S).max(1.0)
         } else if is_second_to_last && subset_indices.len() > 1 {
             // Generous budget for the key multi-sheet candidate.
             let budget = (config.time_limit_s * 0.50)
@@ -703,6 +742,7 @@ pub fn run_finite_stock_multisheet(
     };
 
     let runtime_ms = t_start.elapsed().as_secs_f64() * 1000.0;
+    let deadline_hit = Instant::now() >= deadline;
 
     match incumbent {
         None => {
@@ -734,6 +774,8 @@ pub fn run_finite_stock_multisheet(
                 candidate_subsets,
                 best_full_solution_found: false,
                 runtime_ms,
+                time_limit_s: config.time_limit_s,
+                deadline_hit,
                 best_score: f64::MAX,
                 best_core_diag: None,
                 available_sheet_count,
@@ -762,6 +804,8 @@ pub fn run_finite_stock_multisheet(
                 candidate_subsets,
                 best_full_solution_found: best_full,
                 runtime_ms,
+                time_limit_s: config.time_limit_s,
+                deadline_hit,
                 best_score: inc.score,
                 best_core_diag: Some(inc.core_diag),
                 available_sheet_count,

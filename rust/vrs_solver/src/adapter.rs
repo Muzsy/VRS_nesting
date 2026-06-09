@@ -566,6 +566,8 @@ fn native_sparrow_diag_to_output(
         sparrow_ms_final_pairs: None,
         sparrow_ms_boundary_violations: None,
         sparrow_ms_runtime_ms: None,
+        sparrow_ms_requested_time_limit_s: None,
+        sparrow_ms_deadline_hit: None,
         sparrow_ms_best_score: None,
     }
 }
@@ -941,6 +943,8 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         sparrow_ms_final_pairs: Some(result.final_pairs),
         sparrow_ms_boundary_violations: Some(result.boundary_violations),
         sparrow_ms_runtime_ms: Some(result.runtime_ms),
+        sparrow_ms_requested_time_limit_s: Some(result.time_limit_s),
+        sparrow_ms_deadline_hit: Some(result.deadline_hit),
         sparrow_ms_best_score: Some(result.best_score),
     };
 
@@ -1385,6 +1389,8 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_ms_final_pairs: None,
                             sparrow_ms_boundary_violations: None,
                             sparrow_ms_runtime_ms: None,
+                            sparrow_ms_requested_time_limit_s: None,
+                            sparrow_ms_deadline_hit: None,
                             sparrow_ms_best_score: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))

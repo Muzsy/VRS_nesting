@@ -108,6 +108,8 @@ def check_static_invariants() -> None:
         "sparrow_ms_utilization_pct",
         "sparrow_ms_stock_exhausted",
         "sparrow_ms_status",
+        "sparrow_ms_requested_time_limit_s",
+        "sparrow_ms_deadline_hit",
     ]:
         check(field in io_rs, f"io.rs: {field} field present")
     # 11. Q31 base-shape cache not regressed
@@ -175,6 +177,15 @@ def check_case01(output: dict) -> None:
     check(used <= 2, f"case_01 used_sheet_count<=2, got {used}")
     util = d.get("sparrow_ms_utilization_pct") or 0.0
     check(util > 0.0, f"case_01 utilization_pct>0, got {util}")
+    check(util <= 100.0, f"case_01 utilization_pct<=100 (polygon area), got {util:.2f}")
+    placed_area = d.get("sparrow_ms_placed_part_area") or 0.0
+    sheet_area = d.get("sparrow_ms_used_sheet_area") or 0.0
+    if sheet_area > 0:
+        check(placed_area <= sheet_area + 1.0,
+              f"case_01 placed_part_area({placed_area:.0f}) <= sheet_area({sheet_area:.0f})")
+    runtime_ms = d.get("sparrow_ms_runtime_ms") or 0.0
+    check(runtime_ms <= 1200_000 + 5000,
+          f"case_01 runtime_ms={runtime_ms:.0f} <= 1205000")
     # Q31 cache invariant
     check(d.get("sparrow_q31_base_shape_cache_build_ms") is not None,
           "case_01 Q31 base_shape_cache_build_ms present")
@@ -206,6 +217,14 @@ def check_case02(output: dict) -> None:
           f"case_02 used_sheet_area<=9000000, got {used_area:.0f}")
     util = d.get("sparrow_ms_utilization_pct") or 0.0
     check(util > 0.0, f"case_02 utilization_pct>0, got {util}")
+    check(util <= 100.0, f"case_02 utilization_pct<=100 (polygon area), got {util:.2f}")
+    placed_area = d.get("sparrow_ms_placed_part_area") or 0.0
+    if used_area > 0:
+        check(placed_area <= used_area + 1.0,
+              f"case_02 placed_part_area({placed_area:.0f}) <= sheet_area({used_area:.0f})")
+    runtime_ms = d.get("sparrow_ms_runtime_ms") or 0.0
+    check(runtime_ms <= 1200_000 + 5000,
+          f"case_02 runtime_ms={runtime_ms:.0f} <= 1205000")
     avail = d.get("sparrow_ms_available_sheet_count") or 0
     check(avail == 3, f"case_02 available_sheet_count=3, got {avail}")
 
@@ -252,6 +271,18 @@ def check_case03(output: dict) -> None:
         bad_reasons = [u for u in unplaced if not u.get("reason") or u.get("reason") not in valid_reasons]
         check(len(bad_reasons) == 0,
               f"case_03 partial: all unplaced have valid reasons (bad={len(bad_reasons)})")
+
+    # Cross-status gates
+    util = d.get("sparrow_ms_utilization_pct") or 0.0
+    check(util <= 100.0, f"case_03 utilization_pct<=100 (polygon area), got {util:.2f}")
+    placed_area = d.get("sparrow_ms_placed_part_area") or 0.0
+    sheet_area = d.get("sparrow_ms_used_sheet_area") or 0.0
+    if sheet_area > 0:
+        check(placed_area <= sheet_area + 1.0,
+              f"case_03 placed_part_area({placed_area:.0f}) <= sheet_area({sheet_area:.0f})")
+    runtime_ms = d.get("sparrow_ms_runtime_ms") or 0.0
+    check(runtime_ms <= 1200_000 + 5000,
+          f"case_03 runtime_ms={runtime_ms:.0f} <= 1205000")
 
 
 # ── Summary and codex report markers ────────────────────────────────────────
