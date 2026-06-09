@@ -90,8 +90,8 @@ cargo test  --manifest-path rust/vrs_solver/Cargo.toml --lib        → PASS (45
 cargo test  --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_finite_stock_multisheet → PASS (8 passed, 13.80s)
 python3 scripts/smoke_sgh_q32_finite_stock_multisheet.py            → PASS (89/89)
 python3 scripts/run_sgh_q32_finite_stock_multisheet_lv8.py          → PASS (all 3 cases; wall_s 687/701/1198s)
-./scripts/check.sh                                                   → PENDING
-./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q32_r2_finite_stock_correctness_fix.md → PENDING
+./scripts/check.sh                                                   → PASS (exit 0, 193s)
+./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q32_r2_finite_stock_correctness_fix.md → PASS (exit 0)
 ```
 
 ---
