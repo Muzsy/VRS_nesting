@@ -1,0 +1,161 @@
+steps:
+  - name: "Repo-felderítés és meglévő útvonalak rögzítése"
+    description: >
+      Olvasd el kötelezően: AGENTS.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, canvases/egyedi_solver/sgh_q32_finite_stock_sparrow_multisheet_manager.md,
+      valamint a releváns meglévő kódot: rust/vrs_solver/src/io.rs,
+      rust/vrs_solver/src/adapter.rs, rust/vrs_solver/src/sheet.rs,
+      rust/vrs_solver/src/optimizer/sparrow/model.rs, optimizer.rs, lbf.rs,
+      sample/search.rs, explore.rs, quantify/tracker.rs, profile.rs és diagnostics.rs.
+      A report Existing code audit szekciójában rögzítsd: a jelenlegi SparrowCde út
+      közvetlen SparrowProblem -> SparrowOptimizer::solve pipeline, a régi
+      rust/vrs_solver/src/optimizer/multisheet.rs legacy/Phase1 manager, és a Q31
+      base-shape cache jelenlegi mezői. Ne feltételezz nem létező fájlokat vagy mezőket;
+      minden döntést a valós kódból vezess le.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q32_finite_stock_sparrow_multisheet_manager.md"
+
+  - name: "Pipeline enum és IO diagnostics contract bővítése"
+    description: >
+      Add hozzá az OptimizerPipelineKind::SparrowCdeMultisheet értéket snake_case
+      serde névvel: sparrow_cde_multisheet. Bővítsd az OptimizerDiagnosticsOutputot
+      optional sparrow_ms_* mezőkkel a canvas szerint: active, status,
+      available_sheet_count, used_sheet_count, used_sheet_indices, used_sheet_area,
+      placed_part_area, utilization_pct, total/placed/unplaced instances, attempts,
+      candidate_subsets, best_full_solution_found, stock_exhausted, final_pairs,
+      boundary_violations, runtime_ms, best_score. A meglévő sparrow_cde és legacy
+      contract ne törjön el.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+
+  - name: "Sparrow-native finite-stock multisheet modul létrehozása"
+    description: >
+      Hozz létre új production modult rust/vrs_solver/src/optimizer/sparrow/multisheet.rs
+      néven és exportáld a rust/vrs_solver/src/optimizer/sparrow/mod.rs-ben. A modul
+      implementálja a finite-stock manager fő típusait és helperjeit: stock pool audit,
+      original expanded sheet index mapping, sheet subset candidate generation,
+      deterministic candidate ordering, incumbent scoring, used sheet unique-index
+      utilization számítás, stock exhaustion status, partial sanitize/ejection-repair
+      alaplogika. Tilos WorkingLayout, VrsCollisionTracker, régi optimizer/multisheet.rs,
+      Python wrapper vagy compression használata. A manager a native SparrowProblem és
+      SparrowOptimizer core fölött működjön.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/multisheet.rs"
+
+  - name: "Native Sparrow attempt helper és adapter bekötés"
+    description: >
+      Refaktoráld úgy az adaptert, hogy a sparrow_cde_multisheet pipeline a finite-stock
+      managert hívja. Legyen belső helper vagy tiszta útvonal, amely selected sheet
+      subseten futtatja: SparrowProblem::from_solver_input -> SparrowOptimizer::solve
+      -> final validation -> selected sheet index visszamappelése original expanded
+      sheet indexre. A meglévő sparrow_cde single/core pipeline ne törjön el. A
+      multisheet path mindig CDE backendet használjon, ne fallbackeljen legacy solverre,
+      és final output előtt validálja, hogy ok esetben final_pairs=0 és
+      boundary_violations=0.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/optimizer.rs"
+
+  - name: "Sheet usage, scoring és utilization számítás javítása"
+    description: >
+      A sparrow_cde_multisheet path diagnostics és score számítása ne használjon
+      max(sheet_index)+1 logikát. Implementáld vagy kösd be a unique used sheet index
+      alapú számítást: used_sheet_indices, used_sheet_count, used_sheet_area,
+      placed_part_area, utilization_pct. Heterogén/gapped sheet indexekkel is helyes
+      legyen. Ha a régi score modelhez hozzá kell nyúlni, csak a szükséges részt
+      módosítsd, és a reportban indokold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/score.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/multisheet.rs"
+
+  - name: "Cross-sheet repair, partial sanitize és unplaced reporting"
+    description: >
+      Implementáld a managerben azt, hogy partial/infeasible Sparrow core eredményből
+      nem adható vissza collisionos partial output. Építs collision/boundary violation
+      azonosítást, konfliktusklaszter-alapú removal candidate generálást, multiple
+      removal alternatívát és optional reinsertiont. Legalább highest-loss, largest-area,
+      smallest-area, one-large-vs-multiple-small és boundary-violator candidate legyen.
+      A kiválasztott partial incumbent legyen final_pairs=0 és boundary_violations=0;
+      minden eltávolított instance kerüljön explicit unplaced listára okkal:
+      STOCK_EXHAUSTED_PARTIAL, INSUFFICIENT_STOCK_CAPACITY, UNRESOLVED_AFTER_STOCK_EXHAUSTED
+      vagy PART_NEVER_FITS_STOCK. Tilos az első ütköző item naiv kivétele mint egyetlen stratégia.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/multisheet.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/explore.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Full276 LV8 fixture és runner script"
+    description: >
+      Hozz létre determinisztikus full276 LV8 fixture-t a
+      samples/real_work_dxf/0014-01H/lv8jav_normalized/ normalizált DXF-ekből.
+      A filename quantity alapján 12 part type és összesen 276 instance legyen. A fő
+      Sparrow core ne kapjon holes_points-ot; CUT_INNER előfordulást manifest/report
+      szinten rögzítsd. Készíts scripts/run_sgh_q32_finite_stock_multisheet_lv8.py
+      runner scriptet, amely release binárist buildel/használ, generálja a három kötelező
+      inputot, futtatja case01/case02/case03-at time_limit_s=1200 mellett, menti az inputokat,
+      outputokat, summary JSON-t és Markdown benchmark reportot. A runner ne lazítson gate-et;
+      hiba esetén exit code 2 legyen.
+    outputs:
+      - "rust/vrs_solver/tests/fixtures/sgh_q32_finite_stock_multisheet/full_276_lv8_derived.json"
+      - "scripts/run_sgh_q32_finite_stock_multisheet_lv8.py"
+      - "artifacts/benchmarks/sgh_q32/inputs/case_01_2x1500x3000.json"
+      - "artifacts/benchmarks/sgh_q32/inputs/case_02_3x1500x3000.json"
+      - "artifacts/benchmarks/sgh_q32/inputs/case_03_1x1500x3000_2x1000x2000.json"
+      - "artifacts/benchmarks/sgh_q32/outputs/case_01_2x1500x3000_output.json"
+      - "artifacts/benchmarks/sgh_q32/outputs/case_02_3x1500x3000_output.json"
+      - "artifacts/benchmarks/sgh_q32/outputs/case_03_1x1500x3000_2x1000x2000_output.json"
+      - "artifacts/benchmarks/sgh_q32/finite_stock_multisheet_summary.json"
+      - "artifacts/benchmarks/sgh_q32/finite_stock_multisheet_report.md"
+
+  - name: "Smoke validator és Rust tesztek"
+    description: >
+      Hozz létre scripts/smoke_sgh_q32_finite_stock_multisheet.py validátort és
+      rust/vrs_solver/tests/sparrow_finite_stock_multisheet.rs integrációs tesztet.
+      A smoke ellenőrizze: pipeline enum létezik, snake_case serde név deserializálható,
+      új sparrow/multisheet.rs létezik, nincs WorkingLayout/VrsCollisionTracker import,
+      nincs Python multi_sheet_wrapper használat, nincs compression bekötés, Q31 base-shape
+      cache megmaradt, mindhárom case output létezik, case01 és case02 hard gate PASS,
+      case03 OK vagy korrekt stock-exhausted partial PASS. A Rust tesztek fedjék:
+      enum deserialize, heterogén stock mapping, unique used sheet count, synthetic 3-sheet
+      availability mellett max 2 used sheet, collisionos partial sanitize, explicit
+      stock-exhaustion unplaced reason, Q31 cache invariáns.
+    outputs:
+      - "scripts/smoke_sgh_q32_finite_stock_multisheet.py"
+      - "rust/vrs_solver/tests/sparrow_finite_stock_multisheet.rs"
+
+  - name: "Checklist és Report Standard v2 report kitöltése"
+    description: >
+      Készítsd el és tartsd karban a Q32 checklistet és reportot. A report tartalmazza
+      a canvas által kért szekciókat: Scope, Source files changed, Existing code audit,
+      Finite-stock manager architecture, Sheet subset / stock selection strategy,
+      Initial solution strategy, Sparrow-core integration, Cross-sheet move / repair /
+      local improvement, Partial sanitize / unplaced reporting, Utilization calculation,
+      LV8 full276 inputs, Case 01/02/03 results, Acceptance gates, Build/test commands,
+      Known remaining limitations, Final verdict. A report végén kötelező marker sorok
+      legyenek: Q32_STATUS, Q32_CASE01_STATUS, Q32_CASE02_STATUS, Q32_CASE03_STATUS,
+      Q32_CASE01/02/03_PLACED, USED_SHEETS, FINAL_PAIRS, Q32_CASE03_UNPLACED,
+      Q32_FINAL_VERDICT. PASS csak akkor írható, ha minden acceptance gate és parancs PASS.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q32_finite_stock_sparrow_multisheet_manager.md"
+      - "codex/reports/egyedi_solver/sgh_q32_finite_stock_sparrow_multisheet_manager.md"
+
+  - name: "Repo gate és kötelező verifikáció"
+    description: >
+      Futtasd sorrendben: cargo build --manifest-path rust/vrs_solver/Cargo.toml --release;
+      cargo test --manifest-path rust/vrs_solver/Cargo.toml --lib; cargo test --manifest-path
+      rust/vrs_solver/Cargo.toml --test sparrow_finite_stock_multisheet; python3
+      scripts/run_sgh_q32_finite_stock_multisheet_lv8.py; python3
+      scripts/smoke_sgh_q32_finite_stock_multisheet.py; ./scripts/check.sh; végül
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q32_finite_stock_sparrow_multisheet_manager.md.
+      Ha bármelyik hibázik, javítsd a kódot és futtasd újra. Ne gyengítsd a case gate-eket.
+      A verify logot mentsd a report mellé. A végső report csak akkor PASS, ha a three-case
+      LV8 full276 validation, Rust tesztek, smoke, check és verify is zöld.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q32_finite_stock_sparrow_multisheet_manager.md"
+      - "codex/reports/egyedi_solver/sgh_q32_finite_stock_sparrow_multisheet_manager.verify.log"

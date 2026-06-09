@@ -124,40 +124,76 @@ impl SparrowOptimizer {
             while no_improve < no_improve_limit && started.elapsed().as_secs_f64() < deadline {
                 diag.iterations += 1;
                 if state.tracker.colliding_indices().is_empty() {
-                    if diag.search_rotation_wiggle == 0 {
-                        if let Some(target) = state
-                            .layout
-                            .placements
-                            .iter()
-                            .position(|p| instances[p.instance_idx].continuous_rotation)
-                        {
-                            let mut probe_rng = DeterministicRng::new(rng.next_u64());
-                            let _ = native_search_placement(
-                                target,
-                                &state.layout,
-                                instances,
-                                &state.tracker,
-                                sheets,
-                                &self.config,
-                                &mut probe_rng,
-                                started,
-                                f64::INFINITY,
-                                diag,
-                                None,
-                            );
+                    // Verify with a fresh full rebuild to detect incremental-tracker
+                    // desync. The mini-session fallback in update_after_move can miss
+                    // backward-pair (j < i) collisions, causing premature "feasible"
+                    // reads with actual overlaps still present in the layout.
+                    let fresh = SparrowCollisionTracker::build_with_diag(
+                        &state.layout, instances, sheets, diag,
+                    );
+                    diag.native_tracker_full_rebuilds += fresh.full_rebuilds;
+                    if fresh.is_feasible() {
+                        if diag.search_rotation_wiggle == 0 {
+                            if let Some(target) = state
+                                .layout
+                                .placements
+                                .iter()
+                                .position(|p| instances[p.instance_idx].continuous_rotation)
+                            {
+                                let mut probe_rng = DeterministicRng::new(rng.next_u64());
+                                let _ = native_search_placement(
+                                    target,
+                                    &state.layout,
+                                    instances,
+                                    &state.tracker,
+                                    sheets,
+                                    &self.config,
+                                    &mut probe_rng,
+                                    started,
+                                    f64::INFINITY,
+                                    diag,
+                                    None,
+                                );
+                            }
                         }
+                        state.best_feasible = Some(state.layout.snapshot());
+                        t_sep.add_to(&mut diag.q30_profile.separator_total_ms);
+                        return true;
                     }
-                    break;
+                    // Desync confirmed: repair pair/boundary state from fresh rebuild
+                    // (keeps GLS weights) and continue the inner loop.
+                    state.tracker.restore_keep_weights(fresh.snapshot());
+                    best_raw = state.tracker.total_raw_loss();
+                    best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
+                    no_improve = 0;
                 }
                 let t_iter = ProfileTimer::start_if(r1);
                 self.move_items_multi(state, instances, sheets, rng, started, deadline, diag);
                 state.refresh_incumbents();
                 let raw = state.tracker.total_raw_loss();
                 if raw <= 1e-9 {
-                    t_iter.add_to(&mut diag.q30_profile.separator_iteration_total_ms);
-                    state.best_feasible = Some(state.layout.snapshot());
-                    t_sep.add_to(&mut diag.q30_profile.separator_total_ms);
-                    return true;
+                    // Verify with a fresh full rebuild before claiming feasible.
+                    // The incremental tracker can desync (mini-session fallback for
+                    // backward pairs j < i misses overlaps), reporting zero raw loss
+                    // while actual collisions remain in the layout.
+                    let fresh = SparrowCollisionTracker::build_with_diag(
+                        &state.layout, instances, sheets, diag,
+                    );
+                    diag.native_tracker_full_rebuilds += fresh.full_rebuilds;
+                    if fresh.is_feasible() {
+                        t_iter.add_to(&mut diag.q30_profile.separator_iteration_total_ms);
+                        state.best_feasible = Some(state.layout.snapshot());
+                        t_sep.add_to(&mut diag.q30_profile.separator_total_ms);
+                        return true;
+                    }
+                    // Desync confirmed: repair tracker from fresh rebuild (keeping GLS
+                    // weights) and clear the incorrectly-set best_feasible incumbent.
+                    state.tracker.restore_keep_weights(fresh.snapshot());
+                    state.best_feasible = None;
+                    best_raw = state.tracker.total_raw_loss();
+                    best_snapshot = (state.layout.snapshot(), state.tracker.snapshot());
+                    no_improve = 0;
+                    // Falls through to update_weights below.
                 } else if raw < best_raw - 1e-9 {
                     // New best by total raw loss (upstream Algorithm 9 semantics).
                     let old_best_raw = best_raw;

@@ -100,7 +100,8 @@ pub const SPARROW_DENSE_COORD_DESCENTS: usize = 4;
 /// Use the same no-improve limit as parity: the deadline governs, not this
 /// counter (at ~40s/iter, 200 iterations >> 900s budget).
 pub const SPARROW_DENSE_NO_IMPROVE_LIMIT: usize = 200;
-pub const SPARROW_DENSE_MAX_CONSEC_FAILED_ATTEMPTS: usize = 15;
+/// Time-based deadline governs; this cap just prevents runaway on degenerate inputs.
+pub const SPARROW_DENSE_MAX_CONSEC_FAILED_ATTEMPTS: usize = 1_000_000;
 pub const SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE: f64 = 0.75;
 
 impl SparrowConfig {

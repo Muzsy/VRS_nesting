@@ -1,0 +1,144 @@
+{
+  "task": "sgh_q32_finite_stock_sparrow_multisheet_manager",
+  "status": "PASS",
+  "cases": [
+    {
+      "case_id": "case_01",
+      "case_status": "PASS",
+      "ms": {
+        "status": "ok",
+        "placed_count": 276,
+        "unplaced_count": 0,
+        "pipeline_used": "sparrow_cde_multisheet",
+        "sparrow_ms_active": true,
+        "sparrow_ms_status": "ok",
+        "sparrow_ms_available_sheet_count": 2,
+        "sparrow_ms_used_sheet_count": 2,
+        "sparrow_ms_used_sheet_indices": [
+          0,
+          1
+        ],
+        "sparrow_ms_used_sheet_area": 9000000.0,
+        "sparrow_ms_placed_part_area": 15187542.384728197,
+        "sparrow_ms_utilization_pct": 168.75047094142442,
+        "sparrow_ms_total_instances": 276,
+        "sparrow_ms_placed_instances": 276,
+        "sparrow_ms_unplaced_instances": 0,
+        "sparrow_ms_attempts": 2,
+        "sparrow_ms_candidate_subsets": 2,
+        "sparrow_ms_best_full_solution_found": true,
+        "sparrow_ms_stock_exhausted": false,
+        "sparrow_ms_final_pairs": 0,
+        "sparrow_ms_boundary_violations": 0,
+        "sparrow_ms_runtime_ms": 685340.616114,
+        "sparrow_ms_best_score": 9000000.002,
+        "sparrow_q31_base_shape_cache_build_ms": 1367.560288,
+        "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
+        "unplaced": [],
+        "_wall_s": 712.05
+      },
+      "fails": []
+    },
+    {
+      "case_id": "case_02",
+      "case_status": "PASS",
+      "ms": {
+        "status": "ok",
+        "placed_count": 276,
+        "unplaced_count": 0,
+        "pipeline_used": "sparrow_cde_multisheet",
+        "sparrow_ms_active": true,
+        "sparrow_ms_status": "ok",
+        "sparrow_ms_available_sheet_count": 3,
+        "sparrow_ms_used_sheet_count": 2,
+        "sparrow_ms_used_sheet_indices": [
+          0,
+          1
+        ],
+        "sparrow_ms_used_sheet_area": 9000000.0,
+        "sparrow_ms_placed_part_area": 15187542.384728197,
+        "sparrow_ms_utilization_pct": 168.75047094142442,
+        "sparrow_ms_total_instances": 276,
+        "sparrow_ms_placed_instances": 276,
+        "sparrow_ms_unplaced_instances": 0,
+        "sparrow_ms_attempts": 2,
+        "sparrow_ms_candidate_subsets": 3,
+        "sparrow_ms_best_full_solution_found": true,
+        "sparrow_ms_stock_exhausted": false,
+        "sparrow_ms_final_pairs": 0,
+        "sparrow_ms_boundary_violations": 0,
+        "sparrow_ms_runtime_ms": 683516.125627,
+        "sparrow_ms_best_score": 9000000.002,
+        "sparrow_q31_base_shape_cache_build_ms": 1383.768503,
+        "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
+        "unplaced": [],
+        "_wall_s": 710.19
+      },
+      "fails": []
+    },
+    {
+      "case_id": "case_03",
+      "case_status": "PASS",
+      "ms": {
+        "status": "partial",
+        "placed_count": 271,
+        "unplaced_count": 5,
+        "pipeline_used": "sparrow_cde_multisheet",
+        "sparrow_ms_active": true,
+        "sparrow_ms_status": "partial",
+        "sparrow_ms_available_sheet_count": 3,
+        "sparrow_ms_used_sheet_count": 3,
+        "sparrow_ms_used_sheet_indices": [
+          0,
+          1,
+          2
+        ],
+        "sparrow_ms_used_sheet_area": 8500000.0,
+        "sparrow_ms_placed_part_area": 7767834.744408203,
+        "sparrow_ms_utilization_pct": 91.38629111068475,
+        "sparrow_ms_total_instances": 276,
+        "sparrow_ms_placed_instances": 271,
+        "sparrow_ms_unplaced_instances": 5,
+        "sparrow_ms_attempts": 5,
+        "sparrow_ms_candidate_subsets": 5,
+        "sparrow_ms_best_full_solution_found": false,
+        "sparrow_ms_stock_exhausted": true,
+        "sparrow_ms_final_pairs": 0,
+        "sparrow_ms_boundary_violations": 0,
+        "sparrow_ms_runtime_ms": 1266327.917561,
+        "sparrow_ms_best_score": 999999992232165.2,
+        "sparrow_q31_base_shape_cache_build_ms": 1415.249671,
+        "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
+        "unplaced": [
+          {
+            "instance_id": "Lv8_07921_50db__0018",
+            "part_id": "Lv8_07921_50db",
+            "reason": "STOCK_EXHAUSTED_PARTIAL"
+          },
+          {
+            "instance_id": "Lv8_11612_6db__0001",
+            "part_id": "Lv8_11612_6db",
+            "reason": "STOCK_EXHAUSTED_PARTIAL"
+          },
+          {
+            "instance_id": "Lv8_11612_6db__0003",
+            "part_id": "Lv8_11612_6db",
+            "reason": "STOCK_EXHAUSTED_PARTIAL"
+          },
+          {
+            "instance_id": "Lv8_11612_6db__0005",
+            "part_id": "Lv8_11612_6db",
+            "reason": "STOCK_EXHAUSTED_PARTIAL"
+          },
+          {
+            "instance_id": "Lv8_11612_6db__0006",
+            "part_id": "Lv8_11612_6db",
+            "reason": "STOCK_EXHAUSTED_PARTIAL"
+          }
+        ],
+        "_wall_s": 1288.08
+      },
+      "fails": []
+    }
+  ]
+}

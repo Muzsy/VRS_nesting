@@ -58,6 +58,15 @@ pub enum OptimizerPipelineKind {
     /// back to a legacy solver. A failure returns unsupported/partial with full
     /// diagnostics preserved. Legacy pipelines remain explicit opt-in only.
     SparrowCde,
+    /// SGH-Q32: Sparrow-native finite-stock heterogeneous multisheet manager.
+    /// CDE-first by contract. Manages a pool of available sheets (heterogeneous
+    /// rectangles allowed), generates candidate sheet subsets, and runs the
+    /// native Sparrow core on each subset. Returns the best valid incumbent:
+    /// full feasible (all placed, final_pairs=0, boundary_violations=0) or a
+    /// collision-free partial with explicit STOCK_EXHAUSTED_PARTIAL/
+    /// INSUFFICIENT_STOCK_CAPACITY unplaced reasons when stock is exhausted.
+    /// Never falls back to legacy multisheet manager or Python wrapper.
+    SparrowCdeMultisheet,
 }
 
 impl Default for OptimizerPipelineKind {
@@ -484,6 +493,45 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_q31_search_base_shape_cache_hits: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_q31_lbf_base_shape_cache_hits: Option<usize>,
+    // ── SGH-Q32 finite-stock multisheet manager diagnostics ──────────────────
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_available_sheet_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_used_sheet_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_used_sheet_indices: Option<Vec<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_used_sheet_area: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_placed_part_area: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_utilization_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_total_instances: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_placed_instances: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_unplaced_instances: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_attempts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_candidate_subsets: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_best_full_solution_found: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_stock_exhausted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_final_pairs: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_boundary_violations: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_runtime_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_best_score: Option<f64>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

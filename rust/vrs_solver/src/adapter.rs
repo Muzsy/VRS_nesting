@@ -547,6 +547,26 @@ fn native_sparrow_diag_to_output(
         sparrow_q31_tracker_transform_from_base_ms: Some(d.q30_profile.tracker_transform_from_base_ms),
         sparrow_q31_search_base_shape_cache_hits: Some(d.q30_profile.search_base_shape_cache_hits),
         sparrow_q31_lbf_base_shape_cache_hits: Some(d.q30_profile.lbf_base_shape_cache_hits),
+        // Q32 multisheet fields: not populated by the single-sheet sparrow_cde pipeline.
+        sparrow_ms_active: None,
+        sparrow_ms_status: None,
+        sparrow_ms_available_sheet_count: None,
+        sparrow_ms_used_sheet_count: None,
+        sparrow_ms_used_sheet_indices: None,
+        sparrow_ms_used_sheet_area: None,
+        sparrow_ms_placed_part_area: None,
+        sparrow_ms_utilization_pct: None,
+        sparrow_ms_total_instances: None,
+        sparrow_ms_placed_instances: None,
+        sparrow_ms_unplaced_instances: None,
+        sparrow_ms_attempts: None,
+        sparrow_ms_candidate_subsets: None,
+        sparrow_ms_best_full_solution_found: None,
+        sparrow_ms_stock_exhausted: None,
+        sparrow_ms_final_pairs: None,
+        sparrow_ms_boundary_violations: None,
+        sparrow_ms_runtime_ms: None,
+        sparrow_ms_best_score: None,
     }
 }
 
@@ -663,6 +683,268 @@ fn run_sparrow_pipeline(
         Some(optimizer_diag),
         backend_diag,
     ))
+}
+
+/// SGH-Q32: Sparrow-native finite-stock multisheet manager pipeline.
+///
+/// CDE-first by contract. Manages a pool of available sheets, generates candidate
+/// subsets, runs native Sparrow core on each, and returns the best valid incumbent.
+/// Never falls back to legacy multisheet manager or Python wrapper.
+fn run_sparrow_finite_stock_multisheet_pipeline(
+    input: &SolverInput,
+    sheets: &[crate::sheet::SheetShape],
+    rotation_context: &RotationResolveContext,
+    pre_unplaced: Vec<Unplaced>,
+) -> (
+    Vec<Placement>,
+    Vec<Unplaced>,
+    Option<OptimizerDiagnosticsOutput>,
+    Option<CollisionBackendDiagnosticsOutput>,
+) {
+    use crate::optimizer::sparrow::multisheet::{run_finite_stock_multisheet, FiniteStockRunConfig};
+    cde_observability::reset();
+    crate::optimizer::cde_adapter::reset_query_cache();
+
+    let ms_config = FiniteStockRunConfig {
+        time_limit_s: (input.time_limit_s as f64).max(1.0),
+        seed: input.seed as u64,
+        backend: CollisionBackendKind::Cde,
+        rotation_context: rotation_context.clone(),
+    };
+
+    let result = run_finite_stock_multisheet(
+        &input.parts,
+        &input.stocks,
+        rotation_context,
+        pre_unplaced,
+        ms_config,
+    );
+
+    let snap = cde_observability::snapshot();
+    let backend_diag = if result.status == "ok" {
+        Some(cde_feasible_diag(&snap, "sparrow_cde_multisheet", None))
+    } else {
+        Some(cde_unsupported_diag(&snap, "sparrow_cde_multisheet_partial", None))
+    };
+
+    // Build optimizer diagnostics with Q32 multisheet fields populated.
+    let best_core = result.best_core_diag.as_ref();
+    let optimizer_diag = OptimizerDiagnosticsOutput {
+        pipeline_used: "sparrow_cde_multisheet".to_string(),
+        phase_optimizer_invoked: false,
+        exploration_iterations: best_core.map(|d| d.iterations).unwrap_or(0),
+        compression_iterations: 0,
+        bpp_attempts: 0,
+        rotation_refinement_enabled: false,
+        rotation_refinement_attempts: 0,
+        rotation_refinement_accepts: 0,
+        rotation_refinement_rejections: 0,
+        rotation_refinement_best_delta: 0.0,
+        search_position_calls: best_core.map(|d| d.search_position_calls).unwrap_or(0),
+        search_position_global_samples_evaluated: best_core.map(|d| d.search_global_samples).unwrap_or(0),
+        search_position_focused_samples_evaluated: best_core.map(|d| d.search_focused_samples).unwrap_or(0),
+        search_position_samples_unsupported: best_core.map(|d| d.search_unsupported_samples).unwrap_or(0),
+        search_position_refined_samples: best_core.map(|d| d.search_refined_samples).unwrap_or(0),
+        search_position_coord_descent_steps: best_core.map(|d| d.search_coord_descent_steps).unwrap_or(0),
+        search_position_lbf_fallback_used: best_core.map(|d| d.lbf_fallback_used).unwrap_or(0),
+        search_position_best_eval: 0.0,
+        collision_severity_backend: "cde".to_string(),
+        collision_severity_enabled: true,
+        collision_severity_pair_queries: best_core.map(|d| d.quantified_pair_queries).unwrap_or(0),
+        collision_severity_boundary_queries: best_core.map(|d| d.quantified_boundary_queries).unwrap_or(0),
+        collision_severity_probe_queries: 0,
+        collision_severity_backend_confirmed_collisions: 0,
+        collision_severity_backend_confirmed_no_collisions: 0,
+        collision_severity_unsupported_queries: 0,
+        collision_severity_bbox_proxy_uses: 0,
+        collision_severity_probe_pair_queries: 0,
+        collision_severity_probe_boundary_queries: 0,
+        collision_severity_probe_resolved: 0,
+        collision_severity_probe_unresolved: 0,
+        collision_severity_probe_unsupported: 0,
+        collision_severity_min_resolution_mm: 0.0,
+        collision_severity_max_resolution_mm: 0.0,
+        collision_severity_avg_resolution_mm: 0.0,
+        phase_optimizer_exploration_ms: None,
+        phase_optimizer_compression_ms: None,
+        phase_optimizer_bpp_ms: None,
+        phase_optimizer_final_commit_ms: None,
+        sparrow_invoked: Some(true),
+        sparrow_seed_placements: best_core.map(|d| d.seed_placements),
+        sparrow_seed_unplaced: best_core.map(|d| d.seed_unplaced),
+        sparrow_initial_raw_loss: best_core.map(|d| d.initial_raw_loss),
+        sparrow_initial_weighted_loss: best_core.map(|d| d.initial_weighted_loss),
+        sparrow_final_raw_loss: best_core.map(|d| d.final_raw_loss),
+        sparrow_final_weighted_loss: best_core.map(|d| d.final_weighted_loss),
+        sparrow_best_infeasible_raw_loss: best_core.map(|d| d.best_infeasible_raw_loss),
+        sparrow_best_infeasible_weighted_loss: best_core.map(|d| d.best_infeasible_weighted_loss),
+        sparrow_iterations: best_core.map(|d| d.iterations),
+        sparrow_moves_attempted: best_core.map(|d| d.moves_attempted),
+        sparrow_moves_accepted: best_core.map(|d| d.moves_accepted),
+        sparrow_rollbacks: best_core.map(|d| d.rollbacks),
+        sparrow_gls_weight_updates: best_core.map(|d| d.gls_weight_updates),
+        sparrow_converged: best_core.map(|d| d.converged),
+        sparrow_collision_graph_initial_pairs: best_core.map(|d| d.collision_graph_initial_pairs),
+        sparrow_collision_graph_final_pairs: Some(result.final_pairs),
+        sparrow_boundary_violations_initial: best_core.map(|d| d.boundary_violations_initial),
+        sparrow_boundary_violations_final: Some(result.boundary_violations),
+        sparrow_search_position_calls: best_core.map(|d| d.search_position_calls),
+        sparrow_search_position_samples: best_core.map(|d| d.search_position_samples),
+        sparrow_severity_pair_queries: best_core.map(|d| d.quantified_pair_queries),
+        sparrow_severity_boundary_queries: best_core.map(|d| d.quantified_boundary_queries),
+        sparrow_severity_probe_queries: None,
+        sparrow_lbf_fallback_used: best_core.map(|d| d.lbf_fallback_used),
+        sparrow_workers: best_core.map(|d| d.worker_count),
+        sparrow_worker_passes: best_core.map(|d| d.worker_passes),
+        sparrow_worker_candidates_evaluated: best_core.map(|d| d.worker_candidates_evaluated),
+        sparrow_worker_commits: best_core.map(|d| d.worker_commits),
+        sparrow_worker_rollbacks: best_core.map(|d| d.worker_rollbacks),
+        sparrow_worker_best_loss: best_core.map(|d| d.worker_best_loss),
+        sparrow_multi_target_items_attempted: best_core.map(|d| d.multi_target_items_attempted),
+        sparrow_multi_target_items_accepted: best_core.map(|d| d.multi_target_items_accepted),
+        sparrow_multi_target_items_rejected: best_core.map(|d| d.multi_target_items_rejected),
+        sparrow_topk_target_count: best_core.map(|d| d.topk_target_count),
+        sparrow_graph_full_rebuilds: best_core.map(|d| d.native_tracker_full_rebuilds),
+        sparrow_graph_incremental_updates: best_core.map(|d| d.native_tracker_incremental_updates),
+        sparrow_graph_edges_recomputed: best_core.map(|d| d.quantified_pair_queries),
+        sparrow_graph_edges_pruned_by_broadphase: Some(0),
+        sparrow_graph_debug_rebuilds: Some(0),
+        sparrow_graph_debug_rebuild_mismatches: Some(0),
+        sparrow_exploration_restarts: best_core.map(|d| d.exploration_pool_restores),
+        sparrow_exploration_seed_strategies: Some(0),
+        sparrow_exploration_disruptions: best_core.map(|d| {
+            d.exploration_disruptions_large_item_swap
+                + d.exploration_disruptions_cross_sheet
+                + d.exploration_disruptions_rotation
+        }),
+        sparrow_exploration_stagnation_events: Some(0),
+        sparrow_exploration_best_raw_loss: best_core.map(|d| d.best_infeasible_raw_loss),
+        sparrow_exploration_best_weighted_loss: best_core.map(|d| d.best_infeasible_weighted_loss),
+        sparrow_exploration_best_feasible_found: best_core.map(|d| d.converged),
+        sparrow_compression_passes: Some(0),
+        sparrow_compression_candidates_evaluated: Some(0),
+        sparrow_compression_accepts: Some(0),
+        sparrow_compression_rejects: Some(0),
+        sparrow_fixed_sheet_objective_before: Some(0.0),
+        sparrow_fixed_sheet_objective_after: Some(0.0),
+        sparrow_fixed_sheet_objective_delta: Some(0.0),
+        loss_model_used: Some("CdeSeparationLoss".to_string()),
+        loss_bbox_proxy_used_as_primary: Some(false),
+        sparrow_native_model_active: Some(true),
+        sparrow_native_tracker_active: Some(true),
+        sparrow_old_core_used: Some(false),
+        sparrow_native_problem_instances: best_core.map(|d| d.native_problem_instances),
+        sparrow_native_tracker_full_rebuilds: best_core.map(|d| d.native_tracker_full_rebuilds),
+        sparrow_native_tracker_incremental_updates: best_core.map(|d| d.native_tracker_incremental_updates),
+        sparrow_dense_guard_used: Some(false),
+        sparrow_dense_real_run: Some(false),
+        sparrow_dense_partial_reason: None,
+        sparrow_dense_validated_placements: None,
+        sparrow_dense_unresolved_instances: None,
+        sparrow_dense_final_validation_ran: Some(false),
+        sparrow_profiling_enabled: Some(false),
+        sparrow_profile_search_total_ms: None,
+        sparrow_profile_session_build_ms: None,
+        sparrow_profile_deregister_ms: None,
+        sparrow_profile_candidate_transform_ms: None,
+        sparrow_profile_cde_query_collect_ms: None,
+        sparrow_profile_hazard_loss_ms: None,
+        sparrow_profile_boundary_check_ms: None,
+        sparrow_profile_broadphase_reject_count: None,
+        sparrow_profile_early_termination_count: None,
+        sparrow_q30_profile_enabled: Some(false),
+        sparrow_q30_native_search_calls: None,
+        sparrow_q30_evaluate_sample_calls: None,
+        sparrow_q30_candidates_evaluated: None,
+        sparrow_q30_global_samples_generated: None,
+        sparrow_q30_focused_samples_generated: None,
+        sparrow_q30_coord_descent_runs: None,
+        sparrow_q30_coord_descent_steps: None,
+        sparrow_q30_best_samples_insert_attempts: None,
+        sparrow_q30_best_samples_inserted: None,
+        sparrow_q30_best_samples_dedup_rejects: None,
+        sparrow_q30_early_termination_count: None,
+        sparrow_q30_broadphase_reject_count: None,
+        sparrow_q30_search_total_ms: None,
+        sparrow_q30_sample_generation_ms: None,
+        sparrow_q30_best_samples_insert_dedup_ms: None,
+        sparrow_q30_coord_descent_total_ms: None,
+        sparrow_q30_evaluate_sample_total_ms: None,
+        sparrow_q30_candidate_transform_prepare_ms: None,
+        sparrow_q30_cde_query_collect_ms: None,
+        sparrow_q30_boundary_check_ms: None,
+        sparrow_q30_session_build_ms: None,
+        sparrow_q30_deregister_reregister_ms: None,
+        sparrow_q30r1_exclusive_enabled: Some(false),
+        sparrow_q30r1_prepare_base_shape_native_ms: None,
+        sparrow_q30r1_fixed_shapes_clone_ms: None,
+        sparrow_q30r1_sheet_order_build_ms: None,
+        sparrow_q30r1_best_samples_best_ms: None,
+        sparrow_q30r1_best_samples_clone_ms: None,
+        sparrow_q30r1_coord_descent_ask_ms: None,
+        sparrow_q30r1_coord_descent_tell_ms: None,
+        sparrow_q30r1_search_accounted_ms: None,
+        sparrow_q30r1_search_unaccounted_ms: None,
+        sparrow_q30r1_search_unaccounted_ratio_pct: None,
+        sparrow_q30r1_total_solver_runtime_ms: None,
+        sparrow_q30r1_adapter_solve_total_ms: None,
+        sparrow_q30r1_sparrow_optimizer_solve_total_ms: None,
+        sparrow_q30r1_seed_lbf_total_ms: None,
+        sparrow_q30r1_tracker_initial_build_ms: None,
+        sparrow_q30r1_exploration_total_ms: None,
+        sparrow_q30r1_separator_total_ms: None,
+        sparrow_q30r1_separator_iteration_total_ms: None,
+        sparrow_q30r1_worker_competition_total_ms: None,
+        sparrow_q30r1_worker_pass_total_ms: None,
+        sparrow_q30r1_tracker_final_validation_ms: None,
+        sparrow_q30r1_output_mapping_ms: None,
+        sparrow_q30r1_other_solver_unaccounted_ms: None,
+        sparrow_q30r1_other_solver_unaccounted_ratio_pct: None,
+        sparrow_q30r1_evaluate_sample_calls_from_focused: None,
+        sparrow_q30r1_evaluate_sample_calls_from_global: None,
+        sparrow_q30r1_evaluate_sample_calls_from_coord_descent: None,
+        sparrow_q30r1_best_samples_best_calls: None,
+        sparrow_q30r1_best_samples_clone_calls: None,
+        sparrow_q30r1_coord_descent_ask_calls: None,
+        sparrow_q30r1_coord_descent_tell_calls: None,
+        sparrow_q30r1_sheet_loop_iterations: None,
+        sparrow_q30r1_worker_passes: None,
+        sparrow_q30r1_worker_candidates_evaluated: None,
+        sparrow_q30r1_worker_candidates_accepted: None,
+        // Q31 base-shape cache fields from best core attempt
+        sparrow_q31_base_shape_cache_build_ms: best_core.map(|d| d.q30_profile.base_shape_cache_build_ms),
+        sparrow_q31_base_shape_cache_hits: best_core.map(|d| d.q30_profile.base_shape_cache_hits),
+        sparrow_q31_base_shape_cache_misses: best_core.map(|d| d.q30_profile.base_shape_cache_misses),
+        sparrow_q31_base_shape_cache_unique_parts: best_core.map(|d| d.q30_profile.base_shape_cache_unique_parts),
+        sparrow_q31_base_shape_cache_reused_instances: best_core.map(|d| d.q30_profile.base_shape_cache_reused_instances),
+        sparrow_q31_prepare_base_shape_native_hotpath_calls: best_core.map(|d| d.q30_profile.prepare_base_shape_native_hotpath_calls),
+        sparrow_q31_prepare_base_shape_native_hotpath_ms: best_core.map(|d| d.q30_profile.prepare_base_shape_native_hotpath_ms),
+        sparrow_q31_tracker_transform_from_base_ms: best_core.map(|d| d.q30_profile.tracker_transform_from_base_ms),
+        sparrow_q31_search_base_shape_cache_hits: best_core.map(|d| d.q30_profile.search_base_shape_cache_hits),
+        sparrow_q31_lbf_base_shape_cache_hits: best_core.map(|d| d.q30_profile.lbf_base_shape_cache_hits),
+        // Q32 multisheet diagnostics
+        sparrow_ms_active: Some(true),
+        sparrow_ms_status: Some(result.status.clone()),
+        sparrow_ms_available_sheet_count: Some(result.available_sheet_count),
+        sparrow_ms_used_sheet_count: Some(result.used_sheet_indices.len()),
+        sparrow_ms_used_sheet_indices: Some(result.used_sheet_indices.clone()),
+        sparrow_ms_used_sheet_area: Some(result.used_sheet_area),
+        sparrow_ms_placed_part_area: Some(result.placed_part_area),
+        sparrow_ms_utilization_pct: Some(result.utilization_pct),
+        sparrow_ms_total_instances: Some(result.total_instances),
+        sparrow_ms_placed_instances: Some(result.placed_instances),
+        sparrow_ms_unplaced_instances: Some(result.unplaced_instances),
+        sparrow_ms_attempts: Some(result.attempts),
+        sparrow_ms_candidate_subsets: Some(result.candidate_subsets),
+        sparrow_ms_best_full_solution_found: Some(result.best_full_solution_found),
+        sparrow_ms_stock_exhausted: Some(result.stock_exhausted),
+        sparrow_ms_final_pairs: Some(result.final_pairs),
+        sparrow_ms_boundary_violations: Some(result.boundary_violations),
+        sparrow_ms_runtime_ms: Some(result.runtime_ms),
+        sparrow_ms_best_score: Some(result.best_score),
+    };
+
+    (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
 }
 
 fn score_breakdown_from_result(
@@ -1085,6 +1367,25 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_q31_tracker_transform_from_base_ms: None,
                             sparrow_q31_search_base_shape_cache_hits: None,
                             sparrow_q31_lbf_base_shape_cache_hits: None,
+                            sparrow_ms_active: None,
+                            sparrow_ms_status: None,
+                            sparrow_ms_available_sheet_count: None,
+                            sparrow_ms_used_sheet_count: None,
+                            sparrow_ms_used_sheet_indices: None,
+                            sparrow_ms_used_sheet_area: None,
+                            sparrow_ms_placed_part_area: None,
+                            sparrow_ms_utilization_pct: None,
+                            sparrow_ms_total_instances: None,
+                            sparrow_ms_placed_instances: None,
+                            sparrow_ms_unplaced_instances: None,
+                            sparrow_ms_attempts: None,
+                            sparrow_ms_candidate_subsets: None,
+                            sparrow_ms_best_full_solution_found: None,
+                            sparrow_ms_stock_exhausted: None,
+                            sparrow_ms_final_pairs: None,
+                            sparrow_ms_boundary_violations: None,
+                            sparrow_ms_runtime_ms: None,
+                            sparrow_ms_best_score: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
@@ -1142,6 +1443,19 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                     }
                     Err(out) => return Ok(out),
                 }
+            }
+            OptimizerPipelineKind::SparrowCdeMultisheet => {
+                // SGH-Q32: finite-stock multisheet manager. CDE-first by contract.
+                // Manages a pool of available sheets, tries candidate subsets, and
+                // returns the best valid incumbent. Never falls back to legacy solver.
+                let (p, u, diag, bdiag) = run_sparrow_finite_stock_multisheet_pipeline(
+                    &input,
+                    &sheets,
+                    &rotation_context,
+                    pre_unplaced,
+                );
+                collision_backend_diag = bdiag;
+                (p, u, diag)
             }
         }
     } else {
