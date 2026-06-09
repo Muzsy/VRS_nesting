@@ -133,3 +133,29 @@ Q32R2_CASE03_RUNTIME_MS: 1176058
 Q32R2_CASE03_WALL_S: 1198.2
 Q32R2_CASE01_SCORE_BD_UTIL: 0.7411
 Q32R2_FINAL_VERDICT: PASS
+
+<!-- AUTO_VERIFY_START -->
+### Automatikus repo gate (verify.sh)
+
+- eredmény: **PASS**
+- check.sh exit kód: `0`
+- futás: 2026-06-09T22:07:32+02:00 → 2026-06-09T22:10:45+02:00 (193s)
+- parancs: `./scripts/check.sh`
+- log: `/home/muszy/projects/VRS_nesting/codex/reports/egyedi_solver/sgh_q32_r2_finite_stock_correctness_fix.verify.log`
+- git: `main@33de5ec`
+- módosított fájlok (git status): 1
+
+**git diff --stat**
+
+```text
+ ..._q32_r2_finite_stock_correctness_fix.verify.log | 8821 ++++++++++++++++++++
+ 1 file changed, 8821 insertions(+)
+```
+
+**git status --porcelain (preview)**
+
+```text
+ M codex/reports/egyedi_solver/sgh_q32_r2_finite_stock_correctness_fix.verify.log
+```
+
+<!-- AUTO_VERIFY_END -->
