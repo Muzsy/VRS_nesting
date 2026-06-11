@@ -18,7 +18,7 @@ use crate::optimizer::{
     SheetCursor,
 };
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
-use crate::sheet::{apply_rectangular_sheet_margin, count_sheet_margin_violations, expand_sheets, stock_has_holes};
+use crate::sheet::{apply_rectangular_sheet_margin, find_sheet_margin_violations, expand_sheets, stock_has_holes};
 use crate::technology::TechnologyClearancePolicy;
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
@@ -700,6 +700,38 @@ fn run_sparrow_pipeline(
     ))
 }
 
+/// SGH-Q34-R1: unplaced reason for a placement removed by the margin safety net.
+const REASON_SHEET_MARGIN_VIOLATION: &str = "SHEET_MARGIN_VIOLATION_Q34R1";
+
+/// SGH-Q34-R1: remove margin-violating placements and move them to `unplaced`.
+///
+/// Any placement whose `instance_id` is in `violating_instance_ids` is removed from
+/// `placements` and appended to `unplaced` with reason `SHEET_MARGIN_VIOLATION_Q34R1`.
+/// This guarantees the top-level status calculation (`unplaced.is_empty()`) cannot
+/// report `ok` when a margin violation exists.
+fn apply_margin_violation_safety_net(
+    placements: Vec<Placement>,
+    mut unplaced: Vec<Unplaced>,
+    violating_instance_ids: &[String],
+) -> (Vec<Placement>, Vec<Unplaced>) {
+    if violating_instance_ids.is_empty() {
+        return (placements, unplaced);
+    }
+    let mut kept: Vec<Placement> = Vec::with_capacity(placements.len());
+    for pl in placements {
+        if violating_instance_ids.contains(&pl.instance_id) {
+            unplaced.push(Unplaced {
+                instance_id: pl.instance_id.clone(),
+                part_id: pl.part_id.clone(),
+                reason: REASON_SHEET_MARGIN_VIOLATION.to_string(),
+            });
+        } else {
+            kept.push(pl);
+        }
+    }
+    (kept, unplaced)
+}
+
 /// SGH-Q32: Sparrow-native finite-stock multisheet manager pipeline.
 ///
 /// CDE-first by contract. Manages a pool of available sheets, generates candidate
@@ -767,23 +799,31 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         ms_config,
     );
 
-    // SGH-Q34: final margin validator. Re-check every placement's rotated bbox against
-    // the margin-inset boundary of the ORIGINAL physical sheet. If any placement violates
-    // the margin, treat the result as invalid: downgrade status and do not emit it as ok.
-    let margin_violation_count = if margin_applied {
-        count_sheet_margin_violations(
+    // SGH-Q34-R1: final margin validator using FULL transformed part polygon (not bbox).
+    // Any violating placement is removed and moved to unplaced with an explicit reason, so
+    // the top-level SolverOutput.status (computed from unplaced.is_empty()) cannot be `ok`.
+    let margin_violating_ids = if margin_applied {
+        find_sheet_margin_violations(
             &result.placements,
             &input.parts,
             original_sheets,
             margin_mm,
         )
     } else {
-        0
+        Vec::new()
     };
-    if margin_violation_count > 0 && result.status == "ok" {
-        // Should not happen (solver ran on shrunk sheets); safety net: mark partial.
+    let margin_violation_count = margin_violating_ids.len();
+    if margin_violation_count > 0 {
+        let placements = std::mem::take(&mut result.placements);
+        let unplaced = std::mem::take(&mut result.unplaced);
+        let (kept, new_unplaced) =
+            apply_margin_violation_safety_net(placements, unplaced, &margin_violating_ids);
+        result.placements = kept;
+        result.unplaced = new_unplaced;
         result.status = "partial".to_string();
         result.best_full_solution_found = false;
+        result.placed_instances = result.placements.len();
+        result.unplaced_instances = result.unplaced.len();
     }
 
     // SGH-Q34: compute usable (margin-shrunk) vs physical area for the used sheets.
@@ -1791,7 +1831,10 @@ impl JaguaAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::{phase_commit_or_unsupported, solve};
+    use super::{
+        apply_margin_violation_safety_net, phase_commit_or_unsupported, solve,
+        REASON_SHEET_MARGIN_VIOLATION,
+    };
     use crate::io::{
         CollisionBackendKind, OptimizerPipelineKind, Placement, SolverInput, SolverOutput,
     };
@@ -3024,5 +3067,46 @@ mod tests {
             .collision_backend_diagnostics
             .expect("failure must preserve collision_backend_diagnostics");
         assert_eq!(cbd.backend_used, "cde_adapter");
+    }
+
+    // ── SGH-Q34-R1 margin violation safety net ────────────────────────────────
+
+    fn pl(instance_id: &str, part_id: &str) -> Placement {
+        Placement {
+            instance_id: instance_id.to_string(),
+            part_id: part_id.to_string(),
+            sheet_index: 0,
+            x: 0.0,
+            y: 0.0,
+            rotation_deg: 0.0,
+        }
+    }
+
+    #[test]
+    fn margin_safety_net_moves_violating_to_unplaced() {
+        let placements = vec![pl("A#0", "A"), pl("B#0", "B"), pl("C#0", "C")];
+        let violating = vec!["B#0".to_string()];
+        let (kept, unplaced) =
+            apply_margin_violation_safety_net(placements, vec![], &violating);
+
+        // B#0 removed from placements.
+        assert_eq!(kept.len(), 2);
+        assert!(kept.iter().all(|p| p.instance_id != "B#0"));
+        // B#0 appears in unplaced with the explicit reason.
+        assert_eq!(unplaced.len(), 1);
+        assert_eq!(unplaced[0].instance_id, "B#0");
+        assert_eq!(unplaced[0].reason, REASON_SHEET_MARGIN_VIOLATION);
+        assert_eq!(REASON_SHEET_MARGIN_VIOLATION, "SHEET_MARGIN_VIOLATION_Q34R1");
+        // With a non-empty unplaced list, top-level status cannot be "ok".
+        assert!(!unplaced.is_empty());
+    }
+
+    #[test]
+    fn margin_safety_net_noop_when_no_violations() {
+        let placements = vec![pl("A#0", "A"), pl("B#0", "B")];
+        let (kept, unplaced) =
+            apply_margin_violation_safety_net(placements, vec![], &[]);
+        assert_eq!(kept.len(), 2);
+        assert!(unplaced.is_empty());
     }
 }

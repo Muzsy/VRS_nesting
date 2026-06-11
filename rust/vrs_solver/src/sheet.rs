@@ -410,58 +410,91 @@ pub fn apply_rectangular_sheet_margin(
     Ok(result)
 }
 
-/// SGH-Q34: Count placements whose rotated bounding box falls outside the margin-inset
-/// sheet boundary. Uses the bbox approach (rotation + translation of part corners).
+/// SGH-Q34-R1: Find placements whose transformed part polygon falls outside the
+/// margin-inset sheet boundary. Returns the list of violating `instance_id`s.
 ///
-/// A violation is any placement where any corner of the rotated bbox is outside the
-/// inset rectangle [min_x+m, min_y+m, max_x−m, max_y−m] by more than EPS.
+/// This uses the FULL part polygon (not a bbox proxy), transformed with the exact
+/// same convention as the CDE/Sparrow placement path
+/// (`extract_polygon_from_part` + `transform_polygon`):
+///   - local polygon from `prepared_outer_points`/`outer_points` when present;
+///   - rectangle fallback `[(0,0),(w,0),(w,h),(0,h)]` ONLY when the part has no polygon;
+///   - rotation around the local origin, then translation by the placement anchor.
+///
+/// Every transformed vertex must lie inside the margin-inset rectangle
+/// `[min_x+m, min_y+m, max_x−m, max_y−m]`. Because the container is a convex
+/// rectangle, vertex containment implies full-polygon containment.
+pub fn find_sheet_margin_violations(
+    placements: &[crate::io::Placement],
+    parts: &[crate::item::Part],
+    original_sheets: &[SheetShape],
+    margin_mm: f64,
+) -> Vec<String> {
+    use crate::optimizer::collision_backend::{
+        extract_polygon_from_part, transform_polygon, PolygonExtraction,
+    };
+    if margin_mm <= 0.0 {
+        return Vec::new();
+    }
+    let mut violations: Vec<String> = Vec::new();
+    for pl in placements {
+        let Some(sheet) = original_sheets.get(pl.sheet_index) else {
+            violations.push(pl.instance_id.clone());
+            continue;
+        };
+        let Some(part) = parts.iter().find(|p| p.id == pl.part_id) else {
+            violations.push(pl.instance_id.clone());
+            continue;
+        };
+
+        // Local part polygon — same source/precedence as the CDE/Sparrow path.
+        let local: Vec<Point> = match extract_polygon_from_part(part) {
+            PolygonExtraction::Valid(local) => local,
+            PolygonExtraction::Absent => {
+                // Rectangle fallback ONLY when the part truly has no polygon.
+                vec![
+                    Point { x: 0.0, y: 0.0 },
+                    Point { x: part.width, y: 0.0 },
+                    Point { x: part.width, y: part.height },
+                    Point { x: 0.0, y: part.height },
+                ]
+            }
+            PolygonExtraction::Invalid { .. } => {
+                // Cannot validate a malformed polygon: treat conservatively as a violation.
+                violations.push(pl.instance_id.clone());
+                continue;
+            }
+        };
+
+        let world = transform_polygon(&local, pl.x, pl.y, pl.rotation_deg);
+
+        let inset_min_x = sheet.min_x + margin_mm;
+        let inset_min_y = sheet.min_y + margin_mm;
+        let inset_max_x = sheet.max_x - margin_mm;
+        let inset_max_y = sheet.max_y - margin_mm;
+
+        let outside = world.iter().any(|p| {
+            p.x < inset_min_x - EPS
+                || p.y < inset_min_y - EPS
+                || p.x > inset_max_x + EPS
+                || p.y > inset_max_y + EPS
+        });
+        if outside {
+            violations.push(pl.instance_id.clone());
+        }
+    }
+    violations
+}
+
+/// SGH-Q34: Count placements whose transformed part polygon falls outside the
+/// margin-inset sheet boundary. Thin wrapper over [`find_sheet_margin_violations`]
+/// kept for backward compatibility.
 pub fn count_sheet_margin_violations(
     placements: &[crate::io::Placement],
     parts: &[crate::item::Part],
     original_sheets: &[SheetShape],
     margin_mm: f64,
 ) -> usize {
-    use crate::rotation_policy::{dims_for_rotation_f64, rotated_bbox_min_offset_f64};
-    if margin_mm <= 0.0 {
-        return 0;
-    }
-    let mut violations = 0usize;
-    for pl in placements {
-        let sheet = match original_sheets.get(pl.sheet_index) {
-            Some(s) => s,
-            None => {
-                violations += 1;
-                continue;
-            }
-        };
-        let part = match parts.iter().find(|p| p.id == pl.part_id) {
-            Some(p) => p,
-            None => {
-                violations += 1;
-                continue;
-            }
-        };
-        let (bbox_min_off_x, bbox_min_off_y) =
-            rotated_bbox_min_offset_f64(part.width, part.height, pl.rotation_deg);
-        let (bbox_w, bbox_h) =
-            dims_for_rotation_f64(part.width, part.height, pl.rotation_deg);
-        let world_min_x = pl.x + bbox_min_off_x;
-        let world_min_y = pl.y + bbox_min_off_y;
-        let world_max_x = world_min_x + bbox_w;
-        let world_max_y = world_min_y + bbox_h;
-        let inset_min_x = sheet.min_x + margin_mm;
-        let inset_min_y = sheet.min_y + margin_mm;
-        let inset_max_x = sheet.max_x - margin_mm;
-        let inset_max_y = sheet.max_y - margin_mm;
-        if world_min_x < inset_min_x - EPS
-            || world_min_y < inset_min_y - EPS
-            || world_max_x > inset_max_x + EPS
-            || world_max_y > inset_max_y + EPS
-        {
-            violations += 1;
-        }
-    }
-    violations
+    find_sheet_margin_violations(placements, parts, original_sheets, margin_mm).len()
 }
 
 pub fn rect_inside_sheet_shape(rect: Rect, sheet: &SheetShape) -> bool {

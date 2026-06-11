@@ -118,8 +118,6 @@ def check_static_invariants() -> None:
     # adapter.rs wires the margin into the multisheet pipeline
     check("apply_rectangular_sheet_margin" in adapter_rs,
           "adapter.rs: apply_rectangular_sheet_margin used in multisheet pipeline")
-    check("count_sheet_margin_violations" in adapter_rs,
-          "adapter.rs: count_sheet_margin_violations used as final validator")
     check("solver_sheets_override" in adapter_rs,
           "adapter.rs: solver_sheets_override passed to manager")
 
@@ -133,6 +131,42 @@ def check_static_invariants() -> None:
     # No spec-forbidden new offset fields
     check("part_spacing_mm" not in io_rs.replace("technology_effective_part_spacing_mm", ""),
           "io.rs: no standalone part_spacing_mm field")
+
+    # ── SGH-Q34-R1: polygon validator + status safety net ─────────────────────
+    print("\n--- Q34-R1 polygon validator + safety net ---")
+
+    # find_sheet_margin_violations exists; bbox-final-validator removed.
+    check("fn find_sheet_margin_violations" in sheet_rs,
+          "sheet.rs: find_sheet_margin_violations defined")
+    # The polygon validator must NOT base its final decision on a rotated bbox.
+    raw_sheet = read(sheet_rs_path)
+    check("rotated bounding box" not in raw_sheet.lower(),
+          "sheet.rs: no 'rotated bounding box' final validator language")
+    check("rotated_bbox_min_offset_f64" not in sheet_rs and "dims_for_rotation_f64" not in sheet_rs,
+          "sheet.rs: validator does not use bbox helpers (rotated_bbox_min_offset_f64/dims_for_rotation_f64)")
+    # Validator uses the canonical polygon extraction + transform.
+    check("extract_polygon_from_part" in sheet_rs and "transform_polygon" in sheet_rs,
+          "sheet.rs: validator uses extract_polygon_from_part + transform_polygon (polygon path)")
+
+    # SHEET_MARGIN_VIOLATION_Q34R1 reason exists in adapter.
+    check("SHEET_MARGIN_VIOLATION_Q34R1" in adapter_rs,
+          "adapter.rs: SHEET_MARGIN_VIOLATION_Q34R1 reason present")
+    # adapter uses the violation LIST result, not just a count.
+    check("find_sheet_margin_violations" in adapter_rs,
+          "adapter.rs: uses find_sheet_margin_violations result (instance ids, not just count)")
+    # adapter applies the safety net (removes violating placements / moves to unplaced).
+    check("apply_margin_violation_safety_net" in adapter_rs,
+          "adapter.rs: applies margin-violation safety net (placement removal → unplaced)")
+    # status forced to partial in the violation path.
+    check('result.status = "partial"' in adapter_rs,
+          "adapter.rs: margin violation forces result.status = partial")
+
+    # The polygon regression test exists in the test target.
+    test_rs = read(ROOT / "rust/vrs_solver/tests/technology_sheet_margin.rs")
+    check("polygon_inside_declared_bbox_outside_no_violation" in test_rs,
+          "tests: polygon_inside_declared_bbox_outside_no_violation present (non-bbox proof)")
+    check("rotated_polygon_containment" in test_rs,
+          "tests: rotated_polygon_containment present")
 
 
 # ── Synthetic runs ────────────────────────────────────────────────────────────
@@ -213,6 +247,32 @@ def check_too_large_case() -> None:
           f"explicit unplaced reason present (got {unplaced[0].get('reason') if unplaced else None!r})")
 
 
+# ── Q34-R1 dynamic: cargo test --test technology_sheet_margin ─────────────────
+
+def check_cargo_test() -> None:
+    print("\n--- Q34-R1 dynamic: cargo test --test technology_sheet_margin ---")
+    import shutil
+    cargo = shutil.which("cargo")
+    if cargo is None:
+        # Soft skip: the static check already confirmed the test name exists; verify.sh
+        # runs the full test suite. Do not fail the smoke when cargo is not on PATH.
+        check(True, "cargo not on PATH → skipping live test run (test name presence already checked)")
+        return
+    try:
+        result = subprocess.run(
+            [cargo, "test", "--manifest-path", str(ROOT / "rust/vrs_solver/Cargo.toml"),
+             "--test", "technology_sheet_margin"],
+            capture_output=True, text=True, timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        check(False, "cargo test --test technology_sheet_margin completed within 600s")
+        return
+    ok = result.returncode == 0 and "test result: ok" in (result.stdout + result.stderr)
+    check(ok, "cargo test --test technology_sheet_margin passes")
+    if not ok:
+        print(f"    {result.stdout[-400:]}\n    {result.stderr[-200:]}")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -220,6 +280,7 @@ def main() -> None:
     check_static_invariants()
     check_ok_case()
     check_too_large_case()
+    check_cargo_test()
 
     print(f"\n{'='*48}")
     print(f"  PASS: {PASS_COUNT}   FAIL: {FAIL_COUNT}")

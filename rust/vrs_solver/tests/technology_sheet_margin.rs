@@ -14,9 +14,13 @@
 
 use serde_json::{json, Value};
 use vrs_solver::adapter::solve;
-use vrs_solver::io::{SolverInput, SolverOutput};
+use vrs_solver::io::{Placement, SolverInput, SolverOutput};
+use vrs_solver::item::Part;
 use vrs_solver::rotation_policy::{dims_for_rotation_f64, rotated_bbox_min_offset_f64};
-use vrs_solver::sheet::{apply_rectangular_sheet_margin, expand_sheets, Stock};
+use vrs_solver::sheet::{
+    apply_rectangular_sheet_margin, count_sheet_margin_violations, expand_sheets,
+    find_sheet_margin_violations, Stock,
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -208,4 +212,130 @@ fn explicit_zero_margin_backwards_compatible() {
     assert_eq!(out.status, "ok");
     let d = od(&out);
     assert_eq!(d.technology_sheet_margin_applied, Some(false));
+}
+
+// ── SGH-Q34-R1: polygon-based final margin validator ──────────────────────────
+//
+// These tests prove the validator uses the actual transformed part POLYGON, not the
+// declared width×height bounding box. Test 1 in particular fails with a bbox validator.
+
+/// Build a Part with an explicit triangular outer_points polygon but a large declared
+/// width/height bbox. The polygon is small; the bbox is large.
+fn triangle_part_big_bbox(id: &str) -> Part {
+    serde_json::from_value(json!({
+        "id": id,
+        "width": 100.0,
+        "height": 100.0,
+        "quantity": 1,
+        "allowed_rotations_deg": [0],
+        "outer_points": [[0.0, 0.0], [20.0, 0.0], [0.0, 20.0]]
+    }))
+    .expect("parse triangle part")
+}
+
+fn rect_part_no_polygon(id: &str, w: f64, h: f64) -> Part {
+    // No outer_points → rectangle fallback path.
+    serde_json::from_value(json!({
+        "id": id,
+        "width": w,
+        "height": h,
+        "quantity": 1,
+        "allowed_rotations_deg": [0]
+    }))
+    .expect("parse rect part")
+}
+
+fn placement(instance_id: &str, part_id: &str, x: f64, y: f64, rot: f64) -> Placement {
+    Placement {
+        instance_id: instance_id.to_string(),
+        part_id: part_id.to_string(),
+        sheet_index: 0,
+        x,
+        y,
+        rotation_deg: rot,
+    }
+}
+
+/// Test 1 (the key regression): polygon inside, declared bbox outside.
+/// Triangle [(0,0),(20,0),(0,20)] at (65,65) → world extent x/y 65..85, inside [10,90].
+/// The declared 100×100 bbox would extend to 165 (outside) — a bbox validator would
+/// wrongly flag this. The polygon validator must report NO violation.
+#[test]
+fn polygon_inside_declared_bbox_outside_no_violation() {
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let parts = vec![triangle_part_big_bbox("T")];
+    let placements = vec![placement("T#0", "T", 65.0, 65.0, 0.0)];
+
+    let v = find_sheet_margin_violations(&placements, &parts, &sheets, 10.0);
+    assert!(v.is_empty(), "polygon is inside inset; expected no violation, got {v:?}");
+    assert_eq!(count_sheet_margin_violations(&placements, &parts, &sheets, 10.0), 0);
+}
+
+/// Test 2: polygon actually violates margin. Triangle at (75,75) → world max 95 > 90.
+#[test]
+fn polygon_actually_violates_margin() {
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let parts = vec![triangle_part_big_bbox("T")];
+    let placements = vec![placement("T#0", "T", 75.0, 75.0, 0.0)];
+
+    let v = find_sheet_margin_violations(&placements, &parts, &sheets, 10.0);
+    assert_eq!(v, vec!["T#0".to_string()], "polygon exceeds inset; expected violation");
+    assert_eq!(count_sheet_margin_violations(&placements, &parts, &sheets, 10.0), 1);
+}
+
+/// Test 3: rotated polygon containment. A triangle rotated 45° — placed so the rotated
+/// vertices stay inside vs. cross the inset boundary.
+#[test]
+fn rotated_polygon_containment() {
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let parts = vec![triangle_part_big_bbox("T")];
+
+    // Triangle [(0,0),(20,0),(0,20)] rotated 45° about origin:
+    //   (0,0)->(0,0); (20,0)->(14.14,14.14); (0,20)->(-14.14,14.14)
+    // Anchored at (50,50): vertices (50,50),(64.14,64.14),(35.86,64.14) — all in [10,90].
+    let inside = vec![placement("T#0", "T", 50.0, 50.0, 45.0)];
+    assert!(
+        find_sheet_margin_violations(&inside, &parts, &sheets, 10.0).is_empty(),
+        "rotated polygon fully inside inset must not violate"
+    );
+
+    // Anchored near the left edge so the (-14.14,14.14) vertex crosses inset_min_x=10:
+    //   anchor (15,50) → vertex x = 15 - 14.14 = 0.86 < 10 → violation.
+    let outside = vec![placement("T#0", "T", 15.0, 50.0, 45.0)];
+    assert_eq!(
+        find_sheet_margin_violations(&outside, &parts, &sheets, 10.0),
+        vec!["T#0".to_string()],
+        "rotated polygon vertex outside inset must violate"
+    );
+}
+
+/// Test 4: rectangle fallback (no outer_points) still works.
+#[test]
+fn rectangle_fallback_still_works() {
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let parts = vec![rect_part_no_polygon("R", 20.0, 20.0)];
+
+    // Inside: anchor (10,10) → world 10..30, inside [10,90].
+    let inside = vec![placement("R#0", "R", 10.0, 10.0, 0.0)];
+    assert!(
+        find_sheet_margin_violations(&inside, &parts, &sheets, 10.0).is_empty(),
+        "rect fallback inside must not violate"
+    );
+
+    // Outside: anchor (75,75) → world 75..95, 95 > 90 → violation.
+    let outside = vec![placement("R#0", "R", 75.0, 75.0, 0.0)];
+    assert_eq!(
+        count_sheet_margin_violations(&outside, &parts, &sheets, 10.0),
+        1,
+        "rect fallback outside must violate"
+    );
+}
+
+/// Margin 0 → validator is a no-op (returns empty).
+#[test]
+fn zero_margin_no_violations() {
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let parts = vec![triangle_part_big_bbox("T")];
+    let placements = vec![placement("T#0", "T", 75.0, 75.0, 0.0)];
+    assert!(find_sheet_margin_violations(&placements, &parts, &sheets, 0.0).is_empty());
 }
