@@ -582,6 +582,10 @@ fn native_sparrow_diag_to_output(
         technology_margin_usable_sheet_area: None,
         technology_margin_physical_used_sheet_area: None,
         technology_margin_violation_count: None,
+        technology_part_spacing_applied: None,
+        technology_part_spacing_mm: None,
+        technology_spacing_violation_count: None,
+        technology_spacing_safety_net_removed_count: None,
     }
 }
 
@@ -732,6 +736,55 @@ fn apply_margin_violation_safety_net(
     (kept, unplaced)
 }
 
+/// SGH-Q35: unplaced reason for a placement removed by the part-spacing safety gate.
+const REASON_PART_SPACING_VIOLATION: &str = "PART_SPACING_VIOLATION_Q35";
+
+/// SGH-Q35: remove spacing-violating placements and move them to `unplaced`.
+///
+/// As a SAFETY GATE (not an optimization), both endpoints of every violation pair are
+/// removed. Each removed placement is appended to `unplaced` with reason
+/// `PART_SPACING_VIOLATION_Q35`. Guarantees the top-level status cannot be `ok` when a
+/// spacing violation exists. Returns `(kept_placements, unplaced)`.
+fn apply_spacing_violation_safety_net(
+    placements: Vec<Placement>,
+    mut unplaced: Vec<Unplaced>,
+    violations: &[crate::technology::spacing::PartSpacingViolation],
+) -> (Vec<Placement>, Vec<Unplaced>) {
+    if violations.is_empty() {
+        return (placements, unplaced);
+    }
+    let mut to_remove: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for v in violations {
+        to_remove.insert(v.a_instance_id.clone());
+        to_remove.insert(v.b_instance_id.clone());
+    }
+    let mut kept: Vec<Placement> = Vec::with_capacity(placements.len());
+    for pl in placements {
+        if to_remove.contains(&pl.instance_id) {
+            unplaced.push(Unplaced {
+                instance_id: pl.instance_id.clone(),
+                part_id: pl.part_id.clone(),
+                reason: REASON_PART_SPACING_VIOLATION.to_string(),
+            });
+        } else {
+            kept.push(pl);
+        }
+    }
+    (kept, unplaced)
+}
+
+/// SGH-Q35: number of unique placements that the spacing safety net would remove.
+fn spacing_safety_net_removed_count(
+    violations: &[crate::technology::spacing::PartSpacingViolation],
+) -> usize {
+    let mut ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for v in violations {
+        ids.insert(v.a_instance_id.as_str());
+        ids.insert(v.b_instance_id.as_str());
+    }
+    ids.len()
+}
+
 /// SGH-Q32: Sparrow-native finite-stock multisheet manager pipeline.
 ///
 /// CDE-first by contract. Manages a pool of available sheets, generates candidate
@@ -749,7 +802,11 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     Option<OptimizerDiagnosticsOutput>,
     Option<CollisionBackendDiagnosticsOutput>,
 ) {
-    use crate::optimizer::sparrow::multisheet::{run_finite_stock_multisheet, FiniteStockRunConfig};
+    use crate::optimizer::sparrow::multisheet::{
+        recompute_multisheet_result_after_safety_net, run_finite_stock_multisheet,
+        FiniteStockRunConfig,
+    };
+    use crate::technology::spacing::find_part_spacing_violations;
     cde_observability::reset();
     crate::optimizer::cde_adapter::reset_query_cache();
 
@@ -757,6 +814,9 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     // keeping original sheets for physical area reporting.
     let margin_mm = technology_policy.effective_sheet_margin_mm();
     let margin_applied = margin_mm > 0.0;
+    // SGH-Q35: part-part spacing final gate (independent of kerf_mm).
+    let spacing_mm = technology_policy.effective_part_spacing_mm();
+    let spacing_applied = spacing_mm > 0.0;
     let original_sheets = sheets; // physical sheets, already expanded
     let solver_sheets_override = if margin_applied {
         match apply_rectangular_sheet_margin(original_sheets, margin_mm) {
@@ -813,6 +873,7 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         Vec::new()
     };
     let margin_violation_count = margin_violating_ids.len();
+    let mut safety_net_removed_placement = margin_violation_count > 0;
     if margin_violation_count > 0 {
         let placements = std::mem::take(&mut result.placements);
         let unplaced = std::mem::take(&mut result.unplaced);
@@ -820,10 +881,32 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
             apply_margin_violation_safety_net(placements, unplaced, &margin_violating_ids);
         result.placements = kept;
         result.unplaced = new_unplaced;
-        result.status = "partial".to_string();
-        result.best_full_solution_found = false;
-        result.placed_instances = result.placements.len();
-        result.unplaced_instances = result.unplaced.len();
+    }
+
+    // SGH-Q35: part-part spacing final validator, on the placements remaining after the
+    // margin gate. Runs on the FULL transformed part polygons (not bbox); kerf_mm is NOT
+    // added to spacing_mm. Violating placements are removed and moved to unplaced.
+    let spacing_violations = if spacing_applied {
+        find_part_spacing_violations(&result.placements, &input.parts, spacing_mm)
+    } else {
+        Vec::new()
+    };
+    let spacing_violation_count = spacing_violations.len();
+    let spacing_removed_count = spacing_safety_net_removed_count(&spacing_violations);
+    if spacing_violation_count > 0 {
+        let placements = std::mem::take(&mut result.placements);
+        let unplaced = std::mem::take(&mut result.unplaced);
+        let (kept, new_unplaced) =
+            apply_spacing_violation_safety_net(placements, unplaced, &spacing_violations);
+        result.placements = kept;
+        result.unplaced = new_unplaced;
+        safety_net_removed_placement = true;
+    }
+
+    // SGH-Q35: recompute all result aggregates ONCE after the safety nets so diagnostics
+    // and the top-level output cannot be contradictory (no stale used_sheet_*/counts/status).
+    if safety_net_removed_placement {
+        recompute_multisheet_result_after_safety_net(&mut result, &input.parts, original_sheets);
     }
 
     // SGH-Q34: compute usable (margin-shrunk) vs physical area for the used sheets.
@@ -1088,6 +1171,11 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         technology_margin_usable_sheet_area: margin_usable_area,
         technology_margin_physical_used_sheet_area: margin_physical_area,
         technology_margin_violation_count: Some(margin_violation_count),
+        // SGH-Q35 part-part spacing final validator diagnostics
+        technology_part_spacing_applied: Some(spacing_applied),
+        technology_part_spacing_mm: Some(spacing_mm),
+        technology_spacing_violation_count: Some(spacing_violation_count),
+        technology_spacing_safety_net_removed_count: Some(spacing_removed_count),
     };
 
     (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
@@ -1555,6 +1643,10 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             technology_margin_usable_sheet_area: None,
                             technology_margin_physical_used_sheet_area: None,
                             technology_margin_violation_count: None,
+                            technology_part_spacing_applied: None,
+                            technology_part_spacing_mm: None,
+                            technology_spacing_violation_count: None,
+                            technology_spacing_safety_net_removed_count: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
@@ -1832,9 +1924,11 @@ impl JaguaAdapter {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_margin_violation_safety_net, phase_commit_or_unsupported, solve,
-        REASON_SHEET_MARGIN_VIOLATION,
+        apply_margin_violation_safety_net, apply_spacing_violation_safety_net,
+        phase_commit_or_unsupported, solve, spacing_safety_net_removed_count,
+        REASON_PART_SPACING_VIOLATION, REASON_SHEET_MARGIN_VIOLATION,
     };
+    use crate::technology::spacing::PartSpacingViolation;
     use crate::io::{
         CollisionBackendKind, OptimizerPipelineKind, Placement, SolverInput, SolverOutput,
     };
@@ -3106,6 +3200,60 @@ mod tests {
         let placements = vec![pl("A#0", "A"), pl("B#0", "B")];
         let (kept, unplaced) =
             apply_margin_violation_safety_net(placements, vec![], &[]);
+        assert_eq!(kept.len(), 2);
+        assert!(unplaced.is_empty());
+    }
+
+    // ── SGH-Q35 spacing violation safety net ──────────────────────────────────
+
+    fn spacing_viol(a: &str, b: &str) -> PartSpacingViolation {
+        PartSpacingViolation {
+            sheet_index: 0,
+            a_instance_id: a.to_string(),
+            b_instance_id: b.to_string(),
+            a_part_id: "A".to_string(),
+            b_part_id: "B".to_string(),
+            distance_mm: 0.0,
+            required_spacing_mm: 5.0,
+        }
+    }
+
+    /// Test 9: safety net removes both endpoints of a violation pair.
+    #[test]
+    fn spacing_safety_net_removes_both_endpoints() {
+        let placements = vec![pl("A#0", "A"), pl("B#0", "B"), pl("C#0", "C")];
+        let violations = vec![spacing_viol("A#0", "B#0")];
+        assert_eq!(spacing_safety_net_removed_count(&violations), 2);
+
+        let (kept, unplaced) =
+            apply_spacing_violation_safety_net(placements, vec![], &violations);
+
+        // Only C#0 remains.
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].instance_id, "C#0");
+        // A#0 and B#0 moved to unplaced with the explicit reason.
+        assert_eq!(unplaced.len(), 2);
+        assert!(unplaced.iter().all(|u| u.reason == REASON_PART_SPACING_VIOLATION));
+        assert_eq!(REASON_PART_SPACING_VIOLATION, "PART_SPACING_VIOLATION_Q35");
+        let ids: Vec<&str> = unplaced.iter().map(|u| u.instance_id.as_str()).collect();
+        assert!(ids.contains(&"A#0") && ids.contains(&"B#0"));
+    }
+
+    /// Test 10: after a spacing removal, unplaced is non-empty ⇒ top-level status
+    /// (computed from unplaced.is_empty()) cannot be ok.
+    #[test]
+    fn spacing_safety_net_forces_non_ok_status() {
+        let placements = vec![pl("A#0", "A"), pl("B#0", "B")];
+        let violations = vec![spacing_viol("A#0", "B#0")];
+        let (_kept, unplaced) =
+            apply_spacing_violation_safety_net(placements, vec![], &violations);
+        assert!(!unplaced.is_empty(), "spacing removal must leave a non-empty unplaced list");
+    }
+
+    #[test]
+    fn spacing_safety_net_noop_when_no_violations() {
+        let placements = vec![pl("A#0", "A"), pl("B#0", "B")];
+        let (kept, unplaced) = apply_spacing_violation_safety_net(placements, vec![], &[]);
         assert_eq!(kept.len(), 2);
         assert!(unplaced.is_empty());
     }

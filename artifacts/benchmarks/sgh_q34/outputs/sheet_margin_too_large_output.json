@@ -132,7 +132,7 @@
     "sparrow_profiling_enabled": false,
     "sparrow_q30_profile_enabled": false,
     "sparrow_q30r1_exclusive_enabled": false,
-    "sparrow_q31_base_shape_cache_build_ms": 0.007194,
+    "sparrow_q31_base_shape_cache_build_ms": 0.004749,
     "sparrow_q31_base_shape_cache_hits": 0,
     "sparrow_q31_base_shape_cache_misses": 0,
     "sparrow_q31_base_shape_cache_unique_parts": 0,
@@ -159,7 +159,7 @@
     "sparrow_ms_stock_exhausted": true,
     "sparrow_ms_final_pairs": 0,
     "sparrow_ms_boundary_violations": 0,
-    "sparrow_ms_runtime_ms": 0.12878900000000001,
+    "sparrow_ms_runtime_ms": 0.096312,
     "sparrow_ms_requested_time_limit_s": 30.0,
     "sparrow_ms_deadline_hit": false,
     "sparrow_ms_best_score": 1000000000000000.0,
@@ -174,7 +174,11 @@
     "technology_kerf_mm": 0.0,
     "technology_effective_sheet_margin_mm": 10.0,
     "technology_effective_part_spacing_mm": 0.0,
-    "technology_effective_kerf_mm": 0.0
+    "technology_effective_kerf_mm": 0.0,
+    "technology_part_spacing_applied": false,
+    "technology_part_spacing_mm": 0.0,
+    "technology_spacing_violation_count": 0,
+    "technology_spacing_safety_net_removed_count": 0
   },
   "collision_backend_diagnostics": {
     "backend_used": "cde_adapter",

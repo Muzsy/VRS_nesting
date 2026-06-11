@@ -128,9 +128,13 @@ def check_static_invariants() -> None:
     check("MultiSheetManager" not in sheet_rs,
           "sheet.rs: no legacy MultiSheetManager usage")
 
-    # No spec-forbidden new offset fields
-    check("part_spacing_mm" not in io_rs.replace("technology_effective_part_spacing_mm", ""),
-          "io.rs: no standalone part_spacing_mm field")
+    # No spec-forbidden new offset fields. Exclude the legitimate technology diagnostic
+    # field names that contain the substring (effective_part_spacing_mm, part_spacing_mm).
+    io_field_scan = io_rs.replace("technology_effective_part_spacing_mm", "").replace(
+        "technology_part_spacing_mm", ""
+    )
+    check("part_spacing_mm" not in io_field_scan,
+          "io.rs: no standalone part_spacing_mm SolverInput field")
 
     # ── SGH-Q34-R1: polygon validator + status safety net ─────────────────────
     print("\n--- Q34-R1 polygon validator + safety net ---")
@@ -157,9 +161,11 @@ def check_static_invariants() -> None:
     # adapter applies the safety net (removes violating placements / moves to unplaced).
     check("apply_margin_violation_safety_net" in adapter_rs,
           "adapter.rs: applies margin-violation safety net (placement removal → unplaced)")
-    # status forced to partial in the violation path.
-    check('result.status = "partial"' in adapter_rs,
-          "adapter.rs: margin violation forces result.status = partial")
+    # Margin violation forces a non-ok status. Since Q35, status is recomputed by a shared
+    # helper after the safety nets remove placements (unplaced.is_empty() ⇒ status), instead
+    # of an inline `result.status = "partial"` in the margin block.
+    check("recompute_multisheet_result_after_safety_net" in adapter_rs,
+          "adapter.rs: result aggregates/status recomputed after safety net (forces non-ok)")
 
     # The polygon regression test exists in the test target.
     test_rs = read(ROOT / "rust/vrs_solver/tests/technology_sheet_margin.rs")

@@ -42,6 +42,8 @@ fn irregular_stock(id: &str) -> Stock {
 }
 
 fn ms_input(margin: Option<f64>, parts: Vec<Value>, stock_w: f64, stock_h: f64) -> SolverInput {
+    // spacing_mm is pinned to 0.0 to ISOLATE margin enforcement: without it, Q33's default
+    // (spacing = margin when absent) would make Q35's part-spacing gate fire as well.
     let mut v = json!({
         "contract_version": "v1",
         "project_name": "q34_test",
@@ -50,6 +52,7 @@ fn ms_input(margin: Option<f64>, parts: Vec<Value>, stock_w: f64, stock_h: f64) 
         "optimizer_pipeline": "sparrow_cde_multisheet",
         "collision_backend": "cde",
         "solver_profile": "jagua_optimizer_phase1_outer_only",
+        "spacing_mm": 0.0,
         "stocks": [{"id": "S1", "quantity": 1, "width": stock_w, "height": stock_h}],
         "parts": parts,
     });

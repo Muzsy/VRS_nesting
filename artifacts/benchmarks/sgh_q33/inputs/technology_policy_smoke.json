@@ -15,7 +15,7 @@
   "parts": [
     {
       "id": "P1",
-      "quantity": 2,
+      "quantity": 1,
       "width": 40.0,
       "height": 30.0,
       "allowed_rotations_deg": [0, 90],

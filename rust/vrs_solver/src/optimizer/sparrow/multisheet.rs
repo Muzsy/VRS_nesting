@@ -295,6 +295,41 @@ fn compute_utilization(
     )
 }
 
+/// SGH-Q35: recompute multisheet result aggregates after a safety net removed placements.
+///
+/// Keeps `used_sheet_*`, `placed_part_area`, `utilization_pct`, placed/unplaced instance
+/// counts, `status`, and `best_full_solution_found` consistent with the (possibly reduced)
+/// `placements`/`unplaced`. `original_sheets` are the physical expanded sheets (identity
+/// index order), used for the physical `used_sheet_area`.
+pub(crate) fn recompute_multisheet_result_after_safety_net(
+    result: &mut FiniteStockRunResult,
+    parts: &[crate::item::Part],
+    original_sheets: &[SheetShape],
+) {
+    let all_sheets_with_orig: Vec<(SheetShape, usize)> = original_sheets
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, s)| (s, i))
+        .collect();
+    let (used_idx, used_area, placed_area, util) =
+        compute_utilization(&result.placements, parts, &all_sheets_with_orig);
+    result.used_sheet_indices = used_idx;
+    result.used_sheet_area = used_area;
+    result.placed_part_area = placed_area;
+    result.utilization_pct = util;
+    result.placed_instances = result.placements.len();
+    result.unplaced_instances = result.unplaced.len();
+    result.status = if result.unplaced.is_empty() {
+        "ok".to_string()
+    } else {
+        "partial".to_string()
+    };
+    if !result.unplaced.is_empty() {
+        result.best_full_solution_found = false;
+    }
+}
+
 // ── Partial sanitize ─────────────────────────────────────────────────────────
 
 /// Unplaced reason assigned when a placement is removed to make the layout feasible.

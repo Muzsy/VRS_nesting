@@ -577,6 +577,20 @@ pub struct OptimizerDiagnosticsOutput {
     pub technology_effective_part_spacing_mm: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technology_effective_kerf_mm: Option<f64>,
+    // ── SGH-Q35 part-part spacing final validator diagnostics ────────────────
+    /// True when effective_part_spacing_mm() > 0 (spacing gate active).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_part_spacing_applied: Option<bool>,
+    /// effective_part_spacing_mm() (kerf_mm is NOT included).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_part_spacing_mm: Option<f64>,
+    /// Number of part-part spacing violation pairs found by the final validator.
+    /// Must be 0 for a valid ok output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_violation_count: Option<usize>,
+    /// Number of unique placements removed by the spacing safety net.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_safety_net_removed_count: Option<usize>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).
