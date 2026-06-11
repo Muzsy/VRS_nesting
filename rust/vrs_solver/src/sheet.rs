@@ -341,6 +341,129 @@ mod tests {
     }
 }
 
+/// SGH-Q34: Shrink each rectangular sheet by `margin_mm` on all four sides.
+///
+/// Rules:
+/// - `margin_mm == 0.0` → returns a clone of the input (no-op).
+/// - `margin_mm < 0.0` → `Err`.
+/// - `has_irregular_outer == true` && `margin_mm > 0.0` → `Err(UNSUPPORTED_MARGIN_FOR_IRREGULAR_STOCK_Q34)`.
+/// - `2 * margin_mm >= sheet.width` or `>= sheet.height` → `Err(MARGIN_EXCEEDS_SHEET_DIMENSIONS)`.
+///
+/// The shrunk sheet's `area` and `_outer_poly` are rebuilt for the inset rectangle.
+/// `cost_per_use` and `hole_polys` are preserved from the original.
+pub fn apply_rectangular_sheet_margin(
+    sheets: &[SheetShape],
+    margin_mm: f64,
+) -> Result<Vec<SheetShape>, String> {
+    if margin_mm < 0.0 {
+        return Err(format!(
+            "invalid margin_mm {} in apply_rectangular_sheet_margin: must be >= 0",
+            margin_mm
+        ));
+    }
+    if margin_mm == 0.0 {
+        return Ok(sheets.to_vec());
+    }
+    let mut result = Vec::with_capacity(sheets.len());
+    for (i, sheet) in sheets.iter().enumerate() {
+        if sheet.has_irregular_outer {
+            return Err(format!(
+                "UNSUPPORTED_MARGIN_FOR_IRREGULAR_STOCK_Q34: sheet[{i}] has irregular outer boundary; \
+                 sheet margin is only supported for rectangular stocks in Q34"
+            ));
+        }
+        let new_min_x = sheet.min_x + margin_mm;
+        let new_min_y = sheet.min_y + margin_mm;
+        let new_max_x = sheet.max_x - margin_mm;
+        let new_max_y = sheet.max_y - margin_mm;
+        let new_w = new_max_x - new_min_x;
+        let new_h = new_max_y - new_min_y;
+        if new_w <= 0.0 || new_h <= 0.0 {
+            return Err(format!(
+                "MARGIN_EXCEEDS_SHEET_DIMENSIONS: sheet[{i}] {}x{} is too small for margin {}: \
+                 usable area would be {}x{}",
+                sheet.width, sheet.height, margin_mm, new_w, new_h
+            ));
+        }
+        let solver_corners = vec![
+            Point { x: new_min_x, y: new_min_y },
+            Point { x: new_max_x, y: new_min_y },
+            Point { x: new_max_x, y: new_max_y },
+            Point { x: new_min_x, y: new_max_y },
+        ];
+        let outer_poly = to_jag_polygon(&solver_corners, &format!("margin_sheet[{i}]"))?;
+        result.push(SheetShape {
+            min_x: new_min_x,
+            min_y: new_min_y,
+            max_x: new_max_x,
+            max_y: new_max_y,
+            width: new_w,
+            height: new_h,
+            has_irregular_outer: false,
+            area: new_w * new_h,
+            outer_vertices: Vec::new(),
+            cost_per_use: sheet.cost_per_use,
+            _outer_poly: outer_poly,
+            hole_polys: Vec::new(),
+        });
+    }
+    Ok(result)
+}
+
+/// SGH-Q34: Count placements whose rotated bounding box falls outside the margin-inset
+/// sheet boundary. Uses the bbox approach (rotation + translation of part corners).
+///
+/// A violation is any placement where any corner of the rotated bbox is outside the
+/// inset rectangle [min_x+m, min_y+m, max_x−m, max_y−m] by more than EPS.
+pub fn count_sheet_margin_violations(
+    placements: &[crate::io::Placement],
+    parts: &[crate::item::Part],
+    original_sheets: &[SheetShape],
+    margin_mm: f64,
+) -> usize {
+    use crate::rotation_policy::{dims_for_rotation_f64, rotated_bbox_min_offset_f64};
+    if margin_mm <= 0.0 {
+        return 0;
+    }
+    let mut violations = 0usize;
+    for pl in placements {
+        let sheet = match original_sheets.get(pl.sheet_index) {
+            Some(s) => s,
+            None => {
+                violations += 1;
+                continue;
+            }
+        };
+        let part = match parts.iter().find(|p| p.id == pl.part_id) {
+            Some(p) => p,
+            None => {
+                violations += 1;
+                continue;
+            }
+        };
+        let (bbox_min_off_x, bbox_min_off_y) =
+            rotated_bbox_min_offset_f64(part.width, part.height, pl.rotation_deg);
+        let (bbox_w, bbox_h) =
+            dims_for_rotation_f64(part.width, part.height, pl.rotation_deg);
+        let world_min_x = pl.x + bbox_min_off_x;
+        let world_min_y = pl.y + bbox_min_off_y;
+        let world_max_x = world_min_x + bbox_w;
+        let world_max_y = world_min_y + bbox_h;
+        let inset_min_x = sheet.min_x + margin_mm;
+        let inset_min_y = sheet.min_y + margin_mm;
+        let inset_max_x = sheet.max_x - margin_mm;
+        let inset_max_y = sheet.max_y - margin_mm;
+        if world_min_x < inset_min_x - EPS
+            || world_min_y < inset_min_y - EPS
+            || world_max_x > inset_max_x + EPS
+            || world_max_y > inset_max_y + EPS
+        {
+            violations += 1;
+        }
+    }
+    violations
+}
+
 pub fn rect_inside_sheet_shape(rect: Rect, sheet: &SheetShape) -> bool {
     // Fast bbox precheck
     if rect.x1 < sheet.min_x - EPS

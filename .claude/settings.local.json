@@ -174,7 +174,13 @@
       "Bash(NESTING_ENGINE_NFP_KERNEL=cgal_reference NESTING_ENGINE_STOP_MODE=wall_clock timeout 240 bash -c 'rust/nesting_engine/target/release/nesting_engine nest     --placer nfp --search sa --part-in-part off --compaction slide --nfp-kernel cgal_reference     < tmp/lv8_singlesheet_etalon_20260514/cgal_sa_noprep_180/input.json     > tmp/lv8_singlesheet_etalon_20260514/cgal_sa_noprep_180/stdout.json     2>/dev/null')",
       "Bash(NESTING_ENGINE_STOP_MODE=wall_clock timeout 120 bash -c 'rust/nesting_engine/target/release/nesting_engine nest     --placer nfp --search none --part-in-part off --compaction slide --nfp-kernel old_concave     < tmp/lv8_singlesheet_etalon_20260514/inputs/lv8_sheet1_179.json     > tmp/lv8_singlesheet_etalon_20260514/greedy_oldconcave/stdout.json     2>/dev/null')",
       "Bash(echo \"old_concave greedy exit=$?\")",
-      "Bash(ssh -T git@github.com)"
+      "Bash(ssh -T git@github.com)",
+      "Bash(mkdir -p rust/vrs_solver/src/technology)",
+      "Bash(which rustc *)",
+      "Bash(find /usr /opt /home -name \"cargo\" -type f 2>/dev/null | head -5 ; echo \"PATH=$PATH\")",
+      "Bash(~/.local/rust/cargo/bin/cargo check *)",
+      "Bash(~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo check *)",
+      "Bash(bash -l -c \"cargo check --manifest-path /mnt/workspace/VRS_nesting/rust/vrs_solver/Cargo.toml 2>&1\")"
     ],
     "additionalDirectories": [
       "/tmp"

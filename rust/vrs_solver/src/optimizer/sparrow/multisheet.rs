@@ -31,6 +31,10 @@ pub struct FiniteStockRunConfig {
     pub seed: u64,
     pub backend: CollisionBackendKind,
     pub rotation_context: RotationResolveContext,
+    /// SGH-Q34: margin-shrunk solver sheets. When Some, the Sparrow core uses these
+    /// for collision/boundary checking while the original expanded sheets are kept
+    /// for area reporting. Length must equal expand_sheets(stocks).
+    pub solver_sheets_override: Option<Vec<SheetShape>>,
 }
 
 // ── Public result ────────────────────────────────────────────────────────────
@@ -578,9 +582,17 @@ pub fn run_finite_stock_multisheet(
             probe_cap.min(remaining_s)
         };
 
+        // SGH-Q34: use margin-shrunk solver sheets for the core attempt when provided.
+        // Original all_sheets are still used for area reporting (compute_utilization).
         let subset_sheets: Vec<SheetShape> = subset_indices
             .iter()
-            .map(|&i| all_sheets[i].clone())
+            .map(|&i| {
+                if let Some(ref solver_override) = config.solver_sheets_override {
+                    solver_override.get(i).cloned().unwrap_or_else(|| all_sheets[i].clone())
+                } else {
+                    all_sheets[i].clone()
+                }
+            })
             .collect();
 
         let result = run_core_attempt(

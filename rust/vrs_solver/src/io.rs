@@ -548,6 +548,23 @@ pub struct OptimizerDiagnosticsOutput {
     /// True when TechnologyClearancePolicy was active for this run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technology_policy_active: Option<bool>,
+    // ── SGH-Q34 sheet margin enforcement diagnostics ─────────────────────────
+    /// True when effective_sheet_margin_mm() > 0 and was applied to solver sheets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_sheet_margin_applied: Option<bool>,
+    /// Number of expanded solver sheets that received margin shrink.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_margin_applied_sheet_count: Option<usize>,
+    /// Sum of margin-shrunk usable areas of all used sheets (mm²).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_margin_usable_sheet_area: Option<f64>,
+    /// Sum of original physical areas of all used sheets (mm²).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_margin_physical_used_sheet_area: Option<f64>,
+    /// Count of final placements whose rotated bbox violates the margin-inset boundary.
+    /// Must be 0 for a valid ok output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_margin_violation_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technology_margin_mm: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]

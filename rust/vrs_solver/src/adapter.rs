@@ -18,7 +18,7 @@ use crate::optimizer::{
     SheetCursor,
 };
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
-use crate::sheet::{expand_sheets, stock_has_holes};
+use crate::sheet::{apply_rectangular_sheet_margin, count_sheet_margin_violations, expand_sheets, stock_has_holes};
 use crate::technology::TechnologyClearancePolicy;
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
@@ -577,6 +577,11 @@ fn native_sparrow_diag_to_output(
         technology_effective_sheet_margin_mm: None,
         technology_effective_part_spacing_mm: None,
         technology_effective_kerf_mm: None,
+        technology_sheet_margin_applied: None,
+        technology_margin_applied_sheet_count: None,
+        technology_margin_usable_sheet_area: None,
+        technology_margin_physical_used_sheet_area: None,
+        technology_margin_violation_count: None,
     }
 }
 
@@ -716,20 +721,94 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     cde_observability::reset();
     crate::optimizer::cde_adapter::reset_query_cache();
 
+    // SGH-Q34: apply sheet margin to build solver_sheets (shrunk for collision),
+    // keeping original sheets for physical area reporting.
+    let margin_mm = technology_policy.effective_sheet_margin_mm();
+    let margin_applied = margin_mm > 0.0;
+    let original_sheets = sheets; // physical sheets, already expanded
+    let solver_sheets_override = if margin_applied {
+        match apply_rectangular_sheet_margin(original_sheets, margin_mm) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                // Return an unsupported result — build a minimal diagnostics-free tuple.
+                let total_unplaced: usize = input.parts.iter().map(|p| p.quantity as usize).sum();
+                let mut all_unplaced: Vec<Unplaced> = input.parts.iter().flat_map(|p| {
+                    (0..p.quantity as usize).map(|i| Unplaced {
+                        instance_id: format!("{}#{i}", p.id),
+                        part_id: p.id.clone(),
+                        reason: e.clone(),
+                    })
+                }).collect();
+                all_unplaced.extend(pre_unplaced);
+                let _ = total_unplaced;
+                return (vec![], all_unplaced, None, None);
+            }
+        }
+    } else {
+        None
+    };
+
+    // Keep a copy of the shrunk sheets for usable-area reporting (the config takes ownership).
+    let solver_sheets_for_area = solver_sheets_override.clone();
+
     let ms_config = FiniteStockRunConfig {
         time_limit_s: (input.time_limit_s as f64).max(1.0),
         seed: input.seed as u64,
         backend: CollisionBackendKind::Cde,
         rotation_context: rotation_context.clone(),
+        solver_sheets_override,
     };
 
-    let result = run_finite_stock_multisheet(
+    let mut result = run_finite_stock_multisheet(
         &input.parts,
         &input.stocks,
         rotation_context,
         pre_unplaced,
         ms_config,
     );
+
+    // SGH-Q34: final margin validator. Re-check every placement's rotated bbox against
+    // the margin-inset boundary of the ORIGINAL physical sheet. If any placement violates
+    // the margin, treat the result as invalid: downgrade status and do not emit it as ok.
+    let margin_violation_count = if margin_applied {
+        count_sheet_margin_violations(
+            &result.placements,
+            &input.parts,
+            original_sheets,
+            margin_mm,
+        )
+    } else {
+        0
+    };
+    if margin_violation_count > 0 && result.status == "ok" {
+        // Should not happen (solver ran on shrunk sheets); safety net: mark partial.
+        result.status = "partial".to_string();
+        result.best_full_solution_found = false;
+    }
+
+    // SGH-Q34: compute usable (margin-shrunk) vs physical area for the used sheets.
+    let (margin_usable_area, margin_physical_area) = if margin_applied {
+        let usable: f64 = result
+            .used_sheet_indices
+            .iter()
+            .filter_map(|&orig_idx| {
+                solver_sheets_for_area.as_ref().and_then(|s| s.get(orig_idx)).map(|s| s.area)
+            })
+            .sum();
+        let physical: f64 = result
+            .used_sheet_indices
+            .iter()
+            .filter_map(|&orig_idx| original_sheets.get(orig_idx).map(|s| s.area))
+            .sum();
+        (Some(usable), Some(physical))
+    } else {
+        (None, None)
+    };
+    let margin_applied_sheet_count = if margin_applied {
+        Some(original_sheets.len())
+    } else {
+        None
+    };
 
     let snap = cde_observability::snapshot();
     let backend_diag = if result.status == "ok" {
@@ -963,6 +1042,12 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         technology_effective_sheet_margin_mm: Some(technology_policy.effective_sheet_margin_mm()),
         technology_effective_part_spacing_mm: Some(technology_policy.effective_part_spacing_mm()),
         technology_effective_kerf_mm: Some(technology_policy.effective_kerf_mm()),
+        // SGH-Q34 sheet margin enforcement diagnostics
+        technology_sheet_margin_applied: Some(margin_applied),
+        technology_margin_applied_sheet_count: margin_applied_sheet_count,
+        technology_margin_usable_sheet_area: margin_usable_area,
+        technology_margin_physical_used_sheet_area: margin_physical_area,
+        technology_margin_violation_count: Some(margin_violation_count),
     };
 
     (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
@@ -1425,6 +1510,11 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             technology_effective_sheet_margin_mm: None,
                             technology_effective_part_spacing_mm: None,
                             technology_effective_kerf_mm: None,
+                            technology_sheet_margin_applied: None,
+                            technology_margin_applied_sheet_count: None,
+                            technology_margin_usable_sheet_area: None,
+                            technology_margin_physical_used_sheet_area: None,
+                            technology_margin_violation_count: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
