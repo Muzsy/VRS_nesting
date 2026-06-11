@@ -19,6 +19,7 @@ use crate::optimizer::{
 };
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
 use crate::sheet::{expand_sheets, stock_has_holes};
+use crate::technology::TechnologyClearancePolicy;
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
 
@@ -569,6 +570,13 @@ fn native_sparrow_diag_to_output(
         sparrow_ms_requested_time_limit_s: None,
         sparrow_ms_deadline_hit: None,
         sparrow_ms_best_score: None,
+        technology_policy_active: None,
+        technology_margin_mm: None,
+        technology_spacing_mm: None,
+        technology_kerf_mm: None,
+        technology_effective_sheet_margin_mm: None,
+        technology_effective_part_spacing_mm: None,
+        technology_effective_kerf_mm: None,
     }
 }
 
@@ -697,6 +705,7 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     sheets: &[crate::sheet::SheetShape],
     rotation_context: &RotationResolveContext,
     pre_unplaced: Vec<Unplaced>,
+    technology_policy: &TechnologyClearancePolicy,
 ) -> (
     Vec<Placement>,
     Vec<Unplaced>,
@@ -946,6 +955,14 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         sparrow_ms_requested_time_limit_s: Some(result.time_limit_s),
         sparrow_ms_deadline_hit: Some(result.deadline_hit),
         sparrow_ms_best_score: Some(result.best_score),
+        // SGH-Q33: technology clearance policy diagnostics (diagnostic-only, no geometry offset)
+        technology_policy_active: Some(true),
+        technology_margin_mm: Some(technology_policy.margin_mm),
+        technology_spacing_mm: Some(technology_policy.spacing_mm),
+        technology_kerf_mm: Some(technology_policy.kerf_mm),
+        technology_effective_sheet_margin_mm: Some(technology_policy.effective_sheet_margin_mm()),
+        technology_effective_part_spacing_mm: Some(technology_policy.effective_part_spacing_mm()),
+        technology_effective_kerf_mm: Some(technology_policy.effective_kerf_mm()),
     };
 
     (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
@@ -1029,12 +1046,21 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                 ));
             }
         }
-        if let Some(margin_mm) = input.margin_mm {
-            if margin_mm > 0.0 {
-                return Ok(_unsupported_output("UNSUPPORTED_MARGIN_MM_RUNTIME", &input));
+        // SGH-Q33: sparrow_cde_multisheet centralizes margin_mm via TechnologyClearancePolicy
+        // (diagnostic-only, no polygon offset). Preserve the guard for all other pipelines.
+        if pipeline_kind(&input) != OptimizerPipelineKind::SparrowCdeMultisheet {
+            if let Some(margin_mm) = input.margin_mm {
+                if margin_mm > 0.0 {
+                    return Ok(_unsupported_output("UNSUPPORTED_MARGIN_MM_RUNTIME", &input));
+                }
             }
         }
     }
+
+    // SGH-Q33: centralise technology clearance policy. Validation fails early on
+    // negative values. Policy is diagnostic-only in Q33 — no geometry offset yet.
+    let technology_policy = TechnologyClearancePolicy::from_solver_input(&input)
+        .map_err(|e| e)?;
 
     let rotation_context = RotationResolveContext::new(
         input.rotation_policy.clone(),
@@ -1392,6 +1418,13 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_ms_requested_time_limit_s: None,
                             sparrow_ms_deadline_hit: None,
                             sparrow_ms_best_score: None,
+                            technology_policy_active: None,
+                            technology_margin_mm: None,
+                            technology_spacing_mm: None,
+                            technology_kerf_mm: None,
+                            technology_effective_sheet_margin_mm: None,
+                            technology_effective_part_spacing_mm: None,
+                            technology_effective_kerf_mm: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }
@@ -1459,6 +1492,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                     &sheets,
                     &rotation_context,
                     pre_unplaced,
+                    &technology_policy,
                 );
                 collision_backend_diag = bdiag;
                 (p, u, diag)
@@ -1726,6 +1760,8 @@ mod tests {
             parts,
             solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
             margin_mm: None,
+            spacing_mm: None,
+            kerf_mm: None,
             rotation_policy,
             optimizer_pipeline: Some(OptimizerPipelineKind::LegacyMultisheet),
             collision_backend: None,
@@ -1874,6 +1910,8 @@ mod tests {
             parts: vec![make_part("P", 10.0, 10.0, 1, vec![0], None)],
             solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
             margin_mm: None,
+            spacing_mm: None,
+            kerf_mm: None,
             rotation_policy: None,
             optimizer_pipeline: None,
             collision_backend: Some(CollisionBackendKind::Bbox),

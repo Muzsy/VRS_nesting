@@ -30,6 +30,14 @@ pub struct SolverInput {
     /// Python exact validator applies margin_mm independently (JG-05 deviation).
     #[serde(default)]
     pub margin_mm: Option<f64>,
+    /// SGH-Q33: minimum part-to-part separation (mm). Defaults to margin_mm when absent.
+    /// Centralized in TechnologyClearancePolicy — diagnostic only, not applied as geometry offset.
+    #[serde(default)]
+    pub spacing_mm: Option<f64>,
+    /// SGH-Q33: laser / tool kerf width (mm). Defaults to 0.0 when absent.
+    /// Centralized in TechnologyClearancePolicy — diagnostic only, not applied as geometry offset.
+    #[serde(default)]
+    pub kerf_mm: Option<f64>,
     /// Global rotation policy default. Applied when a part has no part-level policy
     /// and no allowed_rotations_deg. Optional; backward-compatible (default: Orthogonal).
     #[serde(default)]
@@ -536,6 +544,22 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_ms_deadline_hit: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_ms_best_score: Option<f64>,
+    // ── SGH-Q33 technology clearance policy diagnostics ──────────────────────
+    /// True when TechnologyClearancePolicy was active for this run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_policy_active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_margin_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_kerf_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_effective_sheet_margin_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_effective_part_spacing_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_effective_kerf_mm: Option<f64>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).
