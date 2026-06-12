@@ -594,6 +594,16 @@ fn native_sparrow_diag_to_output(
         technology_spacing_offset_failure_count: None,
         technology_spacing_boundary_uses_original_geometry: None,
         technology_spacing_output_uses_original_geometry: None,
+        technology_spacing_offset_build_ms: None,
+        technology_spacing_offset_avg_ms_per_part: None,
+        technology_spacing_offset_max_ms_per_part: None,
+        technology_spacing_offset_input_vertex_count_total: None,
+        technology_spacing_offset_output_vertex_count_total: None,
+        technology_spacing_offset_area_ratio_avg: None,
+        technology_spacing_offset_area_ratio_max: None,
+        technology_margin_final_validator_ms: None,
+        technology_spacing_final_validator_ms: None,
+        technology_safety_net_ms: None,
     }
 }
 
@@ -873,6 +883,7 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     // SGH-Q34-R1: final margin validator using FULL transformed part polygon (not bbox).
     // Any violating placement is removed and moved to unplaced with an explicit reason, so
     // the top-level SolverOutput.status (computed from unplaced.is_empty()) cannot be `ok`.
+    let t_margin_val = Instant::now();
     let margin_violating_ids = if margin_applied {
         find_sheet_margin_violations(
             &result.placements,
@@ -883,28 +894,37 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     } else {
         Vec::new()
     };
+    let margin_final_validator_ms = t_margin_val.elapsed().as_secs_f64() * 1000.0;
     let margin_violation_count = margin_violating_ids.len();
     let mut safety_net_removed_placement = margin_violation_count > 0;
+    // SGH-Q37: accumulate ONLY the safety-net removal + recompute time here (the validators
+    // are timed separately), so safety_net_ms does not double-count the validator cost.
+    let mut safety_net_ms: f64 = 0.0;
     if margin_violation_count > 0 {
+        let t = Instant::now();
         let placements = std::mem::take(&mut result.placements);
         let unplaced = std::mem::take(&mut result.unplaced);
         let (kept, new_unplaced) =
             apply_margin_violation_safety_net(placements, unplaced, &margin_violating_ids);
         result.placements = kept;
         result.unplaced = new_unplaced;
+        safety_net_ms += t.elapsed().as_secs_f64() * 1000.0;
     }
 
     // SGH-Q35: part-part spacing final validator, on the placements remaining after the
     // margin gate. Runs on the FULL transformed part polygons (not bbox); kerf_mm is NOT
     // added to spacing_mm. Violating placements are removed and moved to unplaced.
+    let t_spacing_val = Instant::now();
     let spacing_violations = if spacing_applied {
         find_part_spacing_violations(&result.placements, &input.parts, spacing_mm)
     } else {
         Vec::new()
     };
+    let spacing_final_validator_ms = t_spacing_val.elapsed().as_secs_f64() * 1000.0;
     let spacing_violation_count = spacing_violations.len();
     let spacing_removed_count = spacing_safety_net_removed_count(&spacing_violations);
     if spacing_violation_count > 0 {
+        let t = Instant::now();
         let placements = std::mem::take(&mut result.placements);
         let unplaced = std::mem::take(&mut result.unplaced);
         let (kept, new_unplaced) =
@@ -912,12 +932,15 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         result.placements = kept;
         result.unplaced = new_unplaced;
         safety_net_removed_placement = true;
+        safety_net_ms += t.elapsed().as_secs_f64() * 1000.0;
     }
 
     // SGH-Q35: recompute all result aggregates ONCE after the safety nets so diagnostics
     // and the top-level output cannot be contradictory (no stale used_sheet_*/counts/status).
     if safety_net_removed_placement {
+        let t = Instant::now();
         recompute_multisheet_result_after_safety_net(&mut result, &input.parts, original_sheets);
+        safety_net_ms += t.elapsed().as_secs_f64() * 1000.0;
     }
 
     // SGH-Q34: compute usable (margin-shrunk) vs physical area for the used sheets.
@@ -1201,6 +1224,31 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         // Boundary/output ALWAYS use original geometry (spacing is not a sheet margin).
         technology_spacing_boundary_uses_original_geometry: Some(true),
         technology_spacing_output_uses_original_geometry: Some(true),
+        // SGH-Q37 measurement-hardening timing / inventory.
+        technology_spacing_offset_build_ms: best_core.map(|d| d.spacing_offset_build_ms),
+        technology_spacing_offset_avg_ms_per_part: best_core.map(|d| {
+            if d.spacing_offset_cache_misses > 0 {
+                d.spacing_offset_build_ms / d.spacing_offset_cache_misses as f64
+            } else {
+                0.0
+            }
+        }),
+        technology_spacing_offset_max_ms_per_part: best_core.map(|d| d.spacing_offset_max_ms_per_part),
+        technology_spacing_offset_input_vertex_count_total: best_core
+            .map(|d| d.spacing_offset_input_vertex_total),
+        technology_spacing_offset_output_vertex_count_total: best_core
+            .map(|d| d.spacing_offset_output_vertex_total),
+        technology_spacing_offset_area_ratio_avg: best_core.map(|d| {
+            if d.spacing_offset_cache_misses > 0 {
+                d.spacing_offset_area_ratio_sum / d.spacing_offset_cache_misses as f64
+            } else {
+                0.0
+            }
+        }),
+        technology_spacing_offset_area_ratio_max: best_core.map(|d| d.spacing_offset_area_ratio_max),
+        technology_margin_final_validator_ms: Some(margin_final_validator_ms),
+        technology_spacing_final_validator_ms: Some(spacing_final_validator_ms),
+        technology_safety_net_ms: Some(safety_net_ms),
     };
 
     (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
@@ -1680,6 +1728,16 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             technology_spacing_offset_failure_count: None,
                             technology_spacing_boundary_uses_original_geometry: None,
                             technology_spacing_output_uses_original_geometry: None,
+                            technology_spacing_offset_build_ms: None,
+                            technology_spacing_offset_avg_ms_per_part: None,
+                            technology_spacing_offset_max_ms_per_part: None,
+                            technology_spacing_offset_input_vertex_count_total: None,
+                            technology_spacing_offset_output_vertex_count_total: None,
+                            technology_spacing_offset_area_ratio_avg: None,
+                            technology_spacing_offset_area_ratio_max: None,
+                            technology_margin_final_validator_ms: None,
+                            technology_spacing_final_validator_ms: None,
+                            technology_safety_net_ms: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

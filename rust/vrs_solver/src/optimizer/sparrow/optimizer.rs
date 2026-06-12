@@ -57,6 +57,12 @@ impl SparrowOptimizer {
         diag.spacing_offset_cache_hits = problem.spacing_offset_cache_hits;
         diag.spacing_offset_cache_misses = problem.spacing_offset_cache_misses;
         diag.spacing_offset_failure_count = problem.spacing_offset_failure_count;
+        diag.spacing_offset_build_ms = problem.spacing_offset_build_ms;
+        diag.spacing_offset_input_vertex_total = problem.spacing_offset_input_vertex_total;
+        diag.spacing_offset_output_vertex_total = problem.spacing_offset_output_vertex_total;
+        diag.spacing_offset_area_ratio_sum = problem.spacing_offset_area_ratio_sum;
+        diag.spacing_offset_area_ratio_max = problem.spacing_offset_area_ratio_max;
+        diag.spacing_offset_max_ms_per_part = problem.spacing_offset_max_ms_per_part;
 
         let t_lbf = ProfileTimer::start_if(r1);
         let seed_layout = build_native_constructive_seed(&problem);

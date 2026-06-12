@@ -67,6 +67,13 @@ pub struct SparrowProblem {
     pub spacing_offset_cache_misses: usize,
     /// Instances whose spacing offset could not be built (UNSUPPORTED_SPACING_OFFSET_Q36).
     pub spacing_offset_failure_count: usize,
+    // ── SGH-Q37 spacing offset measurement-hardening stats ────────────────────
+    pub spacing_offset_build_ms: f64,
+    pub spacing_offset_input_vertex_total: usize,
+    pub spacing_offset_output_vertex_total: usize,
+    pub spacing_offset_area_ratio_sum: f64,
+    pub spacing_offset_area_ratio_max: f64,
+    pub spacing_offset_max_ms_per_part: f64,
 }
 
 impl SparrowProblem {
@@ -107,6 +114,13 @@ impl SparrowProblem {
         let mut spacing_cache_hits: usize = 0;
         let mut spacing_cache_misses: usize = 0;
         let mut spacing_failure_count: usize = 0;
+        // SGH-Q37 offset build measurement accumulators.
+        let mut spacing_offset_build_ms: f64 = 0.0;
+        let mut spacing_offset_input_vertex_total: usize = 0;
+        let mut spacing_offset_output_vertex_total: usize = 0;
+        let mut spacing_offset_area_ratio_sum: f64 = 0.0;
+        let mut spacing_offset_area_ratio_max: f64 = 0.0;
+        let mut spacing_offset_max_ms_per_part: f64 = 0.0;
         // Parts whose spacing offset cannot be built safely (no raw fallback).
         let mut spacing_unsupported_parts: std::collections::HashSet<String> =
             std::collections::HashSet::new();
@@ -180,9 +194,28 @@ impl SparrowProblem {
                         e.get().clone()
                     }
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        match prepare_spacing_base_shape_native(part, half_spacing_mm) {
+                        let t0 = Instant::now();
+                        let built = prepare_spacing_base_shape_native(part, half_spacing_mm);
+                        let dt_ms = t0.elapsed().as_secs_f64() * 1000.0;
+                        match built {
                             Ok(bs) => {
                                 spacing_cache_misses += 1;
+                                // SGH-Q37: record offset build stats for this unique part.
+                                spacing_offset_build_ms += dt_ms;
+                                if dt_ms > spacing_offset_max_ms_per_part {
+                                    spacing_offset_max_ms_per_part = dt_ms;
+                                }
+                                let in_vtx = base_shape.local_pts.len();
+                                let out_vtx = bs.local_pts.len();
+                                spacing_offset_input_vertex_total += in_vtx;
+                                spacing_offset_output_vertex_total += out_vtx;
+                                let orig_area = crate::geometry::polygon_area(&base_shape.local_pts).abs();
+                                let exp_area = crate::geometry::polygon_area(&bs.local_pts).abs();
+                                let ratio = if orig_area > 0.0 { exp_area / orig_area } else { 1.0 };
+                                spacing_offset_area_ratio_sum += ratio;
+                                if ratio > spacing_offset_area_ratio_max {
+                                    spacing_offset_area_ratio_max = ratio;
+                                }
                                 e.insert(Rc::new(bs)).clone()
                             }
                             Err(_) => {
@@ -238,6 +271,12 @@ impl SparrowProblem {
             spacing_offset_cache_hits: spacing_cache_hits,
             spacing_offset_cache_misses: spacing_cache_misses,
             spacing_offset_failure_count: spacing_failure_count,
+            spacing_offset_build_ms,
+            spacing_offset_input_vertex_total,
+            spacing_offset_output_vertex_total,
+            spacing_offset_area_ratio_sum,
+            spacing_offset_area_ratio_max,
+            spacing_offset_max_ms_per_part,
         })
     }
 

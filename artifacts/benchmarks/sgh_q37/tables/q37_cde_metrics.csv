@@ -1,0 +1,7 @@
+run_id,cde_pair_queries,cde_boundary_queries,cde_total_queries,cde_engine_builds,cde_collision_results,cde_no_collision_results,cde_unsupported_results,cde_broadphase_pruned,cde_batch_candidate_queries,cde_batch_engine_builds,cde_batch_hazards_registered,cde_batch_collisions_returned,cde_pairwise_fallback_queries,cde_candidate_session_builds,cde_candidate_session_reuses
+D0,0,0,0,949,0,0,0,304,18996,1165,2503,18895,0,0,0
+D1,0,0,0,537,0,0,0,262,1933,598,1200,590,0,0,0
+D2,0,0,0,537,0,0,0,262,1893,599,1212,619,0,0,0
+M0,0,0,0,1517,0,0,0,524,90000,1675,8276,150706,0,0,0
+M1,0,0,0,1148,0,0,0,304,6272,1214,4001,3173,0,0,0
+M2,0,0,0,1147,0,0,0,305,6240,1212,3972,3198,0,0,0

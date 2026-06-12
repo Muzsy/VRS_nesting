@@ -1,0 +1,23 @@
+{
+  "tier": "mandatory",
+  "only": null,
+  "max_time_limit_s": 30,
+  "scenarios_run": [
+    "D0",
+    "D1",
+    "D2",
+    "M0",
+    "M1",
+    "M2"
+  ],
+  "geometry_inventory_parts": 12,
+  "offsettable_at_spacing": {
+    "2": 9,
+    "5": 8,
+    "10": 6
+  },
+  "errors": [],
+  "generated_at": "2026-06-12T19:31:22+0200",
+  "base_full276": "artifacts/benchmarks/sgh_q32/inputs/case_01_2x1500x3000.json",
+  "base_dense191": "artifacts/benchmarks/sgh_q31/inputs/dense191.json"
+}

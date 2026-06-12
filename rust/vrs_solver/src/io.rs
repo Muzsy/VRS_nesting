@@ -614,6 +614,31 @@ pub struct OptimizerDiagnosticsOutput {
     /// Always true: output/export uses ORIGINAL geometry.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technology_spacing_output_uses_original_geometry: Option<bool>,
+    // ── SGH-Q37 measurement-hardening timing / inventory diagnostics ─────────
+    /// Wall-time (ms) building the spacing-expanded base-shape cache.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_build_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_avg_ms_per_part: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_max_ms_per_part: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_input_vertex_count_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_output_vertex_count_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_area_ratio_avg: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_area_ratio_max: Option<f64>,
+    /// Wall-time (ms) of the Q34-R1 margin final validator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_margin_final_validator_ms: Option<f64>,
+    /// Wall-time (ms) of the Q35 spacing final validator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_final_validator_ms: Option<f64>,
+    /// Wall-time (ms) applying the margin + spacing safety nets + result recompute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_safety_net_ms: Option<f64>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).
