@@ -35,6 +35,9 @@ pub struct FiniteStockRunConfig {
     /// for collision/boundary checking while the original expanded sheets are kept
     /// for area reporting. Length must equal expand_sheets(stocks).
     pub solver_sheets_override: Option<Vec<SheetShape>>,
+    /// SGH-Q36: part-part spacing (mm) for spacing-expanded collision geometry.
+    /// `0.0` ⇒ no spacing geometry (unchanged solver path).
+    pub spacing_mm: f64,
 }
 
 // ── Public result ────────────────────────────────────────────────────────────
@@ -450,7 +453,8 @@ fn run_core_attempt(
         config.backend.clone(),
         rotation_context.clone(),
         config.seed,
-    );
+    )
+    .with_spacing_mm(config.spacing_mm);
 
     let problem = match SparrowProblem::from_solver_input(
         parts,
@@ -682,7 +686,8 @@ pub fn run_finite_stock_multisheet(
                     config.backend.clone(),
                     rotation_context.clone(),
                     config.seed,
-                );
+                )
+                .with_spacing_mm(config.spacing_mm);
                 let sanitize_placements;
                 let sanitize_unplaced;
 

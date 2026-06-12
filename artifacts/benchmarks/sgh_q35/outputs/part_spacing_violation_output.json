@@ -1,37 +1,43 @@
 {
   "contract_version": "v1",
-  "status": "partial",
-  "placements": [],
-  "unplaced": [
+  "status": "ok",
+  "placements": [
     {
       "instance_id": "P1__0001",
       "part_id": "P1",
-      "reason": "PART_SPACING_VIOLATION_Q35"
+      "sheet_index": 0,
+      "x": 0.0008465964545623442,
+      "y": 0.002419614653268804,
+      "rotation_deg": 0
     },
     {
       "instance_id": "P1__0002",
       "part_id": "P1",
-      "reason": "PART_SPACING_VIOLATION_Q35"
+      "sheet_index": 0,
+      "x": 0.0033497756465801012,
+      "y": 25.009958532419837,
+      "rotation_deg": 0
     }
   ],
+  "unplaced": [],
   "metrics": {
-    "placed_count": 0,
-    "unplaced_count": 2,
-    "sheet_count_used": 0,
+    "placed_count": 2,
+    "unplaced_count": 0,
+    "sheet_count_used": 1,
     "seed": 42,
     "time_limit_s": 30,
     "project_name": "sgh_q35_part_spacing_violation"
   },
   "score_breakdown": {
-    "total_cost": 2000000.0,
-    "placed_area_contribution": -0.0,
-    "unplaced_contribution": 2000000.0,
-    "sheet_cost_contribution": 0.0,
-    "sheet_cost_total": 0.0,
-    "usable_area_utilization": 0.0,
+    "total_cost": 9200.10026344029,
+    "placed_area_contribution": -800.0,
+    "unplaced_contribution": 0.0,
+    "sheet_cost_contribution": 10000.0,
+    "sheet_cost_total": 1.0,
+    "usable_area_utilization": 0.04,
     "overlap_contribution": 0.0,
     "boundary_contribution": 0.0,
-    "compactness_contribution": 0.0
+    "compactness_contribution": 0.10026344029023426
   },
   "optimizer_diagnostics": {
     "pipeline_used": "sparrow_cde_multisheet",
@@ -137,7 +143,7 @@
     "sparrow_profiling_enabled": false,
     "sparrow_q30_profile_enabled": false,
     "sparrow_q30r1_exclusive_enabled": false,
-    "sparrow_q31_base_shape_cache_build_ms": 0.6250859999999999,
+    "sparrow_q31_base_shape_cache_build_ms": 1.2309720000000002,
     "sparrow_q31_base_shape_cache_hits": 1,
     "sparrow_q31_base_shape_cache_misses": 1,
     "sparrow_q31_base_shape_cache_unique_parts": 1,
@@ -148,23 +154,25 @@
     "sparrow_q31_search_base_shape_cache_hits": 0,
     "sparrow_q31_lbf_base_shape_cache_hits": 0,
     "sparrow_ms_active": true,
-    "sparrow_ms_status": "partial",
+    "sparrow_ms_status": "ok",
     "sparrow_ms_available_sheet_count": 1,
-    "sparrow_ms_used_sheet_count": 0,
-    "sparrow_ms_used_sheet_indices": [],
-    "sparrow_ms_used_sheet_area": -0.0,
-    "sparrow_ms_placed_part_area": -0.0,
-    "sparrow_ms_utilization_pct": 0.0,
+    "sparrow_ms_used_sheet_count": 1,
+    "sparrow_ms_used_sheet_indices": [
+      0
+    ],
+    "sparrow_ms_used_sheet_area": 20000.0,
+    "sparrow_ms_placed_part_area": 800.0,
+    "sparrow_ms_utilization_pct": 4.0,
     "sparrow_ms_total_instances": 2,
-    "sparrow_ms_placed_instances": 0,
-    "sparrow_ms_unplaced_instances": 2,
+    "sparrow_ms_placed_instances": 2,
+    "sparrow_ms_unplaced_instances": 0,
     "sparrow_ms_attempts": 1,
     "sparrow_ms_candidate_subsets": 1,
-    "sparrow_ms_best_full_solution_found": false,
+    "sparrow_ms_best_full_solution_found": true,
     "sparrow_ms_stock_exhausted": false,
     "sparrow_ms_final_pairs": 0,
     "sparrow_ms_boundary_violations": 0,
-    "sparrow_ms_runtime_ms": 7.038812,
+    "sparrow_ms_runtime_ms": 11.343725000000001,
     "sparrow_ms_requested_time_limit_s": 30.0,
     "sparrow_ms_deadline_hit": false,
     "sparrow_ms_best_score": 20000.001,
@@ -179,8 +187,16 @@
     "technology_effective_kerf_mm": 0.0,
     "technology_part_spacing_applied": true,
     "technology_part_spacing_mm": 5.0,
-    "technology_spacing_violation_count": 1,
-    "technology_spacing_safety_net_removed_count": 2
+    "technology_spacing_violation_count": 0,
+    "technology_spacing_safety_net_removed_count": 0,
+    "technology_spacing_geometry_applied": true,
+    "technology_spacing_offset_mm": 2.5,
+    "technology_spacing_offset_part_count": 1,
+    "technology_spacing_offset_cache_hits": 1,
+    "technology_spacing_offset_cache_misses": 1,
+    "technology_spacing_offset_failure_count": 0,
+    "technology_spacing_boundary_uses_original_geometry": true,
+    "technology_spacing_output_uses_original_geometry": true
   },
   "collision_backend_diagnostics": {
     "backend_used": "cde_adapter",
@@ -206,13 +222,13 @@
     "cde_cache_prepared_hits": 0,
     "cde_cache_prepared_misses": 0,
     "cde_cache_invalidations": 0,
-    "cde_batch_candidate_queries": 2183,
+    "cde_batch_candidate_queries": 2181,
     "cde_batch_engine_builds": 8,
     "cde_batch_hazards_registered": 1,
-    "cde_batch_collisions_returned": 39,
+    "cde_batch_collisions_returned": 61,
     "cde_pairwise_fallback_queries": 0,
     "cde_candidate_session_builds": 0,
     "cde_candidate_session_reuses": 0,
-    "cde_observability_scope": "sparrow_cde_multisheet_partial"
+    "cde_observability_scope": "sparrow_cde_multisheet"
   }
 }

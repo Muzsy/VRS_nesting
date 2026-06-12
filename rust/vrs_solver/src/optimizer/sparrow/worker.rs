@@ -52,13 +52,26 @@ pub(super) fn run_worker_pass(
         .filter_map(|j| tracker.shapes[j].clone().map(|s| (j, s)))
         .collect();
     let initial_session_size = all_on_primary.len();
+    // SGH-Q36: when spacing is active, the worker's live part-part session is built on
+    // spacing-expanded item shapes WITHOUT the sheet Exterior (boundary stays on original
+    // geometry via the bbox-fit gate). Expanded touching is allowed. Off ⇒ original path.
     let mut live_session: Option<CdeCandidateSession> =
         tracker.sheet_shapes.get(primary_sheet_idx).and_then(|s| s.clone())
-            .and_then(|ss| CdeCandidateSession::build_all_items(
-                all_on_primary,
-                &ss,
-                crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
-            ));
+            .and_then(|ss| {
+                if tracker.spacing_applied {
+                    CdeCandidateSession::build_pairs_only(
+                        all_on_primary,
+                        &ss,
+                        crate::optimizer::sparrow::quantify::tracker::pair_touching_policy(true),
+                    )
+                } else {
+                    CdeCandidateSession::build_all_items(
+                        all_on_primary,
+                        &ss,
+                        crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+                    )
+                }
+            });
 
     let mut attempted = 0usize;
     let mut accepted = 0usize;

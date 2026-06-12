@@ -586,6 +586,14 @@ fn native_sparrow_diag_to_output(
         technology_part_spacing_mm: None,
         technology_spacing_violation_count: None,
         technology_spacing_safety_net_removed_count: None,
+        technology_spacing_geometry_applied: None,
+        technology_spacing_offset_mm: None,
+        technology_spacing_offset_part_count: None,
+        technology_spacing_offset_cache_hits: None,
+        technology_spacing_offset_cache_misses: None,
+        technology_spacing_offset_failure_count: None,
+        technology_spacing_boundary_uses_original_geometry: None,
+        technology_spacing_output_uses_original_geometry: None,
     }
 }
 
@@ -849,6 +857,9 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         backend: CollisionBackendKind::Cde,
         rotation_context: rotation_context.clone(),
         solver_sheets_override,
+        // SGH-Q36: pass part-part spacing into the solver so collision/search uses
+        // spacing-expanded geometry. The Q35 final validator still runs afterwards.
+        spacing_mm,
     };
 
     let mut result = run_finite_stock_multisheet(
@@ -1176,6 +1187,20 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         technology_part_spacing_mm: Some(spacing_mm),
         technology_spacing_violation_count: Some(spacing_violation_count),
         technology_spacing_safety_net_removed_count: Some(spacing_removed_count),
+        // SGH-Q36 spacing-aware solver geometry diagnostics
+        technology_spacing_geometry_applied: Some(
+            best_core.map(|d| d.spacing_geometry_applied).unwrap_or(spacing_applied),
+        ),
+        technology_spacing_offset_mm: Some(
+            best_core.map(|d| d.spacing_offset_mm).unwrap_or(spacing_mm / 2.0),
+        ),
+        technology_spacing_offset_part_count: best_core.map(|d| d.spacing_offset_part_count),
+        technology_spacing_offset_cache_hits: best_core.map(|d| d.spacing_offset_cache_hits),
+        technology_spacing_offset_cache_misses: best_core.map(|d| d.spacing_offset_cache_misses),
+        technology_spacing_offset_failure_count: best_core.map(|d| d.spacing_offset_failure_count),
+        // Boundary/output ALWAYS use original geometry (spacing is not a sheet margin).
+        technology_spacing_boundary_uses_original_geometry: Some(true),
+        technology_spacing_output_uses_original_geometry: Some(true),
     };
 
     (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
@@ -1647,6 +1672,14 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             technology_part_spacing_mm: None,
                             technology_spacing_violation_count: None,
                             technology_spacing_safety_net_removed_count: None,
+                            technology_spacing_geometry_applied: None,
+                            technology_spacing_offset_mm: None,
+                            technology_spacing_offset_part_count: None,
+                            technology_spacing_offset_cache_hits: None,
+                            technology_spacing_offset_cache_misses: None,
+                            technology_spacing_offset_failure_count: None,
+                            technology_spacing_boundary_uses_original_geometry: None,
+                            technology_spacing_output_uses_original_geometry: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

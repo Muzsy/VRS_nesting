@@ -96,7 +96,11 @@ impl<'a> LBFBuilder<'a> {
         let mut diag = SparrowDiagnostics::default();
         let mut best_clear: Option<ScoredPlacement> = None;
         // Q31: use cached base shape from instance — no prepare_base_shape_native call.
-        let base = inst.base_shape.clone();
+        // SGH-Q36: candidate part-part collision uses the spacing-expanded base shape
+        // (same Rc as the original when spacing is off). Boundary is the bbox-fit gate
+        // on the original dims inside LBFEvaluator.
+        let spacing_applied = self.problem.config.spacing_mm > 0.0;
+        let base = inst.spacing_collision_base_shape.clone();
 
         for sheet_idx in 0..sheets.len() {
             if self.started.elapsed().as_secs_f64() >= self.deadline_s {
@@ -113,17 +117,33 @@ impl<'a> LBFBuilder<'a> {
                 .filter(|(_, p)| p.sheet_index == sheet_idx)
                 .filter_map(|(idx, p)| {
                     // Q31: use cached base shape for already-placed items too.
+                    // SGH-Q36: spacing-expanded for part-part collision (same Rc when off).
                     let other = &self.problem.instances[p.instance_idx];
-                    transform_base_to_candidate(&other.base_shape, p.x, p.y, p.rotation_deg)
-                        .map(Rc::new)
-                        .map(|s| (idx, s))
+                    transform_base_to_candidate(
+                        &other.spacing_collision_base_shape,
+                        p.x,
+                        p.y,
+                        p.rotation_deg,
+                    )
+                    .map(Rc::new)
+                    .map(|s| (idx, s))
                 })
                 .collect();
-            let Some(session) = CdeCandidateSession::build_with_policy(
-                others,
-                &sheet_shape,
-                crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
-            ) else {
+            let session = if spacing_applied {
+                // Pairs-only (no Exterior): boundary is the bbox-fit gate on original dims.
+                CdeCandidateSession::build_pairs_only(
+                    others,
+                    &sheet_shape,
+                    crate::optimizer::sparrow::quantify::tracker::pair_touching_policy(true),
+                )
+            } else {
+                CdeCandidateSession::build_with_policy(
+                    others,
+                    &sheet_shape,
+                    crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+                )
+            };
+            let Some(session) = session else {
                 continue;
             };
             let mut evaluator = LBFEvaluator {

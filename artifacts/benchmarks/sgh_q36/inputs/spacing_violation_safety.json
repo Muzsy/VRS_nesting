@@ -1,0 +1,25 @@
+{
+  "contract_version": "v1",
+  "project_name": "sgh_q36_spacing_violation_safety",
+  "seed": 42,
+  "time_limit_s": 30,
+  "optimizer_pipeline": "sparrow_cde_multisheet",
+  "collision_backend": "cde",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "margin_mm": 0.0,
+  "spacing_mm": 30.0,
+  "kerf_mm": 0.0,
+  "stocks": [
+    { "id": "S1", "quantity": 1, "width": 60.0, "height": 60.0 }
+  ],
+  "parts": [
+    {
+      "id": "P1",
+      "quantity": 2,
+      "width": 25.0,
+      "height": 25.0,
+      "allowed_rotations_deg": [0],
+      "outer_points": [[0,0], [25,0], [25,25], [0,25]]
+    }
+  ]
+}

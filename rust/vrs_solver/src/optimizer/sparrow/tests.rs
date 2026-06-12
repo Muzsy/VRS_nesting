@@ -79,6 +79,7 @@ mod tests {
                 part,
                 allowed_rotations_deg: vec![0.0],
                 continuous_rotation: false,
+                spacing_collision_base_shape: base_shape.clone(),
                 base_shape,
             }
         }
@@ -1136,6 +1137,7 @@ mod tests {
                 part: invalid,
                 allowed_rotations_deg: vec![0.0],
                 continuous_rotation: false,
+                spacing_collision_base_shape: dummy_base.clone(),
                 base_shape: dummy_base,
             };
             let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));

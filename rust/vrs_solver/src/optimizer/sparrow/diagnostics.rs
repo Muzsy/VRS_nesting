@@ -64,6 +64,10 @@ pub struct SparrowConfig {
     /// Only applied when the instance's rotation policy permits continuous/free
     /// rotation; discrete (orthogonal) instances keep their fixed rotation set.
     pub rotation_wiggle_deg: f64,
+    /// SGH-Q36: part-part spacing (mm). When > 0, the solver does part-part
+    /// collision/search on a half-spacing outward-offset contour. Boundary/output
+    /// always use the original geometry. `0.0` ⇒ no spacing geometry (unchanged path).
+    pub spacing_mm: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,7 +126,14 @@ impl SparrowConfig {
             global_grid_n: 4,
             coord_descent_steps: SPARROW_PARITY_COORD_DESCENTS,
             rotation_wiggle_deg: 6.0,
+            spacing_mm: 0.0,
         }
+    }
+
+    /// SGH-Q36: set the part-part spacing applied by the solver collision geometry.
+    pub fn with_spacing_mm(mut self, spacing_mm: f64) -> Self {
+        self.spacing_mm = spacing_mm.max(0.0);
+        self
     }
 
     pub fn with_profile(mut self, profile: SparrowProfile) -> Self {
@@ -233,6 +244,13 @@ pub struct SparrowDiagnostics {
     pub native_problem_instances: usize,
     pub native_tracker_full_rebuilds: usize,
     pub native_tracker_incremental_updates: usize,
+    // ── SGH-Q36 spacing-expanded geometry diagnostics ───────────────────────
+    pub spacing_geometry_applied: bool,
+    pub spacing_offset_mm: f64,
+    pub spacing_offset_part_count: usize,
+    pub spacing_offset_cache_hits: usize,
+    pub spacing_offset_cache_misses: usize,
+    pub spacing_offset_failure_count: usize,
     // ── dense reference-run diagnostics ─────────────────────────────────────
     pub dense_guard_used: bool,
     pub dense_real_run: bool,
@@ -329,6 +347,12 @@ impl Default for SparrowDiagnostics {
             native_tracker_active: false,
             old_core_used: false,
             native_problem_instances: 0,
+            spacing_geometry_applied: false,
+            spacing_offset_mm: 0.0,
+            spacing_offset_part_count: 0,
+            spacing_offset_cache_hits: 0,
+            spacing_offset_cache_misses: 0,
+            spacing_offset_failure_count: 0,
             native_tracker_full_rebuilds: 0,
             native_tracker_incremental_updates: 0,
             dense_guard_used: false,

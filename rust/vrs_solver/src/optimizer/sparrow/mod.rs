@@ -20,9 +20,9 @@ pub(crate) use crate::sheet::SheetShape;
 
 pub(crate) use super::cde_adapter::{
     convex_hull_area_and_diameter, prepare_base_shape_native, prepare_shape_from_sheet,
-    prepare_shape_native, transform_base_to_candidate, translate_prepared, CandidatePole,
-    CdeAdapter, CdeBaseShape, CdeCandidateSession, CdePreparedShape, CdeQueryResult,
-    SpecializedCollectionCtx, SpecializedHazardSink,
+    prepare_shape_native, prepare_spacing_base_shape_native, transform_base_to_candidate,
+    translate_prepared, CandidatePole, CdeAdapter, CdeBaseShape, CdeCandidateSession,
+    CdePreparedShape, CdeQueryResult, SpecializedCollectionCtx, SpecializedHazardSink,
 };
 
 pub mod diagnostics;

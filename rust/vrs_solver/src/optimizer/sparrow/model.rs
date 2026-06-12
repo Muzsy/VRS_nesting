@@ -19,7 +19,12 @@ pub struct SPInstance {
     /// Part-level cached CDE base shape (POI + surrogate computed once per unique
     /// part geometry). Shared across all instances of the same part via `Rc`.
     /// Eliminates repeated `prepare_base_shape_native` calls in search/LBF/tracker.
+    /// ORIGINAL geometry — used for boundary/container checks and output.
     pub base_shape: Rc<CdeBaseShape>,
+    /// SGH-Q36: part-level cached SPACING-EXPANDED base shape (original offset
+    /// outward by `spacing_mm / 2`). Used ONLY for part-part collision/search.
+    /// When `spacing_mm == 0` this is the SAME `Rc` as `base_shape`.
+    pub spacing_collision_base_shape: Rc<CdeBaseShape>,
 }
 
 /// Native fixed-sheet container set.
@@ -49,6 +54,19 @@ pub struct SparrowProblem {
     pub base_shape_cache_hits: usize,
     /// Wall-time (ms) spent building the per-part base shape cache.
     pub base_shape_cache_build_ms: f64,
+    // ── SGH-Q36 spacing-expanded geometry diagnostics ─────────────────────────
+    /// True when `spacing_mm > 0` (spacing-expanded collision geometry was built).
+    pub spacing_geometry_applied: bool,
+    /// The half-spacing offset value applied (`spacing_mm / 2`).
+    pub spacing_offset_mm: f64,
+    /// Unique parts for which a spacing-expanded base shape was built.
+    pub spacing_offset_part_count: usize,
+    /// Cache hits when reusing a spacing-expanded base shape across instances.
+    pub spacing_offset_cache_hits: usize,
+    /// Cache misses (spacing-expanded base shape built for the first time).
+    pub spacing_offset_cache_misses: usize,
+    /// Instances whose spacing offset could not be built (UNSUPPORTED_SPACING_OFFSET_Q36).
+    pub spacing_offset_failure_count: usize,
 }
 
 impl SparrowProblem {
@@ -78,6 +96,19 @@ impl SparrowProblem {
         let mut cache_misses: usize = 0;
         // Track which part IDs failed to build (geometry unsupported).
         let mut unsupported_parts: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        // SGH-Q36: spacing-expanded base shape cache (part-part collision geometry).
+        // half_spacing = spacing_mm / 2; kerf is NOT included.
+        let spacing_mm = config.spacing_mm.max(0.0);
+        let spacing_applied = spacing_mm > 0.0;
+        let half_spacing_mm = spacing_mm / 2.0;
+        let mut spacing_shape_cache: HashMap<String, Rc<CdeBaseShape>> = HashMap::new();
+        let mut spacing_cache_hits: usize = 0;
+        let mut spacing_cache_misses: usize = 0;
+        let mut spacing_failure_count: usize = 0;
+        // Parts whose spacing offset cannot be built safely (no raw fallback).
+        let mut spacing_unsupported_parts: std::collections::HashSet<String> =
             std::collections::HashSet::new();
 
         for inst in expanded {
@@ -128,6 +159,46 @@ impl SparrowProblem {
                     }
                 }
             };
+            // SGH-Q36: resolve the spacing-expanded collision base shape.
+            // When spacing is off, reuse the SAME Rc as the original (zero overhead /
+            // identical behaviour). On offset failure the instance is unplaced with
+            // UNSUPPORTED_SPACING_OFFSET_Q36 — never a silent raw fallback.
+            let spacing_collision_base_shape = if !spacing_applied {
+                base_shape.clone()
+            } else if spacing_unsupported_parts.contains(&inst.part_id) {
+                spacing_failure_count += 1;
+                pre_unplaced.push(Unplaced {
+                    instance_id: inst.instance_id.clone(),
+                    part_id: inst.part_id.clone(),
+                    reason: "UNSUPPORTED_SPACING_OFFSET_Q36".to_string(),
+                });
+                continue;
+            } else {
+                match spacing_shape_cache.entry(inst.part_id.clone()) {
+                    std::collections::hash_map::Entry::Occupied(e) => {
+                        spacing_cache_hits += 1;
+                        e.get().clone()
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        match prepare_spacing_base_shape_native(part, half_spacing_mm) {
+                            Ok(bs) => {
+                                spacing_cache_misses += 1;
+                                e.insert(Rc::new(bs)).clone()
+                            }
+                            Err(_) => {
+                                spacing_unsupported_parts.insert(inst.part_id.clone());
+                                spacing_failure_count += 1;
+                                pre_unplaced.push(Unplaced {
+                                    instance_id: inst.instance_id.clone(),
+                                    part_id: inst.part_id.clone(),
+                                    reason: "UNSUPPORTED_SPACING_OFFSET_Q36".to_string(),
+                                });
+                                continue;
+                            }
+                        }
+                    }
+                }
+            };
             let continuous_rotation = match part.rotation_policy {
                 Some(RotationPolicyKind::Continuous) => true,
                 Some(_) => false,
@@ -145,6 +216,7 @@ impl SparrowProblem {
                 allowed_rotations_deg: inst.allowed_rotations_deg,
                 continuous_rotation,
                 base_shape,
+                spacing_collision_base_shape,
             });
         }
         let base_shape_cache_build_ms = cache_build_start.elapsed().as_secs_f64() * 1000.0;
@@ -160,6 +232,12 @@ impl SparrowProblem {
             base_shape_cache_misses: cache_misses,
             base_shape_cache_hits: cache_hits,
             base_shape_cache_build_ms,
+            spacing_geometry_applied: spacing_applied,
+            spacing_offset_mm: half_spacing_mm,
+            spacing_offset_part_count: spacing_shape_cache.len(),
+            spacing_offset_cache_hits: spacing_cache_hits,
+            spacing_offset_cache_misses: spacing_cache_misses,
+            spacing_offset_failure_count: spacing_failure_count,
         })
     }
 

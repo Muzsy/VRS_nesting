@@ -591,6 +591,29 @@ pub struct OptimizerDiagnosticsOutput {
     /// Number of unique placements removed by the spacing safety net.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technology_spacing_safety_net_removed_count: Option<usize>,
+    // ── SGH-Q36 spacing-aware solver geometry diagnostics ────────────────────
+    /// True when the solver used spacing-expanded part-part collision geometry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_geometry_applied: Option<bool>,
+    /// The half-spacing outward offset applied to part contours (`spacing_mm / 2`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_mm: Option<f64>,
+    /// Unique parts for which a spacing-expanded base shape was built.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_part_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_cache_hits: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_cache_misses: Option<usize>,
+    /// Instances whose spacing offset could not be built (UNSUPPORTED_SPACING_OFFSET_Q36).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_offset_failure_count: Option<usize>,
+    /// Always true: sheet boundary/container checks use ORIGINAL geometry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_boundary_uses_original_geometry: Option<bool>,
+    /// Always true: output/export uses ORIGINAL geometry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_spacing_output_uses_original_geometry: Option<bool>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).

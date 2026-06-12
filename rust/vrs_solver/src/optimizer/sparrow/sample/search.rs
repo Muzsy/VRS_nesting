@@ -26,11 +26,23 @@ pub(crate) fn build_sheet_session(
         .filter(|&j| j != target && layout.placements[j].sheet_index == sheet_idx)
         .filter_map(|j| tracker.shapes[j].clone().map(|s| (j, s)))
         .collect();
-    CdeCandidateSession::build_with_policy(
-        others,
-        sheet_shape,
-        crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
-    )
+    // SGH-Q36: when spacing is active, the separator's part-part session is built on
+    // spacing-expanded item shapes WITHOUT the sheet Exterior (boundary is enforced
+    // separately on the original geometry by the broad-phase bbox-fit gate). Touching
+    // expanded contours is allowed. When spacing is off, the original behaviour is kept.
+    if tracker.spacing_applied {
+        CdeCandidateSession::build_pairs_only(
+            others,
+            sheet_shape,
+            crate::optimizer::sparrow::quantify::tracker::pair_touching_policy(true),
+        )
+    } else {
+        CdeCandidateSession::build_with_policy(
+            others,
+            sheet_shape,
+            crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+        )
+    }
 }
 
 /// Upstream `search_placement` (Algorithm 6 and Figure 7), run for one
@@ -269,7 +281,9 @@ pub(crate) fn native_search_placement(
     let sample_config = separator_sample_config(cfg);
     // Q31: use the per-instance cached CDE base shape (built once in from_solver_input).
     // Every candidate is produced by transform_base_to_candidate (called in SeparationEvaluator).
-    let base = inst.base_shape.clone();
+    // SGH-Q36: the separator candidate uses the spacing-expanded collision base shape for
+    // part-part hazards (same Rc as the original when spacing is off — byte-identical).
+    let base = inst.spacing_collision_base_shape.clone();
     if r1 { diag.q30_profile.search_base_shape_cache_hits += 1; }
     // Verify the current anchor is reachable; if the base shape is degenerate, skip.
     if transform_base_to_candidate(&base, cur.x, cur.y, cur.rotation_deg).is_none() {

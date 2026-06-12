@@ -41,6 +41,12 @@ pub struct CdeAdapterConfig {
 pub enum CdeTouchingPolicy {
     SparrowStrict,
     VrsTouchAllowed,
+    /// SGH-Q36: part-part collision on SPACING-EXPANDED geometry. Touching expanded
+    /// contours is an ALLOWED candidate (the original contours are then exactly
+    /// `spacing_mm` apart); positive overlap of expanded contours is a collision.
+    /// Behaves like `VrsTouchAllowed` for the pair post-policy but is a distinct,
+    /// isolated variant so raw/original `SparrowStrict` semantics stay untouched.
+    SpacingExpandedTouchAllowed,
 }
 
 impl Default for CdeAdapterConfig {
@@ -226,11 +232,14 @@ impl CdeAdapter {
 
         match self.config.touching_policy {
             CdeTouchingPolicy::SparrowStrict => CdeQueryResult::Collision,
-            CdeTouchingPolicy::VrsTouchAllowed => match polygons_collide(&a.world_pts, &b.world_pts) {
-                Ok(true) => CdeQueryResult::Collision,
-                Ok(false) => CdeQueryResult::NoCollision,
-                Err(reason) => CdeQueryResult::Unsupported { reason },
-            },
+            CdeTouchingPolicy::VrsTouchAllowed
+            | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                match polygons_collide(&a.world_pts, &b.world_pts) {
+                    Ok(true) => CdeQueryResult::Collision,
+                    Ok(false) => CdeQueryResult::NoCollision,
+                    Err(reason) => CdeQueryResult::Unsupported { reason },
+                }
+            }
         }
     }
 
@@ -278,11 +287,14 @@ impl CdeAdapter {
                 Ok(false) => CdeQueryResult::Collision,
                 Err(reason) => CdeQueryResult::Unsupported { reason },
             },
-            CdeTouchingPolicy::VrsTouchAllowed => match polygon_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
-                Ok(true) => CdeQueryResult::NoCollision,
-                Ok(false) => CdeQueryResult::Collision,
-                Err(reason) => CdeQueryResult::Unsupported { reason },
-            },
+            CdeTouchingPolicy::VrsTouchAllowed
+            | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                match polygon_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
+                    Ok(true) => CdeQueryResult::NoCollision,
+                    Ok(false) => CdeQueryResult::Collision,
+                    Err(reason) => CdeQueryResult::Unsupported { reason },
+                }
+            }
         }
     }
 }
@@ -419,6 +431,27 @@ pub(crate) fn prepare_base_shape_native(part: &Part) -> Result<CdeBaseShape, &'s
         to_jag_polygon(&local_pts, "cde_base_shape").map_err(|_| "SPolygon build failed for base")?;
     let _ = spoly.generate_surrogate(pole_prepass_surrogate_config());
     Ok(CdeBaseShape { spoly, local_pts })
+}
+
+/// SGH-Q36: build a part's SPACING-EXPANDED base shape — the original local polygon
+/// offset outward by `half_spacing_mm`. Used ONLY for part-part collision/search,
+/// never for boundary/output. Returns the explicit Q36 offset error reason on failure
+/// (never silently falls back to the raw contour).
+pub(crate) fn prepare_spacing_base_shape_native(
+    part: &Part,
+    half_spacing_mm: f64,
+) -> Result<CdeBaseShape, String> {
+    use crate::technology::spacing_geometry::build_spacing_expanded_outer_polygon;
+    let local_pts = part_local_polygon(part).map_err(|e| e.to_string())?;
+    let expanded = build_spacing_expanded_outer_polygon(&local_pts, half_spacing_mm)
+        .map_err(|e| e.to_string())?;
+    let mut spoly = to_jag_polygon(&expanded, "cde_spacing_base_shape")
+        .map_err(|_| "SPolygon build failed for spacing base".to_string())?;
+    let _ = spoly.generate_surrogate(pole_prepass_surrogate_config());
+    Ok(CdeBaseShape {
+        spoly,
+        local_pts: expanded,
+    })
 }
 
 /// Build a candidate shape at `(anchor_x, anchor_y, rotation_deg)` from a base
@@ -829,6 +862,69 @@ impl CdeCandidateSession {
         Self::build_with_policy(all, sheet, touching_policy)
     }
 
+    /// SGH-Q36: build a PAIRS-ONLY session (NO sheet Exterior hazard). Used for
+    /// spacing-expanded part-part collision so the spacing-expanded candidate is
+    /// never checked against the sheet boundary (spacing is not a sheet margin —
+    /// boundary is enforced separately on the ORIGINAL geometry / bbox-fit gate).
+    /// `sheet` is used only to size the engine bbox.
+    pub(crate) fn build_pairs_only(
+        others: Vec<(usize, Rc<CdePreparedShape>)>,
+        sheet: &CdePreparedShape,
+        touching_policy: CdeTouchingPolicy,
+    ) -> Option<Self> {
+        let mut min_x = sheet.min_x;
+        let mut min_y = sheet.min_y;
+        let mut max_x = sheet.max_x;
+        let mut max_y = sheet.max_y;
+        for (_, s) in &others {
+            min_x = min_x.min(s.min_x);
+            min_y = min_y.min(s.min_y);
+            max_x = max_x.max(s.max_x);
+            max_y = max_y.max(s.max_y);
+        }
+        let margin = ((max_x - min_x) + (max_y - min_y)).max(1.0);
+        let bbox = JagRect::try_new(
+            (min_x - margin) as f32,
+            (min_y - margin) as f32,
+            (max_x + margin) as f32,
+            (max_y + margin) as f32,
+        )
+        .ok()?;
+        let cde_config = CDEConfig {
+            quadtree_depth: 4,
+            cd_threshold: 0,
+            item_surrogate_config: SPSurrogateConfig::none(),
+        };
+        // jagua's CDEngine requires an Exterior hazard. For a PAIRS-ONLY session we
+        // register a NO-OP container: a large rectangle (the item/sheet extent grown by
+        // half the engine margin) so every real candidate stays strictly inside it and
+        // the boundary hazard never fires. Boundary is enforced separately on ORIGINAL
+        // geometry (the broad-phase bbox-fit gate), so spacing never acts as a margin.
+        let hm = margin * 0.5;
+        let ext_pts = vec![
+            Point { x: min_x - hm, y: min_y - hm },
+            Point { x: max_x + hm, y: min_y - hm },
+            Point { x: max_x + hm, y: max_y + hm },
+            Point { x: min_x - hm, y: max_y + hm },
+        ];
+        let ext_spoly = to_jag_polygon(&ext_pts, "cde_pairs_only_noop_exterior").ok()?;
+        let mut hazards = Vec::with_capacity(others.len() + 1);
+        hazards.push(Hazard::new(HazardEntity::Exterior, ext_spoly, false));
+        for (i, (_, s)) in others.iter().enumerate() {
+            hazards.push(Hazard::new(HazardEntity::Hole { idx: i }, s.spoly.clone(), false));
+        }
+        super::cde_observability::inc_batch_engine_build(others.len());
+        let cde = CDEngine::new(bbox, hazards, cde_config);
+        Some(Self {
+            cde,
+            holes: others.into_iter().map(Some).collect(),
+            // The no-op exterior polygon as world points, so the boundary post-policy (if
+            // ever exercised) treats the large rectangle as the container.
+            sheet_world_pts: ext_pts,
+            touching_policy,
+        })
+    }
+
     /// Find the CDEngine slot (= index into `holes`) for a given layout index.
     fn lookup_hole_slot(&self, layout_idx: usize) -> Option<usize> {
         self.holes.iter().position(|e| matches!(e, Some((i, _)) if *i == layout_idx))
@@ -876,22 +972,28 @@ impl CdeCandidateSession {
                             Ok(false) => boundary_collision = true,
                             Err(_) => unsupported = true,
                         },
-                        CdeTouchingPolicy::VrsTouchAllowed => match polygon_within_sheet_pts(&candidate.world_pts, &self.sheet_world_pts) {
-                            Ok(true) => {}
-                            Ok(false) => boundary_collision = true,
-                            Err(_) => unsupported = true,
-                        },
+                        CdeTouchingPolicy::VrsTouchAllowed
+                        | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                            match polygon_within_sheet_pts(&candidate.world_pts, &self.sheet_world_pts) {
+                                Ok(true) => {}
+                                Ok(false) => boundary_collision = true,
+                                Err(_) => unsupported = true,
+                            }
+                        }
                     }
                 }
                 HazardEntity::Hole { idx } => {
                     if let Some(Some((layout_idx, oshape))) = self.holes.get(*idx) {
                         match self.touching_policy {
                             CdeTouchingPolicy::SparrowStrict => colliding.push(*layout_idx),
-                            CdeTouchingPolicy::VrsTouchAllowed => match polygons_collide(&candidate.world_pts, &oshape.world_pts) {
-                                Ok(true) => colliding.push(*layout_idx),
-                                Ok(false) => {}
-                                Err(_) => unsupported = true,
-                            },
+                            CdeTouchingPolicy::VrsTouchAllowed
+                            | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                                match polygons_collide(&candidate.world_pts, &oshape.world_pts) {
+                                    Ok(true) => colliding.push(*layout_idx),
+                                    Ok(false) => {}
+                                    Err(_) => unsupported = true,
+                                }
+                            }
                         }
                     }
                 }
@@ -1169,11 +1271,14 @@ impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
                         Ok(false) => self.sink.accept_container(self.candidate),
                         Err(_) => self.sink.accept_unsupported(),
                     },
-                    CdeTouchingPolicy::VrsTouchAllowed => match polygon_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
-                        Ok(true) => {}
-                        Ok(false) => self.sink.accept_container(self.candidate),
-                        Err(_) => self.sink.accept_unsupported(),
-                    },
+                    CdeTouchingPolicy::VrsTouchAllowed
+                    | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                        match polygon_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
+                            Ok(true) => {}
+                            Ok(false) => self.sink.accept_container(self.candidate),
+                            Err(_) => self.sink.accept_unsupported(),
+                        }
+                    }
                 }
             }
             HazardEntity::Hole { idx } => {
@@ -1182,11 +1287,14 @@ impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
                         CdeTouchingPolicy::SparrowStrict => {
                             self.sink.accept_pair(self.candidate, *layout_idx)
                         }
-                        CdeTouchingPolicy::VrsTouchAllowed => match polygons_collide(&self.candidate.world_pts, &oshape.world_pts) {
-                            Ok(true) => self.sink.accept_pair(self.candidate, *layout_idx),
-                            Ok(false) => {}
-                            Err(_) => self.sink.accept_unsupported(),
-                        },
+                        CdeTouchingPolicy::VrsTouchAllowed
+                        | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                            match polygons_collide(&self.candidate.world_pts, &oshape.world_pts) {
+                                Ok(true) => self.sink.accept_pair(self.candidate, *layout_idx),
+                                Ok(false) => {}
+                                Err(_) => self.sink.accept_unsupported(),
+                            }
+                        }
                     }
                 }
             }

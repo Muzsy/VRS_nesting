@@ -27,6 +27,10 @@ pub struct SparrowCollisionTracker {
     pub full_rebuilds: usize,
     pub incremental_updates: usize,
     pub unsupported: bool,
+    /// SGH-Q36: true when part-part collision runs on spacing-expanded geometry.
+    /// `shapes[i]` then holds the spacing-expanded shape (used for pairs + sessions);
+    /// boundary is recomputed from the ORIGINAL base shape on the fly.
+    pub(crate) spacing_applied: bool,
 }
 
 impl Clone for SparrowCollisionTracker {
@@ -42,7 +46,20 @@ impl Clone for SparrowCollisionTracker {
             full_rebuilds: self.full_rebuilds,
             incremental_updates: self.incremental_updates,
             unsupported: self.unsupported,
+            spacing_applied: self.spacing_applied,
         }
+    }
+}
+
+/// SGH-Q36: touching policy for the tracker/separator sessions — spacing-expanded
+/// touching is allowed when spacing is active, otherwise strict (original semantics).
+pub(crate) fn pair_touching_policy(
+    spacing_applied: bool,
+) -> crate::optimizer::cde_adapter::CdeTouchingPolicy {
+    if spacing_applied {
+        crate::optimizer::cde_adapter::CdeTouchingPolicy::SpacingExpandedTouchAllowed
+    } else {
+        crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict
     }
 }
 
@@ -55,7 +72,11 @@ impl SparrowCollisionTracker {
         let p = &layout.placements[idx];
         let inst = &instances[p.instance_idx];
         // Q31: use cached base shape — no prepare_shape_native call.
-        transform_base_to_candidate(&inst.base_shape, p.x, p.y, p.rotation_deg).map(Rc::new)
+        // SGH-Q36: use the spacing-expanded collision base shape for pairs/sessions.
+        // When spacing is off this is the SAME Rc as the original base shape, so the
+        // result is byte-identical to the pre-Q36 path.
+        transform_base_to_candidate(&inst.spacing_collision_base_shape, p.x, p.y, p.rotation_deg)
+            .map(Rc::new)
     }
 
     /// Full CDE rebuild of the collision state from the native layout.
@@ -76,6 +97,11 @@ impl SparrowCollisionTracker {
         diag: &mut SparrowDiagnostics,
     ) -> Self {
         let n = layout.placements.len();
+        // SGH-Q36: spacing is active when any instance carries a distinct spacing-expanded
+        // base shape (when spacing is off, the two base-shape Rc handles are identical).
+        let spacing_applied = instances
+            .iter()
+            .any(|i| !Rc::ptr_eq(&i.base_shape, &i.spacing_collision_base_shape));
         let mut t = Self {
             n,
             shapes: vec![None; n],
@@ -89,6 +115,7 @@ impl SparrowCollisionTracker {
             full_rebuilds: 0,
             incremental_updates: 0,
             unsupported: false,
+            spacing_applied,
         };
         for i in 0..n {
             t.shapes[i] = Self::prepare_item(layout, instances, i);
@@ -122,17 +149,33 @@ impl SparrowCollisionTracker {
         &mut self,
         i: usize,
         layout: &SparrowLayout,
-        _instances: &[SPInstance],
+        instances: &[SPInstance],
         sheets: &[SheetShape],
         diag: &mut SparrowDiagnostics,
     ) {
         self.boundary_loss[i] = 0.0;
-        let Some(shape_i) = self.shapes[i].clone() else {
-            self.unsupported = true;
-            diag.unsupported_queries += 1;
-            return;
-        };
         let pi = &layout.placements[i];
+        // SGH-Q36: boundary/container uses ORIGINAL geometry. When spacing is active,
+        // `self.shapes[i]` is the spacing-expanded shape (for pairs), so build the
+        // original shape on the fly here; otherwise reuse the cached shape (identical).
+        let shape_i = if self.spacing_applied {
+            let inst = &instances[pi.instance_idx];
+            match transform_base_to_candidate(&inst.base_shape, pi.x, pi.y, pi.rotation_deg) {
+                Some(s) => Rc::new(s),
+                None => {
+                    self.unsupported = true;
+                    diag.unsupported_queries += 1;
+                    return;
+                }
+            }
+        } else {
+            let Some(shape_i) = self.shapes[i].clone() else {
+                self.unsupported = true;
+                diag.unsupported_queries += 1;
+                return;
+            };
+            shape_i
+        };
         let si = pi.sheet_index;
 
         // Boundary / container clearance (quantified).
@@ -175,7 +218,7 @@ impl SparrowCollisionTracker {
             if let Some(session) = CdeCandidateSession::build_with_policy(
                 others.clone(),
                 &sheet_shape,
-                crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+                pair_touching_policy(self.spacing_applied),
             ) {
                 let res = session.query(&shape_i);
                 if res.unsupported {
@@ -281,7 +324,7 @@ impl SparrowCollisionTracker {
                     CdeCandidateSession::build_with_policy(
                         vec![(i, shape_i.clone())],
                         &sheet_shape,
-                        crate::optimizer::cde_adapter::CdeTouchingPolicy::SparrowStrict,
+                        pair_touching_policy(self.spacing_applied),
                     )
                 else {
                     continue;

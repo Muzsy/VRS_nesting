@@ -50,6 +50,13 @@ impl SparrowOptimizer {
         diag.q30_profile.base_shape_cache_hits = problem.base_shape_cache_hits;
         diag.q30_profile.base_shape_cache_reused_instances = problem.base_shape_cache_hits;
         // hot-path calls are 0: prepare_base_shape_native is no longer in the hot path.
+        // SGH-Q36: surface spacing-expanded geometry build stats.
+        diag.spacing_geometry_applied = problem.spacing_geometry_applied;
+        diag.spacing_offset_mm = problem.spacing_offset_mm;
+        diag.spacing_offset_part_count = problem.spacing_offset_part_count;
+        diag.spacing_offset_cache_hits = problem.spacing_offset_cache_hits;
+        diag.spacing_offset_cache_misses = problem.spacing_offset_cache_misses;
+        diag.spacing_offset_failure_count = problem.spacing_offset_failure_count;
 
         let t_lbf = ProfileTimer::start_if(r1);
         let seed_layout = build_native_constructive_seed(&problem);

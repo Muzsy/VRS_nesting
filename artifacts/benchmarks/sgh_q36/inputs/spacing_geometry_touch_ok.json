@@ -1,0 +1,25 @@
+{
+  "contract_version": "v1",
+  "project_name": "sgh_q36_spacing_geometry_touch_ok",
+  "seed": 42,
+  "time_limit_s": 30,
+  "optimizer_pipeline": "sparrow_cde_multisheet",
+  "collision_backend": "cde",
+  "solver_profile": "jagua_optimizer_phase1_outer_only",
+  "margin_mm": 0.0,
+  "spacing_mm": 10.0,
+  "kerf_mm": 0.0,
+  "stocks": [
+    { "id": "S1", "quantity": 1, "width": 200.0, "height": 100.0 }
+  ],
+  "parts": [
+    {
+      "id": "P1",
+      "quantity": 2,
+      "width": 20.0,
+      "height": 20.0,
+      "allowed_rotations_deg": [0],
+      "outer_points": [[0,0], [20,0], [20,20], [0,20]]
+    }
+  ]
+}
