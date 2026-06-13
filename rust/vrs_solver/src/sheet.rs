@@ -341,6 +341,68 @@ mod tests {
     }
 }
 
+/// SGH-Q40: Offset every rectangular sheet by a SIGNED inset (mm) on all four sides.
+///
+/// `inset_mm > 0` shrinks inward, `inset_mm < 0` grows outward, `0` is a no-op clone.
+/// Used by the unified technology pre-processing where the solver sheet is offset by
+/// `margin − spacing/2` (which is negative when `spacing > 2·margin`). Rectangular stocks
+/// only; irregular outer with non-zero offset → explicit error; a shrink that collapses a
+/// sheet → `SHEET_OFFSET_COLLAPSES_SHEET_Q40`.
+pub fn apply_rectangular_sheet_offset(
+    sheets: &[SheetShape],
+    inset_mm: f64,
+) -> Result<Vec<SheetShape>, String> {
+    if !inset_mm.is_finite() {
+        return Err(format!("invalid inset_mm {inset_mm}: must be finite"));
+    }
+    if inset_mm == 0.0 {
+        return Ok(sheets.to_vec());
+    }
+    let mut result = Vec::with_capacity(sheets.len());
+    for (i, sheet) in sheets.iter().enumerate() {
+        if sheet.has_irregular_outer {
+            return Err(format!(
+                "UNSUPPORTED_MARGIN_FOR_IRREGULAR_STOCK_Q34: sheet[{i}] has irregular outer boundary; \
+                 sheet offset is only supported for rectangular stocks"
+            ));
+        }
+        let new_min_x = sheet.min_x + inset_mm;
+        let new_min_y = sheet.min_y + inset_mm;
+        let new_max_x = sheet.max_x - inset_mm;
+        let new_max_y = sheet.max_y - inset_mm;
+        let new_w = new_max_x - new_min_x;
+        let new_h = new_max_y - new_min_y;
+        if new_w <= 0.0 || new_h <= 0.0 {
+            return Err(format!(
+                "SHEET_OFFSET_COLLAPSES_SHEET_Q40: sheet[{i}] {}x{} with inset {} collapses to {}x{}",
+                sheet.width, sheet.height, inset_mm, new_w, new_h
+            ));
+        }
+        let solver_corners = vec![
+            Point { x: new_min_x, y: new_min_y },
+            Point { x: new_max_x, y: new_min_y },
+            Point { x: new_max_x, y: new_max_y },
+            Point { x: new_min_x, y: new_max_y },
+        ];
+        let outer_poly = to_jag_polygon(&solver_corners, &format!("offset_sheet[{i}]"))?;
+        result.push(SheetShape {
+            min_x: new_min_x,
+            min_y: new_min_y,
+            max_x: new_max_x,
+            max_y: new_max_y,
+            width: new_w,
+            height: new_h,
+            has_irregular_outer: false,
+            area: new_w * new_h,
+            outer_vertices: Vec::new(),
+            cost_per_use: sheet.cost_per_use,
+            _outer_poly: outer_poly,
+            hole_polys: Vec::new(),
+        });
+    }
+    Ok(result)
+}
+
 /// SGH-Q34: Shrink each rectangular sheet by `margin_mm` on all four sides.
 ///
 /// Rules:

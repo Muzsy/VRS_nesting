@@ -115,9 +115,13 @@ def check_static_invariants() -> None:
     check(clearance_rs_path.exists() and "TechnologyClearancePolicy" in read(clearance_rs_path),
           "TechnologyClearancePolicy still exists")
 
-    # adapter.rs wires the margin into the multisheet pipeline
-    check("apply_rectangular_sheet_margin" in adapter_rs,
-          "adapter.rs: apply_rectangular_sheet_margin used in multisheet pipeline")
+    # SGH-Q40 unified model: adapter wires the margin into the multisheet pipeline via the
+    # SIGNED sheet offset (margin − spacing/2), not the standalone margin shrink. The margin
+    # validator still runs on the PHYSICAL sheet with the full margin (find_sheet_margin_violations).
+    check("apply_rectangular_sheet_offset" in adapter_rs,
+          "adapter.rs: unified-model signed sheet offset used in multisheet pipeline")
+    check("find_sheet_margin_violations" in adapter_rs,
+          "adapter.rs: Q34 margin validator still enforced on physical sheet")
     check("solver_sheets_override" in adapter_rs,
           "adapter.rs: solver_sheets_override passed to manager")
 

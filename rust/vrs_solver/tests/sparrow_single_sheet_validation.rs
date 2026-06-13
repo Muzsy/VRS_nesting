@@ -414,6 +414,8 @@ fn q28_dense_191_incremental_session_speedup() {
         collision_backend: Some(vrs_solver::io::CollisionBackendKind::Cde),
         solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
         margin_mm: None,
+        spacing_mm: None,
+        kerf_mm: None,
         rotation_policy: None,
     };
 

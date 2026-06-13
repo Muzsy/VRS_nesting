@@ -18,8 +18,8 @@ use vrs_solver::io::{Placement, SolverInput, SolverOutput};
 use vrs_solver::item::Part;
 use vrs_solver::rotation_policy::{dims_for_rotation_f64, rotated_bbox_min_offset_f64};
 use vrs_solver::sheet::{
-    apply_rectangular_sheet_margin, count_sheet_margin_violations, expand_sheets,
-    find_sheet_margin_violations, Stock,
+    apply_rectangular_sheet_margin, apply_rectangular_sheet_offset, count_sheet_margin_violations,
+    expand_sheets, find_sheet_margin_violations, Stock,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -144,6 +144,77 @@ fn irregular_stock_with_zero_margin_ok() {
     // Zero margin is a no-op clone even for irregular stock.
     let res = apply_rectangular_sheet_margin(&sheets, 0.0);
     assert!(res.is_ok(), "irregular stock with zero margin should be a no-op clone");
+}
+
+// ── SGH-Q40: signed sheet offset (unified-model sheet transform) ───────────────
+
+#[test]
+fn sheet_offset_positive_inset_shrinks() {
+    // Positive inset (margin − spacing/2 > 0) behaves like margin: shrink inward.
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let off = apply_rectangular_sheet_offset(&sheets, 7.0).expect("apply offset");
+    let s = &off[0];
+    assert!((s.min_x - 7.0).abs() < 1e-9, "min_x={}", s.min_x);
+    assert!((s.max_x - 93.0).abs() < 1e-9, "max_x={}", s.max_x);
+    assert!((s.width - 86.0).abs() < 1e-9, "width={}", s.width);
+    assert!((s.height - 86.0).abs() < 1e-9, "height={}", s.height);
+    assert!((s.area - 7396.0).abs() < 1e-6, "area={}", s.area);
+}
+
+#[test]
+fn sheet_offset_negative_inset_grows_and_preserves_origin() {
+    // Negative inset (spacing/2 > margin) grows the SOLVER sheet outward symmetrically,
+    // preserving the coordinate origin so output anchors map back to original geometry.
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let off = apply_rectangular_sheet_offset(&sheets, -5.0).expect("apply offset");
+    let s = &off[0];
+    assert!((s.min_x + 5.0).abs() < 1e-9, "min_x={}", s.min_x);
+    assert!((s.min_y + 5.0).abs() < 1e-9, "min_y={}", s.min_y);
+    assert!((s.max_x - 105.0).abs() < 1e-9, "max_x={}", s.max_x);
+    assert!((s.max_y - 105.0).abs() < 1e-9, "max_y={}", s.max_y);
+    assert!((s.width - 110.0).abs() < 1e-9, "width={}", s.width);
+    assert!((s.area - 12100.0).abs() < 1e-6, "area={}", s.area);
+    assert!(!s.has_irregular_outer);
+}
+
+#[test]
+fn sheet_offset_zero_is_noop_clone() {
+    // Determinism contract: inset == 0 is a byte-identical clone (spacing == 0 && margin == 0).
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 80.0)]).expect("expand");
+    let off = apply_rectangular_sheet_offset(&sheets, 0.0).expect("apply offset 0");
+    assert_eq!(off.len(), 1);
+    assert!((off[0].width - 100.0).abs() < 1e-9);
+    assert!((off[0].height - 80.0).abs() < 1e-9);
+    assert!((off[0].area - 8000.0).abs() < 1e-6);
+}
+
+#[test]
+fn sheet_offset_collapsing_shrink_errors() {
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    let res = apply_rectangular_sheet_offset(&sheets, 60.0);
+    assert!(res.is_err(), "inset 60 on 100×100 collapses the sheet");
+    assert!(
+        res.unwrap_err().contains("SHEET_OFFSET_COLLAPSES_SHEET_Q40"),
+        "expected SHEET_OFFSET_COLLAPSES_SHEET_Q40"
+    );
+}
+
+#[test]
+fn sheet_offset_irregular_nonzero_errors_zero_ok() {
+    let sheets = expand_sheets(&[irregular_stock("L")]).expect("expand");
+    assert!(sheets[0].has_irregular_outer);
+    // Non-zero offset on irregular stock is unsupported (both shrink and grow).
+    assert!(apply_rectangular_sheet_offset(&sheets, 5.0).is_err());
+    assert!(apply_rectangular_sheet_offset(&sheets, -5.0).is_err());
+    // Zero offset is a no-op clone even for irregular stock.
+    assert!(apply_rectangular_sheet_offset(&sheets, 0.0).is_ok());
+}
+
+#[test]
+fn sheet_offset_nonfinite_errors() {
+    let sheets = expand_sheets(&[rect_stock("S", 1, 100.0, 100.0)]).expect("expand");
+    assert!(apply_rectangular_sheet_offset(&sheets, f64::NAN).is_err());
+    assert!(apply_rectangular_sheet_offset(&sheets, f64::INFINITY).is_err());
 }
 
 // ── Test 4: solver placement respects margin ──────────────────────────────────

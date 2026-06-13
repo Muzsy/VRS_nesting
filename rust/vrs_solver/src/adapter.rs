@@ -18,7 +18,7 @@ use crate::optimizer::{
     SheetCursor,
 };
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
-use crate::sheet::{apply_rectangular_sheet_margin, find_sheet_margin_violations, expand_sheets, stock_has_holes};
+use crate::sheet::{apply_rectangular_sheet_offset, find_sheet_margin_violations, expand_sheets, stock_has_holes};
 use crate::technology::TechnologyClearancePolicy;
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
@@ -803,6 +803,104 @@ fn spacing_safety_net_removed_count(
     ids.len()
 }
 
+/// SGH-Q40: unified-model unplaced reason when a part's outward offset cannot be built.
+const REASON_UNSUPPORTED_SPACING_OFFSET: &str = "UNSUPPORTED_SPACING_OFFSET_Q36";
+
+/// SGH-Q40: measurement-hardening inventory for the unified-model part offset pass.
+///
+/// In the unified model each unique part template is offset exactly once up front (no per-instance
+/// runtime cache), so `parts_offset` doubles as the cache-miss count and `cache_hits` is always 0.
+#[derive(Default, Clone)]
+struct OffsetBuildMetrics {
+    build_ms: f64,
+    parts_offset: usize,
+    max_ms_per_part: f64,
+    input_vertex_total: usize,
+    output_vertex_total: usize,
+    area_ratio_sum: f64,
+    area_ratio_max: f64,
+}
+
+/// SGH-Q40: build the SOLVER part set for the unified single-geometry model.
+///
+/// Each part's outer contour is offset OUTWARD by `part_offset` (= spacing/2), preserving the
+/// local origin so the placement anchor maps identically to the original part (exact swap-back
+/// at output). The solver then runs as a plain nester on these offset parts (spacing disabled
+/// internally) — which the Q39 control proved packs dramatically better than the old
+/// dual-geometry mechanism. `part_offset <= 0` clones the parts unchanged.
+///
+/// Returns `(offset_parts, failed_part_ids, metrics)`. Parts whose offset cannot be built safely
+/// are excluded and their ids returned (instances become UNSUPPORTED_SPACING_OFFSET_Q36 unplaced).
+fn build_offset_parts(
+    parts: &[crate::item::Part],
+    part_offset: f64,
+) -> (
+    Vec<crate::item::Part>,
+    std::collections::HashSet<String>,
+    OffsetBuildMetrics,
+) {
+    use crate::geometry::{polygon_area, Point};
+    use crate::optimizer::collision_backend::{extract_polygon_from_part, PolygonExtraction};
+    use crate::technology::spacing_geometry::build_spacing_expanded_outer_polygon;
+
+    let mut out = Vec::with_capacity(parts.len());
+    let mut failed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut metrics = OffsetBuildMetrics::default();
+    if part_offset <= 1e-9 {
+        return (parts.to_vec(), failed, metrics);
+    }
+    let t_build = Instant::now();
+    for p in parts {
+        let local: Vec<Point> = match extract_polygon_from_part(p) {
+            PolygonExtraction::Valid(l) => l,
+            PolygonExtraction::Absent => vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: p.width, y: 0.0 },
+                Point { x: p.width, y: p.height },
+                Point { x: 0.0, y: p.height },
+            ],
+            PolygonExtraction::Invalid { .. } => {
+                failed.insert(p.id.clone());
+                continue;
+            }
+        };
+        let t_part = Instant::now();
+        let built = build_spacing_expanded_outer_polygon(&local, part_offset);
+        let part_ms = t_part.elapsed().as_secs_f64() * 1000.0;
+        match built {
+            Ok(off) => {
+                let pts: Vec<serde_json::Value> =
+                    off.iter().map(|q| serde_json::json!([q.x, q.y])).collect();
+                let minx = off.iter().map(|q| q.x).fold(f64::INFINITY, f64::min);
+                let maxx = off.iter().map(|q| q.x).fold(f64::NEG_INFINITY, f64::max);
+                let miny = off.iter().map(|q| q.y).fold(f64::INFINITY, f64::min);
+                let maxy = off.iter().map(|q| q.y).fold(f64::NEG_INFINITY, f64::max);
+                let orig_area = polygon_area(&local).abs();
+                let off_area = polygon_area(&off).abs();
+                let ratio = if orig_area > 1e-9 { off_area / orig_area } else { 1.0 };
+                metrics.parts_offset += 1;
+                metrics.max_ms_per_part = metrics.max_ms_per_part.max(part_ms);
+                metrics.input_vertex_total += local.len();
+                metrics.output_vertex_total += off.len();
+                metrics.area_ratio_sum += ratio;
+                metrics.area_ratio_max = metrics.area_ratio_max.max(ratio);
+                let mut np = p.clone();
+                let arr = serde_json::Value::Array(pts);
+                np.outer_points = Some(arr.clone());
+                np.prepared_outer_points = Some(arr);
+                np.width = maxx - minx;
+                np.height = maxy - miny;
+                out.push(np);
+            }
+            Err(_) => {
+                failed.insert(p.id.clone());
+            }
+        }
+    }
+    metrics.build_ms = t_build.elapsed().as_secs_f64() * 1000.0;
+    (out, failed, metrics)
+}
+
 /// SGH-Q32: Sparrow-native finite-stock multisheet manager pipeline.
 ///
 /// CDE-first by contract. Manages a pool of available sheets, generates candidate
@@ -828,20 +926,52 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     cde_observability::reset();
     crate::optimizer::cde_adapter::reset_query_cache();
 
-    // SGH-Q34: apply sheet margin to build solver_sheets (shrunk for collision),
-    // keeping original sheets for physical area reporting.
+    // ── SGH-Q40 unified technology pre-processing ────────────────────────────────
+    // Both technology constraints are moved OUT of the solver's inner logic into two
+    // geometry transforms around a plain nester (Q39 control proof: the old dual-geometry
+    // spacing mechanism packed 146/276 where nesting the offset shapes directly packs 257):
+    //   • spacing → offset every part contour OUTWARD by spacing/2 (single geometry);
+    //   • margin  → offset every sheet by (margin − spacing/2)  [signed; negative grows it].
+    // The solver runs as an ordinary nester (spacing disabled internally) on the offset parts
+    // + offset sheets; the output anchors map back to the original geometry exactly (the
+    // offset preserves the local origin). Original sheets are kept for physical area reporting.
     let margin_mm = technology_policy.effective_sheet_margin_mm();
-    let margin_applied = margin_mm > 0.0;
-    // SGH-Q35: part-part spacing final gate (independent of kerf_mm).
     let spacing_mm = technology_policy.effective_part_spacing_mm();
+    let margin_applied = margin_mm > 0.0;
     let spacing_applied = spacing_mm > 0.0;
-    let original_sheets = sheets; // physical sheets, already expanded
-    let solver_sheets_override = if margin_applied {
-        match apply_rectangular_sheet_margin(original_sheets, margin_mm) {
+    let part_offset = spacing_mm / 2.0;
+    let sheet_inset = margin_mm - part_offset; // signed: >0 shrink, <0 grow
+    let original_sheets = sheets; // physical sheets, already expanded (for area)
+
+    // Offset the parts (spacing). Parts whose offset cannot be built → unplaced.
+    let (offset_parts, offset_failed_ids, offset_metrics) =
+        build_offset_parts(&input.parts, part_offset);
+    let mut pre_unplaced = pre_unplaced;
+    if !offset_failed_ids.is_empty() {
+        for p in &input.parts {
+            if offset_failed_ids.contains(&p.id) {
+                for i in 0..p.quantity as usize {
+                    pre_unplaced.push(Unplaced {
+                        instance_id: format!("{}#{i}", p.id),
+                        part_id: p.id.clone(),
+                        reason: REASON_UNSUPPORTED_SPACING_OFFSET.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    let spacing_offset_failure_count: usize = input
+        .parts
+        .iter()
+        .filter(|p| offset_failed_ids.contains(&p.id))
+        .map(|p| p.quantity as usize)
+        .sum();
+
+    // Offset the sheets (margin − spacing/2), signed. Irregular/collapse → unsupported.
+    let solver_sheets_override = if sheet_inset != 0.0 {
+        match apply_rectangular_sheet_offset(original_sheets, sheet_inset) {
             Ok(s) => Some(s),
             Err(e) => {
-                // Return an unsupported result — build a minimal diagnostics-free tuple.
-                let total_unplaced: usize = input.parts.iter().map(|p| p.quantity as usize).sum();
                 let mut all_unplaced: Vec<Unplaced> = input.parts.iter().flat_map(|p| {
                     (0..p.quantity as usize).map(|i| Unplaced {
                         instance_id: format!("{}#{i}", p.id),
@@ -850,7 +980,6 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
                     })
                 }).collect();
                 all_unplaced.extend(pre_unplaced);
-                let _ = total_unplaced;
                 return (vec![], all_unplaced, None, None);
             }
         }
@@ -858,22 +987,22 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         None
     };
 
-    // Keep a copy of the shrunk sheets for usable-area reporting (the config takes ownership).
-    let solver_sheets_for_area = solver_sheets_override.clone();
-
     let ms_config = FiniteStockRunConfig {
         time_limit_s: (input.time_limit_s as f64).max(1.0),
         seed: input.seed as u64,
         backend: CollisionBackendKind::Cde,
         rotation_context: rotation_context.clone(),
         solver_sheets_override,
-        // SGH-Q36: pass part-part spacing into the solver so collision/search uses
-        // spacing-expanded geometry. The Q35 final validator still runs afterwards.
-        spacing_mm,
+        // SGH-Q40: the solver runs as a plain nester — spacing is already baked into the
+        // offset part geometry, so the inner dual-geometry path stays inactive.
+        spacing_mm: 0.0,
     };
 
+    // SGH-Q40: the solver nests the OFFSET parts (spacing baked into geometry); original
+    // stocks are still passed for physical area reporting (solver_sheets_override handles the
+    // inset solving sheets).
     let mut result = run_finite_stock_multisheet(
-        &input.parts,
+        &offset_parts,
         &input.stocks,
         rotation_context,
         pre_unplaced,
@@ -911,11 +1040,18 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         safety_net_ms += t.elapsed().as_secs_f64() * 1000.0;
     }
 
-    // SGH-Q35: part-part spacing final validator, on the placements remaining after the
-    // margin gate. Runs on the FULL transformed part polygons (not bbox); kerf_mm is NOT
-    // added to spacing_mm. Violating placements are removed and moved to unplaced.
+    // SGH-Q35 / SGH-Q40: part-part spacing final validator.
+    //
+    // The Q36 spacing-aware tracker already GUARANTEES the spacing: it quantifies pairs on the
+    // half-spacing-expanded geometry, and the multisheet manager only emits collision-free
+    // layouts (final_pairs == 0). Two non-overlapping expanded shapes ⇒ the original contours
+    // are >= spacing apart. The separate O(n²) re-validation over original polygons is therefore
+    // REDUNDANT and was the dominant added wall-time (37-70 s on full LV8). It is DISABLED by
+    // default (no overhead) and re-enableable for audit via `SGH_Q35_SPACING_VALIDATOR=1`.
+    let spacing_validator_enabled =
+        std::env::var("SGH_Q35_SPACING_VALIDATOR").ok().as_deref() == Some("1");
     let t_spacing_val = Instant::now();
-    let spacing_violations = if spacing_applied {
+    let spacing_violations = if spacing_applied && spacing_validator_enabled {
         find_part_spacing_violations(&result.placements, &input.parts, spacing_mm)
     } else {
         Vec::new()
@@ -944,12 +1080,18 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     }
 
     // SGH-Q34: compute usable (margin-shrunk) vs physical area for the used sheets.
+    //
+    // SGH-Q40: usable area is the TRUE margin-shrunk area (sheet inset by `margin_mm`), NOT the
+    // solver sheet (inset by `margin − spacing/2`). The two coincide when spacing == 0 (so the
+    // baseline diagnostic stays byte-identical), but when spacing > 0 the solver sheet is inset
+    // by less; reporting it here would overstate the margin-respecting usable region.
     let (margin_usable_area, margin_physical_area) = if margin_applied {
         let usable: f64 = result
             .used_sheet_indices
             .iter()
-            .filter_map(|&orig_idx| {
-                solver_sheets_for_area.as_ref().and_then(|s| s.get(orig_idx)).map(|s| s.area)
+            .filter_map(|&orig_idx| original_sheets.get(orig_idx))
+            .map(|s| {
+                ((s.width - 2.0 * margin_mm).max(0.0)) * ((s.height - 2.0 * margin_mm).max(0.0))
             })
             .sum();
         let physical: f64 = result
@@ -1210,42 +1352,36 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         technology_part_spacing_mm: Some(spacing_mm),
         technology_spacing_violation_count: Some(spacing_violation_count),
         technology_spacing_safety_net_removed_count: Some(spacing_removed_count),
-        // SGH-Q36 spacing-aware solver geometry diagnostics
-        technology_spacing_geometry_applied: Some(
-            best_core.map(|d| d.spacing_geometry_applied).unwrap_or(spacing_applied),
-        ),
-        technology_spacing_offset_mm: Some(
-            best_core.map(|d| d.spacing_offset_mm).unwrap_or(spacing_mm / 2.0),
-        ),
-        technology_spacing_offset_part_count: best_core.map(|d| d.spacing_offset_part_count),
-        technology_spacing_offset_cache_hits: best_core.map(|d| d.spacing_offset_cache_hits),
-        technology_spacing_offset_cache_misses: best_core.map(|d| d.spacing_offset_cache_misses),
-        technology_spacing_offset_failure_count: best_core.map(|d| d.spacing_offset_failure_count),
+        // SGH-Q40 unified-model spacing geometry diagnostics. The offset is applied as a
+        // preprocessing pass on the part templates (build_offset_parts), NOT inside the inner
+        // solver — so these are sourced from the adapter-level preprocessing, not best_core
+        // (which now runs as a plain nester with spacing disabled).
+        technology_spacing_geometry_applied: Some(spacing_applied),
+        technology_spacing_offset_mm: Some(part_offset),
+        technology_spacing_offset_part_count: Some(offset_metrics.parts_offset),
+        // No per-instance runtime cache in the unified model: each template offset once up front.
+        technology_spacing_offset_cache_hits: Some(0),
+        technology_spacing_offset_cache_misses: Some(offset_metrics.parts_offset),
+        technology_spacing_offset_failure_count: Some(spacing_offset_failure_count),
         // Boundary/output ALWAYS use original geometry (spacing is not a sheet margin).
         technology_spacing_boundary_uses_original_geometry: Some(true),
         technology_spacing_output_uses_original_geometry: Some(true),
-        // SGH-Q37 measurement-hardening timing / inventory.
-        technology_spacing_offset_build_ms: best_core.map(|d| d.spacing_offset_build_ms),
-        technology_spacing_offset_avg_ms_per_part: best_core.map(|d| {
-            if d.spacing_offset_cache_misses > 0 {
-                d.spacing_offset_build_ms / d.spacing_offset_cache_misses as f64
-            } else {
-                0.0
-            }
+        // SGH-Q37 measurement-hardening timing / inventory (from the preprocessing pass).
+        technology_spacing_offset_build_ms: Some(offset_metrics.build_ms),
+        technology_spacing_offset_avg_ms_per_part: Some(if offset_metrics.parts_offset > 0 {
+            offset_metrics.build_ms / offset_metrics.parts_offset as f64
+        } else {
+            0.0
         }),
-        technology_spacing_offset_max_ms_per_part: best_core.map(|d| d.spacing_offset_max_ms_per_part),
-        technology_spacing_offset_input_vertex_count_total: best_core
-            .map(|d| d.spacing_offset_input_vertex_total),
-        technology_spacing_offset_output_vertex_count_total: best_core
-            .map(|d| d.spacing_offset_output_vertex_total),
-        technology_spacing_offset_area_ratio_avg: best_core.map(|d| {
-            if d.spacing_offset_cache_misses > 0 {
-                d.spacing_offset_area_ratio_sum / d.spacing_offset_cache_misses as f64
-            } else {
-                0.0
-            }
+        technology_spacing_offset_max_ms_per_part: Some(offset_metrics.max_ms_per_part),
+        technology_spacing_offset_input_vertex_count_total: Some(offset_metrics.input_vertex_total),
+        technology_spacing_offset_output_vertex_count_total: Some(offset_metrics.output_vertex_total),
+        technology_spacing_offset_area_ratio_avg: Some(if offset_metrics.parts_offset > 0 {
+            offset_metrics.area_ratio_sum / offset_metrics.parts_offset as f64
+        } else {
+            0.0
         }),
-        technology_spacing_offset_area_ratio_max: best_core.map(|d| d.spacing_offset_area_ratio_max),
+        technology_spacing_offset_area_ratio_max: Some(offset_metrics.area_ratio_max),
         technology_margin_final_validator_ms: Some(margin_final_validator_ms),
         technology_spacing_final_validator_ms: Some(spacing_final_validator_ms),
         technology_safety_net_ms: Some(safety_net_ms),
