@@ -604,6 +604,9 @@ fn native_sparrow_diag_to_output(
         technology_margin_final_validator_ms: None,
         technology_spacing_final_validator_ms: None,
         technology_safety_net_ms: None,
+        technology_unified_geometry_model_active: None,
+        technology_solver_sheet_inset_mm: None,
+        technology_inner_spacing_mm: None,
     }
 }
 
@@ -1385,6 +1388,11 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         technology_margin_final_validator_ms: Some(margin_final_validator_ms),
         technology_spacing_final_validator_ms: Some(spacing_final_validator_ms),
         technology_safety_net_ms: Some(safety_net_ms),
+        // SGH-Q40/Q41: unified single-geometry model is the active multisheet path. The signed
+        // solver-sheet inset is `margin − spacing/2`; the inner core always runs at spacing 0.
+        technology_unified_geometry_model_active: Some(true),
+        technology_solver_sheet_inset_mm: Some(sheet_inset),
+        technology_inner_spacing_mm: Some(0.0),
     };
 
     (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
@@ -1874,6 +1882,10 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             technology_margin_final_validator_ms: None,
                             technology_spacing_final_validator_ms: None,
                             technology_safety_net_ms: None,
+                            // Legacy PhaseOptimizer path — Q40 unified model not active here.
+                            technology_unified_geometry_model_active: None,
+                            technology_solver_sheet_inset_mm: None,
+                            technology_inner_spacing_mm: None,
                         };
                         (commit.placements, commit.unplaced, Some(diagnostics))
                     }

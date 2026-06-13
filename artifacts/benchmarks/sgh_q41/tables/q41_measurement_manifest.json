@@ -1,0 +1,21 @@
+{
+  "tier": "mandatory",
+  "only": null,
+  "scenarios_run": [
+    "Q41_A_2L",
+    "Q41_B_3L",
+    "Q41_C_MIXED"
+  ],
+  "dataset": "full276",
+  "margin_mm": 5.0,
+  "spacing_mm": 10.0,
+  "kerf_mm": 0.0,
+  "seed": 42,
+  "time_limit_s": 1200,
+  "time_limit_cap_applied": false,
+  "spacing_validator_env_forced_off": true,
+  "have_cairosvg": true,
+  "errors": [],
+  "generated_at": "2026-06-13T17:52:42+0200",
+  "base_full276": "artifacts/benchmarks/sgh_q32/inputs/case_01_2x1500x3000.json"
+}

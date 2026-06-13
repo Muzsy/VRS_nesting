@@ -1,0 +1,4 @@
+run_id,cde_pair_queries,cde_boundary_queries,cde_total_queries,cde_engine_builds,cde_collision_results,cde_no_collision_results,cde_cache_pair_hits,cde_cache_pair_misses,cde_broadphase_pruned
+Q41_A_2L,0,0,0,57370,0,0,0,0,550
+Q41_B_3L,0,0,0,36800,0,0,0,0,593
+Q41_C_MIXED,0,0,0,41196,0,0,0,0,1450

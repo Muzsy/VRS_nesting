@@ -1,0 +1,4 @@
+run_id,wall_time_s,sparrow_ms_runtime_ms,spacing_offset_build_ms,spacing_offset_avg_ms_per_part,spacing_offset_max_ms_per_part,margin_final_validator_ms,spacing_final_validator_ms,safety_net_ms,q31_base_shape_cache_build_ms,q31_prepare_base_shape_native_hotpath_ms,sparrow_iterations,sparrow_ms_attempts,sparrow_ms_candidate_subsets,search_position_calls,search_position_samples
+Q41_A_2L,1133.75,1126799.608525,235.57965000000002,19.6316375,107.461498,431.839639,0.001396,0.0,396.219791,0.0,799,2,2,37778,12706070
+Q41_B_3L,709.18,699488.792164,231.24656299999998,19.270546916666664,106.420372,579.489177,0.001397,0.0,387.077797,0.0,1,3,3,0,0
+Q41_C_MIXED,1133.16,1125362.530218,230.828145,19.23567875,105.52704,527.12178,0.0014670000000000002,0.0,386.562226,0.0,379,5,5,10940,3802826

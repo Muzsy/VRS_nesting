@@ -1,0 +1,9 @@
+run_id,sheet_index,stock_id,stock_width,stock_height,physical_sheet_area,usable_sheet_area,placed_count,placed_part_area,physical_utilization_pct,usable_utilization_pct,svg_path,png_path
+Q41_A_2L,0,LV8_SHEET,1500.0,3000.0,4500000.0,4455100.0,122,1601984.16,35.5996,35.9584,artifacts/benchmarks/sgh_q41/renders/Q41_A_2L/sheet_00.svg,artifacts/benchmarks/sgh_q41/renders/Q41_A_2L/sheet_00.png
+Q41_A_2L,1,LV8_SHEET,1500.0,3000.0,4500000.0,4455100.0,114,2099022.39,46.6449,47.115,artifacts/benchmarks/sgh_q41/renders/Q41_A_2L/sheet_01.svg,artifacts/benchmarks/sgh_q41/renders/Q41_A_2L/sheet_01.png
+Q41_B_3L,0,LV8_SHEET,1500.0,3000.0,4500000.0,4455100.0,92,2225841.58,49.4631,49.9617,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/sheet_00.svg,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/sheet_00.png
+Q41_B_3L,1,LV8_SHEET,1500.0,3000.0,4500000.0,4455100.0,99,2228725.68,49.5272,50.0264,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/sheet_01.svg,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/sheet_01.png
+Q41_B_3L,2,LV8_SHEET,1500.0,3000.0,4500000.0,4455100.0,85,2214930.4,49.2207,49.7167,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/sheet_02.svg,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/sheet_02.png
+Q41_C_MIXED,0,LV8_BIG,1500.0,3000.0,4500000.0,4455100.0,87,1660216.86,36.8937,37.2655,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/sheet_00.svg,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/sheet_00.png
+Q41_C_MIXED,1,LV8_SMALL,1000.0,2000.0,2000000.0,1970100.0,88,1239852.29,61.9926,62.9335,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/sheet_01.svg,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/sheet_01.png
+Q41_C_MIXED,2,LV8_SMALL,1000.0,2000.0,2000000.0,1970100.0,90,1246415.24,62.3208,63.2666,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/sheet_02.svg,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/sheet_02.png

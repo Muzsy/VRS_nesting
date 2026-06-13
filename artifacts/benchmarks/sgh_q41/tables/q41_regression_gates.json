@@ -1,0 +1,19 @@
+{
+  "all_three_runs_completed": true,
+  "all_inputs_full276": true,
+  "all_runs_margin_5_spacing_10": true,
+  "all_runs_full_time_limit": true,
+  "q40_unified_model_active": true,
+  "solver_sheet_inset_zero": true,
+  "inner_spacing_zero": true,
+  "offset_mm_is_5": true,
+  "offset_failure_zero": true,
+  "no_false_ok": true,
+  "no_final_collisions": true,
+  "no_boundary_violations": true,
+  "no_margin_violations": true,
+  "hotpath_calls_zero": true,
+  "spacing_validator_disabled_by_default": true,
+  "all_renders_present": true,
+  "render_original_contours": true
+}

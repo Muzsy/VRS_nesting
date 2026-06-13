@@ -1,0 +1,17 @@
+{
+  "run_id": "Q41_B_3L",
+  "used_sheet_count": 3,
+  "used_sheet_indices": [
+    0,
+    1,
+    2
+  ],
+  "svg_count": 4,
+  "png_count": 4,
+  "render_total_ms": 753.814,
+  "render_svg_total_ms": 0.874,
+  "render_png_total_ms": 668.246,
+  "render_sheet_count": 3,
+  "render_source": "original_canonical_full276_contours",
+  "have_cairosvg": true
+}

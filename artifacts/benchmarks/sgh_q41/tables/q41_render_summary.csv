@@ -1,0 +1,4 @@
+run_id,used_sheet_count,overview_svg_path,overview_png_path,missing_svg_count,missing_png_count,render_status
+Q41_A_2L,2,artifacts/benchmarks/sgh_q41/renders/Q41_A_2L/overview.svg,artifacts/benchmarks/sgh_q41/renders/Q41_A_2L/overview.png,0,0,ok
+Q41_B_3L,3,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/overview.svg,artifacts/benchmarks/sgh_q41/renders/Q41_B_3L/overview.png,0,0,ok
+Q41_C_MIXED,3,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/overview.svg,artifacts/benchmarks/sgh_q41/renders/Q41_C_MIXED/overview.png,0,0,ok

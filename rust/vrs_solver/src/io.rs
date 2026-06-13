@@ -639,6 +639,19 @@ pub struct OptimizerDiagnosticsOutput {
     /// Wall-time (ms) applying the margin + spacing safety nets + result recompute.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technology_safety_net_ms: Option<f64>,
+    /// SGH-Q40/Q41: the unified single-geometry margin/spacing model is active (spacing is baked
+    /// into the part offset geometry and margin into the signed sheet inset; the inner solver runs
+    /// as a plain nester). True for every multisheet pipeline run under the Q40 model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_unified_geometry_model_active: Option<bool>,
+    /// SGH-Q40/Q41: signed solver-sheet inset actually applied = `margin − spacing/2`
+    /// (positive shrinks inward, negative grows outward, 0 = physical sheet unchanged).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_solver_sheet_inset_mm: Option<f64>,
+    /// SGH-Q40/Q41: spacing value passed to the INNER Sparrow/CDE core (always 0 under the unified
+    /// model — spacing is carried by the offset part geometry, not the inner loop).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology_inner_spacing_mm: Option<f64>,
 }
 
 /// Q10: collision backend audit output (optional, skip when absent).
