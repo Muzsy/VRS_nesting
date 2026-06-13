@@ -1,0 +1,1625 @@
+{
+  "contract_version": "v1",
+  "status": "partial",
+  "placements": [
+    {
+      "instance_id": "LV8_00035_28db__0001",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 548.7650236694667,
+      "y": 2524.492282872744,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_00035_28db__0002",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 398.55229922192234,
+      "y": 423.21204088538684,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00035_28db__0003",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 122.40276429438057,
+      "y": 2093.638676324338,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0004",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 168.16501134114813,
+      "y": 2002.8126685627553,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_00035_28db__0005",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 124.0920347200772,
+      "y": 1960.362263232474,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00035_28db__0006",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1395.9742380767038,
+      "y": 2059.6341987880146,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0007",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1494.6923685652707,
+      "y": 2633.050883047767,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_00035_28db__0008",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1257.6672471157083,
+      "y": 155.102169714986,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0009",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 354.2368856933664,
+      "y": 1075.6390049090198,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_00035_28db__0010",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1005.8626362329693,
+      "y": 2275.8346017403296,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00035_28db__0011",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 494.2087319735403,
+      "y": 972.8085046632044,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0012",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 985.4292042688666,
+      "y": 1914.5134109478279,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0013",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 504.2090714105438,
+      "y": 2350.454898589464,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0014",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1073.7126125984225,
+      "y": 1740.8523753870502,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0015",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1291.590037682121,
+      "y": 2818.18922888466,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0016",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 940.3154510252419,
+      "y": 1551.735130073625,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0017",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 151.11169070803427,
+      "y": 1725.1975835600294,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00035_28db__0018",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 958.156451927171,
+      "y": 2206.7295412306717,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0019",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1044.2813041410711,
+      "y": 2456.208201669443,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0020",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1306.9880984322815,
+      "y": 86.84338400903451,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0021",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1101.6868256247844,
+      "y": 1870.7094334756637,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00035_28db__0022",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1341.8631825094228,
+      "y": 2762.890736031339,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0023",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 854.6524379854804,
+      "y": 858.0816368589608,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0024",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 851.4959218795454,
+      "y": 1248.9914535545172,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0025",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 615.3327841417362,
+      "y": 323.95092411917534,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0026",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1341.3554925190358,
+      "y": 1262.4160318665915,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00035_28db__0027",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 344.32184574498865,
+      "y": 396.9918506984636,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00035_28db__0028",
+      "part_id": "LV8_00035_28db",
+      "sheet_index": 0,
+      "x": 1419.7892811209008,
+      "y": 2909.4218661763284,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00057_20db__0001",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 999.5640578545429,
+      "y": 665.1422245945956,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00057_20db__0002",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 78.58014816203925,
+      "y": 943.7420161864057,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_00057_20db__0004",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 1446.5458307776084,
+      "y": 1251.6110091323503,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00057_20db__0005",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 914.4733510937202,
+      "y": 2999.9984618092753,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00057_20db__0006",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 1344.063212318412,
+      "y": 2995.4687068258395,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_00057_20db__0007",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 1484.0531124865688,
+      "y": 310.295241509986,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00057_20db__0008",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 1486.74827825453,
+      "y": 419.51382792118494,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00057_20db__0009",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 36.50551023217769,
+      "y": 37.18138340917092,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_00057_20db__0010",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 1447.8465016245298,
+      "y": 658.7013739712311,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_00057_20db__0011",
+      "part_id": "LV8_00057_20db",
+      "sheet_index": 0,
+      "x": 1380.511848354308,
+      "y": 2580.7551696529854,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_01170_10db__0001",
+      "part_id": "LV8_01170_10db",
+      "sheet_index": 0,
+      "x": 405.916675465637,
+      "y": 2120.7798288739227,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_01170_10db__0002",
+      "part_id": "LV8_01170_10db",
+      "sheet_index": 0,
+      "x": 108.21162246894878,
+      "y": 1155.6548217120499,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_01170_10db__0003",
+      "part_id": "LV8_01170_10db",
+      "sheet_index": 0,
+      "x": 1073.4181659861588,
+      "y": 2890.574311588408,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_01170_10db__0004",
+      "part_id": "LV8_01170_10db",
+      "sheet_index": 0,
+      "x": 1498.8150191027737,
+      "y": 1550.5935172077875,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_01170_10db__0005",
+      "part_id": "LV8_01170_10db",
+      "sheet_index": 0,
+      "x": 504.2767318543081,
+      "y": 1628.811171067429,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_01170_10db__0009",
+      "part_id": "LV8_01170_10db",
+      "sheet_index": 0,
+      "x": 1462.8495354321992,
+      "y": 465.338221139506,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02048_20db__0001",
+      "part_id": "LV8_02048_20db",
+      "sheet_index": 0,
+      "x": 1499.9612572540132,
+      "y": 2796.0754650657727,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_02048_20db__0002",
+      "part_id": "LV8_02048_20db",
+      "sheet_index": 0,
+      "x": 447.4278193142409,
+      "y": 767.6482667127337,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02048_20db__0003",
+      "part_id": "LV8_02048_20db",
+      "sheet_index": 0,
+      "x": 1307.1782235663186,
+      "y": 388.78212831708925,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02048_20db__0004",
+      "part_id": "LV8_02048_20db",
+      "sheet_index": 0,
+      "x": 1244.4122353021664,
+      "y": 415.0626897820596,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02048_20db__0005",
+      "part_id": "LV8_02048_20db",
+      "sheet_index": 0,
+      "x": 194.69654862037515,
+      "y": 2457.707618178198,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_02048_20db__0007",
+      "part_id": "LV8_02048_20db",
+      "sheet_index": 0,
+      "x": 552.1437999887869,
+      "y": 424.8069038643751,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0001",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 599.7708384799137,
+      "y": 702.8897015845603,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0002",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1085.526080297403,
+      "y": 2311.1685228420847,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0003",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 241.77176316788743,
+      "y": 2883.4861025094983,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0004",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 649.0616393747549,
+      "y": 2918.2045339125393,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0005",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1419.945716038316,
+      "y": 2435.3048508395373,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0006",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1434.5123105546593,
+      "y": 1702.2938757591915,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0007",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 49.505718616790006,
+      "y": 683.7361647795038,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0008",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1289.6459011543275,
+      "y": 2822.889686168495,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0009",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1293.1524368940084,
+      "y": 2842.117568652252,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0010",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 538.8266399215063,
+      "y": 788.3636367262565,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0011",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1037.4224711393722,
+      "y": 1717.888895112367,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_02049_50db__0012",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 127.68632455740703,
+      "y": 1774.9595144135567,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0013",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1139.603573917517,
+      "y": 1989.1188921178455,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0014",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1374.9913153834505,
+      "y": 2818.3893966819846,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0015",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 585.8754822518467,
+      "y": 1079.8696358536765,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0017",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1135.6238699887892,
+      "y": 1951.1268444624425,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0018",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1012.4648435101715,
+      "y": 2127.0483393846366,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0019",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1167.9393613806694,
+      "y": 142.32790639263504,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0020",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 148.44672615057567,
+      "y": 2706.2415217862517,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_02049_50db__0021",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1111.3719532072544,
+      "y": 1609.8730387296403,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0023",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1161.2879060086711,
+      "y": 10.472330710195001,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0024",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 681.548084536395,
+      "y": 1754.5040135742695,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0025",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1480.2403488526686,
+      "y": 2393.2152185283767,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_02049_50db__0026",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 560.8455793485012,
+      "y": 1138.2787790986147,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0027",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 118.99798373939277,
+      "y": 1863.7112930568073,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0028",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 566.7031464417912,
+      "y": 1622.31140985242,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0029",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 584.8571973884159,
+      "y": 220.40987275542878,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0030",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 713.5479188313836,
+      "y": 234.77794993027015,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0031",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 645.4375089842148,
+      "y": 146.46288609301303,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0032",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1219.6310255172048,
+      "y": 2911.8496166800646,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0033",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 519.7522675832656,
+      "y": 1148.260829429507,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0034",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 433.1414666214267,
+      "y": 546.8531635363852,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0035",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1454.7898676630657,
+      "y": 1860.5141185659156,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0036",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1427.821438753348,
+      "y": 2274.849178832153,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0037",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 701.7918957034652,
+      "y": 2036.4343694217175,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "LV8_02049_50db__0038",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 15.947025174731582,
+      "y": 548.2140294055245,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0039",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 997.6481060355594,
+      "y": 2841.249953727295,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0040",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1433.9367280397846,
+      "y": 2007.123336856524,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0041",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1081.4092404524179,
+      "y": 2032.1151777732753,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0042",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1464.6583606300026,
+      "y": 1716.6438450327832,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0043",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1384.5584673046312,
+      "y": 229.92861999921382,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0044",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1388.0394219734455,
+      "y": 1048.3209271886074,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "LV8_02049_50db__0045",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1431.211225898448,
+      "y": 2858.401506709677,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "LV8_02049_50db__0046",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 723.8668537225358,
+      "y": 372.12846807847166,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0047",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1013.0798120487273,
+      "y": 831.8876940401749,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0049",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 601.9817238415329,
+      "y": 2147.10294908891,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "LV8_02049_50db__0050",
+      "part_id": "LV8_02049_50db",
+      "sheet_index": 0,
+      "x": 1488.5816343572449,
+      "y": 2503.6690968472976,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0001",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 1230.3534533435936,
+      "y": 248.30119797100843,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0002",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 503.279530016898,
+      "y": 2614.415270235381,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0004",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 1284.239983605634,
+      "y": 42.62269898525126,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0005",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 545.6623717676907,
+      "y": 1855.9615466952987,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0008",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 1009.2142165846137,
+      "y": 2767.570510041336,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0009",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 19.241010108897072,
+      "y": 932.3334124003318,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0010",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 843.8227186128281,
+      "y": 580.8391514166083,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0011",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 283.1188495240602,
+      "y": 510.54474751958276,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0012",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 1250.6188627664526,
+      "y": 250.92478813489194,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0013",
+      "part_id": "Lv8_07919_16db",
+      "sheet_index": 0,
+      "x": 876.4069173733145,
+      "y": 761.3575718806062,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0001",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 952.9949936323311,
+      "y": 2841.5360314463464,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0002",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 1096.213817805147,
+      "y": 2014.948353030795,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0003",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 464.0322640200952,
+      "y": 1185.295110630641,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0004",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 1026.7994263688993,
+      "y": 1671.7738229647405,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0006",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 1080.733404368993,
+      "y": 1669.7593712381954,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0007",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 16.535863159516527,
+      "y": 2749.9404888533722,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0010",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 1497.5338389651065,
+      "y": 990.9239824665776,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0011",
+      "part_id": "Lv8_07920_50db",
+      "sheet_index": 0,
+      "x": 499.1471970983816,
+      "y": 1048.9908595563854,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0001",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 120.0099698001833,
+      "y": 91.31979258497998,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0002",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 0.018014438076697954,
+      "y": 1523.7560826457377,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0003",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 0.0417221710654943,
+      "y": 1752.864473855472,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0004",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 120.08545359144509,
+      "y": 1754.9184798934289,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0005",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 0.03694292872985523,
+      "y": 2211.0374319610614,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0006",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 0.05044206643824269,
+      "y": 2751.150583068868,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0008",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 331.21972541394655,
+      "y": 588.9065651956723,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0009",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 120.03098951645792,
+      "y": 2217.4392992204025,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0010",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 442.1777234421697,
+      "y": 706.0376192875955,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0013",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 227.03352428702968,
+      "y": 2985.3713701578595,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0014",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 377.9014025974955,
+      "y": 2693.202342118559,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0016",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 408.5245976145574,
+      "y": 1738.9610317491085,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0019",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 554.7306635160469,
+      "y": 2088.0652378590507,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0021",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 507.7797727743802,
+      "y": 2225.917729207657,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0029",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 801.0845662671467,
+      "y": 1112.1310063567976,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0030",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 1041.2616146628634,
+      "y": 865.4560452372976,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0031",
+      "part_id": "Lv8_07921_50db",
+      "sheet_index": 0,
+      "x": 1038.950123608487,
+      "y": 2279.2634963128326,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0001",
+      "part_id": "Lv8_10059_10db",
+      "sheet_index": 0,
+      "x": 174.174062165443,
+      "y": 2540.59524817175,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0002",
+      "part_id": "Lv8_10059_10db",
+      "sheet_index": 0,
+      "x": 720.8437893246578,
+      "y": 130.40745525552396,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0003",
+      "part_id": "Lv8_10059_10db",
+      "sheet_index": 0,
+      "x": 439.7614868654246,
+      "y": 735.541097243367,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0006",
+      "part_id": "Lv8_10059_10db",
+      "sheet_index": 0,
+      "x": 550.2880378160238,
+      "y": 2348.0056491201076,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0007",
+      "part_id": "Lv8_10059_10db",
+      "sheet_index": 0,
+      "x": 462.8518097793512,
+      "y": 2380.005961707088,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0009",
+      "part_id": "Lv8_10059_10db",
+      "sheet_index": 0,
+      "x": 221.05798149022928,
+      "y": 1914.9417554949255,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0010",
+      "part_id": "Lv8_10059_10db",
+      "sheet_index": 0,
+      "x": 81.77448782877775,
+      "y": 339.75563884098636,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_11612_6db__0002",
+      "part_id": "Lv8_11612_6db",
+      "sheet_index": 0,
+      "x": 1015.331146478999,
+      "y": 428.5896011798953,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_15348_6db__0004",
+      "part_id": "Lv8_15348_6db",
+      "sheet_index": 0,
+      "x": 1397.3375423202315,
+      "y": 1408.2218578561415,
+      "rotation_deg": 180
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0002",
+      "part_id": "Lv8_15435_10db",
+      "sheet_index": 0,
+      "x": 1030.4742104589586,
+      "y": 1760.0685403857212,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0003",
+      "part_id": "Lv8_15435_10db",
+      "sheet_index": 0,
+      "x": 1406.64363139973,
+      "y": 1274.3361826460182,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0005",
+      "part_id": "Lv8_15435_10db",
+      "sheet_index": 0,
+      "x": 1066.0093268068779,
+      "y": 2071.9016858668524,
+      "rotation_deg": 90
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0007",
+      "part_id": "Lv8_15435_10db",
+      "sheet_index": 0,
+      "x": 1287.7361273007562,
+      "y": 84.47341966636156,
+      "rotation_deg": 270
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0009",
+      "part_id": "Lv8_15435_10db",
+      "sheet_index": 0,
+      "x": 1391.7915694564235,
+      "y": 1814.2902557368056,
+      "rotation_deg": 0
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0010",
+      "part_id": "Lv8_15435_10db",
+      "sheet_index": 0,
+      "x": 994.0568842245153,
+      "y": 525.9754309767428,
+      "rotation_deg": 90
+    }
+  ],
+  "unplaced": [
+    {
+      "instance_id": "LV8_00057_20db__0003",
+      "part_id": "LV8_00057_20db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_01170_10db__0006",
+      "part_id": "LV8_01170_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_01170_10db__0007",
+      "part_id": "LV8_01170_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_01170_10db__0008",
+      "part_id": "LV8_01170_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_01170_10db__0010",
+      "part_id": "LV8_01170_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_02048_20db__0006",
+      "part_id": "LV8_02048_20db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_02049_50db__0016",
+      "part_id": "LV8_02049_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_02049_50db__0022",
+      "part_id": "LV8_02049_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "LV8_02049_50db__0048",
+      "part_id": "LV8_02049_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0003",
+      "part_id": "Lv8_07919_16db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0006",
+      "part_id": "Lv8_07919_16db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07919_16db__0007",
+      "part_id": "Lv8_07919_16db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0005",
+      "part_id": "Lv8_07920_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0008",
+      "part_id": "Lv8_07920_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0009",
+      "part_id": "Lv8_07920_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07920_50db__0012",
+      "part_id": "Lv8_07920_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0007",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0011",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0012",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0015",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0017",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0018",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0020",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0022",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0023",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0024",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0025",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0026",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0027",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0028",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0032",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_07921_50db__0033",
+      "part_id": "Lv8_07921_50db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0004",
+      "part_id": "Lv8_10059_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0005",
+      "part_id": "Lv8_10059_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_10059_10db__0008",
+      "part_id": "Lv8_10059_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_11612_6db__0001",
+      "part_id": "Lv8_11612_6db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_11612_6db__0003",
+      "part_id": "Lv8_11612_6db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_15348_6db__0001",
+      "part_id": "Lv8_15348_6db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_15348_6db__0002",
+      "part_id": "Lv8_15348_6db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_15348_6db__0003",
+      "part_id": "Lv8_15348_6db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0001",
+      "part_id": "Lv8_15435_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0004",
+      "part_id": "Lv8_15435_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0006",
+      "part_id": "Lv8_15435_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    },
+    {
+      "instance_id": "Lv8_15435_10db__0008",
+      "part_id": "Lv8_15435_10db",
+      "reason": "STOCK_EXHAUSTED_PARTIAL"
+    }
+  ],
+  "metrics": {
+    "placed_count": 147,
+    "unplaced_count": 44,
+    "sheet_count_used": 1,
+    "seed": 42,
+    "time_limit_s": 600,
+    "project_name": "sgh_q39_S0_dense191"
+  },
+  "score_breakdown": {
+    "total_cost": 40898020.802469194,
+    "placed_area_contribution": -3113349.9911089195,
+    "unplaced_contribution": 44000000.0,
+    "sheet_cost_contribution": 10000.0,
+    "sheet_cost_total": 1.0,
+    "usable_area_utilization": 0.35461885851691616,
+    "overlap_contribution": 0.0,
+    "boundary_contribution": 0.0,
+    "compactness_contribution": 1370.7935781100127
+  },
+  "optimizer_diagnostics": {
+    "pipeline_used": "sparrow_cde_multisheet",
+    "phase_optimizer_invoked": false,
+    "exploration_iterations": 1,
+    "compression_iterations": 0,
+    "bpp_attempts": 0,
+    "rotation_refinement_enabled": false,
+    "rotation_refinement_attempts": 0,
+    "rotation_refinement_accepts": 0,
+    "rotation_refinement_rejections": 0,
+    "rotation_refinement_best_delta": 0.0,
+    "search_position_calls": 219,
+    "search_position_global_samples_evaluated": 1752,
+    "search_position_focused_samples_evaluated": 1752,
+    "search_position_samples_unsupported": 0,
+    "search_position_refined_samples": 0,
+    "search_position_coord_descent_steps": 33364,
+    "search_position_lbf_fallback_used": 0,
+    "search_position_best_eval": 0.0,
+    "collision_severity_backend": "cde",
+    "collision_severity_enabled": true,
+    "collision_severity_pair_queries": 69021,
+    "collision_severity_boundary_queries": 5,
+    "collision_severity_probe_queries": 0,
+    "collision_severity_backend_confirmed_collisions": 0,
+    "collision_severity_backend_confirmed_no_collisions": 0,
+    "collision_severity_unsupported_queries": 0,
+    "collision_severity_bbox_proxy_uses": 0,
+    "collision_severity_probe_pair_queries": 0,
+    "collision_severity_probe_boundary_queries": 0,
+    "collision_severity_probe_resolved": 0,
+    "collision_severity_probe_unresolved": 0,
+    "collision_severity_probe_unsupported": 0,
+    "collision_severity_min_resolution_mm": 0.0,
+    "collision_severity_max_resolution_mm": 0.0,
+    "collision_severity_avg_resolution_mm": 0.0,
+    "sparrow_invoked": true,
+    "sparrow_seed_placements": 191,
+    "sparrow_seed_unplaced": 0,
+    "sparrow_initial_raw_loss": 8435310.430100884,
+    "sparrow_initial_weighted_loss": 8435310.430100884,
+    "sparrow_final_raw_loss": 1866387.8921666997,
+    "sparrow_final_weighted_loss": 1866387.8921666997,
+    "sparrow_best_infeasible_raw_loss": 1866387.8921667002,
+    "sparrow_best_infeasible_weighted_loss": 1866387.8921667002,
+    "sparrow_iterations": 1,
+    "sparrow_moves_attempted": 168,
+    "sparrow_moves_accepted": 168,
+    "sparrow_rollbacks": 0,
+    "sparrow_gls_weight_updates": 1,
+    "sparrow_converged": false,
+    "sparrow_collision_graph_initial_pairs": 257,
+    "sparrow_collision_graph_final_pairs": 0,
+    "sparrow_boundary_violations_initial": 0,
+    "sparrow_boundary_violations_final": 0,
+    "sparrow_search_position_calls": 219,
+    "sparrow_search_position_samples": 36016,
+    "sparrow_severity_pair_queries": 69021,
+    "sparrow_severity_boundary_queries": 5,
+    "sparrow_lbf_fallback_used": 0,
+    "sparrow_workers": 2,
+    "sparrow_worker_passes": 1,
+    "sparrow_worker_candidates_evaluated": 219,
+    "sparrow_worker_commits": 168,
+    "sparrow_worker_rollbacks": 1,
+    "sparrow_worker_best_loss": 1866387.8921666995,
+    "sparrow_multi_target_items_attempted": 219,
+    "sparrow_multi_target_items_accepted": 219,
+    "sparrow_multi_target_items_rejected": 0,
+    "sparrow_topk_target_count": 177,
+    "sparrow_graph_full_rebuilds": 3,
+    "sparrow_graph_incremental_updates": 244,
+    "sparrow_graph_edges_recomputed": 69021,
+    "sparrow_graph_edges_pruned_by_broadphase": 0,
+    "sparrow_graph_debug_rebuilds": 0,
+    "sparrow_graph_debug_rebuild_mismatches": 0,
+    "sparrow_exploration_restarts": 1,
+    "sparrow_exploration_seed_strategies": 0,
+    "sparrow_exploration_disruptions": 2,
+    "sparrow_exploration_stagnation_events": 0,
+    "sparrow_exploration_best_raw_loss": 1866387.8921667002,
+    "sparrow_exploration_best_weighted_loss": 1866387.8921667002,
+    "sparrow_exploration_best_feasible_found": false,
+    "sparrow_compression_passes": 0,
+    "sparrow_compression_candidates_evaluated": 0,
+    "sparrow_compression_accepts": 0,
+    "sparrow_compression_rejects": 0,
+    "sparrow_fixed_sheet_objective_before": 0.0,
+    "sparrow_fixed_sheet_objective_after": 0.0,
+    "sparrow_fixed_sheet_objective_delta": 0.0,
+    "loss_model_used": "CdeSeparationLoss",
+    "loss_bbox_proxy_used_as_primary": false,
+    "sparrow_native_model_active": true,
+    "sparrow_native_tracker_active": true,
+    "sparrow_old_core_used": false,
+    "sparrow_native_problem_instances": 191,
+    "sparrow_native_tracker_full_rebuilds": 3,
+    "sparrow_native_tracker_incremental_updates": 244,
+    "sparrow_dense_guard_used": false,
+    "sparrow_dense_real_run": false,
+    "sparrow_dense_final_validation_ran": false,
+    "sparrow_profiling_enabled": false,
+    "sparrow_q30_profile_enabled": false,
+    "sparrow_q30r1_exclusive_enabled": false,
+    "sparrow_q31_base_shape_cache_build_ms": 1108.760637,
+    "sparrow_q31_base_shape_cache_hits": 179,
+    "sparrow_q31_base_shape_cache_misses": 12,
+    "sparrow_q31_base_shape_cache_unique_parts": 12,
+    "sparrow_q31_base_shape_cache_reused_instances": 179,
+    "sparrow_q31_prepare_base_shape_native_hotpath_calls": 0,
+    "sparrow_q31_prepare_base_shape_native_hotpath_ms": 0.0,
+    "sparrow_q31_tracker_transform_from_base_ms": 0.0,
+    "sparrow_q31_search_base_shape_cache_hits": 0,
+    "sparrow_q31_lbf_base_shape_cache_hits": 0,
+    "sparrow_ms_active": true,
+    "sparrow_ms_status": "partial",
+    "sparrow_ms_available_sheet_count": 1,
+    "sparrow_ms_used_sheet_count": 1,
+    "sparrow_ms_used_sheet_indices": [
+      0
+    ],
+    "sparrow_ms_used_sheet_area": 4500000.0,
+    "sparrow_ms_placed_part_area": 1595784.8633261228,
+    "sparrow_ms_utilization_pct": 35.46188585169162,
+    "sparrow_ms_total_instances": 191,
+    "sparrow_ms_placed_instances": 147,
+    "sparrow_ms_unplaced_instances": 44,
+    "sparrow_ms_attempts": 1,
+    "sparrow_ms_candidate_subsets": 1,
+    "sparrow_ms_best_full_solution_found": false,
+    "sparrow_ms_stock_exhausted": true,
+    "sparrow_ms_final_pairs": 0,
+    "sparrow_ms_boundary_violations": 0,
+    "sparrow_ms_runtime_ms": 532806.853803,
+    "sparrow_ms_requested_time_limit_s": 600.0,
+    "sparrow_ms_deadline_hit": false,
+    "sparrow_ms_best_score": 999999998404215.1,
+    "technology_policy_active": true,
+    "technology_sheet_margin_applied": false,
+    "technology_margin_violation_count": 0,
+    "technology_margin_mm": 0.0,
+    "technology_spacing_mm": 2.0,
+    "technology_kerf_mm": 0.0,
+    "technology_effective_sheet_margin_mm": 0.0,
+    "technology_effective_part_spacing_mm": 2.0,
+    "technology_effective_kerf_mm": 0.0,
+    "technology_part_spacing_applied": true,
+    "technology_part_spacing_mm": 2.0,
+    "technology_spacing_violation_count": 0,
+    "technology_spacing_safety_net_removed_count": 0,
+    "technology_spacing_geometry_applied": true,
+    "technology_spacing_offset_mm": 1.0,
+    "technology_spacing_offset_part_count": 12,
+    "technology_spacing_offset_cache_hits": 179,
+    "technology_spacing_offset_cache_misses": 12,
+    "technology_spacing_offset_failure_count": 0,
+    "technology_spacing_boundary_uses_original_geometry": true,
+    "technology_spacing_output_uses_original_geometry": true,
+    "technology_spacing_offset_build_ms": 646.1960489999999,
+    "technology_spacing_offset_avg_ms_per_part": 53.849670749999994,
+    "technology_spacing_offset_max_ms_per_part": 397.55216,
+    "technology_spacing_offset_input_vertex_count_total": 1510,
+    "technology_spacing_offset_output_vertex_count_total": 1266,
+    "technology_spacing_offset_area_ratio_avg": 1.0578539994705827,
+    "technology_spacing_offset_area_ratio_max": 1.1192616349078346,
+    "technology_margin_final_validator_ms": 0.0009080000000000001,
+    "technology_spacing_final_validator_ms": 37117.607708999996,
+    "technology_safety_net_ms": 0.0
+  },
+  "collision_backend_diagnostics": {
+    "backend_used": "cde_adapter",
+    "unsupported_queries": 0,
+    "bbox_fallback_queries": 0,
+    "final_commit_backend_used": "cde_adapter",
+    "final_commit_unsupported_queries": 0,
+    "final_commit_bbox_fallback_queries": 0,
+    "cde_pair_queries": 0,
+    "cde_boundary_queries": 0,
+    "cde_total_queries": 0,
+    "cde_engine_builds": 1082,
+    "cde_collision_results": 0,
+    "cde_no_collision_results": 0,
+    "cde_unsupported_results": 0,
+    "cde_prepare_failures": 0,
+    "cde_cross_sheet_skipped": 0,
+    "cde_broadphase_pruned": 304,
+    "cde_cache_pair_hits": 0,
+    "cde_cache_pair_misses": 0,
+    "cde_cache_boundary_hits": 0,
+    "cde_cache_boundary_misses": 0,
+    "cde_cache_prepared_hits": 0,
+    "cde_cache_prepared_misses": 0,
+    "cde_cache_invalidations": 0,
+    "cde_batch_candidate_queries": 46373,
+    "cde_batch_engine_builds": 1203,
+    "cde_batch_hazards_registered": 2977,
+    "cde_batch_collisions_returned": 49262,
+    "cde_pairwise_fallback_queries": 0,
+    "cde_candidate_session_builds": 0,
+    "cde_candidate_session_reuses": 0,
+    "cde_observability_scope": "sparrow_cde_multisheet_partial"
+  }
+}

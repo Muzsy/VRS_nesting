@@ -1,0 +1,14 @@
+{
+  "run_id": "S3",
+  "used_sheet_count": 2,
+  "used_sheet_indices": [
+    0,
+    1
+  ],
+  "svg_count": 3,
+  "png_count": 3,
+  "render_total_ms": 563.611,
+  "render_svg_total_ms": 0.62,
+  "render_png_total_ms": 473.848,
+  "render_sheet_count": 2
+}

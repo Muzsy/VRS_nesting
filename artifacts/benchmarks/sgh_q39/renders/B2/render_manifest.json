@@ -1,0 +1,14 @@
+{
+  "run_id": "B2",
+  "used_sheet_count": 2,
+  "used_sheet_indices": [
+    0,
+    1
+  ],
+  "svg_count": 3,
+  "png_count": 3,
+  "render_total_ms": 623.904,
+  "render_svg_total_ms": 1.738,
+  "render_png_total_ms": 523.958,
+  "render_sheet_count": 2
+}

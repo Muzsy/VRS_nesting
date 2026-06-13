@@ -1,0 +1,15 @@
+{
+  "run_id": "S5",
+  "used_sheet_count": 3,
+  "used_sheet_indices": [
+    0,
+    1,
+    2
+  ],
+  "svg_count": 4,
+  "png_count": 4,
+  "render_total_ms": 543.243,
+  "render_svg_total_ms": 0.752,
+  "render_png_total_ms": 482.089,
+  "render_sheet_count": 3
+}

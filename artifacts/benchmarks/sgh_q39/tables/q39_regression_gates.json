@@ -1,0 +1,11 @@
+{
+  "dense191_baseline_ok": true,
+  "full276_2sheet_baseline_ok": true,
+  "full276_3sheet_baseline_ok": true,
+  "mixed_stock_baseline_valid": true,
+  "mandatory_spacing_runs_valid": true,
+  "all_mandatory_renders_present": true,
+  "no_false_ok": true,
+  "hotpath_calls_zero": true,
+  "time_limit_cap_applied": false
+}

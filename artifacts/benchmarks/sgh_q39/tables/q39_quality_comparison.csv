@@ -1,0 +1,7 @@
+run_id,baseline,delta_placed,delta_used_sheets,delta_offset_fail,delta_spacing_viol
+S0,B0,-44,0,0,0
+S1,B0,-42,0,0,0
+S2,B1,-39,0,0,0
+S3,B1,-26,0,0,0
+S4,B2,-31,1,0,0
+S5,B3,-77,0,0,0
