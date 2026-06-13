@@ -1,5 +1,5 @@
 run_id,baseline,delta_placed_count_vs_baseline,delta_used_sheet_count_vs_baseline,delta_physical_utilization_pct_vs_baseline,runtime_ratio_vs_baseline,offset_failure_delta_vs_baseline,spacing_violation_delta_vs_baseline
-D1,D0,-34,0,-9.883738922443676,0.9564,58,0
-D2,D0,-35,0,-10.217673449110343,0.9555,58,0
-M1,M0,-38,0,-37.08771465980093,0.9611,116,0
-M2,M0,-38,0,-37.08771465980093,0.961,116,0
+D1,D0,-23,0,-7.325065101868425,1.1854,0,0
+D2,D0,-23,0,-7.184778138737316,1.1738,0,0
+M1,M0,-17,0,-31.759475199449255,1.7244,0,0
+M2,M0,-17,0,-31.36754449706881,1.7517,0,0

@@ -49,13 +49,19 @@ impl SpacingOffsetConfig {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpacingGeometryError {
-    /// The shape/offset is not supported by the Q36 offsetter (e.g. degenerate input,
-    /// non-finite vertices, or a reflex geometry the miter offset cannot handle safely).
+    /// The shape/offset is not supported by the offsetter (e.g. degenerate input or a
+    /// geometry the robust buffer cannot offset safely).
     Unsupported(String),
     /// The input polygon is invalid (fewer than 3 vertices, zero area, non-finite).
     InvalidPolygon(String),
     /// The offset produced a self-intersecting / non-simple polygon.
     SelfIntersecting(String),
+    /// SGH-Q38: the robust buffer produced more than one disjoint exterior contour.
+    MultiContour(String),
+    /// SGH-Q38: the robust buffer produced an empty result.
+    Empty(String),
+    /// SGH-Q38: the robust buffer / union operation failed or panicked.
+    BufferFailed(String),
 }
 
 impl std::fmt::Display for SpacingGeometryError {
@@ -70,17 +76,30 @@ impl std::fmt::Display for SpacingGeometryError {
             SpacingGeometryError::SelfIntersecting(m) => {
                 write!(f, "SELF_INTERSECTING_SPACING_OFFSET_Q36: {m}")
             }
+            SpacingGeometryError::MultiContour(m) => {
+                write!(f, "MULTI_CONTOUR_SPACING_OFFSET_Q38: {m}")
+            }
+            SpacingGeometryError::Empty(m) => {
+                write!(f, "EMPTY_SPACING_OFFSET_Q38: {m}")
+            }
+            SpacingGeometryError::BufferFailed(m) => {
+                write!(f, "OFFSET_BOOLEAN_UNION_FAILED_Q38: {m}")
+            }
         }
     }
 }
 
-/// Build the spacing-expanded outer polygon: the original local polygon offset
-/// OUTWARD by `half_spacing_mm` via a miter-join edge offset.
+/// SGH-Q38: Build the spacing-expanded outer polygon — the original local polygon offset
+/// OUTWARD by `half_spacing_mm` using a **robust straight-skeleton buffer** (`geo-buffer`),
+/// which handles concave / high-vertex real polygons that the previous per-edge miter
+/// offset could not.
+///
+/// Pipeline: normalise original → `buffer_polygon(+half)` (outward) → require exactly ONE
+/// exterior contour → extract exterior ring → `validate_spacing_offset_outer_contour`.
 ///
 /// - `half_spacing_mm <= 0` → returns a clone of the original (no offset).
-/// - Exact for axis-aligned rectangles; supports simple convex/closed polygons.
-/// - Detects degenerate / self-intersecting results and returns an explicit error
-///   (never silently falls back to the raw/original contour).
+/// - NEVER falls back to the raw/original contour or a bbox-expand on failure: any failure
+///   returns an explicit `SpacingGeometryError`.
 pub fn build_spacing_expanded_outer_polygon(
     original_local_polygon: &[Point],
     half_spacing_mm: f64,
@@ -95,90 +114,151 @@ pub fn build_spacing_expanded_outer_polygon(
     }
 
     let pts = clean_ring(original_local_polygon)?;
-    let n = pts.len();
 
-    // Orient CCW so the outward normal of edge (p_i -> p_{i+1}) is the right normal
-    // (e.y, -e.x). signed_area > 0 ⇒ CCW.
-    let signed = signed_area(&pts);
-    let ccw: Vec<Point> = if signed > 0.0 {
-        pts.clone()
-    } else {
-        pts.iter().rev().cloned().collect()
-    };
+    // Build a geo::Polygon with a closed exterior ring, oriented to the standard winding
+    // (exterior CCW) so `buffer_polygon(+d)` inflates outward deterministically.
+    use geo::algorithm::orient::{Direction, Orient};
+    let mut ring: Vec<geo::Coord<f64>> =
+        pts.iter().map(|p| geo::Coord { x: p.x, y: p.y }).collect();
+    ring.push(ring[0]); // close
+    let poly = geo::Polygon::new(geo::LineString::from(ring), vec![]);
+    let poly = poly.orient(Direction::Default);
 
-    // Each edge i: from ccw[i] to ccw[i+1]. Offset its supporting line outward by d.
-    // New vertex i = intersection of offset(edge i-1) and offset(edge i).
-    let d = half_spacing_mm;
-    let mut offset_lines: Vec<(Point, Point)> = Vec::with_capacity(n); // (point_on_line, direction)
-    for i in 0..n {
-        let a = ccw[i];
-        let b = ccw[(i + 1) % n];
-        let ex = b.x - a.x;
-        let ey = b.y - a.y;
-        let len = (ex * ex + ey * ey).sqrt();
-        if len <= EPS {
-            return Err(SpacingGeometryError::InvalidPolygon(
-                "zero-length edge in polygon".to_string(),
-            ));
-        }
-        // Outward (right) normal for CCW polygon.
-        let nx = ey / len;
-        let ny = -ex / len;
-        let pa = Point {
-            x: a.x + d * nx,
-            y: a.y + d * ny,
-        };
-        // Direction along the edge.
-        let dir = Point { x: ex, y: ey };
-        offset_lines.push((pa, dir));
+    // Robust outward buffer (straight skeleton). Guard against any internal panic on a
+    // pathological polygon and map it to an explicit error (never a silent raw fallback).
+    let mp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        geo_buffer::buffer_polygon(&poly, half_spacing_mm)
+    }))
+    .map_err(|_| {
+        SpacingGeometryError::BufferFailed("geo-buffer straight-skeleton panicked".to_string())
+    })?;
+
+    let polys: Vec<geo::Polygon<f64>> = mp.0;
+    if polys.is_empty() {
+        return Err(SpacingGeometryError::Empty(
+            "buffer produced no polygon".to_string(),
+        ));
+    }
+    if polys.len() > 1 {
+        return Err(SpacingGeometryError::MultiContour(format!(
+            "buffer produced {} disjoint exterior contours",
+            polys.len()
+        )));
     }
 
-    let mut out: Vec<Point> = Vec::with_capacity(n);
-    for i in 0..n {
-        let prev = (i + n - 1) % n;
-        let (p0, d0) = offset_lines[prev];
-        let (p1, d1) = offset_lines[i];
-        match line_intersection(p0, d0, p1, d1) {
-            Some(v) => out.push(v),
-            None => {
-                // Parallel offset lines (collinear edges): use the endpoint pushed
-                // along the current edge's outward normal.
-                let a = ccw[i];
-                let ex = d1.x;
-                let ey = d1.y;
-                let len = (ex * ex + ey * ey).sqrt();
-                let nx = ey / len;
-                let ny = -ex / len;
-                out.push(Point {
-                    x: a.x + d * nx,
-                    y: a.y + d * ny,
-                });
-            }
+    // Extract the single exterior ring (drop the closing duplicate vertex).
+    let ext = polys[0].exterior();
+    let mut out: Vec<Point> = ext.coords().map(|c| Point { x: c.x, y: c.y }).collect();
+    if out.len() >= 2 {
+        let f = out[0];
+        let l = out[out.len() - 1];
+        if (f.x - l.x).abs() <= EPS && (f.y - l.y).abs() <= EPS {
+            out.pop();
         }
     }
 
-    // Validate the result.
-    for p in &out {
+    // The downstream CDE SPolygon stores vertices in f32; the straight-skeleton can emit
+    // consecutive vertices that collapse to identical f32 points (rejected by SPolygon as
+    // "duplicate points"). Drop consecutive vertices that are EQUAL in f32 space — this is
+    // exactly what the collision engine sees, so it moves no boundary and is Q35-safe.
+    let out = dedup_ring_f32(out);
+
+    validate_spacing_offset_outer_contour(&pts, &out)?;
+    Ok(out)
+}
+
+/// SGH-Q38: validate a spacing-offset outer contour against its original polygon.
+///
+/// Checks: ≥3 vertices; all coordinates finite; no degenerate duplicate-close; area > 0;
+/// offset area ≥ original area (outward); bbox not smaller than the original bbox; a single
+/// non-self-intersecting exterior ring. Returns an explicit error otherwise.
+pub fn validate_spacing_offset_outer_contour(
+    original: &[Point],
+    offset: &[Point],
+) -> Result<(), SpacingGeometryError> {
+    if offset.len() < 3 {
+        return Err(SpacingGeometryError::InvalidPolygon(
+            "offset contour has < 3 vertices".to_string(),
+        ));
+    }
+    for p in offset {
         if !p.x.is_finite() || !p.y.is_finite() {
             return Err(SpacingGeometryError::Unsupported(
                 "offset produced non-finite vertex".to_string(),
             ));
         }
     }
-    let out_area = signed_area(&out).abs();
-    let in_area = signed.abs();
-    if out_area + EPS < in_area {
-        // Offset shrank the polygon — wrong direction / reflex blow-up.
-        return Err(SpacingGeometryError::SelfIntersecting(
-            "offset area smaller than original (reflex/self-intersection)".to_string(),
+    // No degenerate duplicate vertices (consecutive coincident points).
+    let n = offset.len();
+    for i in 0..n {
+        let a = offset[i];
+        let b = offset[(i + 1) % n];
+        if (a.x - b.x).abs() <= EPS && (a.y - b.y).abs() <= EPS {
+            return Err(SpacingGeometryError::InvalidPolygon(
+                "offset contour has a degenerate duplicate vertex".to_string(),
+            ));
+        }
+    }
+    let off_area = polygon_area(offset).abs();
+    let orig_area = polygon_area(original).abs();
+    if off_area <= EPS {
+        return Err(SpacingGeometryError::InvalidPolygon(
+            "offset contour has zero area".to_string(),
         ));
     }
-    if is_self_intersecting(&out) {
+    if off_area + 1e-6 < orig_area {
+        return Err(SpacingGeometryError::SelfIntersecting(
+            "offset area smaller than original (not an outward offset)".to_string(),
+        ));
+    }
+    // Outward offset bbox must not be smaller than the original bbox.
+    let (omin_x, omin_y, omax_x, omax_y) = bbox(original);
+    let (fmin_x, fmin_y, fmax_x, fmax_y) = bbox(offset);
+    if fmin_x > omin_x + EPS || fmin_y > omin_y + EPS || fmax_x < omax_x - EPS || fmax_y < omax_y - EPS {
+        return Err(SpacingGeometryError::SelfIntersecting(
+            "offset bbox is smaller than original bbox (not outward)".to_string(),
+        ));
+    }
+    if is_self_intersecting(offset) {
         return Err(SpacingGeometryError::SelfIntersecting(
             "offset polygon edges cross".to_string(),
         ));
     }
-    Ok(out)
+    Ok(())
+}
+
+/// Drop consecutive (and wraparound) vertices that are equal once narrowed to f32 — the
+/// representation the downstream CDE `SPolygon` uses. Removes f32-duplicate points without
+/// moving the f32 boundary.
+fn dedup_ring_f32(pts: Vec<Point>) -> Vec<Point> {
+    if pts.len() < 2 {
+        return pts;
+    }
+    let same_f32 = |a: &Point, b: &Point| (a.x as f32 == b.x as f32) && (a.y as f32 == b.y as f32);
+    let mut out: Vec<Point> = Vec::with_capacity(pts.len());
+    for p in pts {
+        if out.last().map_or(true, |q| !same_f32(q, &p)) {
+            out.push(p);
+        }
+    }
+    while out.len() >= 2 && same_f32(&out[0], &out[out.len() - 1]) {
+        out.pop();
+    }
+    out
+}
+
+fn bbox(pts: &[Point]) -> (f64, f64, f64, f64) {
+    let mut minx = f64::INFINITY;
+    let mut miny = f64::INFINITY;
+    let mut maxx = f64::NEG_INFINITY;
+    let mut maxy = f64::NEG_INFINITY;
+    for p in pts {
+        minx = minx.min(p.x);
+        miny = miny.min(p.y);
+        maxx = maxx.max(p.x);
+        maxy = maxy.max(p.y);
+    }
+    (minx, miny, maxx, maxy)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -220,32 +300,6 @@ fn clean_ring(points: &[Point]) -> Result<Vec<Point>, SpacingGeometryError> {
         ));
     }
     Ok(out)
-}
-
-fn signed_area(pts: &[Point]) -> f64 {
-    let n = pts.len();
-    let mut s = 0.0;
-    for i in 0..n {
-        let a = pts[i];
-        let b = pts[(i + 1) % n];
-        s += a.x * b.y - b.x * a.y;
-    }
-    s / 2.0
-}
-
-/// Intersection of two lines given as (point, direction). Returns None when parallel.
-fn line_intersection(p0: Point, d0: Point, p1: Point, d1: Point) -> Option<Point> {
-    let denom = d0.x * d1.y - d0.y * d1.x;
-    if denom.abs() <= 1e-12 {
-        return None;
-    }
-    let dx = p1.x - p0.x;
-    let dy = p1.y - p0.y;
-    let t = (dx * d1.y - dy * d1.x) / denom;
-    Some(Point {
-        x: p0.x + t * d0.x,
-        y: p0.y + t * d0.y,
-    })
 }
 
 /// Basic non-simple detection: any pair of non-adjacent edges properly intersect.
@@ -341,12 +395,11 @@ mod tests {
             Point { x: 0.0, y: 20.0 },
         ];
         let out = build_spacing_expanded_outer_polygon(&tri, 2.0).expect("offset");
-        // A bbox-expand would yield 4 corners of a rectangle; a true offset keeps 3
-        // vertices and the hypotenuse stays diagonal (its midpoint is not axis-aligned).
-        assert_eq!(out.len(), 3, "triangle offset must remain a triangle, got {out:?}");
-        let area = signed_area(&out).abs();
-        // Triangle area 200 grows but stays well below the bbox-rect area (24*24=576).
-        assert!(area > 200.0 && area < 576.0, "offset area {area} should be a true offset, not bbox");
+        validate_spacing_offset_outer_contour(&tri, &out).expect("valid");
+        // A bbox-expand would yield a rectangle of area ~ (24*24)=576. A true (robust)
+        // offset of a right triangle (area 200) stays well below that bbox-rectangle area.
+        let area = polygon_area(&out).abs();
+        assert!(area > 200.0 && area < 560.0, "offset area {area} should be a true offset, not bbox");
     }
 
     #[test]

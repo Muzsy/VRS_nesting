@@ -1,0 +1,26 @@
+{
+  "spacing_values_mm": [
+    2,
+    5,
+    10,
+    20,
+    40
+  ],
+  "unique_part_count": 12,
+  "offset_status_source": "rust_solver (build_spacing_expanded_outer_polygon)",
+  "geometry_detail_source": "shapely mitre buffer (reference)",
+  "offsettable_by_spacing": {
+    "2": 12,
+    "5": 12,
+    "10": 12,
+    "20": 12,
+    "40": 12
+  },
+  "unsupported_by_spacing": {
+    "2": 0,
+    "5": 0,
+    "10": 0,
+    "20": 0,
+    "40": 0
+  }
+}
