@@ -137,6 +137,96 @@ pub struct ScoreBreakdownOutput {
     pub compactness_contribution: f64,
 }
 
+/// SGH-Q44 schema version for the per-attempt multisheet diagnostics array.
+/// Bump when the field set of `SparrowMsAttemptDiagnostics` changes.
+pub const SPARROW_MS_ATTEMPT_DIAGNOSTICS_SCHEMA_VERSION: u32 = 1;
+
+/// SGH-Q44: per-attempt diagnostics for one finite-stock multisheet subset attempt.
+///
+/// One record is emitted for every `run_core_attempt` invocation inside
+/// `run_finite_stock_multisheet`. All `cde_*_delta` and `collision_severity_*_delta`
+/// fields are computed by snapshotting the thread-local CDE observability counters
+/// immediately before and after the attempt (core solve + sanitize + scoring), so the
+/// per-attempt deltas sum to the aggregated `collision_backend_diagnostics` counters
+/// (minus the small residual spent in the post-loop margin/spacing validators, which is
+/// reported separately by the Q44 extractor). Purely additive instrumentation — it does
+/// not change any solver decision.
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct SparrowMsAttemptDiagnostics {
+    // ── identity / schedule ──────────────────────────────────────────────────
+    pub attempt_index: usize,
+    pub subset_ord: usize,
+    pub subset_indices_original: Vec<usize>,
+    pub subset_size: usize,
+    pub subset_signature: String,
+    pub is_full_pool: bool,
+    pub is_second_to_last: bool,
+    pub allocated_time_limit_s: f64,
+    pub actual_runtime_ms: f64,
+    pub remaining_budget_before_s: f64,
+    pub remaining_budget_after_s: f64,
+    pub deadline_hit_after_attempt: bool,
+    // ── core outcome ─────────────────────────────────────────────────────────
+    pub core_invoked: bool,
+    pub core_feasible: bool,
+    pub core_status: String,
+    pub core_final_pairs: usize,
+    pub core_boundary_violations: usize,
+    // ── sanitize ─────────────────────────────────────────────────────────────
+    pub placed_before_sanitize: usize,
+    pub unplaced_before_sanitize: usize,
+    pub placed_after_sanitize: usize,
+    pub unplaced_after_sanitize: usize,
+    pub sanitized: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sanitize_reason: Option<String>,
+    // ── candidate / incumbent ────────────────────────────────────────────────
+    pub used_sheet_indices_original: Vec<usize>,
+    pub used_sheet_count: usize,
+    pub used_sheet_area: f64,
+    pub placed_part_area: f64,
+    pub utilization_pct: f64,
+    pub candidate_score: f64,
+    pub became_incumbent: bool,
+    pub incumbent_reason: String,
+    pub stop_reason: String,
+    // ── sparrow / search activity (from this attempt's SparrowDiagnostics) ────
+    pub sparrow_iterations: usize,
+    pub sparrow_moves_attempted: usize,
+    pub sparrow_moves_accepted: usize,
+    pub sparrow_rollbacks: usize,
+    pub sparrow_search_position_calls: usize,
+    pub sparrow_search_position_samples: usize,
+    pub search_position_global_samples_evaluated: usize,
+    pub search_position_focused_samples_evaluated: usize,
+    pub search_position_coord_descent_steps: usize,
+    pub sparrow_graph_full_rebuilds: usize,
+    pub sparrow_graph_incremental_updates: usize,
+    pub sparrow_graph_edges_recomputed: usize,
+    pub sparrow_graph_edges_pruned_by_broadphase: usize,
+    pub sparrow_collision_graph_initial_pairs: usize,
+    pub sparrow_collision_graph_final_pairs: usize,
+    pub sparrow_boundary_violations_initial: usize,
+    pub sparrow_boundary_violations_final: usize,
+    pub sparrow_initial_raw_loss: f64,
+    pub sparrow_initial_weighted_loss: f64,
+    pub sparrow_final_raw_loss: f64,
+    pub sparrow_final_weighted_loss: f64,
+    pub sparrow_best_infeasible_raw_loss: f64,
+    pub sparrow_best_infeasible_weighted_loss: f64,
+    pub sparrow_exploration_best_feasible_found: bool,
+    // ── per-attempt CDE counter deltas (snapshot after − before) ─────────────
+    pub cde_engine_builds_delta: usize,
+    pub cde_batch_candidate_queries_delta: usize,
+    pub cde_batch_engine_builds_delta: usize,
+    pub cde_batch_hazards_registered_delta: usize,
+    pub cde_batch_collisions_returned_delta: usize,
+    pub cde_candidate_session_builds_delta: usize,
+    pub cde_candidate_session_reuses_delta: usize,
+    pub collision_severity_pair_queries_delta: usize,
+    pub collision_severity_boundary_queries_delta: usize,
+}
+
 #[derive(Debug, Serialize)]
 pub struct OptimizerDiagnosticsOutput {
     pub pipeline_used: String,
@@ -544,6 +634,15 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_ms_deadline_hit: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_ms_best_score: Option<f64>,
+    // ── SGH-Q44 per-attempt multisheet diagnostics ───────────────────────────
+    /// One entry per `run_core_attempt`. Stable field name and schema documented
+    /// in `codex/reports/egyedi_solver/sgh_q44_per_attempt_multisheet_diagnostics.md`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_attempt_diagnostics: Option<Vec<SparrowMsAttemptDiagnostics>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_attempt_diagnostics_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparrow_ms_attempt_diagnostics_schema_version: Option<u32>,
     // ── SGH-Q33 technology clearance policy diagnostics ──────────────────────
     /// True when TechnologyClearancePolicy was active for this run.
     #[serde(skip_serializing_if = "Option::is_none")]

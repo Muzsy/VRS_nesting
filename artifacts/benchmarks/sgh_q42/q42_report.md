@@ -13,8 +13,8 @@
 
 | run | status | placed | unplaced | used sheets | used indices | util physical % | final pairs | boundary | margin viol | spacing viol | wall s | runtime ms | acceptance |
 | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| q42_full276_3x1500x3000_margin5_spacing8_continuous_1200 | ok | 276 | 0 | 3 | [0, 1, 2] | 49.4037 | 0 | 0 | 0 | 0 | 716.692 | 706582.953092 | FAIL |
-| q42_full276_3x1500x3000_margin5_spacing8_continuous_2400 | ok | 276 | 0 | 3 | [0, 1, 2] | 49.4037 | 0 | 0 | 0 | 0 | 1315.501 | 1305567.990552 | FAIL |
+| q42_full276_3x1500x3000_margin5_spacing8_continuous_1200 | ok | 276 | 0 | 3 | [0, 1, 2] | 49.4037 | 0 | 0 | 0 | 0 | 711.022 | 701691.205062 | FAIL |
+| q42_full276_3x1500x3000_margin5_spacing8_continuous_2400 | ok | 276 | 0 | 3 | [0, 1, 2] | 49.4037 | 0 | 0 | 0 | 0 | 1310.716 | 1301397.81773 | FAIL |
 
 ## Continuous rotation evidence
 
