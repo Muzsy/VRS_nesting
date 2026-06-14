@@ -546,6 +546,152 @@ fn project(layout: &SparrowLayout, instances: &[SPInstance]) -> Vec<Placement> {
         .collect()
 }
 
+// ── SGH-Q46 M2: gravity / bottom-left compaction post-pass ─────────────────────
+
+/// Slide `cur` toward `min_bound` (with the orthogonal coordinate fixed) until the part
+/// would collide, then binary-refine the contact. Monotone descent — never jumps past an
+/// obstacle. `is_clear(x, y)` tests the part's rect-min at (x, y); `is_x` selects which axis
+/// `cur` is.
+fn slide_axis<F: Fn(f64, f64) -> bool>(
+    fixed: f64,
+    cur: f64,
+    min_bound: f64,
+    is_clear: &F,
+    is_x: bool,
+) -> f64 {
+    let test = |c: f64| -> bool {
+        if is_x {
+            is_clear(c, fixed)
+        } else {
+            is_clear(fixed, c)
+        }
+    };
+    if cur <= min_bound + 1e-9 {
+        return cur;
+    }
+    let mut last_clear = cur;
+    let mut pos = cur;
+    let step = ((cur - min_bound) / 16.0).clamp(2.0, 40.0);
+    loop {
+        let np = (pos - step).max(min_bound);
+        if (np - pos).abs() < 1e-9 {
+            break;
+        }
+        if test(np) {
+            last_clear = np;
+            pos = np;
+            if np <= min_bound + 1e-9 {
+                break;
+            }
+        } else {
+            let (mut lo, mut hi) = (np, last_clear);
+            for _ in 0..8 {
+                let mid = 0.5 * (lo + hi);
+                if test(mid) {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            last_clear = hi;
+            break;
+        }
+    }
+    last_clear
+}
+
+/// ADAPTED density post-pass (coroush `compact_bin` generalised to a translational
+/// gravity sweep): pull every part toward the bottom-left corner of its sheet along
+/// collision-free directions, iterating until convergence. Pure translation (no rotation
+/// change), monotone, and feasibility-preserving (only ever moves a part to a clear spot).
+/// Disable with `VRS_BPP_GRAVITY=0` for A/B comparison.
+fn gravity_compact_layout(
+    working: &mut SparrowLayout,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    bpp: &mut BppReductionDiagnostics,
+) {
+    if working.placements.is_empty() {
+        return;
+    }
+    if std::env::var("VRS_BPP_GRAVITY").ok().as_deref() == Some("0") {
+        return;
+    }
+    let mut tracker = SparrowCollisionTracker::build(working, instances, solver_sheets);
+    let sheet_prepared: Vec<Option<Rc<CdePreparedShape>>> = solver_sheets
+        .iter()
+        .map(|s| prepare_shape_from_sheet(s).ok().map(Rc::new))
+        .collect();
+
+    const MAX_SWEEPS: usize = 4;
+    const COMPACT_ITERS: usize = 3;
+    let mut total_moved = 0.0;
+    let mut sweeps = 0usize;
+    for _ in 0..MAX_SWEEPS {
+        sweeps += 1;
+        // settle corner-most parts first
+        let mut order: Vec<usize> = (0..working.placements.len()).collect();
+        order.sort_by(|&a, &b| {
+            let pa = &working.placements[a];
+            let pb = &working.placements[b];
+            (pa.y + pa.x)
+                .partial_cmp(&(pb.y + pb.x))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut sweep_moved = 0.0;
+        for li in order {
+            let p = working.placements[li].clone();
+            let sheet_idx = p.sheet_index;
+            let Some(sheet_sh) = sheet_prepared.get(sheet_idx).and_then(|o| o.clone()) else {
+                continue;
+            };
+            let inst = &instances[p.instance_idx];
+            let sheet = &solver_sheets[sheet_idx];
+            let rot = p.rotation_deg;
+            let (mut rmx, mut rmy) =
+                rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, rot);
+            let Some(session) = build_sheet_session(li, sheet_idx, working, &tracker, &sheet_sh)
+            else {
+                continue;
+            };
+            let ev = LBFEvaluator {
+                inst,
+                sheet,
+                sheet_idx,
+                session: &session,
+                base: inst.base_shape.as_ref(),
+                n_evals: 0,
+            };
+            let clear = |x: f64, y: f64| ev.score_lbf_candidate(x, y, rot).is_some();
+            if !clear(rmx, rmy) {
+                continue; // colliding part (partial layout) — leave it to the safety net
+            }
+            for _ in 0..COMPACT_ITERS {
+                rmy = slide_axis(rmx, rmy, sheet.min_y, &clear, false);
+                rmx = slide_axis(rmy, rmx, sheet.min_x, &clear, true);
+            }
+            let (ax, ay) =
+                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
+            let d = (ax - p.x).abs() + (ay - p.y).abs();
+            if d > 1e-6 {
+                working.placements[li].x = ax;
+                working.placements[li].y = ay;
+                if let Some(sh) = transform_base_to_candidate(inst.base_shape.as_ref(), ax, ay, rot) {
+                    tracker.shapes[li] = Some(Rc::new(sh));
+                }
+                sweep_moved += d;
+            }
+        }
+        total_moved += sweep_moved;
+        if sweep_moved < 1.0 {
+            break;
+        }
+    }
+    bpp.bpp_gravity_compaction_applied = true;
+    bpp.bpp_gravity_compaction_sweeps = sweeps;
+    bpp.bpp_gravity_moved_total_mm = total_moved;
+}
+
 /// Relabel the used sheets to the lowest available slot of matching dimensions
 /// (existing-sheet-first appearance). Valid because identical sheets are interchangeable
 /// slots; a used sheet only ever maps to an unused slot with the same width/height, so the
@@ -758,6 +904,9 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             }
         }
     }
+
+    // SGH-Q46 M2: gravity / bottom-left compaction post-pass (density + edge alignment).
+    gravity_compact_layout(&mut working, &instances, &solver_sheets, &mut bpp);
 
     // Relabel surviving sheets to the lowest matching slots (existing-sheet-first output).
     compact_sheet_indices(&mut working, &solver_sheets);

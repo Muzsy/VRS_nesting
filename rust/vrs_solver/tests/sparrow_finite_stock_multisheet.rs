@@ -407,3 +407,18 @@ fn bpp_minimizes_sheet_count_with_extra_stock_available() {
     assert!(b.bpp_final_sheet_count <= 2, "must not use more than the 2-sheet minimum");
     assert_eq!(od(&out).sparrow_ms_available_sheet_count, Some(6));
 }
+
+/// Q46-M2: the gravity / bottom-left compaction post-pass runs and preserves feasibility.
+#[test]
+fn bpp_gravity_compaction_runs_and_preserves_feasibility() {
+    // A dozen squares on a large sheet — the separator leaves them loose; gravity compacts.
+    let parts = vec![tiny_rect_part("sq", 12, 150.0, 150.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 1500.0, "height": 3000.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 42, 30));
+    assert_eq!(out.status, "ok");
+    assert_eq!(od(&out).sparrow_ms_final_pairs, Some(0), "compaction must stay collision-free");
+    assert_eq!(od(&out).sparrow_ms_boundary_violations, Some(0));
+    let b = bpp(&out);
+    assert!(b.bpp_gravity_compaction_applied, "gravity compaction must run by default");
+    assert!(b.bpp_gravity_compaction_sweeps >= 1);
+}

@@ -261,6 +261,10 @@ pub struct BppReductionDiagnostics {
     /// BEST_FOUND_NOT_PROVEN_MINIMAL.
     pub bpp_minimality_status: String,
     pub bpp_gap_to_area_lower_bound: usize,
+    // ── SGH-Q46 M2: gravity / bottom-left compaction post-pass ───────────────
+    pub bpp_gravity_compaction_applied: bool,
+    pub bpp_gravity_compaction_sweeps: usize,
+    pub bpp_gravity_moved_total_mm: f64,
 }
 
 #[derive(Debug, Serialize)]
