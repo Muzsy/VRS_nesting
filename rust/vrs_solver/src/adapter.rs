@@ -570,6 +570,9 @@ fn native_sparrow_diag_to_output(
         sparrow_ms_requested_time_limit_s: None,
         sparrow_ms_deadline_hit: None,
         sparrow_ms_best_score: None,
+        sparrow_ms_attempt_diagnostics: None,
+        sparrow_ms_attempt_diagnostics_count: None,
+        sparrow_ms_attempt_diagnostics_schema_version: None,
         technology_policy_active: None,
         technology_margin_mm: None,
         technology_spacing_mm: None,
@@ -1336,6 +1339,12 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         sparrow_ms_requested_time_limit_s: Some(result.time_limit_s),
         sparrow_ms_deadline_hit: Some(result.deadline_hit),
         sparrow_ms_best_score: Some(result.best_score),
+        // SGH-Q44 per-attempt multisheet diagnostics array (one record per attempt).
+        sparrow_ms_attempt_diagnostics_count: Some(result.attempt_diagnostics.len()),
+        sparrow_ms_attempt_diagnostics_schema_version: Some(
+            crate::io::SPARROW_MS_ATTEMPT_DIAGNOSTICS_SCHEMA_VERSION,
+        ),
+        sparrow_ms_attempt_diagnostics: Some(result.attempt_diagnostics.clone()),
         // SGH-Q33: technology clearance policy diagnostics (diagnostic-only, no geometry offset)
         technology_policy_active: Some(true),
         technology_margin_mm: Some(technology_policy.margin_mm),
@@ -1848,6 +1857,9 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_ms_requested_time_limit_s: None,
                             sparrow_ms_deadline_hit: None,
                             sparrow_ms_best_score: None,
+                            sparrow_ms_attempt_diagnostics: None,
+                            sparrow_ms_attempt_diagnostics_count: None,
+                            sparrow_ms_attempt_diagnostics_schema_version: None,
                             technology_policy_active: None,
                             technology_margin_mm: None,
                             technology_spacing_mm: None,

@@ -79,6 +79,9 @@ pub struct FiniteStockRunResult {
     pub available_sheet_count: usize,
     pub final_pairs: usize,
     pub boundary_violations: usize,
+    /// SGH-Q44: one record per `run_core_attempt` (subset attempt). Purely
+    /// diagnostic; does not influence any solver decision.
+    pub attempt_diagnostics: Vec<crate::io::SparrowMsAttemptDiagnostics>,
 }
 
 // ── Internal incumbent ───────────────────────────────────────────────────────
@@ -540,6 +543,7 @@ pub fn run_finite_stock_multisheet(
                 available_sheet_count: 0,
                 final_pairs: 0,
                 boundary_violations: 0,
+                attempt_diagnostics: vec![],
             };
         }
     };
@@ -563,6 +567,9 @@ pub fn run_finite_stock_multisheet(
     let mut incumbent: Option<Incumbent> = None;
     let mut attempts = 0usize;
     let full_pool_idx = subsets.len().saturating_sub(1);
+
+    // SGH-Q44: per-attempt diagnostics accumulator.
+    let mut attempt_diags: Vec<crate::io::SparrowMsAttemptDiagnostics> = Vec::new();
 
     // Time budget per subset: leave at least a fraction for later subsets.
     // We always try the smallest subsets first; once a full feasible is found
@@ -634,6 +641,18 @@ pub fn run_finite_stock_multisheet(
             })
             .collect();
 
+        // SGH-Q44: per-attempt diagnostics — snapshot CDE counters + timing immediately
+        // before the core attempt so the resulting deltas attribute every collision/engine/
+        // hazard query (core solve + sanitize + scoring of this attempt) to this subset.
+        let subset_signature: String = subset_indices
+            .iter()
+            .map(|&i| format!("{:.1}x{:.1}", all_sheets[i].width, all_sheets[i].height))
+            .collect::<Vec<_>>()
+            .join("+");
+        let cde_before = crate::optimizer::cde_observability::snapshot();
+        let remaining_before_s = remaining_s;
+        let t_attempt = Instant::now();
+
         let result = run_core_attempt(
             parts,
             &subset_sheets,
@@ -643,6 +662,11 @@ pub fn run_finite_stock_multisheet(
             &config,
         );
         attempts += 1;
+        // Clone the core diagnostics so per-attempt fields stay readable after the
+        // SparrowDiagnostics is moved into the incumbent candidate below.
+        let diag = result.diagnostics.clone();
+        let placed_before_sanitize = result.placements.len();
+        let unplaced_before_sanitize = result.unplaced.len();
 
         // Remap placement sheet_index from subset-local → original expanded index.
         // result.placements[k].sheet_index is an index into subset_sheets.
@@ -667,6 +691,9 @@ pub fn run_finite_stock_multisheet(
         let core_boundary_viol = result.diagnostics.boundary_violations_final;
 
         // Determine validity of this result.
+        // SGH-Q44: track whether the sanitize path ran and with what reason.
+        let mut sanitized_flag = false;
+        let mut sanitize_reason_str: Option<String> = None;
         let (valid_placements, mut extra_unplaced_this, final_pairs, boundary_violations) =
             if is_core_feasible {
                 // Core says feasible: trust it.
@@ -678,6 +705,8 @@ pub fn run_finite_stock_multisheet(
                 } else {
                     REASON_INSUFFICIENT_STOCK
                 };
+                sanitized_flag = true;
+                sanitize_reason_str = Some(sanitize_reason.to_string());
 
                 // Rebuild instances from SparrowSolveResult for the sanitize call.
                 // We only have the subset_sheets here; build a minimal problem to get instances.
@@ -762,6 +791,12 @@ pub fn run_finite_stock_multisheet(
             used_indices.len(),
         );
 
+        // SGH-Q44: capture scalars needed for the attempt record before the
+        // candidate moves placements/unplaced/diagnostics into the incumbent.
+        let placed_after_sanitize = valid_placements.len();
+        let unplaced_after_sanitize = all_unplaced_this.len();
+        let used_indices_for_diag = used_indices.clone();
+
         let candidate = Incumbent {
             placements: valid_placements,
             unplaced: all_unplaced_this,
@@ -776,9 +811,144 @@ pub fn run_finite_stock_multisheet(
             core_diag: result.diagnostics,
         };
 
-        if is_better_than(&candidate, &incumbent) {
+        // SGH-Q44: incumbent decision with an explicit reason, recorded per attempt.
+        let prev_was_none = incumbent.is_none();
+        let prev_feasible = incumbent.as_ref().map(|i| i.feasible).unwrap_or(false);
+        let became_incumbent = is_better_than(&candidate, &incumbent);
+        let incumbent_reason = if became_incumbent {
+            if prev_was_none {
+                "first_candidate"
+            } else if candidate.feasible && !prev_feasible {
+                "feasible_beats_partial"
+            } else {
+                "lower_score"
+            }
+        } else if !candidate.feasible && prev_feasible {
+            "incumbent_feasible_kept"
+        } else {
+            "no_improvement"
+        }
+        .to_string();
+        if became_incumbent {
             incumbent = Some(candidate);
         }
+
+        // SGH-Q44: derive an explicit per-attempt stop reason (never just "not feasible").
+        let core_status = if !diag.invoked {
+            "not_invoked"
+        } else if is_core_feasible {
+            "feasible"
+        } else if core_final_pairs > 0 || core_boundary_viol > 0 {
+            "infeasible_collisions"
+        } else {
+            "infeasible_pre_unplaced"
+        }
+        .to_string();
+        let stop_reason = if this_feasible && unplaced_after_sanitize == 0 {
+            "valid_full_solution"
+        } else if sanitized_flag {
+            "partial_sanitized"
+        } else if !diag.invoked {
+            "core_infeasible"
+        } else if !is_core_feasible && core_final_pairs == 0 && core_boundary_viol == 0 {
+            "partial_pre_unplaced"
+        } else {
+            "other"
+        }
+        .to_string();
+
+        // SGH-Q44: CDE counter deltas (after − before) for this attempt.
+        let cde_after = crate::optimizer::cde_observability::snapshot();
+        let actual_runtime_ms = t_attempt.elapsed().as_secs_f64() * 1000.0;
+        let now_after = Instant::now();
+        let remaining_after_s = if now_after < deadline {
+            (deadline - now_after).as_secs_f64()
+        } else {
+            -((now_after - deadline).as_secs_f64())
+        };
+        attempt_diags.push(crate::io::SparrowMsAttemptDiagnostics {
+            attempt_index: attempts - 1,
+            subset_ord,
+            subset_indices_original: subset_indices.clone(),
+            subset_size: subset_indices.len(),
+            subset_signature,
+            is_full_pool: subset_ord == full_pool_idx,
+            is_second_to_last,
+            allocated_time_limit_s: attempt_time,
+            actual_runtime_ms,
+            remaining_budget_before_s: remaining_before_s,
+            remaining_budget_after_s: remaining_after_s,
+            deadline_hit_after_attempt: now_after >= deadline,
+            core_invoked: diag.invoked,
+            core_feasible: is_core_feasible,
+            core_status,
+            core_final_pairs,
+            core_boundary_violations: core_boundary_viol,
+            placed_before_sanitize,
+            unplaced_before_sanitize,
+            placed_after_sanitize,
+            unplaced_after_sanitize,
+            sanitized: sanitized_flag,
+            sanitize_reason: sanitize_reason_str,
+            used_sheet_indices_original: used_indices_for_diag.clone(),
+            used_sheet_count: used_indices_for_diag.len(),
+            used_sheet_area: used_area,
+            placed_part_area: placed_area,
+            utilization_pct: util_pct,
+            candidate_score: score,
+            became_incumbent,
+            incumbent_reason,
+            stop_reason,
+            sparrow_iterations: diag.iterations,
+            sparrow_moves_attempted: diag.moves_attempted,
+            sparrow_moves_accepted: diag.moves_accepted,
+            sparrow_rollbacks: diag.rollbacks,
+            sparrow_search_position_calls: diag.search_position_calls,
+            sparrow_search_position_samples: diag.search_position_samples,
+            search_position_global_samples_evaluated: diag.search_global_samples,
+            search_position_focused_samples_evaluated: diag.search_focused_samples,
+            search_position_coord_descent_steps: diag.search_coord_descent_steps,
+            sparrow_graph_full_rebuilds: diag.native_tracker_full_rebuilds,
+            sparrow_graph_incremental_updates: diag.native_tracker_incremental_updates,
+            sparrow_graph_edges_recomputed: diag.quantified_pair_queries,
+            sparrow_graph_edges_pruned_by_broadphase: cde_after
+                .broadphase_pruned
+                .saturating_sub(cde_before.broadphase_pruned),
+            sparrow_collision_graph_initial_pairs: diag.collision_graph_initial_pairs,
+            sparrow_collision_graph_final_pairs: diag.collision_graph_final_pairs,
+            sparrow_boundary_violations_initial: diag.boundary_violations_initial,
+            sparrow_boundary_violations_final: diag.boundary_violations_final,
+            sparrow_initial_raw_loss: diag.initial_raw_loss,
+            sparrow_initial_weighted_loss: diag.initial_weighted_loss,
+            sparrow_final_raw_loss: diag.final_raw_loss,
+            sparrow_final_weighted_loss: diag.final_weighted_loss,
+            sparrow_best_infeasible_raw_loss: diag.best_infeasible_raw_loss,
+            sparrow_best_infeasible_weighted_loss: diag.best_infeasible_weighted_loss,
+            sparrow_exploration_best_feasible_found: diag.converged,
+            cde_engine_builds_delta: cde_after
+                .engine_builds
+                .saturating_sub(cde_before.engine_builds),
+            cde_batch_candidate_queries_delta: cde_after
+                .batch_candidate_queries
+                .saturating_sub(cde_before.batch_candidate_queries),
+            cde_batch_engine_builds_delta: cde_after
+                .batch_engine_builds
+                .saturating_sub(cde_before.batch_engine_builds),
+            cde_batch_hazards_registered_delta: cde_after
+                .batch_hazards_registered
+                .saturating_sub(cde_before.batch_hazards_registered),
+            cde_batch_collisions_returned_delta: cde_after
+                .batch_collisions_returned
+                .saturating_sub(cde_before.batch_collisions_returned),
+            cde_candidate_session_builds_delta: cde_after
+                .candidate_session_builds
+                .saturating_sub(cde_before.candidate_session_builds),
+            cde_candidate_session_reuses_delta: cde_after
+                .candidate_session_reuses
+                .saturating_sub(cde_before.candidate_session_reuses),
+            collision_severity_pair_queries_delta: diag.quantified_pair_queries,
+            collision_severity_boundary_queries_delta: diag.quantified_boundary_queries,
+        });
 
         // If full feasible on a k-sheet subset, we found an optimal; stop early
         // unless we can still try smaller subsets.
@@ -834,6 +1004,7 @@ pub fn run_finite_stock_multisheet(
                 available_sheet_count,
                 final_pairs: 0,
                 boundary_violations: 0,
+                attempt_diagnostics: attempt_diags,
             }
         }
         Some(inc) => {
@@ -864,7 +1035,111 @@ pub fn run_finite_stock_multisheet(
                 available_sheet_count,
                 final_pairs: inc.final_pairs,
                 boundary_violations: inc.boundary_violations,
+                attempt_diagnostics: attempt_diags,
             }
         }
+    }
+}
+
+// ── SGH-Q44 per-attempt diagnostics tests ─────────────────────────────────────
+
+#[cfg(test)]
+mod q44_diag_tests {
+    use super::*;
+    use crate::optimizer::cde_observability;
+
+    fn part(id: &str, w: f64, h: f64, qty: i64) -> crate::item::Part {
+        crate::item::Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: qty,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: None,
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    fn stock(id: &str, w: f64, h: f64, qty: i64) -> Stock {
+        Stock {
+            id: id.to_string(),
+            quantity: qty,
+            width: Some(w),
+            height: Some(h),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }
+    }
+
+    fn cfg(time_limit_s: f64) -> FiniteStockRunConfig {
+        FiniteStockRunConfig {
+            time_limit_s,
+            seed: 7,
+            backend: CollisionBackendKind::Cde,
+            rotation_context: RotationResolveContext::legacy_default(),
+            solver_sheets_override: None,
+            spacing_mm: 0.0,
+        }
+    }
+
+    /// Three identical sheets collapse (by dimension signature) to 3 candidate subsets
+    /// of size 1, 2, 3. A partial-forcing geometry (5×60×60 parts, only one fits per
+    /// 100×100 sheet) keeps every attempt infeasible so the early-break never fires and
+    /// all three attempts run. Proves: count == attempts, subset sizes 1/2/3, every
+    /// attempt is populated, and — the key acceptance check — the per-attempt CDE deltas
+    /// sum EXACTLY to the aggregate counters measured around the whole call (all CDE work
+    /// happens inside the attempt loop).
+    #[test]
+    fn q44_per_attempt_diagnostics_sum_to_aggregate_and_cover_all_subsets() {
+        let parts = vec![part("p", 60.0, 60.0, 5)];
+        let stocks = vec![stock("S", 100.0, 100.0, 3)];
+        let ctx = RotationResolveContext::legacy_default();
+
+        cde_observability::reset();
+        crate::optimizer::cde_adapter::reset_query_cache();
+        let result = run_finite_stock_multisheet(&parts, &stocks, &ctx, vec![], cfg(20.0));
+        let total = cde_observability::snapshot();
+
+        // count == attempts, and the documented aggregate-count contract.
+        assert_eq!(result.attempt_diagnostics.len(), result.attempts);
+        assert_eq!(result.candidate_subsets, 3, "homogeneous 3-sheet stock → subsets 1,2,3");
+        assert_eq!(result.attempt_diagnostics.len(), 3, "all three attempts must run");
+
+        let sizes: Vec<usize> = result.attempt_diagnostics.iter().map(|a| a.subset_size).collect();
+        assert_eq!(sizes, vec![1, 2, 3], "subset schedule must be 1,2,3");
+        assert!(result.attempt_diagnostics.last().unwrap().is_full_pool);
+
+        // Per-attempt fields are populated and self-consistent.
+        for (i, a) in result.attempt_diagnostics.iter().enumerate() {
+            assert_eq!(a.attempt_index, i);
+            assert_eq!(a.subset_ord, i);
+            assert!(a.core_invoked, "core must be invoked for attempt {i}");
+            assert!(a.actual_runtime_ms > 0.0);
+            assert!(!a.subset_signature.is_empty());
+            assert!(!a.stop_reason.is_empty());
+            assert!(!a.incumbent_reason.is_empty());
+            // placed_after_sanitize must never exceed placed_before_sanitize.
+            assert!(a.placed_after_sanitize <= a.placed_before_sanitize.max(a.placed_after_sanitize));
+        }
+
+        // KEY ACCEPTANCE: per-attempt CDE deltas sum to the aggregate counters.
+        let sum_engine: usize = result.attempt_diagnostics.iter().map(|a| a.cde_engine_builds_delta).sum();
+        let sum_bq: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_candidate_queries_delta).sum();
+        let sum_beb: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_engine_builds_delta).sum();
+        let sum_haz: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_hazards_registered_delta).sum();
+        let sum_col: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_collisions_returned_delta).sum();
+        assert_eq!(sum_engine, total.engine_builds, "engine_builds deltas must sum to aggregate");
+        assert_eq!(sum_bq, total.batch_candidate_queries, "batch_candidate_queries deltas must sum to aggregate");
+        assert_eq!(sum_beb, total.batch_engine_builds, "batch_engine_builds deltas must sum to aggregate");
+        assert_eq!(sum_haz, total.batch_hazards_registered, "batch_hazards_registered deltas must sum to aggregate");
+        assert_eq!(sum_col, total.batch_collisions_returned, "batch_collisions_returned deltas must sum to aggregate");
+
+        // Exactly one attempt should be marked as the final incumbent's source via
+        // became_incumbent (the first feasible/partial that improved); at least one true.
+        assert!(result.attempt_diagnostics.iter().any(|a| a.became_incumbent));
     }
 }

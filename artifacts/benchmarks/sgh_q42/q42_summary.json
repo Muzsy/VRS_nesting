@@ -26,8 +26,8 @@
     "kerf_mm": 0.0,
     "technology_sheet_margin_applied": true,
     "technology_part_spacing_applied": true,
-    "solver_reported_runtime_ms": 706582.953092,
-    "wall_time_s": 716.692,
+    "solver_reported_runtime_ms": 701691.205062,
+    "wall_time_s": 711.022,
     "reused_existing_output": false,
     "rotation_evidence": {
       "rotation_policy_input": "continuous",
@@ -369,8 +369,8 @@
       "kerf_mm": 0.0,
       "technology_sheet_margin_applied": true,
       "technology_part_spacing_applied": true,
-      "solver_reported_runtime_ms": 706582.953092,
-      "wall_time_s": 716.692,
+      "solver_reported_runtime_ms": 701691.205062,
+      "wall_time_s": 711.022,
       "reused_existing_output": false,
       "rotation_evidence": {
         "rotation_policy_input": "continuous",
@@ -711,8 +711,8 @@
       "kerf_mm": 0.0,
       "technology_sheet_margin_applied": true,
       "technology_part_spacing_applied": true,
-      "solver_reported_runtime_ms": 1305567.990552,
-      "wall_time_s": 1315.501,
+      "solver_reported_runtime_ms": 1301397.81773,
+      "wall_time_s": 1310.716,
       "reused_existing_output": false,
       "rotation_evidence": {
         "rotation_policy_input": "continuous",
