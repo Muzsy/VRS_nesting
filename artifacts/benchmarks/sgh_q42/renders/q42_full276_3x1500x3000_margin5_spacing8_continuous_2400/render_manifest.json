@@ -1,0 +1,51 @@
+{
+  "run_id": "q42_full276_3x1500x3000_margin5_spacing8_continuous_2400",
+  "used_sheet_count": 3,
+  "used_sheet_indices": [
+    0,
+    1,
+    2
+  ],
+  "render_source": "original_canonical_full276_contours",
+  "svg_count": 4,
+  "png_count": 4,
+  "have_cairosvg": true,
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 98,
+      "placed_part_area": 2203273.18,
+      "physical_utilization_pct": 48.9616,
+      "usable_utilization_pct": 49.4551,
+      "svg_path": "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_00.svg",
+      "png_path": "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_00.png"
+    },
+    {
+      "sheet_index": 1,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 91,
+      "placed_part_area": 2145329.82,
+      "physical_utilization_pct": 47.674,
+      "usable_utilization_pct": 48.1545,
+      "svg_path": "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_01.svg",
+      "png_path": "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_01.png"
+    },
+    {
+      "sheet_index": 2,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 87,
+      "placed_part_area": 2320894.67,
+      "physical_utilization_pct": 51.5754,
+      "usable_utilization_pct": 52.0952,
+      "svg_path": "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_02.svg",
+      "png_path": "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_02.png"
+    }
+  ]
+}

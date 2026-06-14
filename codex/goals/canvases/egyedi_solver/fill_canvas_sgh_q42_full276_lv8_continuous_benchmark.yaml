@@ -1,0 +1,69 @@
+steps:
+  - name: "Canvas es vegrehajtasi terv rogzitese"
+    description: >
+      Rogzitsd a Q42 benchmark celjat, nem-celjait, felderitett valos fajljait,
+      DoD pontjait, kockazatait es teszttervet.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q42_full276_lv8_continuous_benchmark.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q42_full276_lv8_continuous_benchmark.yaml"
+
+  - name: "Q42 benchmark runner letrehozasa"
+    description: >
+      Hozz letre Q41 mintaju, Q42-specifikus benchmark runnert. A runner a
+      kanonikus full276 inputbol generaljon continuous rotation inputot ugy,
+      hogy a part-level allowed_rotations_deg listak ne irjak felul a global
+      rotation_policy mezot. A runner futtassa Run A-t, feltetelesen Run B-t,
+      keszitsen summary/report artefaktumokat es render evidence-et.
+    outputs:
+      - "scripts/bench_sgh_q42_full276_lv8_continuous.py"
+
+  - name: "Q42 benchmark artefaktumok generalasa"
+    description: >
+      Futtasd a Q42 runnert. Run A mindig keszuljon el. Run B csak akkor
+      keszuljon el, ha Run A nem teljesiti a valid legfeljebb 2 sheetes celt.
+      A summary es report tartalmazza a continuous rotation es margin/spacing
+      bizonyitekokat.
+    outputs:
+      - "artifacts/benchmarks/sgh_q42/inputs/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200.json"
+      - "artifacts/benchmarks/sgh_q42/outputs/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200_output.json"
+      - "artifacts/benchmarks/sgh_q42/logs/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200.log"
+      - "artifacts/benchmarks/sgh_q42/inputs/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400.json"
+      - "artifacts/benchmarks/sgh_q42/outputs/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400_output.json"
+      - "artifacts/benchmarks/sgh_q42/logs/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400.log"
+      - "artifacts/benchmarks/sgh_q42/q42_summary.json"
+      - "artifacts/benchmarks/sgh_q42/q42_report.md"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/overview.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/overview.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/overview.svg"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/overview.png"
+      - "artifacts/benchmarks/sgh_q42/renders/q42_full276_3x1500x3000_margin5_spacing8_continuous_2400/render_manifest.json"
+
+  - name: "Checklist es Codex report kitoltese"
+    description: >
+      Toltsd ki a Q42 checklistet es a Report Standard v2 szerinti Codex
+      reportot a benchmark eredmenyekkel, DoD-evidence matrixszal es a
+      futtatott parancsokkal.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q42_full276_lv8_continuous_benchmark.md"
+      - "codex/reports/egyedi_solver/sgh_q42_full276_lv8_continuous_benchmark.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q42_full276_lv8_continuous_benchmark.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q42_full276_lv8_continuous_benchmark.md"
+      - "codex/reports/egyedi_solver/sgh_q42_full276_lv8_continuous_benchmark.verify.log"
