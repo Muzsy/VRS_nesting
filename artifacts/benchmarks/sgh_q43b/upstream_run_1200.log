@@ -1,0 +1,10 @@
+=== SGH-Q43b own vrs_solver run ===
+run_id: q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200
+time_limit_s: 1200
+cmd: /mnt/workspace/VRS_nesting/rust/vrs_solver/target/release/vrs_solver --input /mnt/workspace/VRS_nesting/artifacts/benchmarks/sgh_q43b/inputs/q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200.json --output /mnt/workspace/VRS_nesting/artifacts/benchmarks/sgh_q43b/outputs/q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200_output.json
+returncode: 0
+wall_time_s: 1138.963
+--- stdout ---
+
+--- stderr ---
+

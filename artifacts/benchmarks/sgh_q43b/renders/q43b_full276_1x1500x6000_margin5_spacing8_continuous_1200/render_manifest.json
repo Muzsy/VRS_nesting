@@ -1,0 +1,17 @@
+{
+  "run_id": "q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200",
+  "used_sheet_count": 1,
+  "used_sheet_indices": [
+    0
+  ],
+  "sheet_dimensions_mm": {
+    "0": [
+      1500.0,
+      6000.0
+    ]
+  },
+  "render_dir": "/mnt/workspace/VRS_nesting/artifacts/benchmarks/sgh_q43b/renders/q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200",
+  "svg_count": 2,
+  "png_count": 2,
+  "have_cairosvg": true
+}

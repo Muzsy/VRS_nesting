@@ -1,0 +1,34 @@
+SGH-Q43b own vrs_solver build reconstruction
+==============================================
+
+Date: 2026-06-14
+Source: rust/vrs_solver (commit inherited from main@1295e99)
+
+Build command used to produce rust/vrs_solver/target/release/vrs_solver
+--------------------------------------------------------------------
+  cargo build --release --bin vrs_solver --manifest-path rust/vrs_solver/Cargo.toml
+
+The vrs_solver is a Cargo workspace member under rust/vrs_solver/ with the
+same jagua-rs pin (ba38bcae9ed3ab41a9e93a1894e2b01ea87c6619) inherited from
+the .cache/sparrow/Cargo.toml configuration chain. The release profile is
+defined in rust/vrs_solver/Cargo.toml (opt-level=3, lto=fat).
+
+This produced the 2,226,184-byte release binary at
+  rust/vrs_solver/target/release/vrs_solver
+on 2026-06-14T09:27:37+02:00 (binary mtime).
+
+Note: This Q43b task did not re-run the vrs_solver build. The existing binary
+is the artifact actually executed by the Q43b runner. The build log above
+documents the recipe used to (re)produce the binary if needed. The most
+recent compilation of the binary happened as a side-effect of the
+scripts/verify.sh run for the Q43 report (the cargo test --release rebuild
+triggered by scripts/check.sh).
+
+Verification at audit time (2026-06-14):
+  $ rust/vrs_solver/target/release/vrs_solver --input /dev/null
+  Error: "--output is required"
+  $ rust/vrs_solver/target/release/vrs_solver
+  Error: "--input is required"
+
+The CLI signature is `--input <json> --output <json>`. The binary accepts
+the v1 contract SolverInput JSON and writes the SolverOutput JSON.

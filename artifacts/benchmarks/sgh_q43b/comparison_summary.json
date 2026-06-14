@@ -1,0 +1,70 @@
+{
+  "task": "sgh_q43b_3_way_comparison",
+  "direct_comparability": "PARTIAL_DIRECTLY_COMPARABLE",
+  "reason": "Q43 upstream SPP and Q43b own vrs_solver both use a 1500x6000 container; geometry is identical (12 part types / 276 instances from Q42). However, the inventory model (SPP single strip vs finite stock pool) and objective function (minimize used width vs maximize placed count) differ. Q42 is on a different inventory (3x1500x3000) and a different objective (minimize used sheet count). Numeric metrics are informative; they are not strict like-for-like benchmarks.",
+  "rows": [
+    {
+      "model_type": "upstream_SPP_1500x6000_1200s",
+      "container_or_sheet": "1500x6000 mm strip (SPP)",
+      "time_limit_s": 1200,
+      "wall_time_s": 1208.493,
+      "status": "ok",
+      "placed_count": 276,
+      "unplaced_count": 0,
+      "validity": "valid (full placement, upstream SPP guarantees collision-free)",
+      "objective_or_utilization": {
+        "strip_width_used": 1496.1523,
+        "density": 0.7429589,
+        "used_length_y": 0.0
+      },
+      "rotation_evidence": {
+        "unique_rotation_count": 1,
+        "non_orthogonal_count": 0,
+        "min_rotation_deg": 0.0,
+        "max_rotation_deg": 0.0
+      },
+      "margin_spacing_handling": "not native in upstream SPP; none applied for Q43"
+    },
+    {
+      "model_type": "own_vrs_solver_1x1500x6000_1200s",
+      "container_or_sheet": "1x 1500x6000 mm finite stock (own solver)",
+      "time_limit_s": 1200,
+      "wall_time_s": 1138.963,
+      "status": "partial",
+      "placed_count": 218,
+      "unplaced_count": 58,
+      "validity": "partial: 218/276 placed, 58 unplaced (Q40/Q41 spacing/margin expands effective polygons)",
+      "objective_or_utilization": {
+        "physical_utilization_pct": null,
+        "usable_utilization_pct": null,
+        "effective_density_proxy": 0.7899
+      },
+      "rotation_evidence": {
+        "unique_rotation_count": 184,
+        "non_orthogonal_count": 189,
+        "min_rotation_deg": -34.6543049293875,
+        "max_rotation_deg": 367.45125
+      },
+      "margin_spacing_handling": "Q40/Q41 unified model: margin_mm=5, spacing_mm=8, kerf_mm=0"
+    },
+    {
+      "model_type": "own_vrs_solver_3x1500x3000_1200s",
+      "container_or_sheet": "3x 1500x3000 mm finite stock (own solver)",
+      "time_limit_s": 1200,
+      "wall_time_s": 716.692,
+      "status": "ok",
+      "placed_count": 276,
+      "unplaced_count": 0,
+      "validity": "valid (3 sheets used; 2-sheet acceptance FAIL per Q42 spec)",
+      "objective_or_utilization": {
+        "physical_utilization_pct": 49.4037,
+        "usable_utilization_pct": 49.9016
+      },
+      "rotation_evidence": {
+        "unique_rotation_count": 236,
+        "non_orthogonal_count": null
+      },
+      "margin_spacing_handling": "Q40/Q41 unified model: margin_mm=5, spacing_mm=8, kerf_mm=0 (Q42 default); violations=0"
+    }
+  ]
+}

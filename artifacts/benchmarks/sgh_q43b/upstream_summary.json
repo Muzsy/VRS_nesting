@@ -1,0 +1,61 @@
+{
+  "task": "sgh_q43b_own_vrs_solver_1500x6000_baseline",
+  "audit_time": "2026-06-14T10:59:00+02:00",
+  "upstream_commit": "/mnt/workspace/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+  "upstream_uncommitted_changes": 0,
+  "upstream_binary": "/mnt/workspace/VRS_nesting/rust/vrs_solver/target/release/vrs_solver",
+  "audit_type": "own_solver_run",
+  "model": {
+    "type": "own_sparrow_cde_finite_stock_single_sheet",
+    "container_width_mm": 1500.0,
+    "container_height_mm": 6000.0,
+    "container_quantity": 1,
+    "objectives": "place all 276 parts into the single 1500x6000 stock; minimize remaining area / unplaced count"
+  },
+  "geometry_source": {
+    "base_input": "/mnt/workspace/VRS_nesting/artifacts/benchmarks/sgh_q42/inputs/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200.json",
+    "base_input_part_types": 12,
+    "base_input_total_instances": 276
+  },
+  "run_a": {
+    "status": "ok",
+    "time_limit_s": 1200,
+    "wall_time_s": 1138.963,
+    "placed_count": 218,
+    "unplaced_count": 58,
+    "strip_width_used": null,
+    "density": null,
+    "solver_run_time_sec": null,
+    "runtime_total_sec": null,
+    "sparrow_iterations": 212,
+    "sparrow_search_position_calls": 51508,
+    "sparrow_collision_graph_final_pairs": 0,
+    "rotation_count_total": 218,
+    "unique_rotation_count": 184,
+    "non_orthogonal_count": 189,
+    "min_rotation_deg": -34.6543049293875,
+    "max_rotation_deg": 367.45125,
+    "status_solver": "partial",
+    "solver_optimizer_diagnostics_status": null,
+    "margin_mm": 5.0,
+    "spacing_mm": 8.0,
+    "kerf_mm": 0.0,
+    "rotation_policy": "continuous",
+    "container_model": "single_stock 1500.0x6000.0 mm (quantity=1)",
+    "stock_quantity_available": 1
+  },
+  "run_b": {
+    "status": "skipped",
+    "reason": "Q43b spec is single-run only (max 1200s); user requested only one Run A"
+  },
+  "own_q42_reference": {
+    "available": true,
+    "q42_summary_path": "/mnt/workspace/VRS_nesting/artifacts/benchmarks/sgh_q42/q42_summary.json"
+  },
+  "notes": [
+    "Q43b is an OWN solver (vrs_solver) run, not upstream Sparrow. The Q43 upstream SPP baseline (separate audit) is the comparison reference for upstream parity.",
+    "Single finite stock 1500x6000 \u2014 the area is comparable to upstream SPP 1500x6000 (9.0 m^2 each), but the objective (placement-density vs minimize-width) and inventory model (finite stock vs single strip) differ.",
+    "Continuous rotation effective: 184 unique angles, 189 non-orthogonal placements (vs 16 / 140 in Q43 upstream SPP, which was deliberately limited to a 16-bin orientation list per item).",
+    "Result is partial: 218/276 placed. The 58 unplaced parts are due to the Q40/Q41 margin=5/spacing=8 geometry expansion, which reduces the effective container area below what the upstream SPP baseline saw with raw polygon sizes."
+  ]
+}

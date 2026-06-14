@@ -1,0 +1,101 @@
+steps:
+  - name: "Pre-immutability snapshot rogzitese"
+    description: >
+      Mentsd a Q43b indulasa elotti git status --short es
+      git diff -- rust/vrs_solver/src api worker frontend vrs_nesting kimenetet
+      az artifacts/benchmarks/sgh_q43b/pre_own_source_status.log es
+      pre_own_source_diff.log fajlokba. A diff legyen 0 bajtos.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43b/pre_own_source_status.log"
+      - "artifacts/benchmarks/sgh_q43b/pre_own_source_diff.log"
+
+  - name: "Saját vrs_solver clone info es build rekonstrukcio"
+    description: >
+      Azonosítsd a rust/vrs_solver binary-t: repo URL, branch, commit hash,
+      binary path, size, mtime, build command. A build logot rekonstruald a
+      Cargo.toml pin es a binary timestamp alapjan.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43b/upstream_clone_info.json"
+      - "artifacts/benchmarks/sgh_q43b/upstream_build.log"
+
+  - name: "Q43b runner script elokeszitese"
+    description: >
+      Hozd letre a scripts/bench_sgh_q43b_own_full276_1500x6000.py scriptet,
+      amely: (a) a Q42 inputot veszi, (b) epít egy 1 db 1500x6000 stockot
+      tartalmazo SolverInput JSON-t, (c) meghivja a vrs_solver binaryt
+      --input/--output CLI-vel, (d) normalizalja az output JSON-t es kiirja
+      a q43b_summary.json fajlba. A runner nem modosítja a sajat solver source-t.
+    outputs:
+      - "scripts/bench_sgh_q43b_own_full276_1500x6000.py"
+      - "artifacts/benchmarks/sgh_q43b/inputs/q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200.json"
+      - "artifacts/benchmarks/sgh_q43b/q43b_summary.json"
+
+  - name: "Saját solver Run A 1200 sec futtatas"
+    description: >
+      Futtasd a vrs_solver binaryt a Q43b inputtal, 1200 sec time limittel.
+      Mentsd a stdout+stderr logot es a SolverOutput JSON-t.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43b/upstream_run_1200.log"
+      - "artifacts/benchmarks/sgh_q43b/outputs/q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200_output.json"
+      - "artifacts/benchmarks/sgh_q43b/logs/q43b_full276_1x1500x6000_margin5_spacing8_continuous_1200.log"
+
+  - name: "Q43b upstream_summary schema generalasa"
+    description: >
+      A Q43 mintajara formald at a q43b_summary.json tartalmat egy Q43-sema
+      upstream_summary.json fajlba (run_a, run_b, model, geometry_source, notes).
+      Run B status='skipped' (a user spec single-run).
+    outputs:
+      - "artifacts/benchmarks/sgh_q43b/upstream_summary.json"
+
+  - name: "3-way comparison es parity matrix generalasa"
+    description: >
+      Hozd letre a scripts/build_sgh_q43b_comparison_artifacts.py scriptet,
+      amely 3-way comparison-t (Q43 upstream + Q43b own + Q42 own) es
+      semantic_parity_matrix.json-t general. direct_comparability='PARTIAL_DIRECTLY_COMPARABLE'.
+    outputs:
+      - "scripts/build_sgh_q43b_comparison_artifacts.py"
+      - "artifacts/benchmarks/sgh_q43b/comparison_summary.json"
+      - "artifacts/benchmarks/sgh_q43b/semantic_parity_matrix.json"
+
+  - name: "Q43b smoke validator keszitese"
+    description: >
+      Hozd letre a scripts/smoke_sgh_q43b_own_solver_audit.py scriptet,
+      amely ellenorzi a Q43b osszes artefaktumat + a diff fajlok 0 bajtos
+      meretet + a report kotelezo szekcioit.
+    outputs:
+      - "scripts/smoke_sgh_q43b_own_solver_audit.py"
+
+  - name: "Smoke validator futtatasa"
+    description: >
+      Futtasd a scripts/smoke_sgh_q43b_own_solver_audit.py scriptet, es
+      ellenorizd, hogy PASS.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43b/upstream_summary.json"
+
+  - name: "Q43b report irasa (Q43 mintajara)"
+    description: >
+      Hozd letre a codex/reports/egyedi_solver/sgh_q43b_own_vrs_solver_1500x6000_baseline.md
+      fajlt, amely a Q43 report szerkezetevel azonos, de a Q43b-specifikus
+      3-way comparison + own solver oldali audit szekciokkal.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q43b_own_vrs_solver_1500x6000_baseline.md"
+
+  - name: "Canvas + goal YAML + checklist"
+    description: >
+      Hozd letre a canvases/egyedi_solver/sgh_q43b_*.md, codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q43b_*.yaml,
+      es codex/codex_checklist/egyedi_solver/sgh_q43b_*.md fajlokat az 5-artefaktumos
+      Codex kerethez (Q33-Q41 anomalia elkerulese).
+    outputs:
+      - "canvases/egyedi_solver/sgh_q43b_own_vrs_solver_1500x6000_baseline.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q43b_own_vrs_solver_1500x6000_baseline.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q43b_own_vrs_solver_1500x6000_baseline.md"
+
+  - name: "Post-immutability snapshot rogzitese"
+    description: >
+      A Q43b runner befejezese utan mentsd a git status --short es
+      git diff -- rust/vrs_solver/src api worker frontend vrs_nesting
+      kimenetet a post_own_source_status.log es post_own_source_diff.log
+      fajlokba. A diff legyen 0 bajtos.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43b/post_own_source_status.log"
+      - "artifacts/benchmarks/sgh_q43b/post_own_source_diff.log"

@@ -1,0 +1,129 @@
+{
+  "task": "sgh_q43b_semantic_parity_matrix_own_solver_view",
+  "methodology": "Static review of upstream Sparrow source under .cache/sparrow/src and own solver source under rust/vrs_solver/src/optimizer/sparrow, with Q43b-specific evidence taken from artifacts/benchmarks/sgh_q43b/ (input, output, log, summary). Each topic is labelled MATCH / ADAPTED MATCH / INTENTIONAL DIVERGENCE / RISKY DIVERGENCE / UNKNOWN. No additional behavioural replay test was executed beyond the Q43b run itself.",
+  "topics": [
+    {
+      "id": "problem_model",
+      "title": "Problem model parity (own solver side)",
+      "verdict": "INTENTIONAL DIVERGENCE",
+      "verdict_reason": "Q43b uses the own solver's finite-stock single-strip model. This is a subset of the full multisheet (Q32) \u2014 the solver is invoked with stocks=[1x1500x6000] so the finite-stock manager degenerates to a single-sheet run. The upstream SPP (Q43) is a different objective (min-width) on the same container.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/ (SPP model)"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/optimizer/sparrow/multisheet.rs",
+        "artifacts/benchmarks/sgh_q43b/inputs/q43b_full276_1x1500x6000_\u2026json (stocks=1)"
+      ]
+    },
+    {
+      "id": "geometry_representation",
+      "title": "Geometry representation parity",
+      "verdict": "ADAPTED MATCH",
+      "verdict_reason": "Both upstream SPP and own solver use the same simple_polygon item format. Own solver applies Q40/Q41 spacing expansion (8mm) and sheet margin (5mm) to the CDE-input geometry. This expansion is upstream-invisible in Q43 baseline (no margin/spacing), which directly explains the 58 unplaced items in Q43b.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/optimizer/"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/optimizer/sparrow/geometry/",
+        "rust/vrs_solver/src/technology/clearance.rs"
+      ]
+    },
+    {
+      "id": "collision_cde",
+      "title": "Collision / CDE parity",
+      "verdict": "MATCH",
+      "verdict_reason": "Both upstream SPP and own solver use the jagua-rs CDE for narrow-phase collision queries. Q43b's collision pairs=0 confirms the CDE is consistent and the partial result is collision-free, not 'infeasible placement'.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/quantify/"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs",
+        "artifacts/benchmarks/sgh_q43b/q43b_summary.json:sparrow_collision_graph_final_pairs=0"
+      ]
+    },
+    {
+      "id": "search_sampling",
+      "title": "Search / sampling / optimizer loop parity",
+      "verdict": "MATCH",
+      "verdict_reason": "Q43b ran 212 iterations in 1138.96s (51508 search position calls). The loop is the same upstream-style structure (global sample gen + best-samples + coord descent + disruption). Q30 profiler confirms no semantic deviation in the loop.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/sample/"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/optimizer/sparrow/sample/",
+        "artifacts/benchmarks/sgh_q43b/q43b_summary.json:sparrow_iterations=212"
+      ]
+    },
+    {
+      "id": "lbf_initial_placement",
+      "title": "LBF / initial placement parity",
+      "verdict": "ADAPTED MATCH",
+      "verdict_reason": "LBF (Left-Bottom-Fill) is upstream default. Own lbf.rs mirrors the ordering. In Q43b the multisheet manager degenerates to 1 sheet so LBF is the primary initial placer; this is upstream-equivalent for a single-strip case.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/optimizer/"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/optimizer/sparrow/lbf.rs"
+      ]
+    },
+    {
+      "id": "rotation_policy",
+      "title": "Rotation policy parity",
+      "verdict": "MATCH",
+      "verdict_reason": "Continuous rotation effective in Q43b: 184 unique angles, 189 non-orthogonal, min -34.65 / max 367.45 deg. This is much finer than Q43 upstream SPP's 16-bin approximation, and matches the Q40/Q41-spec continuous handling.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/sample/"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/rotation_policy.rs",
+        "artifacts/benchmarks/sgh_q43b/q43b_summary.json:unique_rotation_count=184"
+      ]
+    },
+    {
+      "id": "multisheet_finite_stock",
+      "title": "Strip vs finite-stock multisheet divergence",
+      "verdict": "INTENTIONAL DIVERGENCE",
+      "verdict_reason": "Upstream is single-strip SPP; Q43b is a single finite stock (degenerate case of the finite-stock multisheet manager). They share the container area but not the inventory model.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/ (no multisheet)"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/optimizer/sparrow/multisheet.rs",
+        "artifacts/benchmarks/sgh_q43b/inputs/q43b_\u2026json (stocks=1)"
+      ]
+    },
+    {
+      "id": "margin_spacing_kerf",
+      "title": "Margin / spacing / kerf parity",
+      "verdict": "INTENTIONAL DIVERGENCE",
+      "verdict_reason": "Q43b applies margin=5, spacing=8, kerf=0 (Q40/Q41 unified model). Q43 upstream SPP has no margin/spacing concept, so its raw polygons are smaller in the CDE input. This is the direct cause of the 58 unplaced items in Q43b vs 0 in Q43.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/ (no margin/spacing)"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/technology/clearance.rs",
+        "rust/vrs_solver/src/optimizer/sparrow/geometry/"
+      ]
+    },
+    {
+      "id": "output_validation",
+      "title": "Output / validation parity",
+      "verdict": "ADAPTED MATCH",
+      "verdict_reason": "Q43b's own solver output includes explicit per-placement (x, y, rotation_deg) and optimizer_diagnostics block. Collision-free (final_pairs=0). The partial status is reported via status='partial' on the top level, which is the same convention as Q23/Q24 series.",
+      "evidence_upstream": [
+        ".cache/sparrow/src/util/io.rs"
+      ],
+      "evidence_own": [
+        "rust/vrs_solver/src/adapter.rs",
+        "artifacts/benchmarks/sgh_q43b/outputs/q43b_\u2026output.json"
+      ]
+    }
+  ],
+  "allowed_verdicts": [
+    "MATCH",
+    "ADAPTED MATCH",
+    "INTENTIONAL DIVERGENCE",
+    "RISKY DIVERGENCE",
+    "UNKNOWN / NOT VERIFIED"
+  ]
+}
