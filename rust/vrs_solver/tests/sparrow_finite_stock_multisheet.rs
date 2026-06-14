@@ -297,3 +297,113 @@ fn multisheet_part_never_fits_any_stock_reported() {
     assert_eq!(d.sparrow_ms_final_pairs, Some(0));
     assert_eq!(d.sparrow_ms_boundary_violations, Some(0));
 }
+
+// ── SGH-Q45: BPP sheet-reduction path tests ───────────────────────────────────
+
+fn bpp(out: &SolverOutput) -> &vrs_solver::io::BppReductionDiagnostics {
+    od(out)
+        .bpp_reduction
+        .as_ref()
+        .expect("bpp_reduction diagnostics must be present (BPP is the default multisheet path)")
+}
+
+/// Q45-1: the production `sparrow_cde_multisheet` pipeline routes to the BPP path.
+#[test]
+fn bpp_path_is_active_for_sparrow_cde_multisheet() {
+    let parts = vec![tiny_rect_part("sq60", 6, 60.0, 60.0)];
+    let stocks = vec![json!({"id": "S0", "quantity": 3, "width": 200.0, "height": 200.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 42, 25));
+    assert_eq!(od(&out).sparrow_ms_active, Some(true));
+    assert!(bpp(&out).bpp_reduction_active, "BPP path must be active by default");
+    assert!(bpp(&out).bpp_runtime_ms > 0.0);
+}
+
+/// Q45-2: initial construction fills existing (low-index) sheets first — the minimum
+/// used sheet index is 0 and the used set is a contiguous low-index prefix.
+#[test]
+fn bpp_initial_construction_existing_sheet_first() {
+    // 4 small squares trivially fit on a single 200×200 sheet; pool has 3.
+    let parts = vec![tiny_rect_part("sq50", 4, 50.0, 50.0)];
+    let stocks = vec![json!({"id": "S0", "quantity": 3, "width": 200.0, "height": 200.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 42, 25));
+    assert_eq!(out.status, "ok");
+    let used = od(&out).sparrow_ms_used_sheet_indices.clone().unwrap_or_default();
+    assert!(!used.is_empty());
+    assert_eq!(*used.iter().min().unwrap(), 0, "construction must use sheet 0 first");
+    // existing-sheet-first ⇒ used indices are a low prefix (max < count of available).
+    assert!(*used.iter().max().unwrap() < od(&out).sparrow_ms_available_sheet_count.unwrap());
+}
+
+/// Q45-3: the reduction loop drives the used sheet count down toward the area lower
+/// bound (≤ initial, and ≤ the 2-sheet bound for this fixture).
+#[test]
+fn bpp_reduces_from_more_sheets_to_fewer_sheets() {
+    // 8 × 700×1400 on 1500×3000: 4 fit per sheet ⇒ area lower bound = 2.
+    let parts = vec![tiny_rect_part("big", 8, 700.0, 1400.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 4, "width": 1500.0, "height": 3000.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 42, 40));
+    assert_eq!(out.status, "ok", "must place all 8");
+    let b = bpp(&out);
+    assert_eq!(b.bpp_area_lower_bound, 2);
+    assert!(b.bpp_final_sheet_count <= b.bpp_initial_sheet_count.max(2));
+    assert!(b.bpp_final_sheet_count <= 2, "final used sheets must reach the 2-sheet bound");
+    if b.bpp_initial_sheet_count > b.bpp_final_sheet_count {
+        assert!(b.bpp_elimination_successes >= 1, "a successful elimination must be recorded");
+    }
+}
+
+/// Q45-4: redistribution that overpacks a receiving sheet is resolved (by the affected
+/// separator and/or explicit transfers) into a collision-free full layout.
+#[test]
+fn bpp_transfer_resolves_overpacked_receiving_sheet() {
+    let parts = vec![tiny_rect_part("big", 8, 700.0, 1400.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 3, "width": 1500.0, "height": 3000.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 7, 40));
+    assert_eq!(out.status, "ok");
+    assert_eq!(od(&out).sparrow_ms_final_pairs, Some(0));
+    assert_eq!(od(&out).sparrow_ms_boundary_violations, Some(0));
+    assert!(bpp(&out).bpp_separator_calls >= 1, "the affected-sheet separator must run");
+}
+
+/// Q45-5: `ok` is never reported with residual collisions or boundary violations.
+#[test]
+fn bpp_does_not_report_ok_with_collisions() {
+    let parts = vec![tiny_rect_part("sq60", 8, 60.0, 60.0)];
+    let stocks = vec![json!({"id": "S0", "quantity": 2, "width": 200.0, "height": 200.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 42, 30));
+    if out.status == "ok" {
+        assert_eq!(od(&out).sparrow_ms_final_pairs, Some(0));
+        assert_eq!(od(&out).sparrow_ms_boundary_violations, Some(0));
+        assert_eq!(out.metrics.unplaced_count, 0);
+    }
+}
+
+/// Q45-6: used sheet indices are unique and bounded — never `max+1` / duplicated.
+#[test]
+fn bpp_used_sheet_count_is_unique_not_max_plus_one() {
+    let parts = vec![tiny_rect_part("big", 8, 700.0, 1400.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 4, "width": 1500.0, "height": 3000.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 42, 40));
+    let used = od(&out).sparrow_ms_used_sheet_indices.clone().unwrap_or_default();
+    let mut sorted = used.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), used.len(), "used sheet indices must be unique");
+    assert_eq!(used.len(), od(&out).sparrow_ms_used_sheet_count.unwrap());
+    let avail = od(&out).sparrow_ms_available_sheet_count.unwrap();
+    assert!(used.iter().all(|&i| i < avail), "used indices must be within available stock");
+}
+
+/// Q45-7: with surplus stock available the BPP path still minimizes used sheets.
+#[test]
+fn bpp_minimizes_sheet_count_with_extra_stock_available() {
+    // 8 parts fit on 2 sheets; 6 are available — the result must not waste sheets.
+    let parts = vec![tiny_rect_part("big", 8, 700.0, 1400.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 6, "width": 1500.0, "height": 3000.0})];
+    let out = parse_and_solve(&ms_input(parts, stocks, 42, 40));
+    assert_eq!(out.status, "ok");
+    let b = bpp(&out);
+    assert_eq!(b.bpp_area_lower_bound, 2);
+    assert!(b.bpp_final_sheet_count <= 2, "must not use more than the 2-sheet minimum");
+    assert_eq!(od(&out).sparrow_ms_available_sheet_count, Some(6));
+}

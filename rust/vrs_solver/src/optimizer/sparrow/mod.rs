@@ -25,6 +25,7 @@ pub(crate) use super::cde_adapter::{
     CdePreparedShape, CdeQueryResult, SpecializedCollectionCtx, SpecializedHazardSink,
 };
 
+pub mod bpp_reduction;
 pub mod diagnostics;
 pub mod eval;
 pub mod explore;

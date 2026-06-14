@@ -82,6 +82,9 @@ pub struct FiniteStockRunResult {
     /// SGH-Q44: one record per `run_core_attempt` (subset attempt). Purely
     /// diagnostic; does not influence any solver decision.
     pub attempt_diagnostics: Vec<crate::io::SparrowMsAttemptDiagnostics>,
+    /// SGH-Q45: present when the coroush-style BPP sheet-reduction path produced
+    /// the result; `None` for the legacy subset-attempt manager.
+    pub bpp_diagnostics: Option<crate::io::BppReductionDiagnostics>,
 }
 
 // ── Internal incumbent ───────────────────────────────────────────────────────
@@ -216,7 +219,7 @@ fn generate_sheet_subsets(all_sheets: &[SheetShape], _seed: u64) -> Vec<Vec<usiz
 /// Polygon area for a part using the shoelace formula on `outer_points`.
 /// Falls back to bounding-box area (width×height) when `outer_points` is
 /// absent, malformed, or has fewer than 3 vertices.
-fn part_polygon_area(part: &crate::item::Part) -> f64 {
+pub(crate) fn part_polygon_area(part: &crate::item::Part) -> f64 {
     let json_pts = part.outer_points.as_ref().or(part.prepared_outer_points.as_ref());
     if let Some(val) = json_pts {
         if let Some(arr) = val.as_array() {
@@ -251,7 +254,7 @@ fn part_polygon_area(part: &crate::item::Part) -> f64 {
 /// Compute used sheet indices, used area, placed part area, and utilization pct.
 /// `all_sheets` is the full expanded sheet list; `original_indices[i]` is the
 /// original expanded index of all_sheets[i] (identity when no remapping needed).
-fn compute_utilization(
+pub(crate) fn compute_utilization(
     placements: &[Placement],
     parts: &[crate::item::Part],
     all_sheets_with_orig: &[(SheetShape, usize)], // (sheet, original_expanded_idx)
@@ -357,7 +360,7 @@ const REASON_UNRESOLVED: &str = "UNRESOLVED_AFTER_STOCK_EXHAUSTED";
 /// This correctly handles the case of N parts on a sheet that can only hold K<N
 /// (all N collide with each other): the greedy approach picks the K=1 best item
 /// rather than removing everything via cluster-based two-pass logic.
-fn sanitize_partial(
+pub(crate) fn sanitize_partial(
     layout: &SparrowLayout,
     instances: &[SPInstance],
     sheets: &[SheetShape],
@@ -544,6 +547,7 @@ pub fn run_finite_stock_multisheet(
                 final_pairs: 0,
                 boundary_violations: 0,
                 attempt_diagnostics: vec![],
+                bpp_diagnostics: None,
             };
         }
     };
@@ -1005,6 +1009,7 @@ pub fn run_finite_stock_multisheet(
                 final_pairs: 0,
                 boundary_violations: 0,
                 attempt_diagnostics: attempt_diags,
+                bpp_diagnostics: None,
             }
         }
         Some(inc) => {
@@ -1036,6 +1041,7 @@ pub fn run_finite_stock_multisheet(
                 final_pairs: inc.final_pairs,
                 boundary_violations: inc.boundary_violations,
                 attempt_diagnostics: attempt_diags,
+                bpp_diagnostics: None,
             }
         }
     }

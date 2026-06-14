@@ -573,6 +573,7 @@ fn native_sparrow_diag_to_output(
         sparrow_ms_attempt_diagnostics: None,
         sparrow_ms_attempt_diagnostics_count: None,
         sparrow_ms_attempt_diagnostics_schema_version: None,
+        bpp_reduction: None,
         technology_policy_active: None,
         technology_margin_mm: None,
         technology_spacing_mm: None,
@@ -1007,13 +1008,29 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     // SGH-Q40: the solver nests the OFFSET parts (spacing baked into geometry); original
     // stocks are still passed for physical area reporting (solver_sheets_override handles the
     // inset solving sheets).
-    let mut result = run_finite_stock_multisheet(
-        &offset_parts,
-        &input.stocks,
-        rotation_context,
-        pre_unplaced,
-        ms_config,
-    );
+    //
+    // SGH-Q45: the coroush-style BPP sheet-reduction path is the production multisheet
+    // solver. The legacy subset-attempt manager is kept as a documented fallback, selectable
+    // via `VRS_MULTISHEET_MODE=subset` for comparison/baseline runs only.
+    let use_subset_fallback =
+        std::env::var("VRS_MULTISHEET_MODE").ok().as_deref() == Some("subset");
+    let mut result = if use_subset_fallback {
+        run_finite_stock_multisheet(
+            &offset_parts,
+            &input.stocks,
+            rotation_context,
+            pre_unplaced,
+            ms_config,
+        )
+    } else {
+        crate::optimizer::sparrow::bpp_reduction::run_bpp_sheet_reduction_multisheet(
+            &offset_parts,
+            &input.stocks,
+            rotation_context,
+            pre_unplaced,
+            ms_config,
+        )
+    };
 
     // SGH-Q34-R1: final margin validator using FULL transformed part polygon (not bbox).
     // Any violating placement is removed and moved to unplaced with an explicit reason, so
@@ -1345,6 +1362,8 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
             crate::io::SPARROW_MS_ATTEMPT_DIAGNOSTICS_SCHEMA_VERSION,
         ),
         sparrow_ms_attempt_diagnostics: Some(result.attempt_diagnostics.clone()),
+        // SGH-Q45: present when the BPP sheet-reduction path produced the result.
+        bpp_reduction: result.bpp_diagnostics.clone(),
         // SGH-Q33: technology clearance policy diagnostics (diagnostic-only, no geometry offset)
         technology_policy_active: Some(true),
         technology_margin_mm: Some(technology_policy.margin_mm),
@@ -1860,6 +1879,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_ms_attempt_diagnostics: None,
                             sparrow_ms_attempt_diagnostics_count: None,
                             sparrow_ms_attempt_diagnostics_schema_version: None,
+                            bpp_reduction: None,
                             technology_policy_active: None,
                             technology_margin_mm: None,
                             technology_spacing_mm: None,

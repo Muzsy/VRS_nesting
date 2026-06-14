@@ -227,6 +227,42 @@ pub struct SparrowMsAttemptDiagnostics {
     pub collision_severity_boundary_queries_delta: usize,
 }
 
+/// SGH-Q45: diagnostics for the coroush-style BPP sheet-reduction multisheet path.
+/// One record per solve when the BPP path runs. Field names are stable and documented
+/// in `codex/reports/egyedi_solver/sgh_q45_bpp_full276_min_sheets.md`.
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct BppReductionDiagnostics {
+    pub bpp_reduction_active: bool,
+    pub bpp_initial_sheet_count: usize,
+    pub bpp_final_sheet_count: usize,
+    pub bpp_area_lower_bound: usize,
+    pub bpp_elimination_attempts: usize,
+    pub bpp_elimination_successes: usize,
+    pub bpp_elimination_failures: usize,
+    pub bpp_candidate_sheets_tried: usize,
+    pub bpp_failed_candidate_sheets: usize,
+    pub bpp_displaced_items_total: usize,
+    pub bpp_displaced_lbf_clear_count: usize,
+    pub bpp_displaced_fallback_count: usize,
+    pub bpp_receiving_sheet_count_total: usize,
+    pub bpp_separator_calls: usize,
+    pub bpp_transfer_attempts: usize,
+    pub bpp_transfer_successes: usize,
+    pub bpp_swap_attempts: usize,
+    pub bpp_swap_successes: usize,
+    pub bpp_compaction_calls: usize,
+    pub bpp_compaction_successes: usize,
+    pub bpp_perturbation_attempts: usize,
+    pub bpp_perturbation_successes: usize,
+    pub bpp_incumbent_updates: usize,
+    pub bpp_restore_count: usize,
+    pub bpp_runtime_ms: f64,
+    /// Minimality classification: AREA_LOWER_BOUND_MATCHED | GAP_TO_AREA_LOWER_BOUND |
+    /// BEST_FOUND_NOT_PROVEN_MINIMAL.
+    pub bpp_minimality_status: String,
+    pub bpp_gap_to_area_lower_bound: usize,
+}
+
 #[derive(Debug, Serialize)]
 pub struct OptimizerDiagnosticsOutput {
     pub pipeline_used: String,
@@ -643,6 +679,10 @@ pub struct OptimizerDiagnosticsOutput {
     pub sparrow_ms_attempt_diagnostics_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparrow_ms_attempt_diagnostics_schema_version: Option<u32>,
+    // ── SGH-Q45 BPP sheet-reduction multisheet diagnostics ───────────────────
+    /// Present when the coroush-style BPP sheet-reduction path produced the layout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_reduction: Option<BppReductionDiagnostics>,
     // ── SGH-Q33 technology clearance policy diagnostics ──────────────────────
     /// True when TechnologyClearancePolicy was active for this run.
     #[serde(skip_serializing_if = "Option::is_none")]

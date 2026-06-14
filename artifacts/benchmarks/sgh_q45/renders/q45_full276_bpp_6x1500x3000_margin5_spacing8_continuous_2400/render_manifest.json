@@ -1,0 +1,34 @@
+{
+  "run_id": "q45_full276_bpp_6x1500x3000_margin5_spacing8_continuous_2400",
+  "used_sheet_indices": [
+    0,
+    1,
+    2
+  ],
+  "svg_count": 3,
+  "png_count": 3,
+  "have_cairosvg": true,
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "placed_count": 102,
+      "placed_part_area": 2259221.41,
+      "physical_utilization_pct": 50.2049,
+      "svg_path": "artifacts/benchmarks/sgh_q45/renders/q45_full276_bpp_6x1500x3000_margin5_spacing8_continuous_2400/sheet_00.svg"
+    },
+    {
+      "sheet_index": 1,
+      "placed_count": 96,
+      "placed_part_area": 2255032.24,
+      "physical_utilization_pct": 50.1118,
+      "svg_path": "artifacts/benchmarks/sgh_q45/renders/q45_full276_bpp_6x1500x3000_margin5_spacing8_continuous_2400/sheet_01.svg"
+    },
+    {
+      "sheet_index": 2,
+      "placed_count": 78,
+      "placed_part_area": 2155244.01,
+      "physical_utilization_pct": 47.8943,
+      "svg_path": "artifacts/benchmarks/sgh_q45/renders/q45_full276_bpp_6x1500x3000_margin5_spacing8_continuous_2400/sheet_02.svg"
+    }
+  ]
+}
