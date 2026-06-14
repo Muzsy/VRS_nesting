@@ -1,0 +1,30 @@
+{
+  "task": "sgh_q43b_own_vrs_solver_1500x6000_baseline",
+  "solver_repo_url": "https://github.com/Muzsy/VRS_nesting.git",
+  "solver_repo_local_path": "rust/vrs_solver",
+  "solver_branch": "main",
+  "solver_commit_hash": "1295e99",
+  "solver_clone_time_source": "git log -1 on rust/vrs_solver parent repo at audit time",
+  "audit_time": "2026-06-14T10:59:00+02:00",
+  "audit_type": "own solver (not upstream)",
+  "solver_binary_path": "rust/vrs_solver/target/release/vrs_solver",
+  "solver_binary_size_bytes": 2226184,
+  "solver_binary_mtime": "2026-06-14T09:27:37+02:00",
+  "solver_build_command": "cargo build --release --bin vrs_solver --manifest-path rust/vrs_solver/Cargo.toml",
+  "solver_build_log_artifact": "artifacts/benchmarks/sgh_q43b/upstream_build.log",
+  "solver_build_log_note": "The vrs_solver binary was built during a repo-gate verify.sh run (2026-06-14T09:27:37) which compiled the release profile in 0.05s using cargo build via scripts/ensure_sparrow.sh chain. The build recipe is documented in upstream_build.log; the binary used for this Q43b run is the one at the path above.",
+  "solver_run_command_pattern": "rust/vrs_solver/target/release/vrs_solver --input <input.json> --output <output.json>",
+  "solver_native_model": "Sparrow CDE multisheet (own native Rust port); finite-stock pool with Q40/Q41 unified margin/spacing geometry; continuous rotation policy",
+  "solver_jagua_rs_pin": "inherited from .cache/sparrow/Cargo.toml: ba38bcae9ed3ab41a9e93a1894e2b01ea87c6619",
+  "solver_contract_version": "v1",
+  "solver_cli_args": {
+    "input_long": "--input",
+    "input_desc": "Path to the SolverInput JSON (v1 contract)",
+    "output_long": "--output",
+    "output_desc": "Path where the solver writes the SolverOutput JSON"
+  },
+  "own_solver_source_diff_pre": "empty (0 bytes) — verified by 'git diff -- rust/vrs_solver/src api worker frontend vrs_nesting'",
+  "own_solver_source_diff_pre_artifact": "artifacts/benchmarks/sgh_q43b/pre_own_source_diff.log",
+  "strip_vs_finite_stock": "Q43b is a 1x1500x6000 single finite stock run; the Q43 upstream is an SPP 1500x6000 strip; the Q42 own is a 3x1500x3000 finite-stock multisheet. All three use the same 12 part type / 276 instance geometry.",
+  "comparability": "Direct geometry parity (same parts); direct container-area parity (Q43/Q43b both 9.0 m^2 strip); inventory model differs (SPP vs finite stock); objective differs (min-width vs placement-density). Documented as PARTIAL_DIRECTLY_COMPARABLE between Q43b and Q43 upstream."
+}

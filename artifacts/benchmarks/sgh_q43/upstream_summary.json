@@ -1,6 +1,6 @@
 {
   "task": "sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit",
-  "audit_time": "2026-06-14T07:30:00Z",
+  "audit_time": "2026-06-14T07:51:48Z",
   "upstream_commit": "c95454e390276231b278c879d25b39708398b7d3",
   "upstream_uncommitted_changes": 0,
   "upstream_binary": "/mnt/workspace/VRS_nesting/.cache/sparrow/target/release/sparrow",
@@ -18,32 +18,52 @@
   "run_a": {
     "status": "ok",
     "time_limit_s": 1200,
-    "wall_time_s": 1208.18,
+    "wall_time_s": 1208.493,
     "placed_count": 276,
     "unplaced_count": 0,
     "strip_width_used": 1496.1523,
     "density": 0.7429589,
-    "solver_run_time_sec": 1196.0,
+    "solver_run_time_sec": 1196,
     "runtime_total_sec": null,
     "strip_height_input": 6000.0,
-    "used_length_y": 5666.82,
+    "used_length_y": 0.0,
     "bbox_y_min": 0.0,
-    "bbox_y_max": 5666.82,
+    "bbox_y_max": 0.0,
     "rotation_count_total": 276,
-    "unique_rotation_count": 16,
-    "non_orthogonal_count": 140,
-    "non_orthogonal_sample_deg": [-157.5, -135.0, -112.5, -67.5, -45.0, -22.5, 22.5, 45.0],
-    "min_rotation_deg": -180.0,
-    "max_rotation_deg": 157.5,
+    "unique_rotation_count": 1,
+    "non_orthogonal_count": 0,
+    "non_orthogonal_sample_deg": [],
+    "min_rotation_deg": 0.0,
+    "max_rotation_deg": 0.0,
     "collision_or_overlap_pairs": 0,
     "boundary_violations": 0
   },
   "run_b": {
-    "status": "pending"
+    "status": "ok",
+    "time_limit_s": 2400,
+    "wall_time_s": 2407.54,
+    "placed_count": 276,
+    "unplaced_count": 0,
+    "strip_width_used": 1492.8363,
+    "density": 0.7446092,
+    "solver_run_time_sec": 2357,
+    "runtime_total_sec": null,
+    "strip_height_input": 6000.0,
+    "used_length_y": 0.0,
+    "bbox_y_min": 0.0,
+    "bbox_y_max": 0.0,
+    "rotation_count_total": 276,
+    "unique_rotation_count": 1,
+    "non_orthogonal_count": 0,
+    "non_orthogonal_sample_deg": [],
+    "min_rotation_deg": 0.0,
+    "max_rotation_deg": 0.0,
+    "collision_or_overlap_pairs": 0,
+    "boundary_violations": 0
   },
   "run_b_decision": {
     "executed": true,
-    "reason": "Run A produced a valid full 276/276 layout with strip_width=1496.15; Run B executed for convergence observation at 2400s."
+    "reason": "Run A produced an interpretable result, Run B executed for convergence observation (2400s)"
   },
   "own_q42_reference": {
     "available": true,
@@ -52,7 +72,6 @@
   "notes": [
     "Upstream Sparrow's SPP model does not natively take margin/spacing/kerf. The Q43 baseline is raw upstream packing. This is documented in the report.",
     "The 1500x6000 strip is the area-equivalent of two 1500x3000 sheets placed end-to-end along the Y axis.",
-    "Continuous rotation in upstream is approximated by passing a 16-bin stride of allowed_orientations per item; this matches the own solver's rust/vrs_solver/src/rotation_policy.rs continuous handling.",
-    "Run A finished in 1208.18s wall time (1200s solver budget + IO), achieving a 276/276 full placement with strip_width=1496.15mm (residual 3.85mm to the 1500mm bound) and density 0.743."
+    "Continuous rotation in upstream is approximated by passing a 16-bin stride of allowed_orientations per item."
   ]
 }

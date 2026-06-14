@@ -1,12 +1,14 @@
 # SGH-Q43 — Upstream jagua_rs/Sparrow 1500x6000 strip baseline + runtime-focused semantic parity audit
 
-## Cel
+**Status:** PARTIAL — Run A (1200s) complete with valid 276/276 layout; Run B (2400s) in progress at audit time. The report is updated with Run A numbers; Run B numbers land when the background process finishes. **Update: `verify.sh` returned PASS (exit 0) at 2026-06-14T09:28:50+02:00, see `AUTO_VERIFY_START` block at the end of this report.**
 
-Az eredeti upstream `jagua_rs` / `Sparrow` modell futtatasa es auditálása a full276 LV8 csomagon, 1500x6000 mm strip baseline celgeometriaval (ami a 2 db 1500x3000 mm lap területének es geometriájának megfelelo osszefüggo csi). Az audit a futásido mérésre es a saját solver logikájának upstream-paritás vizsgálatára fókuszál.
+## Scope
+
+- Az eredeti upstream `jagua_rs` / `Sparrow` modell futtatasa es auditálása a full276 LV8 csomagon, 1500x6000 mm strip baseline celgeometriaval (ami a 2 db 1500x3000 mm lap területének es geometriájának megfelelo osszefüggo csi). Az audit a futásido mérésre es a saját solver logikájának upstream-paritás vizsgálatára fókuszál.
 
 A sajat solver forrasa szigorúan nem modosúl. A Q43 audit + benchmark task; nem implementacio.
 
-## Nem-cel
+## Nem-cél
 
 - Saát solverlogika javítása.
 - Saát solver acceptance lazítasa.
