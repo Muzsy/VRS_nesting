@@ -1,0 +1,9 @@
+?? artifacts/benchmarks/sgh_q43/
+?? canvases/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.md
+?? codex/codex_checklist/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.md
+?? codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.yaml
+?? codex/reports/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.md
+?? codex/reports/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.verify.log
+?? scripts/build_sgh_q43_comparison_artifacts.py
+?? scripts/run_sgh_q43_upstream_sparrow_strip1500x6000.py
+?? scripts/smoke_sgh_q43_upstream_sparrow_strip_audit.py

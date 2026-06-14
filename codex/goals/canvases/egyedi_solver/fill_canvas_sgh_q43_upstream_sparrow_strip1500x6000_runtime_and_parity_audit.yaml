@@ -1,0 +1,120 @@
+steps:
+  - name: "Pre-immutability snapshot rogzitese"
+    description: >
+      Mentsd a Q43 indulasa elotti git status --short es
+      git diff -- rust/vrs_solver/src api worker frontend vrs_nesting kimenetet
+      az artifacts/benchmarks/sgh_q43/pre_own_source_status.log es
+      pre_own_source_diff.log fajlokba. A diff legyen 0 bajtos.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43/pre_own_source_status.log"
+      - "artifacts/benchmarks/sgh_q43/pre_own_source_diff.log"
+
+  - name: "Upstream clone info es build rekonstrukcio"
+    description: >
+      Azonositsd a .cache/sparrow klont: repo URL, branch, commit hash, clone ido.
+      Dokumentald a release binary utvonalat es mtime-jat. A build logot
+      rekonstruald a Cargo.toml pin es a binary timestamp alapjan.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43/upstream_clone_info.json"
+      - "artifacts/benchmarks/sgh_q43/upstream_build.log"
+
+  - name: "Q43 runner script elokeszitese"
+    description: >
+      Hozd letre a scripts/run_sgh_q43_upstream_sparrow_strip1500x6000.py
+      scriptet, amely: (a) SPP formatumba konvertalja a Q42 full276 inputot,
+      (b) meghivja az upstream sparrow binaryt 1200s, opcionalisan 2400s
+      time_limit_s ertekkel, (c) normalizalja az output JSON-t es kiirja az
+      upstream_summary.json fajlba. A runner nem modosítja a sajat solver source-t.
+    outputs:
+      - "scripts/run_sgh_q43_upstream_sparrow_strip1500x6000.py"
+      - "artifacts/benchmarks/sgh_q43/upstream/inputs/sgh_q43_upstream_full276_1500x6000_continuous_1200.json"
+      - "artifacts/benchmarks/sgh_q43/upstream/inputs/sgh_q43_upstream_full276_1500x6000_continuous_2400.json"
+      - "artifacts/benchmarks/sgh_q43/upstream_summary.json"
+
+  - name: "Upstream Run A 1200 sec futtatas"
+    description: >
+      Futtasd az upstream sparrow binaryt a 1200s SPP inputtal. Mentsd a
+      stdout+stderr logot es a final_<name>.json + .svg outputot.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43/upstream_run_1200.log"
+      - "artifacts/benchmarks/sgh_q43/upstream/run_1200/output/final_sgh_q43_upstream_full276_1500x6000_continuous_1200.json"
+      - "artifacts/benchmarks/sgh_q43/upstream/run_1200/output/final_sgh_q43_upstream_full276_1500x6000_continuous_1200.svg"
+
+  - name: "Upstream Run B 2400 sec futtatas (konvergencia megfigyeles)"
+    description: >
+      Futtasd az upstream sparrow binaryt a 2400s SPP inputtal, ha Run A
+      interpretalhato valid layout-ot adott. Mentsd a logot es az outputot.
+      A Q43 spec alapjan Run B csak konvergencia megfigyeles, nem kotelezo
+      uj cel elerese.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43/upstream_run_2400.log"
+      - "artifacts/benchmarks/sgh_q43/upstream/run_2400/output/final_sgh_q43_upstream_full276_1500x6000_continuous_2400.json"
+      - "artifacts/benchmarks/sgh_q43/upstream/run_2400/output/final_sgh_q43_upstream_full276_1500x6000_continuous_2400.svg"
+
+  - name: "Comparison es parity matrix artifactok generalasa"
+    description: >
+      Hozd letre a scripts/build_sgh_q43_comparison_artifacts.py scriptet,
+      amely az upstream_summary.json es a Q42 q42_summary.json alapjan
+      generalja a comparison_summary.json (NOT DIRECTLY COMPARABLE verdicttel)
+      es a semantic_parity_matrix.json (9 audit temaval) fajlokat.
+    outputs:
+      - "scripts/build_sgh_q43_comparison_artifacts.py"
+      - "artifacts/benchmarks/sgh_q43/comparison_summary.json"
+      - "artifacts/benchmarks/sgh_q43/semantic_parity_matrix.json"
+
+  - name: "Q43 smoke validator keszitese"
+    description: >
+      Hozd letre a scripts/smoke_sgh_q43_upstream_sparrow_strip_audit.py
+      scriptet, amely ellenorzi az artefaktumok letezese + a diff fajlok
+      0 bajtos meretet + a report kotelezo szekcioit.
+    outputs:
+      - "scripts/smoke_sgh_q43_upstream_sparrow_strip_audit.py"
+
+  - name: "Smoke validator futtatasa"
+    description: >
+      Futtasd a scripts/smoke_sgh_q43_upstream_sparrow_strip_audit.py
+      scriptet, es ellenorizd, hogy PASS.
+    outputs:
+      - "artifacts/benchmarks/sgh_q43/upstream_summary.json"
+
+  - name: "Semantic parity audit report irasa"
+    description: >
+      Hozd letre a
+      codex/reports/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.md
+      fajlt, amely a Q43 spec kotelezo szekcioit tartalmazza: Scope,
+      Strict no-own-code-modification rule, Own solver code immutability proof,
+      Why this task uses 1500x6000 strip, Upstream source, Upstream build,
+      Benchmark input, Upstream Run A, Upstream Run B, Runtime summary,
+      Optimization quality summary, Upstream result summary,
+      Own Q42 result source, Upstream vs own comparison,
+      Direct comparability limitations, Semantic parity audit methodology,
+      Problem model parity, Geometry representation parity,
+      Collision / CDE parity, Search / sampling / optimizer loop parity,
+      LBF / initial placement parity, Rotation policy parity,
+      Strip vs finite-stock multisheet divergence, Margin / spacing / kerf parity,
+      Output / validation parity, Parity matrix, Risky divergences,
+      Intentional divergences, Unknown / not verified items,
+      Recommendations, Final verdict.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.md"
+
+  - name: "Post-immutability snapshot rogzitese"
+    description: >
+      A Q43 runner befejezese utan mentsd a git status --short es
+      git diff -- rust/vrs_solver/src api worker frontend vrs_nesting
+      kimenetet a post_own_source_status.log es post_own_source_diff.log
+      fajlokba. A diff legyen 0 bajtos (a sajat solver source nem valtozott).
+    outputs:
+      - "artifacts/benchmarks/sgh_q43/post_own_source_status.log"
+      - "artifacts/benchmarks/sgh_q43/post_own_source_diff.log"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest: ./scripts/verify.sh --report
+      codex/reports/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.md.
+      A verify logot a report melle kell menteni. Ha a cargo nincs PATH-ban,
+      a verify FAIL lesz (kornyezeti hiba), de ez a Q43 spec alapjan nem
+      jelenti a Q43 audit-ot PASS/FAIL-nak.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.md"
+      - "codex/reports/egyedi_solver/sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit.verify.log"

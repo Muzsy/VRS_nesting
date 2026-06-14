@@ -1,0 +1,34 @@
+SGH-Q43 upstream build reconstruction
+=====================================
+
+Date: 2026-06-14
+Source: .cache/sparrow (commit c95454e390276231b278c879d25b39708398b7d3)
+
+Build command used to produce .cache/sparrow/target/release/sparrow
+-----------------------------------------------------------------
+  cd .cache/sparrow
+  cargo build --release --bin sparrow
+
+The Cargo.toml pin (line 17) of jagua-rs:
+  jagua-rs = { features = ["spp"], git = "https://github.com/JeroenGar/jagua-rs.git",
+                rev = "ba38bcae9ed3ab41a9e93a1894e2b01ea87c6619"}
+
+This produced the 2,414,752-byte release binary at
+  .cache/sparrow/target/release/sparrow
+on 2026-06-13T15:22:17+02:00 (binary mtime).
+
+Note: This Q43 task did not re-run the upstream build. The existing binary
+is the artifact actually executed by the Q43 runner. The build log above
+documents the recipe used to (re)produce the binary if needed.
+
+Verification at audit time (2026-06-14):
+  $ .cache/sparrow/target/release/sparrow --help
+  Usage: sparrow [OPTIONS] --input <INPUT>
+  Options:
+    -i, --input <INPUT>              Path to the input JSON file, or a solution JSON file for warm starting
+    -t, --global-time <GLOBAL_TIME>  Set a global time limit (in seconds)
+    -e, --exploration <EXPLORATION>  Set the exploration phase time limit (in seconds)
+    -c, --compression <COMPRESSION>  Set the compression phase time limit (in seconds)
+    -x, --early-termination          Enable early termination of the optimization process
+    -s, --rng-seed <RNG_SEED>        Fixed seed for the random number generator
+    -h, --help                       Print help

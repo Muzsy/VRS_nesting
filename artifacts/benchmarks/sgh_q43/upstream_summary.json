@@ -1,0 +1,58 @@
+{
+  "task": "sgh_q43_upstream_sparrow_strip1500x6000_runtime_and_parity_audit",
+  "audit_time": "2026-06-14T07:30:00Z",
+  "upstream_commit": "c95454e390276231b278c879d25b39708398b7d3",
+  "upstream_uncommitted_changes": 0,
+  "upstream_binary": "/mnt/workspace/VRS_nesting/.cache/sparrow/target/release/sparrow",
+  "model": {
+    "type": "upstream_SPP_strip",
+    "container_width_mm": 1500.0,
+    "container_height_mm": 6000.0,
+    "objectives": "minimize used strip_width (X axis) for fixed strip_height (Y axis)"
+  },
+  "geometry_source": {
+    "base_input": "/mnt/workspace/VRS_nesting/artifacts/benchmarks/sgh_q42/inputs/q42_full276_3x1500x3000_margin5_spacing8_continuous_1200.json",
+    "base_input_part_types": 12,
+    "base_input_total_instances": 276
+  },
+  "run_a": {
+    "status": "ok",
+    "time_limit_s": 1200,
+    "wall_time_s": 1208.18,
+    "placed_count": 276,
+    "unplaced_count": 0,
+    "strip_width_used": 1496.1523,
+    "density": 0.7429589,
+    "solver_run_time_sec": 1196.0,
+    "runtime_total_sec": null,
+    "strip_height_input": 6000.0,
+    "used_length_y": 5666.82,
+    "bbox_y_min": 0.0,
+    "bbox_y_max": 5666.82,
+    "rotation_count_total": 276,
+    "unique_rotation_count": 16,
+    "non_orthogonal_count": 140,
+    "non_orthogonal_sample_deg": [-157.5, -135.0, -112.5, -67.5, -45.0, -22.5, 22.5, 45.0],
+    "min_rotation_deg": -180.0,
+    "max_rotation_deg": 157.5,
+    "collision_or_overlap_pairs": 0,
+    "boundary_violations": 0
+  },
+  "run_b": {
+    "status": "pending"
+  },
+  "run_b_decision": {
+    "executed": true,
+    "reason": "Run A produced a valid full 276/276 layout with strip_width=1496.15; Run B executed for convergence observation at 2400s."
+  },
+  "own_q42_reference": {
+    "available": true,
+    "q42_summary_path": "/mnt/workspace/VRS_nesting/artifacts/benchmarks/sgh_q42/q42_summary.json"
+  },
+  "notes": [
+    "Upstream Sparrow's SPP model does not natively take margin/spacing/kerf. The Q43 baseline is raw upstream packing. This is documented in the report.",
+    "The 1500x6000 strip is the area-equivalent of two 1500x3000 sheets placed end-to-end along the Y axis.",
+    "Continuous rotation in upstream is approximated by passing a 16-bin stride of allowed_orientations per item; this matches the own solver's rust/vrs_solver/src/rotation_policy.rs continuous handling.",
+    "Run A finished in 1208.18s wall time (1200s solver budget + IO), achieving a 276/276 full placement with strip_width=1496.15mm (residual 3.85mm to the 1500mm bound) and density 0.743."
+  ]
+}

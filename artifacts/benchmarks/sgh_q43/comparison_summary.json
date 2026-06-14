@@ -1,0 +1,61 @@
+{
+  "task": "sgh_q43_comparison",
+  "direct_comparability": "NOT_DIRECTLY_COMPARABLE",
+  "reason": "Upstream Sparrow's SPP model minimizes used width for a fixed strip_height (1500x6000 strip baseline), while our Q42 result is a 3x1500x3000 finite-stock multisheet production run. The geometric area is comparable (2 sheets' worth), but the objective (minimize width vs minimize used sheet count) and the inventory model (single strip vs fixed stock pool) differ fundamentally. Numeric metrics like placed_count, wall_time and density are informative; they are NOT a like-for-like benchmark.",
+  "rows": [
+    {
+      "model_type": "upstream_SPP_1500x6000_1200s",
+      "container_or_sheet": "1500x6000 strip",
+      "time_limit_s": 1200,
+      "wall_time_s": 1208.18,
+      "status": "ok",
+      "placed_count": 276,
+      "unplaced_count": 0,
+      "validity": "valid if placed_count matches total demand",
+      "objective_or_utilization": {
+        "strip_width_used": 1496.1523,
+        "density": 0.7429589,
+        "used_length_y": 5666.82
+      },
+      "rotation_evidence": {
+        "unique_rotation_count": 16,
+        "non_orthogonal_count": 140,
+        "min_rotation_deg": -180.0,
+        "max_rotation_deg": 157.5
+      },
+      "margin_spacing_handling": "not native in upstream SPP; approximated via item polygon size (none for Q43)"
+    },
+    {
+      "model_type": "upstream_SPP_1500x6000_2400s",
+      "container_or_sheet": "1500x6000 strip",
+      "time_limit_s": null,
+      "wall_time_s": null,
+      "status": null,
+      "placed_count": null,
+      "unplaced_count": null,
+      "validity": null,
+      "objective_or_utilization": null,
+      "rotation_evidence": null,
+      "margin_spacing_handling": null
+    },
+    {
+      "model_type": "own_Q42_3x1500x3000_1200s",
+      "container_or_sheet": "3x 1500x3000 sheets",
+      "time_limit_s": 1200,
+      "wall_time_s": 716.692,
+      "status": "ok",
+      "placed_count": 276,
+      "unplaced_count": 0,
+      "validity": "valid (3 sheets used; acceptance target was <=2 sheets and was NOT met)",
+      "objective_or_utilization": {
+        "physical_utilization_pct": 49.4037,
+        "usable_utilization_pct": 49.9016
+      },
+      "rotation_evidence": {
+        "unique_rotation_values_count": 236,
+        "non_orthogonal_placement_count": null
+      },
+      "margin_spacing_handling": "Q40/Q41 unified model: margin_mm=5, spacing_mm=8, kerf_mm=0 (Q42 default); violations=0"
+    }
+  ]
+}
