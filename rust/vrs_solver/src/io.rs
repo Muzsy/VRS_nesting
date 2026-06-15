@@ -265,6 +265,11 @@ pub struct BppReductionDiagnostics {
     pub bpp_gravity_compaction_applied: bool,
     pub bpp_gravity_compaction_sweeps: usize,
     pub bpp_gravity_moved_total_mm: f64,
+    // ── SGH-Q46 M3: fixed-sheet region-compression (Sparrow Alg.13 adaptation) ─
+    pub bpp_region_compression_applied: bool,
+    pub bpp_region_compression_attempts: usize,
+    pub bpp_region_compression_accepts: usize,
+    pub bpp_region_compression_freed_area_mm2: f64,
 }
 
 #[derive(Debug, Serialize)]

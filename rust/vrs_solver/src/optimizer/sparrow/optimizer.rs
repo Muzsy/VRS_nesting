@@ -17,7 +17,15 @@ impl SparrowOptimizer {
         // search budget so the solver completes 4-5× more iterations within the
         // same time budget. GLS semantics (shuffle ordering, weighted-loss
         // selection, strike/exploration cycling) are preserved.
-        if problem.instances.len() >= 100 {
+        //
+        // SGH-Q46 M3 investigation: the dense downgrade (8 vs upstream's 50 container +
+        // 25 focused samples) is the prime suspect for our loose packing on full276. The
+        // upstream/coroush separators afford the full budget because they run workers in
+        // PARALLEL (rayon); we are sequential. `VRS_SPARROW_FULL_SAMPLES=1` keeps the full
+        // (parity) budget even at ≥100 instances so we can measure the density effect before
+        // investing in parallelization.
+        let force_full_samples = std::env::var("VRS_SPARROW_FULL_SAMPLES").ok().as_deref() == Some("1");
+        if problem.instances.len() >= 100 && !force_full_samples {
             active_config.profile = SparrowProfile::SparrowDenseLargeScale;
             active_config.worker_count = SPARROW_DENSE_WORKER_COUNT;
             active_config.focused_samples = SPARROW_DENSE_FOCUSED_SAMPLES;

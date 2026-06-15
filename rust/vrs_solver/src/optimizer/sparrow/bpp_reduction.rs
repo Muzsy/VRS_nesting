@@ -168,7 +168,177 @@ fn separate_affected_sheets(
             })
             .collect(),
     };
+    // SGH-Q46 M3: when the direct fit fails, try the strip-compress fit (place loose on a
+    // virtual-wide boundary, then compress to the real width — the only way to fit parts that
+    // need interlocking). Opt-in (default off) while it matures.
+    if !full && std::env::var("VRS_BPP_COMPRESS").ok().as_deref() == Some("1") {
+        let (sc_full, sc_layout) = strip_compress_fit(
+            optimizer, trial, receiving, instances, solver_sheets, started, deadline_s, rng, diag,
+        );
+        if sc_full {
+            return (true, sc_layout);
+        }
+    }
     (full, remapped)
+}
+
+/// Rotation (deg) minimizing the part's bounding-box width — the narrow orientation along the
+/// compression axis. Scans continuous angles or the allowed discrete set.
+fn min_width_rotation(inst: &SPInstance) -> f64 {
+    let candidates: Vec<f64> = if inst.continuous_rotation {
+        (0..36).map(|i| i as f64 * 5.0).collect()
+    } else if !inst.allowed_rotations_deg.is_empty() {
+        inst.allowed_rotations_deg.clone()
+    } else {
+        vec![0.0]
+    };
+    candidates
+        .into_iter()
+        .min_by(|&a, &b| {
+            let (wa, _) = dims_for_rotation(inst.part.width, inst.part.height, a);
+            let (wb, _) = dims_for_rotation(inst.part.width, inst.part.height, b);
+            wa.partial_cmp(&wb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(0.0)
+}
+
+/// SGH-Q46 M3: strip-compression fit. Place the items on a virtual-WIDE boundary (so they fit
+/// feasibly, spread out), then incrementally compress each sheet's width back to the real
+/// dimension, re-separating each step — forcing the separator to interlock the parts to fit.
+/// Returns `(reached_real_feasibly, global_layout)`.
+fn strip_compress_fit(
+    optimizer: &SparrowOptimizer,
+    trial: &SparrowLayout,
+    receiving: &[usize],
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+) -> (bool, SparrowLayout) {
+    let k = receiving.len();
+    if k == 0 {
+        return (false, trial.clone());
+    }
+    const WIDEN: f64 = 1.7;
+    const MIN_SHRINK: f64 = 0.02;
+    let n_items = trial.placements.len();
+    let g2l: HashMap<usize, usize> = receiving.iter().enumerate().map(|(l, &g)| (g, l)).collect();
+    let remap_to_global = |layout: &SparrowLayout| -> SparrowLayout {
+        SparrowLayout {
+            placements: layout
+                .placements
+                .iter()
+                .map(|p| SparrowPlacement {
+                    sheet_index: receiving.get(p.sheet_index).cloned().unwrap_or(receiving[0]),
+                    ..p.clone()
+                })
+                .collect(),
+        }
+    };
+
+    // virtual-wide local sheets
+    let mut local_sheets: Vec<SheetShape> = receiving
+        .iter()
+        .map(|&g| {
+            let s = &solver_sheets[g];
+            shrunk_sheet(s, s.min_x + s.width * WIDEN, s.max_y)
+        })
+        .collect();
+    // Seed each part in its MINIMUM-WIDTH orientation so the wide separation can fit them
+    // side by side along the (to-be-compressed) width — the separator's small rotation-wiggle
+    // cannot flip a part 90°, so the starting orientation is decisive.
+    let local_layout = SparrowLayout {
+        placements: trial
+            .placements
+            .iter()
+            .map(|p| {
+                let inst = &instances[p.instance_idx];
+                SparrowPlacement {
+                    sheet_index: *g2l.get(&p.sheet_index).unwrap_or(&0),
+                    rotation_deg: min_width_rotation(inst),
+                    ..p.clone()
+                }
+            })
+            .collect(),
+    };
+
+    // 1. separate loose on the wide sheets (must place all items feasibly)
+    let now = started.elapsed().as_secs_f64();
+    let sep_deadline = (now + (deadline_s - now).max(1.0) * 0.35).min(deadline_s);
+    let mut cur = {
+        let mut state = SparrowState::new_with_diag(local_layout, instances, &local_sheets, diag);
+        let _ = optimizer.exploration_phase(
+            &mut state, instances, &local_sheets, started, sep_deadline, rng, diag,
+        );
+        state.best_feasible.clone().unwrap_or_else(|| state.layout.clone())
+    };
+    let wide_ok = SparrowCollisionTracker::final_validation_tracker(&cur, instances, &local_sheets)
+        .is_feasible()
+        && cur.placements.len() == n_items;
+    let dbg = std::env::var("VRS_BPP_COMPRESS_DEBUG").ok().as_deref() == Some("1");
+    if dbg {
+        let mut per: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+        for p in &cur.placements {
+            *per.entry(p.sheet_index).or_insert(0) += 1;
+        }
+        let pairs = SparrowCollisionTracker::final_validation_tracker(&cur, instances, &local_sheets).colliding_pairs();
+        eprintln!(
+            "[STRIP] receiving={:?} n_items={} wide_factor={} wide_ok={} placed={} per_local_sheet={:?} residual_pairs={}",
+            receiving, n_items, WIDEN, wide_ok, cur.placements.len(), per, pairs
+        );
+    }
+    if !wide_ok {
+        return (false, remap_to_global(&cur));
+    }
+
+    // 2. compress each sheet's width toward the real dimension
+    for l in 0..k {
+        let g = receiving[l];
+        let smin_x = solver_sheets[g].min_x;
+        let target_max = smin_x + solver_sheets[g].width;
+        let mut cur_max = local_sheets[l].max_x;
+        let mut shrink = 0.10;
+        while shrink >= MIN_SHRINK
+            && cur_max > target_max + 1.0
+            && started.elapsed().as_secs_f64() < deadline_s
+        {
+            let new_max = (cur_max - (cur_max - smin_x) * shrink).max(target_max);
+            let trial_sheet = shrunk_sheet(&solver_sheets[g], new_max, local_sheets[l].max_y);
+            let now = started.elapsed().as_secs_f64();
+            let step_deadline = (now + (deadline_s - now).max(0.5) * 0.25).min(deadline_s);
+            let (feas, remapped) = separate_sheet_local(
+                optimizer, &cur, l, &trial_sheet, instances, started, step_deadline, rng, diag,
+            );
+            if feas {
+                replace_sheet_placements(&mut cur, l, remapped);
+                local_sheets[l] = trial_sheet;
+                cur_max = new_max;
+            } else {
+                shrink *= 0.6;
+            }
+        }
+        if dbg {
+            eprintln!(
+                "[STRIP]   sheet l={} target_w={:.0} reached_w={:.0} (gap {:.0})",
+                l,
+                target_max - smin_x,
+                cur_max - smin_x,
+                cur_max - target_max
+            );
+        }
+    }
+
+    // 3. validate against the REAL sheets
+    let real_local: Vec<SheetShape> = receiving.iter().map(|&g| solver_sheets[g].clone()).collect();
+    let feasible = SparrowCollisionTracker::final_validation_tracker(&cur, instances, &real_local)
+        .is_feasible()
+        && cur.placements.len() == n_items;
+    if dbg {
+        eprintln!("[STRIP] final feasible_at_real={}", feasible);
+    }
+    (feasible, remap_to_global(&cur))
 }
 
 // ── ADAPTED bp_lbf: clear placement search on a single global sheet ────────────
@@ -546,6 +716,174 @@ fn project(layout: &SparrowLayout, instances: &[SPInstance]) -> Vec<Placement> {
         .collect()
 }
 
+// ── SGH-Q46 M3: fixed-sheet region compression (upstream Sparrow Algorithm 13) ─
+
+/// A rectangular sheet with a reduced usable extent. `prepare_shape_from_sheet` rebuilds
+/// the boundary from min/max for rectangular sheets, so reducing `max_x`/`max_y` is enough.
+fn shrunk_sheet(sheet: &SheetShape, new_max_x: f64, new_max_y: f64) -> SheetShape {
+    let mut s = sheet.clone();
+    s.max_x = new_max_x;
+    s.max_y = new_max_y;
+    s.width = (new_max_x - s.min_x).max(0.0);
+    s.height = (new_max_y - s.min_y).max(0.0);
+    s.area = s.width * s.height;
+    s
+}
+
+/// Re-separate only the items on `sheet_idx` inside `local_sheet` (a possibly-shrunk
+/// boundary). Returns `(feasible, remapped placements)`. Feasibility is "this sheet's items
+/// are collision-free and inside the boundary" — independent of the global instance count.
+fn separate_sheet_local(
+    optimizer: &SparrowOptimizer,
+    working: &SparrowLayout,
+    sheet_idx: usize,
+    local_sheet: &SheetShape,
+    instances: &[SPInstance],
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+) -> (bool, Vec<SparrowPlacement>) {
+    let placements: Vec<SparrowPlacement> = working
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == sheet_idx)
+        .map(|p| SparrowPlacement { sheet_index: 0, ..p.clone() })
+        .collect();
+    if placements.is_empty() {
+        return (true, vec![]);
+    }
+    let local_sheets = [local_sheet.clone()];
+    let local_layout = SparrowLayout { placements };
+    let mut state = SparrowState::new_with_diag(local_layout, instances, &local_sheets, diag);
+    let _ = optimizer.exploration_phase(
+        &mut state, instances, &local_sheets, started, deadline_s, rng, diag,
+    );
+    let layout = state
+        .best_feasible
+        .clone()
+        .unwrap_or_else(|| state.layout.clone());
+    let tracker = SparrowCollisionTracker::final_validation_tracker(&layout, instances, &local_sheets);
+    let feasible = tracker.is_feasible();
+    let remapped = layout
+        .placements
+        .iter()
+        .map(|p| SparrowPlacement { sheet_index: sheet_idx, ..p.clone() })
+        .collect();
+    (feasible, remapped)
+}
+
+/// Used extent (max coordinate of any part) on one axis for a sheet's items.
+fn sheet_used_max(layout: &SparrowLayout, instances: &[SPInstance], sheet_idx: usize, axis_x: bool) -> f64 {
+    layout
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == sheet_idx)
+        .map(|p| {
+            let inst = &instances[p.instance_idx];
+            let (rmx, rmy) =
+                rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, p.rotation_deg);
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, p.rotation_deg);
+            if axis_x { rmx + rw } else { rmy + rh }
+        })
+        .fold(f64::MIN, f64::max)
+}
+
+/// Replace the placements on `sheet_idx` with `new`.
+fn replace_sheet_placements(working: &mut SparrowLayout, sheet_idx: usize, new: Vec<SparrowPlacement>) {
+    let mut others: Vec<SparrowPlacement> = working
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index != sheet_idx)
+        .cloned()
+        .collect();
+    others.extend(new);
+    others.sort_by_key(|p| p.instance_idx);
+    working.placements = others;
+}
+
+/// ADAPTED upstream `compression_phase` (Algorithm 13) for fixed sheets. Per sheet, per axis,
+/// incrementally shrink the usable extent toward the corner and re-separate; accept a shrink
+/// only when the items still fit feasibly inside the smaller region (so the separator tucks
+/// them tighter — this is the genuine Sparrow density driver, reusing the CDE separator, no
+/// NFP). Disable with `VRS_BPP_COMPRESS=0`.
+fn compress_layout(
+    optimizer: &SparrowOptimizer,
+    working: &mut SparrowLayout,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+    bpp: &mut BppReductionDiagnostics,
+) {
+    // SGH-Q46 M3 is opt-in while it matures (default off keeps production fast/correct).
+    if std::env::var("VRS_BPP_COMPRESS").ok().as_deref() != Some("1") {
+        return;
+    }
+    if working.placements.is_empty() {
+        return;
+    }
+    const MIN_SHRINK: f64 = 0.01;
+    const SHRINK_DECAY: f64 = 0.6;
+    let used = used_sheet_set(working);
+    let mut freed = 0.0;
+    for &s in &used {
+        let sheet = solver_sheets[s].clone();
+        // shrink width then height (axis_x = true then false)
+        for &axis_x in &[true, false] {
+            let (sheet_min, _full_max) = if axis_x {
+                (sheet.min_x, sheet.max_x)
+            } else {
+                (sheet.min_y, sheet.max_y)
+            };
+            let mut accepted_max = sheet_used_max(working, instances, s, axis_x).min(if axis_x { sheet.max_x } else { sheet.max_y });
+            let before_extent = accepted_max - sheet_min;
+            // Fine-grained compression (upstream uses ~0.05% steps): take small steps and keep
+            // going while they remain feasible; shrink the step on failure. A small step injects
+            // a small overlap the separator can resolve by nudging parts into concavities, which
+            // accumulates into deep nesting. Coarse steps inject un-nestable overlaps and fail.
+            let mut step = 0.015;
+            let mut stagnant = 0usize;
+            while step >= MIN_SHRINK && stagnant < 5 && started.elapsed().as_secs_f64() < deadline_s {
+                let extent = (accepted_max - sheet_min).max(0.0);
+                let new_max = sheet_min + extent * (1.0 - step);
+                let trial = if axis_x {
+                    shrunk_sheet(&sheet, new_max, sheet.max_y)
+                } else {
+                    shrunk_sheet(&sheet, sheet.max_x, new_max)
+                };
+                bpp.bpp_region_compression_attempts += 1;
+                let now = started.elapsed().as_secs_f64();
+                // Tight per-step deadline: a small overlap separates quickly.
+                let step_deadline = (now + 2.5).min(deadline_s);
+                let (feasible, remapped) = separate_sheet_local(
+                    optimizer, working, s, &trial, instances, started, step_deadline, rng, diag,
+                );
+                if feasible && !remapped.is_empty() {
+                    replace_sheet_placements(working, s, remapped);
+                    bpp.bpp_region_compression_accepts += 1;
+                    let new_extent = (sheet_used_max(working, instances, s, axis_x).min(new_max) - sheet_min).max(0.0);
+                    if (extent - new_extent) < 1.0 {
+                        stagnant += 1;
+                    } else {
+                        stagnant = 0;
+                    }
+                    accepted_max = sheet_min + new_extent;
+                } else {
+                    step *= SHRINK_DECAY;
+                }
+            }
+            let after_extent = (accepted_max - sheet_min).max(0.0);
+            let span = if axis_x { sheet.height } else { sheet.width };
+            freed += (before_extent - after_extent).max(0.0) * span;
+        }
+    }
+    bpp.bpp_region_compression_applied = true;
+    bpp.bpp_region_compression_freed_area_mm2 = freed;
+}
+
 // ── SGH-Q46 M2: gravity / bottom-left compaction post-pass ─────────────────────
 
 /// Slide `cur` toward `min_bound` (with the orthogonal coordinate fixed) until the part
@@ -904,6 +1242,14 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             }
         }
     }
+
+    // SGH-Q46 M3: fixed-sheet region compression (Sparrow Alg.13 adaptation) — the density
+    // driver. Incrementally shrink each sheet's usable region and re-separate, tucking parts
+    // tighter (interlocking concave parts). Runs before gravity; uses the remaining budget.
+    let compress_deadline = (total_budget - guard).max(started.elapsed().as_secs_f64() + 1.0);
+    compress_layout(
+        &optimizer, &mut working, &instances, &solver_sheets, &started, compress_deadline, &mut rng, &mut diag, &mut bpp,
+    );
 
     // SGH-Q46 M2: gravity / bottom-left compaction post-pass (density + edge alignment).
     gravity_compact_layout(&mut working, &instances, &solver_sheets, &mut bpp);
