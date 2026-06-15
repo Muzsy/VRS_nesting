@@ -25,6 +25,10 @@ pub struct SPInstance {
     /// outward by `spacing_mm / 2`). Used ONLY for part-part collision/search.
     /// When `spacing_mm == 0` this is the SAME `Rc` as `base_shape`.
     pub spacing_collision_base_shape: Rc<CdeBaseShape>,
+    /// SGH-Q47: per-part-type shape profile (decision-support metadata only — ordering,
+    /// BPP redistribution, placement budget, diagnostics). Never a collision or rotation input.
+    /// Shared across all instances of the same part via `Rc`.
+    pub shape_profile: Rc<PartShapeProfile>,
 }
 
 /// Native fixed-sheet container set.
@@ -99,6 +103,10 @@ impl SparrowProblem {
         // exactly once per unique part.id; all instances sharing a part reuse the Rc.
         let cache_build_start = Instant::now();
         let mut base_shape_cache: HashMap<String, Rc<CdeBaseShape>> = HashMap::new();
+        // SGH-Q47: per-unique-part shape-profile cache (computed once per part_id).
+        let mut shape_profile_cache: HashMap<String, Rc<PartShapeProfile>> = HashMap::new();
+        let (profile_sheet_area, profile_max_span) =
+            crate::optimizer::sparrow::shape_profile::profile_sheet_scale(sheets);
         let mut cache_hits: usize = 0;
         let mut cache_misses: usize = 0;
         // Track which part IDs failed to build (geometry unsupported).
@@ -240,6 +248,19 @@ impl SparrowProblem {
                     Some(RotationPolicyKind::Continuous)
                 ),
             };
+            // SGH-Q47: resolve the per-part shape profile (computed once per part_id).
+            let shape_profile = match shape_profile_cache.entry(inst.part_id.clone()) {
+                std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let prof = PartShapeProfile::compute(
+                        part,
+                        &base_shape,
+                        profile_sheet_area,
+                        profile_max_span,
+                    );
+                    e.insert(Rc::new(prof)).clone()
+                }
+            };
             let idx = instances.len();
             instances.push(SPInstance {
                 idx,
@@ -250,6 +271,7 @@ impl SparrowProblem {
                 continuous_rotation,
                 base_shape,
                 spacing_collision_base_shape,
+                shape_profile,
             });
         }
         let base_shape_cache_build_ms = cache_build_start.elapsed().as_secs_f64() * 1000.0;

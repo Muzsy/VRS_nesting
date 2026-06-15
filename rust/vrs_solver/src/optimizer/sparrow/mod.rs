@@ -38,6 +38,7 @@ pub mod profile;
 pub mod quantify;
 pub mod sample;
 pub mod separator;
+pub mod shape_profile;
 mod tests;
 pub mod worker;
 
@@ -47,6 +48,7 @@ pub use model::{
     SparrowRotationDomain, SparrowSolution, SparrowSolveResult,
 };
 pub use optimizer::SparrowOptimizer;
+pub(crate) use shape_profile::PartShapeProfile;
 
 pub(crate) use diagnostics::*;
 pub(crate) use profile::{ProfileTimer, SearchProfiler};

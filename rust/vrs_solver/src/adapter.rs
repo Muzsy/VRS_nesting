@@ -574,6 +574,7 @@ fn native_sparrow_diag_to_output(
         sparrow_ms_attempt_diagnostics_count: None,
         sparrow_ms_attempt_diagnostics_schema_version: None,
         bpp_reduction: None,
+        shape_profiles: None,
         technology_policy_active: None,
         technology_margin_mm: None,
         technology_spacing_mm: None,
@@ -1364,6 +1365,8 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         sparrow_ms_attempt_diagnostics: Some(result.attempt_diagnostics.clone()),
         // SGH-Q45: present when the BPP sheet-reduction path produced the result.
         bpp_reduction: result.bpp_diagnostics.clone(),
+        // SGH-Q47: per-part-type shape-profile decision diagnostics (BPP path).
+        shape_profiles: result.shape_profile_diagnostics.clone(),
         // SGH-Q33: technology clearance policy diagnostics (diagnostic-only, no geometry offset)
         technology_policy_active: Some(true),
         technology_margin_mm: Some(technology_policy.margin_mm),
@@ -1880,6 +1883,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
                             sparrow_ms_attempt_diagnostics_count: None,
                             sparrow_ms_attempt_diagnostics_schema_version: None,
                             bpp_reduction: None,
+                            shape_profiles: None,
                             technology_policy_active: None,
                             technology_margin_mm: None,
                             technology_spacing_mm: None,

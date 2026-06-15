@@ -272,6 +272,29 @@ pub struct BppReductionDiagnostics {
     pub bpp_region_compression_freed_area_mm2: f64,
 }
 
+/// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,
+/// emitted in `priority_rank` order. Proves the profile actually drives ordering/budget and shows
+/// placement success per type. Decision-support evidence only — no collision/rotation semantics.
+#[derive(Debug, Serialize, Clone)]
+pub struct ShapeProfileDiagnostics {
+    pub part_id: String,
+    /// Non-exclusive class labels (e.g. ["large_anchor","concave_like","high_interlock_potential"]).
+    pub classes: Vec<String>,
+    pub priority_score: f64,
+    /// 0-based rank among part types by `priority_score` (desc); 0 = placed earliest.
+    pub priority_rank: usize,
+    pub search_budget_multiplier: f64,
+    pub declared_quantity: usize,
+    /// Expanded instances of this type that entered the solver.
+    pub instance_count: usize,
+    /// Instances of this type present in the final emitted layout.
+    pub placed_count: usize,
+    pub fill_ratio: f64,
+    pub convexity_ratio: f64,
+    pub aspect_ratio: f64,
+    pub sheet_area_ratio: f64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct OptimizerDiagnosticsOutput {
     pub pipeline_used: String,
@@ -692,6 +715,10 @@ pub struct OptimizerDiagnosticsOutput {
     /// Present when the coroush-style BPP sheet-reduction path produced the layout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bpp_reduction: Option<BppReductionDiagnostics>,
+    // ── SGH-Q47 shape-profile priority-layer decision diagnostics ────────────
+    /// One record per unique part type (priority_rank order). Present when the BPP path ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape_profiles: Option<Vec<ShapeProfileDiagnostics>>,
     // ── SGH-Q33 technology clearance policy diagnostics ──────────────────────
     /// True when TechnologyClearancePolicy was active for this run.
     #[serde(skip_serializing_if = "Option::is_none")]

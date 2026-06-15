@@ -54,6 +54,18 @@ fn instance_area(instances: &[SPInstance], instance_idx: usize) -> f64 {
     part_polygon_area(&instances[instance_idx].part)
 }
 
+/// SGH-Q47 ordering key for redistribution/compaction: heavier shape-`priority_score` first, then
+/// larger polygon area. Tuples compare lexicographically. With the profile layer disabled the
+/// priority term is 0.0 for every instance ⇒ pure largest-area ordering (the pre-Q47 behaviour).
+fn profile_order_key(instances: &[SPInstance], instance_idx: usize) -> (f64, f64) {
+    let prio = if super::shape_profile::shape_profile_enabled() {
+        instances[instance_idx].shape_profile.priority_score
+    } else {
+        0.0
+    };
+    (prio, instance_area(instances, instance_idx))
+}
+
 /// Sum of placed part areas on a given sheet (for utilization ranking).
 fn sheet_placed_area(layout: &SparrowLayout, instances: &[SPInstance], sheet: usize) -> f64 {
     layout
@@ -375,6 +387,14 @@ fn search_placement_on_sheet(
     local.push(SparrowPlacement { instance_idx: target_instance, sheet_index: 0, x: ax, y: ay, rotation_deg: rot });
     let layout_local = SparrowLayout { placements: local };
     let tracker = SparrowCollisionTracker::build(&layout_local, instances, &local_sheets);
+    // SGH-Q47 T4: scale the per-placement micro-budget by the target's shape budget multiplier
+    // (large concave anchors get more search time, tiny fillers less). Base 2.0 s; multiplier is
+    // clamped [0.4, 3.0] ⇒ deadline ∈ [0.8 s, 6.0 s]. `VRS_SHAPE_PROFILE=0` ⇒ flat 2.0 s.
+    let budget_mult = if super::shape_profile::shape_profile_enabled() {
+        inst.shape_profile.search_budget_multiplier
+    } else {
+        1.0
+    };
     let found = native_search_placement(
         target_idx,
         &layout_local,
@@ -384,7 +404,7 @@ fn search_placement_on_sheet(
         &optimizer.config,
         rng,
         started,
-        started.elapsed().as_secs_f64() + 2.0,
+        started.elapsed().as_secs_f64() + 2.0 * budget_mult,
         diag,
         None,
     );
@@ -593,7 +613,8 @@ fn resolve_by_transfers(
 
 // ── ADAPTED compact_bin ────────────────────────────────────────────────────────
 
-/// ADAPTED `compact_bin`: largest-first LBF reinsertion on one sheet; restore-on-fail.
+/// ADAPTED `compact_bin`: shape-priority-then-area LBF reinsertion on one sheet (Q47);
+/// restore-on-fail.
 /// Never reduces placement count and never makes the sheet infeasible.
 fn compact_sheet(
     optimizer: &SparrowOptimizer,
@@ -611,8 +632,8 @@ fn compact_sheet(
         .filter(|&i| layout.placements[i].sheet_index == sheet)
         .collect();
     idxs.sort_by(|&a, &b| {
-        instance_area(instances, layout.placements[b].instance_idx)
-            .partial_cmp(&instance_area(instances, layout.placements[a].instance_idx))
+        profile_order_key(instances, layout.placements[b].instance_idx)
+            .partial_cmp(&profile_order_key(instances, layout.placements[a].instance_idx))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     let mut any = false;
@@ -665,8 +686,8 @@ fn perturb_swap_between_sheets(
             .enumerate()
             .filter(|(_, p)| p.sheet_index == sheet)
             .max_by(|(_, a), (_, b)| {
-                instance_area(instances, a.instance_idx)
-                    .partial_cmp(&instance_area(instances, b.instance_idx))
+                profile_order_key(instances, a.instance_idx)
+                    .partial_cmp(&profile_order_key(instances, b.instance_idx))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(i, _)| i)
@@ -1181,13 +1202,13 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             let receiving: Vec<usize> = used.iter().cloned().filter(|&s| s != candidate).collect();
             bpp.bpp_receiving_sheet_count_total += receiving.len();
 
-            // displaced layout indices on the candidate, largest-first
+            // displaced layout indices on the candidate, by shape-priority then area (Q47)
             let mut displaced: Vec<usize> = (0..working.placements.len())
                 .filter(|&i| working.placements[i].sheet_index == candidate)
                 .collect();
             displaced.sort_by(|&a, &b| {
-                instance_area(&instances, working.placements[b].instance_idx)
-                    .partial_cmp(&instance_area(&instances, working.placements[a].instance_idx))
+                profile_order_key(&instances, working.placements[b].instance_idx)
+                    .partial_cmp(&profile_order_key(&instances, working.placements[a].instance_idx))
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             bpp.bpp_displaced_items_total += displaced.len();
@@ -1286,6 +1307,9 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
 
     let (used_indices, used_area, placed_area, util_pct) =
         compute_utilization(&placements, parts, &all_sheets_with_orig);
+    // SGH-Q47: per-part-type decision diagnostics (built before `placements` is moved).
+    let shape_profile_diags =
+        super::shape_profile::build_shape_profile_diagnostics(&instances, &placements);
     let placed_instances = placements.len();
     let unplaced_instances = unplaced.len();
     let feasible = final_full && unplaced.is_empty();
@@ -1320,6 +1344,7 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
         boundary_violations,
         attempt_diagnostics: vec![],
         bpp_diagnostics: Some(bpp),
+        shape_profile_diagnostics: Some(shape_profile_diags),
     }
 }
 
@@ -1373,5 +1398,6 @@ fn error_result(
             bpp_minimality_status: "PARTIAL".to_string(),
             ..Default::default()
         }),
+        shape_profile_diagnostics: None,
     }
 }

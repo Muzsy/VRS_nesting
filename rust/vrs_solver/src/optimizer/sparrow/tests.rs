@@ -72,6 +72,12 @@ mod tests {
             let base_shape = std::rc::Rc::new(
                 prepare_base_shape_native(&part).expect("test part must be preparable"),
             );
+            let shape_profile = std::rc::Rc::new(PartShapeProfile::compute(
+                &part,
+                &base_shape,
+                4_500_000.0,
+                3000.0,
+            ));
             SPInstance {
                 idx,
                 instance_id: format!("{}#{idx}", part.id),
@@ -81,6 +87,7 @@ mod tests {
                 continuous_rotation: false,
                 spacing_collision_base_shape: base_shape.clone(),
                 base_shape,
+                shape_profile,
             }
         }
 
@@ -1130,6 +1137,12 @@ mod tests {
                 prepare_base_shape_native(&make_part("_dummy", 10.0, 10.0, 1))
                     .expect("dummy part"),
             );
+            let shape_profile = std::rc::Rc::new(PartShapeProfile::compute(
+                &invalid,
+                &dummy_base,
+                4_500_000.0,
+                3000.0,
+            ));
             let inst = SPInstance {
                 idx: 0,
                 instance_id: "INVALID#0".to_string(),
@@ -1139,6 +1152,7 @@ mod tests {
                 continuous_rotation: false,
                 spacing_collision_base_shape: dummy_base.clone(),
                 base_shape: dummy_base,
+                shape_profile,
             };
             let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));
             assert!(prepare_shape_native(&inst.part, 0.0, 0.0, 0.0).is_err());

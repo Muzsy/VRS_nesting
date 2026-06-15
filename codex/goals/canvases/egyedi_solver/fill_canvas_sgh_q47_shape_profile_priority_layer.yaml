@@ -1,0 +1,73 @@
+steps:
+  - name: "T1 — PartShapeProfile modul es per-tipus szamitas"
+    description: >
+      Hozd letre a rust/vrs_solver/src/optimizer/sparrow/shape_profile.rs modult a
+      PartShapeProfile structtal es a compute fuggvennyel (true_area, bbox_area,
+      convex_hull_area, diameter, max/min_dim, aspect_ratio, fill_ratio,
+      convexity_ratio, slenderness, quantity, sheet_area_ratio, bbox_sheet_span_ratio,
+      bool osztalyok, priority_score, search_budget_multiplier, filler_defer_score).
+      A szamitas meglevo helperekbol: part_polygon_area, convex_hull_area_and_diameter
+      (transform_base_to_candidate uton), Part.width/height/quantity. Kosd be a
+      model.rs from_solver_input ciklusaba per-unique-part cache-kent es add hozza az
+      SPInstance.shape_profile: Rc<PartShapeProfile> mezot. VRS_SHAPE_PROFILE default on.
+      Continuous rotaciot NEM erint. cargo build + cargo test zold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/shape_profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+
+  - name: "T2 — Dontes-diagnosztika (ShapeProfileDiagnostics)"
+    description: >
+      Add hozza az io.rs-hez a ShapeProfileDiagnostics structot (part_id, classes,
+      priority_score, placement_order_rank, budget_multiplier, candidate_count,
+      accepted_count, rejection_summary) es az OptimizerDiagnosticsOutput.shape_profiles
+      mezot. Kosd be az adapter.rs diagnosztika-utba a bpp_reduction mintajara.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/adapter.rs"
+
+  - name: "T3 — Profile-aware ordering (LBF + BPP)"
+    description: >
+      lbf.rs lbf_order_key: elsodleges kulcs priority_score, tiebreak a meglevo
+      convex_hull_area x diameter majd instance_id. bpp_reduction.rs displaced-sort es
+      compact-sort: priority_score instance_area helyett. VRS_SHAPE_PROFILE=0 a regi
+      viselkedes. A diagnosztika bizonyitja az ordering valtozast.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/lbf.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T4 — Profile-aware placement budget"
+    description: >
+      bpp_reduction.rs search_placement_on_sheet per-placement deadline (elapsed + 2.0)
+      szorzasa shape_profile.search_budget_multiplier-rel, felso korlattal. Nem globalis
+      idolimit-emeles. A separator foro hurkat nem erinti. Csak T2/T3 diagnosztika utan.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T5 — Tesztek"
+    description: >
+      Uj rust/vrs_solver/tests/sparrow_shape_profile.rs: determinisztikus profil,
+      osztalyozas (exact_rectangle/rectangle_like/concave_like/slender/tiny_filler),
+      ordering-valtozas, no collision semantics change, continuous guardrail. A meglevo
+      sparrow_finite_stock_multisheet.rs suite zold marad.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_shape_profile.rs"
+
+  - name: "T6 — A/B regresszios benchmark (full276 LV8)"
+    description: >
+      scripts/bench_sgh_q47_shape_profile_full276.py a Q45 mintajara, full276 LV8,
+      margin5/spacing8/continuous, A/B VRS_SHAPE_PROFILE=0 vs 1 azonos seed/time-limit.
+      Cel: valid output, nincs sheet-count regresszio, a diagnosztikabol latszik a
+      priority-valtozas. Artefaktok az artifacts/benchmarks/sgh_q47/ alatt.
+    outputs:
+      - "scripts/bench_sgh_q47_shape_profile_full276.py"
+      - "artifacts/benchmarks/sgh_q47/q47_summary.json"
+
+  - name: "T7 — Verify + report + checklist"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q47_shape_profile_priority_layer.md
+      futtatasa; report a Q45 mintara (beepitesi pontok, A/B diagnosztika,
+      sheet-count regresszio igazolasa, PASS/FAIL); checklist kitoltese.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q47_shape_profile_priority_layer.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q47_shape_profile_priority_layer.md"

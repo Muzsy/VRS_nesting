@@ -52,17 +52,34 @@ impl<'a> LBFBuilder<'a> {
     /// from the shape surrogate (rotation-invariant), with a stable instance-id
     /// tie-break for determinism.
     fn order(&self) -> Vec<usize> {
-        let mut keyed: Vec<(usize, f64)> = (0..self.problem.instances.len())
-            .map(|i| (i, lbf_order_key(&self.problem.instances[i])))
+        // SGH-Q47: profile-aware ordering. Primary key = shape `priority_score` (large/concave/
+        // slender/low-fill first, tiny fillers last); tie-break = the upstream
+        // `convex_hull_area × diameter` key; final tie-break = `instance_id` (determinism).
+        // With `VRS_SHAPE_PROFILE=0` every priority is 0.0 ⇒ ties fall through to the exact
+        // pre-Q47 ordering.
+        let use_profile = shape_profile::shape_profile_enabled();
+        let mut keyed: Vec<(usize, f64, f64)> = (0..self.problem.instances.len())
+            .map(|i| {
+                let inst = &self.problem.instances[i];
+                let prio = if use_profile {
+                    inst.shape_profile.priority_score
+                } else {
+                    0.0
+                };
+                (i, prio, lbf_order_key(inst))
+            })
             .collect();
         keyed.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal).then_with(|| {
-                self.problem.instances[a.0]
-                    .instance_id
-                    .cmp(&self.problem.instances[b.0].instance_id)
-            })
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(Ordering::Equal))
+                .then_with(|| {
+                    self.problem.instances[a.0]
+                        .instance_id
+                        .cmp(&self.problem.instances[b.0].instance_id)
+                })
         });
-        keyed.into_iter().map(|(i, _)| i).collect()
+        keyed.into_iter().map(|(i, _, _)| i).collect()
     }
 
     pub(crate) fn construct(mut self) -> LBFResult {

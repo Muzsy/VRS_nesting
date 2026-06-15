@@ -85,6 +85,8 @@ pub struct FiniteStockRunResult {
     /// SGH-Q45: present when the coroush-style BPP sheet-reduction path produced
     /// the result; `None` for the legacy subset-attempt manager.
     pub bpp_diagnostics: Option<crate::io::BppReductionDiagnostics>,
+    /// SGH-Q47: per-part-type shape-profile decision diagnostics (BPP path only).
+    pub shape_profile_diagnostics: Option<Vec<crate::io::ShapeProfileDiagnostics>>,
 }
 
 // ── Internal incumbent ───────────────────────────────────────────────────────
@@ -548,6 +550,7 @@ pub fn run_finite_stock_multisheet(
                 boundary_violations: 0,
                 attempt_diagnostics: vec![],
                 bpp_diagnostics: None,
+                shape_profile_diagnostics: None,
             };
         }
     };
@@ -1010,6 +1013,7 @@ pub fn run_finite_stock_multisheet(
                 boundary_violations: 0,
                 attempt_diagnostics: attempt_diags,
                 bpp_diagnostics: None,
+                shape_profile_diagnostics: None,
             }
         }
         Some(inc) => {
@@ -1042,6 +1046,7 @@ pub fn run_finite_stock_multisheet(
                 boundary_violations: inc.boundary_violations,
                 attempt_diagnostics: attempt_diags,
                 bpp_diagnostics: None,
+                shape_profile_diagnostics: None,
             }
         }
     }
