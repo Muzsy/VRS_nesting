@@ -997,6 +997,20 @@ fn density_samples() -> usize {
         .clamp(20, 400)
 }
 
+/// SGH-Q50: true when the density-guided LNS sheet-drop pass is enabled.
+fn lns_enabled() -> bool {
+    std::env::var("VRS_BPP_LNS").ok().as_deref() == Some("1")
+}
+
+/// SGH-Q50: perturbed restarts per sheet-drop attempt (tunable, clamped [1, 16]; default 4).
+fn lns_restarts() -> usize {
+    std::env::var("VRS_BPP_LNS_RESTARTS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(4)
+        .clamp(1, 16)
+}
+
 /// Density placement search for one part on its sheet. Among collision-free candidates (current
 /// position + uniform random + contour-near, across the part's rotation set), returns the lowest
 /// density-score placement that strictly improves on the current one — or `None`. The CDE decides
@@ -1123,6 +1137,116 @@ fn density_place_part(
     }
 }
 
+/// SGH-Q50: density-guided **insertion** of a ruined part onto a chosen `target_sheet`. `li` is the
+/// part's layout index; the part is treated as not-on-`target_sheet` (its `tracker.shapes[li]` is
+/// expected to be `None` while ruined). Returns the lowest density-score collision-free placement on
+/// `target_sheet` (preferring interlock), or `None` if it does not fit there. Unlike
+/// `density_place_part` there is no "improve on current" gate — any clear position is a valid
+/// insertion. CDE decides clearance; continuous rotation preserved.
+#[allow(clippy::too_many_arguments)]
+fn density_insert_part(
+    li: usize,
+    target_sheet: usize,
+    working: &SparrowLayout,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    tracker: &SparrowCollisionTracker,
+    sheet_prepared: &Rc<CdePreparedShape>,
+    weights: &DensityWeights,
+    rng: &mut DeterministicRng,
+    bpp: &mut BppReductionDiagnostics,
+) -> Option<SparrowPlacement> {
+    let inst_idx = working.placements[li].instance_idx;
+    let inst = &instances[inst_idx];
+    let sheet = &solver_sheets[target_sheet];
+    let cand_base = inst.spacing_collision_base_shape.as_ref();
+
+    // Neighbours = parts currently living on `target_sheet` with a live (non-ruined) shape.
+    let neighbours: Vec<&CdePreparedShape> = (0..working.placements.len())
+        .filter(|&j| j != li && working.placements[j].sheet_index == target_sheet)
+        .filter_map(|j| tracker.shapes.get(j).and_then(|o| o.as_deref()))
+        .collect();
+    let session = build_sheet_session(li, target_sheet, working, tracker, sheet_prepared)?;
+    let ev = LBFEvaluator {
+        inst,
+        sheet,
+        sheet_idx: target_sheet,
+        session: &session,
+        base: cand_base,
+        n_evals: 0,
+    };
+
+    // Seed rotation = the part's current rotation; plus a bounded subsample of its resolved
+    // rotation set (continuous samples for continuous parts) — never snapped.
+    let cur_rot = working.placements[li].rotation_deg;
+    let mut rotations: Vec<f64> = vec![cur_rot];
+    let allowed = &inst.allowed_rotations_deg;
+    if !allowed.is_empty() {
+        let stride = (allowed.len() / 8).max(1);
+        for (i, &r) in allowed.iter().enumerate() {
+            if i % stride == 0 {
+                rotations.push(r);
+            }
+        }
+    }
+
+    let (rw0, rh0) = dims_for_rotation(inst.part.width, inst.part.height, cur_rot);
+    let n_uniform = density_samples();
+    let mut positions: Vec<(f64, f64)> = Vec::with_capacity(n_uniform + 32);
+    for _ in 0..n_uniform {
+        let rmx = sheet.min_x + rng.next_f64() * (sheet.max_x - rw0 - sheet.min_x).max(0.0);
+        let rmy = sheet.min_y + rng.next_f64() * (sheet.max_y - rh0 - sheet.min_y).max(0.0);
+        positions.push((rmx, rmy));
+    }
+    if !neighbours.is_empty() {
+        positions.extend(contour_near_rect_mins(&neighbours, rw0, rh0, sheet, n_uniform + 20));
+    }
+
+    let mut best: Option<(f64, SparrowPlacement, bool)> = None;
+    for &rot in &rotations {
+        for &(rmx, rmy) in &positions {
+            if ev.score_lbf_candidate(rmx, rmy, rot).is_none() {
+                continue; // CDE: not collision-free here
+            }
+            let (ax, ay) =
+                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
+            let Some(cand) = transform_base_to_candidate(cand_base, ax, ay, rot) else {
+                continue;
+            };
+            let interlock = is_interlock_candidate(&cand, &neighbours);
+            if interlock {
+                bpp.bpp_interlock_candidates_generated += 1;
+            }
+            // With neighbours rank by density (prefer interlock); on an empty sheet fall back to
+            // a bottom-left score so the first part still lands in a corner.
+            let score = if neighbours.is_empty() {
+                (rmx - sheet.min_x) + (rmy - sheet.min_y)
+            } else {
+                density_candidate_score(&cand, &neighbours, weights)
+            };
+            if best.as_ref().is_none_or(|(bs, _, _)| score < *bs) {
+                best = Some((
+                    score,
+                    SparrowPlacement {
+                        instance_idx: inst_idx,
+                        sheet_index: target_sheet,
+                        x: ax,
+                        y: ay,
+                        rotation_deg: rot,
+                    },
+                    interlock,
+                ));
+            }
+        }
+    }
+    best.map(|(_, pl, interlock)| {
+        if interlock {
+            bpp.bpp_interlock_candidates_accepted += 1;
+        }
+        pl
+    })
+}
+
 /// Per-sheet density compaction (SGH-Q49): multi-sweep, **incremental tracker**. The shared
 /// `tracker` is built once by the caller; after each accepted move only that part's shape is
 /// updated (`tracker.shapes[li]`), which is all `build_sheet_session` reads — eliminating the Q48
@@ -1212,6 +1336,163 @@ fn density_compact_layout(
     // Final safety net: revert the whole pass if anything broke feasibility.
     if !layout_is_full_feasible(working, instances, solver_sheets) {
         *working = snapshot;
+    }
+}
+
+// ── SGH-Q50: density-guided LNS sheet-drop pass (opt-in VRS_BPP_LNS) ──────────────────────────
+
+/// Free area (sheet area − placed-part area) on a sheet — used to pick receiving-sheet order.
+fn sheet_free_area(
+    layout: &SparrowLayout,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    sheet: usize,
+) -> f64 {
+    solver_sheets[sheet].area - sheet_placed_area(layout, instances, sheet)
+}
+
+/// Attempt to drop sheet `s`: ruin its parts and re-insert them (density-guided) onto the
+/// `receiving` sheets. Returns true and leaves `working` with `s` empty and feasible on success;
+/// the caller reverts on false. `perturb` rotates the re-insertion order for restarts.
+#[allow(clippy::too_many_arguments)]
+fn try_drop_sheet(
+    working: &mut SparrowLayout,
+    s: usize,
+    receiving: &[usize],
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+    weights: &DensityWeights,
+    rng: &mut DeterministicRng,
+    bpp: &mut BppReductionDiagnostics,
+    perturb: usize,
+) -> bool {
+    let ruined: Vec<usize> = (0..working.placements.len())
+        .filter(|&i| working.placements[i].sheet_index == s)
+        .collect();
+    if ruined.is_empty() {
+        return true;
+    }
+    // Tracker with the ruined parts removed (shape = None ⇒ excluded as neighbours / obstacles).
+    let mut tracker = SparrowCollisionTracker::build(working, instances, solver_sheets);
+    for &li in &ruined {
+        tracker.shapes[li] = None;
+    }
+    // Re-insertion order: hardest (highest priority) first; rotate for perturbed restarts.
+    let mut order = ruined.clone();
+    order.sort_by(|&a, &b| {
+        profile_order_key(instances, working.placements[b].instance_idx)
+            .partial_cmp(&profile_order_key(instances, working.placements[a].instance_idx))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if perturb > 0 && !order.is_empty() {
+        let n = order.len();
+        order.rotate_left(perturb % n);
+    }
+
+    // Prepared shapes for the receiving sheets.
+    let sheet_prepared: Vec<Option<Rc<CdePreparedShape>>> = solver_sheets
+        .iter()
+        .map(|sh| prepare_shape_from_sheet(sh).ok().map(Rc::new))
+        .collect();
+
+    for &li in &order {
+        if started.elapsed().as_secs_f64() >= deadline_s {
+            return false;
+        }
+        // Receiving sheets by most free area first.
+        let mut targets: Vec<usize> = receiving.to_vec();
+        targets.sort_by(|&a, &b| {
+            sheet_free_area(working, instances, solver_sheets, b)
+                .partial_cmp(&sheet_free_area(working, instances, solver_sheets, a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut placed = false;
+        for &t in &targets {
+            let Some(sheet_sh) = sheet_prepared.get(t).and_then(|o| o.clone()) else {
+                continue;
+            };
+            if let Some(pl) = density_insert_part(
+                li, t, working, instances, solver_sheets, &tracker, &sheet_sh, weights, rng, bpp,
+            ) {
+                working.placements[li] = pl;
+                tracker.shapes[li] = SparrowCollisionTracker::prepare_item(working, instances, li);
+                bpp.bpp_lns_parts_reinserted += 1;
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            return false; // a ruined part has nowhere to go ⇒ this restart fails
+        }
+    }
+    // All ruined parts re-homed on receiving sheets ⇒ `s` is empty. Confirm full feasibility.
+    layout_is_full_feasible(working, instances, solver_sheets)
+}
+
+/// SGH-Q50 entry: density-guided LNS sheet-drop. Opt-in (`VRS_BPP_LNS=1`, default off). Runs after
+/// the density compaction. Repeatedly ruins the least-utilized used sheet and re-inserts its parts
+/// onto the others (density-guided, perturbed restarts); accepts only when a sheet is actually
+/// emptied and the layout stays feasible, otherwise reverts. Feasibility-preserving.
+fn lns_sheet_drop(
+    working: &mut SparrowLayout,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    bpp: &mut BppReductionDiagnostics,
+) {
+    if !lns_enabled() || working.placements.is_empty() {
+        return;
+    }
+    bpp.bpp_lns_applied = true;
+    let weights = DensityWeights::default();
+    let restarts = lns_restarts();
+    loop {
+        if started.elapsed().as_secs_f64() >= deadline_s {
+            break;
+        }
+        let used = used_sheet_set(working);
+        if used.len() <= 1 {
+            break;
+        }
+        // Least-utilized used sheet (smallest placed area).
+        let Some(&s) = used.iter().min_by(|&&a, &&b| {
+            sheet_placed_area(working, instances, a)
+                .partial_cmp(&sheet_placed_area(working, instances, b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) else {
+            break;
+        };
+        let receiving: Vec<usize> = used.iter().copied().filter(|&x| x != s).collect();
+        bpp.bpp_lns_attempts += 1;
+        let snapshot = working.clone();
+        let mut dropped = false;
+        for restart in 0..restarts {
+            if started.elapsed().as_secs_f64() >= deadline_s {
+                break;
+            }
+            if restart > 0 {
+                *working = snapshot.clone();
+                bpp.bpp_lns_restarts += 1;
+            }
+            if try_drop_sheet(
+                working, s, &receiving, instances, solver_sheets, started, deadline_s, &weights,
+                rng, bpp, restart,
+            ) {
+                dropped = true;
+                break;
+            }
+        }
+        if dropped {
+            bpp.bpp_lns_sheets_dropped += 1;
+            // try to drop another sheet
+        } else {
+            *working = snapshot; // revert; the least-full sheet couldn't be cleared
+            break;
+        }
     }
 }
 
@@ -1533,11 +1814,26 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     // SGH-Q49: the reduction loop above was capped at `reduction_deadline` to reserve this budget.
     bpp.bpp_reduction_time_ms = started.elapsed().as_secs_f64() * 1000.0;
     let density_deadline = (total_budget - guard).max(started.elapsed().as_secs_f64() + 1.0);
+    // SGH-Q50: when the LNS sheet-drop is enabled, give the density compaction the first half of the
+    // reserved window and the LNS the second half; otherwise density gets the whole window (Q49).
+    let density_compact_deadline = if lns_enabled() {
+        let now = started.elapsed().as_secs_f64();
+        (now + (density_deadline - now) * 0.5).max(now + 1.0)
+    } else {
+        density_deadline
+    };
     density_compact_layout(
-        &mut working, &instances, &solver_sheets, &started, density_deadline, &mut rng, &mut bpp,
+        &mut working, &instances, &solver_sheets, &started, density_compact_deadline, &mut rng,
+        &mut bpp,
     );
     bpp.bpp_density_time_ms =
         (started.elapsed().as_secs_f64() * 1000.0 - bpp.bpp_reduction_time_ms).max(0.0);
+
+    // SGH-Q50: density-guided LNS sheet-drop — try to eliminate one more sheet via coordinated
+    // multi-part ruin-recreate (opt-in VRS_BPP_LNS, default off). Uses the remaining reserved budget.
+    lns_sheet_drop(
+        &mut working, &instances, &solver_sheets, &started, density_deadline, &mut rng, &mut bpp,
+    );
 
     // SGH-Q46 M2: gravity / bottom-left compaction post-pass (density + edge alignment).
     gravity_compact_layout(&mut working, &instances, &solver_sheets, &mut bpp);
@@ -1666,5 +1962,163 @@ fn error_result(
             ..Default::default()
         }),
         shape_profile_diagnostics: None,
+    }
+}
+
+#[cfg(test)]
+mod q50_tests {
+    use super::*;
+    use crate::sheet::{expand_sheets, Stock};
+
+    fn poly_part(id: &str, w: f64, h: f64, pts: serde_json::Value) -> Part {
+        Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(pts),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    fn make_instance(idx: usize, part: Part) -> SPInstance {
+        let base = std::rc::Rc::new(prepare_base_shape_native(&part).expect("preparable"));
+        let prof = std::rc::Rc::new(PartShapeProfile::compute(&part, &base, 40_000.0, 200.0));
+        SPInstance {
+            idx,
+            instance_id: format!("{}#{idx}", part.id),
+            part_id: part.id.clone(),
+            part,
+            allowed_rotations_deg: vec![0.0],
+            continuous_rotation: false,
+            spacing_collision_base_shape: base.clone(),
+            base_shape: base,
+            shape_profile: prof,
+        }
+    }
+
+    #[test]
+    fn density_insert_part_finds_interlock_on_target_sheet() {
+        // U with a concave mouth (bbox 100×100) + a 20×20 square to insert.
+        let u = poly_part(
+            "U",
+            100.0,
+            100.0,
+            serde_json::json!([
+                [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [70.0, 100.0],
+                [70.0, 30.0], [30.0, 30.0], [30.0, 100.0], [0.0, 100.0]
+            ]),
+        );
+        let sq = poly_part(
+            "SQ",
+            20.0,
+            20.0,
+            serde_json::json!([[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]),
+        );
+        let instances = vec![make_instance(0, u), make_instance(1, sq)];
+        let sheets = expand_sheets(&[Stock {
+            id: "S".into(),
+            quantity: 1,
+            width: Some(200.0),
+            height: Some(200.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }])
+        .expect("sheets");
+
+        // Place the U well inside the sheet; the square's start position is irrelevant (ruined).
+        let u0 = transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let (uax, uay) = (40.0 - u0.min_x, 40.0 - u0.min_y);
+        let mut layout = SparrowLayout {
+            placements: vec![
+                SparrowPlacement { instance_idx: 0, sheet_index: 0, x: uax, y: uay, rotation_deg: 0.0 },
+                SparrowPlacement { instance_idx: 1, sheet_index: 0, x: 10.0, y: 10.0, rotation_deg: 0.0 },
+            ],
+        };
+        // Build the tracker, then ruin the square (its shape becomes None ⇒ excluded as a neighbour).
+        let mut tracker = SparrowCollisionTracker::build(&layout, &instances, &sheets);
+        tracker.shapes[1] = None;
+        layout.placements[1].sheet_index = 0; // stays addressable; tracker None excludes it
+
+        let sheet_sh = std::rc::Rc::new(prepare_shape_from_sheet(&sheets[0]).expect("sheet shape"));
+        let weights = DensityWeights::default();
+        let mut rng = DeterministicRng::new(7);
+        let mut bpp = BppReductionDiagnostics::default();
+        let pl = density_insert_part(
+            1, 0, &layout, &instances, &sheets, &tracker, &sheet_sh, &weights, &mut rng, &mut bpp,
+        )
+        .expect("square must fit on the target sheet");
+        assert_eq!(pl.sheet_index, 0);
+
+        // The chosen placement should interlock with the U (bbox-overlap, polygon-clear): the
+        // densest spot is tucked into the concave mouth.
+        let placed = transform_base_to_candidate(
+            instances[1].spacing_collision_base_shape.as_ref(),
+            pl.x,
+            pl.y,
+            pl.rotation_deg,
+        )
+        .unwrap();
+        let u_shape = transform_base_to_candidate(instances[0].base_shape.as_ref(), uax, uay, 0.0).unwrap();
+        assert!(
+            super::super::density::bbox_overlaps(&placed, &u_shape),
+            "inserted square should interlock (bbox-overlap) the U"
+        );
+        assert!(bpp.bpp_interlock_candidates_generated > 0);
+    }
+
+    #[test]
+    fn try_drop_sheet_rehomes_a_droppable_sheet() {
+        // sheet 0 has a 40×40 square; sheet 1 has one 30×30 square that obviously fits on sheet 0.
+        let a = poly_part(
+            "A",
+            40.0,
+            40.0,
+            serde_json::json!([[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]]),
+        );
+        let b = poly_part(
+            "B",
+            30.0,
+            30.0,
+            serde_json::json!([[0.0, 0.0], [30.0, 0.0], [30.0, 30.0], [0.0, 30.0]]),
+        );
+        let instances = vec![make_instance(0, a), make_instance(1, b)];
+        let sheets = expand_sheets(&[Stock {
+            id: "S".into(),
+            quantity: 2,
+            width: Some(200.0),
+            height: Some(200.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }])
+        .expect("sheets");
+        // place A on sheet 0, B on sheet 1
+        let a0 = transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let b0 = transform_base_to_candidate(instances[1].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let mut working = SparrowLayout {
+            placements: vec![
+                SparrowPlacement { instance_idx: 0, sheet_index: 0, x: 20.0 - a0.min_x, y: 20.0 - a0.min_y, rotation_deg: 0.0 },
+                SparrowPlacement { instance_idx: 1, sheet_index: 1, x: 20.0 - b0.min_x, y: 20.0 - b0.min_y, rotation_deg: 0.0 },
+            ],
+        };
+        let weights = DensityWeights::default();
+        let mut rng = DeterministicRng::new(3);
+        let mut bpp = BppReductionDiagnostics::default();
+        let started = std::time::Instant::now();
+        let dropped = try_drop_sheet(
+            &mut working, 1, &[0], &instances, &sheets, &started, 1e9, &weights, &mut rng, &mut bpp, 0,
+        );
+        assert!(dropped, "B must be re-homed onto sheet 0, emptying sheet 1");
+        assert!(
+            working.placements.iter().all(|p| p.sheet_index != 1),
+            "no part should remain on the dropped sheet 1"
+        );
+        assert!(layout_is_full_feasible(&working, &instances, &sheets));
     }
 }

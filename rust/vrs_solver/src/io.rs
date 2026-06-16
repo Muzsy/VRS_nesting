@@ -286,6 +286,16 @@ pub struct BppReductionDiagnostics {
     pub bpp_density_sweeps: usize,
     /// Distinct part placements re-evaluated by the density pass (T3).
     pub bpp_density_parts_processed: usize,
+    // ── SGH-Q50: density-guided LNS sheet-drop pass (opt-in VRS_BPP_LNS) ──────
+    pub bpp_lns_applied: bool,
+    /// Sheet-elimination attempts (one per least-utilized sheet tried).
+    pub bpp_lns_attempts: usize,
+    /// Sheets actually dropped by the LNS (the headline metric).
+    pub bpp_lns_sheets_dropped: usize,
+    /// Ruined parts successfully re-inserted onto other sheets.
+    pub bpp_lns_parts_reinserted: usize,
+    /// Perturbed restarts consumed across all attempts.
+    pub bpp_lns_restarts: usize,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

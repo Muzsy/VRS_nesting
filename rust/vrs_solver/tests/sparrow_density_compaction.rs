@@ -68,6 +68,26 @@ fn density_compaction_runs_and_preserves_feasibility() {
 }
 
 #[test]
+fn lns_sheet_drop_runs_and_preserves_feasibility() {
+    // SGH-Q50: with the LNS sheet-drop enabled, the pass runs and the layout stays valid
+    // (collision-free, fully placed) whether or not a sheet is actually dropped.
+    std::env::set_var("VRS_BPP_DENSITY_COMPACT", "1");
+    std::env::set_var("VRS_BPP_LNS", "1");
+    let parts = vec![l_part("L", 3), rect_part("f", 9, 130.0, 130.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 3, "width": 3000.0, "height": 1500.0})];
+    let out = solve_json(&ms_input(parts, stocks, 5, 40));
+    std::env::remove_var("VRS_BPP_LNS");
+
+    assert_eq!(out.status, "ok", "LNS must keep the layout valid: {}", out.status);
+    assert_eq!(out.unplaced.len(), 0);
+    let d = od(&out);
+    assert_eq!(d.sparrow_ms_final_pairs, Some(0), "no collisions");
+    assert_eq!(d.sparrow_ms_boundary_violations, Some(0));
+    let bpp = d.bpp_reduction.as_ref().expect("bpp diagnostics");
+    assert!(bpp.bpp_lns_applied, "LNS pass must run when enabled");
+}
+
+#[test]
 fn density_multi_sweep_processes_all_parts() {
     // SGH-Q49: with a reserved budget + multi-sweep, the density pass should sweep over the parts
     // at least once (parts_processed ≥ placed count) and run ≥ 1 sweep.

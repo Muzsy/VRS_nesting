@@ -1,0 +1,41 @@
+{
+  "task": "sgh_q50_density_lns_sheet_drop",
+  "time_limit_s": 300,
+  "stock_qty": 6,
+  "run_a_density_plus_lns": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "final_pairs": 0,
+    "utilization_pct": 54.415207455514896,
+    "lns_applied": true,
+    "lns_attempts": 1,
+    "lns_sheets_dropped": 0,
+    "lns_parts_reinserted": 0,
+    "lns_restarts": 3,
+    "wall_time_s": 243.0
+  },
+  "run_b_density_only": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "final_pairs": 0,
+    "utilization_pct": 54.415207455514896,
+    "lns_applied": false,
+    "lns_attempts": 0,
+    "lns_sheets_dropped": 0,
+    "lns_parts_reinserted": 0,
+    "lns_restarts": 0,
+    "wall_time_s": 273.1
+  },
+  "lns_dropped_a_sheet": false,
+  "acceptance": {
+    "valid_a": true,
+    "valid_b": true,
+    "no_sheet_count_regression": true,
+    "lns_pass_ran": true,
+    "lns_attempted_elimination": true,
+    "STRETCH_lns_dropped_a_sheet": false
+  },
+  "verdict": "PASS"
+}

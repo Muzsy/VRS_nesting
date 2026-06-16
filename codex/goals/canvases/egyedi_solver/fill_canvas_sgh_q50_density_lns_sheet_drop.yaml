@@ -1,0 +1,53 @@
+steps:
+  - name: "T1 — density_insert_part (density-vezerelt beszuras cel-tablara)"
+    description: >
+      A density_place_part adaptacioja beszurasra: a darab meg nincs a tablan, a cel-tabla
+      alkatreszeire epul a session, uniform + kontur-mintak (contour_near_rect_mins), density-score,
+      a legjobb clear interlock pozicio. Folytonos rotacio megorizve, CDE az igazsag. Unit-teszt:
+      egy darabot a cel-tabla egy meglevo konkav darabjanak obleibe szur interlockkent. cargo build
+      + cargo test zold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T2 — lns_sheet_drop ruin-recreate pass"
+    description: >
+      Gated VRS_BPP_LNS (default off). A legkevesbe kihasznalt tablat ruinold, az alkatreszeit
+      szurd be a tobbi tablara density_insert_part-tal + density_compact_sheet-tel (hely-csinalas),
+      par perturbalt restarttal (VRS_BPP_LNS_RESTARTS, default 4). Accept csak ha mind elfer
+      kevesebb tablan; kulonben teljes revert. A reduction + density-compaction utan fut.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T3 — LNS diagnosztika"
+    description: >
+      io.rs: bpp_lns_applied, bpp_lns_attempts, bpp_lns_sheets_dropped, bpp_lns_parts_reinserted,
+      bpp_lns_restarts. Adapter/result wiring a meglevo bpp diagnosztika mintajara.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T4 — Tesztek"
+    description: >
+      Pozitiv: konstrualt fixtura, ahol egy tabla ejtheto -> az LNS ledobja (bpp_lns_sheets_dropped
+      >= 1). Negativ: ahol nem -> biztonsagos revert (valtozatlan, valid). VRS_BPP_LNS=0 ->
+      valtozatlan; determinizmus. A meglevo suite-ok (lib + 16 + 3 + 3 density) zoldek maradnak.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_density_compaction.rs"
+
+  - name: "T5 — A/B benchmark (full276)"
+    description: >
+      scripts/bench_sgh_q50_lns_sheet_drop.py: LNS ON vs OFF, full276 LV8. Meres: used_sheets,
+      lns_sheets_dropped, lns_attempts/restarts, utilization, validity. Acceptance: nincs
+      regresszio + attempts > 0 + valid; stretch: 2 tabla. Artefaktok az artifacts/benchmarks/sgh_q50/.
+    outputs:
+      - "scripts/bench_sgh_q50_lns_sheet_drop.py"
+      - "artifacts/benchmarks/sgh_q50/q50_summary.json"
+
+  - name: "T6 — Verify + report + checklist"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q50_density_lns_sheet_drop.md
+      futtatasa; report a Q49-mintara, oszinte verdikttel (ledobott-e tablat; ha nem, mi a marado
+      akadaly es a kovetkezo irany).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q50_density_lns_sheet_drop.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q50_density_lns_sheet_drop.md"
