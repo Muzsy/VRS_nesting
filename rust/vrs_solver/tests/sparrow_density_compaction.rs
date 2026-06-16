@@ -1,0 +1,87 @@
+//! SGH-Q48 — Interlock-aware density compaction integration tests.
+//!
+//! Exercises the opt-in `VRS_BPP_DENSITY_COMPACT` pass through the public `adapter::solve`
+//! boundary on the `sparrow_cde_multisheet` (BPP) path. All tests enable the pass (same env value
+//! ⇒ no intra-binary race); the OFF path is covered by the existing multisheet/shape_profile
+//! suites (which run with the var unset). Asserts:
+//!   - the density pass runs and preserves collision feasibility (CDE stays the truth);
+//!   - the pass generates interlock (bbox-overlapping, polygon-clear) candidates on concave parts.
+
+use serde_json::{json, Value};
+use vrs_solver::adapter::solve;
+use vrs_solver::io::{OptimizerDiagnosticsOutput, SolverInput, SolverOutput};
+
+fn l_part(id: &str, qty: i64) -> Value {
+    // Large concave "L" (bbox 1000×1000): has a concavity for neighbours to nest into.
+    json!({
+        "id": id,
+        "quantity": qty,
+        "width": 1000.0,
+        "height": 1000.0,
+        "allowed_rotations_deg": [0, 90, 180, 270],
+        "outer_points": [
+            [0.0, 0.0], [1000.0, 0.0], [1000.0, 300.0],
+            [300.0, 300.0], [300.0, 1000.0], [0.0, 1000.0]
+        ]
+    })
+}
+
+fn rect_part(id: &str, qty: i64, w: f64, h: f64) -> Value {
+    json!({
+        "id": id, "quantity": qty, "width": w, "height": h,
+        "allowed_rotations_deg": [0, 90, 180, 270],
+        "outer_points": [[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]]
+    })
+}
+
+fn ms_input(parts: Vec<Value>, stocks: Vec<Value>, seed: i64, t: i64) -> Value {
+    json!({
+        "contract_version": "v1", "project_name": "sgh_q48_test", "seed": seed, "time_limit_s": t,
+        "stocks": stocks, "solver_profile": "jagua_optimizer_phase1_outer_only", "margin_mm": 0.0,
+        "optimizer_pipeline": "sparrow_cde_multisheet", "collision_backend": "cde", "parts": parts,
+    })
+}
+
+fn solve_json(v: &Value) -> SolverOutput {
+    let input: SolverInput = serde_json::from_value(v.clone()).expect("parse SolverInput");
+    solve(input).expect("solve")
+}
+
+fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
+    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+}
+
+#[test]
+fn density_compaction_runs_and_preserves_feasibility() {
+    std::env::set_var("VRS_BPP_DENSITY_COMPACT", "1");
+    let parts = vec![l_part("L", 4), rect_part("f", 12, 120.0, 120.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 3000.0, "height": 1500.0})];
+    let out = solve_json(&ms_input(parts, stocks, 42, 40));
+
+    assert_eq!(out.status, "ok", "must place all: {}", out.status);
+    assert_eq!(out.unplaced.len(), 0);
+    let d = od(&out);
+    assert_eq!(d.sparrow_ms_final_pairs, Some(0), "density pass keeps it collision-free");
+    assert_eq!(d.sparrow_ms_boundary_violations, Some(0));
+    let bpp = d.bpp_reduction.as_ref().expect("bpp diagnostics");
+    assert!(bpp.bpp_density_compaction_applied, "density pass must run when enabled");
+}
+
+#[test]
+fn density_compaction_generates_interlock_candidates() {
+    std::env::set_var("VRS_BPP_DENSITY_COMPACT", "1");
+    // Concave anchors packed together ⇒ contour sampling should propose bbox-overlapping,
+    // polygon-clear (interlock) placements.
+    let parts = vec![l_part("L", 4), rect_part("f", 8, 150.0, 150.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 3000.0, "height": 1500.0})];
+    let out = solve_json(&ms_input(parts, stocks, 7, 40));
+
+    assert_eq!(out.status, "ok");
+    let bpp = od(&out).bpp_reduction.as_ref().expect("bpp diagnostics").clone();
+    assert!(bpp.bpp_density_compaction_applied);
+    assert!(
+        bpp.bpp_interlock_candidates_generated > 0,
+        "density search must generate interlock candidates on concave parts (got {})",
+        bpp.bpp_interlock_candidates_generated
+    );
+}

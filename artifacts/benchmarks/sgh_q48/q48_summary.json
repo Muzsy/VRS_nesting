@@ -1,0 +1,38 @@
+{
+  "task": "sgh_q48_interlocking_density_compaction",
+  "time_limit_s": 300,
+  "stock_qty": 6,
+  "run_a_density_on": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "utilization_pct": 54.415207455514896,
+    "density_applied": true,
+    "density_moves_accepted": 2,
+    "interlock_generated": 20,
+    "interlock_accepted": 2,
+    "wall_time_s": 293.6
+  },
+  "run_b_density_off": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "utilization_pct": 54.415207455514896,
+    "density_applied": false,
+    "density_moves_accepted": 0,
+    "interlock_generated": 0,
+    "interlock_accepted": 0,
+    "wall_time_s": 292.4
+  },
+  "acceptance": {
+    "valid_a": true,
+    "valid_b": true,
+    "no_sheet_count_regression": true,
+    "density_pass_ran": true
+  },
+  "verdict": "PASS"
+}

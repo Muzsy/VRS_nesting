@@ -1,9 +1,30 @@
 use super::*;
 
-/// Pick the first allowed rotation under which the part fits at least one sheet
-/// (rotation-aware: parts that only fit rotated — e.g. a strip wider than the
-/// sheet at 0° — get a fitting rotation instead of being dropped).
+/// Pick a fitting seed rotation under which the part fits at least one sheet (rotation-aware:
+/// parts that only fit rotated — e.g. a strip wider than the sheet at 0° — get a fitting rotation
+/// instead of being dropped).
+///
+/// SGH-Q48 T5: a **continuous-rotation** part gets a **continuous** seed — the bbox-min-width
+/// orientation that fits, found by a fine continuous scan (NOT snapped to a fixed discrete grid;
+/// the downstream coord-descent keeps refining the rotation continuously). Discrete / legacy parts
+/// are unchanged (first fitting allowed rotation).
 pub(crate) fn fitting_rotation(inst: &SPInstance, sheets: &[SheetShape]) -> f64 {
+    if inst.continuous_rotation {
+        // Fine continuous scan: the smallest-bbox-width orientation that fits some sheet.
+        let mut best: Option<(f64, f64)> = None; // (bbox_width, rotation)
+        let mut a = 0.0_f64;
+        while a < 180.0 {
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, a);
+            let fits = sheets
+                .iter()
+                .any(|s| rw <= s.width + 1e-9 && rh <= s.height + 1e-9);
+            if fits && best.as_ref().is_none_or(|(bw, _)| rw < *bw) {
+                best = Some((rw, a));
+            }
+            a += 0.5;
+        }
+        return best.map(|(_, rot)| rot).unwrap_or(0.0);
+    }
     let rots: Vec<f64> = if inst.allowed_rotations_deg.is_empty() {
         vec![0.0]
     } else {

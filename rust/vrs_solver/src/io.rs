@@ -270,6 +270,13 @@ pub struct BppReductionDiagnostics {
     pub bpp_region_compression_attempts: usize,
     pub bpp_region_compression_accepts: usize,
     pub bpp_region_compression_freed_area_mm2: f64,
+    // ── SGH-Q48: interlock-aware density compaction (opt-in VRS_BPP_DENSITY_COMPACT) ──
+    pub bpp_density_compaction_applied: bool,
+    pub bpp_density_moves_accepted: usize,
+    /// Clear candidates whose bbox overlapped a neighbour (interlock candidates) — generated.
+    pub bpp_interlock_candidates_generated: usize,
+    /// Accepted density moves whose placement is bbox-overlapping a neighbour (interlock kept).
+    pub bpp_interlock_candidates_accepted: usize,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

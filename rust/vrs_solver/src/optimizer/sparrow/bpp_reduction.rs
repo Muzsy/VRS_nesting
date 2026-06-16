@@ -20,6 +20,9 @@
 //!   → final validation; status "ok" only when all placed && pairs=0 && boundary=0.
 
 use super::*;
+use super::density::{
+    contour_near_rect_mins, density_candidate_score, is_interlock_candidate, DensityWeights,
+};
 use super::multisheet::{
     compute_utilization, part_polygon_area, sanitize_partial, FiniteStockRunConfig,
     FiniteStockRunResult,
@@ -964,6 +967,198 @@ fn slide_axis<F: Fn(f64, f64) -> bool>(
 /// collision-free directions, iterating until convergence. Pure translation (no rotation
 /// change), monotone, and feasibility-preserving (only ever moves a part to a clear spot).
 /// Disable with `VRS_BPP_GRAVITY=0` for A/B comparison.
+// ── SGH-Q48: interlock-aware density compaction (opt-in VRS_BPP_DENSITY_COMPACT) ─────────────
+
+/// Density placement search for one part on its sheet. Among collision-free candidates (current
+/// position + uniform random + contour-near, across the part's rotation set), returns the lowest
+/// density-score placement that strictly improves on the current one — or `None`. The CDE decides
+/// clearance (LBFEvaluator); the density score only ranks the clear candidates. Counts interlock
+/// (bbox-overlapping, polygon-clear) candidates into `bpp`. Continuous parts keep continuous
+/// rotation (the candidate rotation set is the instance's resolved continuous samples).
+#[allow(clippy::too_many_arguments)]
+fn density_place_part(
+    li: usize,
+    working: &SparrowLayout,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    tracker: &SparrowCollisionTracker,
+    sheet_prepared: &Rc<CdePreparedShape>,
+    weights: &DensityWeights,
+    rng: &mut DeterministicRng,
+    bpp: &mut BppReductionDiagnostics,
+) -> Option<SparrowPlacement> {
+    let p = working.placements[li].clone();
+    let sheet_idx = p.sheet_index;
+    let inst = &instances[p.instance_idx];
+    let sheet = &solver_sheets[sheet_idx];
+
+    let neighbours: Vec<&CdePreparedShape> = (0..working.placements.len())
+        .filter(|&j| j != li && working.placements[j].sheet_index == sheet_idx)
+        .filter_map(|j| tracker.shapes.get(j).and_then(|o| o.as_deref()))
+        .collect();
+    if neighbours.is_empty() {
+        return None; // first/only part on the sheet: density-neutral
+    }
+
+    let session = build_sheet_session(li, sheet_idx, working, tracker, sheet_prepared)?;
+    let ev = LBFEvaluator {
+        inst,
+        sheet,
+        sheet_idx,
+        session: &session,
+        base: inst.base_shape.as_ref(),
+        n_evals: 0,
+    };
+
+    let cur_rot = p.rotation_deg;
+    let baseline = transform_base_to_candidate(inst.base_shape.as_ref(), p.x, p.y, cur_rot)
+        .map(|s| density_candidate_score(&s, &neighbours, weights))
+        .unwrap_or(f64::MAX);
+
+    // Rotation set: current + a bounded subsample of the instance's resolved rotations (these are
+    // the continuous samples for continuous parts, or the discrete set otherwise) — never snapped.
+    let mut rotations: Vec<f64> = vec![cur_rot];
+    let allowed = &inst.allowed_rotations_deg;
+    if !allowed.is_empty() {
+        let stride = (allowed.len() / 8).max(1);
+        for (i, &r) in allowed.iter().enumerate() {
+            if i % stride == 0 {
+                rotations.push(r);
+            }
+        }
+    }
+
+    // Position candidates: current rect-min + uniform random + contour-near (T3).
+    let (cur_rmx, cur_rmy) =
+        rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, cur_rot);
+    let mut positions: Vec<(f64, f64)> = vec![(cur_rmx, cur_rmy)];
+    let (rw0, rh0) = dims_for_rotation(inst.part.width, inst.part.height, cur_rot);
+    for _ in 0..100 {
+        let rmx = sheet.min_x + rng.next_f64() * (sheet.max_x - rw0 - sheet.min_x).max(0.0);
+        let rmy = sheet.min_y + rng.next_f64() * (sheet.max_y - rh0 - sheet.min_y).max(0.0);
+        positions.push((rmx, rmy));
+    }
+    positions.extend(contour_near_rect_mins(&neighbours, rw0, rh0, sheet, 120));
+
+    let margin = 1e-6;
+    let mut best: Option<(f64, SparrowPlacement, bool)> = None;
+    for &rot in &rotations {
+        for &(rmx, rmy) in &positions {
+            if ev.score_lbf_candidate(rmx, rmy, rot).is_none() {
+                continue; // CDE: not collision-free here
+            }
+            let (ax, ay) =
+                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
+            let Some(cand) = transform_base_to_candidate(inst.base_shape.as_ref(), ax, ay, rot)
+            else {
+                continue;
+            };
+            let interlock = is_interlock_candidate(&cand, &neighbours);
+            if interlock {
+                bpp.bpp_interlock_candidates_generated += 1;
+            }
+            let score = density_candidate_score(&cand, &neighbours, weights);
+            if best.as_ref().is_none_or(|(bs, _, _)| score < *bs - margin) {
+                best = Some((
+                    score,
+                    SparrowPlacement {
+                        instance_idx: p.instance_idx,
+                        sheet_index: sheet_idx,
+                        x: ax,
+                        y: ay,
+                        rotation_deg: rot,
+                    },
+                    interlock,
+                ));
+            }
+        }
+    }
+
+    match best {
+        Some((score, pl, interlock)) if score < baseline - margin => {
+            if interlock {
+                bpp.bpp_interlock_candidates_accepted += 1;
+            }
+            Some(pl)
+        }
+        _ => None,
+    }
+}
+
+/// Per-sheet density compaction: re-place each part (priority order) to the densest collision-free
+/// position. Rebuilds the tracker before each part so prior moves are seen; reverts any move that
+/// fails the full-feasibility safety net.
+#[allow(clippy::too_many_arguments)]
+fn density_compact_sheet(
+    layout: &mut SparrowLayout,
+    sheet: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    weights: &DensityWeights,
+    bpp: &mut BppReductionDiagnostics,
+) {
+    let Some(sheet_sh) = prepare_shape_from_sheet(&solver_sheets[sheet])
+        .ok()
+        .map(Rc::new)
+    else {
+        return;
+    };
+    let mut idxs: Vec<usize> = (0..layout.placements.len())
+        .filter(|&i| layout.placements[i].sheet_index == sheet)
+        .collect();
+    idxs.sort_by(|&a, &b| {
+        profile_order_key(instances, layout.placements[b].instance_idx)
+            .partial_cmp(&profile_order_key(instances, layout.placements[a].instance_idx))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for li in idxs {
+        if started.elapsed().as_secs_f64() >= deadline_s {
+            break;
+        }
+        let tracker = SparrowCollisionTracker::build(layout, instances, solver_sheets);
+        if let Some(pl) = density_place_part(
+            li, layout, instances, solver_sheets, &tracker, &sheet_sh, weights, rng, bpp,
+        ) {
+            let old = layout.placements[li].clone();
+            layout.placements[li] = pl;
+            if layout_is_full_feasible(layout, instances, solver_sheets) {
+                bpp.bpp_density_moves_accepted += 1;
+            } else {
+                layout.placements[li] = old; // safety net
+            }
+        }
+    }
+}
+
+/// SGH-Q48 entry: interlock-aware density compaction over all used sheets. Opt-in (default off);
+/// enable with `VRS_BPP_DENSITY_COMPACT=1`. Feasibility-preserving by construction.
+fn density_compact_layout(
+    working: &mut SparrowLayout,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    bpp: &mut BppReductionDiagnostics,
+) {
+    if std::env::var("VRS_BPP_DENSITY_COMPACT").ok().as_deref() != Some("1") {
+        return;
+    }
+    if working.placements.is_empty() {
+        return;
+    }
+    bpp.bpp_density_compaction_applied = true;
+    let weights = DensityWeights::default();
+    for s in used_sheet_set(working) {
+        density_compact_sheet(
+            working, s, instances, solver_sheets, started, deadline_s, rng, &weights, bpp,
+        );
+    }
+}
+
 fn gravity_compact_layout(
     working: &mut SparrowLayout,
     instances: &[SPInstance],
@@ -1270,6 +1465,14 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     let compress_deadline = (total_budget - guard).max(started.elapsed().as_secs_f64() + 1.0);
     compress_layout(
         &optimizer, &mut working, &instances, &solver_sheets, &started, compress_deadline, &mut rng, &mut diag, &mut bpp,
+    );
+
+    // SGH-Q48: interlock-aware density compaction (opt-in VRS_BPP_DENSITY_COMPACT) — the real
+    // density driver: re-place parts to the densest collision-free position (tucking into
+    // concavities / interlocking), CDE-validated, before the gravity tidy. Default off.
+    let density_deadline = (total_budget - guard).max(started.elapsed().as_secs_f64() + 1.0);
+    density_compact_layout(
+        &mut working, &instances, &solver_sheets, &started, density_deadline, &mut rng, &mut bpp,
     );
 
     // SGH-Q46 M2: gravity / bottom-left compaction post-pass (density + edge alignment).

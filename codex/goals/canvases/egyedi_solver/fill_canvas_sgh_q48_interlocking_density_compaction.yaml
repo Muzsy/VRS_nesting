@@ -1,0 +1,70 @@
+steps:
+  - name: "T1 — DensityEvaluator + density-score"
+    description: >
+      Hozd letre a density-objective magot: egy density_candidate_score fuggvenyt
+      (added_used_extent + attraction/proximity term; minimalizalando) es egy
+      DensityEvaluator structot a LBFEvaluator mellett. A score interlockot jutalmaz
+      (konkav obolbe agyazott pozicio jobb, mint a szetvalasztott). Unit-tesztek egy
+      U-alaku konkav fixturan. Reuse: CdePreparedShape bbox + surrogate poles. Continuous
+      rotaciot NEM erint. cargo build + cargo test zold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/density.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "T2 — Interlock dontes-diagnosztika"
+    description: >
+      Szamold meg, hanyszor general es fogad el a kereses bbox-atfedo-de-poligon-tiszta
+      (interlock) jeloltet per tabla. Uj io.rs mezok (bpp_interlock_candidates_generated/
+      accepted + per-anchor bontas). Ez a meresi kapu a T4 elott.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T3 — Density-tudatos sampling"
+    description: >
+      A UniformBBoxSampler kiegeszitese: a random mintak melle a mar lerakott szomszedok
+      konturja (csucsok/elek) kozeleben is mintazunk, hogy interlock-poziciok javaslodjanak.
+      NFP-mentes, continuous rotacio megorizve.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/uniform_sampler.rs"
+
+  - name: "T4 — Density-compaction pass (y-only compact_sheet lecserelese)"
+    description: >
+      Tablankent, Q47-prioritas-sorrendben: emeld le a darabot, helyezd vissza a density_score
+      minimalizalasaval (transzlacio + folytonos rotacio), fogadd el ha collision-free ES a
+      density javul (a pl.y < old.y kapu helyett). Gate VRS_BPP_DENSITY_COMPACT, default off.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T5 — Continuous-rotacio seed-helyesseg"
+    description: >
+      A fitting_rotation tegye tiszteletben a continuous_rotation flaget: folytonos seed-szog
+      (analitikus min-width-fit), nincs diszkret snapping. A density-kereses vegig continuous.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/fixed_sheet.rs"
+
+  - name: "T6 — Tesztek"
+    description: >
+      Unit: density-score interlock > szetvalasztott; continuous seed folytonos. Integracios:
+      density-compact megorzi a feasibility-t; interlock-diagnosztika megjelenik. A meglevo
+      multisheet (16) + Q47 shape_profile (3) suite zold marad.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_density_compaction.rs"
+
+  - name: "T7 — A/B regresszios + dontes-diagnosztikai benchmark"
+    description: >
+      scripts/bench_sgh_q48_density_compaction.py: density-compact ON vs OFF, full276 LV8 + kis
+      fixturak. Acceptance: valid + nincs sheet/util regresszio + interlock-jelolt generalas a
+      diagnosztikaban. Stretch: tomorebb used-extent / kevesebb tabla. Artefaktok az
+      artifacts/benchmarks/sgh_q48/ alatt.
+    outputs:
+      - "scripts/bench_sgh_q48_density_compaction.py"
+      - "artifacts/benchmarks/sgh_q48/q48_summary.json"
+
+  - name: "T8 — Verify + report + checklist"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q48_interlocking_density_compaction.md
+      futtatasa; report a Q47-mintara, oszinte verdikttel (mit general/javit, mi a marado res).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q48_interlocking_density_compaction.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q48_interlocking_density_compaction.md"

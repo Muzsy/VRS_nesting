@@ -26,6 +26,7 @@ pub(crate) use super::cde_adapter::{
 };
 
 pub mod bpp_reduction;
+pub mod density;
 pub mod diagnostics;
 pub mod eval;
 pub mod explore;
