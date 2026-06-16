@@ -1,0 +1,53 @@
+{
+  "run_id": "q49_B_densityoff_300",
+  "task": "SGH-Q49",
+  "input_path": "artifacts/benchmarks/sgh_q49/inputs/q49_full276_6x1500x3000_margin5_spacing8_continuous_300.json",
+  "output_path": "artifacts/benchmarks/sgh_q49/outputs/q49_B_densityoff_300_output.json",
+  "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+  "used_sheet_count": 3,
+  "used_sheet_indices": [
+    0,
+    1,
+    2
+  ],
+  "svg_count": 4,
+  "png_count": 4,
+  "have_cairosvg": true,
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 112,
+      "placed_part_area": 2441738.64,
+      "physical_utilization_pct": 54.2609,
+      "svg_path": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_00.svg",
+      "png_path": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_00.png"
+    },
+    {
+      "sheet_index": 1,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 105,
+      "placed_part_area": 2155472.02,
+      "physical_utilization_pct": 47.8994,
+      "svg_path": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_01.svg",
+      "png_path": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_01.png"
+    },
+    {
+      "sheet_index": 2,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 59,
+      "placed_part_area": 2072287.01,
+      "physical_utilization_pct": 46.0508,
+      "svg_path": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_02.svg",
+      "png_path": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_02.png"
+    }
+  ],
+  "overview_svg": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/overview.svg",
+  "overview_png": "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/overview.png"
+}

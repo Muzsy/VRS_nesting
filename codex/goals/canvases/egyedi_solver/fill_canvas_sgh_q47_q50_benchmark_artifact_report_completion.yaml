@@ -1,0 +1,110 @@
+steps:
+  - name: "Benchmark artifact reportok potlasa"
+    description: >
+      A mar letezo SGH-Q47, SGH-Q48, SGH-Q49 es SGH-Q50 benchmark summary/input/output/log
+      artefaktumok alapjan hozz letre Q42 mintaju, top-level markdown reportokat az
+      artifacts/benchmarks/sgh_qXX/ mappakba. Ne futtasd ujra a benchmarkokat es ne modosits
+      solver output JSON-t.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q47_q50_benchmark_artifact_report_completion.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q47_q50_benchmark_artifact_report_completion.yaml"
+      - "artifacts/benchmarks/sgh_q47/q47_report.md"
+      - "artifacts/benchmarks/sgh_q48/q48_report.md"
+      - "artifacts/benchmarks/sgh_q49/q49_report.md"
+      - "artifacts/benchmarks/sgh_q50/q50_report.md"
+
+  - name: "SVG es PNG tablatervek generalasa"
+    description: >
+      A meglevo Q47-Q50 A/B solver output JSON-okbol es input geometriakbol generalj
+      Q42-szeru per-sheet SVG es PNG tablaterveket, valamint render_manifest.json
+      fajlokat. Ne futtasd ujra a solver benchmarkokat.
+    outputs:
+      - "scripts/render_sgh_q47_q50_benchmark_artifacts.py"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/overview.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_A_profileon_300/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/overview.png"
+      - "artifacts/benchmarks/sgh_q47/renders/q47_B_profileoff_300/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/overview.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_A_densityon_300/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/overview.png"
+      - "artifacts/benchmarks/sgh_q48/renders/q48_B_densityoff_300/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/overview.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_A_densityon_300/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/overview.png"
+      - "artifacts/benchmarks/sgh_q49/renders/q49_B_densityoff_300/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/overview.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_A_lnson_300/render_manifest.json"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/sheet_00.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/sheet_00.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/sheet_01.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/sheet_01.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/sheet_02.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/sheet_02.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/overview.svg"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/overview.png"
+      - "artifacts/benchmarks/sgh_q50/renders/q50_B_lnsoff_300/render_manifest.json"
+
+  - name: "Checklist es report"
+    description: >
+      Toltsd ki a task checklistet es a Codex reportot. A report rogzitse, hogy a feladat
+      dokumentacios/artifact-paritas potlas, es nem solver/benchmark ujrafuttatas.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q47_q50_benchmark_artifact_report_completion.md"
+      - "codex/reports/egyedi_solver/sgh_q47_q50_benchmark_artifact_report_completion.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenorzest es frissitsd automatikusan a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q47_q50_benchmark_artifact_report_completion.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q47_q50_benchmark_artifact_report_completion.md"
+      - "codex/reports/egyedi_solver/sgh_q47_q50_benchmark_artifact_report_completion.verify.log"
