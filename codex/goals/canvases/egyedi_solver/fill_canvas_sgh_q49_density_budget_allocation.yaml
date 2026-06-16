@@ -1,0 +1,54 @@
+steps:
+  - name: "T1 — Budget-foglalas a density passnek"
+    description: >
+      Uj VRS_BPP_DENSITY_BUDGET_FRAC (default 0.35, csak ha density ON; OFF -> 0.0 -> valtozatlan).
+      A reduction loop deadline-ja total_budget*(1-frac)-guard a total_budget-guard helyett
+      (bpp_reduction.rs 1383/1417/1427). A density_deadline marad total_budget-guard. Ido-split
+      diagnosztika: bpp_reduction_time_ms, bpp_density_time_ms. cargo build + cargo test zold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "T2 — Per-part hatekonysag"
+    description: >
+      density_compact_sheet: inkrementalis tracker (sweepenkent egyszer build, mozgas utan csak
+      tracker.shapes[li] frissites). Hangolhato candidate-budget (VRS_BPP_DENSITY_SAMPLES), kontur
+      mintak prioritasa, early-exit ha nincs javulas. Cel: egy teljes 276-os sweep belefer a foglalt
+      budgetbe.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T3 — Multi-sweep konvergenciaig"
+    description: >
+      A density-compaction ismetlese sweepenkent, amig van elfogadott mozgas (konvergencia) vagy a
+      density_deadline le nem jar. Diagnosztika: bpp_density_sweeps, bpp_density_parts_processed.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "T4 — Tesztek"
+    description: >
+      Unit/integracios: budget-split tiszteletben tartva; density egy kis fixturan minden
+      alkatreszt feldolgoz a kereten belul; VRS_BPP_DENSITY_COMPACT=0 -> valtozatlan; determinizmus.
+      A meglevo suite-ok (478 lib + 16 + 3 + 2 density) zoldek maradnak.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_density_compaction.rs"
+
+  - name: "T5 — A/B ujra-benchmark (full276)"
+    description: >
+      scripts/bench_sgh_q49_density_budget.py (vagy a Q48 runner kiterjesztese): density ON (foglalt
+      budgettel) vs OFF. Meres: parts_processed, sweeps, interlock generated/accepted, utilization,
+      used_sheets, osszevetve a Q48 starved (20/2) es az OFF eredmennyel. Artefaktok az
+      artifacts/benchmarks/sgh_q49/ alatt.
+    outputs:
+      - "scripts/bench_sgh_q49_density_budget.py"
+      - "artifacts/benchmarks/sgh_q49/q49_summary.json"
+
+  - name: "T6 — Verify + report + checklist"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q49_density_budget_allocation.md
+      futtatasa; report a Q48-mintara, oszinte verdikttel (most lefut-e mindenre, mit javit, mi a
+      marado res -> Q50 multi-part).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q49_density_budget_allocation.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q49_density_budget_allocation.md"

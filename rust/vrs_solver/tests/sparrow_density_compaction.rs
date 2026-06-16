@@ -68,6 +68,28 @@ fn density_compaction_runs_and_preserves_feasibility() {
 }
 
 #[test]
+fn density_multi_sweep_processes_all_parts() {
+    // SGH-Q49: with a reserved budget + multi-sweep, the density pass should sweep over the parts
+    // at least once (parts_processed ≥ placed count) and run ≥ 1 sweep.
+    std::env::set_var("VRS_BPP_DENSITY_COMPACT", "1");
+    let parts = vec![l_part("L", 3), rect_part("f", 9, 130.0, 130.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 3000.0, "height": 1500.0})];
+    let out = solve_json(&ms_input(parts, stocks, 11, 40));
+    assert_eq!(out.status, "ok");
+    let placed = out.metrics.placed_count;
+    let bpp = od(&out).bpp_reduction.as_ref().expect("bpp diagnostics").clone();
+    assert!(bpp.bpp_density_sweeps >= 1, "at least one density sweep");
+    assert!(
+        bpp.bpp_density_parts_processed >= placed,
+        "density must process ≥ all {} placed parts (got {})",
+        placed,
+        bpp.bpp_density_parts_processed
+    );
+    // Time-split diagnostics are populated when the pass runs.
+    assert!(bpp.bpp_density_time_ms >= 0.0 && bpp.bpp_reduction_time_ms > 0.0);
+}
+
+#[test]
 fn density_compaction_generates_interlock_candidates() {
     std::env::set_var("VRS_BPP_DENSITY_COMPACT", "1");
     // Concave anchors packed together ⇒ contour sampling should propose bbox-overlapping,

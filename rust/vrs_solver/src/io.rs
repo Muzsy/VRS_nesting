@@ -277,6 +277,15 @@ pub struct BppReductionDiagnostics {
     pub bpp_interlock_candidates_generated: usize,
     /// Accepted density moves whose placement is bbox-overlapping a neighbour (interlock kept).
     pub bpp_interlock_candidates_accepted: usize,
+    // ── SGH-Q49: density-pass budget allocation ──────────────────────────────
+    /// Wall time (ms) spent in the BPP sheet-reduction loop (before the density pass).
+    pub bpp_reduction_time_ms: f64,
+    /// Wall time (ms) spent in the density compaction pass.
+    pub bpp_density_time_ms: f64,
+    /// Density sweeps completed (multi-sweep, T3).
+    pub bpp_density_sweeps: usize,
+    /// Distinct part placements re-evaluated by the density pass (T3).
+    pub bpp_density_parts_processed: usize,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

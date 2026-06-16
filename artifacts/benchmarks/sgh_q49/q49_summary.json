@@ -1,0 +1,49 @@
+{
+  "task": "sgh_q49_density_budget_allocation",
+  "time_limit_s": 300,
+  "stock_qty": 6,
+  "run_a_density_on": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "final_pairs": 0,
+    "utilization_pct": 54.415207455514896,
+    "density_applied": true,
+    "density_sweeps": 18,
+    "density_parts_processed": 1656,
+    "density_moves_accepted": 497,
+    "interlock_generated": 109991,
+    "interlock_accepted": 480,
+    "reduction_time_ms": 181370.0,
+    "density_time_ms": 77923.0,
+    "wall_time_s": 272.8
+  },
+  "run_b_density_off": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "final_pairs": 0,
+    "utilization_pct": 54.415207455514896,
+    "density_applied": false,
+    "density_sweeps": 0,
+    "density_parts_processed": 0,
+    "density_moves_accepted": 0,
+    "interlock_generated": 0,
+    "interlock_accepted": 0,
+    "reduction_time_ms": 276110.0,
+    "density_time_ms": 0.0,
+    "wall_time_s": 291.6
+  },
+  "q48_starved_reference": {
+    "interlock_generated": 20,
+    "interlock_accepted": 2
+  },
+  "acceptance": {
+    "valid_a": true,
+    "valid_b": true,
+    "no_sheet_count_regression": true,
+    "density_pass_ran": true,
+    "density_processed_all_276": true
+  },
+  "verdict": "PASS"
+}

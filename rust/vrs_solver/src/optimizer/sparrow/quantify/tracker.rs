@@ -64,7 +64,7 @@ pub(crate) fn pair_touching_policy(
 }
 
 impl SparrowCollisionTracker {
-    fn prepare_item(
+    pub(crate) fn prepare_item(
         layout: &SparrowLayout,
         instances: &[SPInstance],
         idx: usize,
