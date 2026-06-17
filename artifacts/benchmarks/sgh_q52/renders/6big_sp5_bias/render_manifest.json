@@ -1,0 +1,53 @@
+{
+  "run_id": "6big_sp5_bias",
+  "task": "SGH-Q52",
+  "input_path": "artifacts/benchmarks/sgh_q52/inputs/q52_6big_sp5.json",
+  "output_path": "artifacts/benchmarks/sgh_q52/outputs/6big_sp5_bias_output.json",
+  "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+  "used_sheet_count": 3,
+  "used_sheet_indices": [
+    0,
+    1,
+    2
+  ],
+  "svg_count": 4,
+  "png_count": 4,
+  "have_cairosvg": true,
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "stock_id": "S",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 2,
+      "placed_part_area": 1194935.9,
+      "physical_utilization_pct": 26.5541,
+      "svg_path": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/sheet_00.svg",
+      "png_path": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/sheet_00.png"
+    },
+    {
+      "sheet_index": 1,
+      "stock_id": "S",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 2,
+      "placed_part_area": 1194935.9,
+      "physical_utilization_pct": 26.5541,
+      "svg_path": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/sheet_01.svg",
+      "png_path": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/sheet_01.png"
+    },
+    {
+      "sheet_index": 2,
+      "stock_id": "S",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 2,
+      "placed_part_area": 1194935.9,
+      "physical_utilization_pct": 26.5541,
+      "svg_path": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/sheet_02.svg",
+      "png_path": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/sheet_02.png"
+    }
+  ],
+  "overview_svg": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/overview.svg",
+  "overview_png": "artifacts/benchmarks/sgh_q52/renders/6big_sp5_bias/overview.png"
+}

@@ -1369,12 +1369,29 @@ fn density_biased_separate(
 
             let cur_rot = local[i].rotation_deg;
             let mut rotations: Vec<f64> = vec![cur_rot];
-            let allowed = &inst.allowed_rotations_deg;
-            if !allowed.is_empty() {
-                let stride = (allowed.len() / 8).max(1);
-                for (k, &r) in allowed.iter().enumerate() {
-                    if k % stride == 0 {
-                        rotations.push(r);
+            if inst.continuous_rotation {
+                // SGH-Q52 fix: continuous parts must refine rotation CONTINUOUSLY (the interlock
+                // for the curved parts needs precise angles like ~91°/~281°, not the min-width
+                // 90°/270° seed). `allowed_rotations_deg` is empty for continuous parts, so the
+                // old `stride`-of-allowed logic degenerated to `[cur_rot]` (no rotation at all).
+                // Sample fine local offsets around the current angle (the wiggle that lands the
+                // precise interlock) plus a coarse global sweep to escape the seed basin. Never
+                // snapped to a discrete grid; the descent keeps refining across sweeps.
+                for d in [0.5_f64, 1.0, 2.0, 4.0, 8.0, 16.0] {
+                    rotations.push(cur_rot + d);
+                    rotations.push(cur_rot - d);
+                }
+                for k in 0..12 {
+                    rotations.push(k as f64 * 30.0);
+                }
+            } else {
+                let allowed = &inst.allowed_rotations_deg;
+                if !allowed.is_empty() {
+                    let stride = (allowed.len() / 8).max(1);
+                    for (k, &r) in allowed.iter().enumerate() {
+                        if k % stride == 0 {
+                            rotations.push(r);
+                        }
                     }
                 }
             }
