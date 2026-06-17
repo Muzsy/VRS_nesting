@@ -72,6 +72,46 @@ pub fn build_native_constructive_seed(problem: &SparrowProblem) -> SparrowLayout
     layout
 }
 
+/// SGH-Q51: instance indices grouped by construction tier (the input to the anchor-first sheet
+/// builder). Each list is sorted by descending shape `priority_score`, tie-broken by `instance_id`
+/// — deterministic. Critical parts are admitted first per sheet, fillers last.
+pub(crate) struct CriticalityQueues {
+    pub critical: Vec<usize>,
+    pub structural: Vec<usize>,
+    pub filler: Vec<usize>,
+}
+
+pub(crate) fn build_criticality_queues(instances: &[SPInstance]) -> CriticalityQueues {
+    let mut critical = Vec::new();
+    let mut structural = Vec::new();
+    let mut filler = Vec::new();
+    for (i, inst) in instances.iter().enumerate() {
+        match inst.shape_profile.criticality_tier() {
+            CriticalityTier::Critical => critical.push(i),
+            CriticalityTier::Structural => structural.push(i),
+            CriticalityTier::Filler => filler.push(i),
+        }
+    }
+    let sort_tier = |v: &mut Vec<usize>| {
+        v.sort_by(|&a, &b| {
+            instances[b]
+                .shape_profile
+                .priority_score
+                .partial_cmp(&instances[a].shape_profile.priority_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| instances[a].instance_id.cmp(&instances[b].instance_id))
+        });
+    };
+    sort_tier(&mut critical);
+    sort_tier(&mut structural);
+    sort_tier(&mut filler);
+    CriticalityQueues {
+        critical,
+        structural,
+        filler,
+    }
+}
+
 /// Fixed-sheet separator bootstrap — NOT upstream LBF parity.
 ///
 /// Upstream guarantees every item a clear placement by widening the strip; on
@@ -114,5 +154,80 @@ fn fixed_sheet_separator_bootstrap(
             y: ay,
             rotation_deg: rot,
         });
+    }
+}
+
+#[cfg(test)]
+mod q51_tests {
+    use super::*;
+
+    fn poly_part(id: &str, w: f64, h: f64, qty: i64, pts: serde_json::Value) -> Part {
+        Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: qty,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(pts),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    fn rect(id: &str, w: f64, h: f64, qty: i64) -> Part {
+        poly_part(
+            id,
+            w,
+            h,
+            qty,
+            serde_json::json!([[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]]),
+        )
+    }
+
+    fn make_instance(idx: usize, part: Part) -> SPInstance {
+        let base = std::rc::Rc::new(prepare_base_shape_native(&part).expect("preparable"));
+        let prof = std::rc::Rc::new(PartShapeProfile::compute(&part, &base, 4_500_000.0, 3000.0));
+        SPInstance {
+            idx,
+            instance_id: format!("{}#{idx}", part.id),
+            part_id: part.id.clone(),
+            part,
+            allowed_rotations_deg: vec![0.0],
+            continuous_rotation: false,
+            spacing_collision_base_shape: base.clone(),
+            base_shape: base,
+            shape_profile: prof,
+        }
+    }
+
+    #[test]
+    fn criticality_queues_split_and_sort_by_priority() {
+        // big concave L (critical), medium square (structural), tiny square (filler).
+        let l = poly_part(
+            "L",
+            1000.0,
+            1000.0,
+            6,
+            serde_json::json!([
+                [0.0, 0.0], [1000.0, 0.0], [1000.0, 200.0],
+                [200.0, 200.0], [200.0, 1000.0], [0.0, 1000.0]
+            ]),
+        );
+        let instances = vec![
+            make_instance(0, rect("T", 20.0, 20.0, 50)),  // filler
+            make_instance(1, l),                          // critical
+            make_instance(2, rect("M", 300.0, 300.0, 1)), // structural
+        ];
+        let q = build_criticality_queues(&instances);
+        assert_eq!(q.critical, vec![1], "the L is the only critical part");
+        assert_eq!(q.structural, vec![2], "the 300×300 square is structural");
+        assert_eq!(q.filler, vec![0], "the 20×20 square is a filler");
+        // determinism: same input ⇒ same queues
+        let q2 = build_criticality_queues(&instances);
+        assert_eq!(q.critical, q2.critical);
+        assert_eq!(q.structural, q2.structural);
+        assert_eq!(q.filler, q2.filler);
     }
 }

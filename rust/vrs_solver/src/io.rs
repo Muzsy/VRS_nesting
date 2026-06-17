@@ -296,6 +296,16 @@ pub struct BppReductionDiagnostics {
     pub bpp_lns_parts_reinserted: usize,
     /// Perturbed restarts consumed across all attempts.
     pub bpp_lns_restarts: usize,
+    // ── SGH-Q51: critical-aware constructive sheet builder (opt-in VRS_SHEET_BUILDER) ──
+    pub bpp_sheet_builder_applied: bool,
+    /// Critical parts admitted anchor-first during construction.
+    pub bpp_critical_admitted: usize,
+    /// Critical admission failures (deferred to a later sheet).
+    pub bpp_critical_deferred: usize,
+    /// Sheets opened by the constructive builder.
+    pub bpp_sheets_opened: usize,
+    /// Max critical parts admitted onto a single sheet (the headline: 3 big curved per sheet?).
+    pub bpp_max_critical_per_sheet: usize,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

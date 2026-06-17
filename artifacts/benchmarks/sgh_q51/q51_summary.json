@@ -1,0 +1,68 @@
+{
+  "task": "sgh_q51_critical_aware_sheet_builder",
+  "proof_6big_spacing0_builder_on": {
+    "status": "ok",
+    "placed_count": 6,
+    "used_sheets": 2,
+    "utilization_pct": 39.83119659996222,
+    "big_per_sheet": {
+      "0": 3,
+      "1": 3
+    },
+    "max_big_per_sheet": 3,
+    "builder_applied": true,
+    "max_critical_per_sheet": 3,
+    "wall_time_s": 61.3
+  },
+  "tight_6big_spacing8_builder_on": {
+    "status": "ok",
+    "placed_count": 6,
+    "used_sheets": 3,
+    "utilization_pct": 27.887216570128547,
+    "big_per_sheet": {
+      "0": 2,
+      "1": 2,
+      "2": 2
+    },
+    "max_big_per_sheet": 2,
+    "builder_applied": true,
+    "max_critical_per_sheet": 2,
+    "wall_time_s": 60.9
+  },
+  "full276_builder_on": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "utilization_pct": 54.415207455514896,
+    "big_per_sheet": {
+      "0": 2,
+      "1": 2,
+      "2": 2
+    },
+    "max_big_per_sheet": 2,
+    "builder_applied": true,
+    "max_critical_per_sheet": 2,
+    "wall_time_s": 244.0
+  },
+  "full276_builder_off": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "utilization_pct": 54.415207455514896,
+    "big_per_sheet": {
+      "0": 2,
+      "1": 2,
+      "2": 2
+    },
+    "max_big_per_sheet": 2,
+    "builder_applied": false,
+    "max_critical_per_sheet": 0,
+    "wall_time_s": 243.1
+  },
+  "acceptance": {
+    "PROOF_2sheets_3big_per_sheet_at_spacing0": true,
+    "no_full276_regression_vs_off": true
+  },
+  "verdict": "PASS",
+  "note": "Architecture proven at spacing 0; tight-spacing admission (density-biased separation) = SGH-Q52."
+}

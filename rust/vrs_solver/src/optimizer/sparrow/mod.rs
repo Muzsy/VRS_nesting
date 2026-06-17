@@ -49,7 +49,7 @@ pub use model::{
     SparrowRotationDomain, SparrowSolution, SparrowSolveResult,
 };
 pub use optimizer::SparrowOptimizer;
-pub(crate) use shape_profile::PartShapeProfile;
+pub(crate) use shape_profile::{CriticalityTier, PartShapeProfile};
 
 pub(crate) use diagnostics::*;
 pub(crate) use profile::{ProfileTimer, SearchProfiler};

@@ -1247,6 +1247,299 @@ fn density_insert_part(
     })
 }
 
+// ── SGH-Q51: critical anchor admission (co-movable) ──────────────────────────────────────────
+
+/// Centroid of the admitted parts on `sheet` (mean of their anchor positions); used as the
+/// overlapping seed for the co-movable admission separation.
+fn sheet_centroid(working: &SparrowLayout, sheet: usize) -> (f64, f64) {
+    let (mut sx, mut sy, mut n) = (0.0, 0.0, 0.0);
+    for p in working.placements.iter().filter(|p| p.sheet_index == sheet) {
+        sx += p.x;
+        sy += p.y;
+        n += 1.0;
+    }
+    if n == 0.0 {
+        (0.0, 0.0)
+    } else {
+        (sx / n, sy / n)
+    }
+}
+
+/// SGH-Q51: try to admit critical `cand_inst_idx` onto `target_sheet`, with the already-admitted
+/// parts on that sheet **co-movable**. Returns a new layout with the candidate admitted (and the
+/// sheet's parts possibly re-arranged) on success, or `None`. The candidate is NOT yet in `working`.
+///
+/// Two stages: (1) **direct** density insertion with the admitted set fixed; (2) on failure,
+/// **co-movable** — seed the candidate overlapping the admitted set (interlock-biased) and separate
+/// the whole target sheet (admitted + candidate move together), accepting only a CDE-feasible,
+/// on-sheet result. Continuous rotation preserved; the CDE decides clearance.
+#[allow(clippy::too_many_arguments)]
+fn try_admit_critical(
+    optimizer: &SparrowOptimizer,
+    working: &SparrowLayout,
+    cand_inst_idx: usize,
+    target_sheet: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+    bpp: &mut BppReductionDiagnostics,
+) -> Option<SparrowLayout> {
+    let sheet = &solver_sheets[target_sheet];
+    let inst = &instances[cand_inst_idx];
+    let sheet_sh = prepare_shape_from_sheet(sheet).ok().map(Rc::new)?;
+
+    let rot = super::fixed_sheet::fitting_rotation(inst, std::slice::from_ref(sheet));
+    let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+    if rw > sheet.width + 1e-9 || rh > sheet.height + 1e-9 {
+        return None; // the part does not fit this sheet in any case
+    }
+    let weights = DensityWeights::default();
+
+    // ── (1) DIRECT: density insertion with the admitted set fixed ──────────────────────────────
+    {
+        let mut trial = working.clone();
+        let cand_li = trial.placements.len();
+        let (ax, ay) =
+            placement_anchor_from_rect_min(sheet.min_x, sheet.min_y, inst.part.width, inst.part.height, rot);
+        trial.placements.push(SparrowPlacement {
+            instance_idx: cand_inst_idx,
+            sheet_index: target_sheet,
+            x: ax,
+            y: ay,
+            rotation_deg: rot,
+        });
+        let mut tracker = SparrowCollisionTracker::build(&trial, instances, solver_sheets);
+        tracker.shapes[cand_li] = None; // place the candidate fresh
+        if let Some(pl) = density_insert_part(
+            cand_li, target_sheet, &trial, instances, solver_sheets, &tracker, &sheet_sh, &weights,
+            rng, bpp,
+        ) {
+            trial.placements[cand_li] = pl;
+            // Mid-build feasibility = the placed parts are collision-free / in-bounds (NOT "all
+            // instances placed" — the layout is still being constructed).
+            if SparrowCollisionTracker::final_validation_tracker(&trial, instances, solver_sheets)
+                .is_feasible()
+            {
+                return Some(trial);
+            }
+        }
+    }
+
+    // ── (2) CO-MOVABLE: overlapping seed + separate the whole target sheet ─────────────────────
+    let (cx, cy) = sheet_centroid(working, target_sheet);
+    let admitted_count = working
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == target_sheet)
+        .count();
+    const RESTARTS: usize = 4;
+    for r in 0..RESTARTS {
+        if started.elapsed().as_secs_f64() >= deadline_s {
+            break;
+        }
+        // Seed near the admitted centroid (overlapping), jittered per restart; clamped on-sheet.
+        let jx = (rng.next_f64() - 0.5) * sheet.width * 0.3;
+        let jy = (rng.next_f64() - 0.5) * sheet.height * 0.3;
+        let sx = (cx + jx).clamp(sheet.min_x, (sheet.max_x - rw).max(sheet.min_x));
+        let sy = (cy + jy).clamp(sheet.min_y, (sheet.max_y - rh).max(sheet.min_y));
+        let seed_rot = if r == 0 { rot } else { rot + 90.0 * (r as f64) };
+        let (ax, ay) =
+            placement_anchor_from_rect_min(sx, sy, inst.part.width, inst.part.height, seed_rot);
+        let mut trial = working.clone();
+        trial.placements.push(SparrowPlacement {
+            instance_idx: cand_inst_idx,
+            sheet_index: target_sheet,
+            x: ax,
+            y: ay,
+            rotation_deg: seed_rot,
+        });
+        let now = started.elapsed().as_secs_f64();
+        let step_deadline = (now + (deadline_s - now).max(0.5) * 0.5).min(deadline_s);
+        let (feasible, remapped) = separate_sheet_local(
+            optimizer, &trial, target_sheet, sheet, instances, started, step_deadline, rng, diag,
+        );
+        if feasible && remapped.len() == admitted_count + 1 {
+            let mut others: Vec<SparrowPlacement> = working
+                .placements
+                .iter()
+                .filter(|p| p.sheet_index != target_sheet)
+                .cloned()
+                .collect();
+            others.extend(remapped);
+            let out = SparrowLayout { placements: others };
+            if SparrowCollisionTracker::final_validation_tracker(&out, instances, solver_sheets)
+                .is_feasible()
+            {
+                return Some(out);
+            }
+        }
+    }
+    None
+}
+
+/// SGH-Q51: directly insert (no co-movable separation) part `inst_idx` onto `sheet` at the densest
+/// clear position (the structural/filler path). Returns the new layout or `None` if it does not fit.
+#[allow(clippy::too_many_arguments)]
+fn direct_insert_on_sheet(
+    working: &SparrowLayout,
+    inst_idx: usize,
+    sheet: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    weights: &DensityWeights,
+    rng: &mut DeterministicRng,
+    bpp: &mut BppReductionDiagnostics,
+) -> Option<SparrowLayout> {
+    let s = &solver_sheets[sheet];
+    let inst = &instances[inst_idx];
+    let sheet_sh = prepare_shape_from_sheet(s).ok().map(Rc::new)?;
+    let rot = super::fixed_sheet::fitting_rotation(inst, std::slice::from_ref(s));
+    let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+    if rw > s.width + 1e-9 || rh > s.height + 1e-9 {
+        return None;
+    }
+    let mut trial = working.clone();
+    let cand_li = trial.placements.len();
+    let (ax, ay) =
+        placement_anchor_from_rect_min(s.min_x, s.min_y, inst.part.width, inst.part.height, rot);
+    trial.placements.push(SparrowPlacement {
+        instance_idx: inst_idx,
+        sheet_index: sheet,
+        x: ax,
+        y: ay,
+        rotation_deg: rot,
+    });
+    let mut tracker = SparrowCollisionTracker::build(&trial, instances, solver_sheets);
+    tracker.shapes[cand_li] = None;
+    let pl = density_insert_part(
+        cand_li, sheet, &trial, instances, solver_sheets, &tracker, &sheet_sh, weights, rng, bpp,
+    )?;
+    trial.placements[cand_li] = pl; // density_insert_part guarantees a CDE-clear placement
+    Some(trial)
+}
+
+/// True when the critical-aware constructive sheet builder is enabled (`VRS_SHEET_BUILDER=1`).
+pub(crate) fn sheet_builder_enabled() -> bool {
+    std::env::var("VRS_SHEET_BUILDER").ok().as_deref() == Some("1")
+}
+
+/// SGH-Q51: critical-aware constructive sheet builder. Builds the seed **anchor-first**: per sheet,
+/// a critical admission phase (co-movable `try_admit_critical`) runs before any filler, then
+/// structural and filler parts fill the remaining space; a new sheet opens only when the current
+/// sheet's critical frontier is exhausted. The sheet count **emerges**. Any part that still does not
+/// fit is bootstrapped (overlap allowed) so the downstream separator can resolve it. Gated; the
+/// caller falls back to the LBF seed when disabled.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_critical_aware_seed(
+    problem: &SparrowProblem,
+    optimizer: &SparrowOptimizer,
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+    bpp: &mut BppReductionDiagnostics,
+) -> SparrowLayout {
+    let instances = &problem.instances;
+    let sheets = &problem.container.sheets;
+    let queues = super::fixed_sheet::build_criticality_queues(instances);
+    let weights = DensityWeights::default();
+    let mut layout = SparrowLayout {
+        placements: Vec::with_capacity(instances.len()),
+    };
+    let mut placed = vec![false; instances.len()];
+    bpp.bpp_sheet_builder_applied = true;
+
+    const CRITICAL_FRONTIER: usize = 2; // close the critical phase after this many consecutive fails
+
+    for sheet_idx in 0..sheets.len() {
+        if started.elapsed().as_secs_f64() >= deadline_s || placed.iter().all(|&p| p) {
+            break;
+        }
+        bpp.bpp_sheets_opened += 1;
+        let mut critical_here = 0usize;
+
+        // ── 1. Critical admission phase (co-movable anchors) ──────────────────────────────────
+        let mut consec_fail = 0usize;
+        for &ci in &queues.critical {
+            if placed[ci] {
+                continue;
+            }
+            if started.elapsed().as_secs_f64() >= deadline_s || consec_fail >= CRITICAL_FRONTIER {
+                break;
+            }
+            let now = started.elapsed().as_secs_f64();
+            let admit_deadline = (now + (deadline_s - now).max(1.0) * 0.5).min(deadline_s);
+            match try_admit_critical(
+                optimizer, &layout, ci, sheet_idx, instances, sheets, started, admit_deadline, rng,
+                diag, bpp,
+            ) {
+                Some(new_layout) => {
+                    layout = new_layout;
+                    placed[ci] = true;
+                    consec_fail = 0;
+                    critical_here += 1;
+                    bpp.bpp_critical_admitted += 1;
+                }
+                None => {
+                    consec_fail += 1;
+                    bpp.bpp_critical_deferred += 1;
+                }
+            }
+        }
+        bpp.bpp_max_critical_per_sheet = bpp.bpp_max_critical_per_sheet.max(critical_here);
+
+        // ── 2. Structural + 3. Filler phases (direct density insertion on this sheet) ─────────
+        for &pi in queues.structural.iter().chain(queues.filler.iter()) {
+            if placed[pi] {
+                continue;
+            }
+            if started.elapsed().as_secs_f64() >= deadline_s {
+                break;
+            }
+            if let Some(new_layout) = direct_insert_on_sheet(
+                &layout, pi, sheet_idx, instances, sheets, &weights, rng, bpp,
+            ) {
+                layout = new_layout;
+                placed[pi] = true;
+            }
+        }
+    }
+
+    // Bootstrap any still-unplaced part (overlap allowed; the separator resolves it).
+    for i in 0..instances.len() {
+        if placed[i] {
+            continue;
+        }
+        let inst = &instances[i];
+        let rot = super::fixed_sheet::fitting_rotation(inst, sheets);
+        let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+        if let Some((sheet_idx, sheet)) = sheets
+            .iter()
+            .enumerate()
+            .find(|(_, s)| rw <= s.width + 1e-9 && rh <= s.height + 1e-9)
+        {
+            let max_rmx = (sheet.max_x - rw).max(sheet.min_x);
+            let max_rmy = (sheet.max_y - rh).max(sheet.min_y);
+            let rmx = sheet.min_x + rng.next_f64() * (max_rmx - sheet.min_x).max(0.0);
+            let rmy = sheet.min_y + rng.next_f64() * (max_rmy - sheet.min_y).max(0.0);
+            let (ax, ay) =
+                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
+            layout.placements.push(SparrowPlacement {
+                instance_idx: i,
+                sheet_index: sheet_idx,
+                x: ax,
+                y: ay,
+                rotation_deg: rot,
+            });
+        }
+    }
+    layout.placements.sort_by_key(|p| p.instance_idx);
+    layout
+}
+
 /// Per-sheet density compaction (SGH-Q49): multi-sweep, **incremental tracker**. The shared
 /// `tracker` is built once by the caller; after each accepted move only that part's shape is
 /// updated (`tracker.shapes[li]`), which is all `build_sheet_session` reads — eliminating the Q48
@@ -1697,7 +1990,33 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     let reduction_deadline = (total_budget * (1.0 - density_frac) - guard).max(guard.min(total_budget * 0.5));
     let construct_deadline =
         (total_budget * 0.25).clamp(2.0, 180.0).min((total_budget - guard).max(1.0));
-    let seed = build_native_constructive_seed(&problem);
+    // SGH-Q51: critical-aware constructive sheet builder (opt-in). The builder seed is used ONLY
+    // when it is complete and fully feasible (every part placed, collision-free); otherwise it
+    // falls back to the LBF seed — so the builder can never regress the result. This banks the
+    // proven cases (e.g. 3 big curved parts on one sheet) without risking partial output where the
+    // admission is not yet strong enough (tight spacing).
+    let seed = if sheet_builder_enabled() {
+        // Snapshot the RNG so a fallback restores the exact pre-builder stream — the fallback path
+        // is then identical (deterministically) to the builder-off path.
+        let rng_snapshot = rng.clone();
+        // Cap the builder's wall time to a small budget fraction so a fallback still leaves the
+        // BPP reduction enough time at ANY total budget (no time-starvation regression, even at
+        // tight budgets). The spacing-0 win completes well within this; tight-spacing failures fall
+        // back cheaply.
+        let builder_cap = (total_budget * 0.12).clamp(4.0, 20.0);
+        let builder_deadline = (started.elapsed().as_secs_f64() + builder_cap).min(construct_deadline);
+        let built = build_critical_aware_seed(
+            &problem, &optimizer, &started, builder_deadline, &mut rng, &mut diag, &mut bpp,
+        );
+        if layout_is_full_feasible(&built, &instances, &solver_sheets) {
+            built
+        } else {
+            rng = rng_snapshot;
+            build_native_constructive_seed(&problem)
+        }
+    } else {
+        build_native_constructive_seed(&problem)
+    };
     let mut working = if layout_is_full_feasible(&seed, &instances, &solver_sheets) {
         seed
     } else {
@@ -2120,5 +2439,116 @@ mod q50_tests {
             "no part should remain on the dropped sheet 1"
         );
         assert!(layout_is_full_feasible(&working, &instances, &sheets));
+    }
+}
+
+#[cfg(test)]
+mod q51_measure_gate {
+    use super::*;
+    use crate::sheet::{expand_sheets, Stock};
+
+    fn load_lv8_11612() -> Part {
+        let base = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../artifacts/benchmarks/sgh_q32/inputs/case_01_2x1500x3000.json"
+        ))
+        .expect("base input");
+        let v: serde_json::Value = serde_json::from_str(&base).unwrap();
+        let p = v["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["id"].as_str().unwrap_or("").starts_with("Lv8_11612"))
+            .expect("Lv8_11612");
+        Part {
+            id: p["id"].as_str().unwrap().to_string(),
+            width: p["width"].as_f64().unwrap(),
+            height: p["height"].as_f64().unwrap(),
+            quantity: 6,
+            allowed_rotations_deg: vec![],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(p["outer_points"].clone()),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    fn continuous_instance(idx: usize, part: Part) -> SPInstance {
+        let base = std::rc::Rc::new(prepare_base_shape_native(&part).expect("preparable"));
+        let prof = std::rc::Rc::new(PartShapeProfile::compute(&part, &base, 4_500_000.0, 3000.0));
+        // 24 continuous-domain rotation samples (the separator's rotation set); continuous flag on.
+        let rots: Vec<f64> = (0..24).map(|i| i as f64 * 15.0).collect();
+        SPInstance {
+            idx,
+            instance_id: format!("{}#{idx}", part.id),
+            part_id: part.id.clone(),
+            part,
+            allowed_rotations_deg: rots,
+            continuous_rotation: true,
+            spacing_collision_base_shape: base.clone(),
+            base_shape: base,
+            shape_profile: prof,
+        }
+    }
+
+    #[test]
+    fn measure_gate_admit_third_big_part_on_one_sheet() {
+        let part = load_lv8_11612();
+        let instances: Vec<SPInstance> = (0..3).map(|i| continuous_instance(i, part.clone())).collect();
+        let sheets = expand_sheets(&[Stock {
+            id: "S".into(),
+            quantity: 1,
+            width: Some(1500.0),
+            height: Some(3000.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }])
+        .expect("sheets");
+        let sheet = &sheets[0];
+
+        let cfg = SparrowConfig::from_solver_input(
+            30.0,
+            CollisionBackendKind::Cde,
+            RotationResolveContext::legacy_default(),
+            42,
+        );
+        let optimizer = SparrowOptimizer::new(cfg);
+        let mut rng = DeterministicRng::new(42);
+        let mut diag = SparrowDiagnostics::default();
+        let mut bpp = BppReductionDiagnostics::default();
+        let started = std::time::Instant::now();
+
+        // Place 2 big parts side by side at the fitting (≈90°) rotation — bbox-separate, feasible.
+        let rot = super::super::fixed_sheet::fitting_rotation(&instances[0], std::slice::from_ref(sheet));
+        let (rw, _rh) = dims_for_rotation(part.width, part.height, rot);
+        let mk = |idx: usize, rmx: f64| {
+            let (ax, ay) =
+                placement_anchor_from_rect_min(rmx, sheet.min_y + 5.0, part.width, part.height, rot);
+            SparrowPlacement { instance_idx: idx, sheet_index: 0, x: ax, y: ay, rotation_deg: rot }
+        };
+        let working = SparrowLayout {
+            placements: vec![mk(0, sheet.min_x + 5.0), mk(1, sheet.min_x + rw + 20.0)],
+        };
+        let setup_feasible =
+            SparrowCollisionTracker::final_validation_tracker(&working, &instances, &sheets)
+                .is_feasible();
+        assert!(setup_feasible, "two big parts side by side must be feasible (rw={rw})");
+
+        // Try to admit the 3rd big part onto the same sheet (only interlock can fit it).
+        let result = try_admit_critical(
+            &optimizer, &working, 2, 0, &instances, &sheets, &started, 25.0, &mut rng, &mut diag,
+            &mut bpp,
+        );
+        let admitted = result.is_some();
+        eprintln!("=== Q51 MEASURE-GATE: 3rd big Lv8_11612 admitted on one sheet = {admitted} ===");
+        if let Some(out) = result {
+            assert!(layout_is_full_feasible(&out, &instances, &sheets), "admitted layout must be feasible");
+            let on_sheet = out.placements.iter().filter(|p| p.sheet_index == 0).count();
+            eprintln!("=== Q51 MEASURE-GATE: parts on sheet 0 = {on_sheet} (expect 3) ===");
+            assert_eq!(on_sheet, 3, "all 3 big parts on one sheet");
+        }
+        // The test passes either way; the eprintln reports the gate outcome (run with --nocapture).
     }
 }

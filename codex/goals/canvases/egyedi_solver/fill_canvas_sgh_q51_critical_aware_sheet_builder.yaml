@@ -1,0 +1,71 @@
+steps:
+  - name: "T1 — Kritikalitas tierek + queue-k"
+    description: >
+      A PartShapeProfile (Q47) alapjan deterministikus kritikalitas-besorolas: critical
+      (large_anchor/concave/slender/low-fill/high-interlock), structural (medium), filler (tiny).
+      Critical/structural/filler queue-k a sheet-builderhez. Unit-tesztek (determinizmus, besorolas).
+      cargo build + cargo test zold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/shape_profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/fixed_sheet.rs"
+
+  - name: "T2 — Critical admission search (a gating R&D mag)"
+    description: >
+      try_admit_critical(sheet, admitted_set, candidate): (1) direct density-beszuras a fix admitted
+      set mellett (density_insert_part); (2) ha nem megy, co-movable: seedeld a candidate-et atfedve,
+      es density-biased szeparacio a {admitted + candidate} seten (continuous rotation, CDE-valid,
+      budgetelt) a separate_sheet_local/exploration ujrahasznositasaval. Unit-teszt egy konstrualt
+      konkav-par fixturan. Meres-kapu: a 6x Lv8_11612 fixturan elfer-e 3 nagy darab egy tablan.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/fixed_sheet.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T3 — build_critical_aware_seed fazisos builder"
+    description: >
+      Tablankent: critical admission phase (T2) -> structural phase -> filler phase -> seal -> uj
+      tabla; a tablaszam emergens. Gated VRS_SHEET_BUILDER (default off -> a jelenlegi LBF seed). A
+      build_native_constructive_seed kimenetet valtja le, ha engedelyezve.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/fixed_sheet.rs"
+
+  - name: "T4 — Soft-movable anchorok (inertia penalty)"
+    description: >
+      A structural/filler fazisban a critical anchorok mozoghatnak, ha a sheet-score javul, de
+      inertia-buntetessel, hogy a fillerek ne rangassak szet a jo anchor-konfiguraciot. A Q49
+      density compaction ujrahasznositasa mozgas-buntetessel.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T5 — Dontes-diagnosztika"
+    description: >
+      io.rs: per-sheet critical_admitted / critical_deferred, admission attempts/failures,
+      phase-close reasons, sheets_opened. A solver bizonyitja, hogy anchor-first admission futott es
+      a tabla nem zarodott a kritikus frontier kimerulese elott.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/fixed_sheet.rs"
+
+  - name: "T6 — Tesztek"
+    description: >
+      Unit/integracios: builder on/off; determinizmus; anchor-first admission a fillerek elott; a
+      meglevo suite-ok (lib + multisheet + density + shape_profile) zoldek maradnak.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "T7 — A/B benchmark (full276)"
+    description: >
+      scripts/bench_sgh_q51_sheet_builder.py: builder ON vs OFF, full276 LV8. Meres: used_sheets,
+      critical-per-sheet (nagy darab/tabla), validity. Acceptance: nincs regresszio + anchor-first
+      admission lathato a diagnosztikaban; stretch: tobb kritikus/tabla vagy kevesebb tabla.
+    outputs:
+      - "scripts/bench_sgh_q51_sheet_builder.py"
+      - "artifacts/benchmarks/sgh_q51/q51_summary.json"
+
+  - name: "T8 — Verify + report + checklist"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q51_critical_aware_sheet_builder.md
+      futtatasa; report a Q50-mintara, oszinte verdikttel (admission mukodott-e, elfer-e 3 nagy egy
+      tablan, mi a marado res).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q51_critical_aware_sheet_builder.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q51_critical_aware_sheet_builder.md"

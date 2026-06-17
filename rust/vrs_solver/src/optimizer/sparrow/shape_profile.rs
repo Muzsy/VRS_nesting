@@ -235,6 +235,41 @@ impl PartShapeProfile {
         }
         v
     }
+
+    /// SGH-Q51: true when the part is layout-determining (a critical anchor): a large anchor, a
+    /// high-interlock concave part, a slender part, or a high-priority part — and never a tiny
+    /// filler. Project-general (no `part_id`), deterministic.
+    pub fn is_critical(&self) -> bool {
+        !self.is_tiny_filler
+            && (self.is_large_anchor
+                || self.is_high_interlock_potential
+                || self.is_slender
+                || self.priority_score >= CRITICAL_PRIORITY)
+    }
+
+    /// SGH-Q51: construction tier — `Critical` (admitted anchor-first), `Filler` (tiny, last),
+    /// or `Structural` (everything between).
+    pub fn criticality_tier(&self) -> CriticalityTier {
+        if self.is_critical() {
+            CriticalityTier::Critical
+        } else if self.is_tiny_filler {
+            CriticalityTier::Filler
+        } else {
+            CriticalityTier::Structural
+        }
+    }
+}
+
+/// SGH-Q51 priority threshold above which a (non-tiny) part counts as critical even without a
+/// dominant class flag. ≈ the big GRAVÍR-class parts; tunable, documented.
+const CRITICAL_PRIORITY: f64 = 0.15;
+
+/// SGH-Q51: the three construction tiers, admitted in this order per sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CriticalityTier {
+    Critical,
+    Structural,
+    Filler,
 }
 
 /// Representative sheet scale used by the profile (largest sheet area + longest sheet span).
@@ -404,6 +439,36 @@ mod tests {
             anchor.priority_score,
             tiny.priority_score
         );
+    }
+
+    #[test]
+    fn criticality_tiers_classify_anchor_structural_filler() {
+        let anchor = profile_of(&poly_part("L", 1000.0, 1000.0, 6, l_points()));
+        let structural = profile_of(&rect_part("M", 300.0, 300.0, 1));
+        let filler = profile_of(&rect_part("T", 20.0, 20.0, 50));
+        assert_eq!(anchor.criticality_tier(), CriticalityTier::Critical, "large concave anchor");
+        assert!(anchor.is_critical());
+        assert_eq!(structural.criticality_tier(), CriticalityTier::Structural, "medium square");
+        assert_eq!(filler.criticality_tier(), CriticalityTier::Filler, "tiny square");
+        assert!(!filler.is_critical());
+    }
+
+    #[test]
+    fn tiny_part_is_never_critical_even_if_slender() {
+        // A long thin strip that is tiny relative to the sheet must be Filler, not Critical.
+        let strip = profile_of(&rect_part("S", 160.0, 12.0, 10));
+        assert!(strip.is_slender, "aspect={}", strip.aspect_ratio);
+        assert!(strip.is_tiny_filler, "ratio={}", strip.sheet_area_ratio);
+        assert!(!strip.is_critical(), "a tiny slender strip is a filler, not a critical anchor");
+        assert_eq!(strip.criticality_tier(), CriticalityTier::Filler);
+    }
+
+    #[test]
+    fn criticality_tier_is_deterministic() {
+        let a = profile_of(&poly_part("L", 1000.0, 1000.0, 6, l_points()));
+        let b = profile_of(&poly_part("L", 1000.0, 1000.0, 6, l_points()));
+        assert_eq!(a.criticality_tier(), b.criticality_tier());
+        assert_eq!(a.is_critical(), b.is_critical());
     }
 
     #[test]
