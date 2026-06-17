@@ -1,0 +1,50 @@
+steps:
+  - name: "T1 — density_biased_separate primitiv"
+    description: >
+      Fokuszalt iterativ szeparator a kritikus seten: minden atfedo darabra mintazz jelolteket
+      (uniform + kontur-kozeli, Q48), continuous rotacioval; pontozd kombinalt objektivvel:
+      collision_proxy(quantify_collision_poly_poly) + w_density*density_candidate_score (spacing-
+      collision shape-en, gap-tarto). Mozgasd a legjobb pozaciora, iteralj amig CDE-feasible vagy
+      budget. Unit-teszt: szintetikus atfedo konkav-par interlockba oldodik (nem szetvalik).
+      cargo build + cargo test zold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T2 — bekotes try_admit_critical-be + meres-kapu"
+    description: >
+      A density_biased_separate bekotese a try_admit_critical co-movable lepesebe (a
+      separate_sheet_local helyett/melle). Meres-kapu: 6x Lv8_11612 spacing 5 — elfer-e 3 nagy
+      darab egy tablan? Ha nem, a sulyozast/sampling-et ujragondoljuk a T3 elott.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T3 — Suly- es budget-hangolas"
+    description: >
+      w_density, sweepek, per-darab budget hangolasa az admissionhez. VRS_ADMISSION_DENSITY_BIAS
+      knob (default ertek + ki/be). A density-bias csak a gated builder admissionjeben aktiv.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "T4 — Tesztek"
+    description: >
+      Unit: density-biased szeparator interlockot ad atfedo parra. Integracios: builder+bias valid;
+      VRS_SHEET_BUILDER/ADMISSION_DENSITY_BIAS default-off valtozatlan. A meglevo suite-ok zoldek.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "T5 — A/B benchmark"
+    description: >
+      scripts/bench_sgh_q52_density_biased_admission.py: 6-big spacing 5/8 + full276; builder+bias
+      ON vs Q51-builder-only vs OFF. Meres: big/sheet, used_sheets, validity. Artefaktok az
+      artifacts/benchmarks/sgh_q52/ alatt.
+    outputs:
+      - "scripts/bench_sgh_q52_density_biased_admission.py"
+      - "artifacts/benchmarks/sgh_q52/q52_summary.json"
+
+  - name: "T6 — Verify + report + checklist"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q52_density_biased_admission.md
+      futtatasa; report a Q51-mintara, oszinte verdikttel (spacing 5-on 3/tabla?-e, mi a marado res).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q52_density_biased_admission.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q52_density_biased_admission.md"

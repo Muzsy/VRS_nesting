@@ -1,0 +1,135 @@
+{
+  "task": "sgh_q52_density_biased_admission",
+  "bias_w": 2.0,
+  "tight_spacing_5": {
+    "builder_only": {
+      "status": "ok",
+      "placed_count": 6,
+      "used_sheets": 3,
+      "utilization_pct": 27.387929881017428,
+      "big_per_sheet": {
+        "0": 2,
+        "1": 2,
+        "2": 2
+      },
+      "max_big_per_sheet": 2,
+      "builder_applied": true,
+      "critical_admitted": 2,
+      "wall_time_s": 78.3
+    },
+    "builder_plus_bias": {
+      "status": "ok",
+      "placed_count": 6,
+      "used_sheets": 3,
+      "utilization_pct": 27.387929881017428,
+      "big_per_sheet": {
+        "0": 2,
+        "1": 2,
+        "2": 2
+      },
+      "max_big_per_sheet": 2,
+      "builder_applied": true,
+      "critical_admitted": 6,
+      "wall_time_s": 77.0
+    }
+  },
+  "tight_spacing_8": {
+    "builder_only": {
+      "status": "ok",
+      "placed_count": 6,
+      "used_sheets": 3,
+      "utilization_pct": 27.887216570128547,
+      "big_per_sheet": {
+        "0": 2,
+        "1": 2,
+        "2": 2
+      },
+      "max_big_per_sheet": 2,
+      "builder_applied": true,
+      "critical_admitted": 4,
+      "wall_time_s": 77.1
+    },
+    "builder_plus_bias": {
+      "status": "ok",
+      "placed_count": 6,
+      "used_sheets": 3,
+      "utilization_pct": 27.887216570128547,
+      "big_per_sheet": {
+        "0": 2,
+        "1": 2,
+        "2": 2
+      },
+      "max_big_per_sheet": 2,
+      "builder_applied": true,
+      "critical_admitted": 6,
+      "wall_time_s": 76.1
+    }
+  },
+  "proof_spacing0_builder_on": {
+    "status": "ok",
+    "placed_count": 6,
+    "used_sheets": 2,
+    "utilization_pct": 39.83119659996222,
+    "big_per_sheet": {
+      "0": 3,
+      "1": 3
+    },
+    "max_big_per_sheet": 3,
+    "builder_applied": true,
+    "critical_admitted": 3,
+    "wall_time_s": 73.0
+  },
+  "full276_builder_plus_bias": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "utilization_pct": 54.415207455514896,
+    "big_per_sheet": {
+      "0": 2,
+      "1": 2,
+      "2": 2
+    },
+    "max_big_per_sheet": 2,
+    "builder_applied": true,
+    "critical_admitted": 2,
+    "wall_time_s": 292.9
+  },
+  "full276_builder_only": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "utilization_pct": 54.415207455514896,
+    "big_per_sheet": {
+      "0": 2,
+      "1": 2,
+      "2": 2
+    },
+    "max_big_per_sheet": 2,
+    "builder_applied": true,
+    "critical_admitted": 2,
+    "wall_time_s": 292.9
+  },
+  "full276_off": {
+    "status": "ok",
+    "placed_count": 276,
+    "used_sheets": 3,
+    "utilization_pct": 54.415207455514896,
+    "big_per_sheet": {
+      "0": 2,
+      "1": 2,
+      "2": 2
+    },
+    "max_big_per_sheet": 2,
+    "builder_applied": false,
+    "critical_admitted": 0,
+    "wall_time_s": 317.7
+  },
+  "acceptance": {
+    "PROOF_2sheets_3big_at_spacing0": true,
+    "tight_spacing_no_regression_vs_builder_only": true,
+    "full276_no_regression": true,
+    "tight_spacing_improved_big_per_sheet": false
+  },
+  "verdict": "PASS",
+  "finding": "NEGATIVE (as expected): density-bias == overlap-min at tight spacing (both 2 big/sheet). The objective is correct; the sequential single-part coordinate-descent search cannot find the simultaneous 3-way curved interlock. Retained as a gated, tested building block; the lever is SGH-Q53 (simultaneous multi-part admission search)."
+}

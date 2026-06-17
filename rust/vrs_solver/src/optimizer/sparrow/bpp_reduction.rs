@@ -1265,6 +1265,189 @@ fn sheet_centroid(working: &SparrowLayout, sheet: usize) -> (f64, f64) {
     }
 }
 
+/// SGH-Q52: density-biased weight for the admission separation (`VRS_ADMISSION_DENSITY_BIAS`,
+/// default 0.0 ⇒ pure overlap-minimising = Q51 behaviour). A positive value biases overlap
+/// resolution toward interlock (tuck into concavities) instead of spreading.
+fn admission_density_bias() -> f64 {
+    std::env::var("VRS_ADMISSION_DENSITY_BIAS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0)
+        .max(0.0)
+}
+
+/// Feasibility of the parts on `sheet_idx` (collision-free + in-bounds), given the local placements.
+fn sheet_local_feasible(
+    local: &[SparrowPlacement],
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+) -> bool {
+    let lay = SparrowLayout {
+        placements: local.to_vec(),
+    };
+    SparrowCollisionTracker::final_validation_tracker(&lay, instances, solver_sheets).is_feasible()
+}
+
+/// SGH-Q52: density-biased separation over the parts on `sheet_idx`. Coordinate descent: each part
+/// moves to the candidate (uniform + contour-near, continuous rotation) that minimises
+/// `collision_proxy + w_density · density_proxy` — resolving overlap **toward interlock** (tuck into
+/// concavities, gap-preserving via the spacing-collision shape) rather than spreading. Returns
+/// `(feasible, remapped placements for the sheet)`. NFP-free; the CDE decides final feasibility.
+#[allow(clippy::too_many_arguments)]
+fn density_biased_separate(
+    layout: &SparrowLayout,
+    sheet_idx: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    w_density: f64,
+    rng: &mut DeterministicRng,
+    started: &Instant,
+    deadline_s: f64,
+) -> (bool, Vec<SparrowPlacement>) {
+    let sheet = &solver_sheets[sheet_idx];
+    let mut local: Vec<SparrowPlacement> = layout
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == sheet_idx)
+        .map(|p| SparrowPlacement {
+            sheet_index: sheet_idx,
+            ..p.clone()
+        })
+        .collect();
+    if local.len() <= 1 {
+        return (sheet_local_feasible(&local, instances, solver_sheets), local);
+    }
+    let weights = DensityWeights::default();
+    let n_uniform = density_samples();
+    let Some(sheet_sh) = prepare_shape_from_sheet(sheet).ok().map(Rc::new) else {
+        return (false, local);
+    };
+    const SWEEPS: usize = 12;
+    const EPS: f64 = 1e-9;
+    for _ in 0..SWEEPS {
+        if started.elapsed().as_secs_f64() >= deadline_s {
+            break;
+        }
+        for i in 0..local.len() {
+            if started.elapsed().as_secs_f64() >= deadline_s {
+                break;
+            }
+            let inst = &instances[local[i].instance_idx];
+            let cand_base = inst.spacing_collision_base_shape.as_ref();
+            // Session + neighbour shapes over the OTHER parts on the sheet (current positions).
+            let local_layout = SparrowLayout {
+                placements: local.clone(),
+            };
+            let tracker =
+                SparrowCollisionTracker::build(&local_layout, instances, solver_sheets);
+            let Some(session) = build_sheet_session(i, sheet_idx, &local_layout, &tracker, &sheet_sh)
+            else {
+                continue;
+            };
+            let ev = LBFEvaluator {
+                inst,
+                sheet,
+                sheet_idx,
+                session: &session,
+                base: cand_base,
+                n_evals: 0,
+            };
+            let neigh: Vec<CdePreparedShape> = (0..local.len())
+                .filter(|&j| j != i)
+                .filter_map(|j| {
+                    let p = &local[j];
+                    let ji = &instances[p.instance_idx];
+                    transform_base_to_candidate(
+                        ji.spacing_collision_base_shape.as_ref(),
+                        p.x,
+                        p.y,
+                        p.rotation_deg,
+                    )
+                })
+                .collect();
+            let nref: Vec<&CdePreparedShape> = neigh.iter().collect();
+
+            let cur_rot = local[i].rotation_deg;
+            let mut rotations: Vec<f64> = vec![cur_rot];
+            let allowed = &inst.allowed_rotations_deg;
+            if !allowed.is_empty() {
+                let stride = (allowed.len() / 8).max(1);
+                for (k, &r) in allowed.iter().enumerate() {
+                    if k % stride == 0 {
+                        rotations.push(r);
+                    }
+                }
+            }
+            let (cur_rmx, cur_rmy) =
+                rect_min_from_anchor(local[i].x, local[i].y, inst.part.width, inst.part.height, cur_rot);
+            let (rw0, rh0) = dims_for_rotation(inst.part.width, inst.part.height, cur_rot);
+            let mut positions: Vec<(f64, f64)> = vec![(cur_rmx, cur_rmy)];
+            for _ in 0..n_uniform {
+                let rmx = sheet.min_x + rng.next_f64() * (sheet.max_x - rw0 - sheet.min_x).max(0.0);
+                let rmy = sheet.min_y + rng.next_f64() * (sheet.max_y - rh0 - sheet.min_y).max(0.0);
+                positions.push((rmx, rmy));
+            }
+            positions.extend(contour_near_rect_mins(&nref, rw0, rh0, sheet, n_uniform + 20));
+
+            // Lexicographic objective: prefer CLEAR candidates ranked by density (interlock); only
+            // if NONE is clear, take the lowest collision-proxy (progress toward feasible).
+            let mut best_clear: Option<(f64, SparrowPlacement)> = None; // (density, placement)
+            let mut best_coll: Option<(f64, SparrowPlacement)> = None; // (collision_proxy, placement)
+            for &rot in &rotations {
+                let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+                for &(rmx, rmy) in &positions {
+                    if rmx < sheet.min_x - EPS
+                        || rmy < sheet.min_y - EPS
+                        || rmx + rw > sheet.max_x + EPS
+                        || rmy + rh > sheet.max_y + EPS
+                    {
+                        continue;
+                    }
+                    let (ax, ay) = placement_anchor_from_rect_min(
+                        rmx,
+                        rmy,
+                        inst.part.width,
+                        inst.part.height,
+                        rot,
+                    );
+                    let Some(cand) = transform_base_to_candidate(cand_base, ax, ay, rot) else {
+                        continue;
+                    };
+                    let pl = SparrowPlacement {
+                        instance_idx: local[i].instance_idx,
+                        sheet_index: sheet_idx,
+                        x: ax,
+                        y: ay,
+                        rotation_deg: rot,
+                    };
+                    if ev.score_lbf_candidate(rmx, rmy, rot).is_some() {
+                        // clear ⇒ rank by density (lower = more interlocked), scaled by w_density
+                        let dens = density_candidate_score(&cand, &nref, &weights) * w_density;
+                        if best_clear.as_ref().is_none_or(|(bs, _)| dens < *bs) {
+                            best_clear = Some((dens, pl));
+                        }
+                    } else {
+                        let coll: f64 = nref
+                            .iter()
+                            .map(|n| quantify_collision_poly_poly_value(&cand, n))
+                            .sum();
+                        if best_coll.as_ref().is_none_or(|(bs, _)| coll < *bs) {
+                            best_coll = Some((coll, pl));
+                        }
+                    }
+                }
+            }
+            if let Some((_, pl)) = best_clear.or(best_coll) {
+                local[i] = pl;
+            }
+        }
+        if sheet_local_feasible(&local, instances, solver_sheets) {
+            break;
+        }
+    }
+    (sheet_local_feasible(&local, instances, solver_sheets), local)
+}
+
 /// SGH-Q51: try to admit critical `cand_inst_idx` onto `target_sheet`, with the already-admitted
 /// parts on that sheet **co-movable**. Returns a new layout with the candidate admitted (and the
 /// sheet's parts possibly re-arranged) on success, or `None`. The candidate is NOT yet in `working`.
@@ -1358,9 +1541,20 @@ fn try_admit_critical(
         });
         let now = started.elapsed().as_secs_f64();
         let step_deadline = (now + (deadline_s - now).max(0.5) * 0.5).min(deadline_s);
-        let (feasible, remapped) = separate_sheet_local(
-            optimizer, &trial, target_sheet, sheet, instances, started, step_deadline, rng, diag,
-        );
+        // SGH-Q52: when enabled, resolve the overlap with the DENSITY-BIASED separator (tuck into
+        // interlock, gap-preserving) instead of the overlap-minimising one (which spreads). This is
+        // what lets the 3-way curved interlock be found at tight spacing.
+        let w_density = admission_density_bias();
+        let (feasible, remapped) = if w_density > 0.0 {
+            density_biased_separate(
+                &trial, target_sheet, instances, solver_sheets, w_density, rng, started,
+                step_deadline,
+            )
+        } else {
+            separate_sheet_local(
+                optimizer, &trial, target_sheet, sheet, instances, started, step_deadline, rng, diag,
+            )
+        };
         if feasible && remapped.len() == admitted_count + 1 {
             let mut others: Vec<SparrowPlacement> = working
                 .placements
@@ -2439,6 +2633,72 @@ mod q50_tests {
             "no part should remain on the dropped sheet 1"
         );
         assert!(layout_is_full_feasible(&working, &instances, &sheets));
+    }
+
+    #[test]
+    fn density_biased_separate_resolves_overlap_into_interlock() {
+        // SGH-Q52: a U with a concave mouth fills a tight sheet; a square seeded OVERLAPPING the
+        // U's floor must be resolved by the density-biased separator into the U's mouth (the only
+        // clear space) — i.e. feasible AND bbox-overlapping the U (interlock), not spread.
+        let u = poly_part(
+            "U",
+            100.0,
+            100.0,
+            serde_json::json!([
+                [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [70.0, 100.0],
+                [70.0, 30.0], [30.0, 30.0], [30.0, 100.0], [0.0, 100.0]
+            ]),
+        );
+        let sq = poly_part(
+            "SQ",
+            20.0,
+            20.0,
+            serde_json::json!([[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]),
+        );
+        let instances = vec![make_instance(0, u), make_instance(1, sq)];
+        // Sheet 110×110 with the U placed at (5,5)-(105,105): the 5 mm margin around the U is too
+        // narrow for the 20×20 square, so the only place it fits is the U's mouth ⇒ it can only be
+        // admitted interlocked. (The U itself stays off the sheet boundary, so it is feasible.)
+        let sheets = expand_sheets(&[Stock {
+            id: "S".into(),
+            quantity: 1,
+            width: Some(110.0),
+            height: Some(110.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }])
+        .expect("sheets");
+        let u0 = transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let (uax, uay) = (5.0 - u0.min_x, 5.0 - u0.min_y);
+        let sq0 = transform_base_to_candidate(instances[1].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let (sax, say) = (45.0 - sq0.min_x, 10.0 - sq0.min_y); // floor region ⇒ overlaps the U
+        let layout = SparrowLayout {
+            placements: vec![
+                SparrowPlacement { instance_idx: 0, sheet_index: 0, x: uax, y: uay, rotation_deg: 0.0 },
+                SparrowPlacement { instance_idx: 1, sheet_index: 0, x: sax, y: say, rotation_deg: 0.0 },
+            ],
+        };
+        let mut rng = DeterministicRng::new(11);
+        let started = std::time::Instant::now();
+        let (feasible, remapped) = density_biased_separate(
+            &layout, 0, &instances, &sheets, 3.0, &mut rng, &started, 10.0,
+        );
+        assert!(feasible, "the density-biased separator must resolve the overlap to feasible");
+        let sq_pl = remapped.iter().find(|p| p.instance_idx == 1).expect("square placement");
+        let sq_shape = transform_base_to_candidate(
+            instances[1].base_shape.as_ref(),
+            sq_pl.x,
+            sq_pl.y,
+            sq_pl.rotation_deg,
+        )
+        .unwrap();
+        let u_shape =
+            transform_base_to_candidate(instances[0].base_shape.as_ref(), uax, uay, 0.0).unwrap();
+        assert!(
+            super::super::density::bbox_overlaps(&sq_shape, &u_shape),
+            "the square should resolve INTO the U's mouth (interlock), not spread"
+        );
     }
 }
 
