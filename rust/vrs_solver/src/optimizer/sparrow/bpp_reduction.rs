@@ -217,6 +217,37 @@ fn min_width_rotation(inst: &SPInstance) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// Rotation candidate set for a density placement / separation step. Honors continuous rotation:
+/// a continuous part gets the current angle + **fine local refinement** (the wiggle that lands a
+/// precise interlock orientation, e.g. ~91°/~281°) + a **coarse global sweep** (every 30°, to flip
+/// 90↔270 or escape the seed basin) — never snapped to a discrete grid, and the coordinate descent
+/// keeps refining across sweeps. A discrete part gets the current angle + a bounded subsample of its
+/// allowed set. (`allowed_rotations_deg` is EMPTY for continuous parts — keying off it alone froze
+/// continuous parts at their seed rotation; this helper is the fix and the single source of truth.)
+fn density_rotation_candidates(inst: &SPInstance, cur_rot: f64) -> Vec<f64> {
+    let mut rotations: Vec<f64> = vec![cur_rot];
+    if inst.continuous_rotation {
+        for d in [0.5_f64, 1.0, 2.0, 4.0, 8.0, 16.0] {
+            rotations.push(cur_rot + d);
+            rotations.push(cur_rot - d);
+        }
+        for k in 0..12 {
+            rotations.push(k as f64 * 30.0);
+        }
+    } else {
+        let allowed = &inst.allowed_rotations_deg;
+        if !allowed.is_empty() {
+            let stride = (allowed.len() / 8).max(1);
+            for (i, &r) in allowed.iter().enumerate() {
+                if i % stride == 0 {
+                    rotations.push(r);
+                }
+            }
+        }
+    }
+    rotations
+}
+
 /// SGH-Q46 M3: strip-compression fit. Place the items on a virtual-WIDE boundary (so they fit
 /// feasibly, spread out), then incrementally compress each sheet's width back to the real
 /// dimension, re-separating each step — forcing the separator to interlock the parts to fit.
@@ -1061,18 +1092,9 @@ fn density_place_part(
         .map(|s| density_candidate_score(&s, &neighbours, weights))
         .unwrap_or(f64::MAX);
 
-    // Rotation set: current + a bounded subsample of the instance's resolved rotations (these are
-    // the continuous samples for continuous parts, or the discrete set otherwise) — never snapped.
-    let mut rotations: Vec<f64> = vec![cur_rot];
-    let allowed = &inst.allowed_rotations_deg;
-    if !allowed.is_empty() {
-        let stride = (allowed.len() / 8).max(1);
-        for (i, &r) in allowed.iter().enumerate() {
-            if i % stride == 0 {
-                rotations.push(r);
-            }
-        }
-    }
+    // Rotation set: current + continuous refinement (continuous parts) or a bounded subsample of
+    // the discrete set — never snapped. See `density_rotation_candidates`.
+    let rotations = density_rotation_candidates(inst, cur_rot);
 
     // Position candidates: current rect-min + uniform random + contour-near (T3).
     let (cur_rmx, cur_rmy) =
@@ -1176,19 +1198,10 @@ fn density_insert_part(
         n_evals: 0,
     };
 
-    // Seed rotation = the part's current rotation; plus a bounded subsample of its resolved
-    // rotation set (continuous samples for continuous parts) — never snapped.
+    // Seed rotation = the part's current rotation; plus continuous refinement (continuous parts) or
+    // a bounded subsample of the discrete set — never snapped. See `density_rotation_candidates`.
     let cur_rot = working.placements[li].rotation_deg;
-    let mut rotations: Vec<f64> = vec![cur_rot];
-    let allowed = &inst.allowed_rotations_deg;
-    if !allowed.is_empty() {
-        let stride = (allowed.len() / 8).max(1);
-        for (i, &r) in allowed.iter().enumerate() {
-            if i % stride == 0 {
-                rotations.push(r);
-            }
-        }
-    }
+    let rotations = density_rotation_candidates(inst, cur_rot);
 
     let (rw0, rh0) = dims_for_rotation(inst.part.width, inst.part.height, cur_rot);
     let n_uniform = density_samples();
@@ -1367,34 +1380,10 @@ fn density_biased_separate(
                 .collect();
             let nref: Vec<&CdePreparedShape> = neigh.iter().collect();
 
+            // SGH-Q52 fix: continuous parts must refine rotation CONTINUOUSLY (the interlock for the
+            // curved parts needs precise angles + 90↔270 flips, not the frozen min-width seed).
             let cur_rot = local[i].rotation_deg;
-            let mut rotations: Vec<f64> = vec![cur_rot];
-            if inst.continuous_rotation {
-                // SGH-Q52 fix: continuous parts must refine rotation CONTINUOUSLY (the interlock
-                // for the curved parts needs precise angles like ~91°/~281°, not the min-width
-                // 90°/270° seed). `allowed_rotations_deg` is empty for continuous parts, so the
-                // old `stride`-of-allowed logic degenerated to `[cur_rot]` (no rotation at all).
-                // Sample fine local offsets around the current angle (the wiggle that lands the
-                // precise interlock) plus a coarse global sweep to escape the seed basin. Never
-                // snapped to a discrete grid; the descent keeps refining across sweeps.
-                for d in [0.5_f64, 1.0, 2.0, 4.0, 8.0, 16.0] {
-                    rotations.push(cur_rot + d);
-                    rotations.push(cur_rot - d);
-                }
-                for k in 0..12 {
-                    rotations.push(k as f64 * 30.0);
-                }
-            } else {
-                let allowed = &inst.allowed_rotations_deg;
-                if !allowed.is_empty() {
-                    let stride = (allowed.len() / 8).max(1);
-                    for (k, &r) in allowed.iter().enumerate() {
-                        if k % stride == 0 {
-                            rotations.push(r);
-                        }
-                    }
-                }
-            }
+            let rotations = density_rotation_candidates(inst, cur_rot);
             let (cur_rmx, cur_rmy) =
                 rect_min_from_anchor(local[i].x, local[i].y, inst.part.width, inst.part.height, cur_rot);
             let (rw0, rh0) = dims_for_rotation(inst.part.width, inst.part.height, cur_rot);
@@ -2529,6 +2518,34 @@ mod q50_tests {
             base_shape: base,
             shape_profile: prof,
         }
+    }
+
+    #[test]
+    fn density_rotation_candidates_refines_continuous_parts() {
+        // Production-faithful: a continuous part carries `continuous_rotation=true` and an EMPTY
+        // `allowed_rotations_deg`. The helper must still refine rotation (fine offsets + a global
+        // sweep that includes the 90↔270 flip) — NOT degenerate to `[cur_rot]` (the old bug that
+        // froze continuous parts at their seed orientation).
+        let part = poly_part("sq", 20.0, 20.0, serde_json::json!([
+            [0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]
+        ]));
+        let mut cont = make_instance(0, part.clone());
+        cont.continuous_rotation = true;
+        cont.allowed_rotations_deg = vec![]; // empty, as in production for continuous parts
+
+        let cands = density_rotation_candidates(&cont, 90.0);
+        assert!(cands.len() > 8, "continuous part must explore many rotations, got {}", cands.len());
+        assert!(cands.contains(&90.5), "fine local refinement around cur_rot is missing");
+        assert!(cands.contains(&89.5), "fine local refinement (negative offset) is missing");
+        assert!(cands.iter().any(|&r| (r - 270.0).abs() < 1e-9), "the 90↔270 flip must be reachable");
+
+        // A discrete part keeps the bounded allowed-set subsample (NO continuous offsets).
+        let mut disc = make_instance(1, part);
+        disc.continuous_rotation = false;
+        disc.allowed_rotations_deg = vec![0.0, 90.0, 180.0, 270.0];
+        let dcands = density_rotation_candidates(&disc, 0.0);
+        assert!(!dcands.contains(&0.5), "discrete part must NOT get continuous offsets");
+        assert!(dcands.contains(&0.0));
     }
 
     #[test]

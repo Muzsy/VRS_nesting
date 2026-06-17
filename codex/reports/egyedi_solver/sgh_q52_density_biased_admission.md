@@ -35,7 +35,7 @@ time-capped) still guards the whole seed ⇒ never worse than builder-off at any
 
 | File | Change |
 | --- | --- |
-| `optimizer/sparrow/bpp_reduction.rs` | T1 `density_biased_separate` (lexicographic clear-first/interlock-ranked coordinate descent, spacing-collision gap-preserving shape, continuous rotation, budgeted) + `sheet_local_feasible` + `admission_density_bias`; T2/T3 wired into `try_admit_critical`'s co-movable step behind `VRS_ADMISSION_DENSITY_BIAS`; T1 unit test `density_biased_separate_resolves_overlap_into_interlock` |
+| `optimizer/sparrow/bpp_reduction.rs` | T1 `density_biased_separate` (lexicographic clear-first/interlock-ranked coordinate descent, spacing-collision gap-preserving shape, continuous rotation, budgeted) + `sheet_local_feasible` + `admission_density_bias`; T2/T3 wired into `try_admit_critical`'s co-movable step behind `VRS_ADMISSION_DENSITY_BIAS`; T1 unit test `density_biased_separate_resolves_overlap_into_interlock`. **Rotation fix:** new `density_rotation_candidates` helper (single source of truth) — continuous parts get fine local refinement + a 30° global sweep (flips), discrete parts the bounded allowed-set subsample; applied to `density_biased_separate`, `density_place_part`, `density_insert_part` (which previously keyed off the empty `allowed_rotations_deg` and so **froze continuous parts at their seed rotation**) |
 | `tests/sparrow_density_admission.rs` (new) | T4 integration: builder+bias valid + no-regression vs builder-only, default-off baseline |
 | `scripts/bench_sgh_q52_density_biased_admission.py` (new) | T5 A/B: tight spacing 5/8 (bias vs builder-only), spacing-0 proof, full276 no-regression |
 
@@ -84,6 +84,37 @@ The sequential single-part coordinate descent resolves the seeded overlap to a f
 topology is findable (Q51 proved 3/sheet at spacing 0); finding it at gap 5 requires simultaneous
 multi-part repositioning → SGH-Q53.
 
+## 5b. Rotation defect found, fixed, and the finding re-measured (clean)
+
+**The defect (caught on review of the output rotations).** Every big part in the bias outputs was
+locked to exactly 90/270, while the Q51 native separator produced continuous angles (91.16°,
+281.6°). Root cause: continuous parts carry `continuous_rotation = true` and an **empty**
+`allowed_rotations_deg` (the codebase convention — `min_width_rotation` generates its own continuous
+samples). The density candidate samplers (`density_biased_separate`, `density_place_part`,
+`density_insert_part`) keyed **only** off `allowed_rotations_deg`, so for continuous parts the
+rotation set degenerated to `[cur_rot]` — **the descent never rotated**, freezing each part at its
+min-width seed. This violates "continuous rotation stays continuous" and **confounded the
+measure-gate** (it was measured with rotation frozen).
+
+**The fix.** A single `density_rotation_candidates(inst, cur_rot)` helper: continuous parts get
+`cur_rot` + fine local offsets (±0.5/1/2/4/8/16°, the wiggle that lands a precise interlock) + a 30°
+global sweep (to flip 90↔270 / escape the seed basin); discrete parts keep the bounded allowed-set
+subsample. Used by all three density samplers.
+
+**Re-measured — the negative finding STANDS, now trustworthy.** Instrumenting `density_biased_separate`
+(bias on, spacing 5) confirms the descent now genuinely explores rotation and the right structure —
+e.g. `rots=[270.0, 268.5, 90.0]` (fine refine), `[89.0, 90.0, 270.0]`, `[270.0, 270.0, 90.0]`
+(**alternating 90/270 flips**, exactly the spacing-0 interlock structure). Yet **every 3-part attempt
+is `feasible=false`**. So with rotation correct, the bottleneck is **confirmed** to be the sequential
+single-part search structure, not rotation and not the objective.
+
+**Why ~90/270 is in fact the right orientation here.** The part's min-width is **732 mm at 92°**;
+three side-by-side would need **2217 mm across a 1500 mm-wide sheet**, so 3/sheet is reachable *only*
+by deep interlock (bboxes overlapping ~350 mm each, curves nesting), at the near-90° orientation in
+**alternating** 90/270 — precisely what the spacing-0 proof shows (`270 / 90 / 270`). The frozen
+rotation prevented the **flip** and the **sub-degree refine**; both are now restored, and the
+remaining gap is the simultaneous nested packing → SGH-Q53.
+
 ## 6. Benchmark — `artifacts/benchmarks/sgh_q52/q52_summary.json`
 
 | run | bias | status | sheets | big/sheet | util |
@@ -106,6 +137,10 @@ co-movably, yet still packs them 2/sheet — pinpointing search structure, not a
 - `bpp_reduction.rs::q50_tests::density_biased_separate_resolves_overlap_into_interlock`: a U-shape +
   square seeded overlapping resolves into the U's mouth (CDE-feasible + bbox-overlapping = nested),
   not apart.
+- `bpp_reduction.rs::q50_tests::density_rotation_candidates_refines_continuous_parts`: a
+  production-faithful continuous part (empty `allowed_rotations_deg`) still gets fine refinement +
+  the 90↔270 flip (regression guard for the frozen-rotation defect); a discrete part keeps the
+  bounded allowed-set subsample.
 - `tests/sparrow_density_admission.rs`: builder+bias produces valid, fully-placed output with
   `used_sheets ≤ builder-only`; default-off baseline valid (env phases run sequentially in one test
   to avoid intra-binary races).
@@ -115,12 +150,15 @@ co-movably, yet still packs them 2/sheet — pinpointing search structure, not a
 ## 8. Verdict & next lever
 
 **PASS as a building block; NEGATIVE on the stretch.** Density-biased separation does **not** reach
-3 big curved parts per sheet at production spacing (5–8) — it matches Q51's 2/sheet — and a weight
-sweep proves the objective is not the bottleneck. The finding is **definitive and useful**: the
-limitation is the **sequential single-part coordinate-descent search**, which cannot perform the
-**simultaneous multi-part repositioning** the tight 3-way interlock requires. The density objective
-and gap-preserving candidate machinery are now implemented, tested, and gated — the substrate Q53
-plugs into.
+3 big curved parts per sheet at production spacing (5–8) — it matches Q51's 2/sheet. A review caught
+that the density samplers had **frozen continuous parts at their seed rotation** (§5b); after fixing
+that and **re-measuring with continuous rotation + flips genuinely explored** (verified by
+instrumentation: `268.5°`, `89.5°`, alternating `90/270`), the result is unchanged and the negative
+finding is now **clean and trustworthy**: both a weight sweep and the rotation fix leave it at
+2/sheet, so the bottleneck is neither the objective nor rotation but the **sequential single-part
+coordinate-descent search**, which cannot perform the **simultaneous multi-part repositioning** the
+tight 3-way interlock requires. The density objective, gap-preserving candidates, and now-correct
+continuous rotation are implemented, tested, and gated — the substrate Q53 plugs into.
 
 **SGH-Q53 = simultaneous multi-part admission search:** a joint move over the critical set
 (annealing / GLS that repositions several big parts *together* under the CDE, reusing Q52's density
