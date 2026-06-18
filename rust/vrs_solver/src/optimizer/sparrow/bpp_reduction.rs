@@ -2190,6 +2190,11 @@ pub(crate) fn build_critical_aware_seed(
     let mut placed = vec![false; instances.len()];
     bpp.bpp_sheet_builder_applied = true;
 
+    // SGH-Q54A: skeleton role state (opt-in VRS_SHEET_BUILDER_SKELETON). When off, never built and
+    // placement is byte-identical to Q51/Q52; when on, it only records role/geometry (Q54B+ act on it).
+    let skeleton_on = super::sheet_skeleton::skeleton_builder_enabled();
+    let mut skeleton = super::sheet_skeleton::SheetSkeletonState::new(sheets.len());
+
     const CRITICAL_FRONTIER: usize = 2; // close the critical phase after this many consecutive fails
 
     for sheet_idx in 0..sheets.len() {
@@ -2210,6 +2215,13 @@ pub(crate) fn build_critical_aware_seed(
             }
             let now = started.elapsed().as_secs_f64();
             let admit_deadline = (now + (deadline_s - now).max(1.0) * 0.5).min(deadline_s);
+            // SGH-Q54A: classify the candidate's skeleton role BEFORE admission (from the sheet's
+            // current topology + the part's Q47 profile). Decision-support only in Q54A.
+            let role = skeleton_on.then(|| {
+                let inputs =
+                    super::sheet_skeleton::RoleInputs::from_profile(&instances[ci].shape_profile);
+                super::sheet_skeleton::assign_role(&inputs, &skeleton, sheet_idx)
+            });
             match try_admit_critical(
                 optimizer,
                 &layout,
@@ -2229,6 +2241,10 @@ pub(crate) fn build_critical_aware_seed(
                     consec_fail = 0;
                     critical_here += 1;
                     bpp.bpp_critical_admitted += 1;
+                    if let Some(role) = role {
+                        let bbox = critical_world_bbox(&layout, ci, instances);
+                        skeleton.record_admission(sheet_idx, ci, role, bbox);
+                    }
                 }
                 None => {
                     consec_fail += 1;
@@ -2294,8 +2310,30 @@ pub(crate) fn build_critical_aware_seed(
             });
         }
     }
+    if skeleton_on {
+        let (a, i, b) = skeleton.role_counts();
+        bpp.bpp_skeleton_anchor_count = a;
+        bpp.bpp_skeleton_interlock_count = i;
+        bpp.bpp_skeleton_bandinsert_count = b;
+    }
     layout.placements.sort_by_key(|p| p.instance_idx);
     layout
+}
+
+/// SGH-Q54A: world-space bbox `[min_x, min_y, max_x, max_y]` of instance `ci` as currently placed in
+/// `layout` (decision-support geometry for the skeleton state). Uses the same rect-min/rotated-dims
+/// convention as placement; no collision semantics.
+fn critical_world_bbox(layout: &SparrowLayout, ci: usize, instances: &[SPInstance]) -> [f64; 4] {
+    let inst = &instances[ci];
+    match layout.placements.iter().find(|p| p.instance_idx == ci) {
+        Some(p) => {
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, p.rotation_deg);
+            let (rmx, rmy) =
+                rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, p.rotation_deg);
+            [rmx, rmy, rmx + rw, rmy + rh]
+        }
+        None => [0.0, 0.0, 0.0, 0.0],
+    }
 }
 
 /// Per-sheet density compaction (SGH-Q49): multi-sweep, **incremental tracker**. The shared

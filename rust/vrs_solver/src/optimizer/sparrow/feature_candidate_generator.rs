@@ -76,6 +76,10 @@ struct MovingFeatureSpec<'a> {
     feature_base_shape: &'a CdeBaseShape,
     collision_base_shape: &'a CdeBaseShape,
     features: &'a ContourFeatureSet,
+    /// SGH-Q54B: clearance offset (mm) applied to neighbour feature alignments so the two
+    /// spacing-expanded contours just touch instead of overlapping. ≈ the technology spacing
+    /// (both contours are half-spacing expanded). 0.0 reproduces the Q53 point-on-point seed.
+    clearance: f64,
 }
 
 struct NeighbourFeatureSpec<'a> {
@@ -124,6 +128,7 @@ pub fn generate_feature_candidate_seeds_debug(
     sheet: &SheetShape,
     neighbours: &[DebugPlacedNeighbour],
     max_total: usize,
+    clearance: f64,
 ) -> Result<Vec<CandidateSeed>, String> {
     let base = prepare_base_shape_native(moving_part).map_err(|e| e.to_string())?;
     let moving_features = ContourFeatureSet::extract(&base);
@@ -141,6 +146,7 @@ pub fn generate_feature_candidate_seeds_debug(
         feature_base_shape: &base,
         collision_base_shape: &base,
         features: &moving_features,
+        clearance,
     };
 
     let mut neighbour_bases: Vec<CdeBaseShape> = Vec::with_capacity(neighbours.len());
@@ -171,6 +177,30 @@ pub fn generate_feature_candidate_seeds_debug(
     ))
 }
 
+/// SGH-Q54B: local-point bbox span `(width, height)` of a base shape.
+fn bbox_span(shape: &CdeBaseShape) -> (f64, f64) {
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for p in &shape.local_pts {
+        min_x = min_x.min(p.x);
+        min_y = min_y.min(p.y);
+        max_x = max_x.max(p.x);
+        max_y = max_y.max(p.y);
+    }
+    if shape.local_pts.is_empty() {
+        (0.0, 0.0)
+    } else {
+        (max_x - min_x, max_y - min_y)
+    }
+}
+
+/// SGH-Q54B: clearance ≈ technology spacing, recovered from the half-spacing-expanded collision
+/// shape vs the original base shape (their bbox-span difference). 0 when spacing is 0 (same shape).
+fn clearance_from_instance(inst: &SPInstance) -> f64 {
+    let (bw, bh) = bbox_span(&inst.base_shape);
+    let (sw, sh) = bbox_span(&inst.spacing_collision_base_shape);
+    ((sw - bw).max(sh - bh)).max(0.0)
+}
+
 pub(crate) fn generate_feature_candidate_seeds_for_sheet(
     moving: &SPInstance,
     moving_rotation_deg: f64,
@@ -185,6 +215,7 @@ pub(crate) fn generate_feature_candidate_seeds_for_sheet(
         feature_base_shape: &moving.base_shape,
         collision_base_shape: &moving.spacing_collision_base_shape,
         features: moving.contour_features(),
+        clearance: clearance_from_instance(moving),
     };
     let neighbour_specs: Vec<NeighbourFeatureSpec<'_>> = neighbours
         .iter()
@@ -332,12 +363,15 @@ fn neighbour_feature_candidates(
                     let score = (m_edge.normalized_length * n_edge.normalized_length)
                         .clamp(0.0, 1.5)
                         + 0.35;
+                    // SGH-Q54B: offset along the edge normal by the clearance (both spacing-expanded
+                    // contours just touch) instead of the point-on-point Q53 seed.
+                    let off = FEATURE_SEED_EPS + moving.clearance;
                     for side in [-1.0, 1.0] {
                         out.push(point_alignment_seed(
                             moved_mid,
                             Point {
-                                x: neigh_mid.x + side * FEATURE_SEED_EPS * normal.x,
-                                y: neigh_mid.y + side * FEATURE_SEED_EPS * normal.y,
+                                x: neigh_mid.x + side * off * normal.x,
+                                y: neigh_mid.y + side * off * normal.y,
                             },
                             rot,
                             "dominant_edge",
@@ -357,7 +391,15 @@ fn neighbour_feature_candidates(
                         - protrusion.outward_angle_deg,
                 );
                 let rot = resolve_seed_rotation(moving, raw_rot, moving_rotation_deg);
-                let target = world_point(zone.anchor, n.placement_x, n.placement_y, n.rotation_deg);
+                let target0 = world_point(zone.anchor, n.placement_x, n.placement_y, n.rotation_deg);
+                // SGH-Q54B: pull the target OUT of the concavity mouth (opposite the inward
+                // direction) by the clearance, so the protrusion seats with a gap rather than
+                // point-on-point (the Q53 root cause of `seed_not_clear`).
+                let inward = world_angle(zone.inward_angle_deg, n.rotation_deg).to_radians();
+                let target = Point {
+                    x: target0.x - moving.clearance * inward.cos(),
+                    y: target0.y - moving.clearance * inward.sin(),
+                };
                 let moved_pt = rotate_point(protrusion.point, rot);
                 out.push(point_alignment_seed(
                     moved_pt,
@@ -371,19 +413,52 @@ fn neighbour_feature_candidates(
             }
         }
 
+        // SGH-Q54B: pull point targets OUT of the neighbour (away from its geometric centroid, which
+        // lies inside the part) by the clearance, so vertex/edge-projection seeds also seat with a
+        // gap instead of point-on-point. Centroid (not the placement anchor, which may sit on the
+        // contour) gives a robust outward direction.
+        let (mut cx, mut cy, mut cnt) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for v in &n.features.vertices {
+            let w = world_point(v.point, n.placement_x, n.placement_y, n.rotation_deg);
+            cx += w.x;
+            cy += w.y;
+            cnt += 1.0;
+        }
+        let centroid = if cnt > 0.0 {
+            Point { x: cx / cnt, y: cy / cnt }
+        } else {
+            Point { x: n.placement_x, y: n.placement_y }
+        };
+        let pull_out = |t: Point| -> Point {
+            let dx = t.x - centroid.x;
+            let dy = t.y - centroid.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len > 1e-9 {
+                Point {
+                    x: t.x + moving.clearance * dx / len,
+                    y: t.y + moving.clearance * dy / len,
+                }
+            } else {
+                t
+            }
+        };
         let edge_midpoints: Vec<Point> = n
             .features
             .edges
             .iter()
             .step_by(stride_for(n.features.edges.len(), 6))
-            .map(|edge| world_point(edge.midpoint, n.placement_x, n.placement_y, n.rotation_deg))
+            .map(|edge| {
+                pull_out(world_point(edge.midpoint, n.placement_x, n.placement_y, n.rotation_deg))
+            })
             .collect();
         let vertices: Vec<Point> = n
             .features
             .vertices
             .iter()
             .step_by(stride_for(n.features.vertices.len(), 8))
-            .map(|vertex| world_point(vertex.point, n.placement_x, n.placement_y, n.rotation_deg))
+            .map(|vertex| {
+                pull_out(world_point(vertex.point, n.placement_x, n.placement_y, n.rotation_deg))
+            })
             .collect();
 
         for extreme in &moving.features.extreme_points {
@@ -639,6 +714,7 @@ pub fn refine_feature_candidate_debug(
         sheet,
         neighbours,
         64,
+        0.0,
     )?
     .into_iter()
     .find(|cand| {
@@ -828,7 +904,7 @@ mod tests {
             serde_json::json!([[0.0, 0.0], [120.0, 0.0], [120.0, 40.0], [0.0, 40.0]]),
         );
         let seeds =
-            generate_feature_candidate_seeds_debug(&moving, 0.0, &sheet(), &[], 16).unwrap();
+            generate_feature_candidate_seeds_debug(&moving, 0.0, &sheet(), &[], 16, 0.0).unwrap();
         assert!(
             seeds.iter().any(|seed| {
                 seed.source == CandidateSeedSource::ContourFeature
@@ -865,7 +941,7 @@ mod tests {
             rotation_deg: 0.0,
         };
         let seeds =
-            generate_feature_candidate_seeds_debug(&moving, 17.0, &sheet(), &[neighbour], 24)
+            generate_feature_candidate_seeds_debug(&moving, 17.0, &sheet(), &[neighbour], 24, 0.0)
                 .unwrap();
         assert!(!seeds.is_empty());
         assert!(seeds.iter().all(|seed| {

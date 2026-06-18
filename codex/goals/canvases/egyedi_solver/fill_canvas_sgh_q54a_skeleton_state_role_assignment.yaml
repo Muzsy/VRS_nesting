@@ -1,0 +1,65 @@
+steps:
+  - name: "Repo és előzmény-ellenőrzés"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/* szabályfájlokat, a Q47–Q53 canvas/report fájlokat és a Q53
+      auditot. Rögzítsd a reportban a felhasznált PartShapeProfile / CriticalityTier struktúrákat és a
+      build_critical_aware_seed jelenlegi admission-folyamatát.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54a_skeleton_state_role_assignment.md"
+
+  - name: "sheet_skeleton modul + SheetSkeletonState"
+    description: >
+      Hozd létre a sheet_skeleton.rs modult. SheetSkeletonState: per sheet admittált critical placementek
+      (instance_idx + role) + a maradék edge-connected szabad régió durva reprezentációja. API: new,
+      record_admission, lekérdezők. Regisztráld a mod.rs-ben.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "assign_role szerep-hozzárendelés"
+    description: >
+      assign_role(profile, instance, skeleton_state, sheet) -> Anchor|Interlock|BandInsert. A döntés a
+      sheet geometriájából + Q47 profilból; darabszám-hardcode nélkül; determinisztikus instance_idx
+      tiebreak. Anchor = friss sheet leg-kritikusabbja; Interlock = van anchor + feature-illeszthető;
+      BandInsert = maradt nagy edge-connected sáv.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Gated bekötés (állapot-réteg, placement nélkül)"
+    description: >
+      VRS_SHEET_BUILDER_SKELETON gate. A skeleton state/role csak gate ON mellett épül a
+      build_critical_aware_seed admission-során; placement NEM változik. Default off → Q51/Q52 byte-azonos.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      Additív diagnosztika: skeleton_role_per_admission, skeleton_anchor/interlock/bandinsert_counts.
+      Optional/additive IO mezők.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Unit: 3-critical szekvencia → Anchor→Interlock→BandInsert determinisztikusan; üres sheet → Anchor;
+      darabszám nem befolyásolja a szerepet. Default-off no-regression a meglévő suite-okon.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_skeleton.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján (Report Standard v2).
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q54a_skeleton_state_role_assignment.md"
+      - "codex/reports/egyedi_solver/sgh_q54a_skeleton_state_role_assignment.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q54a_skeleton_state_role_assignment.md
+      futtatása (a check.sh most a teljes vrs_solver cargo suite-ot is futtatja).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54a_skeleton_state_role_assignment.md"
+      - "codex/reports/egyedi_solver/sgh_q54a_skeleton_state_role_assignment.verify.log"

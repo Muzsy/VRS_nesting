@@ -1,0 +1,55 @@
+steps:
+  - name: "Repo és Q54A-D ellenőrzés"
+    description: >
+      Ellenőrizd, hogy a Q54A-D (skeleton state, clearance-aware candidate, overlap-toleráns separation,
+      free-space/band/close-guard) jelen van. Ha hiányzik, állj meg BLOCKED_Q54ABCD_MISSING státusszal.
+      Rögzítsd a reportban a teljes admission-folyamatot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54e_lv8_skeleton_proof.md"
+
+  - name: "Teljes skeleton admission bekötés (gated)"
+    description: >
+      build_critical_aware_seed critical fázisa VRS_SHEET_BUILDER_SKELETON=1 mellett a Q54A-D utat
+      használja: role -> clearance seed -> overlap-toleráns separation -> free-space rangsor -> band-insert
+      -> sheet-close guard. Feasibility-gated fallback a Q51 LBF seedre. Default off -> byte-azonos.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Összesített diagnosztika"
+    description: >
+      Fázisonkénti Q54 diagnosztika összefogása az optimizer/BPP outputba (role, clearance, separation,
+      free-space, band, sheet-close, rotation_distribution). Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Benchmark script"
+    description: >
+      scripts/bench_sgh_q54_skeleton_admission.py: PROOF 6x Lv8_11612 spacing 5 skeleton ON (>=1 táblán 3
+      nagy CDE-valid) vs OFF kontroll; NO-REGRESSION full276 spacing 8 ON vs OFF (276 placed, ON<=OFF
+      sheets, valid). Per-sheet + overview render. q54_summary.json.
+    outputs:
+      - "scripts/bench_sgh_q54_skeleton_admission.py"
+      - "artifacts/benchmarks/sgh_q54/q54_summary.json"
+
+  - name: "Integrációs teszt"
+    description: >
+      Integrációs teszt az adapter::solve határon: skeleton ON valid + fully placed + no-regression vs OFF;
+      default-off byte-azonos.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_skeleton_admission.rs"
+
+  - name: "Checklist és report (őszinte verdikt)"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján; őszinte PASS/NEGATÍV verdikt a
+      Q52/Q53 mintára (ha NEGATÍV: fázis-diagnosztika mutatja, hol akad el). Ne túlkommunikálj.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q54e_lv8_skeleton_proof.md"
+      - "codex/reports/egyedi_solver/sgh_q54e_lv8_skeleton_proof.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q54e_lv8_skeleton_proof.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54e_lv8_skeleton_proof.md"
+      - "codex/reports/egyedi_solver/sgh_q54e_lv8_skeleton_proof.verify.log"

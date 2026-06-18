@@ -177,6 +177,14 @@ fi
 if [[ -f "rust/vrs_solver/Cargo.toml" ]]; then
   echo "[4/5] Nesting solution validator smoke"
   cargo build --release --manifest-path rust/vrs_solver/Cargo.toml
+
+  # Gate the full vrs_solver test suite (unit + tests/ integration). Previously the gate built the
+  # binary and ran smoketests but never ran `cargo test` here, so a red cargo test (e.g. SGH-Q53A's
+  # contour-feature integration test) could pass verify.sh unnoticed. `set -e` fails the gate on any
+  # red test.
+  echo "[VRS] cargo test (unit + integration gate)"
+  cargo test --release --manifest-path rust/vrs_solver/Cargo.toml
+
   VRS_SOLVER_BIN_PATH="$ROOT_DIR/rust/vrs_solver/target/release/vrs_solver"
 
   if [[ ! -x "$VRS_SOLVER_BIN_PATH" ]]; then

@@ -42,6 +42,7 @@ pub mod quantify;
 pub mod sample;
 pub mod separator;
 pub mod shape_profile;
+pub mod sheet_skeleton;
 mod tests;
 pub mod worker;
 

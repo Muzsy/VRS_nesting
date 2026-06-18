@@ -1,0 +1,71 @@
+steps:
+  - name: "Repo és Q54A-C ellenőrzés"
+    description: >
+      Ellenőrizd, hogy a Q54A skeleton state, Q54B clearance-aware candidate és Q54C overlap-toleráns
+      separation jelen van. Ha hiányzik, állj meg BLOCKED_Q54ABC_MISSING státusszal. Rögzítsd a reportban
+      a felhasznált PartShapeProfile méret-metrikákat (next critical osztály).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54d_freespace_band_insert.md"
+
+  - name: "Olcsó free-space proxy"
+    description: >
+      A sheet_skeleton.rs-ben durva occupancy (25-50 mm cella, env-állítható) -> legnagyobb edge-connected
+      szabad komponens; free_space_quality(skeleton_state, sheet, next_critical_profile). Csak rangsoroló
+      proxy, nem collision igazság.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Candidate rangsor kiegészítés"
+    description: >
+      A Q54B/C candidate pontszáma: CDE-clearance (elsődleges) + free-space-minőség (másodlagos). Az
+      edge-anchored/sáv-megőrző jelölt jobb; központi-blokkoló rosszabb; centroid-közelség ne domináljon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/density.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "BandInsert szerep megvalósítása"
+    description: >
+      A BandInsert szerepű critical a megmaradt edge-connected sávba, táblaélhez igazítva, continuous
+      rotation; nem az anchor/interlock párhoz illesztve.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Sheet-close guard"
+    description: >
+      Új sheet / structural+filler fázis előtt: ha van geometriailag alkalmas nagy edge-connected szabad
+      régió egy következő critical-hoz, ne zárd a critical fázist. Phase-close reason logolva. Nincs
+      darabszám-előrejelzés.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      free_space_proxy_before/after, largest_free_component, band_insert_success, sheet_close_reason.
+      Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Unit: nagy összefüggő sáv > sok apró rés (azonos terület); naiv elhelyezés elrontja a harmadik
+      helyét, free-space score-ral marad sáv -> band-insert sikeres; sheet-close guard helyes nyit/zár.
+      Default-off no-regression.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_freespace_band_insert.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q54d_freespace_band_insert.md"
+      - "codex/reports/egyedi_solver/sgh_q54d_freespace_band_insert.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q54d_freespace_band_insert.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54d_freespace_band_insert.md"
+      - "codex/reports/egyedi_solver/sgh_q54d_freespace_band_insert.verify.log"

@@ -1,0 +1,63 @@
+steps:
+  - name: "Repo és Q54A ellenőrzés"
+    description: >
+      Ellenőrizd, hogy a Q54A skeleton state + assign_role jelen van. Ha hiányzik, állj meg
+      BLOCKED_Q54A_MISSING státusszal. Rögzítsd a reportban a Q53 point_alignment_seed pont-pont
+      gyökerét és a half_spacing forrását (spacing-collision shape).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54b_clearance_aware_candidate.md"
+
+  - name: "Clearance-aware seed pozícionálás"
+    description: >
+      point_alignment_seed offset-paraméter: a moving feature-pontot a feature-normál mentén
+      half_spacing+eps távolságra tedd (érintő, nem fedő spacing-expanded kontúrok). Interlock szerephez
+      alternatív kontrollált-overlap mód. A pont-pont seed marad fallbacknek.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Edge-anchored candidate (Anchor szerep)"
+    description: >
+      Domináns hosszú él / nyúlvány a tábla szélével párhuzamosítva (sheet_edge_alignment_angle,
+      continuous), margin+spacing távolságra, sarok-preferenciával. Nem bbox-sarok.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/contour_features.rs"
+
+  - name: "Role-tudatos generálás bekötés"
+    description: >
+      A Q54A assign_role szerint válassz candidate-forrást: Anchor -> edge-anchored; Interlock ->
+      clearance-offset / kontrollált-overlap feature-pár. Gated VRS_SHEET_BUILDER_SKELETON; default off.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      clearance_offset_applied, seed_directly_clear_count, controlled_overlap_seed_count, szerepenkénti
+      candidate count. Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Unit: anchor candidate él-párhuzamos margin+spacing távolságra; interlock seed clearance-offsettel
+      közvetlenül CDE-clear vagy kontrollált overlap (szemben a Q53 garantált ütközésével). Default-off
+      no-regression.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_clearance_aware_candidates.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q54b_clearance_aware_candidate.md"
+      - "codex/reports/egyedi_solver/sgh_q54b_clearance_aware_candidate.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q54b_clearance_aware_candidate.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54b_clearance_aware_candidate.md"
+      - "codex/reports/egyedi_solver/sgh_q54b_clearance_aware_candidate.verify.log"

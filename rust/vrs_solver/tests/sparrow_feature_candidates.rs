@@ -85,7 +85,7 @@ fn protrusion_part() -> Part {
 
 #[test]
 fn feature_candidate_sheet_edge_alignment_exists_for_long_part() {
-    let seeds = generate_feature_candidate_seeds_debug(&bar_part(), 0.0, &sheet(), &[], 24)
+    let seeds = generate_feature_candidate_seeds_debug(&bar_part(), 0.0, &sheet(), &[], 24, 0.0)
         .expect("feature seeds");
     assert!(
         seeds.iter().any(|seed| {
@@ -110,6 +110,7 @@ fn feature_candidate_neighbour_alignment_exists_for_concave_pair() {
             rotation_deg: 0.0,
         }],
         48,
+        0.0,
     )
     .expect("feature seeds");
     assert!(
@@ -135,6 +136,7 @@ fn feature_candidate_debug_path_is_not_bbox_corner_primary() {
             rotation_deg: 0.0,
         }],
         48,
+        0.0,
     )
     .expect("feature seeds");
     assert!(!seeds.is_empty(), "expected some feature seeds");
@@ -145,4 +147,57 @@ fn feature_candidate_debug_path_is_not_bbox_corner_primary() {
         }),
         "Q53B debug generator must not use moving bbox corners as the primary feature path"
     );
+}
+
+#[test]
+fn q54b_clearance_offsets_neighbour_seeds_off_point_on_point() {
+    // SGH-Q54B: with a clearance the neighbour feature alignment seeds the part with a GAP (so the
+    // two spacing-expanded contours just touch) instead of point-on-point — the Q53 root cause of
+    // `seed_not_clear`. Concretely: NO clearance>0 seed lands on a clearance=0 (point-on-point)
+    // position for the same alignment kind, and the offset magnitude matches the clearance.
+    const C: f64 = 6.0;
+    let neighbours = || {
+        vec![DebugPlacedNeighbour {
+            part: u_part(),
+            x: 210.0,
+            y: 80.0,
+            rotation_deg: 0.0,
+        }]
+    };
+    let neighbour_seeds = |clearance: f64| -> Vec<(f64, f64, f64, &'static str)> {
+        generate_feature_candidate_seeds_debug(&protrusion_part(), 0.0, &sheet(), &neighbours(), 64, clearance)
+            .expect("feature seeds")
+            .into_iter()
+            .filter(|s| s.target_feature_type != "sheet_edge") // neighbour-driven only
+            .map(|s| (s.x, s.y, s.seed_rotation_deg, s.alignment_kind))
+            .collect()
+    };
+
+    let s0 = neighbour_seeds(0.0);
+    let s_c = neighbour_seeds(C);
+    assert!(!s0.is_empty() && !s_c.is_empty(), "neighbour-driven feature seeds expected");
+
+    // No clearance=C seed coincides with a clearance=0 seed of the same kind+rotation (it moved).
+    let key = |x: f64, y: f64| ((x * 100.0).round() as i64, (y * 100.0).round() as i64);
+    for (cx, cy, crot, ckind) in &s_c {
+        let coincides = s0.iter().any(|(x, y, rot, kind)| {
+            key(*x, *y) == key(*cx, *cy) && (rot - crot).abs() < 1e-6 && kind == ckind
+        });
+        assert!(
+            !coincides,
+            "clearance must offset the {ckind} seed off the Q53 point-on-point position"
+        );
+    }
+
+    // The offset magnitude matches the clearance: at least one clearance=C seed has a
+    // same-kind/rotation clearance=0 seed exactly C away (the target was pulled out by `clearance`).
+    // (Not every seed, because finalize clamps/dedups some — but the mechanism is unambiguous.)
+    let any_exact_offset = s_c.iter().any(|(cx, cy, crot, ckind)| {
+        s0.iter().any(|(x, y, rot, kind)| {
+            kind == ckind
+                && (rot - crot).abs() < 1e-6
+                && (((x - cx).powi(2) + (y - cy).powi(2)).sqrt() - C).abs() < 1e-3
+        })
+    });
+    assert!(any_exact_offset, "at least one seed must be offset by exactly the clearance ({C})");
 }

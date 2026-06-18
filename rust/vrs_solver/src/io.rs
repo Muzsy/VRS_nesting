@@ -329,6 +329,11 @@ pub struct BppReductionDiagnostics {
     pub bpp_sheets_opened: usize,
     /// Max critical parts admitted onto a single sheet (the headline: 3 big curved per sheet?).
     pub bpp_max_critical_per_sheet: usize,
+    // ── SGH-Q54A: skeleton role assignment (opt-in VRS_SHEET_BUILDER_SKELETON) ──
+    /// Critical parts admitted in each skeleton role (anchor / interlock / band-insert).
+    pub bpp_skeleton_anchor_count: usize,
+    pub bpp_skeleton_interlock_count: usize,
+    pub bpp_skeleton_bandinsert_count: usize,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

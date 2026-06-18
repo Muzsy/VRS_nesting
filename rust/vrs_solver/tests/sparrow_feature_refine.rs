@@ -101,6 +101,7 @@ fn continuous_feature_refine_continuous_seed_can_wiggle_off_orthogonal() {
             rotation_deg: 0.0,
         }],
         32,
+        0.0,
     )
     .expect("feature seeds");
     assert!(
@@ -126,6 +127,7 @@ fn continuous_feature_refine_discrete_policy_stays_allowed_only() {
             rotation_deg: 0.0,
         }],
         32,
+        0.0,
     )
     .expect("feature seeds");
     assert!(!seeds.is_empty());
@@ -151,6 +153,7 @@ fn continuous_feature_refine_debug_api_reports_seed_and_refined_rotation() {
         &sheet(),
         std::slice::from_ref(&neighbour),
         32,
+        0.0,
     )
     .expect("feature seeds")
     .into_iter()

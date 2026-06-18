@@ -1,0 +1,63 @@
+steps:
+  - name: "Repo és Q54A/B ellenőrzés"
+    description: >
+      Ellenőrizd, hogy a Q54A skeleton role és a Q54B clearance-aware seed jelen van. Ha hiányzik, állj
+      meg BLOCKED_Q54AB_MISSING státusszal. Rögzítsd a reportban a Q53C refine not-clear-feladás gyökerét
+      és a Q52 density_biased_separate rotation-correct állapotát.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54c_overlap_tolerant_separation.md"
+
+  - name: "Overlap-toleráns separation a feature-seedből"
+    description: >
+      A Q54B seedből density_biased_separate a target sheet critical setjén, a Q54A szerepekkel (anchor
+      inertia, interlock/band aktív). Not-clear seed -> szeparálj (ne dobj). Continuous rotation a
+      density_rotation_candidates-szel; nincs snapping. Budgetelt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Q53C refine not-clear-feladás megkerülése"
+    description: >
+      A refine_feature_candidates azonnali seed_not_clear feladásának lecserélése/megkerülése a skeleton
+      úton: a seed overlapos indulóállapot, amit a separation tisztít.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Co-movable critical set bekötés"
+    description: >
+      try_admit_critical co-movable lépésében a Q54B feature-seed legyen az induló overlap-állapot, majd
+      density_biased_separate tisztít. Final acceptance csak final_validation_tracker feasible.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      separation_iterations, seed_overlap, seed_rotation/refined_rotation, final_clear,
+      separation_fail_reason. Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Unit: overlapos 2-critical konkáv pár CDE-clear interlockba oldódik, rotation nem fix listán.
+      Szintetikus 3-critical: CDE-clear vagy dokumentált fail_reason mérhető iterációkkal (nem azonnali
+      feladás). Default-off no-regression.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_overlap_tolerant_separation.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q54c_overlap_tolerant_separation.md"
+      - "codex/reports/egyedi_solver/sgh_q54c_overlap_tolerant_separation.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q54c_overlap_tolerant_separation.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q54c_overlap_tolerant_separation.md"
+      - "codex/reports/egyedi_solver/sgh_q54c_overlap_tolerant_separation.verify.log"

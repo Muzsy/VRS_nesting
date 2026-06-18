@@ -49,11 +49,14 @@ fn lv8_like_part(id: &str, qty: i64) -> Value {
 }
 
 fn with_hole_metadata(mut part: Value) -> Value {
+    // The hole must lie INSIDE the solid material. `concave_part` is an L whose filled region is the
+    // bottom band (y <= 200) plus the left column (x <= 200); the top-right (x > 200 && y > 200) is
+    // the concave cut-out (no material). Place the hole well inside the bottom band.
     part["holes_points"] = json!([[
-        [300.0, 300.0],
-        [350.0, 300.0],
-        [350.0, 350.0],
-        [300.0, 350.0]
+        [400.0, 50.0],
+        [450.0, 50.0],
+        [450.0, 100.0],
+        [400.0, 100.0]
     ]]);
     part
 }
@@ -135,28 +138,45 @@ fn contour_feature_summary_is_deterministic_across_solves() {
 }
 
 #[test]
-fn optional_hole_metadata_does_not_change_outer_contour_summary() {
-    let plain = concave_part("L_plain", 1);
-    let holed = with_hole_metadata(concave_part("L_holed", 1));
+fn hole_metadata_is_rejected_on_outer_only_phase_so_summary_stays_outer_driven() {
+    // The Q53A contour-feature summary must be driven by the OUTER contour only. On the
+    // `jagua_optimizer_phase1_outer_only` path a part carrying hole metadata is INTENTIONALLY
+    // rejected (UNSUPPORTED_PART_HOLES_PHASE1, adapter.rs), so hole geometry can never leak into
+    // the feature layer. A plain (hole-free) part on the same path solves and exports the
+    // outer-contour feature summary. (The original test asserted the holed part would solve `ok`,
+    // which contradicts this intentional outer-only restriction — it could never pass.)
     let stocks = vec![json!({"id": "S", "quantity": 2, "width": 3000.0, "height": 1500.0})];
-    let out = parse_and_solve(&ms_input(
-        vec![plain, holed, rect_part("tiny", 2, 30.0, 30.0)],
+
+    // (1) plain part → ok, outer-contour feature summary present.
+    let plain_out = parse_and_solve(&ms_input(
+        vec![concave_part("L_plain", 1), rect_part("tiny", 2, 30.0, 30.0)],
+        stocks.clone(),
+        11,
+        30,
+    ));
+    assert_eq!(plain_out.status, "ok");
+    let profiles = od(&plain_out).shape_profiles.as_ref().unwrap();
+    let plain = profiles.iter().find(|p| p.part_id == "L_plain").unwrap();
+    assert!(
+        plain.contour_vertex_count > 0,
+        "the outer contour drives the feature summary"
+    );
+    assert!(plain.concave_zone_count >= 1, "the L exposes a concave region");
+
+    // (2) the SAME part WITH hole metadata → intentionally unsupported on the outer-only phase,
+    // proving hole geometry never reaches (and so never perturbs) the feature layer here.
+    let holed_out = parse_and_solve(&ms_input(
+        vec![
+            with_hole_metadata(concave_part("L_holed", 1)),
+            rect_part("tiny", 2, 30.0, 30.0),
+        ],
         stocks,
         11,
         30,
     ));
-    assert_eq!(out.status, "ok");
-    let profiles = od(&out).shape_profiles.as_ref().unwrap();
-    let plain = profiles.iter().find(|p| p.part_id == "L_plain").unwrap();
-    let holed = profiles.iter().find(|p| p.part_id == "L_holed").unwrap();
-    assert_eq!(plain.contour_vertex_count, holed.contour_vertex_count);
-    assert_eq!(plain.concave_zone_count, holed.concave_zone_count);
+    assert_eq!(holed_out.status, "unsupported");
     assert_eq!(
-        plain.protrusion_candidate_count,
-        holed.protrusion_candidate_count
-    );
-    assert_eq!(
-        plain.dominant_alignment_angles_deg,
-        holed.dominant_alignment_angles_deg
+        holed_out.unsupported_reason.as_deref(),
+        Some("UNSUPPORTED_PART_HOLES_PHASE1"),
     );
 }
