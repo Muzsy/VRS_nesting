@@ -50,7 +50,11 @@ impl UniformBBoxSampler {
                 if range_is_empty(x_range) || range_is_empty(y_range) {
                     None
                 } else {
-                    Some(RotEntry { rot, x_range, y_range })
+                    Some(RotEntry {
+                        rot,
+                        x_range,
+                        y_range,
+                    })
                 }
             })
             .collect();

@@ -26,10 +26,12 @@ pub(crate) use super::cde_adapter::{
 };
 
 pub mod bpp_reduction;
+pub mod contour_features;
 pub mod density;
 pub mod diagnostics;
 pub mod eval;
 pub mod explore;
+pub mod feature_candidate_generator;
 pub mod fixed_sheet;
 pub mod lbf;
 pub mod model;
@@ -51,14 +53,16 @@ pub use model::{
 pub use optimizer::SparrowOptimizer;
 pub(crate) use shape_profile::{CriticalityTier, PartShapeProfile};
 
+pub(crate) use contour_features::*;
 pub(crate) use diagnostics::*;
-pub(crate) use profile::{ProfileTimer, SearchProfiler};
 pub(crate) use eval::lbf_evaluator::*;
 pub(crate) use eval::sample_eval::*;
 pub(crate) use eval::sep_evaluator::*;
 pub(crate) use eval::specialized_cde_pipeline::*;
+pub(crate) use feature_candidate_generator::*;
 pub(crate) use fixed_sheet::*;
 pub(crate) use lbf::*;
+pub(crate) use profile::{ProfileTimer, SearchProfiler};
 pub(crate) use quantify::overlap_proxy::*;
 pub(crate) use quantify::tracker::*;
 pub(crate) use sample::best_samples::*;

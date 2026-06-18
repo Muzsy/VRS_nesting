@@ -1,0 +1,50 @@
+steps:
+  - name: "Repo felderítés és érintett pontok rögzítése"
+    description: >
+      Olvasd el a szabályfájlokat és keresd meg a Q47–Q52 releváns kódpontjait. Rögzítsd a reportban,
+      hogy a contour-near path jelenleg bbox-sarok seedinget használ, és mely fájlokhoz nyúlsz.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53a_contour_feature_extraction.md"
+
+  - name: "Kontúrfeature modul létrehozása"
+    description: >
+      Hozd létre a contour_features modult. Implementálj külső kontúr alapú feature extractort:
+      vertex, edge, dominant edge, extreme point, concave vertex/zone, protrusion candidate, sheet-
+      edge alignment angle. A számítás legyen determinisztikus, olcsó, és ne módosítson placementet.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/contour_features.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "Profilhoz vagy instance-hez kötés és diagnosztika"
+    description: >
+      Kösd be a feature summaryt PartShapeProfile/SPInstance környezetbe csak döntéstámogató
+      metaadatként. Adj diagnosztikai exportot: feature count, type breakdown, dominant angles. Ha a
+      legjobb repo-kompatibilis megoldás csak report-only helper, indokold.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/shape_profile.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Adj unit teszteket egyszerű téglalapra, konkáv U-alakra és egy LV8-szerű hosszú/konkáv kontúrra.
+      Bizonyítsd: determinisztika, feature type-ok, nincs hole/cavity függés.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_contour_features.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/contour_features.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Hozd létre/frissítsd a task checklistet és reportot a Report Standard szerint. A DoD→Evidence
+      Matrix tartalmazzon path+line bizonyítékokat.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q53a_contour_feature_extraction.md"
+      - "codex/reports/egyedi_solver/sgh_q53a_contour_feature_extraction.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q53a_contour_feature_extraction.md
+      futtatása. A report AUTO_VERIFY blokk frissüljön.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53a_contour_feature_extraction.md"
+      - "codex/reports/egyedi_solver/sgh_q53a_contour_feature_extraction.verify.log"

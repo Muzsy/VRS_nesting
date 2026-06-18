@@ -41,9 +41,7 @@ impl SparrowOptimizer {
             // from the better half, disrupt it, and retry.
             let raw = state.tracker.total_raw_loss();
             let at = infeas_sol_pool
-                .binary_search_by(|(l, _)| {
-                    l.partial_cmp(&raw).unwrap_or(std::cmp::Ordering::Equal)
-                })
+                .binary_search_by(|(l, _)| l.partial_cmp(&raw).unwrap_or(std::cmp::Ordering::Equal))
                 .unwrap_or_else(|e| e);
             infeas_sol_pool.insert(at, (raw, state.layout.snapshot()));
             infeas_sol_pool.truncate(8);
@@ -123,9 +121,14 @@ impl SparrowOptimizer {
                         y: ay,
                         rotation_deg: rot,
                     };
-                    state
-                        .tracker
-                        .update_after_move(w, &state.layout, instances, sheets, diag, None);
+                    state.tracker.update_after_move(
+                        w,
+                        &state.layout,
+                        instances,
+                        sheets,
+                        diag,
+                        None,
+                    );
                     diag.exploration_disruptions_cross_sheet += 1;
                 }
             }
@@ -165,9 +168,14 @@ impl SparrowOptimizer {
                             y: ay,
                             rotation_deg: pick,
                         };
-                        state
-                            .tracker
-                            .update_after_move(w, &state.layout, instances, sheets, diag, None);
+                        state.tracker.update_after_move(
+                            w,
+                            &state.layout,
+                            instances,
+                            sheets,
+                            diag,
+                            None,
+                        );
                         diag.exploration_disruptions_rotation += 1;
                     }
                 }
@@ -206,8 +214,7 @@ impl SparrowOptimizer {
                 self.large_item_disruption_area_key(inst)
             })
             .sum();
-        let cutoff_target =
-            total_area * SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE;
+        let cutoff_target = total_area * SPARROW_PARITY_LARGE_ITEM_CH_AREA_CUTOFF_PERCENTILE;
         let mut by_area: Vec<(usize, f64)> = (0..n)
             .map(|i| {
                 let inst = &instances[state.layout.placements[i].instance_idx];

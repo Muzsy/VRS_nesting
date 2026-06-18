@@ -31,6 +31,17 @@ pub struct SPInstance {
     pub shape_profile: Rc<PartShapeProfile>,
 }
 
+impl SPInstance {
+    /// SGH-Q53A contour-feature layer (outer contour only, deterministic, decision-support only).
+    pub fn contour_features(&self) -> &ContourFeatureSet {
+        &self.shape_profile.contour_features
+    }
+
+    pub fn contour_feature_summary(&self) -> &ContourFeatureSummary {
+        &self.shape_profile.contour_feature_summary
+    }
+}
+
 /// Native fixed-sheet container set.
 #[derive(Debug, Clone)]
 pub struct SparrowContainer {
@@ -217,9 +228,14 @@ impl SparrowProblem {
                                 let out_vtx = bs.local_pts.len();
                                 spacing_offset_input_vertex_total += in_vtx;
                                 spacing_offset_output_vertex_total += out_vtx;
-                                let orig_area = crate::geometry::polygon_area(&base_shape.local_pts).abs();
+                                let orig_area =
+                                    crate::geometry::polygon_area(&base_shape.local_pts).abs();
                                 let exp_area = crate::geometry::polygon_area(&bs.local_pts).abs();
-                                let ratio = if orig_area > 0.0 { exp_area / orig_area } else { 1.0 };
+                                let ratio = if orig_area > 0.0 {
+                                    exp_area / orig_area
+                                } else {
+                                    1.0
+                                };
                                 spacing_offset_area_ratio_sum += ratio;
                                 if ratio > spacing_offset_area_ratio_max {
                                     spacing_offset_area_ratio_max = ratio;

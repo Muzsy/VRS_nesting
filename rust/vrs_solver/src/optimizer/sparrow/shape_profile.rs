@@ -51,6 +51,8 @@ pub fn shape_profile_enabled() -> bool {
 #[derive(Debug, Clone)]
 pub struct PartShapeProfile {
     pub part_id: String,
+    pub contour_features: ContourFeatureSet,
+    pub contour_feature_summary: ContourFeatureSummary,
     // base geometry
     pub true_area: f64,
     pub bbox_area: f64,
@@ -93,6 +95,8 @@ impl PartShapeProfile {
         sheet_area: f64,
         max_sheet_span: f64,
     ) -> Self {
+        let contour_features = ContourFeatureSet::extract(base_shape);
+        let contour_feature_summary = contour_features.summary();
         let w = part.width.max(0.0);
         let h = part.height.max(0.0);
         let bbox_area = (w * h).max(EPS);
@@ -171,6 +175,8 @@ impl PartShapeProfile {
 
         PartShapeProfile {
             part_id: part.id.clone(),
+            contour_features,
+            contour_feature_summary,
             true_area,
             bbox_area,
             convex_hull_area,
@@ -308,24 +314,41 @@ pub fn build_shape_profile_diagnostics(
     });
     rows.into_iter()
         .enumerate()
-        .map(|(rank, (prof, instance_count))| crate::io::ShapeProfileDiagnostics {
-            part_id: prof.part_id.clone(),
-            classes: prof
-                .class_labels()
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect(),
-            priority_score: prof.priority_score,
-            priority_rank: rank,
-            search_budget_multiplier: prof.search_budget_multiplier,
-            declared_quantity: prof.quantity,
-            instance_count,
-            placed_count: placed.get(&prof.part_id).copied().unwrap_or(0),
-            fill_ratio: prof.fill_ratio,
-            convexity_ratio: prof.convexity_ratio,
-            aspect_ratio: prof.aspect_ratio,
-            sheet_area_ratio: prof.sheet_area_ratio,
-        })
+        .map(
+            |(rank, (prof, instance_count))| crate::io::ShapeProfileDiagnostics {
+                part_id: prof.part_id.clone(),
+                classes: prof
+                    .class_labels()
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                priority_score: prof.priority_score,
+                priority_rank: rank,
+                search_budget_multiplier: prof.search_budget_multiplier,
+                declared_quantity: prof.quantity,
+                instance_count,
+                placed_count: placed.get(&prof.part_id).copied().unwrap_or(0),
+                fill_ratio: prof.fill_ratio,
+                convexity_ratio: prof.convexity_ratio,
+                aspect_ratio: prof.aspect_ratio,
+                sheet_area_ratio: prof.sheet_area_ratio,
+                contour_vertex_count: prof.contour_feature_summary.contour_vertex_count,
+                contour_edge_count: prof.contour_feature_summary.contour_edge_count,
+                dominant_edge_count: prof.contour_feature_summary.dominant_edge_count,
+                extreme_point_count: prof.contour_feature_summary.extreme_point_count,
+                concave_vertex_count: prof.contour_feature_summary.concave_vertex_count,
+                concave_zone_count: prof.contour_feature_summary.concave_zone_count,
+                protrusion_candidate_count: prof.contour_feature_summary.protrusion_candidate_count,
+                sheet_alignment_angle_count: prof
+                    .contour_feature_summary
+                    .sheet_alignment_angle_count,
+                contour_feature_total_count: prof.contour_feature_summary.total_feature_count,
+                dominant_alignment_angles_deg: prof
+                    .contour_feature_summary
+                    .dominant_alignment_angles_deg
+                    .clone(),
+            },
+        )
         .collect()
 }
 
@@ -421,12 +444,20 @@ mod tests {
     #[test]
     fn large_concave_low_fill_is_anchor_and_high_interlock() {
         let prof = profile_of(&poly_part("L", 1000.0, 1000.0, 6, l_points()));
-        assert!(prof.is_large_anchor, "sheet_area_ratio={}", prof.sheet_area_ratio);
+        assert!(
+            prof.is_large_anchor,
+            "sheet_area_ratio={}",
+            prof.sheet_area_ratio
+        );
         assert!(prof.is_concave_like, "convexity={}", prof.convexity_ratio);
         assert!(prof.fill_ratio < 0.5, "fill={}", prof.fill_ratio);
         assert!(prof.is_high_interlock_potential);
         assert!(prof.is_repeated_family, "qty=6 must be a family");
-        assert!(prof.search_budget_multiplier > 1.0, "budget={}", prof.search_budget_multiplier);
+        assert!(
+            prof.search_budget_multiplier > 1.0,
+            "budget={}",
+            prof.search_budget_multiplier
+        );
     }
 
     #[test]
@@ -446,10 +477,22 @@ mod tests {
         let anchor = profile_of(&poly_part("L", 1000.0, 1000.0, 6, l_points()));
         let structural = profile_of(&rect_part("M", 300.0, 300.0, 1));
         let filler = profile_of(&rect_part("T", 20.0, 20.0, 50));
-        assert_eq!(anchor.criticality_tier(), CriticalityTier::Critical, "large concave anchor");
+        assert_eq!(
+            anchor.criticality_tier(),
+            CriticalityTier::Critical,
+            "large concave anchor"
+        );
         assert!(anchor.is_critical());
-        assert_eq!(structural.criticality_tier(), CriticalityTier::Structural, "medium square");
-        assert_eq!(filler.criticality_tier(), CriticalityTier::Filler, "tiny square");
+        assert_eq!(
+            structural.criticality_tier(),
+            CriticalityTier::Structural,
+            "medium square"
+        );
+        assert_eq!(
+            filler.criticality_tier(),
+            CriticalityTier::Filler,
+            "tiny square"
+        );
         assert!(!filler.is_critical());
     }
 
@@ -459,7 +502,10 @@ mod tests {
         let strip = profile_of(&rect_part("S", 160.0, 12.0, 10));
         assert!(strip.is_slender, "aspect={}", strip.aspect_ratio);
         assert!(strip.is_tiny_filler, "ratio={}", strip.sheet_area_ratio);
-        assert!(!strip.is_critical(), "a tiny slender strip is a filler, not a critical anchor");
+        assert!(
+            !strip.is_critical(),
+            "a tiny slender strip is a filler, not a critical anchor"
+        );
         assert_eq!(strip.criticality_tier(), CriticalityTier::Filler);
     }
 

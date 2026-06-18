@@ -82,7 +82,9 @@ pub(crate) fn search_placement(
     // 1. Reference/current placement candidate + focused sampler around it.
     let focused_sampler = match ref_rect_min {
         Some((rmx, rmy, rot)) => {
-            if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
+            if let Some(c) =
+                evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag)
+            {
                 best.report(c, diag);
             }
             // Focused sample bbox = the item's current footprint at this rotation.
@@ -111,9 +113,15 @@ pub(crate) fn search_placement(
             let (rmx, rmy, rot) = fs.sample(rng);
             t_sample.add_to(&mut diag.q30_profile.sample_generation_ms);
             diag.search_focused_samples += 1;
-            if prof_active { diag.q30_profile.focused_samples_generated += 1; }
-            if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
-                if r1_active { diag.q30_profile.evaluate_sample_calls_from_focused += 1; }
+            if prof_active {
+                diag.q30_profile.focused_samples_generated += 1;
+            }
+            if let Some(c) =
+                evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag)
+            {
+                if r1_active {
+                    diag.q30_profile.evaluate_sample_calls_from_focused += 1;
+                }
                 best.report(c, diag);
             }
         }
@@ -129,9 +137,15 @@ pub(crate) fn search_placement(
             let (rmx, rmy, rot) = cs.sample(rng);
             t_sample.add_to(&mut diag.q30_profile.sample_generation_ms);
             diag.search_global_samples += 1;
-            if prof_active { diag.q30_profile.global_samples_generated += 1; }
-            if let Some(c) = evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag) {
-                if r1_active { diag.q30_profile.evaluate_sample_calls_from_global += 1; }
+            if prof_active {
+                diag.q30_profile.global_samples_generated += 1;
+            }
+            if let Some(c) =
+                evaluator.evaluate_sample(rmx, rmy, rot, Some(best.upper_bound()), diag)
+            {
+                if r1_active {
+                    diag.q30_profile.evaluate_sample_calls_from_global += 1;
+                }
                 best.report(c, diag);
             }
         }
@@ -148,12 +162,16 @@ pub(crate) fn search_placement(
     let t_bclone = ProfileTimer::start_if(r1_active);
     let starts = best.samples.clone();
     t_bclone.add_to(&mut diag.q30_profile.best_samples_clone_ms);
-    if r1_active { diag.q30_profile.best_samples_clone_calls += 1; }
+    if r1_active {
+        diag.q30_profile.best_samples_clone_calls += 1;
+    }
     for s in starts {
         if deadline_reached(started) {
             break;
         }
-        if prof_active { diag.q30_profile.coord_descent_runs += 1; }
+        if prof_active {
+            diag.q30_profile.coord_descent_runs += 1;
+        }
         let t_cd = ProfileTimer::start_if(prof_active);
         if let Some(d) = refine_coord_desc(
             s,
@@ -178,10 +196,14 @@ pub(crate) fn search_placement(
     let t_best = ProfileTimer::start_if(r1_active);
     let best_sample = best.best();
     t_best.add_to(&mut diag.q30_profile.best_samples_best_ms);
-    if r1_active { diag.q30_profile.best_samples_best_calls += 1; }
+    if r1_active {
+        diag.q30_profile.best_samples_best_calls += 1;
+    }
     if let Some(s) = best_sample {
         if !deadline_reached(started) {
-            if prof_active { diag.q30_profile.coord_descent_runs += 1; }
+            if prof_active {
+                diag.q30_profile.coord_descent_runs += 1;
+            }
             let t_cd = ProfileTimer::start_if(prof_active);
             if let Some(d) = refine_coord_desc(
                 s,
@@ -222,7 +244,8 @@ pub(crate) fn separator_sample_config(cfg: &SparrowConfig) -> SampleConfig {
     } else {
         SampleConfig {
             n_focused_samples: cfg.focused_samples.max(1),
-            n_container_samples: (cfg.global_grid_n * cfg.global_grid_n + 2 * cfg.global_grid_n).max(8),
+            n_container_samples: (cfg.global_grid_n * cfg.global_grid_n + 2 * cfg.global_grid_n)
+                .max(8),
             n_coord_descents: 8,
         }
     }
@@ -255,7 +278,11 @@ pub(crate) fn native_search_placement(
     diag.search_position_calls += 1;
     diag.q30_profile.native_search_calls += 1;
     diag.q30_profile.profiling_scope_active = diag.q30_profile.enabled;
-    let search_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
+    let search_t0 = if diag.profiling_enabled {
+        Some(Instant::now())
+    } else {
+        None
+    };
     let t_search = ProfileTimer::start_if(diag.q30_profile.enabled);
     // Deregister the target BEFORE any early-return or deadline check so that the
     // invariant holds: when live_session is Some, the target is always deregistered
@@ -263,7 +290,11 @@ pub(crate) fn native_search_placement(
     // The caller (run_worker_pass) always reregisters after the call.
     let mut live_session = live_session;
     if let Some(ref mut ls) = live_session {
-        let dereg_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
+        let dereg_t0 = if diag.profiling_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         let t_dereg = ProfileTimer::start_if(diag.q30_profile.enabled);
         ls.deregister_item(target);
         if let Some(t) = dereg_t0 {
@@ -284,7 +315,9 @@ pub(crate) fn native_search_placement(
     // SGH-Q36: the separator candidate uses the spacing-expanded collision base shape for
     // part-part hazards (same Rc as the original when spacing is off — byte-identical).
     let base = inst.spacing_collision_base_shape.clone();
-    if r1 { diag.q30_profile.search_base_shape_cache_hits += 1; }
+    if r1 {
+        diag.q30_profile.search_base_shape_cache_hits += 1;
+    }
     // Verify the current anchor is reachable; if the base shape is degenerate, skip.
     if transform_base_to_candidate(&base, cur.x, cur.y, cur.rotation_deg).is_none() {
         t_search.add_to(&mut diag.q30_profile.search_total_ms);
@@ -308,7 +341,9 @@ pub(crate) fn native_search_placement(
         if started.elapsed().as_secs_f64() >= deadline {
             break;
         }
-        if r1 { diag.q30_profile.sheet_loop_iterations += 1; }
+        if r1 {
+            diag.q30_profile.sheet_loop_iterations += 1;
+        }
         if rank > 0 {
             diag.search_cross_sheet_calls += 1;
         }
@@ -370,7 +405,11 @@ pub(crate) fn native_search_placement(
         }
 
         // Fallback: build a fresh session for this sheet (None case or cross-sheet).
-        let sess_t0 = if diag.profiling_enabled { Some(Instant::now()) } else { None };
+        let sess_t0 = if diag.profiling_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         let t_sess = ProfileTimer::start_if(diag.q30_profile.enabled);
         let Some(session) = build_sheet_session(target, sheet_idx, layout, tracker, &sheet_shape)
         else {

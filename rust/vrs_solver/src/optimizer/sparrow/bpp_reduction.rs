@@ -19,14 +19,15 @@
 //!       → on failure: mark candidate failed, restore incumbent, maybe perturb
 //!   → final validation; status "ok" only when all placed && pairs=0 && boundary=0.
 
-use super::*;
 use super::density::{
-    contour_near_rect_mins, density_candidate_score, is_interlock_candidate, DensityWeights,
+    bbox_corner_fallback_rect_mins, contour_near_rect_mins, density_candidate_score,
+    is_interlock_candidate, DensityWeights,
 };
 use super::multisheet::{
     compute_utilization, part_polygon_area, sanitize_partial, FiniteStockRunConfig,
     FiniteStockRunResult,
 };
+use super::*;
 use crate::io::BppReductionDiagnostics;
 use crate::sheet::{expand_sheets, Stock};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -117,7 +118,13 @@ fn run_subsolve(
 ) -> (bool, SparrowLayout) {
     let mut state = SparrowState::new_with_diag(seed_layout, instances, local_sheets, diag);
     let _ = optimizer.exploration_phase(
-        &mut state, instances, local_sheets, started, deadline_s, rng, diag,
+        &mut state,
+        instances,
+        local_sheets,
+        started,
+        deadline_s,
+        rng,
+        diag,
     );
     let layout = state
         .best_feasible
@@ -158,7 +165,10 @@ fn separate_affected_sheets(
     rng: &mut DeterministicRng,
     diag: &mut SparrowDiagnostics,
 ) -> (bool, SparrowLayout) {
-    let local_sheets: Vec<SheetShape> = receiving.iter().map(|&g| solver_sheets[g].clone()).collect();
+    let local_sheets: Vec<SheetShape> = receiving
+        .iter()
+        .map(|&g| solver_sheets[g].clone())
+        .collect();
     let g2l: HashMap<usize, usize> = receiving.iter().enumerate().map(|(l, &g)| (g, l)).collect();
     let local_layout = SparrowLayout {
         placements: trial
@@ -171,14 +181,24 @@ fn separate_affected_sheets(
             .collect(),
     };
     let (full, solved) = run_subsolve(
-        optimizer, local_layout, instances, &local_sheets, started, deadline_s, rng, diag,
+        optimizer,
+        local_layout,
+        instances,
+        &local_sheets,
+        started,
+        deadline_s,
+        rng,
+        diag,
     );
     let remapped = SparrowLayout {
         placements: solved
             .placements
             .iter()
             .map(|p| SparrowPlacement {
-                sheet_index: receiving.get(p.sheet_index).cloned().unwrap_or(receiving[0]),
+                sheet_index: receiving
+                    .get(p.sheet_index)
+                    .cloned()
+                    .unwrap_or(receiving[0]),
                 ..p.clone()
             })
             .collect(),
@@ -188,7 +208,15 @@ fn separate_affected_sheets(
     // need interlocking). Opt-in (default off) while it matures.
     if !full && std::env::var("VRS_BPP_COMPRESS").ok().as_deref() == Some("1") {
         let (sc_full, sc_layout) = strip_compress_fit(
-            optimizer, trial, receiving, instances, solver_sheets, started, deadline_s, rng, diag,
+            optimizer,
+            trial,
+            receiving,
+            instances,
+            solver_sheets,
+            started,
+            deadline_s,
+            rng,
+            diag,
         );
         if sc_full {
             return (true, sc_layout);
@@ -277,7 +305,10 @@ fn strip_compress_fit(
                 .placements
                 .iter()
                 .map(|p| SparrowPlacement {
-                    sheet_index: receiving.get(p.sheet_index).cloned().unwrap_or(receiving[0]),
+                    sheet_index: receiving
+                        .get(p.sheet_index)
+                        .cloned()
+                        .unwrap_or(receiving[0]),
                     ..p.clone()
                 })
                 .collect(),
@@ -316,9 +347,18 @@ fn strip_compress_fit(
     let mut cur = {
         let mut state = SparrowState::new_with_diag(local_layout, instances, &local_sheets, diag);
         let _ = optimizer.exploration_phase(
-            &mut state, instances, &local_sheets, started, sep_deadline, rng, diag,
+            &mut state,
+            instances,
+            &local_sheets,
+            started,
+            sep_deadline,
+            rng,
+            diag,
         );
-        state.best_feasible.clone().unwrap_or_else(|| state.layout.clone())
+        state
+            .best_feasible
+            .clone()
+            .unwrap_or_else(|| state.layout.clone())
     };
     let wide_ok = SparrowCollisionTracker::final_validation_tracker(&cur, instances, &local_sheets)
         .is_feasible()
@@ -329,7 +369,9 @@ fn strip_compress_fit(
         for p in &cur.placements {
             *per.entry(p.sheet_index).or_insert(0) += 1;
         }
-        let pairs = SparrowCollisionTracker::final_validation_tracker(&cur, instances, &local_sheets).colliding_pairs();
+        let pairs =
+            SparrowCollisionTracker::final_validation_tracker(&cur, instances, &local_sheets)
+                .colliding_pairs();
         eprintln!(
             "[STRIP] receiving={:?} n_items={} wide_factor={} wide_ok={} placed={} per_local_sheet={:?} residual_pairs={}",
             receiving, n_items, WIDEN, wide_ok, cur.placements.len(), per, pairs
@@ -355,7 +397,15 @@ fn strip_compress_fit(
             let now = started.elapsed().as_secs_f64();
             let step_deadline = (now + (deadline_s - now).max(0.5) * 0.25).min(deadline_s);
             let (feas, remapped) = separate_sheet_local(
-                optimizer, &cur, l, &trial_sheet, instances, started, step_deadline, rng, diag,
+                optimizer,
+                &cur,
+                l,
+                &trial_sheet,
+                instances,
+                started,
+                step_deadline,
+                rng,
+                diag,
             );
             if feas {
                 replace_sheet_placements(&mut cur, l, remapped);
@@ -377,7 +427,10 @@ fn strip_compress_fit(
     }
 
     // 3. validate against the REAL sheets
-    let real_local: Vec<SheetShape> = receiving.iter().map(|&g| solver_sheets[g].clone()).collect();
+    let real_local: Vec<SheetShape> = receiving
+        .iter()
+        .map(|&g| solver_sheets[g].clone())
+        .collect();
     let feasible = SparrowCollisionTracker::final_validation_tracker(&cur, instances, &real_local)
         .is_feasible()
         && cur.placements.len() == n_items;
@@ -411,14 +464,24 @@ fn search_placement_on_sheet(
         .placements
         .iter()
         .filter(|p| p.sheet_index == sheet)
-        .map(|p| SparrowPlacement { sheet_index: 0, ..p.clone() })
+        .map(|p| SparrowPlacement {
+            sheet_index: 0,
+            ..p.clone()
+        })
         .collect();
     let inst = &instances[target_instance];
     let rot = super::fixed_sheet::fitting_rotation(inst, &local_sheets);
     let s = &local_sheets[0];
-    let (ax, ay) = placement_anchor_from_rect_min(s.min_x, s.min_y, inst.part.width, inst.part.height, rot);
+    let (ax, ay) =
+        placement_anchor_from_rect_min(s.min_x, s.min_y, inst.part.width, inst.part.height, rot);
     let target_idx = local.len();
-    local.push(SparrowPlacement { instance_idx: target_instance, sheet_index: 0, x: ax, y: ay, rotation_deg: rot });
+    local.push(SparrowPlacement {
+        instance_idx: target_instance,
+        sheet_index: 0,
+        x: ax,
+        y: ay,
+        rotation_deg: rot,
+    });
     let layout_local = SparrowLayout { placements: local };
     let tracker = SparrowCollisionTracker::build(&layout_local, instances, &local_sheets);
     // SGH-Q47 T4: scale the per-placement micro-budget by the target's shape budget multiplier
@@ -444,7 +507,10 @@ fn search_placement_on_sheet(
     );
     let pl = found?;
     // Remap to global sheet.
-    let global = SparrowPlacement { sheet_index: sheet, ..pl };
+    let global = SparrowPlacement {
+        sheet_index: sheet,
+        ..pl
+    };
     if prefer_clear {
         // Verify the candidate is collision-free against the sheet's existing items.
         let mut check: Vec<SparrowPlacement> = layout
@@ -455,7 +521,11 @@ fn search_placement_on_sheet(
             .collect();
         check.push(global.clone());
         let chk_layout = SparrowLayout { placements: check };
-        let t = SparrowCollisionTracker::final_validation_tracker(&chk_layout, instances, solver_sheets);
+        let t = SparrowCollisionTracker::final_validation_tracker(
+            &chk_layout,
+            instances,
+            solver_sheets,
+        );
         if !t.is_feasible() {
             return None;
         }
@@ -480,7 +550,13 @@ fn bootstrap_on_sheet(
     let rmx = s.min_x + rng.next_f64() * (max_rmx - s.min_x).max(0.0);
     let rmy = s.min_y + rng.next_f64() * (max_rmy - s.min_y).max(0.0);
     let (ax, ay) = placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
-    SparrowPlacement { instance_idx: target_instance, sheet_index: sheet, x: ax, y: ay, rotation_deg: rot }
+    SparrowPlacement {
+        instance_idx: target_instance,
+        sheet_index: sheet,
+        x: ax,
+        y: ay,
+        rotation_deg: rot,
+    }
 }
 
 /// ADAPTED `try_lbf_into_any_bin`: move every displaced item from `candidate` into a
@@ -509,7 +585,16 @@ fn redistribute_displaced(
         let mut placed = false;
         for &rs in &order {
             if let Some(pl) = search_placement_on_sheet(
-                optimizer, target_instance, rs, trial, instances, solver_sheets, started, rng, diag, true,
+                optimizer,
+                target_instance,
+                rs,
+                trial,
+                instances,
+                solver_sheets,
+                started,
+                rng,
+                diag,
+                true,
             ) {
                 trial.placements[li] = pl;
                 bpp.bpp_displaced_lbf_clear_count += 1;
@@ -521,7 +606,8 @@ fn redistribute_displaced(
             // bootstrap into the most-available receiving sheet (overlaps allowed; the
             // affected-sheet separator resolves them).
             let rs = order[0];
-            trial.placements[li] = bootstrap_on_sheet(target_instance, rs, instances, solver_sheets, rng);
+            trial.placements[li] =
+                bootstrap_on_sheet(target_instance, rs, instances, solver_sheets, rng);
             bpp.bpp_displaced_fallback_count += 1;
         }
     }
@@ -548,7 +634,16 @@ fn try_transfer(
     let old = layout.placements[item_layout_idx].clone();
     let inst = old.instance_idx;
     let new_pl = search_placement_on_sheet(
-        optimizer, inst, to_sheet, layout, instances, solver_sheets, started, rng, diag, false,
+        optimizer,
+        inst,
+        to_sheet,
+        layout,
+        instances,
+        solver_sheets,
+        started,
+        rng,
+        diag,
+        false,
     )
     .unwrap_or_else(|| bootstrap_on_sheet(inst, to_sheet, instances, solver_sheets, rng));
     layout.placements[item_layout_idx] = new_pl;
@@ -577,8 +672,18 @@ fn try_swap(
     let pa = layout.placements[a].clone();
     let pb = layout.placements[b].clone();
     // swap sheet assignment + anchor (keep each item's own rotation)
-    layout.placements[a] = SparrowPlacement { sheet_index: pb.sheet_index, x: pb.x, y: pb.y, ..pa.clone() };
-    layout.placements[b] = SparrowPlacement { sheet_index: pa.sheet_index, x: pa.x, y: pa.y, ..pb.clone() };
+    layout.placements[a] = SparrowPlacement {
+        sheet_index: pb.sheet_index,
+        x: pb.x,
+        y: pb.y,
+        ..pa.clone()
+    };
+    layout.placements[b] = SparrowPlacement {
+        sheet_index: pa.sheet_index,
+        x: pa.x,
+        y: pa.y,
+        ..pb.clone()
+    };
     let after = layout_conflict_count(layout, instances, solver_sheets);
     if after < before {
         bpp.bpp_swap_successes += 1;
@@ -606,7 +711,8 @@ fn resolve_by_transfers(
 ) -> bool {
     let mut budget = TRANSFER_BUDGET;
     while budget > 0 && started.elapsed().as_secs_f64() < deadline_s {
-        let tracker = SparrowCollisionTracker::final_validation_tracker(layout, instances, solver_sheets);
+        let tracker =
+            SparrowCollisionTracker::final_validation_tracker(layout, instances, solver_sheets);
         if tracker.is_feasible() {
             return true;
         }
@@ -622,7 +728,18 @@ fn resolve_by_transfers(
                     continue;
                 }
                 budget = budget.saturating_sub(1);
-                if try_transfer(optimizer, layout, ci, to, instances, solver_sheets, started, rng, diag, bpp) {
+                if try_transfer(
+                    optimizer,
+                    layout,
+                    ci,
+                    to,
+                    instances,
+                    solver_sheets,
+                    started,
+                    rng,
+                    diag,
+                    bpp,
+                ) {
                     improved = true;
                     break;
                 }
@@ -637,7 +754,14 @@ fn resolve_by_transfers(
         if !improved {
             // one swap attempt between the two most-colliding items
             if colliding.len() >= 2 {
-                let _ = try_swap(layout, colliding[0], colliding[1], instances, solver_sheets, bpp);
+                let _ = try_swap(
+                    layout,
+                    colliding[0],
+                    colliding[1],
+                    instances,
+                    solver_sheets,
+                    bpp,
+                );
             }
             break;
         }
@@ -667,7 +791,10 @@ fn compact_sheet(
         .collect();
     idxs.sort_by(|&a, &b| {
         profile_order_key(instances, layout.placements[b].instance_idx)
-            .partial_cmp(&profile_order_key(instances, layout.placements[a].instance_idx))
+            .partial_cmp(&profile_order_key(
+                instances,
+                layout.placements[a].instance_idx,
+            ))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     let mut any = false;
@@ -675,9 +802,21 @@ fn compact_sheet(
         let target_instance = layout.placements[li].instance_idx;
         let old = layout.placements[li].clone();
         // temporarily lift the item off the sheet so search ignores it as an obstacle
-        layout.placements[li] = SparrowPlacement { sheet_index: usize::MAX, ..old.clone() };
+        layout.placements[li] = SparrowPlacement {
+            sheet_index: usize::MAX,
+            ..old.clone()
+        };
         let candidate = search_placement_on_sheet(
-            optimizer, target_instance, sheet, layout, instances, solver_sheets, started, rng, diag, true,
+            optimizer,
+            target_instance,
+            sheet,
+            layout,
+            instances,
+            solver_sheets,
+            started,
+            rng,
+            diag,
+            true,
         );
         match candidate {
             Some(pl) if pl.y + 1e-9 < old.y => {
@@ -803,7 +942,10 @@ fn separate_sheet_local(
         .placements
         .iter()
         .filter(|p| p.sheet_index == sheet_idx)
-        .map(|p| SparrowPlacement { sheet_index: 0, ..p.clone() })
+        .map(|p| SparrowPlacement {
+            sheet_index: 0,
+            ..p.clone()
+        })
         .collect();
     if placements.is_empty() {
         return (true, vec![]);
@@ -812,24 +954,39 @@ fn separate_sheet_local(
     let local_layout = SparrowLayout { placements };
     let mut state = SparrowState::new_with_diag(local_layout, instances, &local_sheets, diag);
     let _ = optimizer.exploration_phase(
-        &mut state, instances, &local_sheets, started, deadline_s, rng, diag,
+        &mut state,
+        instances,
+        &local_sheets,
+        started,
+        deadline_s,
+        rng,
+        diag,
     );
     let layout = state
         .best_feasible
         .clone()
         .unwrap_or_else(|| state.layout.clone());
-    let tracker = SparrowCollisionTracker::final_validation_tracker(&layout, instances, &local_sheets);
+    let tracker =
+        SparrowCollisionTracker::final_validation_tracker(&layout, instances, &local_sheets);
     let feasible = tracker.is_feasible();
     let remapped = layout
         .placements
         .iter()
-        .map(|p| SparrowPlacement { sheet_index: sheet_idx, ..p.clone() })
+        .map(|p| SparrowPlacement {
+            sheet_index: sheet_idx,
+            ..p.clone()
+        })
         .collect();
     (feasible, remapped)
 }
 
 /// Used extent (max coordinate of any part) on one axis for a sheet's items.
-fn sheet_used_max(layout: &SparrowLayout, instances: &[SPInstance], sheet_idx: usize, axis_x: bool) -> f64 {
+fn sheet_used_max(
+    layout: &SparrowLayout,
+    instances: &[SPInstance],
+    sheet_idx: usize,
+    axis_x: bool,
+) -> f64 {
     layout
         .placements
         .iter()
@@ -839,13 +996,21 @@ fn sheet_used_max(layout: &SparrowLayout, instances: &[SPInstance], sheet_idx: u
             let (rmx, rmy) =
                 rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, p.rotation_deg);
             let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, p.rotation_deg);
-            if axis_x { rmx + rw } else { rmy + rh }
+            if axis_x {
+                rmx + rw
+            } else {
+                rmy + rh
+            }
         })
         .fold(f64::MIN, f64::max)
 }
 
 /// Replace the placements on `sheet_idx` with `new`.
-fn replace_sheet_placements(working: &mut SparrowLayout, sheet_idx: usize, new: Vec<SparrowPlacement>) {
+fn replace_sheet_placements(
+    working: &mut SparrowLayout,
+    sheet_idx: usize,
+    new: Vec<SparrowPlacement>,
+) {
     let mut others: Vec<SparrowPlacement> = working
         .placements
         .iter()
@@ -893,7 +1058,11 @@ fn compress_layout(
             } else {
                 (sheet.min_y, sheet.max_y)
             };
-            let mut accepted_max = sheet_used_max(working, instances, s, axis_x).min(if axis_x { sheet.max_x } else { sheet.max_y });
+            let mut accepted_max = sheet_used_max(working, instances, s, axis_x).min(if axis_x {
+                sheet.max_x
+            } else {
+                sheet.max_y
+            });
             let before_extent = accepted_max - sheet_min;
             // Fine-grained compression (upstream uses ~0.05% steps): take small steps and keep
             // going while they remain feasible; shrink the step on failure. A small step injects
@@ -901,7 +1070,8 @@ fn compress_layout(
             // accumulates into deep nesting. Coarse steps inject un-nestable overlaps and fail.
             let mut step = 0.015;
             let mut stagnant = 0usize;
-            while step >= MIN_SHRINK && stagnant < 5 && started.elapsed().as_secs_f64() < deadline_s {
+            while step >= MIN_SHRINK && stagnant < 5 && started.elapsed().as_secs_f64() < deadline_s
+            {
                 let extent = (accepted_max - sheet_min).max(0.0);
                 let new_max = sheet_min + extent * (1.0 - step);
                 let trial = if axis_x {
@@ -914,12 +1084,22 @@ fn compress_layout(
                 // Tight per-step deadline: a small overlap separates quickly.
                 let step_deadline = (now + 2.5).min(deadline_s);
                 let (feasible, remapped) = separate_sheet_local(
-                    optimizer, working, s, &trial, instances, started, step_deadline, rng, diag,
+                    optimizer,
+                    working,
+                    s,
+                    &trial,
+                    instances,
+                    started,
+                    step_deadline,
+                    rng,
+                    diag,
                 );
                 if feasible && !remapped.is_empty() {
                     replace_sheet_placements(working, s, remapped);
                     bpp.bpp_region_compression_accepts += 1;
-                    let new_extent = (sheet_used_max(working, instances, s, axis_x).min(new_max) - sheet_min).max(0.0);
+                    let new_extent = (sheet_used_max(working, instances, s, axis_x).min(new_max)
+                        - sheet_min)
+                        .max(0.0);
                     if (extent - new_extent) < 1.0 {
                         stagnant += 1;
                     } else {
@@ -1040,6 +1220,61 @@ fn lns_restarts() -> usize {
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4)
         .clamp(1, 16)
+}
+
+/// SGH-Q53D: opt-in feature-first critical admission inside the sheet builder.
+fn critical_feature_admission_enabled() -> bool {
+    std::env::var("VRS_SHEET_BUILDER_FEATURE_CRITICAL")
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+fn feature_seed_rejection_summary(seeds: &[CandidateSeed]) -> Option<String> {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for seed in seeds {
+        if seed.refine_success {
+            continue;
+        }
+        let reason = seed
+            .refine_rejection_reason
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        *counts.entry(reason).or_insert(0) += 1;
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    Some(
+        counts
+            .into_iter()
+            .map(|(reason, count)| format!("{reason}={count}"))
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
+fn record_feature_seed_metrics(
+    seeds: &[CandidateSeed],
+    bpp: &mut BppReductionDiagnostics,
+    diag: &mut SparrowDiagnostics,
+) {
+    bpp.bpp_feature_candidates_generated += seeds.len();
+    diag.feature_candidates_generated += seeds.len();
+
+    let refine_successes = seeds.iter().filter(|seed| seed.refine_success).count();
+    let refine_failures = seeds.len().saturating_sub(refine_successes);
+    bpp.bpp_feature_refine_successes += refine_successes;
+    bpp.bpp_feature_refine_failures += refine_failures;
+    diag.feature_refine_successes += refine_successes;
+    diag.feature_refine_failures += refine_failures;
+
+    if bpp.bpp_feature_refine_rejection_reason.is_none() {
+        bpp.bpp_feature_refine_rejection_reason = feature_seed_rejection_summary(seeds);
+    }
+    if diag.feature_refine_rejection_reason.is_none() {
+        diag.feature_refine_rejection_reason = feature_seed_rejection_summary(seeds);
+    }
 }
 
 /// Density placement search for one part on its sheet. Among collision-free candidates (current
@@ -1176,6 +1411,10 @@ fn density_insert_part(
     sheet_prepared: &Rc<CdePreparedShape>,
     weights: &DensityWeights,
     rng: &mut DeterministicRng,
+    allow_feature_seeds: bool,
+    allow_bbox_fallback: bool,
+    allow_uniform_positions: bool,
+    diag: &mut SparrowDiagnostics,
     bpp: &mut BppReductionDiagnostics,
 ) -> Option<SparrowPlacement> {
     let inst_idx = working.placements[li].instance_idx;
@@ -1184,10 +1423,21 @@ fn density_insert_part(
     let cand_base = inst.spacing_collision_base_shape.as_ref();
 
     // Neighbours = parts currently living on `target_sheet` with a live (non-ruined) shape.
-    let neighbours: Vec<&CdePreparedShape> = (0..working.placements.len())
-        .filter(|&j| j != li && working.placements[j].sheet_index == target_sheet)
-        .filter_map(|j| tracker.shapes.get(j).and_then(|o| o.as_deref()))
-        .collect();
+    let mut neighbours: Vec<&CdePreparedShape> = Vec::new();
+    let mut feature_neighbours: Vec<PlacedFeatureNeighbour<'_>> = Vec::new();
+    for j in 0..working.placements.len() {
+        if j == li || working.placements[j].sheet_index != target_sheet {
+            continue;
+        }
+        let Some(shape) = tracker.shapes.get(j).and_then(|o| o.as_deref()) else {
+            continue;
+        };
+        neighbours.push(shape);
+        feature_neighbours.push(PlacedFeatureNeighbour {
+            placement: &working.placements[j],
+            instance: &instances[working.placements[j].instance_idx],
+        });
+    }
     let session = build_sheet_session(li, target_sheet, working, tracker, sheet_prepared)?;
     let ev = LBFEvaluator {
         inst,
@@ -1205,56 +1455,135 @@ fn density_insert_part(
 
     let (rw0, rh0) = dims_for_rotation(inst.part.width, inst.part.height, cur_rot);
     let n_uniform = density_samples();
-    let mut positions: Vec<(f64, f64)> = Vec::with_capacity(n_uniform + 32);
-    for _ in 0..n_uniform {
-        let rmx = sheet.min_x + rng.next_f64() * (sheet.max_x - rw0 - sheet.min_x).max(0.0);
-        let rmy = sheet.min_y + rng.next_f64() * (sheet.max_y - rh0 - sheet.min_y).max(0.0);
-        positions.push((rmx, rmy));
-    }
-    if !neighbours.is_empty() {
-        positions.extend(contour_near_rect_mins(&neighbours, rw0, rh0, sheet, n_uniform + 20));
-    }
-
-    let mut best: Option<(f64, SparrowPlacement, bool)> = None;
-    for &rot in &rotations {
-        for &(rmx, rmy) in &positions {
-            if ev.score_lbf_candidate(rmx, rmy, rot).is_none() {
-                continue; // CDE: not collision-free here
-            }
-            let (ax, ay) =
-                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
-            let Some(cand) = transform_base_to_candidate(cand_base, ax, ay, rot) else {
-                continue;
-            };
-            let interlock = is_interlock_candidate(&cand, &neighbours);
-            if interlock {
-                bpp.bpp_interlock_candidates_generated += 1;
-            }
-            // With neighbours rank by density (prefer interlock); on an empty sheet fall back to
-            // a bottom-left score so the first part still lands in a corner.
-            let score = if neighbours.is_empty() {
-                (rmx - sheet.min_x) + (rmy - sheet.min_y)
-            } else {
-                density_candidate_score(&cand, &neighbours, weights)
-            };
-            if best.as_ref().is_none_or(|(bs, _, _)| score < *bs) {
-                best = Some((
-                    score,
-                    SparrowPlacement {
-                        instance_idx: inst_idx,
-                        sheet_index: target_sheet,
-                        x: ax,
-                        y: ay,
-                        rotation_deg: rot,
-                    },
-                    interlock,
-                ));
-            }
+    let mut uniform_positions: Vec<(f64, f64)> = Vec::with_capacity(n_uniform);
+    if allow_uniform_positions {
+        for _ in 0..n_uniform {
+            let rmx = sheet.min_x + rng.next_f64() * (sheet.max_x - rw0 - sheet.min_x).max(0.0);
+            let rmy = sheet.min_y + rng.next_f64() * (sheet.max_y - rh0 - sheet.min_y).max(0.0);
+            uniform_positions.push((rmx, rmy));
         }
     }
-    best.map(|(_, pl, interlock)| {
+    let feature_seeds = if allow_feature_seeds
+        && feature_candidate_generation_enabled()
+        && inst.shape_profile.is_critical()
+    {
+            let seeds = generate_feature_candidate_seeds_for_sheet(
+                inst,
+                cur_rot,
+                sheet,
+                &feature_neighbours,
+                n_uniform + 20,
+            );
+            record_feature_seed_metrics(&seeds, bpp, diag);
+            seeds
+    } else {
+        Vec::new()
+    };
+    let bbox_positions = if allow_bbox_fallback && !neighbours.is_empty() {
+        bbox_corner_fallback_rect_mins(&neighbours, rw0, rh0, sheet, n_uniform + 20)
+    } else {
+        Vec::new()
+    };
+    bpp.bpp_bbox_corner_candidates_generated += bbox_positions.len();
+    diag.bbox_corner_candidates_generated += bbox_positions.len();
+
+    let mut best: Option<(
+        f64,
+        SparrowPlacement,
+        bool,
+        Option<CandidateSeedSource>,
+        Option<CandidateSeed>,
+    )> = None;
+    let mut consider = |rmx: f64,
+                        rmy: f64,
+                        rot: f64,
+                        source: Option<CandidateSeedSource>,
+                        feature_seed: Option<CandidateSeed>| {
+        if ev.score_lbf_candidate(rmx, rmy, rot).is_none() {
+            return;
+        }
+        let (ax, ay) =
+            placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
+        let Some(cand) = transform_base_to_candidate(cand_base, ax, ay, rot) else {
+            return;
+        };
+        let interlock = is_interlock_candidate(&cand, &neighbours);
+        if interlock {
+            bpp.bpp_interlock_candidates_generated += 1;
+        }
+        let score = if neighbours.is_empty() {
+            (rmx - sheet.min_x) + (rmy - sheet.min_y)
+        } else {
+            density_candidate_score(&cand, &neighbours, weights)
+        };
+        if best.as_ref().is_none_or(|(bs, _, _, _, _)| score < *bs) {
+            best = Some((
+                score,
+                SparrowPlacement {
+                    instance_idx: inst_idx,
+                    sheet_index: target_sheet,
+                    x: ax,
+                    y: ay,
+                    rotation_deg: rot,
+                },
+                interlock,
+                source,
+                feature_seed,
+            ));
+        }
+    };
+
+    for seed in &feature_seeds {
+        consider(
+            seed.x,
+            seed.y,
+            seed.rotation_seed_deg,
+            Some(seed.source),
+            Some(seed.clone()),
+        );
+    }
+    for &(rmx, rmy) in &bbox_positions {
+        for &rot in &rotations {
+            consider(
+                rmx,
+                rmy,
+                rot,
+                Some(CandidateSeedSource::BboxCornerFallback),
+                None,
+            );
+        }
+    }
+    for &(rmx, rmy) in &uniform_positions {
+        for &rot in &rotations {
+            consider(rmx, rmy, rot, None, None);
+        }
+    }
+    best.map(|(_, pl, interlock, source, feature_seed)| {
         if interlock {
             bpp.bpp_interlock_candidates_accepted += 1;
+        }
+        match source {
+            Some(CandidateSeedSource::ContourFeature) => {
+                bpp.bpp_feature_candidates_accepted += 1;
+                diag.feature_candidates_accepted += 1;
+                if let Some(seed) = feature_seed {
+                    bpp.bpp_accepted_feature_pair_type = Some(seed.pair_type());
+                    diag.accepted_feature_pair_type = Some(seed.pair_type());
+                    bpp.bpp_feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
+                    bpp.bpp_feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
+                    bpp.bpp_feature_refine_iterations = seed.refine_iterations;
+                    bpp.bpp_feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
+                    diag.feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
+                    diag.feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
+                    diag.feature_refine_iterations = seed.refine_iterations;
+                    diag.feature_refine_rejection_reason = seed.refine_rejection_reason;
+                }
+            }
+            Some(CandidateSeedSource::BboxCornerFallback) => {
+                bpp.bpp_bbox_corner_candidates_accepted += 1;
+                diag.bbox_corner_candidates_accepted += 1;
+            }
+            None => {}
         }
         pl
     })
@@ -1328,7 +1657,10 @@ fn density_biased_separate(
         })
         .collect();
     if local.len() <= 1 {
-        return (sheet_local_feasible(&local, instances, solver_sheets), local);
+        return (
+            sheet_local_feasible(&local, instances, solver_sheets),
+            local,
+        );
     }
     let weights = DensityWeights::default();
     let n_uniform = density_samples();
@@ -1351,9 +1683,9 @@ fn density_biased_separate(
             let local_layout = SparrowLayout {
                 placements: local.clone(),
             };
-            let tracker =
-                SparrowCollisionTracker::build(&local_layout, instances, solver_sheets);
-            let Some(session) = build_sheet_session(i, sheet_idx, &local_layout, &tracker, &sheet_sh)
+            let tracker = SparrowCollisionTracker::build(&local_layout, instances, solver_sheets);
+            let Some(session) =
+                build_sheet_session(i, sheet_idx, &local_layout, &tracker, &sheet_sh)
             else {
                 continue;
             };
@@ -1384,8 +1716,13 @@ fn density_biased_separate(
             // curved parts needs precise angles + 90↔270 flips, not the frozen min-width seed).
             let cur_rot = local[i].rotation_deg;
             let rotations = density_rotation_candidates(inst, cur_rot);
-            let (cur_rmx, cur_rmy) =
-                rect_min_from_anchor(local[i].x, local[i].y, inst.part.width, inst.part.height, cur_rot);
+            let (cur_rmx, cur_rmy) = rect_min_from_anchor(
+                local[i].x,
+                local[i].y,
+                inst.part.width,
+                inst.part.height,
+                cur_rot,
+            );
             let (rw0, rh0) = dims_for_rotation(inst.part.width, inst.part.height, cur_rot);
             let mut positions: Vec<(f64, f64)> = vec![(cur_rmx, cur_rmy)];
             for _ in 0..n_uniform {
@@ -1393,7 +1730,13 @@ fn density_biased_separate(
                 let rmy = sheet.min_y + rng.next_f64() * (sheet.max_y - rh0 - sheet.min_y).max(0.0);
                 positions.push((rmx, rmy));
             }
-            positions.extend(contour_near_rect_mins(&nref, rw0, rh0, sheet, n_uniform + 20));
+            positions.extend(contour_near_rect_mins(
+                &nref,
+                rw0,
+                rh0,
+                sheet,
+                n_uniform + 20,
+            ));
 
             // Lexicographic objective: prefer CLEAR candidates ranked by density (interlock); only
             // if NONE is clear, take the lowest collision-proxy (progress toward feasible).
@@ -1451,7 +1794,89 @@ fn density_biased_separate(
             break;
         }
     }
-    (sheet_local_feasible(&local, instances, solver_sheets), local)
+    (
+        sheet_local_feasible(&local, instances, solver_sheets),
+        local,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn try_seeded_critical_separation(
+    optimizer: &SparrowOptimizer,
+    working: &SparrowLayout,
+    cand_inst_idx: usize,
+    target_sheet: usize,
+    seed_rmx: f64,
+    seed_rmy: f64,
+    seed_rot: f64,
+    admitted_count: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    sheet: &SheetShape,
+    started: &Instant,
+    deadline_s: f64,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+) -> Option<SparrowLayout> {
+    let inst = &instances[cand_inst_idx];
+    let (ax, ay) = placement_anchor_from_rect_min(
+        seed_rmx,
+        seed_rmy,
+        inst.part.width,
+        inst.part.height,
+        seed_rot,
+    );
+    let mut trial = working.clone();
+    trial.placements.push(SparrowPlacement {
+        instance_idx: cand_inst_idx,
+        sheet_index: target_sheet,
+        x: ax,
+        y: ay,
+        rotation_deg: seed_rot,
+    });
+    let now = started.elapsed().as_secs_f64();
+    let step_deadline = (now + (deadline_s - now).max(0.5) * 0.5).min(deadline_s);
+    let w_density = admission_density_bias();
+    let (feasible, remapped) = if w_density > 0.0 {
+        density_biased_separate(
+            &trial,
+            target_sheet,
+            instances,
+            solver_sheets,
+            w_density,
+            rng,
+            started,
+            step_deadline,
+        )
+    } else {
+        separate_sheet_local(
+            optimizer,
+            &trial,
+            target_sheet,
+            sheet,
+            instances,
+            started,
+            step_deadline,
+            rng,
+            diag,
+        )
+    };
+    if feasible && remapped.len() == admitted_count + 1 {
+        let mut others: Vec<SparrowPlacement> = working
+            .placements
+            .iter()
+            .filter(|p| p.sheet_index != target_sheet)
+            .cloned()
+            .collect();
+        others.extend(remapped);
+        let out = SparrowLayout { placements: others };
+        if SparrowCollisionTracker::final_validation_tracker(&out, instances, solver_sheets)
+            .is_feasible()
+        {
+            return Some(out);
+        }
+    }
+    None
 }
 
 /// SGH-Q51: try to admit critical `cand_inst_idx` onto `target_sheet`, with the already-admitted
@@ -1486,13 +1911,26 @@ fn try_admit_critical(
         return None; // the part does not fit this sheet in any case
     }
     let weights = DensityWeights::default();
+    let admitted_count = working
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == target_sheet)
+        .count();
+    let feature_first =
+        critical_feature_admission_enabled() && feature_candidate_generation_enabled();
 
-    // ── (1) DIRECT: density insertion with the admitted set fixed ──────────────────────────────
-    {
+    if feature_first {
+        // ── (1) FEATURE-FIRST DIRECT: feature seeds only, admitted anchors fixed ───────────────
+        bpp.bpp_critical_feature_admission_attempts += 1;
         let mut trial = working.clone();
         let cand_li = trial.placements.len();
-        let (ax, ay) =
-            placement_anchor_from_rect_min(sheet.min_x, sheet.min_y, inst.part.width, inst.part.height, rot);
+        let (ax, ay) = placement_anchor_from_rect_min(
+            sheet.min_x,
+            sheet.min_y,
+            inst.part.width,
+            inst.part.height,
+            rot,
+        );
         trial.placements.push(SparrowPlacement {
             instance_idx: cand_inst_idx,
             sheet_index: target_sheet,
@@ -1501,14 +1939,129 @@ fn try_admit_critical(
             rotation_deg: rot,
         });
         let mut tracker = SparrowCollisionTracker::build(&trial, instances, solver_sheets);
-        tracker.shapes[cand_li] = None; // place the candidate fresh
+        tracker.shapes[cand_li] = None;
         if let Some(pl) = density_insert_part(
-            cand_li, target_sheet, &trial, instances, solver_sheets, &tracker, &sheet_sh, &weights,
-            rng, bpp,
+            cand_li,
+            target_sheet,
+            &trial,
+            instances,
+            solver_sheets,
+            &tracker,
+            &sheet_sh,
+            &weights,
+            rng,
+            true,
+            false,
+            false,
+            diag,
+            bpp,
         ) {
             trial.placements[cand_li] = pl;
-            // Mid-build feasibility = the placed parts are collision-free / in-bounds (NOT "all
-            // instances placed" — the layout is still being constructed).
+            if SparrowCollisionTracker::final_validation_tracker(&trial, instances, solver_sheets)
+                .is_feasible()
+            {
+                bpp.bpp_critical_feature_admission_successes += 1;
+                return Some(trial);
+            }
+        }
+        bpp.bpp_critical_feature_admission_failures += 1;
+
+        // ── (2) FEATURE-FIRST CO-MOVABLE: seed from contour features, then separate together ──
+        let feature_neighbours: Vec<PlacedFeatureNeighbour<'_>> = working
+            .placements
+            .iter()
+            .filter(|p| p.sheet_index == target_sheet)
+            .map(|placement| PlacedFeatureNeighbour {
+                placement,
+                instance: &instances[placement.instance_idx],
+            })
+            .collect();
+        let feature_seeds = generate_feature_candidate_seeds_for_sheet(
+            inst,
+            rot,
+            sheet,
+            &feature_neighbours,
+            density_samples() + 20,
+        );
+        record_feature_seed_metrics(&feature_seeds, bpp, diag);
+        bpp.bpp_critical_candidate_rejection_summary =
+            feature_seed_rejection_summary(&feature_seeds)
+                .or_else(|| Some("no_feature_seed_rejections".to_string()));
+        bpp.bpp_critical_feature_admission_attempts += 1;
+        for seed in feature_seeds.iter().filter(|seed| seed.refine_success).take(16) {
+            if let Some(out) = try_seeded_critical_separation(
+                optimizer,
+                working,
+                cand_inst_idx,
+                target_sheet,
+                seed.x,
+                seed.y,
+                seed.rotation_seed_deg,
+                admitted_count,
+                instances,
+                solver_sheets,
+                sheet,
+                started,
+                deadline_s,
+                rng,
+                diag,
+            ) {
+                bpp.bpp_critical_feature_admission_successes += 1;
+                bpp.bpp_feature_candidates_accepted += 1;
+                diag.feature_candidates_accepted += 1;
+                bpp.bpp_accepted_feature_pair_type = Some(seed.pair_type());
+                diag.accepted_feature_pair_type = Some(seed.pair_type());
+                bpp.bpp_feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
+                bpp.bpp_feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
+                bpp.bpp_feature_refine_iterations = seed.refine_iterations;
+                bpp.bpp_feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
+                diag.feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
+                diag.feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
+                diag.feature_refine_iterations = seed.refine_iterations;
+                diag.feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
+                return Some(out);
+            }
+        }
+        bpp.bpp_critical_feature_admission_failures += 1;
+    }
+
+    // ── (3) EXPLICIT FALLBACK: bbox/uniform direct insertion, then centroid-seeded co-movable ──
+    {
+        let mut trial = working.clone();
+        let cand_li = trial.placements.len();
+        let (ax, ay) = placement_anchor_from_rect_min(
+            sheet.min_x,
+            sheet.min_y,
+            inst.part.width,
+            inst.part.height,
+            rot,
+        );
+        trial.placements.push(SparrowPlacement {
+            instance_idx: cand_inst_idx,
+            sheet_index: target_sheet,
+            x: ax,
+            y: ay,
+            rotation_deg: rot,
+        });
+        let mut tracker = SparrowCollisionTracker::build(&trial, instances, solver_sheets);
+        tracker.shapes[cand_li] = None;
+        if let Some(pl) = density_insert_part(
+            cand_li,
+            target_sheet,
+            &trial,
+            instances,
+            solver_sheets,
+            &tracker,
+            &sheet_sh,
+            &weights,
+            rng,
+            false,
+            true,
+            true,
+            diag,
+            bpp,
+        ) {
+            trial.placements[cand_li] = pl;
             if SparrowCollisionTracker::final_validation_tracker(&trial, instances, solver_sheets)
                 .is_feasible()
             {
@@ -1517,64 +2070,35 @@ fn try_admit_critical(
         }
     }
 
-    // ── (2) CO-MOVABLE: overlapping seed + separate the whole target sheet ─────────────────────
     let (cx, cy) = sheet_centroid(working, target_sheet);
-    let admitted_count = working
-        .placements
-        .iter()
-        .filter(|p| p.sheet_index == target_sheet)
-        .count();
     const RESTARTS: usize = 4;
     for r in 0..RESTARTS {
         if started.elapsed().as_secs_f64() >= deadline_s {
             break;
         }
-        // Seed near the admitted centroid (overlapping), jittered per restart; clamped on-sheet.
         let jx = (rng.next_f64() - 0.5) * sheet.width * 0.3;
         let jy = (rng.next_f64() - 0.5) * sheet.height * 0.3;
         let sx = (cx + jx).clamp(sheet.min_x, (sheet.max_x - rw).max(sheet.min_x));
         let sy = (cy + jy).clamp(sheet.min_y, (sheet.max_y - rh).max(sheet.min_y));
         let seed_rot = if r == 0 { rot } else { rot + 90.0 * (r as f64) };
-        let (ax, ay) =
-            placement_anchor_from_rect_min(sx, sy, inst.part.width, inst.part.height, seed_rot);
-        let mut trial = working.clone();
-        trial.placements.push(SparrowPlacement {
-            instance_idx: cand_inst_idx,
-            sheet_index: target_sheet,
-            x: ax,
-            y: ay,
-            rotation_deg: seed_rot,
-        });
-        let now = started.elapsed().as_secs_f64();
-        let step_deadline = (now + (deadline_s - now).max(0.5) * 0.5).min(deadline_s);
-        // SGH-Q52: when enabled, resolve the overlap with the DENSITY-BIASED separator (tuck into
-        // interlock, gap-preserving) instead of the overlap-minimising one (which spreads). This is
-        // what lets the 3-way curved interlock be found at tight spacing.
-        let w_density = admission_density_bias();
-        let (feasible, remapped) = if w_density > 0.0 {
-            density_biased_separate(
-                &trial, target_sheet, instances, solver_sheets, w_density, rng, started,
-                step_deadline,
-            )
-        } else {
-            separate_sheet_local(
-                optimizer, &trial, target_sheet, sheet, instances, started, step_deadline, rng, diag,
-            )
-        };
-        if feasible && remapped.len() == admitted_count + 1 {
-            let mut others: Vec<SparrowPlacement> = working
-                .placements
-                .iter()
-                .filter(|p| p.sheet_index != target_sheet)
-                .cloned()
-                .collect();
-            others.extend(remapped);
-            let out = SparrowLayout { placements: others };
-            if SparrowCollisionTracker::final_validation_tracker(&out, instances, solver_sheets)
-                .is_feasible()
-            {
-                return Some(out);
-            }
+        if let Some(out) = try_seeded_critical_separation(
+            optimizer,
+            working,
+            cand_inst_idx,
+            target_sheet,
+            sx,
+            sy,
+            seed_rot,
+            admitted_count,
+            instances,
+            solver_sheets,
+            sheet,
+            started,
+            deadline_s,
+            rng,
+            diag,
+        ) {
+            return Some(out);
         }
     }
     None
@@ -1591,6 +2115,7 @@ fn direct_insert_on_sheet(
     solver_sheets: &[SheetShape],
     weights: &DensityWeights,
     rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
     bpp: &mut BppReductionDiagnostics,
 ) -> Option<SparrowLayout> {
     let s = &solver_sheets[sheet];
@@ -1615,7 +2140,20 @@ fn direct_insert_on_sheet(
     let mut tracker = SparrowCollisionTracker::build(&trial, instances, solver_sheets);
     tracker.shapes[cand_li] = None;
     let pl = density_insert_part(
-        cand_li, sheet, &trial, instances, solver_sheets, &tracker, &sheet_sh, weights, rng, bpp,
+        cand_li,
+        sheet,
+        &trial,
+        instances,
+        solver_sheets,
+        &tracker,
+        &sheet_sh,
+        weights,
+        rng,
+        true,
+        true,
+        true,
+        diag,
+        bpp,
     )?;
     trial.placements[cand_li] = pl; // density_insert_part guarantees a CDE-clear placement
     Some(trial)
@@ -1673,8 +2211,17 @@ pub(crate) fn build_critical_aware_seed(
             let now = started.elapsed().as_secs_f64();
             let admit_deadline = (now + (deadline_s - now).max(1.0) * 0.5).min(deadline_s);
             match try_admit_critical(
-                optimizer, &layout, ci, sheet_idx, instances, sheets, started, admit_deadline, rng,
-                diag, bpp,
+                optimizer,
+                &layout,
+                ci,
+                sheet_idx,
+                instances,
+                sheets,
+                started,
+                admit_deadline,
+                rng,
+                diag,
+                bpp,
             ) {
                 Some(new_layout) => {
                     layout = new_layout;
@@ -1689,6 +2236,17 @@ pub(crate) fn build_critical_aware_seed(
                 }
             }
         }
+        bpp.bpp_critical_phase_close_reason = Some(
+            if started.elapsed().as_secs_f64() >= deadline_s {
+                "deadline".to_string()
+            } else if consec_fail >= CRITICAL_FRONTIER {
+                "frontier_fail_limit".to_string()
+            } else if queues.critical.iter().all(|&ci| placed[ci]) {
+                "critical_exhausted".to_string()
+            } else {
+                "sheet_phase_exhausted".to_string()
+            },
+        );
         bpp.bpp_max_critical_per_sheet = bpp.bpp_max_critical_per_sheet.max(critical_here);
 
         // ── 2. Structural + 3. Filler phases (direct density insertion on this sheet) ─────────
@@ -1700,7 +2258,7 @@ pub(crate) fn build_critical_aware_seed(
                 break;
             }
             if let Some(new_layout) = direct_insert_on_sheet(
-                &layout, pi, sheet_idx, instances, sheets, &weights, rng, bpp,
+                &layout, pi, sheet_idx, instances, sheets, &weights, rng, diag, bpp,
             ) {
                 layout = new_layout;
                 placed[pi] = true;
@@ -1770,7 +2328,10 @@ fn density_compact_sheet(
         .collect();
     idxs.sort_by(|&a, &b| {
         profile_order_key(instances, layout.placements[b].instance_idx)
-            .partial_cmp(&profile_order_key(instances, layout.placements[a].instance_idx))
+            .partial_cmp(&profile_order_key(
+                instances,
+                layout.placements[a].instance_idx,
+            ))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     const MAX_SWEEPS: usize = 6;
@@ -1785,11 +2346,18 @@ fn density_compact_sheet(
             }
             bpp.bpp_density_parts_processed += 1;
             if let Some(pl) = density_place_part(
-                li, layout, instances, solver_sheets, tracker, &sheet_sh, weights, rng, bpp,
+                li,
+                layout,
+                instances,
+                solver_sheets,
+                tracker,
+                &sheet_sh,
+                weights,
+                rng,
+                bpp,
             ) {
                 layout.placements[li] = pl;
-                tracker.shapes[li] =
-                    SparrowCollisionTracker::prepare_item(layout, instances, li);
+                tracker.shapes[li] = SparrowCollisionTracker::prepare_item(layout, instances, li);
                 bpp.bpp_density_moves_accepted += 1;
                 sweep_moves += 1;
             }
@@ -1822,7 +2390,15 @@ fn density_compact_layout(
     let mut tracker = SparrowCollisionTracker::build(working, instances, solver_sheets);
     for s in used_sheet_set(working) {
         density_compact_sheet(
-            working, s, instances, solver_sheets, started, deadline_s, rng, &weights, bpp,
+            working,
+            s,
+            instances,
+            solver_sheets,
+            started,
+            deadline_s,
+            rng,
+            &weights,
+            bpp,
             &mut tracker,
         );
     }
@@ -1858,6 +2434,7 @@ fn try_drop_sheet(
     deadline_s: f64,
     weights: &DensityWeights,
     rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
     bpp: &mut BppReductionDiagnostics,
     perturb: usize,
 ) -> bool {
@@ -1876,7 +2453,10 @@ fn try_drop_sheet(
     let mut order = ruined.clone();
     order.sort_by(|&a, &b| {
         profile_order_key(instances, working.placements[b].instance_idx)
-            .partial_cmp(&profile_order_key(instances, working.placements[a].instance_idx))
+            .partial_cmp(&profile_order_key(
+                instances,
+                working.placements[a].instance_idx,
+            ))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     if perturb > 0 && !order.is_empty() {
@@ -1907,7 +2487,20 @@ fn try_drop_sheet(
                 continue;
             };
             if let Some(pl) = density_insert_part(
-                li, t, working, instances, solver_sheets, &tracker, &sheet_sh, weights, rng, bpp,
+                li,
+                t,
+                working,
+                instances,
+                solver_sheets,
+                &tracker,
+                &sheet_sh,
+                weights,
+                rng,
+                true,
+                true,
+                true,
+                diag,
+                bpp,
             ) {
                 working.placements[li] = pl;
                 tracker.shapes[li] = SparrowCollisionTracker::prepare_item(working, instances, li);
@@ -1935,6 +2528,7 @@ fn lns_sheet_drop(
     started: &Instant,
     deadline_s: f64,
     rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
     bpp: &mut BppReductionDiagnostics,
 ) {
     if !lns_enabled() || working.placements.is_empty() {
@@ -1972,8 +2566,18 @@ fn lns_sheet_drop(
                 bpp.bpp_lns_restarts += 1;
             }
             if try_drop_sheet(
-                working, s, &receiving, instances, solver_sheets, started, deadline_s, &weights,
-                rng, bpp, restart,
+                working,
+                s,
+                &receiving,
+                instances,
+                solver_sheets,
+                started,
+                deadline_s,
+                &weights,
+                rng,
+                diag,
+                bpp,
+                restart,
             ) {
                 dropped = true;
                 break;
@@ -2060,7 +2664,8 @@ fn gravity_compact_layout(
             if d > 1e-6 {
                 working.placements[li].x = ax;
                 working.placements[li].y = ay;
-                if let Some(sh) = transform_base_to_candidate(inst.base_shape.as_ref(), ax, ay, rot) {
+                if let Some(sh) = transform_base_to_candidate(inst.base_shape.as_ref(), ax, ay, rot)
+                {
                     tracker.shapes[li] = Some(Rc::new(sh));
                 }
                 sweep_moved += d;
@@ -2121,15 +2726,28 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
 
     let original_sheets = match expand_sheets(stocks) {
         Ok(s) => s,
-        Err(e) => return error_result(parts, extra_pre_unplaced, total_instances, &started, total_budget, format!("STOCK_BUILD_ERROR: {e}")),
+        Err(e) => {
+            return error_result(
+                parts,
+                extra_pre_unplaced,
+                total_instances,
+                &started,
+                total_budget,
+                format!("STOCK_BUILD_ERROR: {e}"),
+            )
+        }
     };
     let n = original_sheets.len();
     let solver_sheets: Vec<SheetShape> = match &config.solver_sheets_override {
         Some(ov) if ov.len() == n => ov.clone(),
         _ => original_sheets.clone(),
     };
-    let all_sheets_with_orig: Vec<(SheetShape, usize)> =
-        original_sheets.iter().cloned().enumerate().map(|(i, s)| (s, i)).collect();
+    let all_sheets_with_orig: Vec<(SheetShape, usize)> = original_sheets
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, s)| (s, i))
+        .collect();
 
     let core_config = SparrowConfig::from_solver_input(
         total_budget,
@@ -2148,7 +2766,16 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
         core_config.clone(),
     ) {
         Ok(p) => p,
-        Err(e) => return error_result(parts, extra_pre_unplaced, total_instances, &started, total_budget, format!("PROBLEM_BUILD_ERROR: {e}")),
+        Err(e) => {
+            return error_result(
+                parts,
+                extra_pre_unplaced,
+                total_instances,
+                &started,
+                total_budget,
+                format!("PROBLEM_BUILD_ERROR: {e}"),
+            )
+        }
     };
 
     let instances: Vec<SPInstance> = problem.instances.clone();
@@ -2187,9 +2814,11 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     // SGH-Q49: reserve a fraction of the budget for the density pass by capping the reduction loop
     // earlier (no-op when the density pass is disabled ⇒ reduction_deadline == total_budget-guard).
     let density_frac = density_budget_frac();
-    let reduction_deadline = (total_budget * (1.0 - density_frac) - guard).max(guard.min(total_budget * 0.5));
-    let construct_deadline =
-        (total_budget * 0.25).clamp(2.0, 180.0).min((total_budget - guard).max(1.0));
+    let reduction_deadline =
+        (total_budget * (1.0 - density_frac) - guard).max(guard.min(total_budget * 0.5));
+    let construct_deadline = (total_budget * 0.25)
+        .clamp(2.0, 180.0)
+        .min((total_budget - guard).max(1.0));
     // SGH-Q51: critical-aware constructive sheet builder (opt-in). The builder seed is used ONLY
     // when it is complete and fully feasible (every part placed, collision-free); otherwise it
     // falls back to the LBF seed — so the builder can never regress the result. This banks the
@@ -2204,9 +2833,16 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
         // tight budgets). The spacing-0 win completes well within this; tight-spacing failures fall
         // back cheaply.
         let builder_cap = (total_budget * 0.12).clamp(4.0, 20.0);
-        let builder_deadline = (started.elapsed().as_secs_f64() + builder_cap).min(construct_deadline);
+        let builder_deadline =
+            (started.elapsed().as_secs_f64() + builder_cap).min(construct_deadline);
         let built = build_critical_aware_seed(
-            &problem, &optimizer, &started, builder_deadline, &mut rng, &mut diag, &mut bpp,
+            &problem,
+            &optimizer,
+            &started,
+            builder_deadline,
+            &mut rng,
+            &mut diag,
+            &mut bpp,
         );
         if layout_is_full_feasible(&built, &instances, &solver_sheets) {
             built
@@ -2221,7 +2857,14 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
         seed
     } else {
         let (_cf, solved) = run_subsolve(
-            &optimizer, seed, &instances, &solver_sheets, &started, construct_deadline, &mut rng, &mut diag,
+            &optimizer,
+            seed,
+            &instances,
+            &solver_sheets,
+            &started,
+            construct_deadline,
+            &mut rng,
+            &mut diag,
         );
         bpp.bpp_separator_calls += 1;
         solved
@@ -2246,7 +2889,13 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             if consec_failures >= MAX_CONSEC_FAILURES {
                 break;
             }
-            let candidate = match select_candidate_sheet(&working, &instances, &solver_sheets, &used, &failed) {
+            let candidate = match select_candidate_sheet(
+                &working,
+                &instances,
+                &solver_sheets,
+                &used,
+                &failed,
+            ) {
                 Some(c) => c,
                 None => break,
             };
@@ -2263,21 +2912,41 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
                 .collect();
             displaced.sort_by(|&a, &b| {
                 profile_order_key(&instances, working.placements[b].instance_idx)
-                    .partial_cmp(&profile_order_key(&instances, working.placements[a].instance_idx))
+                    .partial_cmp(&profile_order_key(
+                        &instances,
+                        working.placements[a].instance_idx,
+                    ))
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             bpp.bpp_displaced_items_total += displaced.len();
 
             let mut trial = working.clone();
             redistribute_displaced(
-                &optimizer, &mut trial, &displaced, &receiving, &instances, &solver_sheets, &started, &mut rng, &mut diag, &mut bpp,
+                &optimizer,
+                &mut trial,
+                &displaced,
+                &receiving,
+                &instances,
+                &solver_sheets,
+                &started,
+                &mut rng,
+                &mut diag,
+                &mut bpp,
             );
 
             // affected-sheet-only separation
             let remaining = (reduction_deadline - started.elapsed().as_secs_f64()).max(1.0);
             let attempt_deadline = started.elapsed().as_secs_f64() + (remaining * 0.9).max(1.0);
             let (mut feasible, mut candidate_layout) = separate_affected_sheets(
-                &optimizer, &trial, &receiving, &instances, &solver_sheets, &started, attempt_deadline, &mut rng, &mut diag,
+                &optimizer,
+                &trial,
+                &receiving,
+                &instances,
+                &solver_sheets,
+                &started,
+                attempt_deadline,
+                &mut rng,
+                &mut diag,
             );
             bpp.bpp_separator_calls += 1;
 
@@ -2286,14 +2955,33 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
                 let rep_deadline = started.elapsed().as_secs_f64()
                     + ((reduction_deadline - started.elapsed().as_secs_f64()).max(1.0) * 0.5);
                 feasible = resolve_by_transfers(
-                    &optimizer, &mut candidate_layout, &receiving, &instances, &solver_sheets, &started, rep_deadline, &mut rng, &mut diag, &mut bpp,
+                    &optimizer,
+                    &mut candidate_layout,
+                    &receiving,
+                    &instances,
+                    &solver_sheets,
+                    &started,
+                    rep_deadline,
+                    &mut rng,
+                    &mut diag,
+                    &mut bpp,
                 );
             }
 
             if feasible && layout_is_full_feasible(&candidate_layout, &instances, &solver_sheets) {
                 // compact the receiving sheets, accept incumbent
                 for &s in &receiving {
-                    compact_sheet(&optimizer, &mut candidate_layout, s, &instances, &solver_sheets, &started, &mut rng, &mut diag, &mut bpp);
+                    compact_sheet(
+                        &optimizer,
+                        &mut candidate_layout,
+                        s,
+                        &instances,
+                        &solver_sheets,
+                        &started,
+                        &mut rng,
+                        &mut diag,
+                        &mut bpp,
+                    );
                 }
                 if layout_is_full_feasible(&candidate_layout, &instances, &solver_sheets) {
                     working = candidate_layout;
@@ -2311,7 +2999,14 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             consec_failures += 1;
             bpp.bpp_restore_count += 1;
             if consec_failures % PERTURB_AFTER_FAILURES == 0 {
-                perturb_swap_between_sheets(&mut working, &used, &instances, &solver_sheets, &mut rng, &mut bpp);
+                perturb_swap_between_sheets(
+                    &mut working,
+                    &used,
+                    &instances,
+                    &solver_sheets,
+                    &mut rng,
+                    &mut bpp,
+                );
                 // re-validate after perturbation; if it broke feasibility, undo by re-running
                 // a quick affected separation over all used sheets is unnecessary — try_swap
                 // only accepts strict improvements so feasibility is preserved.
@@ -2324,7 +3019,15 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     // tighter (interlocking concave parts). Runs before gravity; uses the remaining budget.
     let compress_deadline = (total_budget - guard).max(started.elapsed().as_secs_f64() + 1.0);
     compress_layout(
-        &optimizer, &mut working, &instances, &solver_sheets, &started, compress_deadline, &mut rng, &mut diag, &mut bpp,
+        &optimizer,
+        &mut working,
+        &instances,
+        &solver_sheets,
+        &started,
+        compress_deadline,
+        &mut rng,
+        &mut diag,
+        &mut bpp,
     );
 
     // SGH-Q48: interlock-aware density compaction (opt-in VRS_BPP_DENSITY_COMPACT) — the real
@@ -2342,7 +3045,12 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
         density_deadline
     };
     density_compact_layout(
-        &mut working, &instances, &solver_sheets, &started, density_compact_deadline, &mut rng,
+        &mut working,
+        &instances,
+        &solver_sheets,
+        &started,
+        density_compact_deadline,
+        &mut rng,
         &mut bpp,
     );
     bpp.bpp_density_time_ms =
@@ -2351,7 +3059,14 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     // SGH-Q50: density-guided LNS sheet-drop — try to eliminate one more sheet via coordinated
     // multi-part ruin-recreate (opt-in VRS_BPP_LNS, default off). Uses the remaining reserved budget.
     lns_sheet_drop(
-        &mut working, &instances, &solver_sheets, &started, density_deadline, &mut rng, &mut bpp,
+        &mut working,
+        &instances,
+        &solver_sheets,
+        &started,
+        density_deadline,
+        &mut rng,
+        &mut diag,
+        &mut bpp,
     );
 
     // SGH-Q46 M2: gravity / bottom-left compaction post-pass (density + edge alignment).
@@ -2374,18 +3089,29 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     };
 
     // ── assemble FiniteStockRunResult ────────────────────────────────────────────
-    let final_tracker = SparrowCollisionTracker::final_validation_tracker(&working, &instances, &solver_sheets);
-    let (placements, unplaced, final_pairs, boundary_violations): (Vec<Placement>, Vec<Unplaced>, usize, usize) =
-        if final_full {
-            (project(&working, &instances), pre_unplaced.clone(), 0, 0)
-        } else {
-            // sanitize to a collision-free partial
-            let raw = project(&working, &instances);
-            let (kept, mut newly) = sanitize_partial(&working, &instances, &solver_sheets, &raw, REASON_BPP_STOCK_EXHAUSTED);
-            let mut un = pre_unplaced.clone();
-            un.append(&mut newly);
-            (kept, un, 0, 0)
-        };
+    let final_tracker =
+        SparrowCollisionTracker::final_validation_tracker(&working, &instances, &solver_sheets);
+    let (placements, unplaced, final_pairs, boundary_violations): (
+        Vec<Placement>,
+        Vec<Unplaced>,
+        usize,
+        usize,
+    ) = if final_full {
+        (project(&working, &instances), pre_unplaced.clone(), 0, 0)
+    } else {
+        // sanitize to a collision-free partial
+        let raw = project(&working, &instances);
+        let (kept, mut newly) = sanitize_partial(
+            &working,
+            &instances,
+            &solver_sheets,
+            &raw,
+            REASON_BPP_STOCK_EXHAUSTED,
+        );
+        let mut un = pre_unplaced.clone();
+        un.append(&mut newly);
+        (kept, un, 0, 0)
+    };
 
     let (used_indices, used_area, placed_area, util_pct) =
         compute_utilization(&placements, parts, &all_sheets_with_orig);
@@ -2526,25 +3252,44 @@ mod q50_tests {
         // `allowed_rotations_deg`. The helper must still refine rotation (fine offsets + a global
         // sweep that includes the 90↔270 flip) — NOT degenerate to `[cur_rot]` (the old bug that
         // froze continuous parts at their seed orientation).
-        let part = poly_part("sq", 20.0, 20.0, serde_json::json!([
-            [0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]
-        ]));
+        let part = poly_part(
+            "sq",
+            20.0,
+            20.0,
+            serde_json::json!([[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]),
+        );
         let mut cont = make_instance(0, part.clone());
         cont.continuous_rotation = true;
         cont.allowed_rotations_deg = vec![]; // empty, as in production for continuous parts
 
         let cands = density_rotation_candidates(&cont, 90.0);
-        assert!(cands.len() > 8, "continuous part must explore many rotations, got {}", cands.len());
-        assert!(cands.contains(&90.5), "fine local refinement around cur_rot is missing");
-        assert!(cands.contains(&89.5), "fine local refinement (negative offset) is missing");
-        assert!(cands.iter().any(|&r| (r - 270.0).abs() < 1e-9), "the 90↔270 flip must be reachable");
+        assert!(
+            cands.len() > 8,
+            "continuous part must explore many rotations, got {}",
+            cands.len()
+        );
+        assert!(
+            cands.contains(&90.5),
+            "fine local refinement around cur_rot is missing"
+        );
+        assert!(
+            cands.contains(&89.5),
+            "fine local refinement (negative offset) is missing"
+        );
+        assert!(
+            cands.iter().any(|&r| (r - 270.0).abs() < 1e-9),
+            "the 90↔270 flip must be reachable"
+        );
 
         // A discrete part keeps the bounded allowed-set subsample (NO continuous offsets).
         let mut disc = make_instance(1, part);
         disc.continuous_rotation = false;
         disc.allowed_rotations_deg = vec![0.0, 90.0, 180.0, 270.0];
         let dcands = density_rotation_candidates(&disc, 0.0);
-        assert!(!dcands.contains(&0.5), "discrete part must NOT get continuous offsets");
+        assert!(
+            !dcands.contains(&0.5),
+            "discrete part must NOT get continuous offsets"
+        );
         assert!(dcands.contains(&0.0));
     }
 
@@ -2556,8 +3301,14 @@ mod q50_tests {
             100.0,
             100.0,
             serde_json::json!([
-                [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [70.0, 100.0],
-                [70.0, 30.0], [30.0, 30.0], [30.0, 100.0], [0.0, 100.0]
+                [0.0, 0.0],
+                [100.0, 0.0],
+                [100.0, 100.0],
+                [70.0, 100.0],
+                [70.0, 30.0],
+                [30.0, 30.0],
+                [30.0, 100.0],
+                [0.0, 100.0]
             ]),
         );
         let sq = poly_part(
@@ -2579,12 +3330,25 @@ mod q50_tests {
         .expect("sheets");
 
         // Place the U well inside the sheet; the square's start position is irrelevant (ruined).
-        let u0 = transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let u0 =
+            transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
         let (uax, uay) = (40.0 - u0.min_x, 40.0 - u0.min_y);
         let mut layout = SparrowLayout {
             placements: vec![
-                SparrowPlacement { instance_idx: 0, sheet_index: 0, x: uax, y: uay, rotation_deg: 0.0 },
-                SparrowPlacement { instance_idx: 1, sheet_index: 0, x: 10.0, y: 10.0, rotation_deg: 0.0 },
+                SparrowPlacement {
+                    instance_idx: 0,
+                    sheet_index: 0,
+                    x: uax,
+                    y: uay,
+                    rotation_deg: 0.0,
+                },
+                SparrowPlacement {
+                    instance_idx: 1,
+                    sheet_index: 0,
+                    x: 10.0,
+                    y: 10.0,
+                    rotation_deg: 0.0,
+                },
             ],
         };
         // Build the tracker, then ruin the square (its shape becomes None ⇒ excluded as a neighbour).
@@ -2595,9 +3359,23 @@ mod q50_tests {
         let sheet_sh = std::rc::Rc::new(prepare_shape_from_sheet(&sheets[0]).expect("sheet shape"));
         let weights = DensityWeights::default();
         let mut rng = DeterministicRng::new(7);
+        let mut diag = SparrowDiagnostics::default();
         let mut bpp = BppReductionDiagnostics::default();
         let pl = density_insert_part(
-            1, 0, &layout, &instances, &sheets, &tracker, &sheet_sh, &weights, &mut rng, &mut bpp,
+            1,
+            0,
+            &layout,
+            &instances,
+            &sheets,
+            &tracker,
+            &sheet_sh,
+            &weights,
+            &mut rng,
+            true,
+            true,
+            true,
+            &mut diag,
+            &mut bpp,
         )
         .expect("square must fit on the target sheet");
         assert_eq!(pl.sheet_index, 0);
@@ -2611,7 +3389,8 @@ mod q50_tests {
             pl.rotation_deg,
         )
         .unwrap();
-        let u_shape = transform_base_to_candidate(instances[0].base_shape.as_ref(), uax, uay, 0.0).unwrap();
+        let u_shape =
+            transform_base_to_candidate(instances[0].base_shape.as_ref(), uax, uay, 0.0).unwrap();
         assert!(
             super::super::density::bbox_overlaps(&placed, &u_shape),
             "inserted square should interlock (bbox-overlap) the U"
@@ -2646,20 +3425,46 @@ mod q50_tests {
         }])
         .expect("sheets");
         // place A on sheet 0, B on sheet 1
-        let a0 = transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
-        let b0 = transform_base_to_candidate(instances[1].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let a0 =
+            transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let b0 =
+            transform_base_to_candidate(instances[1].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
         let mut working = SparrowLayout {
             placements: vec![
-                SparrowPlacement { instance_idx: 0, sheet_index: 0, x: 20.0 - a0.min_x, y: 20.0 - a0.min_y, rotation_deg: 0.0 },
-                SparrowPlacement { instance_idx: 1, sheet_index: 1, x: 20.0 - b0.min_x, y: 20.0 - b0.min_y, rotation_deg: 0.0 },
+                SparrowPlacement {
+                    instance_idx: 0,
+                    sheet_index: 0,
+                    x: 20.0 - a0.min_x,
+                    y: 20.0 - a0.min_y,
+                    rotation_deg: 0.0,
+                },
+                SparrowPlacement {
+                    instance_idx: 1,
+                    sheet_index: 1,
+                    x: 20.0 - b0.min_x,
+                    y: 20.0 - b0.min_y,
+                    rotation_deg: 0.0,
+                },
             ],
         };
         let weights = DensityWeights::default();
         let mut rng = DeterministicRng::new(3);
+        let mut diag = SparrowDiagnostics::default();
         let mut bpp = BppReductionDiagnostics::default();
         let started = std::time::Instant::now();
         let dropped = try_drop_sheet(
-            &mut working, 1, &[0], &instances, &sheets, &started, 1e9, &weights, &mut rng, &mut bpp, 0,
+            &mut working,
+            1,
+            &[0],
+            &instances,
+            &sheets,
+            &started,
+            1e9,
+            &weights,
+            &mut rng,
+            &mut diag,
+            &mut bpp,
+            0,
         );
         assert!(dropped, "B must be re-homed onto sheet 0, emptying sheet 1");
         assert!(
@@ -2679,8 +3484,14 @@ mod q50_tests {
             100.0,
             100.0,
             serde_json::json!([
-                [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [70.0, 100.0],
-                [70.0, 30.0], [30.0, 30.0], [30.0, 100.0], [0.0, 100.0]
+                [0.0, 0.0],
+                [100.0, 0.0],
+                [100.0, 100.0],
+                [70.0, 100.0],
+                [70.0, 30.0],
+                [30.0, 30.0],
+                [30.0, 100.0],
+                [0.0, 100.0]
             ]),
         );
         let sq = poly_part(
@@ -2703,14 +3514,28 @@ mod q50_tests {
             cost_per_use: None,
         }])
         .expect("sheets");
-        let u0 = transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let u0 =
+            transform_base_to_candidate(instances[0].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
         let (uax, uay) = (5.0 - u0.min_x, 5.0 - u0.min_y);
-        let sq0 = transform_base_to_candidate(instances[1].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
+        let sq0 =
+            transform_base_to_candidate(instances[1].base_shape.as_ref(), 0.0, 0.0, 0.0).unwrap();
         let (sax, say) = (45.0 - sq0.min_x, 10.0 - sq0.min_y); // floor region ⇒ overlaps the U
         let layout = SparrowLayout {
             placements: vec![
-                SparrowPlacement { instance_idx: 0, sheet_index: 0, x: uax, y: uay, rotation_deg: 0.0 },
-                SparrowPlacement { instance_idx: 1, sheet_index: 0, x: sax, y: say, rotation_deg: 0.0 },
+                SparrowPlacement {
+                    instance_idx: 0,
+                    sheet_index: 0,
+                    x: uax,
+                    y: uay,
+                    rotation_deg: 0.0,
+                },
+                SparrowPlacement {
+                    instance_idx: 1,
+                    sheet_index: 0,
+                    x: sax,
+                    y: say,
+                    rotation_deg: 0.0,
+                },
             ],
         };
         let mut rng = DeterministicRng::new(11);
@@ -2718,8 +3543,14 @@ mod q50_tests {
         let (feasible, remapped) = density_biased_separate(
             &layout, 0, &instances, &sheets, 3.0, &mut rng, &started, 10.0,
         );
-        assert!(feasible, "the density-biased separator must resolve the overlap to feasible");
-        let sq_pl = remapped.iter().find(|p| p.instance_idx == 1).expect("square placement");
+        assert!(
+            feasible,
+            "the density-biased separator must resolve the overlap to feasible"
+        );
+        let sq_pl = remapped
+            .iter()
+            .find(|p| p.instance_idx == 1)
+            .expect("square placement");
         let sq_shape = transform_base_to_candidate(
             instances[1].base_shape.as_ref(),
             sq_pl.x,
@@ -2789,7 +3620,9 @@ mod q51_measure_gate {
     #[test]
     fn measure_gate_admit_third_big_part_on_one_sheet() {
         let part = load_lv8_11612();
-        let instances: Vec<SPInstance> = (0..3).map(|i| continuous_instance(i, part.clone())).collect();
+        let instances: Vec<SPInstance> = (0..3)
+            .map(|i| continuous_instance(i, part.clone()))
+            .collect();
         let sheets = expand_sheets(&[Stock {
             id: "S".into(),
             quantity: 1,
@@ -2815,12 +3648,24 @@ mod q51_measure_gate {
         let started = std::time::Instant::now();
 
         // Place 2 big parts side by side at the fitting (≈90°) rotation — bbox-separate, feasible.
-        let rot = super::super::fixed_sheet::fitting_rotation(&instances[0], std::slice::from_ref(sheet));
+        let rot =
+            super::super::fixed_sheet::fitting_rotation(&instances[0], std::slice::from_ref(sheet));
         let (rw, _rh) = dims_for_rotation(part.width, part.height, rot);
         let mk = |idx: usize, rmx: f64| {
-            let (ax, ay) =
-                placement_anchor_from_rect_min(rmx, sheet.min_y + 5.0, part.width, part.height, rot);
-            SparrowPlacement { instance_idx: idx, sheet_index: 0, x: ax, y: ay, rotation_deg: rot }
+            let (ax, ay) = placement_anchor_from_rect_min(
+                rmx,
+                sheet.min_y + 5.0,
+                part.width,
+                part.height,
+                rot,
+            );
+            SparrowPlacement {
+                instance_idx: idx,
+                sheet_index: 0,
+                x: ax,
+                y: ay,
+                rotation_deg: rot,
+            }
         };
         let working = SparrowLayout {
             placements: vec![mk(0, sheet.min_x + 5.0), mk(1, sheet.min_x + rw + 20.0)],
@@ -2828,7 +3673,10 @@ mod q51_measure_gate {
         let setup_feasible =
             SparrowCollisionTracker::final_validation_tracker(&working, &instances, &sheets)
                 .is_feasible();
-        assert!(setup_feasible, "two big parts side by side must be feasible (rw={rw})");
+        assert!(
+            setup_feasible,
+            "two big parts side by side must be feasible (rw={rw})"
+        );
 
         // Try to admit the 3rd big part onto the same sheet (only interlock can fit it).
         let result = try_admit_critical(
@@ -2838,7 +3686,10 @@ mod q51_measure_gate {
         let admitted = result.is_some();
         eprintln!("=== Q51 MEASURE-GATE: 3rd big Lv8_11612 admitted on one sheet = {admitted} ===");
         if let Some(out) = result {
-            assert!(layout_is_full_feasible(&out, &instances, &sheets), "admitted layout must be feasible");
+            assert!(
+                layout_is_full_feasible(&out, &instances, &sheets),
+                "admitted layout must be feasible"
+            );
             let on_sheet = out.placements.iter().filter(|p| p.sheet_index == 0).count();
             eprintln!("=== Q51 MEASURE-GATE: parts on sheet 0 = {on_sheet} (expect 3) ===");
             assert_eq!(on_sheet, 3, "all 3 big parts on one sheet");

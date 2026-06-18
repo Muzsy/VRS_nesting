@@ -1,0 +1,59 @@
+steps:
+  - name: "Repo és Q53D ellenőrzés"
+    description: >
+      Ellenőrizd, hogy Q53D feature critical admission integráció létezik. Ha hiányzik,
+      BLOCKED_Q53D_MISSING. Rögzítsd a feature flag nevét és az elérhető diagnosztikai mezőket.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53e_lv8_feature_admission_proof.md"
+
+  - name: "Benchmark runner létrehozása"
+    description: >
+      Hozd létre a `scripts/bench_sgh_q53_feature_admission.py` futtatót a Q51/Q52 benchmark scriptek
+      mintájára. Készítsen 6-big spacing 5 inputot, feature-off és feature-on armot, majd summaryt és
+      logokat írjon.
+    outputs:
+      - "scripts/bench_sgh_q53_feature_admission.py"
+
+  - name: "Render/artifact integráció"
+    description: >
+      A runner vagy külön helper generáljon SVG/PNG render outputot a meglévő Q51/Q52 render tooling
+      mintája szerint. Ha PNG render dependency hiányzik, SVG kötelező, PNG advisory.
+    outputs:
+      - "scripts/bench_sgh_q53_feature_admission.py"
+      - "artifacts/benchmarks/sgh_q53/q53_report.md"
+
+  - name: "Mechanizmus-gate futtatása"
+    description: >
+      Futtasd a 6-big spacing 5 feature-off/on összevetést. Írd ki: used sheets, big_per_sheet,
+      rotations, feature candidate counters, rejection reasons. A primary acceptance: feature-on valid
+      és legalább egy sheeten 3 nagy alkatrész.
+    outputs:
+      - "artifacts/benchmarks/sgh_q53/q53_summary.json"
+      - "artifacts/benchmarks/sgh_q53/q53_report.md"
+      - "artifacts/benchmarks/sgh_q53/outputs"
+      - "artifacts/benchmarks/sgh_q53/logs"
+      - "artifacts/benchmarks/sgh_q53/renders"
+
+  - name: "Regressziós kontrollok"
+    description: >
+      Futtass rövid regressziós kontrollt: existing tests, builder-off/feature-off validitás,
+      opcionálisan full276 rövid no-regression arm. Full276 2 sheet nem acceptance.
+    outputs:
+      - "artifacts/benchmarks/sgh_q53/q53_summary.json"
+      - "artifacts/benchmarks/sgh_q53/q53_report.md"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és Codex reportot. A DoD→Evidence Matrix tartalmazza a benchmark
+      artifact pathokat és a releváns kódsorokat.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q53e_lv8_feature_admission_proof.md"
+      - "codex/reports/egyedi_solver/sgh_q53e_lv8_feature_admission_proof.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q53e_lv8_feature_admission_proof.md
+      futtatása.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53e_lv8_feature_admission_proof.md"
+      - "codex/reports/egyedi_solver/sgh_q53e_lv8_feature_admission_proof.verify.log"

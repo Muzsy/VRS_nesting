@@ -91,7 +91,8 @@ impl<'a> SpecializedCdeHazardCollector<'a> {
     }
 
     fn add_container(&mut self, candidate: &CdePreparedShape) {
-        let raw = quantify_collision_poly_container_value(candidate, self.sheet_shape).max(QUANT_FLOOR);
+        let raw =
+            quantify_collision_poly_container_value(candidate, self.sheet_shape).max(QUANT_FLOOR);
         let weight = self.tracker.container_weight(self.target);
         self.container_hazard_count += 1;
         self.hazards
@@ -169,7 +170,11 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     collector: &mut SpecializedCdeHazardCollector<'_>,
     diag: &mut SparrowDiagnostics,
 ) {
-    let cde_t0 = if diag.profiling_enabled { Some(std::time::Instant::now()) } else { None };
+    let cde_t0 = if diag.profiling_enabled {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
     let prof_scope = diag.q30_profile.enabled && diag.q30_profile.profiling_scope_active;
     let t_cde = ProfileTimer::start_if(prof_scope);
     let mut ctx = session.begin_specialized_collection(candidate);
@@ -183,9 +188,13 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
         session.collect_pole_hazards(&mut ctx, pole, candidate, collector);
         if collector.early_terminate() {
             diag.profile_early_termination_count += 1;
-            if prof_scope { diag.q30_profile.early_termination_count += 1; }
+            if prof_scope {
+                diag.q30_profile.early_termination_count += 1;
+            }
             merge_quant_counts(collector, diag);
-            if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
+            if let Some(t) = cde_t0 {
+                diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0;
+            }
             t_cde.add_to(&mut diag.q30_profile.cde_query_collect_ms);
             return;
         }
@@ -201,9 +210,13 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
         session.collect_edge_hazards(&mut ctx, candidate, edge_index, collector);
         if collector.early_terminate() {
             diag.profile_early_termination_count += 1;
-            if prof_scope { diag.q30_profile.early_termination_count += 1; }
+            if prof_scope {
+                diag.q30_profile.early_termination_count += 1;
+            }
             merge_quant_counts(collector, diag);
-            if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
+            if let Some(t) = cde_t0 {
+                diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0;
+            }
             t_cde.add_to(&mut diag.q30_profile.cde_query_collect_ms);
             return;
         }
@@ -212,11 +225,16 @@ pub(crate) fn collect_poly_collisions_in_detector_custom(
     // Phase 3: containment pass (early termination handled inside).
     session.collect_containment_hazards(&mut ctx, candidate, collector);
     merge_quant_counts(collector, diag);
-    if let Some(t) = cde_t0 { diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0; }
+    if let Some(t) = cde_t0 {
+        diag.profile_cde_query_collect_ms += t.elapsed().as_secs_f64() * 1000.0;
+    }
     t_cde.add_to(&mut diag.q30_profile.cde_query_collect_ms);
 }
 
-fn merge_quant_counts(collector: &SpecializedCdeHazardCollector<'_>, diag: &mut SparrowDiagnostics) {
+fn merge_quant_counts(
+    collector: &SpecializedCdeHazardCollector<'_>,
+    diag: &mut SparrowDiagnostics,
+) {
     diag.quantified_pair_queries += collector.pair_hazard_count;
     diag.quantified_boundary_queries += collector.container_hazard_count;
     diag.unsupported_queries += collector.unsupported_hazard_count;

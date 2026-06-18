@@ -129,7 +129,10 @@ impl SparrowOptimizer {
                     // backward-pair (j < i) collisions, causing premature "feasible"
                     // reads with actual overlaps still present in the layout.
                     let fresh = SparrowCollisionTracker::build_with_diag(
-                        &state.layout, instances, sheets, diag,
+                        &state.layout,
+                        instances,
+                        sheets,
+                        diag,
                     );
                     diag.native_tracker_full_rebuilds += fresh.full_rebuilds;
                     if fresh.is_feasible() {
@@ -177,7 +180,10 @@ impl SparrowOptimizer {
                     // backward pairs j < i misses overlaps), reporting zero raw loss
                     // while actual collisions remain in the layout.
                     let fresh = SparrowCollisionTracker::build_with_diag(
-                        &state.layout, instances, sheets, diag,
+                        &state.layout,
+                        instances,
+                        sheets,
+                        diag,
                     );
                     diag.native_tracker_full_rebuilds += fresh.full_rebuilds;
                     if fresh.is_feasible() {

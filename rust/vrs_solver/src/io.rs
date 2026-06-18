@@ -296,6 +296,29 @@ pub struct BppReductionDiagnostics {
     pub bpp_lns_parts_reinserted: usize,
     /// Perturbed restarts consumed across all attempts.
     pub bpp_lns_restarts: usize,
+    // ── SGH-Q53B: feature candidate diagnostics ─────────────────────────────
+    pub bpp_feature_candidates_generated: usize,
+    pub bpp_feature_candidates_accepted: usize,
+    pub bpp_bbox_corner_candidates_generated: usize,
+    pub bpp_bbox_corner_candidates_accepted: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_accepted_feature_pair_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_feature_refine_seed_rotation_deg: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_feature_refine_refined_rotation_deg: Option<f64>,
+    pub bpp_feature_refine_iterations: usize,
+    pub bpp_feature_refine_successes: usize,
+    pub bpp_feature_refine_failures: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_feature_refine_rejection_reason: Option<String>,
+    pub bpp_critical_feature_admission_attempts: usize,
+    pub bpp_critical_feature_admission_successes: usize,
+    pub bpp_critical_feature_admission_failures: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_critical_phase_close_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_critical_candidate_rejection_summary: Option<String>,
     // ── SGH-Q51: critical-aware constructive sheet builder (opt-in VRS_SHEET_BUILDER) ──
     pub bpp_sheet_builder_applied: bool,
     /// Critical parts admitted anchor-first during construction.
@@ -329,6 +352,16 @@ pub struct ShapeProfileDiagnostics {
     pub convexity_ratio: f64,
     pub aspect_ratio: f64,
     pub sheet_area_ratio: f64,
+    pub contour_vertex_count: usize,
+    pub contour_edge_count: usize,
+    pub dominant_edge_count: usize,
+    pub extreme_point_count: usize,
+    pub concave_vertex_count: usize,
+    pub concave_zone_count: usize,
+    pub protrusion_candidate_count: usize,
+    pub sheet_alignment_angle_count: usize,
+    pub contour_feature_total_count: usize,
+    pub dominant_alignment_angles_deg: Vec<f64>,
 }
 
 #[derive(Debug, Serialize)]

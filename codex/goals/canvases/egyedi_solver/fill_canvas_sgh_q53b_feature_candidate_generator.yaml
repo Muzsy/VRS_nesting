@@ -1,0 +1,57 @@
+steps:
+  - name: "Repo és Q53A ellenőrzés"
+    description: >
+      Ellenőrizd, hogy Q53A feature extraction jelen van. Ha hiányzik, állj meg BLOCKED_Q53A_MISSING
+      státusszal. Rögzítsd a reportban a felhasznált feature struktúrákat.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53b_feature_candidate_generator.md"
+
+  - name: "Feature candidate generator létrehozása"
+    description: >
+      Hozd létre a feature_candidate_generator modult. Generálj CandidateSeed objektumokat moving
+      contour feature + sheet edge / neighbour contour feature alapján. Ne használj moving bbox-corner
+      alignmentet primary pathként.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "Density path bekötési pont előkészítése"
+    description: >
+      Készíts olyan API-t, amelyet később a density_insert_part és density_biased_separate is hívhat.
+      Egyelőre gated/opt-in legyen; ne változtasd meg default production viselkedést.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/density.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Diagnosztikai számlálók"
+    description: >
+      Adj számlálókat a BPP/optimizer diagnosztikába: feature_candidates_generated,
+      feature_candidates_accepted, bbox_corner_candidates_generated, bbox_corner_candidates_accepted,
+      accepted_feature_pair_type.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Tesztek"
+    description: >
+      Adj unit/integration teszteket: sheet-edge alignment, neighbour edge alignment, bbox-fallback
+      külön számlálása, no-bbox-primary critical path.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_feature_candidates.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q53b_feature_candidate_generator.md"
+      - "codex/reports/egyedi_solver/sgh_q53b_feature_candidate_generator.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q53b_feature_candidate_generator.md
+      futtatása.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53b_feature_candidate_generator.md"
+      - "codex/reports/egyedi_solver/sgh_q53b_feature_candidate_generator.verify.log"

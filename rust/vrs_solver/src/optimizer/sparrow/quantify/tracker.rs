@@ -287,11 +287,15 @@ impl SparrowCollisionTracker {
                     diag.unsupported_queries += 1;
                 } else {
                     for &j in &res.colliding_layout_idxs {
-                        if j >= i { continue; }
+                        if j >= i {
+                            continue;
+                        }
                         if layout.placements[j].sheet_index != layout.placements[i].sheet_index {
                             continue;
                         }
-                        let Some(shape_j) = self.shapes[j].clone() else { continue; };
+                        let Some(shape_j) = self.shapes[j].clone() else {
+                            continue;
+                        };
                         let dist = quantify_collision_poly_poly_native(&shape_j, &shape_i, diag);
                         self.pair_loss.insert((j, i), dist.max(QUANT_FLOOR));
                         self.pair_weight.entry((j, i)).or_insert(1.0);
@@ -320,13 +324,11 @@ impl SparrowCollisionTracker {
                 else {
                     continue;
                 };
-                let Some(session) =
-                    CdeCandidateSession::build_with_policy(
-                        vec![(i, shape_i.clone())],
-                        &sheet_shape,
-                        pair_touching_policy(self.spacing_applied),
-                    )
-                else {
+                let Some(session) = CdeCandidateSession::build_with_policy(
+                    vec![(i, shape_i.clone())],
+                    &sheet_shape,
+                    pair_touching_policy(self.spacing_applied),
+                ) else {
                     continue;
                 };
                 let res = session.query(&shape_j);
@@ -455,7 +457,8 @@ impl SparrowCollisionTracker {
                 GLS_WEIGHT_DECAY
             } else {
                 let ratio = (loss / max_loss).clamp(0.0, 1.0);
-                GLS_WEIGHT_MIN_INC_RATIO + (GLS_WEIGHT_MAX_INC_RATIO - GLS_WEIGHT_MIN_INC_RATIO) * ratio
+                GLS_WEIGHT_MIN_INC_RATIO
+                    + (GLS_WEIGHT_MAX_INC_RATIO - GLS_WEIGHT_MIN_INC_RATIO) * ratio
             };
             let w = self.pair_weight.entry(k).or_insert(1.0);
             *w = (*w * mult).max(1.0);
@@ -466,7 +469,8 @@ impl SparrowCollisionTracker {
                 GLS_WEIGHT_DECAY
             } else {
                 let ratio = (self.boundary_loss[i] / max_loss).clamp(0.0, 1.0);
-                GLS_WEIGHT_MIN_INC_RATIO + (GLS_WEIGHT_MAX_INC_RATIO - GLS_WEIGHT_MIN_INC_RATIO) * ratio
+                GLS_WEIGHT_MIN_INC_RATIO
+                    + (GLS_WEIGHT_MAX_INC_RATIO - GLS_WEIGHT_MIN_INC_RATIO) * ratio
             };
             self.boundary_weight[i] = (self.boundary_weight[i] * mult).max(1.0);
         }

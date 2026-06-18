@@ -791,7 +791,10 @@ mod tests {
             let edge = prepare_shape_native(&part, 30.0, 0.0, 0.0).expect("edge shape");
             let corner = prepare_shape_native(&part, 30.0, 20.0, 0.0).expect("corner shape");
             let adapter = CdeAdapter::with_vrs_touch_allowed();
-            assert_eq!(adapter.query_pair(&left, &edge), CdeQueryResult::NoCollision);
+            assert_eq!(
+                adapter.query_pair(&left, &edge),
+                CdeQueryResult::NoCollision
+            );
             assert_eq!(
                 adapter.query_pair(&left, &corner),
                 CdeQueryResult::NoCollision
@@ -814,8 +817,7 @@ mod tests {
             let layout = SparrowLayout {
                 placements: vec![pl(0, 0.0, 0.0)],
             };
-            let tracker =
-                SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
+            let tracker = SparrowCollisionTracker::build(&layout, &problem.instances, &sheets);
             assert_eq!(tracker.boundary_violations(), 1);
             assert!(!tracker.is_feasible());
         }
@@ -907,8 +909,7 @@ mod tests {
             let mut expected_rng = DeterministicRng::new(123);
             expected_rng.shuffle(&mut expected);
             let mut worker_rng = DeterministicRng::new(123);
-            let ordered =
-                ordered_colliding_items_for_worker(&tracker, &config, 2, &mut worker_rng);
+            let ordered = ordered_colliding_items_for_worker(&tracker, &config, 2, &mut worker_rng);
             assert_eq!(ordered, expected);
         }
 
@@ -974,8 +975,7 @@ mod tests {
                 ],
             };
             let mut diag = SparrowDiagnostics::default();
-            let state =
-                SparrowState::new_with_diag(layout, &problem.instances, &sheets, &mut diag);
+            let state = SparrowState::new_with_diag(layout, &problem.instances, &sheets, &mut diag);
             let optimizer = SparrowOptimizer::new(problem.config.clone());
             let mut saw_non_top_two = false;
             for seed in 1..100 {
@@ -1134,8 +1134,7 @@ mod tests {
             // base_shape uses a valid dummy because the invalid part cannot be prepared;
             // the field is never accessed by large_item_disruption_area_key.
             let dummy_base = std::rc::Rc::new(
-                prepare_base_shape_native(&make_part("_dummy", 10.0, 10.0, 1))
-                    .expect("dummy part"),
+                prepare_base_shape_native(&make_part("_dummy", 10.0, 10.0, 1)).expect("dummy part"),
             );
             let shape_profile = std::rc::Rc::new(PartShapeProfile::compute(
                 &invalid,

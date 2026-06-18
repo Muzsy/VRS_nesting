@@ -24,7 +24,8 @@ impl SparrowOptimizer {
         // PARALLEL (rayon); we are sequential. `VRS_SPARROW_FULL_SAMPLES=1` keeps the full
         // (parity) budget even at ≥100 instances so we can measure the density effect before
         // investing in parallelization.
-        let force_full_samples = std::env::var("VRS_SPARROW_FULL_SAMPLES").ok().as_deref() == Some("1");
+        let force_full_samples =
+            std::env::var("VRS_SPARROW_FULL_SAMPLES").ok().as_deref() == Some("1");
         if problem.instances.len() >= 100 && !force_full_samples {
             active_config.profile = SparrowProfile::SparrowDenseLargeScale;
             active_config.worker_count = SPARROW_DENSE_WORKER_COUNT;

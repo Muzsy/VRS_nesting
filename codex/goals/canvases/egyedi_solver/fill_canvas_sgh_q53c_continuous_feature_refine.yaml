@@ -1,0 +1,55 @@
+steps:
+  - name: "Repo és Q53B ellenőrzés"
+    description: >
+      Ellenőrizd, hogy a feature candidate generator létezik. Ha nincs, BLOCKED_Q53B_MISSING. Olvasd
+      el a rotation policy és coord_descent jelenlegi kódját.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53c_continuous_feature_refine.md"
+
+  - name: "Feature refine API"
+    description: >
+      Implementálj feature_candidate_refine API-t: bemenet CandidateSeed, instance, sheet, neighbour
+      session; kimenet refined candidate placement + diagnostics. Continuous policy esetén valós
+      rotation refine, discrete policy esetén allowed-only.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sample/coord_descent.rs"
+
+  - name: "CDE és evaluator integráció"
+    description: >
+      A refine CDE clear/loss értékelést használjon. Reuse-olj meglévő evaluator/session primitíveket;
+      ne hozz létre alternatív collision modellt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/eval/lbf_evaluator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      Exportáld: seed_rotation, refined_rotation, refine_iterations, refine_success/fail, rejection
+      reason. A reportban emeld ki, hogy continuous nem diszkrét lista.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Adj rotation guardrail teszteket: continuous refine nem snappel; discrete policy allowed-only;
+      CDE validation megmarad.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_feature_refine.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q53c_continuous_feature_refine.md"
+      - "codex/reports/egyedi_solver/sgh_q53c_continuous_feature_refine.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q53c_continuous_feature_refine.md
+      futtatása.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53c_continuous_feature_refine.md"
+      - "codex/reports/egyedi_solver/sgh_q53c_continuous_feature_refine.verify.log"

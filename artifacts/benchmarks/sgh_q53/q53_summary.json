@@ -1,0 +1,129 @@
+{
+  "task": "sgh_q53_feature_admission_proof",
+  "case": "6big",
+  "spacing_mm": 5.0,
+  "time_limit_s": 600,
+  "runs": {
+    "feature_off": {
+      "run_id": "feature_off",
+      "status": "ok",
+      "placed_count": 6,
+      "unplaced_count": 0,
+      "used_sheets": 3,
+      "used_sheet_indices": [
+        0,
+        1,
+        2
+      ],
+      "utilization_pct": 27.387929881017428,
+      "wall_time_s": 555.1,
+      "final_pairs": 0,
+      "boundary_violations": 0,
+      "big_per_sheet": {
+        "0": 2,
+        "1": 2,
+        "2": 2
+      },
+      "big_rotations_deg_by_sheet": {
+        "0": [
+          270.0,
+          90.0
+        ],
+        "1": [
+          281.625,
+          90.956
+        ],
+        "2": [
+          91.162,
+          90.0
+        ]
+      },
+      "max_big_per_sheet": 2,
+      "builder_applied": true,
+      "critical_admitted": 4,
+      "critical_deferred": 3,
+      "max_critical_per_sheet": 2,
+      "feature_candidates_generated": 0,
+      "feature_candidates_accepted": 0,
+      "bbox_corner_candidates_generated": 34,
+      "bbox_corner_candidates_accepted": 2,
+      "accepted_feature_pair_type": null,
+      "feature_refine_seed_rotation_deg": null,
+      "feature_refine_refined_rotation_deg": null,
+      "feature_refine_iterations": 0,
+      "feature_refine_successes": 0,
+      "feature_refine_failures": 0,
+      "feature_refine_rejection_reason": null,
+      "critical_feature_admission_attempts": 0,
+      "critical_feature_admission_successes": 0,
+      "critical_feature_admission_failures": 0,
+      "critical_phase_close_reason": "deadline",
+      "critical_candidate_rejection_summary": null
+    },
+    "feature_on": {
+      "run_id": "feature_on",
+      "status": "ok",
+      "placed_count": 6,
+      "unplaced_count": 0,
+      "used_sheets": 3,
+      "used_sheet_indices": [
+        0,
+        1,
+        2
+      ],
+      "utilization_pct": 27.387929881017428,
+      "wall_time_s": 555.8,
+      "final_pairs": 0,
+      "boundary_violations": 0,
+      "big_per_sheet": {
+        "0": 2,
+        "1": 2,
+        "2": 2
+      },
+      "big_rotations_deg_by_sheet": {
+        "0": [
+          270.0,
+          90.0
+        ],
+        "1": [
+          281.625,
+          90.956
+        ],
+        "2": [
+          91.162,
+          90.0
+        ]
+      },
+      "max_big_per_sheet": 2,
+      "builder_applied": true,
+      "critical_admitted": 4,
+      "critical_deferred": 3,
+      "max_critical_per_sheet": 2,
+      "feature_candidates_generated": 306,
+      "feature_candidates_accepted": 0,
+      "bbox_corner_candidates_generated": 34,
+      "bbox_corner_candidates_accepted": 2,
+      "accepted_feature_pair_type": null,
+      "feature_refine_seed_rotation_deg": null,
+      "feature_refine_refined_rotation_deg": null,
+      "feature_refine_iterations": 0,
+      "feature_refine_successes": 0,
+      "feature_refine_failures": 306,
+      "feature_refine_rejection_reason": "seed_not_clear=16",
+      "critical_feature_admission_attempts": 14,
+      "critical_feature_admission_successes": 0,
+      "critical_feature_admission_failures": 14,
+      "critical_phase_close_reason": "deadline",
+      "critical_candidate_rejection_summary": "seed_not_clear=38"
+    }
+  },
+  "acceptance": {
+    "feature_on_valid": true,
+    "feature_on_has_3_big_on_a_sheet": false,
+    "feature_candidates_exercised": true,
+    "feature_path_evidenced_or_reason_recorded": true,
+    "feature_off_control_valid": true
+  },
+  "verdict": "FAIL",
+  "finding": "Feature-first critical admission stayed CDE-valid and exercised the feature path (generated 306 candidates), but the 600 s spacing-5 gate still ended at 2 big/sheet across 3 sheets, matching the builder-only control."
+}

@@ -1,0 +1,54 @@
+steps:
+  - name: "Repo és Q53C ellenőrzés"
+    description: >
+      Ellenőrizd, hogy Q53A–C kódjai jelen vannak. Ha bármelyik hiányzik, BLOCKED_DEPENDENCY_MISSING.
+      Olvasd el `try_admit_critical` és `build_critical_aware_seed` aktuális kódját.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53d_critical_admission_integration.md"
+
+  - name: "Critical admission feature-first bekötés"
+    description: >
+      Módosítsd a `try_admit_critical` útvonalat: feature-based direct admission legyen első, utána
+      feature-based co-movable admission, végül density/bbox fallback. A fallback maradjon explicit
+      diagnosztikával.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Co-movable critical anchor kezelés"
+    description: >
+      Biztosítsd, hogy új critical candidate admissionje közben az aktuális sheet existing critical
+      anchorjai is mozgathatók legyenek. Ne mozgasd a fillereket critical phase előtt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Gating és default regresszióvédelem"
+    description: >
+      Adj feature flaget vagy meglévő builder gate alatti almódot. Default/off viselkedés maradjon
+      összevethető Q52-vel. Dokumentáld a flaget a reportban.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Adj integration teszteket: feature-first admission path fut critical partnál; bbox fallback
+      külön számolódik; critical phase close reason kötelező; final validation zöld.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_critical_feature_admission.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q53d_critical_admission_integration.md"
+      - "codex/reports/egyedi_solver/sgh_q53d_critical_admission_integration.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report
+      codex/reports/egyedi_solver/sgh_q53d_critical_admission_integration.md futtatása.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q53d_critical_admission_integration.md"
+      - "codex/reports/egyedi_solver/sgh_q53d_critical_admission_integration.verify.log"

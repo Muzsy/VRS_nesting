@@ -1,0 +1,9 @@
+run_id=feature_on
+exit=0
+wall_time_s=555.8
+env={"VRS_BPP_DENSITY_SAMPLES": "40", "VRS_FEATURE_CANDIDATES": "1", "VRS_SHEET_BUILDER": "1", "VRS_SHEET_BUILDER_FEATURE_CRITICAL": "1"}
+
+stderr:
+
+
+stdout:

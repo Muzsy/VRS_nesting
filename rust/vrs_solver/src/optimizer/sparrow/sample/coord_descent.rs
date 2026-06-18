@@ -122,7 +122,9 @@ pub(crate) fn refine_coord_desc(
         let t_ask = ProfileTimer::start_if(r1);
         let maybe_cands = cd.ask();
         t_ask.add_to(&mut diag.q30_profile.coord_descent_ask_ms);
-        if r1 { diag.q30_profile.coord_descent_ask_calls += 1; }
+        if r1 {
+            diag.q30_profile.coord_descent_ask_calls += 1;
+        }
         let Some(cands) = maybe_cands else { break };
         rounds += 1;
         if rounds > max_rounds {
@@ -154,9 +156,59 @@ pub(crate) fn refine_coord_desc(
         let t_tell = ProfileTimer::start_if(r1);
         cd.tell(best, rng, diag);
         t_tell.add_to(&mut diag.q30_profile.coord_descent_tell_ms);
-        if r1 { diag.q30_profile.coord_descent_tell_calls += 1; }
+        if r1 {
+            diag.q30_profile.coord_descent_tell_calls += 1;
+        }
     }
     Some(cd.cur)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn refine_feature_seed(
+    init: ScoredPlacement,
+    evaluator: &mut impl SampleEvaluator,
+    item_min_dim: f64,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+    wiggle: bool,
+    rotation_wiggle_deg: f64,
+) -> Option<(ScoredPlacement, usize)> {
+    let cd_config = CDConfig::for_stage(item_min_dim.max(1.0), false, wiggle, rotation_wiggle_deg);
+    let mut cd = CoordinateDescent {
+        cur: init,
+        axis: CDAxis::random(rng, cd_config.wiggle),
+        t_steps: (cd_config.t_step_init, cd_config.t_step_init),
+        t_step_limit: cd_config.t_step_limit,
+        r_step: cd_config.r_step_init,
+        r_step_limit: cd_config.r_step_limit,
+        wiggle: cd_config.wiggle,
+    };
+    let mut rounds = 0usize;
+    let max_rounds = 80usize;
+    loop {
+        let Some(cands) = cd.ask() else { break };
+        rounds += 1;
+        if rounds > max_rounds {
+            break;
+        }
+        let upper = Some(cd.cur.eval());
+        let mut best: Option<ScoredPlacement> = None;
+        for &(x, y, rot, is_wiggle) in &cands {
+            diag.search_coord_descent_steps += 1;
+            if is_wiggle {
+                diag.search_rotation_wiggle += 1;
+            }
+            if let Some(c) = evaluator.evaluate_sample(x, y, rot, upper, diag) {
+                best = match best {
+                    None => Some(c),
+                    Some(b) if c.eval() < b.eval() => Some(c),
+                    other => other,
+                };
+            }
+        }
+        cd.tell(best, rng, diag);
+    }
+    Some((cd.cur, rounds))
 }
 
 struct CoordinateDescent {

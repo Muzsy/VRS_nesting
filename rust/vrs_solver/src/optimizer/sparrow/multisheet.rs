@@ -167,9 +167,11 @@ fn generate_sheet_subsets(all_sheets: &[SheetShape], _seed: u64) -> Vec<Vec<usiz
         subsets.sort_by(|a, b| {
             let area_a: f64 = a.iter().map(|&i| all_sheets[i].area).sum();
             let area_b: f64 = b.iter().map(|&i| all_sheets[i].area).sum();
-            a.len()
-                .cmp(&b.len())
-                .then_with(|| area_a.partial_cmp(&area_b).unwrap_or(std::cmp::Ordering::Equal))
+            a.len().cmp(&b.len()).then_with(|| {
+                area_a
+                    .partial_cmp(&area_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
     } else {
         // Greedy: add sheets from largest to smallest first (fit the biggest parts).
@@ -222,7 +224,10 @@ fn generate_sheet_subsets(all_sheets: &[SheetShape], _seed: u64) -> Vec<Vec<usiz
 /// Falls back to bounding-box area (width×height) when `outer_points` is
 /// absent, malformed, or has fewer than 3 vertices.
 pub(crate) fn part_polygon_area(part: &crate::item::Part) -> f64 {
-    let json_pts = part.outer_points.as_ref().or(part.prepared_outer_points.as_ref());
+    let json_pts = part
+        .outer_points
+        .as_ref()
+        .or(part.prepared_outer_points.as_ref());
     if let Some(val) = json_pts {
         if let Some(arr) = val.as_array() {
             let pts: Vec<(f64, f64)> = arr
@@ -429,7 +434,10 @@ pub(crate) fn sanitize_partial(
     for (layout_idx, pl) in layout.placements.iter().enumerate() {
         let inst = &instances[pl.instance_idx];
         if included[layout_idx] {
-            if let Some(vrs_pl) = placements.iter().find(|p| p.instance_id == inst.instance_id) {
+            if let Some(vrs_pl) = placements
+                .iter()
+                .find(|p| p.instance_id == inst.instance_id)
+            {
                 valid_placements.push(vrs_pl.clone());
             }
         } else {
@@ -641,7 +649,10 @@ pub fn run_finite_stock_multisheet(
             .iter()
             .map(|&i| {
                 if let Some(ref solver_override) = config.solver_sheets_override {
-                    solver_override.get(i).cloned().unwrap_or_else(|| all_sheets[i].clone())
+                    solver_override
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| all_sheets[i].clone())
                 } else {
                     all_sheets[i].clone()
                 }
@@ -704,14 +715,20 @@ pub fn run_finite_stock_multisheet(
         let (valid_placements, mut extra_unplaced_this, final_pairs, boundary_violations) =
             if is_core_feasible {
                 // Core says feasible: trust it.
-                (remapped_placements, vec![], core_final_pairs, core_boundary_viol)
+                (
+                    remapped_placements,
+                    vec![],
+                    core_final_pairs,
+                    core_boundary_viol,
+                )
             } else if core_final_pairs > 0 || core_boundary_viol > 0 {
                 // Core infeasible: sanitize to produce collision-free partial.
-                let sanitize_reason = if subset_ord == full_pool_idx || attempts >= candidate_subsets {
-                    REASON_STOCK_EXHAUSTED_PARTIAL
-                } else {
-                    REASON_INSUFFICIENT_STOCK
-                };
+                let sanitize_reason =
+                    if subset_ord == full_pool_idx || attempts >= candidate_subsets {
+                        REASON_STOCK_EXHAUSTED_PARTIAL
+                    } else {
+                        REASON_INSUFFICIENT_STOCK
+                    };
                 sanitized_flag = true;
                 sanitize_reason_str = Some(sanitize_reason.to_string());
 
@@ -791,12 +808,7 @@ pub fn run_finite_stock_multisheet(
         let (used_indices, used_area, placed_area, util_pct) =
             compute_utilization(&valid_placements, parts, &all_sheets_with_orig);
 
-        let score = score_candidate(
-            this_feasible,
-            placed_area,
-            used_area,
-            used_indices.len(),
-        );
+        let score = score_candidate(this_feasible, placed_area, used_area, used_indices.len());
 
         // SGH-Q44: capture scalars needed for the attempt record before the
         // candidate moves placements/unplaced/diagnostics into the incumbent.
@@ -1117,10 +1129,21 @@ mod q44_diag_tests {
 
         // count == attempts, and the documented aggregate-count contract.
         assert_eq!(result.attempt_diagnostics.len(), result.attempts);
-        assert_eq!(result.candidate_subsets, 3, "homogeneous 3-sheet stock → subsets 1,2,3");
-        assert_eq!(result.attempt_diagnostics.len(), 3, "all three attempts must run");
+        assert_eq!(
+            result.candidate_subsets, 3,
+            "homogeneous 3-sheet stock → subsets 1,2,3"
+        );
+        assert_eq!(
+            result.attempt_diagnostics.len(),
+            3,
+            "all three attempts must run"
+        );
 
-        let sizes: Vec<usize> = result.attempt_diagnostics.iter().map(|a| a.subset_size).collect();
+        let sizes: Vec<usize> = result
+            .attempt_diagnostics
+            .iter()
+            .map(|a| a.subset_size)
+            .collect();
         assert_eq!(sizes, vec![1, 2, 3], "subset schedule must be 1,2,3");
         assert!(result.attempt_diagnostics.last().unwrap().is_full_pool);
 
@@ -1134,23 +1157,63 @@ mod q44_diag_tests {
             assert!(!a.stop_reason.is_empty());
             assert!(!a.incumbent_reason.is_empty());
             // placed_after_sanitize must never exceed placed_before_sanitize.
-            assert!(a.placed_after_sanitize <= a.placed_before_sanitize.max(a.placed_after_sanitize));
+            assert!(
+                a.placed_after_sanitize <= a.placed_before_sanitize.max(a.placed_after_sanitize)
+            );
         }
 
         // KEY ACCEPTANCE: per-attempt CDE deltas sum to the aggregate counters.
-        let sum_engine: usize = result.attempt_diagnostics.iter().map(|a| a.cde_engine_builds_delta).sum();
-        let sum_bq: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_candidate_queries_delta).sum();
-        let sum_beb: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_engine_builds_delta).sum();
-        let sum_haz: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_hazards_registered_delta).sum();
-        let sum_col: usize = result.attempt_diagnostics.iter().map(|a| a.cde_batch_collisions_returned_delta).sum();
-        assert_eq!(sum_engine, total.engine_builds, "engine_builds deltas must sum to aggregate");
-        assert_eq!(sum_bq, total.batch_candidate_queries, "batch_candidate_queries deltas must sum to aggregate");
-        assert_eq!(sum_beb, total.batch_engine_builds, "batch_engine_builds deltas must sum to aggregate");
-        assert_eq!(sum_haz, total.batch_hazards_registered, "batch_hazards_registered deltas must sum to aggregate");
-        assert_eq!(sum_col, total.batch_collisions_returned, "batch_collisions_returned deltas must sum to aggregate");
+        let sum_engine: usize = result
+            .attempt_diagnostics
+            .iter()
+            .map(|a| a.cde_engine_builds_delta)
+            .sum();
+        let sum_bq: usize = result
+            .attempt_diagnostics
+            .iter()
+            .map(|a| a.cde_batch_candidate_queries_delta)
+            .sum();
+        let sum_beb: usize = result
+            .attempt_diagnostics
+            .iter()
+            .map(|a| a.cde_batch_engine_builds_delta)
+            .sum();
+        let sum_haz: usize = result
+            .attempt_diagnostics
+            .iter()
+            .map(|a| a.cde_batch_hazards_registered_delta)
+            .sum();
+        let sum_col: usize = result
+            .attempt_diagnostics
+            .iter()
+            .map(|a| a.cde_batch_collisions_returned_delta)
+            .sum();
+        assert_eq!(
+            sum_engine, total.engine_builds,
+            "engine_builds deltas must sum to aggregate"
+        );
+        assert_eq!(
+            sum_bq, total.batch_candidate_queries,
+            "batch_candidate_queries deltas must sum to aggregate"
+        );
+        assert_eq!(
+            sum_beb, total.batch_engine_builds,
+            "batch_engine_builds deltas must sum to aggregate"
+        );
+        assert_eq!(
+            sum_haz, total.batch_hazards_registered,
+            "batch_hazards_registered deltas must sum to aggregate"
+        );
+        assert_eq!(
+            sum_col, total.batch_collisions_returned,
+            "batch_collisions_returned deltas must sum to aggregate"
+        );
 
         // Exactly one attempt should be marked as the final incumbent's source via
         // became_incumbent (the first feasible/partial that improved); at least one true.
-        assert!(result.attempt_diagnostics.iter().any(|a| a.became_incumbent));
+        assert!(result
+            .attempt_diagnostics
+            .iter()
+            .any(|a| a.became_incumbent));
     }
 }

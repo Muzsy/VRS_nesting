@@ -70,8 +70,13 @@ pub fn density_candidate_score(
     if neighbours.is_empty() {
         return 0.0;
     }
-    let cand_area =
-        bbox_area(candidate.min_x, candidate.min_y, candidate.max_x, candidate.max_y).max(EPS);
+    let cand_area = bbox_area(
+        candidate.min_x,
+        candidate.min_y,
+        candidate.max_x,
+        candidate.max_y,
+    )
+    .max(EPS);
 
     // Union bbox of the neighbours, and of the neighbours ∪ candidate.
     let (mut nx0, mut ny0, mut nx1, mut ny1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
@@ -187,6 +192,21 @@ pub fn contour_near_rect_mins(
     out
 }
 
+/// Legacy Q48/Q52 fallback: neighbour-vertex -> moving bbox-corner seeds.
+///
+/// Q53B introduces feature-driven primary seeds, but keeps this cheap contour-near path as an
+/// explicit fallback so diagnostics can distinguish true contour-feature candidates from the old
+/// bbox-corner approximation.
+pub fn bbox_corner_fallback_rect_mins(
+    neighbours: &[&CdePreparedShape],
+    rw: f64,
+    rh: f64,
+    sheet: &SheetShape,
+    max_total: usize,
+) -> Vec<(f64, f64)> {
+    contour_near_rect_mins(neighbours, rw, rh, sheet, max_total)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,8 +233,14 @@ mod tests {
             100.0,
             100.0,
             serde_json::json!([
-                [0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [70.0, 100.0],
-                [70.0, 30.0], [30.0, 30.0], [30.0, 100.0], [0.0, 100.0]
+                [0.0, 0.0],
+                [100.0, 0.0],
+                [100.0, 100.0],
+                [70.0, 100.0],
+                [70.0, 30.0],
+                [30.0, 30.0],
+                [30.0, 100.0],
+                [0.0, 100.0]
             ]),
         );
         let base = prepare_base_shape_native(&p).expect("U preparable");
