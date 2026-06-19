@@ -45,36 +45,29 @@ fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
     out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
 }
 
-fn geometry(out: &SolverOutput) -> Vec<(String, usize, i64, i64, i64)> {
-    let mut g: Vec<_> = out
-        .placements
+fn used_sheets(out: &SolverOutput) -> usize {
+    out.placements
         .iter()
-        .map(|p| {
-            (
-                p.part_id.clone(),
-                p.sheet_index,
-                (p.x * 1000.0).round() as i64,
-                (p.y * 1000.0).round() as i64,
-                (p.rotation_deg * 1000.0).round() as i64,
-            )
-        })
-        .collect();
-    g.sort();
-    g
+        .map(|p| p.sheet_index)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
 }
 
 #[test]
-fn skeleton_records_roles_without_changing_placement() {
+fn skeleton_admission_is_valid_records_roles_and_runs_feature_path() {
+    // Q54A records skeleton roles; Q54C drives the feature-first, overlap-tolerant admission on the
+    // skeleton path (so it DOES change placement, unlike the Q54A-only state layer). The result must
+    // stay valid, record roles, exercise the feature path, and not regress the used-sheet count.
     let parts = vec![l_part("L", 4), rect_part("f", 12, 120.0, 120.0)];
     let stocks = vec![json!({"id": "S", "quantity": 3, "width": 3000.0, "height": 1500.0})];
     let input = ms_input(parts, stocks, 42, 40);
 
-    // ── (1) builder ON, skeleton OFF (baseline geometry) ────────────────────────────────────────
+    // ── (1) builder ON, skeleton OFF (baseline) ─────────────────────────────────────────────────
     std::env::set_var("VRS_SHEET_BUILDER", "1");
     std::env::remove_var("VRS_SHEET_BUILDER_SKELETON");
     let off = solve_json(&input);
     assert_eq!(off.status, "ok", "builder baseline must be valid: {}", off.status);
-    let off_geom = geometry(&off);
+    let off_sheets = used_sheets(&off);
     let off_bpp = od(&off).bpp_reduction.as_ref().expect("bpp diagnostics");
     assert_eq!(
         (
@@ -92,17 +85,26 @@ fn skeleton_records_roles_without_changing_placement() {
     std::env::remove_var("VRS_SHEET_BUILDER_SKELETON");
 
     assert_eq!(on.status, "ok", "skeleton path must stay valid: {}", on.status);
-    // INVARIANT: Q54A only records role/state — placement is byte-identical to skeleton-off.
-    assert_eq!(
-        geometry(&on),
-        off_geom,
-        "Q54A must NOT change placement (state/role layer only)"
-    );
+    assert_eq!(on.unplaced.len(), 0, "skeleton path fully placed");
     let on_bpp = od(&on).bpp_reduction.as_ref().expect("bpp diagnostics");
+    assert_eq!(od(&on).sparrow_ms_final_pairs, Some(0), "no collisions");
+    assert_eq!(od(&on).sparrow_ms_boundary_violations, Some(0));
+    // Q54A: roles recorded; first critical on a sheet is always an Anchor.
     let total = on_bpp.bpp_skeleton_anchor_count
         + on_bpp.bpp_skeleton_interlock_count
         + on_bpp.bpp_skeleton_bandinsert_count;
     assert!(total > 0, "skeleton on must record at least one critical role");
-    // The first critical admitted on any sheet is always an Anchor.
     assert!(on_bpp.bpp_skeleton_anchor_count >= 1, "at least one Anchor role recorded");
+    // Q54C: the feature-first overlap-tolerant admission runs on the skeleton path (no Q53D gates).
+    assert!(
+        on_bpp.bpp_critical_feature_admission_attempts > 0,
+        "feature-first admission must run on the skeleton path"
+    );
+    // No regression: skeleton must not use more sheets than the baseline.
+    assert!(
+        used_sheets(&on) <= off_sheets,
+        "skeleton must not regress used-sheet count: on={} off={}",
+        used_sheets(&on),
+        off_sheets
+    );
 }

@@ -1,0 +1,41 @@
+{
+  "run_id": "6big_sp0_skeleton",
+  "task": "SGH-Q54",
+  "input_path": "artifacts/benchmarks/sgh_q54/inputs/q54_6big_sp0.json",
+  "output_path": "artifacts/benchmarks/sgh_q54/outputs/6big_sp0_skeleton_output.json",
+  "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+  "used_sheet_count": 2,
+  "used_sheet_indices": [
+    0,
+    1
+  ],
+  "svg_count": 3,
+  "png_count": 3,
+  "have_cairosvg": true,
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "stock_id": "S",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 3,
+      "placed_part_area": 1792403.85,
+      "physical_utilization_pct": 39.8312,
+      "svg_path": "artifacts/benchmarks/sgh_q54/renders/6big_sp0_skeleton/sheet_00.svg",
+      "png_path": "artifacts/benchmarks/sgh_q54/renders/6big_sp0_skeleton/sheet_00.png"
+    },
+    {
+      "sheet_index": 1,
+      "stock_id": "S",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 3,
+      "placed_part_area": 1792403.85,
+      "physical_utilization_pct": 39.8312,
+      "svg_path": "artifacts/benchmarks/sgh_q54/renders/6big_sp0_skeleton/sheet_01.svg",
+      "png_path": "artifacts/benchmarks/sgh_q54/renders/6big_sp0_skeleton/sheet_01.png"
+    }
+  ],
+  "overview_svg": "artifacts/benchmarks/sgh_q54/renders/6big_sp0_skeleton/overview.svg",
+  "overview_png": "artifacts/benchmarks/sgh_q54/renders/6big_sp0_skeleton/overview.png"
+}

@@ -1836,7 +1836,17 @@ fn try_seeded_critical_separation(
     });
     let now = started.elapsed().as_secs_f64();
     let step_deadline = (now + (deadline_s - now).max(0.5) * 0.5).min(deadline_s);
-    let w_density = admission_density_bias();
+    // SGH-Q54C: on the skeleton path the overlap-tolerant density-biased separator (Q52,
+    // rotation-correct) cleans an overlapping seed into interlock with continuous rotation; default
+    // weight 2.0 so it is active even without VRS_ADMISSION_DENSITY_BIAS. Off the skeleton path the
+    // explicit bias knob decides (0.0 ⇒ the legacy overlap-minimising separator).
+    let w_density = admission_density_bias().max(
+        if super::sheet_skeleton::skeleton_builder_enabled() {
+            2.0
+        } else {
+            0.0
+        },
+    );
     let (feasible, remapped) = if w_density > 0.0 {
         density_biased_separate(
             &trial,
@@ -1879,6 +1889,51 @@ fn try_seeded_critical_separation(
     None
 }
 
+/// SGH-Q54D: largest edge-connected free-region area (mm²) on `sheet_idx` of `layout` — the
+/// free-space-preserving ranking proxy for "does the next critical still have room?".
+fn sheet_freespace_score(
+    layout: &SparrowLayout,
+    sheet_idx: usize,
+    instances: &[SPInstance],
+    sheet: &SheetShape,
+) -> f64 {
+    let bboxes: Vec<[f64; 4]> = layout
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == sheet_idx)
+        .map(|p| critical_world_bbox(layout, p.instance_idx, instances))
+        .collect();
+    super::sheet_skeleton::largest_edge_connected_free_area(
+        &bboxes,
+        sheet.min_x,
+        sheet.min_y,
+        sheet.max_x,
+        sheet.max_y,
+        super::sheet_skeleton::freespace_cell_mm(),
+    )
+}
+
+/// SGH-Q54D: record the accepted-feature-admission metrics for `seed` onto the diagnostics.
+fn commit_feature_admission(
+    bpp: &mut BppReductionDiagnostics,
+    diag: &mut SparrowDiagnostics,
+    seed: &super::feature_candidate_generator::CandidateSeed,
+) {
+    bpp.bpp_critical_feature_admission_successes += 1;
+    bpp.bpp_feature_candidates_accepted += 1;
+    diag.feature_candidates_accepted += 1;
+    bpp.bpp_accepted_feature_pair_type = Some(seed.pair_type());
+    diag.accepted_feature_pair_type = Some(seed.pair_type());
+    bpp.bpp_feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
+    bpp.bpp_feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
+    bpp.bpp_feature_refine_iterations = seed.refine_iterations;
+    bpp.bpp_feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
+    diag.feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
+    diag.feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
+    diag.feature_refine_iterations = seed.refine_iterations;
+    diag.feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
+}
+
 /// SGH-Q51: try to admit critical `cand_inst_idx` onto `target_sheet`, with the already-admitted
 /// parts on that sheet **co-movable**. Returns a new layout with the candidate admitted (and the
 /// sheet's parts possibly re-arranged) on success, or `None`. The candidate is NOT yet in `working`.
@@ -1916,8 +1971,12 @@ fn try_admit_critical(
         .iter()
         .filter(|p| p.sheet_index == target_sheet)
         .count();
-    let feature_first =
-        critical_feature_admission_enabled() && feature_candidate_generation_enabled();
+    // SGH-Q54C: the skeleton path drives the same feature-first admission (clearance-aware seeds +
+    // overlap-tolerant separation), so VRS_SHEET_BUILDER_SKELETON alone enables it (incl. feature
+    // candidate generation). Off the skeleton path the Q53D gates decide.
+    let skeleton_on = super::sheet_skeleton::skeleton_builder_enabled();
+    let feature_first = (critical_feature_admission_enabled() || skeleton_on)
+        && (feature_candidate_generation_enabled() || skeleton_on);
 
     if feature_first {
         // ── (1) FEATURE-FIRST DIRECT: feature seeds only, admitted anchors fixed ───────────────
@@ -1988,7 +2047,21 @@ fn try_admit_critical(
             feature_seed_rejection_summary(&feature_seeds)
                 .or_else(|| Some("no_feature_seed_rejections".to_string()));
         bpp.bpp_critical_feature_admission_attempts += 1;
-        for seed in feature_seeds.iter().filter(|seed| seed.refine_success).take(16) {
+        // SGH-Q54C: on the skeleton path, the overlap-tolerant separator cleans not-yet-clear seeds,
+        // so do NOT pre-filter on refine_success (the Q53 behaviour that dropped every clearance-aware
+        // seed → 0 accepted). Off the skeleton path, keep the Q53 refine-clear filter.
+        let take_n = if skeleton_on { 24 } else { 16 };
+        // SGH-Q54D: on the skeleton path, keep the feasible result that leaves the largest
+        // edge-connected free band for the NEXT critical (free-space-preserving), not just the first
+        // feasible. Off the skeleton path, commit the first feasible (Q53 behaviour).
+        let mut best_skeleton: Option<(f64, SparrowLayout, &super::feature_candidate_generator::CandidateSeed)> =
+            None;
+        let mut feasible_seen = 0usize;
+        for seed in feature_seeds
+            .iter()
+            .filter(|seed| skeleton_on || seed.refine_success)
+            .take(take_n)
+        {
             if let Some(out) = try_seeded_critical_separation(
                 optimizer,
                 working,
@@ -2006,21 +2079,26 @@ fn try_admit_critical(
                 rng,
                 diag,
             ) {
-                bpp.bpp_critical_feature_admission_successes += 1;
-                bpp.bpp_feature_candidates_accepted += 1;
-                diag.feature_candidates_accepted += 1;
-                bpp.bpp_accepted_feature_pair_type = Some(seed.pair_type());
-                diag.accepted_feature_pair_type = Some(seed.pair_type());
-                bpp.bpp_feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
-                bpp.bpp_feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
-                bpp.bpp_feature_refine_iterations = seed.refine_iterations;
-                bpp.bpp_feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
-                diag.feature_refine_seed_rotation_deg = Some(seed.seed_rotation_deg);
-                diag.feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
-                diag.feature_refine_iterations = seed.refine_iterations;
-                diag.feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
-                return Some(out);
+                if skeleton_on {
+                    let score = sheet_freespace_score(&out, target_sheet, instances, sheet);
+                    if best_skeleton.as_ref().is_none_or(|(s, _, _)| score > *s) {
+                        best_skeleton = Some((score, out, seed));
+                    }
+                    feasible_seen += 1;
+                    // SGH-Q54D: rank a BOUNDED number of feasible candidates by free-space (the
+                    // separation budget is precious — don't separate all 24 seeds).
+                    if feasible_seen >= 4 || started.elapsed().as_secs_f64() >= deadline_s {
+                        break;
+                    }
+                } else {
+                    commit_feature_admission(bpp, diag, seed);
+                    return Some(out);
+                }
             }
+        }
+        if let Some((_, out, seed)) = best_skeleton {
+            commit_feature_admission(bpp, diag, seed);
+            return Some(out);
         }
         bpp.bpp_critical_feature_admission_failures += 1;
     }
@@ -2195,7 +2273,10 @@ pub(crate) fn build_critical_aware_seed(
     let skeleton_on = super::sheet_skeleton::skeleton_builder_enabled();
     let mut skeleton = super::sheet_skeleton::SheetSkeletonState::new(sheets.len());
 
-    const CRITICAL_FRONTIER: usize = 2; // close the critical phase after this many consecutive fails
+    // SGH-Q54D sheet-close guard: on the skeleton path keep the critical phase open longer (4 vs 2)
+    // so a band-insert third big part still gets attempts after the tighter interlock pair's misses,
+    // instead of closing the sheet early and spilling to a new one.
+    let critical_frontier: usize = if skeleton_on { 4 } else { 2 };
 
     for sheet_idx in 0..sheets.len() {
         if started.elapsed().as_secs_f64() >= deadline_s || placed.iter().all(|&p| p) {
@@ -2210,7 +2291,7 @@ pub(crate) fn build_critical_aware_seed(
             if placed[ci] {
                 continue;
             }
-            if started.elapsed().as_secs_f64() >= deadline_s || consec_fail >= CRITICAL_FRONTIER {
+            if started.elapsed().as_secs_f64() >= deadline_s || consec_fail >= critical_frontier {
                 break;
             }
             let now = started.elapsed().as_secs_f64();
@@ -2255,7 +2336,7 @@ pub(crate) fn build_critical_aware_seed(
         bpp.bpp_critical_phase_close_reason = Some(
             if started.elapsed().as_secs_f64() >= deadline_s {
                 "deadline".to_string()
-            } else if consec_fail >= CRITICAL_FRONTIER {
+            } else if consec_fail >= critical_frontier {
                 "frontier_fail_limit".to_string()
             } else if queues.critical.iter().all(|&ci| placed[ci]) {
                 "critical_exhausted".to_string()
