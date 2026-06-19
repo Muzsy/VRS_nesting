@@ -1,0 +1,47 @@
+steps:
+  - name: "Repo és Q54 ellenőrzés"
+    description: >
+      Olvasd el az AGENTS.md, docs/codex/* fájlokat, a Q47–Q54 canvas/reportokat és a Q54E proofot.
+      Rögzítsd a reportban a jelenlegi sheet_edge_candidates rotáció-generálást és a sheet long/short
+      edge forrását (SheetShape width/height).
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55a_sheet_aware_edge_anchor_rotation.md"
+
+  - name: "Sheet-aware rotation seed halmaz"
+    description: >
+      A sheet_edge_candidates rotáció-generálása sheet-aware: a domináns hosszú él igazítása a sheet long
+      ÉS short edge irányához, 180° flip variánsokkal, continuous lokális finomítással (nincs snapping).
+      Rangsorolt rotációs jelölthalmaz, nem egyetlen seed.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/contour_features.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      seed_rotation, refined_rotation, edge_distance, sheet_edge_anchor_side, cde_result. Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Unit: a sheet-aware seed-halmaz tartalmaz long-edge + short-edge igazítást + flip variánst; CDE-clear
+      sheet-edge anchor candidate Lv8-szerű parton 1500×3000 sheeten; a refined rotáció continuous (nem
+      snapping). Default-off no-regression.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_edge_anchor.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q55a_sheet_aware_edge_anchor_rotation.md"
+      - "codex/reports/egyedi_solver/sgh_q55a_sheet_aware_edge_anchor_rotation.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q55a_sheet_aware_edge_anchor_rotation.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55a_sheet_aware_edge_anchor_rotation.md"
+      - "codex/reports/egyedi_solver/sgh_q55a_sheet_aware_edge_anchor_rotation.verify.log"

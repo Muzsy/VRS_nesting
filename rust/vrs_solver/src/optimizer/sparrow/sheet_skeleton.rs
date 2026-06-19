@@ -111,6 +111,93 @@ pub fn largest_edge_connected_free_area(
     best
 }
 
+/// SGH-Q55C: world bbox `[min_x, min_y, max_x, max_y]` of the **largest edge-connected free**
+/// component — the band the next BandInsert big part is placed into. `None` if there is no
+/// border-touching free band. Same coarse occupancy grid as `largest_edge_connected_free_area`.
+pub fn largest_edge_connected_free_slot(
+    occupied: &[[f64; 4]],
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+) -> Option<[f64; 4]> {
+    let w = sheet_max_x - sheet_min_x;
+    let h = sheet_max_y - sheet_min_y;
+    if w <= 0.0 || h <= 0.0 || cell_mm <= 0.0 {
+        return None;
+    }
+    let nx = ((w / cell_mm).ceil() as usize).clamp(1, 400);
+    let ny = ((h / cell_mm).ceil() as usize).clamp(1, 400);
+    let cw = w / nx as f64;
+    let ch = h / ny as f64;
+    let mut occ = vec![false; nx * ny];
+    for j in 0..ny {
+        let cy = sheet_min_y + (j as f64 + 0.5) * ch;
+        for i in 0..nx {
+            let cx = sheet_min_x + (i as f64 + 0.5) * cw;
+            if occupied.iter().any(|b| cx >= b[0] && cx <= b[2] && cy >= b[1] && cy <= b[3]) {
+                occ[j * nx + i] = true;
+            }
+        }
+    }
+    let mut seen = vec![false; nx * ny];
+    let mut best_cells = 0usize;
+    let mut best_bbox: Option<[f64; 4]> = None;
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for j0 in 0..ny {
+        for i0 in 0..nx {
+            if occ[j0 * nx + i0] || seen[j0 * nx + i0] {
+                continue;
+            }
+            stack.clear();
+            stack.push((i0, j0));
+            seen[j0 * nx + i0] = true;
+            let (mut imin, mut jmin, mut imax, mut jmax) = (i0, j0, i0, j0);
+            let mut cells = 0usize;
+            let mut touches_border = false;
+            while let Some((i, j)) = stack.pop() {
+                cells += 1;
+                imin = imin.min(i);
+                jmin = jmin.min(j);
+                imax = imax.max(i);
+                jmax = jmax.max(j);
+                if i == 0 || j == 0 || i == nx - 1 || j == ny - 1 {
+                    touches_border = true;
+                }
+                let mut push = |ni: usize, nj: usize, st: &mut Vec<(usize, usize)>, seen: &mut [bool]| {
+                    if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
+                        seen[nj * nx + ni] = true;
+                        st.push((ni, nj));
+                    }
+                };
+                if i > 0 {
+                    push(i - 1, j, &mut stack, &mut seen);
+                }
+                if i + 1 < nx {
+                    push(i + 1, j, &mut stack, &mut seen);
+                }
+                if j > 0 {
+                    push(i, j - 1, &mut stack, &mut seen);
+                }
+                if j + 1 < ny {
+                    push(i, j + 1, &mut stack, &mut seen);
+                }
+            }
+            if touches_border && cells > best_cells {
+                best_cells = cells;
+                best_bbox = Some([
+                    sheet_min_x + imin as f64 * cw,
+                    sheet_min_y + jmin as f64 * ch,
+                    sheet_min_x + (imax + 1) as f64 * cw,
+                    sheet_min_y + (jmax + 1) as f64 * ch,
+                ]);
+            }
+        }
+    }
+    best_bbox
+}
+
 /// The skeleton role of a critical part on a sheet. Roles mirror the reference LV8 layout: an
 /// edge-anchored first part (`Anchor`), a second part interlocked into it (`Interlock`), and a third
 /// part placed into the remaining edge-connected free band (`BandInsert`).

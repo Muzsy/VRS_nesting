@@ -1,0 +1,54 @@
+steps:
+  - name: "Repo és Q55A-C ellenőrzés"
+    description: >
+      Ellenőrizd a Q55A-C jelenlétét. Ha hiányzik, állj meg BLOCKED_Q55ABC_MISSING státusszal. Rögzítsd a
+      reportban a Q54D area-only free-space rangsort és a next-critical profil-metrikákat.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55d_strict_freespace_preservation.md"
+
+  - name: "FreeSpaceSlot fogalom"
+    description: >
+      A largest_edge_connected_free_area kibővítése FreeSpaceSlot-okat adó analízissé: area, bbox_w/h,
+      touches_edge, touched_edges, component_id, fragmentation_score, can_fit_next_critical_min_width/long_span,
+      estimated_next_critical_fit_margin.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Szigorított candidate ranking"
+    description: >
+      A sheet_freespace_score / candidate-rangsor sorrendje: CDE feasibility -> role suitability ->
+      next-critical fit -> largest free component -> fragmentation penalty -> band aspect -> density tie-break.
+      Nagy büntetés, ha a candidate feldarabolja az utolsó critical-fit sávot.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      largest_edge_connected_free_slot, can_fit_next_critical, estimated_next_critical_fit_margin,
+      band_slot_found/can_fit. Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Szintetikus: A (sűrűbb, feldarabol) vs B (kevésbé sűrű, megőriz critical slotot) -> a solver B-t
+      választja. LV8: az első két nagy után can_fit_next_critical=true, fit_margin>0. Default-off byte-azonos.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_freespace_slot.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q55d_strict_freespace_preservation.md"
+      - "codex/reports/egyedi_solver/sgh_q55d_strict_freespace_preservation.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q55d_strict_freespace_preservation.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55d_strict_freespace_preservation.md"
+      - "codex/reports/egyedi_solver/sgh_q55d_strict_freespace_preservation.verify.log"

@@ -1,0 +1,59 @@
+steps:
+  - name: "Repo és Q55A/B ellenőrzés"
+    description: >
+      Ellenőrizd, hogy a Q55A sheet-aware anchor és a Q55B role-routing jelen van. Ha hiányzik, állj meg
+      BLOCKED_Q55AB_MISSING státusszal. Rögzítsd a reportban a Q54D free-space proxyt.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55c_band_insert_candidate_generator.md"
+
+  - name: "Free-space sáv bbox + élek visszaadása"
+    description: >
+      A largest_edge_connected_free_area kibővítése: a legjobb border-érintő szabad komponens bbox-a +
+      érintett élei (nem csak terület). Proxy, nem collision igazság.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Band-insert generátor"
+    description: >
+      band_insert_candidates: a legjobb sáv megkeresése; befértetés a következő critical min-width/long-span
+      proxyval; edge-aligned pozíciók a sáv mentén (part hosszú éle a sáv/táblaél irányához), 180° flip;
+      continuous local rotation refine; CDE final validation.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "BandInsert ág bekötés (Q55B routing)"
+    description: >
+      A Q55B BandInsert hook a band_insert_candidates-t hívja. Csak CDE-clear/feasible eredmény fogadható el.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      band_slot_found, band_slot_bbox, band_slot_can_fit_critical, band_insert_candidates_generated/accepted,
+      band_insert_rejection_reason. Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Unit: szabad sáv + beférő part → edge-aligned candidate-ek a sáv mentén, continuous refine. LV8
+      mechanizmus-teszt (a Q55F-fel közös): 6-big spacing 5 → Anchor+Interlock+BandInsert, max_big>=3, CDE-valid.
+      Default-off byte-azonos.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_band_insert.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján (őszinte verdikt: létrejön-e a 3.?).
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q55c_band_insert_candidate_generator.md"
+      - "codex/reports/egyedi_solver/sgh_q55c_band_insert_candidate_generator.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q55c_band_insert_candidate_generator.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55c_band_insert_candidate_generator.md"
+      - "codex/reports/egyedi_solver/sgh_q55c_band_insert_candidate_generator.verify.log"

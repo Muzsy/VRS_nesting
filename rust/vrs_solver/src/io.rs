@@ -334,6 +334,17 @@ pub struct BppReductionDiagnostics {
     pub bpp_skeleton_anchor_count: usize,
     pub bpp_skeleton_interlock_count: usize,
     pub bpp_skeleton_bandinsert_count: usize,
+    // ── SGH-Q55B: role-routed candidate generation (per-role candidate counts) ──
+    pub bpp_role_anchor_generated: usize,
+    pub bpp_role_anchor_accepted: usize,
+    pub bpp_role_interlock_generated: usize,
+    pub bpp_role_interlock_accepted: usize,
+    pub bpp_role_band_insert_generated: usize,
+    pub bpp_role_band_insert_accepted: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpp_role_candidate_rejection_summary: Option<String>,
+    // ── SGH-Q55C: band-insert (third big part into the preserved free-space slot) ──
+    pub bpp_band_slot_found: bool,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

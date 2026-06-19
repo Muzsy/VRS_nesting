@@ -253,6 +253,107 @@ fn generate_feature_candidate_seeds_impl(
     refine_feature_candidates(moving, sheet, neighbours, seeds)
 }
 
+/// SGH-Q55A: sheet-aware rotation seeds for an edge-anchored placement. Align the part's dominant
+/// edge to the sheet's **long** AND **short** edge directions, with **180° flips** — instead of a
+/// single part-axis seed that ignores the sheet aspect. Continuous parts keep the raw (continuous)
+/// seed so the downstream refine can find the precise angle (e.g. ~88.3°); discrete parts snap to
+/// their allowed set via `resolve_seed_rotation`. Deduplicated, order-stable.
+fn sheet_aware_anchor_rotations(
+    moving: &MovingFeatureSpec<'_>,
+    edge_angle_deg: f64,
+    sheet: &SheetShape,
+    moving_rotation_deg: f64,
+) -> Vec<f64> {
+    // Sheet long/short edge directions (deg): the long edge runs along the larger dimension.
+    let (long_dir, short_dir) = if sheet.width >= sheet.height {
+        (0.0, 90.0)
+    } else {
+        (90.0, 0.0)
+    };
+    let mut seeds: Vec<f64> = Vec::with_capacity(4);
+    for &target in &[long_dir, short_dir] {
+        for &flip in &[0.0, 180.0] {
+            let raw = wrap_deg(target + flip - edge_angle_deg);
+            let r = resolve_seed_rotation(moving, raw, moving_rotation_deg);
+            if !seeds.iter().any(|&s| angular_distance_deg(s, r) < 1e-6) {
+                seeds.push(r);
+            }
+        }
+    }
+    seeds
+}
+
+/// SGH-Q55A: push the four edge-anchored seeds (both sheet-parallel sides) for one rotation.
+fn push_sheet_edge_anchors(
+    feature_base_shape: &CdeBaseShape,
+    edge: &DominantEdge,
+    rot: f64,
+    sheet: &SheetShape,
+    alignment_score: f64,
+    out: &mut Vec<RawSeed>,
+) {
+    let Some(frame) = rotation_frame(feature_base_shape, rot) else {
+        return;
+    };
+    let moved_mid = rotate_point(edge.midpoint, rot);
+    let world_edge_angle = wrap_deg(edge.angle_deg + rot);
+    let closer_to_horizontal =
+        angular_distance_deg(world_edge_angle, 0.0) <= angular_distance_deg(world_edge_angle, 90.0);
+    let left_anchor = sheet.min_x - frame.bbox_min_x;
+    let right_anchor = sheet.max_x - frame.bbox_max_x;
+    let bottom_anchor = sheet.min_y - frame.bbox_min_y;
+    let top_anchor = sheet.max_y - frame.bbox_max_y;
+    if closer_to_horizontal {
+        for &(anchor_x, kind) in &[
+            (left_anchor, "sheet_edge_horizontal_left"),
+            (right_anchor, "sheet_edge_horizontal_right"),
+        ] {
+            out.push(RawSeed {
+                anchor_x,
+                anchor_y: sheet.min_y - moved_mid.y,
+                rotation_seed_deg: rot,
+                moving_feature_type: "dominant_edge",
+                target_feature_type: "sheet_edge",
+                alignment_kind: kind,
+                source_score: alignment_score + 0.20,
+            });
+            out.push(RawSeed {
+                anchor_x,
+                anchor_y: sheet.max_y - moved_mid.y,
+                rotation_seed_deg: rot,
+                moving_feature_type: "dominant_edge",
+                target_feature_type: "sheet_edge",
+                alignment_kind: kind,
+                source_score: alignment_score + 0.18,
+            });
+        }
+    } else {
+        for &(anchor_y, kind) in &[
+            (bottom_anchor, "sheet_edge_vertical_bottom"),
+            (top_anchor, "sheet_edge_vertical_top"),
+        ] {
+            out.push(RawSeed {
+                anchor_x: sheet.min_x - moved_mid.x,
+                anchor_y,
+                rotation_seed_deg: rot,
+                moving_feature_type: "dominant_edge",
+                target_feature_type: "sheet_edge",
+                alignment_kind: kind,
+                source_score: alignment_score + 0.20,
+            });
+            out.push(RawSeed {
+                anchor_x: sheet.max_x - moved_mid.x,
+                anchor_y,
+                rotation_seed_deg: rot,
+                moving_feature_type: "dominant_edge",
+                target_feature_type: "sheet_edge",
+                alignment_kind: kind,
+                source_score: alignment_score + 0.18,
+            });
+        }
+    }
+}
+
 fn sheet_edge_candidates(
     moving: &MovingFeatureSpec<'_>,
     moving_rotation_deg: f64,
@@ -268,66 +369,17 @@ fn sheet_edge_candidates(
         else {
             continue;
         };
-        let rot = resolve_seed_rotation(moving, align.rotation_seed_deg, moving_rotation_deg);
-        let Some(frame) = rotation_frame(moving.feature_base_shape, rot) else {
-            continue;
-        };
-        let moved_mid = rotate_point(edge.midpoint, rot);
-        let world_edge_angle = wrap_deg(edge.angle_deg + rot);
-        let closer_to_horizontal = angular_distance_deg(world_edge_angle, 0.0)
-            <= angular_distance_deg(world_edge_angle, 90.0);
-        let left_anchor = sheet.min_x - frame.bbox_min_x;
-        let right_anchor = sheet.max_x - frame.bbox_max_x;
-        let bottom_anchor = sheet.min_y - frame.bbox_min_y;
-        let top_anchor = sheet.max_y - frame.bbox_max_y;
-        if closer_to_horizontal {
-            for &(anchor_x, kind) in &[
-                (left_anchor, "sheet_edge_horizontal_left"),
-                (right_anchor, "sheet_edge_horizontal_right"),
-            ] {
-                out.push(RawSeed {
-                    anchor_x,
-                    anchor_y: sheet.min_y - moved_mid.y,
-                    rotation_seed_deg: rot,
-                    moving_feature_type: "dominant_edge",
-                    target_feature_type: "sheet_edge",
-                    alignment_kind: kind,
-                    source_score: align.alignment_score + 0.20,
-                });
-                out.push(RawSeed {
-                    anchor_x,
-                    anchor_y: sheet.max_y - moved_mid.y,
-                    rotation_seed_deg: rot,
-                    moving_feature_type: "dominant_edge",
-                    target_feature_type: "sheet_edge",
-                    alignment_kind: kind,
-                    source_score: align.alignment_score + 0.18,
-                });
-            }
-        } else {
-            for &(anchor_y, kind) in &[
-                (bottom_anchor, "sheet_edge_vertical_bottom"),
-                (top_anchor, "sheet_edge_vertical_top"),
-            ] {
-                out.push(RawSeed {
-                    anchor_x: sheet.min_x - moved_mid.x,
-                    anchor_y,
-                    rotation_seed_deg: rot,
-                    moving_feature_type: "dominant_edge",
-                    target_feature_type: "sheet_edge",
-                    alignment_kind: kind,
-                    source_score: align.alignment_score + 0.20,
-                });
-                out.push(RawSeed {
-                    anchor_x: sheet.max_x - moved_mid.x,
-                    anchor_y,
-                    rotation_seed_deg: rot,
-                    moving_feature_type: "dominant_edge",
-                    target_feature_type: "sheet_edge",
-                    alignment_kind: kind,
-                    source_score: align.alignment_score + 0.18,
-                });
-            }
+        // SGH-Q55A: a ranked sheet-aware rotation set (long+short edge alignment + 180° flips),
+        // not a single part-axis seed.
+        for rot in sheet_aware_anchor_rotations(moving, edge.angle_deg, sheet, moving_rotation_deg) {
+            push_sheet_edge_anchors(
+                moving.feature_base_shape,
+                edge,
+                rot,
+                sheet,
+                align.alignment_score,
+                out,
+            );
         }
     }
 }

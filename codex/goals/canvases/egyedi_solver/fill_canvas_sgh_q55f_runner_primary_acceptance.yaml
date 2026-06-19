@@ -1,0 +1,38 @@
+steps:
+  - name: "Repo és Q55A-E ellenőrzés"
+    description: >
+      Ellenőrizd a Q55A-E jelenlétét (a teljes role-skeleton + band-insert + guard). Ha hiányzik, állj meg
+      BLOCKED_Q55ABCDE_MISSING státusszal. Rögzítsd a reportban a Q54E misleading-PASS tanulságot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55f_runner_primary_acceptance.md"
+
+  - name: "Benchmark script — szigorú primary acceptance"
+    description: >
+      scripts/bench_sgh_q55_role_skeleton.py: PRIMARY = 6-big spacing 5 skeleton ON: status ok, final_pairs 0,
+      boundary 0, max_big_per_sheet>=3, egy sheeten Anchor+Interlock+BandInsert, band_insert_candidates_accepted>=1.
+      FAIL ha bármelyik nem teljesül. Secondary: spacing 0, full276, gate-off no-regression (nem írja felül a primary-t).
+    outputs:
+      - "scripts/bench_sgh_q55_role_skeleton.py"
+      - "artifacts/benchmarks/sgh_q55/q55_summary.json"
+
+  - name: "Renders + artifactok"
+    description: >
+      Per-sheet + overview SVG/PNG render; artifactok az artifacts/benchmarks/sgh_q55/ alatt (outputs, logs, renders).
+    outputs:
+      - "artifacts/benchmarks/sgh_q55/"
+
+  - name: "Report (kötelező tartalom)"
+    description: >
+      touched-file lista, scope-on túli módosítások indoklása, gate off/on A/B, role-by-role candidate counts,
+      free-space before/after, edge distance, seed/refined rotations, sheet-close reason, rejection summary.
+      Őszinte verdikt (PASS csak ha a primary teljesül).
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q55f_runner_primary_acceptance.md"
+      - "codex/reports/egyedi_solver/sgh_q55f_runner_primary_acceptance.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q55f_runner_primary_acceptance.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55f_runner_primary_acceptance.md"
+      - "codex/reports/egyedi_solver/sgh_q55f_runner_primary_acceptance.verify.log"

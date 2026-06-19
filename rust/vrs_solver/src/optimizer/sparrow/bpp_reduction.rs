@@ -1913,6 +1913,41 @@ fn sheet_freespace_score(
     )
 }
 
+/// SGH-Q55C: band-insert rect-min seeds — place the BandInsert big part INTO the free-space slot
+/// bbox, edge-aligned to the slot corners, in the sheet-aware orientations (long/short edge + flip)
+/// that fit the slot. The third reference big part goes into the preserved band, sheet-edge-aligned,
+/// not interlocked to the anchor pair. Returns `(rect_min_x, rect_min_y, rotation_deg)`.
+fn band_insert_seeds(inst: &SPInstance, sheet: &SheetShape, slot: [f64; 4]) -> Vec<(f64, f64, f64)> {
+    let (sx0, sy0, sx1, sy1) = (slot[0], slot[1], slot[2], slot[3]);
+    let (slot_w, slot_h) = (sx1 - sx0, sy1 - sy0);
+    let (long_dir, short_dir) = if sheet.width >= sheet.height {
+        (0.0_f64, 90.0_f64)
+    } else {
+        (90.0_f64, 0.0_f64)
+    };
+    let mut out: Vec<(f64, f64, f64)> = Vec::new();
+    for &rot in &[long_dir, short_dir, long_dir + 180.0, short_dir + 180.0] {
+        let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+        if rw > slot_w + 1e-6 || rh > slot_h + 1e-6 {
+            continue; // the part does not fit the slot in this orientation
+        }
+        // edge-aligned rect-min positions: the four slot corners (clamped on-sheet).
+        for &(rmx, rmy) in &[
+            (sx0, sy0),
+            ((sx1 - rw).max(sx0), sy0),
+            (sx0, (sy1 - rh).max(sy0)),
+            ((sx1 - rw).max(sx0), (sy1 - rh).max(sy0)),
+        ] {
+            let rmx = rmx.clamp(sheet.min_x, (sheet.max_x - rw).max(sheet.min_x));
+            let rmy = rmy.clamp(sheet.min_y, (sheet.max_y - rh).max(sheet.min_y));
+            if !out.iter().any(|&(x, y, r)| (x - rmx).abs() < 1.0 && (y - rmy).abs() < 1.0 && (r - rot).abs() < 1e-6) {
+                out.push((rmx, rmy, rot));
+            }
+        }
+    }
+    out
+}
+
 /// SGH-Q54D: record the accepted-feature-admission metrics for `seed` onto the diagnostics.
 fn commit_feature_admission(
     bpp: &mut BppReductionDiagnostics,
@@ -1955,6 +1990,7 @@ fn try_admit_critical(
     rng: &mut DeterministicRng,
     diag: &mut SparrowDiagnostics,
     bpp: &mut BppReductionDiagnostics,
+    role: Option<super::sheet_skeleton::SkeletonRole>,
 ) -> Option<SparrowLayout> {
     let sheet = &solver_sheets[target_sheet];
     let inst = &instances[cand_inst_idx];
@@ -1979,6 +2015,11 @@ fn try_admit_critical(
         && (feature_candidate_generation_enabled() || skeleton_on);
 
     if feature_first {
+        // SGH-Q55C: the Anchor seats via the sheet-aware sheet-edge candidates (stage 2), not the
+        // corner density-insert — skip the direct stage for the Anchor role on the skeleton path.
+        let anchor_skip_direct =
+            skeleton_on && role == Some(super::sheet_skeleton::SkeletonRole::Anchor);
+        if !anchor_skip_direct {
         // ── (1) FEATURE-FIRST DIRECT: feature seeds only, admitted anchors fixed ───────────────
         bpp.bpp_critical_feature_admission_attempts += 1;
         let mut trial = working.clone();
@@ -2024,6 +2065,7 @@ fn try_admit_critical(
             }
         }
         bpp.bpp_critical_feature_admission_failures += 1;
+        } // end !anchor_skip_direct (SGH-Q55C)
 
         // ── (2) FEATURE-FIRST CO-MOVABLE: seed from contour features, then separate together ──
         let feature_neighbours: Vec<PlacedFeatureNeighbour<'_>> = working
@@ -2054,12 +2096,73 @@ fn try_admit_critical(
         // SGH-Q54D: on the skeleton path, keep the feasible result that leaves the largest
         // edge-connected free band for the NEXT critical (free-space-preserving), not just the first
         // feasible. Off the skeleton path, commit the first feasible (Q53 behaviour).
+        // SGH-Q55B: route candidate generation by skeleton role — Anchor → sheet-edge anchors,
+        // Interlock → neighbour feature pairs, BandInsert → all (Q55C plugs the band generator here).
+        use super::sheet_skeleton::SkeletonRole;
+        let role_match = |seed: &super::feature_candidate_generator::CandidateSeed| -> bool {
+            match role {
+                Some(SkeletonRole::Anchor) => seed.target_feature_type == "sheet_edge",
+                Some(SkeletonRole::Interlock) => seed.target_feature_type != "sheet_edge",
+                _ => true,
+            }
+        };
+        if skeleton_on {
+            let gen = feature_seeds.iter().filter(|s| role_match(s)).count();
+            match role {
+                Some(SkeletonRole::Anchor) => bpp.bpp_role_anchor_generated += gen,
+                Some(SkeletonRole::Interlock) => bpp.bpp_role_interlock_generated += gen,
+                Some(SkeletonRole::BandInsert) => bpp.bpp_role_band_insert_generated += gen,
+                None => {}
+            }
+        }
+        let role_accept = |bpp: &mut BppReductionDiagnostics| match role {
+            Some(SkeletonRole::Anchor) => bpp.bpp_role_anchor_accepted += 1,
+            Some(SkeletonRole::Interlock) => bpp.bpp_role_interlock_accepted += 1,
+            Some(SkeletonRole::BandInsert) => bpp.bpp_role_band_insert_accepted += 1,
+            None => {}
+        };
+        // SGH-Q55C: BandInsert role → place the third big part INTO the preserved free-space slot
+        // (edge-aligned to the slot, sheet-edge-parallel), not interlocked to the anchor pair.
+        if skeleton_on && role == Some(SkeletonRole::BandInsert) {
+            let occ: Vec<[f64; 4]> = working
+                .placements
+                .iter()
+                .filter(|p| p.sheet_index == target_sheet)
+                .map(|p| critical_world_bbox(working, p.instance_idx, instances))
+                .collect();
+            if let Some(slot) = super::sheet_skeleton::largest_edge_connected_free_slot(
+                &occ,
+                sheet.min_x,
+                sheet.min_y,
+                sheet.max_x,
+                sheet.max_y,
+                super::sheet_skeleton::freespace_cell_mm(),
+            ) {
+                bpp.bpp_band_slot_found = true;
+                for (rmx, rmy, brot) in band_insert_seeds(inst, sheet, slot) {
+                    if started.elapsed().as_secs_f64() >= deadline_s {
+                        break;
+                    }
+                    bpp.bpp_role_band_insert_generated += 1;
+                    if let Some(out) = try_seeded_critical_separation(
+                        optimizer, working, cand_inst_idx, target_sheet, rmx, rmy, brot,
+                        admitted_count, instances, solver_sheets, sheet, started, deadline_s, rng,
+                        diag,
+                    ) {
+                        bpp.bpp_critical_feature_admission_successes += 1;
+                        bpp.bpp_feature_candidates_accepted += 1;
+                        bpp.bpp_role_band_insert_accepted += 1;
+                        return Some(out);
+                    }
+                }
+            }
+        }
         let mut best_skeleton: Option<(f64, SparrowLayout, &super::feature_candidate_generator::CandidateSeed)> =
             None;
         let mut feasible_seen = 0usize;
         for seed in feature_seeds
             .iter()
-            .filter(|seed| skeleton_on || seed.refine_success)
+            .filter(|seed| role_match(seed) && (skeleton_on || seed.refine_success))
             .take(take_n)
         {
             if let Some(out) = try_seeded_critical_separation(
@@ -2098,6 +2201,7 @@ fn try_admit_critical(
         }
         if let Some((_, out, seed)) = best_skeleton {
             commit_feature_admission(bpp, diag, seed);
+            role_accept(bpp); // SGH-Q55B: per-role accepted count
             return Some(out);
         }
         bpp.bpp_critical_feature_admission_failures += 1;
@@ -2315,6 +2419,7 @@ pub(crate) fn build_critical_aware_seed(
                 rng,
                 diag,
                 bpp,
+                role, // SGH-Q55B: route the candidate generation by skeleton role
             ) {
                 Some(new_layout) => {
                     layout = new_layout;
@@ -3800,7 +3905,7 @@ mod q51_measure_gate {
         // Try to admit the 3rd big part onto the same sheet (only interlock can fit it).
         let result = try_admit_critical(
             &optimizer, &working, 2, 0, &instances, &sheets, &started, 25.0, &mut rng, &mut diag,
-            &mut bpp,
+            &mut bpp, None,
         );
         let admitted = result.is_some();
         eprintln!("=== Q51 MEASURE-GATE: 3rd big Lv8_11612 admitted on one sheet = {admitted} ===");

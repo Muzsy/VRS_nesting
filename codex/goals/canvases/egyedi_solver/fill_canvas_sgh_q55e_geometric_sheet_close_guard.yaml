@@ -1,0 +1,53 @@
+steps:
+  - name: "Repo és Q55A-D ellenőrzés"
+    description: >
+      Ellenőrizd a Q55A-D jelenlétét (különösen a Q55D FreeSpaceSlot és a Q55C band_insert). Ha hiányzik,
+      állj meg BLOCKED_Q55ABCD_MISSING státusszal. Rögzítsd a reportban a Q54 frontier-guardot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55e_geometric_sheet_close_guard.md"
+
+  - name: "Geometriai close guard"
+    description: >
+      A build_critical_aware_seed critical phase close-ja: ha remaining_critical_exists, számold a free-space
+      slotokat (Q55D); ha bármelyikbe a következő critical befér, KÖTELEZŐ band-insertet próbálni (Q55C) a
+      close előtt. Nincs darabszám-előrejelzés; a guard geometriai.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Close-reason fegyelem"
+    description: >
+      Primary critical phase-ben frontier_fail_limit/deadline close reason CSAK akkor, ha
+      band_insert_attempted=true VAGY critical_slot_found_before_close=false.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Diagnosztika"
+    description: >
+      sheet_close_reason, critical_slot_found_before_close, band_insert_attempted_before_close,
+      band_insert_success, band_insert_rejection_reason. Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Szintetikus: van beférő slot -> band_insert_attempted_before_close=true; nincs slot ->
+      critical_slot_found_before_close=false (és csak ekkor zárhat frontier/deadline). LV8: a close reason
+      nem frontier/deadline band-insert kísérlet nélkül. Default-off byte-azonos.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_close_guard.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q55e_geometric_sheet_close_guard.md"
+      - "codex/reports/egyedi_solver/sgh_q55e_geometric_sheet_close_guard.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q55e_geometric_sheet_close_guard.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55e_geometric_sheet_close_guard.md"
+      - "codex/reports/egyedi_solver/sgh_q55e_geometric_sheet_close_guard.verify.log"

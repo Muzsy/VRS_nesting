@@ -1,0 +1,51 @@
+steps:
+  - name: "Repo és Q55A ellenőrzés"
+    description: >
+      Ellenőrizd, hogy a Q55A sheet-aware edge-anchor candidate jelen van. Ha hiányzik, állj meg
+      BLOCKED_Q55A_MISSING státusszal. Rögzítsd a reportban a Q54A role-számítást a build_critical_aware_seed-ben.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55b_role_routed_candidate_generation.md"
+
+  - name: "Role átadás a try_admit_critical-nek"
+    description: >
+      try_admit_critical aláírás-bővítés: role: Option<SkeletonRole>, skeleton_state: Option<&SheetSkeletonState>,
+      remaining_critical_profiles. A build_critical_aware_seed átadja ezeket. Additív (None = régi viselkedés).
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Role-specifikus candidate-útvonalak"
+    description: >
+      Anchor -> Q55A sheet-edge anchor; Interlock -> anchor-targeted feature-pár; BandInsert -> Q55C
+      free-space band hook (stub a Q55B-ben). A routing a role-ból + sheet-geometriából; nincs darabszám-előrejelzés.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Role-by-role diagnosztika"
+    description: >
+      anchor/interlock/band_insert_candidates_generated + _accepted, role_candidate_rejection_summary. Additív IO.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/diagnostics.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Tesztek"
+    description: >
+      Integrációs: a role-routing a megfelelő ágat választja; role-by-role diagnosztika kitöltődik a
+      skeleton úton; default-off byte-azonos.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_role_routing.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Checklist és report"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence alapján.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q55b_role_routed_candidate_generation.md"
+      - "codex/reports/egyedi_solver/sgh_q55b_role_routed_candidate_generation.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q55b_role_routed_candidate_generation.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q55b_role_routed_candidate_generation.md"
+      - "codex/reports/egyedi_solver/sgh_q55b_role_routed_candidate_generation.verify.log"
