@@ -41,9 +41,9 @@ margin-shrunk sheet edge, which lands the **physical** contour at exactly `margi
 
 ## Final report (the 15 required items)
 
-1. **Commit hash** — not yet committed (standing rule: commit/push only on request). Working-tree
-   changes ready: `feature_candidate_generator.rs` (modified), `tests/sparrow_one_part_sheet_edge.rs`
-   (new), `artifacts/benchmarks/sgh_q55b/` (new). Base commit `129aa61`. Hash filled in on commit.
+1. **Commit hash** — `1c99f7b69d212d0ce2a609e7064f283df1e891e6` (`1c99f7b`), pushed to `main`
+   (`129aa61..1c99f7b`). Files: `feature_candidate_generator.rs` (modified),
+   `tests/sparrow_one_part_sheet_edge.rs` (new), `artifacts/benchmarks/sgh_q55b/` (new), this report.
 2. **Command** —
    `cargo test --release --manifest-path rust/vrs_solver/Cargo.toml --test sparrow_one_part_sheet_edge -- --nocapture`
    (env: `RUSTUP_HOME=$HOME/.local/rustup CARGO_HOME=$HOME/.local/rust/cargo`, toolchain bin on PATH).
