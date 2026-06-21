@@ -36,6 +36,7 @@ pub mod fixed_sheet;
 pub mod lbf;
 pub mod model;
 pub mod multisheet;
+pub mod one_part_edge;
 pub mod optimizer;
 pub mod profile;
 pub mod quantify;
