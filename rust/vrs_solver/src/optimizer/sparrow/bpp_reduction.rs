@@ -1871,6 +1871,22 @@ fn try_seeded_critical_separation(
             diag,
         )
     };
+    // SGH-Q55D'-2: if the sequential separator failed, try a SIMULTANEOUS simulated-annealing repack
+    // of the whole sheet — the lever for the tight 3-way interlock the single-part descent (Q52)
+    // cannot reach (it moves all critical parts at once into the deep-interlock configuration).
+    let (feasible, remapped) = if !feasible && super::sheet_skeleton::skeleton_builder_enabled() {
+        simultaneous_critical_repack(
+            &trial,
+            target_sheet,
+            instances,
+            solver_sheets,
+            rng,
+            started,
+            step_deadline,
+        )
+    } else {
+        (feasible, remapped)
+    };
     if feasible && remapped.len() == admitted_count + 1 {
         let mut others: Vec<SparrowPlacement> = working
             .placements
@@ -1946,6 +1962,115 @@ fn band_insert_seeds(inst: &SPInstance, sheet: &SheetShape, slot: [f64; 4]) -> V
         }
     }
     out
+}
+
+/// SGH-Q55D'-2: **simultaneous** multi-part repack of a sheet's critical parts via simulated
+/// annealing. The sequential single-part coordinate descent (`density_biased_separate`, Q52) was
+/// proven NOT to converge on the tight 3-way interlock; this perturbs ALL parts at once and accepts
+/// via Metropolis, so the deep-interlock configuration (overlapping bboxes, nested contours — the
+/// reference's actual layout) can be reached. Energy = pairwise spacing-collision overlap proxy +
+/// boundary penalty; continuous rotation preserved; the CDE decides final feasibility.
+fn simultaneous_critical_repack(
+    layout: &SparrowLayout,
+    sheet_idx: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    rng: &mut DeterministicRng,
+    started: &Instant,
+    deadline_s: f64,
+) -> (bool, Vec<SparrowPlacement>) {
+    let sheet = &solver_sheets[sheet_idx];
+    let mut cur: Vec<SparrowPlacement> = layout
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == sheet_idx)
+        .map(|p| SparrowPlacement {
+            sheet_index: sheet_idx,
+            ..p.clone()
+        })
+        .collect();
+    if cur.len() <= 1 {
+        return (sheet_local_feasible(&cur, instances, solver_sheets), cur);
+    }
+    const BOUNDARY_W: f64 = 50.0;
+    let energy = |poses: &[SparrowPlacement]| -> f64 {
+        let shapes: Vec<Option<CdePreparedShape>> = poses
+            .iter()
+            .map(|p| {
+                let inst = &instances[p.instance_idx];
+                transform_base_to_candidate(
+                    inst.spacing_collision_base_shape.as_ref(),
+                    p.x,
+                    p.y,
+                    p.rotation_deg,
+                )
+            })
+            .collect();
+        let mut e = 0.0;
+        for i in 0..poses.len() {
+            for j in (i + 1)..poses.len() {
+                if let (Some(a), Some(b)) = (&shapes[i], &shapes[j]) {
+                    e += quantify_collision_poly_poly_value(a, b);
+                }
+            }
+        }
+        for p in poses {
+            let inst = &instances[p.instance_idx];
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, p.rotation_deg);
+            let (rmx, rmy) =
+                rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, p.rotation_deg);
+            let over = (sheet.min_x - rmx).max(0.0)
+                + (rmx + rw - sheet.max_x).max(0.0)
+                + (sheet.min_y - rmy).max(0.0)
+                + (rmy + rh - sheet.max_y).max(0.0);
+            e += over * BOUNDARY_W;
+        }
+        e
+    };
+    let mut cur_e = energy(&cur);
+    let mut best = cur.clone();
+    let mut best_e = cur_e;
+    let t0 = (cur_e / cur.len() as f64).max(1.0);
+    const MAX_ITER: usize = 8000;
+    for it in 0..MAX_ITER {
+        if best_e <= 1e-6 || started.elapsed().as_secs_f64() >= deadline_s {
+            break;
+        }
+        let frac = it as f64 / MAX_ITER as f64;
+        let temp = t0 * (1.0 - frac).max(0.02);
+        let tscale = sheet.width.min(sheet.height) * 0.15 * (1.0 - frac).max(0.04);
+        let rscale = 25.0 * (1.0 - frac).max(0.04);
+        let mut trial = cur.clone();
+        for p in trial.iter_mut() {
+            let inst = &instances[p.instance_idx];
+            p.x += (rng.next_f64() - 0.5) * 2.0 * tscale;
+            p.y += (rng.next_f64() - 0.5) * 2.0 * tscale;
+            if inst.continuous_rotation {
+                p.rotation_deg = (p.rotation_deg + (rng.next_f64() - 0.5) * 2.0 * rscale).rem_euclid(360.0);
+            }
+            // clamp the anchor so the rotated bbox stays on-sheet.
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, p.rotation_deg);
+            let (mut rmx, mut rmy) =
+                rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, p.rotation_deg);
+            rmx = rmx.clamp(sheet.min_x, (sheet.max_x - rw).max(sheet.min_x));
+            rmy = rmy.clamp(sheet.min_y, (sheet.max_y - rh).max(sheet.min_y));
+            let (ax, ay) =
+                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, p.rotation_deg);
+            p.x = ax;
+            p.y = ay;
+        }
+        let trial_e = energy(&trial);
+        let de = trial_e - cur_e;
+        if de < 0.0 || rng.next_f64() < (-de / temp).exp() {
+            cur = trial;
+            cur_e = trial_e;
+            if cur_e < best_e {
+                best_e = cur_e;
+                best = cur.clone();
+            }
+        }
+    }
+    (sheet_local_feasible(&best, instances, solver_sheets), best)
 }
 
 /// SGH-Q54D: record the accepted-feature-admission metrics for `seed` onto the diagnostics.
