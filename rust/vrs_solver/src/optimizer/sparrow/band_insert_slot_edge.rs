@@ -140,6 +140,93 @@ impl BandInsertSlotEdgeResult {
     }
 }
 
+/// SGH-Q61: a slot-edge BandInsert candidate as a rect-min seed for the production co-movable
+/// separation. Operates on the LIVE solver instance (`SPInstance`) — no separate `SparrowProblem`.
+#[derive(Debug, Clone)]
+pub struct LiveSlotEdgeSeed {
+    pub rect_min_x: f64,
+    pub rect_min_y: f64,
+    pub rotation_deg: f64,
+    pub target_slot_edge: &'static str,
+    pub secondary_axis_policy: &'static str,
+    pub source: &'static str,
+    pub is_fractional: bool,
+    pub is_corner: bool,
+}
+
+/// SGH-Q61 production entry point: true-extreme slot-edge BandInsert seeds for a LIVE critical instance
+/// into a free `slot_bbox`, using the instance's OrientationCatalog rotations and spacing-expanded
+/// contour extrema. Flush to the slot edges (corner + center), clipped to the slot AND the sheet. The
+/// production co-movable separation performs the exact CDE/neighbour clearance.
+pub fn slot_edge_seeds_for_instance(
+    inst: &SPInstance,
+    slot_bbox: [f64; 4],
+    sheet_bbox: [f64; 4],
+) -> Vec<LiveSlotEdgeSeed> {
+    let shape = inst.spacing_collision_base_shape.as_ref();
+    let mut rotations: Vec<f64> = Vec::new();
+    for c in &inst.orientation_catalog.candidates {
+        if !rotations.iter().any(|a| (a - c.angle_deg).abs() < 0.01) {
+            rotations.push(c.angle_deg);
+        }
+    }
+    if rotations.is_empty() {
+        rotations.push(90.0);
+    }
+    let mut out: Vec<LiveSlotEdgeSeed> = Vec::new();
+    for rot in rotations {
+        let Some(f) = frame(shape, rot) else { continue };
+        let rw = f[2] - f[0];
+        let rh = f[3] - f[1];
+        let slot_w = slot_bbox[2] - slot_bbox[0];
+        let slot_h = slot_bbox[3] - slot_bbox[1];
+        if rw > slot_w + 1e-6 || rh > slot_h + 1e-6 {
+            continue; // does not fit the slot in this orientation
+        }
+        let is_frac = nearest_axis_dist(rot) > 0.25;
+        let x_low = slot_bbox[0];
+        let x_high = slot_bbox[2] - rw;
+        let x_center = slot_bbox[0] + (slot_w - rw) / 2.0;
+        let y_low = slot_bbox[1];
+        let y_high = slot_bbox[3] - rh;
+        let y_center = slot_bbox[1] + (slot_h - rh) / 2.0;
+        let mut add = |rmx: f64, rmy: f64, edge: &'static str, pol: &'static str, corner: bool, out: &mut Vec<LiveSlotEdgeSeed>| {
+            // Keep within the full sheet (the real boundary truth).
+            if rmx < sheet_bbox[0] - 0.05 || rmy < sheet_bbox[1] - 0.05
+                || rmx + rw > sheet_bbox[2] + 0.05 || rmy + rh > sheet_bbox[3] + 0.05
+            {
+                return;
+            }
+            if !out.iter().any(|o: &LiveSlotEdgeSeed| {
+                (o.rect_min_x - rmx).abs() < 1.0 && (o.rect_min_y - rmy).abs() < 1.0 && (o.rotation_deg - rot).abs() < 1e-6
+            }) {
+                out.push(LiveSlotEdgeSeed {
+                    rect_min_x: rmx,
+                    rect_min_y: rmy,
+                    rotation_deg: rot,
+                    target_slot_edge: edge,
+                    secondary_axis_policy: pol,
+                    source: "true_extreme_slot_edge_band_insert",
+                    is_fractional: is_frac,
+                    is_corner: corner,
+                });
+            }
+        };
+        for (edge, rmx) in [("slot_left", x_low), ("slot_right", x_high)] {
+            add(rmx, y_low, edge, "corner_low", true, &mut out);
+            add(rmx, y_high, edge, "corner_high", true, &mut out);
+            add(rmx, y_center, edge, "center", false, &mut out);
+        }
+        for (edge, rmy) in [("slot_bottom", y_low), ("slot_top", y_high)] {
+            add(x_low, rmy, edge, "corner_low", true, &mut out);
+            add(x_high, rmy, edge, "corner_high", true, &mut out);
+            add(x_center, rmy, edge, "center", false, &mut out);
+        }
+    }
+    out.sort_by(|a, b| (b.is_corner as u8).cmp(&(a.is_corner as u8)));
+    out
+}
+
 /// Build BandInsert true-extreme slot-edge candidates for `part` into `slot_bbox` on the sheet, with
 /// optional already-placed neighbour world-bboxes for clearance.
 pub fn build_band_insert_slot_edge_candidates(

@@ -1,0 +1,39 @@
+{
+  "q61": {
+    "accepted_anchor_secondary_policy": null,
+    "accepted_anchor_source": null,
+    "anchor_catalog_accepted": 0,
+    "anchor_catalog_candidates_generated": 48,
+    "anchor_catalog_consumed": true,
+    "band_insert_true_extreme_consumed": true,
+    "best_partial_tracker_enabled": true,
+    "best_valid_critical_count": 2,
+    "boundary_violations": 0,
+    "builder_path_places_3_on_one_sheet": false,
+    "collision_pairs": 0,
+    "conclusion": "best valid partial preserved; 3-on-one-sheet feasible (builder path) but skeleton+module path reached fewer → algorithmic gap.",
+    "downgrades_rejected": 1,
+    "fallback_to_bbox_band_insert": true,
+    "final_placed_critical_count": 3,
+    "final_unplaced_critical_count": 0,
+    "group_sizes_attempted": [
+      2,
+      3
+    ],
+    "interlock_fallback_to_neighbour": false,
+    "max_critical_per_sheet_builder_path": 2,
+    "max_critical_per_sheet_module_path": 2,
+    "pair_candidates_accepted": 0,
+    "pair_candidates_generated": 0,
+    "pair_index_consumed": false,
+    "pair_rejection_summary": null,
+    "previous_group_parts_moved": true,
+    "real_solver_path_used": true,
+    "simultaneous_critical_consumed": true,
+    "simultaneous_group_attempts": 2,
+    "slot_edge_candidates_accepted": 0,
+    "slot_edge_candidates_generated": 24,
+    "spacing_mm": 8.0,
+    "standalone_demo": false
+  }
+}

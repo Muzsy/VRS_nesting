@@ -345,6 +345,52 @@ pub struct BppReductionDiagnostics {
     pub bpp_role_candidate_rejection_summary: Option<String>,
     // ── SGH-Q55C: band-insert (third big part into the preserved free-space slot) ──
     pub bpp_band_slot_found: bool,
+    // ── SGH-Q61: Q56–Q60 module consumption in the real critical-admission path ──
+    // Q56C SheetEdgePlacementCatalog (Anchor role)
+    #[serde(default)]
+    pub bpp_q61_anchor_catalog_consulted: bool,
+    #[serde(default)]
+    pub bpp_q61_anchor_catalog_candidates_generated: usize,
+    #[serde(default)]
+    pub bpp_q61_anchor_catalog_accepted: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q61_accepted_anchor_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q61_accepted_anchor_secondary_policy: Option<String>,
+    // Q57B PairCompatibilityIndex / interlock_pair (Interlock role)
+    #[serde(default)]
+    pub bpp_q61_pair_index_consulted: bool,
+    #[serde(default)]
+    pub bpp_q61_pair_candidates_generated: usize,
+    #[serde(default)]
+    pub bpp_q61_pair_candidates_accepted: usize,
+    #[serde(default)]
+    pub bpp_q61_interlock_fallback_to_neighbour: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q61_pair_rejection_summary: Option<String>,
+    // Q59 true-extreme slot-edge BandInsert
+    #[serde(default)]
+    pub bpp_q61_band_insert_true_extreme_consulted: bool,
+    #[serde(default)]
+    pub bpp_q61_slot_edge_candidates_generated: usize,
+    #[serde(default)]
+    pub bpp_q61_slot_edge_candidates_accepted: usize,
+    #[serde(default)]
+    pub bpp_q61_fallback_to_bbox_band_insert: bool,
+    // Q58B best-partial preservation
+    #[serde(default)]
+    pub bpp_q61_best_partial_tracker_enabled: bool,
+    #[serde(default)]
+    pub bpp_q61_best_partial_max_critical_count: usize,
+    #[serde(default)]
+    pub bpp_q61_best_partial_downgrades_rejected: usize,
+    // Q60 simultaneous critical admission
+    #[serde(default)]
+    pub bpp_q61_simultaneous_critical_consulted: bool,
+    #[serde(default)]
+    pub bpp_q61_simultaneous_group_attempts: usize,
+    #[serde(default)]
+    pub bpp_q61_previous_group_parts_moved: bool,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

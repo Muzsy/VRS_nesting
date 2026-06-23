@@ -94,7 +94,7 @@
     "simultaneous_group_attempts": 2,
     "spacing_mm": 8.0,
     "target_count": 3,
-    "time_ms": 10555.9559
+    "time_ms": 658.0589
   },
   "spacing_0": {
     "arrangements": [
@@ -184,6 +184,6 @@
     "simultaneous_group_attempts": 2,
     "spacing_mm": 0.0,
     "target_count": 3,
-    "time_ms": 5129.3131
+    "time_ms": 292.3284
   }
 }
