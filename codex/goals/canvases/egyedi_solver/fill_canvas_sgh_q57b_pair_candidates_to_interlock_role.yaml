@@ -1,0 +1,56 @@
+steps:
+  - name: "Interlock út és pair index felderítés"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld sheet_skeleton.rs
+      (SkeletonRole::Interlock), bpp_reduction.rs (try_admit_critical, role filtering,
+      try_seeded_critical_separation), feature_candidate_generator.rs (neighbour_feature_candidates) és a
+      Q57A pair_matrix.rs indexet. Rögzítsd a placement origin szemantikát, amit a transzform-konverzió használ.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md"
+
+  - name: "Pair → placement seed konverzió"
+    description: >
+      Implementáld a pair relatív transzform → sheet placement seed konverziót az elhelyezett Anchor
+      ellen (A/B irány kezelve, origin szemantika bizonyítva, matek logolva). A konverzió a
+      feature_candidate_generator/bpp admission úton legyen elérhető. Env-gate default off → no-regression.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Interlock role bekötés, validáció és rangsor"
+    description: >
+      Az Interlock role először a pair-index candidate-eket konzultálja, exact CDE / spacing-expanded
+      validációval, pair score + eredő free-space score szerint rangsorolva. Fallback a neighbour feature
+      candidate-ekre csak ha nincs valid pair candidate; a fallback megőrizve és logolva. Bővítsd a
+      diagnosztikát az io.rs-en.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact és tesztek"
+    description: >
+      Generálj interlock_pair_admission.json artifactot valós kritikus szcenárióra (anchor/candidate
+      part, considered/accepted candidate, source, rotation, position, pair_score, free_space_after,
+      cde_clear, boundary_clear). Adj fókuszált teszteket: pair index lekérdezés, same-part konverzió,
+      pair source diagnosztika, fallback működik, CDE clear, Q55B/Q56C Anchor megmarad.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_interlock_pair_candidates.rs"
+      - "artifacts/benchmarks/sgh_q57b/interlock_pair_admission.json"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal: transzform-konverzió leírása, új diagnosztika mezők, artifact path, pair-index
+      accepted count, fallback viselkedés.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md"
+      - "codex/reports/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md"
+      - "codex/reports/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.verify.log"

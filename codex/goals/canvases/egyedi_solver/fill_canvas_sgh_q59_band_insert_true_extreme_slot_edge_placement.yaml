@@ -1,0 +1,58 @@
+steps:
+  - name: "BandInsert és slot felderítés"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld bpp_reduction.rs (band_insert_seeds,
+      BandInsert role ág), sheet_skeleton.rs (largest_edge_connected_free_slot) és a Q55B true-extreme
+      sheet-edge logikát (feature_candidate_generator.rs, bounded_sheet_edge_repair, min_width_rotations).
+      Rögzítsd a jelenlegi bbox/ortogonális gyengeséget.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md"
+
+  - name: "SlotEdgePlacementCandidate és slot-edge generálás"
+    description: >
+      Vezesd be a SlotEdgePlacementCandidate modellt és a slot-edge candidate generálást (corner +
+      center fallback) a szabad slot bbox-ból. A geometria a Q55B sheet-edge analógiája: OrientationCatalog
+      rotációk, spacing_collision_base_shape true extrema, slot-edge igazított transláció. A slot bbox
+      ranking/target régió, nem collision truth. Gate: VRS_BAND_INSERT_TRUE_EXTREME default off.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Exact validáció, scoring és bekötés"
+    description: >
+      Validáld minden candidate-et exact CDE-vel a placed partok ellen és exact boundary-val a sheet
+      ellen. Pontozz: edge-connected slot fit, maradék terület megőrzés, dead strip elkerülés, slot-él
+      support, befelé drift büntetés. Kösd be a BandInsert role-ba a katalógus candidate-eket, fallback
+      a bbox band_insert_seeds-re logolva. Diagnosztika az io.rs-en.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact (JSON + SVG) és tesztek"
+    description: >
+      Generálj band_insert_slot_edge_candidates.json + .svg artifactot (sheet, placed partok, slot bbox,
+      candidate-ek, kiválasztott candidate). Adj teszteket: true-extreme slot-edge candidate generálás,
+      continuous rotációk nem fix ortogonálisak, spacing-expanded extrema, gate-en a bbox út nem primary,
+      fallback logolva.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_band_insert_slot_edge.rs"
+      - "artifacts/benchmarks/sgh_q59/band_insert_slot_edge_candidates.json"
+      - "artifacts/benchmarks/sgh_q59/band_insert_slot_edge_candidates.svg"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal: új candidate modell/függvények, slot-edge vs sheet-edge alignment különbség, artifact
+      path-ok, elfogadott BandInsert candidate source fókuszált futáson, fallback viselkedés.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md"
+      - "codex/reports/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md"
+      - "codex/reports/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.verify.log"

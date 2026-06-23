@@ -3582,6 +3582,8 @@ mod q50_tests {
     fn make_instance(idx: usize, part: Part) -> SPInstance {
         let base = std::rc::Rc::new(prepare_base_shape_native(&part).expect("preparable"));
         let prof = std::rc::Rc::new(PartShapeProfile::compute(&part, &base, 40_000.0, 200.0));
+        let orient = std::rc::Rc::new(OrientationCatalog::placeholder(&part.id));
+        let analysis = std::rc::Rc::new(PartAnalysis::placeholder(&part.id, &prof));
         SPInstance {
             idx,
             instance_id: format!("{}#{idx}", part.id),
@@ -3592,6 +3594,8 @@ mod q50_tests {
             spacing_collision_base_shape: base.clone(),
             base_shape: base,
             shape_profile: prof,
+            orientation_catalog: orient,
+            part_analysis: analysis,
         }
     }
 
@@ -3953,6 +3957,8 @@ mod q51_measure_gate {
         let prof = std::rc::Rc::new(PartShapeProfile::compute(&part, &base, 4_500_000.0, 3000.0));
         // 24 continuous-domain rotation samples (the separator's rotation set); continuous flag on.
         let rots: Vec<f64> = (0..24).map(|i| i as f64 * 15.0).collect();
+        let orient = std::rc::Rc::new(OrientationCatalog::placeholder(&part.id));
+        let analysis = std::rc::Rc::new(PartAnalysis::placeholder(&part.id, &prof));
         SPInstance {
             idx,
             instance_id: format!("{}#{idx}", part.id),
@@ -3963,6 +3969,8 @@ mod q51_measure_gate {
             spacing_collision_base_shape: base.clone(),
             base_shape: base,
             shape_profile: prof,
+            orientation_catalog: orient,
+            part_analysis: analysis,
         }
     }
 

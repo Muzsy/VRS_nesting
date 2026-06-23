@@ -1,0 +1,60 @@
+steps:
+  - name: "Simultaneous repack hook felderítés"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld bpp_reduction.rs
+      (simultaneous_critical_repack, try_seeded_critical_separation, try_admit_critical,
+      build_critical_aware_seed, best partial paths) és a Q56-Q59 preprocessing outputokat. Rögzítsd a
+      jelenlegi hook állapotát és a szekvenciális bukás-mintát.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md"
+
+  - name: "Group candidate konstrukció"
+    description: >
+      Implementáld a bounded 2/3 kritikus group candidate konstrukciót a preprocessing rétegekből
+      (SheetEdgePlacementCatalog Anchor, PairCompatibilityIndex Interlock, true-extreme slot-edge
+      BandInsert, SheetFeasibilityHints target kvóta, OrientationCatalog rotációk). Minden group candidate
+      group_source/roles/part_ids/rotations/positions/source_candidates/expected_critical_count/initial_score.
+      Gate: VRS_SIMULTANEOUS_CRITICAL default off.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Simultaneous refinement és best partial"
+    description: >
+      Implementáld a bounded simultaneous refinementet (kis coordinate descent / SA / bounded
+      perturbáció): az összes group part mozoghat, a placed non-group part fix, spacing-expanded collision,
+      exact boundary, continuous rotációk megmaradnak. Implementáld a kötelező best-partial preservationt
+      (incumbensek critical_count/area/free_space szerint). Diagnosztika az io.rs-en.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact (JSON + SVG), benchmark és tesztek"
+    description: >
+      Generálj critical_group_admission.json + .svg artifactot (elfogadott csoport vagy best partial,
+      role-ok, source). Futtasd a fókuszált 3-kritikus benchmarkot valós spacingnél, és jelentsd
+      őszintén (spacing=0 siker nem elég). Adj teszteket: 2-csoport admittálható, 3-csoport refinement,
+      korábbi partok mozognak, full 3 bukás esetén best partial 2 megmarad, source diagnosztika,
+      szekvenciális fallback logolva.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_critical_simultaneous_admission.rs"
+      - "artifacts/benchmarks/sgh_q60/critical_group_admission.json"
+      - "artifacts/benchmarks/sgh_q60/critical_group_admission.svg"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal: gate/config, group candidate flow, refinement módszer, best partial policy, fókuszált
+      3-kritikus eredmény valós spacingnél, full vs best-partial kimenet, fennmaradó blockerek.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md"
+      - "codex/reports/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md"
+      - "codex/reports/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.verify.log"

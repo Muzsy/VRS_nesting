@@ -1,0 +1,53 @@
+steps:
+  - name: "Feasibility forrásadatok felderítése"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld a meglévő bpp_area_lower_bound /
+      bpp_max_critical_per_sheet diagnosztikát a bpp_reduction.rs-ben, a shape_profile criticality/quantity
+      mezőit és a model.rs sheet/margin/spacing kontextust. Rögzítsd a reportban, mely jeleket
+      hasznosítod a hintekhez.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md"
+
+  - name: "SheetFeasibilityHints modul"
+    description: >
+      Hozd létre a sheet_feasibility.rs modult SheetFeasibilityHints / CriticalPartTypeSheetHint /
+      RepeatedFamilySheetHint / DangerPartHint / TargetSheetStrategyHint típusokkal. Számold ki: area
+      lower bound (margin-shrunk basis explicit), kritikus kapacitás-becslés státusszal (unknown/plausible/
+      unlikely/proven/rejected), target distribution ismételt típusra, danger parts. Regisztráld a mod.rs-ben.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_feasibility.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "Diagnosztikai export"
+    description: >
+      Kösd be a hints exportot az io.rs-en keresztül (additív/opcionális mezők). A becsléseket
+      confidence/basis címkével lásd el; semmi sem állíthat exact feasibility-t vagy final sheet-countot.
+      Nincs placement mutáció.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact és tesztek"
+    description: >
+      Generálj sheet_feasibility_hints.json artifactot reprezentatív valós inputra. Adj fókuszált
+      teszteket: hints épül, area lower bound determinisztikus, ismételt típus distribution hint, danger
+      parts large anchor, becslések hint/probability jelöléssel, artifact stabil/szerializálható.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_feasibility_hints.rs"
+      - "artifacts/benchmarks/sgh_q58a/sheet_feasibility_hints.json"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal: schema, artifact path, area lower bound eredmény valós benchmark inputon, top
+      kritikus kapacitás-hintek, target distribution.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md"
+      - "codex/reports/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md"
+      - "codex/reports/egyedi_solver/sgh_q58a_sheet_feasibility_hints.verify.log"

@@ -1,0 +1,57 @@
+steps:
+  - name: "Repo felderítés és orientációs forráspontok rögzítése"
+    description: >
+      Olvasd el AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md. Auditáld a meglévő, szétszórt
+      orientációs logikát: contour_features.rs sheet_edge_alignment_angles, feature_candidate_generator.rs
+      min_width_rotations, density.rs rotation jelöltek. Rögzítsd a reportban, hogy melyik fájlokhoz nyúlsz.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56a_orientation_catalog_alap.md"
+
+  - name: "OrientationCatalog modul létrehozása"
+    description: >
+      Hozd létre az orientation_catalog.rs modult OrientationCatalog / OrientationCandidate /
+      OrientationCandidateKind / OrientationExtremaSample (vagy ekvivalens) típusokkal. Az extrema
+      mintákat a spacing_collision_base_shape forgatott kontúrpontjaiból számold (nem part.width/height).
+      Continuous partnál feature-eredetű continuous jelöltek, diszkrétnél allowed rotations + metaadat.
+      Determinisztikus dedup. Regisztráld a modult a mod.rs-ben.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/orientation_catalog.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "Katalógus bekötése instance/profil szintre"
+    description: >
+      Kösd be az OrientationCatalog-ot SPInstance-be (Rc<OrientationCatalog>) és számold ki
+      part-típusonként egyszer a from_solver_input(...) építési úton, újrahasználva minden mennyiségre.
+      Adj diagnosztikai exportot az io.rs-en keresztül (additív/opcionális mezők). Placement viselkedés
+      nem változhat csendben.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Diagnosztikai artifact és tesztek"
+    description: >
+      Generálj JSON diagnosztikát egy valós LV8 kritikus partra
+      (artifacts/benchmarks/sgh_q56a/orientation_catalog_lv8_critical.json). Adj fókuszált unit
+      teszteket: nem üres katalógus, continuous jelöltek, kontúr-él visszavezetés, spacing-expanded
+      extrema, diszkrét policy tisztelete, determinisztikus dedup, Q55B sheet-edge proof megmarad.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_orientation_catalog.rs"
+      - "artifacts/benchmarks/sgh_q56a/orientation_catalog_lv8_critical.json"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot a Report Standard v2 szerint. A DoD->Evidence Matrix
+      tartalmazzon path+line bizonyítékot: katalógus konstrukciós pont, extrema forrás, candidate count,
+      fractional count, deprecation-jelöltek.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q56a_orientation_catalog_alap.md"
+      - "codex/reports/egyedi_solver/sgh_q56a_orientation_catalog_alap.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q56a_orientation_catalog_alap.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56a_orientation_catalog_alap.md"
+      - "codex/reports/egyedi_solver/sgh_q56a_orientation_catalog_alap.verify.log"
