@@ -654,6 +654,118 @@ def validate_prepack_solver_input_hole_free(engine_input: dict[str, Any]) -> Non
         )
 
 
+def _count_holed_parts(engine_input: dict[str, Any]) -> int:
+    parts = engine_input.get("parts")
+    if not isinstance(parts, list):
+        return 0
+    count = 0
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        holes = part.get("holes_points_mm")
+        if isinstance(holes, list) and len(holes) > 0:
+            count += 1
+    return count
+
+
+def compute_cavity_prepack_bridge_hints(
+    *,
+    base_engine_input: dict[str, Any],
+    solver_engine_input: dict[str, Any],
+    cavity_plan: dict[str, Any] | None,
+    requested: bool,
+    enabled: bool,
+) -> dict[str, Any]:
+    """SGH-Q56B2: formalize the worker→solver cavity-prepack contract as an explicit, diagnostic-backed
+    object. This does NOT re-implement cavity packing; it only inspects the already-built prepack output
+    and reports whether the solver input is hole-free (so the Rust/Sparrow solver never needs to reason
+    about internal holes as free nesting space).
+    """
+    base_parts = base_engine_input.get("parts") if isinstance(base_engine_input, dict) else None
+    solver_parts = solver_engine_input.get("parts") if isinstance(solver_engine_input, dict) else None
+    input_part_count = len(base_parts) if isinstance(base_parts, list) else 0
+    solver_part_count = len(solver_parts) if isinstance(solver_parts, list) else 0
+    hole_bearing_input = _count_holed_parts(base_engine_input)
+    solver_holes_remaining = _count_holed_parts(solver_engine_input)
+    hole_free_solver_part_count = solver_part_count - solver_holes_remaining
+
+    plan = cavity_plan if isinstance(cavity_plan, dict) else {}
+    version = plan.get("version")
+    plan_v2_present = version == _PLAN_VERSION_V2
+    virtual_parts = plan.get("virtual_parts") if isinstance(plan.get("virtual_parts"), dict) else {}
+    module_variants = plan.get("module_variants") if isinstance(plan.get("module_variants"), dict) else {}
+    placement_trees = plan.get("placement_trees") if isinstance(plan.get("placement_trees"), dict) else {}
+    normalizer_expansion_supported = bool(plan_v2_present and isinstance(plan.get("placement_trees"), dict))
+
+    warnings: list[str] = []
+    errors: list[str] = []
+    hole_free_validation_passed = False
+
+    if enabled:
+        try:
+            validate_prepack_solver_input_hole_free(solver_engine_input)
+            hole_free_validation_passed = True
+        except CavityPrepackGuardError as exc:
+            errors.append(str(exc))
+            hole_free_validation_passed = False
+    else:
+        # Disabled: never fake a hole-free guarantee. It is only true if the input genuinely has none.
+        hole_free_validation_passed = solver_holes_remaining == 0
+        if hole_bearing_input > 0:
+            warnings.append(
+                "cavity_prepack disabled while base input has hole-bearing parts: "
+                f"{hole_bearing_input} part(s) carry holes_points_mm"
+            )
+
+    if not enabled:
+        bridge_status = "disabled"
+    elif hole_free_validation_passed and plan_v2_present:
+        bridge_status = "enabled_passed"
+    elif errors or solver_holes_remaining > 0 or not plan_v2_present:
+        bridge_status = "failed"
+    else:
+        bridge_status = "unknown"
+
+    return {
+        "cavity_prepack_requested": bool(requested),
+        "cavity_prepack_enabled": bool(enabled),
+        "cavity_prepack_version": str(version) if version is not None else None,
+        "input_part_count_before_prepack": int(input_part_count),
+        "solver_part_count_after_prepack": int(solver_part_count),
+        "virtual_part_count": int(len(virtual_parts)),
+        "composite_part_count": int(len(module_variants)),
+        "module_variant_count": int(len(module_variants)),
+        "hole_bearing_input_part_count": int(hole_bearing_input),
+        "hole_free_solver_part_count": int(hole_free_solver_part_count),
+        "solver_top_level_holes_remaining": int(solver_holes_remaining),
+        "hole_free_validation_passed": bool(hole_free_validation_passed),
+        "cavity_plan_v2_present": bool(plan_v2_present),
+        # The cavity plan can only be fully *validated* against the solver OUTPUT (post-solve), so at the
+        # bridge boundary we report presence; validate_cavity_plan_v2 runs in the post-solve gate.
+        "cavity_plan_v2_validated": None,
+        "normalizer_expansion_supported": normalizer_expansion_supported,
+        "placement_tree_count": int(len(placement_trees)),
+        "bridge_status": bridge_status,
+        "bridge_warnings": warnings,
+        "bridge_errors": errors,
+    }
+
+
+def cavity_prepack_bridge_block(hints: dict[str, Any]) -> dict[str, Any]:
+    """Compact bridge block for the generated solver-input / run artifacts (audit-friendly)."""
+    return {
+        "cavity_prepack_bridge": {
+            "requested": bool(hints.get("cavity_prepack_requested", False)),
+            "enabled": bool(hints.get("cavity_prepack_enabled", False)),
+            "version": hints.get("cavity_prepack_version"),
+            "hole_free_validation_passed": bool(hints.get("hole_free_validation_passed", False)),
+            "solver_top_level_holes_remaining": int(hints.get("solver_top_level_holes_remaining", 0)),
+            "cavity_plan_v2_present": bool(hints.get("cavity_plan_v2_present", False)),
+            "status": hints.get("bridge_status", "unknown"),
+        }
+    }
+
+
 def build_cavity_prepacked_engine_input(
     *,
     snapshot_row: dict[str, Any],
@@ -1116,5 +1228,7 @@ __all__ = [
     "CavityPrepackGuardError",
     "build_cavity_prepacked_engine_input",
     "build_cavity_prepacked_engine_input_v2",
+    "cavity_prepack_bridge_block",
+    "compute_cavity_prepack_bridge_hints",
     "validate_prepack_solver_input_hole_free",
 ]

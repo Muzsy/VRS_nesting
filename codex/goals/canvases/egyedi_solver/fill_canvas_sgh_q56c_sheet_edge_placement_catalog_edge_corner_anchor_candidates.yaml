@@ -1,0 +1,59 @@
+steps:
+  - name: "Anchor candidate út és skeleton felderítés"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld feature_candidate_generator.rs
+      (sheet_edge_candidates, push_sheet_edge_anchors, finalize_seeds, bounded_sheet_edge_repair,
+      verify_one_part_sheet_edge_placement), sheet_skeleton.rs (Anchor, largest_edge_connected_free_area),
+      bpp_reduction.rs (try_admit_critical, sheet_freespace_score). Rögzítsd a center-húzó Anchor problémát.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md"
+
+  - name: "SheetEdgePlacementCatalog producer"
+    description: >
+      Hozd létre a SheetEdgePlacementCatalog producert (új modul vagy feature_candidate_generator.rs
+      bővítés). Generálj edge+corner+center candidate-eket mind a négy sheet-élre, forgatott
+      spacing-expanded kontúr-extrémából, margin-aware translációval, exact boundary validációval. Minden
+      candidate teljes metaadattal (source, edge index/angle, rotation, extrema, margin_error, score).
+      Q58A-tól nincs fordítási függés.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "Anchor role bekötés és scoring"
+    description: >
+      Kösd be a katalógust a production Anchor útba (try_admit_critical / feature-first admission):
+      SkeletonRole::Anchor a katalógus candidate-eket használja, free-space-megőrző score szerint
+      rangsorolva. Fallback density placementre csak az összes catalog candidate bukása után, látható
+      fallback source-szal. Adj diagnosztikai exportot.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact (JSON + SVG) és tesztek"
+    description: >
+      Generálj sheet_edge_anchor_candidates.json + .svg artifactot egy valós kritikus nagy partra
+      (sheet, margin vonalak, candidate label-ek, kiválasztott candidate, kontúr, rotation, free-space
+      score). Adj fókuszált teszteket: négy él candidate, corner variánsok, center nem egyedüli,
+      spacing-expanded extrema, free-space score rögzítve, Q55B proof megmarad.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_edge_anchor_catalog.rs"
+      - "artifacts/benchmarks/sgh_q56c/sheet_edge_anchor_candidates.json"
+      - "artifacts/benchmarks/sgh_q56c/sheet_edge_anchor_candidates.svg"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal: candidate count élenként és secondary-axis policy szerint, kiválasztott candidate,
+      free-space score before/after, artifact path-ok, center=fallback megerősítés.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md"
+      - "codex/reports/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md"
+      - "codex/reports/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.verify.log"

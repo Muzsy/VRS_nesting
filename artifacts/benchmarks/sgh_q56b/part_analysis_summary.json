@@ -1,0 +1,147 @@
+{
+  "critical_part_type_count": 1,
+  "parts": [
+    {
+      "cavity_prepack_bridge_status": "hole_free_observed",
+      "concavity_count": 45,
+      "critical_anchor_score": 0.7435,
+      "criticality_tier": "critical",
+      "dominant_edge_count": 2,
+      "family_key": "a33_pa13_v130_cx4_fl3_as14",
+      "filler_score": 0.0,
+      "fit_difficulty_components": {
+        "area_term": 0.0739,
+        "concavity_term": 0.0737,
+        "contour_complexity_term": 0.09,
+        "low_fill_term": 0.088,
+        "orientation_scarcity_term": 0.0114,
+        "repeated_critical_pressure_term": 0.024,
+        "sheet_span_term": 0.1849,
+        "slenderness_term": 0.0814,
+        "tiny_filler_relief": 0.0
+      },
+      "fit_difficulty_score": 0.6274,
+      "hole_free_solver_input": true,
+      "interlock_potential_score": 0.8071,
+      "orientation_candidate_count": 6,
+      "orientation_sensitivity_score": 0.7753,
+      "outer_contour_complexity": 520,
+      "part_id": "Lv8_11612_6db",
+      "priority_score": 0.6153,
+      "protrusion_count": 8,
+      "quantity": 6,
+      "shape_tags": [
+        "concave_like",
+        "large_anchor",
+        "critical_large",
+        "repeated_family",
+        "high_interlock_potential",
+        "hole_free_after_prepack",
+        "orientation_sensitive",
+        "complex_outer_contour",
+        "edge_alignable"
+      ],
+      "sheet_span_risk_score": 0.8407,
+      "symmetry_score": 0.0232
+    },
+    {
+      "cavity_prepack_bridge_status": "hole_free_observed",
+      "concavity_count": 0,
+      "critical_anchor_score": 0.116,
+      "criticality_tier": "structural",
+      "dominant_edge_count": 0,
+      "family_key": "a31_pa6_v1_cx10_fl10_as6",
+      "filler_score": 0.3,
+      "fit_difficulty_components": {
+        "area_term": 0.0096,
+        "concavity_term": 0.0,
+        "contour_complexity_term": 0.0056,
+        "low_fill_term": 0.0,
+        "orientation_scarcity_term": 0.016,
+        "repeated_critical_pressure_term": 0.0,
+        "sheet_span_term": 0.044,
+        "slenderness_term": 0.0167,
+        "tiny_filler_relief": 0.0
+      },
+      "fit_difficulty_score": 0.0919,
+      "hole_free_solver_input": true,
+      "interlock_potential_score": 0.15,
+      "orientation_candidate_count": 4,
+      "orientation_sensitivity_score": 0.2393,
+      "outer_contour_complexity": 4,
+      "part_id": "medium_structural",
+      "priority_score": 0.0912,
+      "protrusion_count": 4,
+      "quantity": 2,
+      "shape_tags": [
+        "exact_rectangle",
+        "rectangle_like",
+        "convex_like",
+        "medium_structural",
+        "hole_free_after_prepack"
+      ],
+      "sheet_span_risk_score": 0.2,
+      "symmetry_score": 0.8333
+    },
+    {
+      "cavity_prepack_bridge_status": "hole_free_observed",
+      "concavity_count": 0,
+      "critical_anchor_score": 0.0042,
+      "criticality_tier": "filler",
+      "dominant_edge_count": 0,
+      "family_key": "a16_pa6_v1_cx10_fl10_as4",
+      "filler_score": 1.0,
+      "fit_difficulty_components": {
+        "area_term": 0.0,
+        "concavity_term": 0.0,
+        "contour_complexity_term": 0.0056,
+        "low_fill_term": 0.0,
+        "orientation_scarcity_term": 0.0267,
+        "repeated_critical_pressure_term": 0.0,
+        "sheet_span_term": 0.0018,
+        "slenderness_term": 0.0,
+        "tiny_filler_relief": 0.2
+      },
+      "fit_difficulty_score": 0.0,
+      "hole_free_solver_input": true,
+      "interlock_potential_score": 0.15,
+      "orientation_candidate_count": 2,
+      "orientation_sensitivity_score": 0.0,
+      "outer_contour_complexity": 4,
+      "part_id": "tiny_filler",
+      "priority_score": -0.2471,
+      "protrusion_count": 4,
+      "quantity": 30,
+      "shape_tags": [
+        "exact_rectangle",
+        "rectangle_like",
+        "convex_like",
+        "tiny_filler",
+        "repeated_family",
+        "hole_free_after_prepack",
+        "near_symmetric"
+      ],
+      "sheet_span_risk_score": 0.0083,
+      "symmetry_score": 1.0
+    }
+  ],
+  "repeated_families": [
+    "a33_pa13_v130_cx4_fl3_as14",
+    "a16_pa6_v1_cx10_fl10_as4"
+  ],
+  "tiny_filler_families": [
+    "a16_pa6_v1_cx10_fl10_as4"
+  ],
+  "top_critical_parts_by_fit_difficulty": [
+    "Lv8_11612_6db"
+  ],
+  "top_critical_parts_by_priority": [
+    "Lv8_11612_6db"
+  ],
+  "top_interlock_candidates_by_shape_signal": [
+    "Lv8_11612_6db",
+    "medium_structural",
+    "tiny_filler"
+  ],
+  "unique_part_count": 3
+}

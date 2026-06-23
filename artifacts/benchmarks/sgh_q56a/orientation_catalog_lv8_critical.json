@@ -1,0 +1,138 @@
+{
+  "allowed_rotations_count": 24,
+  "candidate_count": 6,
+  "candidates": [
+    {
+      "angle_deg": 0.0,
+      "is_fractional": false,
+      "is_policy_allowed": true,
+      "kind": "sheet_horizontal_alignment",
+      "score": 0.97,
+      "source": "dominant_edge_to_horizontal_axis",
+      "source_edge_angle_deg": 0.0,
+      "source_edge_index": 257,
+      "target_axis_angle_deg": 0.0
+    },
+    {
+      "angle_deg": 90.0,
+      "is_fractional": false,
+      "is_policy_allowed": true,
+      "kind": "sheet_vertical_alignment",
+      "score": 0.95,
+      "source": "dominant_edge_to_vertical_axis",
+      "source_edge_angle_deg": 0.0,
+      "source_edge_index": 257,
+      "target_axis_angle_deg": 90.0
+    },
+    {
+      "angle_deg": 92.75,
+      "is_fractional": true,
+      "is_policy_allowed": true,
+      "kind": "min_width",
+      "score": 0.92,
+      "source": "min_perpendicular_width",
+      "source_edge_angle_deg": null,
+      "source_edge_index": null,
+      "target_axis_angle_deg": null
+    },
+    {
+      "angle_deg": 2.75,
+      "is_fractional": true,
+      "is_policy_allowed": true,
+      "kind": "min_height",
+      "score": 0.9,
+      "source": "min_perpendicular_width",
+      "source_edge_angle_deg": null,
+      "source_edge_index": null,
+      "target_axis_angle_deg": null
+    },
+    {
+      "angle_deg": 180.0,
+      "is_fractional": false,
+      "is_policy_allowed": true,
+      "kind": "flip_180",
+      "score": 0.5,
+      "source": "flip_180",
+      "source_edge_angle_deg": null,
+      "source_edge_index": null,
+      "target_axis_angle_deg": null
+    },
+    {
+      "angle_deg": 270.0,
+      "is_fractional": false,
+      "is_policy_allowed": true,
+      "kind": "flip_180",
+      "score": 0.5,
+      "source": "flip_180",
+      "source_edge_angle_deg": null,
+      "source_edge_index": null,
+      "target_axis_angle_deg": null
+    }
+  ],
+  "continuous_rotation": true,
+  "dominant_edge_count": 2,
+  "extrema_from_spacing_expanded": true,
+  "extrema_samples": [
+    {
+      "angle_deg": 0.0,
+      "height": 740.8,
+      "max_x": 2525.9936,
+      "max_y": 736.8,
+      "min_x": -4.0,
+      "min_y": -4.0,
+      "width": 2529.9936
+    },
+    {
+      "angle_deg": 90.0,
+      "height": 2529.9936,
+      "max_x": 4.0,
+      "max_y": 2525.9936,
+      "min_x": -736.8,
+      "min_y": -4.0,
+      "width": 740.8
+    },
+    {
+      "angle_deg": 92.75,
+      "height": 2552.0478,
+      "max_x": 4.1873,
+      "max_y": 2512.7022,
+      "min_x": -736.3649,
+      "min_y": -39.3457,
+      "width": 740.5522
+    },
+    {
+      "angle_deg": 2.75,
+      "height": 740.5522,
+      "max_x": 2512.7022,
+      "max_y": 736.3649,
+      "min_x": -39.3457,
+      "min_y": -4.1873,
+      "width": 2552.0478
+    },
+    {
+      "angle_deg": 180.0,
+      "height": 740.8,
+      "max_x": 4.0,
+      "max_y": 4.0,
+      "min_x": -2525.9936,
+      "min_y": -736.8,
+      "width": 2529.9936
+    },
+    {
+      "angle_deg": 270.0,
+      "height": 2529.9936,
+      "max_x": 736.8,
+      "max_y": 4.0,
+      "min_x": -4.0,
+      "min_y": -2525.9936,
+      "width": 740.8
+    }
+  ],
+  "fractional_candidate_count": 2,
+  "horizontal_alignment_count": 1,
+  "min_height_candidate_count": 1,
+  "min_width_candidate_count": 1,
+  "part_id": "Lv8_11612_6db",
+  "spacing_extrema_sample_count": 6,
+  "vertical_alignment_count": 1
+}

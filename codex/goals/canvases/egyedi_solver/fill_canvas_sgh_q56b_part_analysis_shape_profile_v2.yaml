@@ -1,0 +1,56 @@
+steps:
+  - name: "Repo felderítés és meglévő profilréteg auditja"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld shape_profile.rs (PartShapeProfile)
+      és contour_features.rs (ContourFeatureSet/Summary) jelenlegi mezőit. Rögzítsd a reportban, mit
+      hasznosítasz újra és milyen új jeleket adsz hozzá konfliktus nélkül.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md"
+
+  - name: "PartAnalysis modul létrehozása"
+    description: >
+      Hozd létre a part_analysis.rs modult PartAnalysis (vagy PartShapeProfileV2), ShapeTag,
+      FitDifficultySignals, PartAnalysisDiagnostics típusokkal. Rc<PartShapeProfile> és
+      ContourFeatureSummary újrahasználata. Determinisztikus shape tag-ek és fit_difficulty_score
+      geometriából + mennyiségből (nem part-ID). Olcsó family/near-duplicate kulcs. Regisztráld a mod.rs-ben.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/part_analysis.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/mod.rs"
+
+  - name: "Bekötés instance szintre és diagnosztika"
+    description: >
+      Kösd be a PartAnalysis-t SPInstance-be (Rc<PartAnalysis>) vagy explicit part-analysis map-be,
+      part-típusonként egyszer számolva a from_solver_input úton. Rögzítsd a hole_free_solver_input
+      flaget (worker prepack tisztelete). Adj diagnosztikai exportot az io.rs-en. Final placement
+      viselkedés nem változhat agresszíven.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/shape_profile.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact és tesztek"
+    description: >
+      Generálj part_analysis_summary.json-t valós LV8 munkacsomagra (rendezett top-listákkal). Adj
+      fókuszált unit teszteket: minden partnak van analízise, ShapeProfile értékek megmaradnak, LV8
+      large/critical/edge-alignable, tiny filler nem anchor, fit difficulty determinisztikus, nincs
+      bbox shortcut tag.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_part_analysis.rs"
+      - "artifacts/benchmarks/sgh_q56b/part_analysis_summary.json"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot a Report Standard v2 szerint, DoD->Evidence Matrix
+      path+line bizonyítékkal: data model, ShapeProfile újrahasználat, új jelek/küszöbök, artifact,
+      top kritikus partok, soft-only megerősítés.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md"
+      - "codex/reports/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md"
+      - "codex/reports/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.verify.log"

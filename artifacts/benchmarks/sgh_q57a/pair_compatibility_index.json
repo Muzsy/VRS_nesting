@@ -1,0 +1,104 @@
+{
+  "candidate_count_by_source": {
+    "dominant_edge_parallel": 0,
+    "orientation_catalog_pair": 1,
+    "same_family_flip": 0,
+    "same_part_flip": 3
+  },
+  "candidate_count_total": 4,
+  "candidate_count_valid": 1,
+  "critical_part_type_count": 1,
+  "lv8_critical_same_part_pair_candidates": [
+    {
+      "cde_clear": true,
+      "compactness_gain": 0.0,
+      "part_id": "Lv8_11612_6db",
+      "rotation_a_deg": 0.0,
+      "rotation_b_deg": 0.0,
+      "score": 0.3
+    },
+    {
+      "cde_clear": false,
+      "compactness_gain": 0.0,
+      "part_id": "Lv8_11612_6db",
+      "rotation_a_deg": 0.0,
+      "rotation_b_deg": 180.0,
+      "score": 0.0
+    },
+    {
+      "cde_clear": false,
+      "compactness_gain": 0.0,
+      "part_id": "Lv8_11612_6db",
+      "rotation_a_deg": 0.0,
+      "rotation_b_deg": 180.0,
+      "score": 0.0
+    }
+  ],
+  "top_pairs": [
+    {
+      "bbox_area_reduction": 0.0,
+      "cde_clear": true,
+      "compactness_gain": 0.0,
+      "interlock_depth_score": 0.0,
+      "part_a_id": "Lv8_11612_6db",
+      "part_b_id": "Lv8_11612_6db",
+      "rejection_reason": null,
+      "relative_dx": 2529.9936,
+      "relative_dy": 0.0,
+      "rotation_a_deg": 0.0,
+      "rotation_b_deg": 0.0,
+      "score": 0.3,
+      "source": "same_part_flip",
+      "spacing_clear": true
+    },
+    {
+      "bbox_area_reduction": 0.0,
+      "cde_clear": false,
+      "compactness_gain": 0.0,
+      "interlock_depth_score": 0.0,
+      "part_a_id": "Lv8_11612_6db",
+      "part_b_id": "Lv8_11612_6db",
+      "rejection_reason": "contour_overlap_at_relative_transform",
+      "relative_dx": 0.0,
+      "relative_dy": 481.52,
+      "rotation_a_deg": 0.0,
+      "rotation_b_deg": 180.0,
+      "score": 0.0,
+      "source": "same_part_flip",
+      "spacing_clear": false
+    },
+    {
+      "bbox_area_reduction": 0.0,
+      "cde_clear": false,
+      "compactness_gain": 0.0,
+      "interlock_depth_score": 0.0,
+      "part_a_id": "Lv8_11612_6db",
+      "part_b_id": "Lv8_11612_6db",
+      "rejection_reason": "contour_overlap_at_relative_transform",
+      "relative_dx": 0.0,
+      "relative_dy": 740.8,
+      "rotation_a_deg": 0.0,
+      "rotation_b_deg": 180.0,
+      "score": 0.0,
+      "source": "same_part_flip",
+      "spacing_clear": false
+    },
+    {
+      "bbox_area_reduction": 0.0,
+      "cde_clear": false,
+      "compactness_gain": 0.0,
+      "interlock_depth_score": 0.0,
+      "part_a_id": "Lv8_11612_6db",
+      "part_b_id": "Lv8_11612_6db",
+      "rejection_reason": "contour_overlap_at_relative_transform",
+      "relative_dx": 2529.9936,
+      "relative_dy": 0.0,
+      "rotation_a_deg": 0.0,
+      "rotation_b_deg": 92.75,
+      "score": 0.0,
+      "source": "orientation_catalog_pair",
+      "spacing_clear": false
+    }
+  ],
+  "unique_part_count": 2
+}

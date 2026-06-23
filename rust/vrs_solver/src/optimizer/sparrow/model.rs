@@ -29,6 +29,14 @@ pub struct SPInstance {
     /// BPP redistribution, placement budget, diagnostics). Never a collision or rotation input.
     /// Shared across all instances of the same part via `Rc`.
     pub shape_profile: Rc<PartShapeProfile>,
+    /// SGH-Q56A: per-part-type orientation catalog (precomputed rotation candidates + spacing-expanded
+    /// extrema samples). Decision-support metadata only — never a collision or rotation-policy input.
+    /// Computed once per unique part type and shared across all instances via `Rc`.
+    pub orientation_catalog: Rc<OrientationCatalog>,
+    /// SGH-Q56B: per-part-type analysis layer (shape tags, fit-difficulty, family key, interlock /
+    /// anchor / filler scores) derived from `shape_profile` + `orientation_catalog`. Soft
+    /// decision-support metadata only — never a collision or placement input. Shared via `Rc`.
+    pub part_analysis: Rc<PartAnalysis>,
 }
 
 impl SPInstance {
@@ -116,6 +124,12 @@ impl SparrowProblem {
         let mut base_shape_cache: HashMap<String, Rc<CdeBaseShape>> = HashMap::new();
         // SGH-Q47: per-unique-part shape-profile cache (computed once per part_id).
         let mut shape_profile_cache: HashMap<String, Rc<PartShapeProfile>> = HashMap::new();
+        // SGH-Q56A: per-unique-part orientation-catalog cache (computed once per part_id, reused
+        // across all instances of that part type — never recomputed per placement attempt).
+        let mut orientation_catalog_cache: HashMap<String, Rc<OrientationCatalog>> = HashMap::new();
+        // SGH-Q56B: per-unique-part analysis cache (derived once per part_id from the shared profile
+        // + orientation catalog).
+        let mut part_analysis_cache: HashMap<String, Rc<PartAnalysis>> = HashMap::new();
         let (profile_sheet_area, profile_max_span) =
             crate::optimizer::sparrow::shape_profile::profile_sheet_scale(sheets);
         let mut cache_hits: usize = 0;
@@ -277,6 +291,31 @@ impl SparrowProblem {
                     e.insert(Rc::new(prof)).clone()
                 }
             };
+            // SGH-Q56A: resolve the per-part orientation catalog (computed once per part_id). Uses the
+            // spacing-expanded collision contour for true extrema and the (original-contour) feature
+            // set for dominant-edge alignment angles — never part.width/height as final extrema.
+            let orientation_catalog = match orientation_catalog_cache.entry(inst.part_id.clone()) {
+                std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let cat = OrientationCatalog::compute(
+                        &inst.part_id,
+                        spacing_collision_base_shape.as_ref(),
+                        &shape_profile.contour_features,
+                        continuous_rotation,
+                        &inst.allowed_rotations_deg,
+                    );
+                    e.insert(Rc::new(cat)).clone()
+                }
+            };
+            // SGH-Q56B: derive the per-part analysis (once per part_id) from the shared profile +
+            // orientation catalog. Soft decision-support metadata; never a placement/collision input.
+            let part_analysis = match part_analysis_cache.entry(inst.part_id.clone()) {
+                std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let pa = PartAnalysis::compute(part, &shape_profile, &orientation_catalog);
+                    e.insert(Rc::new(pa)).clone()
+                }
+            };
             let idx = instances.len();
             instances.push(SPInstance {
                 idx,
@@ -288,6 +327,8 @@ impl SparrowProblem {
                 base_shape,
                 spacing_collision_base_shape,
                 shape_profile,
+                orientation_catalog,
+                part_analysis,
             });
         }
         let base_shape_cache_build_ms = cache_build_start.elapsed().as_secs_f64() * 1000.0;

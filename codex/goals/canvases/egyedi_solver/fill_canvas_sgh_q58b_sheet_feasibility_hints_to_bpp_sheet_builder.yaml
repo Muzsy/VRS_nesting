@@ -1,0 +1,57 @@
+steps:
+  - name: "Sheet-builder és best-partial felderítés"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld bpp_reduction.rs
+      (build_critical_aware_seed, try_admit_critical, critical_frontier, best partial handling),
+      fixed_sheet.rs (build_criticality_queues), sheet_skeleton.rs role assignment és a Q58A
+      sheet_feasibility.rs hinteket. Rögzítsd a jelenlegi best-partial viselkedést és a 2/3→1/3 kockázatot.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md"
+
+  - name: "Hint-aware queue ordering és target kvóta"
+    description: >
+      Vezesd be a VRS_SHEET_FEASIBILITY_HINTS gate-et (default off). Finomítsd a critical queue
+      ordert a danger_parts + kritikus típus-hintek alapján (priority_score megőrizve, kombinálva).
+      Számolj sheet-enkénti target kritikus kvótát és fallback minimum partial countot. Tedd a frontiert
+      hint-aware-ré, de bounded.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/fixed_sheet.rs"
+
+  - name: "Best partial preservation és diagnosztika"
+    description: >
+      Implementáld a kötelező best-partial preservationt: kvóta-bukáskor a legjobb valid partial
+      megmarad (critical_count, hint satisfaction, placed area, free-space, future feasibility szerint);
+      soha nem ad vissza rosszabb 1/3-at valid 2/3 után. Adj diagnosztikát (bpp_sheet_target_quota,
+      bpp_sheet_best_partial_*, bpp_hint_*) az io.rs-en. A hint advisory; minden placement exact validált.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact és tesztek"
+    description: >
+      Generálj sheet_builder_hints_integration.json artifactot fókuszált valós LV8 kritikus
+      szcenárióra (sheet_attempts target_quota/critical_placed/best_partial_count/quota_met/abandoned_reason).
+      Adj teszteket: hints elérhető build_critical_aware_seed-nek, queue order csak gate-tel változik,
+      target kvóta diagnosztikában, valid best partial megmarad, gate off byte-azonos.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_feasibility_bpp_integration.rs"
+      - "artifacts/benchmarks/sgh_q58b/sheet_builder_hints_integration.json"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal: gate/env, queue ordering hatás, target kvóta számítás, best partial összehasonlító
+      formula, artifact path, fókuszált futás eredmény.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md"
+      - "codex/reports/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md"
+      - "codex/reports/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.verify.log"

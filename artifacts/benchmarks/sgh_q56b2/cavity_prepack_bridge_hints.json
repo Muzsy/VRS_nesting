@@ -1,0 +1,34 @@
+{
+  "block": {
+    "cavity_prepack_bridge": {
+      "cavity_plan_v2_present": true,
+      "enabled": true,
+      "hole_free_validation_passed": true,
+      "requested": true,
+      "solver_top_level_holes_remaining": 0,
+      "status": "enabled_passed",
+      "version": "cavity_plan_v2"
+    }
+  },
+  "hints": {
+    "bridge_errors": [],
+    "bridge_status": "enabled_passed",
+    "bridge_warnings": [],
+    "cavity_plan_v2_present": true,
+    "cavity_plan_v2_validated": null,
+    "cavity_prepack_enabled": true,
+    "cavity_prepack_requested": true,
+    "cavity_prepack_version": "cavity_plan_v2",
+    "composite_part_count": 1,
+    "hole_bearing_input_part_count": 1,
+    "hole_free_solver_part_count": 1,
+    "hole_free_validation_passed": true,
+    "input_part_count_before_prepack": 2,
+    "module_variant_count": 1,
+    "normalizer_expansion_supported": true,
+    "placement_tree_count": 1,
+    "solver_part_count_after_prepack": 1,
+    "solver_top_level_holes_remaining": 0,
+    "virtual_part_count": 1
+  }
+}

@@ -1,0 +1,56 @@
+steps:
+  - name: "Pair index felderítés és stub audit"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld a quantify/pair_matrix.rs stubot és
+      a quantify/mod.rs-t, valamint a reuse-forrásokat (shape_profile, contour_features, model,
+      orientation_catalog/part_analysis ha léteznek). Rögzítsd a reportban, hogy a stubot lecseréled,
+      kiterjeszted vagy superseded jelöléssel kezeled.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md"
+
+  - name: "PairCompatibilityIndex modell és stage-1 filter"
+    description: >
+      Vezesd be a PairCompatibilityIndex + PairCompatibilityCandidate típusokat a pair_matrix.rs helyén
+      vagy új modulban; a stubot egyértelműen cseréld/kiterjeszd. Implementáld a stage-1 olcsó filtert
+      (criticality_tier, is_large_anchor, is_high_interlock_potential, family key, area/aspect, dominant
+      edge angle). Env-gate: VRS_PAIR_INDEX default off (no-regression). Regisztráld a quantify/mod.rs-ben.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/pair_matrix.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/mod.rs"
+
+  - name: "Stage-2 bounded validáció és same-part pár"
+    description: >
+      Implementáld a stage-2 bounded geometriai validációt top-K párra: OrientationCatalog rotációk,
+      feature-eredetű relatív placement, spacing-expanded CDE clearance, compactness scoring. Adj
+      explicit same-part flip candidate-et ismételt kritikus típusra (nincs part-ID hardcode). Kösd be a
+      diagnosztikai exportot az io.rs-en.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/pair_matrix.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Artifact és tesztek"
+    description: >
+      Generálj pair_compatibility_index.json artifactot (counts, candidate_count_by_source, top_pairs,
+      lv8_critical_same_part_pair_candidates ha van). Adj fókuszált teszteket: determinisztikus build,
+      critical-only filter, same-part pair, rotation source metaadat, valid candidate CDE/spacing-checked,
+      stub superseded.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_pair_compatibility_index.rs"
+      - "artifacts/benchmarks/sgh_q57a/pair_compatibility_index.json"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal: új modell, candidate generation filterek, indexelt kritikus típusok száma, valid
+      pair candidate-ek száma, top same-part candidate.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md"
+      - "codex/reports/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md"
+      - "codex/reports/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.verify.log"

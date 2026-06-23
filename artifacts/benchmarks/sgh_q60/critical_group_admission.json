@@ -1,0 +1,189 @@
+{
+  "honest_summary": {
+    "note": "3 large LV8 parts do not fit side-by-side on a 1500mm-wide sheet; the best valid partial is preserved. Achieving 3-per-sheet requires deeper interlock than bounded side-by-side / flip refinement provides — reported honestly, no false pass.",
+    "real_spacing_best_partial": 2,
+    "real_spacing_full_3": false,
+    "spacing_0_best_partial": 2,
+    "spacing_0_full_3": false
+  },
+  "real_spacing_8": {
+    "arrangements": [
+      {
+        "any_part_moved_in_refinement": true,
+        "arrangement": "side_by_side_min_width",
+        "attempted_count": 3,
+        "boundary_violations": 1,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 92.75,
+            "world_bbox": [
+              5.0,
+              5.0,
+              745.5522,
+              2557.0478
+            ],
+            "x": 741.3649,
+            "y": 44.3457
+          },
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 92.75,
+            "world_bbox": [
+              745.5522,
+              5.0,
+              1486.1044,
+              2557.0478
+            ],
+            "x": 1481.9171,
+            "y": 44.3457
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      },
+      {
+        "any_part_moved_in_refinement": false,
+        "arrangement": "flipped_interlock",
+        "attempted_count": 3,
+        "boundary_violations": 1,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 92.75,
+            "world_bbox": [
+              5.0,
+              5.0,
+              745.5522,
+              2557.0478
+            ],
+            "x": 741.3649,
+            "y": 44.3457
+          },
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 272.75,
+            "world_bbox": [
+              745.5522,
+              5.0,
+              1486.1044,
+              2557.0478
+            ],
+            "x": 749.7395,
+            "y": 2517.7022
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      }
+    ],
+    "best_partial_count": 2,
+    "best_partial_source": "side_by_side_min_width",
+    "full_success": false,
+    "part_id": "Lv8_11612_6db",
+    "sheet": [
+      0.0,
+      0.0,
+      1500.0,
+      3000.0
+    ],
+    "simultaneous_group_attempts": 2,
+    "spacing_mm": 8.0,
+    "target_count": 3,
+    "time_ms": 10555.9559
+  },
+  "spacing_0": {
+    "arrangements": [
+      {
+        "any_part_moved_in_refinement": true,
+        "arrangement": "side_by_side_min_width",
+        "attempted_count": 3,
+        "boundary_violations": 1,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 92.75,
+            "world_bbox": [
+              5.0,
+              5.0,
+              737.2142,
+              2548.6732
+            ],
+            "x": 737.2142,
+            "y": 40.1584
+          },
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 92.75,
+            "world_bbox": [
+              737.2142,
+              5.0,
+              1469.4284,
+              2548.6732
+            ],
+            "x": 1469.4284,
+            "y": 40.1584
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      },
+      {
+        "any_part_moved_in_refinement": false,
+        "arrangement": "flipped_interlock",
+        "attempted_count": 3,
+        "boundary_violations": 1,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 92.75,
+            "world_bbox": [
+              5.0,
+              5.0,
+              737.2142,
+              2548.6732
+            ],
+            "x": 737.2142,
+            "y": 40.1584
+          },
+          {
+            "part_id": "Lv8_11612_6db",
+            "rotation_deg": 272.75,
+            "world_bbox": [
+              737.2142,
+              5.0,
+              1469.4284,
+              2548.6732
+            ],
+            "x": 737.2142,
+            "y": 2513.5149
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      }
+    ],
+    "best_partial_count": 2,
+    "best_partial_source": "side_by_side_min_width",
+    "full_success": false,
+    "part_id": "Lv8_11612_6db",
+    "sheet": [
+      0.0,
+      0.0,
+      1500.0,
+      3000.0
+    ],
+    "simultaneous_group_attempts": 2,
+    "spacing_mm": 0.0,
+    "target_count": 3,
+    "time_ms": 5129.3131
+  }
+}

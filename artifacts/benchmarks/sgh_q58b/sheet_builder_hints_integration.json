@@ -1,0 +1,42 @@
+{
+  "best_partial_downgrades_rejected": 1,
+  "critical_distribution_hint": [
+    {
+      "distribution": [
+        2,
+        2,
+        2
+      ],
+      "part_id": "Lv8_11612_6db"
+    }
+  ],
+  "hint_aware_order": [
+    "Lv8_11612_6db"
+  ],
+  "sheet_attempts": [
+    {
+      "abandoned_reason": "deeper_attempt_only_yielded_1_of_3",
+      "attempts": [
+        {
+          "attempt": "anchor+interlock",
+          "became_incumbent": true,
+          "best_partial_count": 2,
+          "critical_placed": 2
+        },
+        {
+          "attempt": "anchor_only",
+          "became_incumbent": false,
+          "best_partial_count": 2,
+          "critical_placed": 1
+        }
+      ],
+      "best_partial_count": 2,
+      "best_partial_source": "anchor+interlock",
+      "critical_candidates_attempted": 2,
+      "critical_placed": 2,
+      "quota_met": true,
+      "sheet_index": 0,
+      "target_quota": 2
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "area_lower_bound": 1,
+  "critical_hints": [
+    {
+      "basis": [
+        "area_cap=2",
+        "span_cap=4",
+        "min_bbox_area=1874219",
+        "fit_difficulty=0.627"
+      ],
+      "confidence": 0.549,
+      "criticality_tier": "critical",
+      "estimated_max_per_sheet": 2,
+      "part_id": "Lv8_11612_6db",
+      "quantity": 6,
+      "status": "unknown",
+      "target_distribution": [
+        2,
+        2,
+        2
+      ],
+      "target_per_sheet": 2
+    }
+  ],
+  "critical_part_type_count": 1,
+  "danger_part_count": 1,
+  "danger_parts": [
+    {
+      "fit_difficulty_score": 0.6274,
+      "orientation_candidate_count": 6,
+      "part_id": "Lv8_11612_6db",
+      "reasons": [
+        "large_sheet_span",
+        "high_fit_difficulty",
+        "large_repeated_quantity"
+      ],
+      "sheet_span_risk_score": 0.8407
+    }
+  ],
+  "margin": 5.0,
+  "repeated_family_count": 2,
+  "repeated_family_hints": [
+    {
+      "family_key": "a18_pa6_v1_cx10_fl10_as4",
+      "member_part_ids": [
+        "filler"
+      ],
+      "suggests_grid_or_band": true,
+      "total_quantity": 60
+    },
+    {
+      "family_key": "a33_pa13_v130_cx4_fl3_as14",
+      "member_part_ids": [
+        "Lv8_11612_6db"
+      ],
+      "suggests_grid_or_band": true,
+      "total_quantity": 6
+    }
+  ],
+  "sheet_height": 3000.0,
+  "sheet_width": 1500.0,
+  "spacing": 8.0,
+  "target_sheet_strategy": {
+    "area_lower_bound": 1,
+    "strategy": "single_sheet_plausible"
+  },
+  "total_area_ratio": 0.8262,
+  "total_part_area": 3680807.694,
+  "usable_sheet_area": 4455100.0,
+  "usable_sheet_area_basis": "margin_shrunk"
+}

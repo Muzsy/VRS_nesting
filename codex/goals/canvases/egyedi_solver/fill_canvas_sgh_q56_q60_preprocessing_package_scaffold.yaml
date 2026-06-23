@@ -1,0 +1,106 @@
+steps:
+  - name: "Repo szabályok és forrástervek felderítése"
+    description: >
+      Olvasd el AGENTS.md, docs/codex/overview.md, docs/codex/yaml_schema.md,
+      docs/codex/report_standard.md, docs/qa/testing_guidelines.md, codex/prompts/task_runner_prompt_template.md.
+      Olvasd be a tmp/plans/q56_q60_preprocessing_tasks/ forrásterveket és a repo-mintákat (sgh_q55f,
+      sgh_q53a, sgh_q15, jagua_optimizer_t00). Auditáld a valós kódhorgonyokat (sparrow Rust modulok,
+      worker python, scriptek). A forrásterveket NE módosítsd.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56_q60_preprocessing_package_scaffold.md"
+
+  - name: "Q56A–Q56C package-ek létrehozása"
+    description: >
+      Hozd létre a Q56A OrientationCatalog, Q56B PartAnalysis/ShapeProfileV2, Q56B2
+      CavityPrepackBridgeHints és Q56C SheetEdgePlacementCatalog csomagokat (canvas + YAML + runner +
+      checklist + report skeleton). A canvasok valós repo anchorokat és Valós repo anchorok blokkot
+      tartalmaznak; a YAML-ek steps sémát követnek záró verify lépéssel; a reportok
+      STATUS: PACKAGE_READY_IMPLEMENTATION_NOT_RUN alappal. Q56B2 rögzíti, hogy a cavity prepack v2 már
+      meglévő worker/pre-solver réteg.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q56a_orientation_catalog_alap.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q56a_orientation_catalog_alap.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q56a_orientation_catalog_alap/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q56a_orientation_catalog_alap.md"
+      - "codex/reports/egyedi_solver/sgh_q56a_orientation_catalog_alap.md"
+      - "canvases/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q56b_part_analysis_shape_profile_v2.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md"
+      - "codex/reports/egyedi_solver/sgh_q56b_part_analysis_shape_profile_v2.md"
+      - "canvases/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q56b2_cavity_prepack_bridge_hints.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md"
+      - "codex/reports/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md"
+      - "canvases/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md"
+      - "codex/reports/egyedi_solver/sgh_q56c_sheet_edge_placement_catalog_edge_corner_anchor_candidates.md"
+
+  - name: "Q57A–Q58B package-ek létrehozása"
+    description: >
+      Hozd létre a Q57A PairCompatibilityIndex, Q57B Pair->Interlock, Q58A SheetFeasibilityHints és Q58B
+      hints->BPP/sheet-builder csomagokat (canvas + YAML + runner + checklist + report skeleton). A YAML
+      outputs listák minden fájlt tartalmaznak, amit az adott implementációs task később módosíthat
+      (Rust modulok, tesztek, artifactok). A reportok PACKAGE_READY alappal, AUTO_VERIFY placeholderrel.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q57a_pair_compatibility_index_critical_only.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md"
+      - "codex/reports/egyedi_solver/sgh_q57a_pair_compatibility_index_critical_only.md"
+      - "canvases/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q57b_pair_candidates_to_interlock_role.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md"
+      - "codex/reports/egyedi_solver/sgh_q57b_pair_candidates_to_interlock_role.md"
+      - "canvases/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q58a_sheet_feasibility_hints.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q58a_sheet_feasibility_hints/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md"
+      - "codex/reports/egyedi_solver/sgh_q58a_sheet_feasibility_hints.md"
+      - "canvases/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md"
+      - "codex/reports/egyedi_solver/sgh_q58b_sheet_feasibility_hints_to_bpp_sheet_builder.md"
+
+  - name: "Q59–Q60 package-ek + index/master runner létrehozása"
+    description: >
+      Hozd létre a Q59 BandInsert true-extreme slot-edge és Q60 critical triple/simultaneous admission
+      csomagokat, valamint az összefoglaló task-indexet és master runnert (végrehajtási sorrend + full
+      dependency graph: Q56A->...->Q60). A reportok PACKAGE_READY alappal; nincs előre írt PASS.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q59_band_insert_true_extreme_slot_edge_placement.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md"
+      - "codex/reports/egyedi_solver/sgh_q59_band_insert_true_extreme_slot_edge_placement.md"
+      - "canvases/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q60_critical_triple_simultaneous_admission.yaml"
+      - "codex/prompts/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission/run.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md"
+      - "codex/reports/egyedi_solver/sgh_q60_critical_triple_simultaneous_admission.md"
+      - "canvases/egyedi_solver/sgh_q56_q60_preprocessing_task_index.md"
+      - "codex/prompts/egyedi_solver/sgh_q56_q60_preprocessing_master_runner.md"
+
+  - name: "Sanity ellenőrzés és self-package lezárása"
+    description: >
+      Futtasd a Python sanity ellenőrzést (minden slug 5 fájlja létezik; minden YAML steps sémájú,
+      az utolsó step verify.sh-t hív). Töltsd ki a self-package checklistet és reportot Report Standard
+      v2 szerint, DoD->Evidence path+line bizonyítékkal. Nincs előre írt PASS; a státusz a sanity +
+      verify eredménye alapján alakul.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q56_q60_preprocessing_package_scaffold.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q56_q60_preprocessing_package_scaffold.md"
+      - "codex/reports/egyedi_solver/sgh_q56_q60_preprocessing_package_scaffold.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q56_q60_preprocessing_package_scaffold.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56_q60_preprocessing_package_scaffold.md"
+      - "codex/reports/egyedi_solver/sgh_q56_q60_preprocessing_package_scaffold.verify.log"

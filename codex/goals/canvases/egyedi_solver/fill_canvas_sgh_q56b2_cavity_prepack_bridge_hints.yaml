@@ -1,0 +1,57 @@
+steps:
+  - name: "Cavity prepack v2 pre-audit"
+    description: >
+      Olvasd el a repo szabályfájlokat és a forrástervet. Auditáld worker/cavity_prepack.py
+      (build_cavity_prepacked_engine_input_v2, validate_prepack_solver_input_hole_free),
+      worker/cavity_validation.py (validate_cavity_plan_v2), worker/engine_adapter_input.py,
+      worker/result_normalizer.py, worker/main.py. Rögzítsd a reportban: a cavity prepack v2 már
+      meglévő pre-solver réteg, a fősolver hole-free inputot kap, a task bridge szerződés és nem cavity újraírás.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md"
+
+  - name: "CavityPrepackBridgeHints modell és diagnosztika"
+    description: >
+      Vezesd be a CavityPrepackBridgeHints diagnosztikai modellt a worker oldalon. Számold ki a
+      prepack előtti/utáni part-számokat, hole-bearing vs hole-free arányt, top-level maradék furatokat,
+      hole_free_validation_passed, cavity_plan_v2_present/validated, bridge_status mezőket. Csak akkor add
+      tovább a solver inputot, ha a szerződés teljesül; letiltott esetben explicit diagnosztika.
+    outputs:
+      - "worker/cavity_prepack.py"
+      - "worker/main.py"
+
+  - name: "Bridge blokk a solver run artifactba és normalizer kompatibilitás"
+    description: >
+      Add hozzá a tömör cavity_prepack_bridge blokkot a generált solver input / run artifacthoz, és
+      bizonyítsd, hogy a result_normalizer továbbra is látja a cavity plan metaadatot az expanzióhoz.
+      Ne legyen silent hole passthrough a fősolver felé.
+    outputs:
+      - "worker/result_normalizer.py"
+      - "worker/engine_adapter_input.py"
+      - "artifacts/benchmarks/sgh_q56b2/cavity_prepack_bridge_hints.json"
+
+  - name: "Worker contract tesztek"
+    description: >
+      Adj/bővíts teszteket tests/worker/test_cavity_prepack_bridge_hints.py-ban: prepack-engedélyezett
+      furatos input hole-free solver inputot ad; validate_prepack_solver_input_hole_free hibázik ha furat
+      marad; cavity_plan_v2 jelen van és validál; normalizer látja a metaadatot; Rust-oldali diagnosztika
+      nem állít prepacket ha nem történt. Meglévő cavity teszteket bővítsd, ne duplikáld a fixture-öket.
+    outputs:
+      - "tests/worker/test_cavity_prepack_bridge_hints.py"
+      - "worker/cavity_validation.py"
+
+  - name: "Checklist és report kitöltése"
+    description: >
+      Frissítsd a checklistet és a reportot Report Standard v2 szerint, DoD->Evidence path+line
+      bizonyítékkal. A report explicit mondja ki: vrs_solver top-level input hole-free a sikeres cavity
+      prepack v2 után; nem készült Rust cavity prepack reimplementáció.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md"
+      - "codex/reports/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      Futtasd a standard ellenőrzést és frissítsd a reportot.
+      Parancs: ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.md"
+      - "codex/reports/egyedi_solver/sgh_q56b2_cavity_prepack_bridge_hints.verify.log"
