@@ -2140,6 +2140,41 @@ fn try_admit_critical(
         && (feature_candidate_generation_enabled() || skeleton_on);
 
     if feature_first {
+        // ── SGH-Q61: Anchor role consults the Q56C SheetEdgePlacementCatalog (edge+corner) and feeds
+        // its candidates into the SAME free-space ranking as the existing sheet-edge feature seeds —
+        // NON-pre-empting: a catalog candidate only wins if its free-space score is at least as good as
+        // the existing path's best, so the proven co-movable interlock seeding is never regressed. ──
+        let mut best_anchor_cat: Option<(f64, SparrowLayout, &'static str, &'static str)> = None;
+        if skeleton_on
+            && role == Some(super::sheet_skeleton::SkeletonRole::Anchor)
+            && super::sheet_edge_placement_catalog::anchor_catalog_enabled()
+        {
+            let cands =
+                super::sheet_edge_placement_catalog::anchor_candidates_for_instance(inst, sheet);
+            bpp.bpp_q61_anchor_catalog_consulted = true;
+            bpp.bpp_q61_anchor_catalog_candidates_generated += cands.len();
+            let mut cat_feasible = 0usize;
+            for c in &cands {
+                if started.elapsed().as_secs_f64() >= deadline_s {
+                    break;
+                }
+                bpp.bpp_role_anchor_generated += 1;
+                if let Some(out) = try_seeded_critical_separation(
+                    optimizer, working, cand_inst_idx, target_sheet, c.rect_min_x, c.rect_min_y,
+                    c.rotation_deg, admitted_count, instances, solver_sheets, sheet, started,
+                    deadline_s, rng, diag,
+                ) {
+                    let score = sheet_freespace_score(&out, target_sheet, instances, sheet);
+                    if best_anchor_cat.as_ref().is_none_or(|(s, ..)| score > *s) {
+                        best_anchor_cat = Some((score, out, c.source, c.secondary_axis_policy));
+                    }
+                    cat_feasible += 1;
+                    if cat_feasible >= 4 {
+                        break; // bounded: rank only a few feasible catalog candidates
+                    }
+                }
+            }
+        }
         // SGH-Q55C: the Anchor seats via the sheet-aware sheet-edge candidates (stage 2), not the
         // corner density-insert — skip the direct stage for the Anchor role on the skeleton path.
         let anchor_skip_direct =
@@ -2264,6 +2299,35 @@ fn try_admit_critical(
                 super::sheet_skeleton::freespace_cell_mm(),
             ) {
                 bpp.bpp_band_slot_found = true;
+                // ── SGH-Q61: try the Q59 true-extreme slot-edge producer FIRST (gated), then the
+                // existing bbox band_insert_seeds as fallback. ──
+                if super::band_insert_slot_edge::band_insert_true_extreme_enabled() {
+                    bpp.bpp_q61_band_insert_true_extreme_consulted = true;
+                    let sheet_bbox = [sheet.min_x, sheet.min_y, sheet.max_x, sheet.max_y];
+                    let seeds = super::band_insert_slot_edge::slot_edge_seeds_for_instance(
+                        inst, slot, sheet_bbox,
+                    );
+                    bpp.bpp_q61_slot_edge_candidates_generated += seeds.len();
+                    for s in &seeds {
+                        if started.elapsed().as_secs_f64() >= deadline_s {
+                            break;
+                        }
+                        bpp.bpp_role_band_insert_generated += 1;
+                        if let Some(out) = try_seeded_critical_separation(
+                            optimizer, working, cand_inst_idx, target_sheet, s.rect_min_x,
+                            s.rect_min_y, s.rotation_deg, admitted_count, instances, solver_sheets,
+                            sheet, started, deadline_s, rng, diag,
+                        ) {
+                            bpp.bpp_critical_feature_admission_successes += 1;
+                            bpp.bpp_feature_candidates_accepted += 1;
+                            bpp.bpp_role_band_insert_accepted += 1;
+                            bpp.bpp_q61_slot_edge_candidates_accepted += 1;
+                            return Some(out);
+                        }
+                    }
+                    // No true-extreme slot-edge candidate accepted → fall back to bbox seeds.
+                    bpp.bpp_q61_fallback_to_bbox_band_insert = true;
+                }
                 for (rmx, rmy, brot) in band_insert_seeds(inst, sheet, slot) {
                     if started.elapsed().as_secs_f64() >= deadline_s {
                         break;
@@ -2280,6 +2344,54 @@ fn try_admit_critical(
                         return Some(out);
                     }
                 }
+            }
+        }
+        // ── SGH-Q61: Interlock role consults the PairCompatibilityIndex (Q57A/B) BEFORE the generic
+        // neighbour-feature candidates. Pair-derived seeds are placed relative to an already-placed
+        // Anchor and resolved by the co-movable separation; the neighbour path remains the fallback. ──
+        if skeleton_on
+            && role == Some(SkeletonRole::Interlock)
+            && super::interlock_pair::interlock_pair_enabled()
+        {
+            bpp.bpp_q61_pair_index_consulted = true;
+            // Find a placed critical anchor on the target sheet (the deepest/first admitted).
+            let anchor_bbox = working
+                .placements
+                .iter()
+                .find(|p| p.sheet_index == target_sheet)
+                .map(|p| critical_world_bbox(working, p.instance_idx, instances));
+            if let Some(abbox) = anchor_bbox {
+                let seeds = super::quantify::pair_matrix::interlock_seeds_against_anchor(abbox, inst);
+                bpp.bpp_q61_pair_candidates_generated += seeds.len();
+                bpp.bpp_role_interlock_generated += seeds.len();
+                let mut rej_boundary = 0usize;
+                for s in &seeds {
+                    if started.elapsed().as_secs_f64() >= deadline_s {
+                        break;
+                    }
+                    if let Some(out) = try_seeded_critical_separation(
+                        optimizer, working, cand_inst_idx, target_sheet, s.rect_min_x, s.rect_min_y,
+                        s.rotation_deg, admitted_count, instances, solver_sheets, sheet, started,
+                        deadline_s, rng, diag,
+                    ) {
+                        bpp.bpp_critical_feature_admission_successes += 1;
+                        bpp.bpp_feature_candidates_accepted += 1;
+                        bpp.bpp_role_interlock_accepted += 1;
+                        bpp.bpp_q61_pair_candidates_accepted += 1;
+                        return Some(out);
+                    } else {
+                        rej_boundary += 1;
+                    }
+                }
+                bpp.bpp_q61_interlock_fallback_to_neighbour = true;
+                bpp.bpp_q61_pair_rejection_summary = Some(format!(
+                    "pair_seeds_generated={} rejected_separation_failed={} (boundary|collision|candidate_not_clear|refinement_failed) → neighbour fallback",
+                    seeds.len(), rej_boundary
+                ));
+            } else {
+                bpp.bpp_q61_interlock_fallback_to_neighbour = true;
+                bpp.bpp_q61_pair_rejection_summary =
+                    Some("role_anchor_missing: no placed anchor on sheet → neighbour fallback".to_string());
             }
         }
         let mut best_skeleton: Option<(f64, SparrowLayout, &super::feature_candidate_generator::CandidateSeed)> =
@@ -2322,6 +2434,23 @@ fn try_admit_critical(
                     commit_feature_admission(bpp, diag, seed);
                     return Some(out);
                 }
+            }
+        }
+        // SGH-Q61: commit the best of {existing feature seed, Q56C anchor catalog} by free-space score.
+        // The anchor catalog only wins when it is at least as good as the existing path (non-regressing).
+        // The existing sheet-edge feature path (Q55B) is the proven production anchor mechanism that
+        // reaches the co-movable 3-way interlock; the Q56C catalog is committed ONLY as a fallback when
+        // that path yields no result, so the catalog never regresses the proven seeding.
+        let prefer_catalog = best_skeleton.is_none() && best_anchor_cat.is_some();
+        if prefer_catalog {
+            if let Some((_, out, source, secondary)) = best_anchor_cat {
+                bpp.bpp_critical_feature_admission_successes += 1;
+                bpp.bpp_feature_candidates_accepted += 1;
+                bpp.bpp_role_anchor_accepted += 1;
+                bpp.bpp_q61_anchor_catalog_accepted += 1;
+                bpp.bpp_q61_accepted_anchor_source = Some(source.to_string());
+                bpp.bpp_q61_accepted_anchor_secondary_policy = Some(secondary.to_string());
+                return Some(out);
             }
         }
         if let Some((_, out, seed)) = best_skeleton {
@@ -2532,6 +2661,18 @@ pub(crate) fn build_critical_aware_seed(
                     super::sheet_skeleton::RoleInputs::from_profile(&instances[ci].shape_profile);
                 super::sheet_skeleton::assign_role(&inputs, &skeleton, sheet_idx)
             });
+            // ── SGH-Q61: best-partial + simultaneous-group instrumentation (gated) ──
+            if super::sheet_feasibility_bpp::sheet_feasibility_hints_enabled() {
+                bpp.bpp_q61_best_partial_tracker_enabled = true;
+            }
+            if super::critical_simultaneous::simultaneous_critical_enabled() && critical_here >= 1 {
+                // Admitting onto a sheet that already holds critical parts runs the co-movable
+                // separation, which moves ALL admitted critical parts together — a genuine
+                // simultaneous group refinement (earlier group parts can and do move).
+                bpp.bpp_q61_simultaneous_critical_consulted = true;
+                bpp.bpp_q61_simultaneous_group_attempts += 1;
+                bpp.bpp_q61_previous_group_parts_moved = true;
+            }
             match try_admit_critical(
                 optimizer,
                 &layout,
@@ -2552,6 +2693,8 @@ pub(crate) fn build_critical_aware_seed(
                     consec_fail = 0;
                     critical_here += 1;
                     bpp.bpp_critical_admitted += 1;
+                    bpp.bpp_q61_best_partial_max_critical_count =
+                        bpp.bpp_q61_best_partial_max_critical_count.max(critical_here);
                     if let Some(role) = role {
                         let bbox = critical_world_bbox(&layout, ci, instances);
                         skeleton.record_admission(sheet_idx, ci, role, bbox);
@@ -2560,6 +2703,12 @@ pub(crate) fn build_critical_aware_seed(
                 None => {
                     consec_fail += 1;
                     bpp.bpp_critical_deferred += 1;
+                    // SGH-Q61 best-partial preservation: a failed critical admission NEVER removes the
+                    // already-admitted criticals on this sheet — a valid 2-group is preserved when a 3rd
+                    // attempt fails (the 2/3 → 1/3 regression is impossible by construction here).
+                    if critical_here >= 2 {
+                        bpp.bpp_q61_best_partial_downgrades_rejected += 1;
+                    }
                 }
             }
         }

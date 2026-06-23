@@ -152,6 +152,68 @@ impl PairCompatibilityIndex {
     }
 }
 
+/// SGH-Q61: a pair-derived Interlock seed (rect-min) for the production co-movable separation, placing
+/// the candidate relative to an already-placed Anchor's world bbox. Operates on LIVE solver geometry.
+#[derive(Debug, Clone)]
+pub struct LivePairInterlockSeed {
+    pub rect_min_x: f64,
+    pub rect_min_y: f64,
+    pub rotation_deg: f64,
+    pub source: &'static str,
+}
+
+/// SGH-Q61 production entry point: pair-compatibility Interlock seeds for `cand_inst` relative to a
+/// placed Anchor's world bbox `[min_x,min_y,max_x,max_y]`. Uses the candidate's OrientationCatalog
+/// rotations (vertical/min-width + 180° flips) and pair-compatible relative placements (side-by-side
+/// and overlapping flip-interlock). Overlapping seeds are intentional: the co-movable separation
+/// resolves overlap into a deep interlock (the same mechanism that reaches the 3-way packing).
+pub fn interlock_seeds_against_anchor(
+    anchor_bbox: [f64; 4],
+    cand_inst: &SPInstance,
+) -> Vec<LivePairInterlockSeed> {
+    let shape = cand_inst.spacing_collision_base_shape.as_ref();
+    let (amnx, amny, amxx, amxy) = (anchor_bbox[0], anchor_bbox[1], anchor_bbox[2], anchor_bbox[3]);
+    let anchor_h = amxy - amny;
+    let anchor_w = amxx - amnx;
+    // Candidate rotations: vertical-alignment + min-width + their 180° flips (deduped).
+    let mut rots: Vec<f64> = Vec::new();
+    for c in &cand_inst.orientation_catalog.candidates {
+        for r in [c.angle_deg, c.angle_deg + 180.0] {
+            let r = ((r % 360.0) + 360.0) % 360.0;
+            if !rots.iter().any(|a| (a - r).abs() < 0.01) {
+                rots.push(r);
+            }
+        }
+    }
+    if rots.is_empty() {
+        rots.push(90.0);
+    }
+    let mut out: Vec<LivePairInterlockSeed> = Vec::new();
+    let mut push = |rmx: f64, rmy: f64, rot: f64, src: &'static str, out: &mut Vec<LivePairInterlockSeed>| {
+        if !out.iter().any(|o: &LivePairInterlockSeed| {
+            (o.rect_min_x - rmx).abs() < 1.0 && (o.rect_min_y - rmy).abs() < 1.0 && (o.rotation_deg - rot).abs() < 1e-6
+        }) {
+            out.push(LivePairInterlockSeed { rect_min_x: rmx, rect_min_y: rmy, rotation_deg: rot, source: src });
+        }
+    };
+    for rot in rots {
+        let Some(f) = frame(shape, rot) else { continue };
+        let rw = f[2] - f[0];
+        let rh = f[3] - f[1];
+        // (1) side-by-side to the right of the anchor (dominant-edge-parallel pair).
+        push(amxx, amny, rot, "pair_side_by_side_right", &mut out);
+        // (2) side-by-side above the anchor.
+        push(amnx, amxy, rot, "pair_side_by_side_top", &mut out);
+        // (3) overlapping flip-interlock: nudge the candidate into the anchor's long span so the
+        //     co-movable separation can resolve it into a nested interlock.
+        let overlap_y = amny + anchor_h * 0.5 - rh * 0.5;
+        push(amxx - rw * 0.5, overlap_y, rot, "pair_flip_interlock_x", &mut out);
+        let overlap_x = amnx + anchor_w * 0.5 - rw * 0.5;
+        push(overlap_x, amxy - rh * 0.5, rot, "pair_flip_interlock_y", &mut out);
+    }
+    out
+}
+
 /// One unique critical part type, with the geometry/analysis needed for pairing.
 struct PairPartCtx {
     part_id: String,

@@ -172,6 +172,120 @@ impl SheetEdgeAnchorCatalog {
     }
 }
 
+/// SGH-Q61: a single edge+corner Anchor candidate expressed as a rect-min seed, ready to feed the
+/// production co-movable separation (`try_seeded_critical_separation`). Operates on the LIVE solver
+/// instance geometry (`SPInstance`) — no separate `SparrowProblem` is built.
+#[derive(Debug, Clone)]
+pub struct LiveAnchorCandidate {
+    pub rect_min_x: f64,
+    pub rect_min_y: f64,
+    pub rotation_deg: f64,
+    pub target_sheet_edge: &'static str,
+    pub secondary_axis_policy: &'static str,
+    pub source: &'static str,
+    pub source_edge_index: Option<usize>,
+    pub is_corner: bool,
+    pub is_fractional: bool,
+}
+
+/// SGH-Q61 gate: consume the SheetEdgePlacementCatalog in the real Anchor admission path
+/// (`VRS_ANCHOR_CATALOG=1`). Default off → the existing Q55B sheet-edge feature path is byte-identical.
+pub fn anchor_catalog_enabled() -> bool {
+    std::env::var("VRS_ANCHOR_CATALOG").ok().as_deref() == Some("1")
+}
+
+/// SGH-Q61 production entry point: edge+corner Anchor candidates for a LIVE critical instance on the
+/// solver's actual sheet, using the instance's `OrientationCatalog` rotations and its spacing-expanded
+/// collision contour's true extrema. Candidates are flush to the (already margin-adjusted) solver sheet
+/// edges, with corner + center secondary policies. Deterministic; corner variants first.
+pub fn anchor_candidates_for_instance(inst: &SPInstance, sheet: &SheetShape) -> Vec<LiveAnchorCandidate> {
+    let shape = inst.spacing_collision_base_shape.as_ref();
+    // Candidate rotations from the per-part OrientationCatalog (continuous, incl. fractional min-width).
+    let mut rotations: Vec<(f64, Option<usize>)> = Vec::new();
+    for c in &inst.orientation_catalog.candidates {
+        if !rotations.iter().any(|(a, _)| (a - c.angle_deg).abs() < 0.01) {
+            rotations.push((c.angle_deg, c.source_edge_index));
+        }
+    }
+    if rotations.is_empty() {
+        rotations.push((0.0, None));
+    }
+    let mut out: Vec<LiveAnchorCandidate> = Vec::new();
+    let mut push = |c: LiveAnchorCandidate, out: &mut Vec<LiveAnchorCandidate>| {
+        if !out.iter().any(|o| {
+            (o.rect_min_x - c.rect_min_x).abs() < 1.0
+                && (o.rect_min_y - c.rect_min_y).abs() < 1.0
+                && (o.rotation_deg - c.rotation_deg).abs() < 1e-6
+        }) {
+            out.push(c);
+        }
+    };
+    for (rot, edge_idx) in rotations {
+        let Some(f) = frame_extrema(shape, rot) else { continue };
+        let rw = f[2] - f[0];
+        let rh = f[3] - f[1];
+        if rw > sheet.width + 1e-6 || rh > sheet.height + 1e-6 {
+            continue; // does not fit this sheet in this orientation
+        }
+        let is_frac = nearest_axis_dist(rot) > 0.25;
+        let y_low = sheet.min_y;
+        let y_high = sheet.max_y - rh;
+        let y_center = sheet.min_y + (sheet.height - rh) / 2.0;
+        let x_low = sheet.min_x;
+        let x_high = sheet.max_x - rw;
+        let x_center = sheet.min_x + (sheet.width - rw) / 2.0;
+        // Left / right edges: x flush, y = bottom/top/center.
+        for (edge, rmx) in [("left", x_low), ("right", x_high)] {
+            for (pol, rmy, corner) in [
+                ("corner_low", y_low, true),
+                ("corner_high", y_high, true),
+                ("center", y_center, false),
+            ] {
+                push(
+                    LiveAnchorCandidate {
+                        rect_min_x: rmx,
+                        rect_min_y: rmy,
+                        rotation_deg: rot,
+                        target_sheet_edge: edge,
+                        secondary_axis_policy: pol,
+                        source: "sheet_edge_placement_catalog",
+                        source_edge_index: edge_idx,
+                        is_corner: corner,
+                        is_fractional: is_frac,
+                    },
+                    &mut out,
+                );
+            }
+        }
+        // Bottom / top edges: y flush, x = left/right/center.
+        for (edge, rmy) in [("bottom", y_low), ("top", y_high)] {
+            for (pol, rmx, corner) in [
+                ("corner_low", x_low, true),
+                ("corner_high", x_high, true),
+                ("center", x_center, false),
+            ] {
+                push(
+                    LiveAnchorCandidate {
+                        rect_min_x: rmx,
+                        rect_min_y: rmy,
+                        rotation_deg: rot,
+                        target_sheet_edge: edge,
+                        secondary_axis_policy: pol,
+                        source: "sheet_edge_placement_catalog",
+                        source_edge_index: edge_idx,
+                        is_corner: corner,
+                        is_fractional: is_frac,
+                    },
+                    &mut out,
+                );
+            }
+        }
+    }
+    // Corner candidates first (the Q56C policy: corners are first-class, center is fallback).
+    out.sort_by(|a, b| (b.is_corner as u8).cmp(&(a.is_corner as u8)));
+    out
+}
+
 /// Build the Anchor catalog for `part` on a single sheet, routing real spacing through the solver's
 /// internal dual-geometry mechanism so the extrema come from the genuine spacing-expanded contour.
 pub fn build_sheet_edge_anchor_catalog(
