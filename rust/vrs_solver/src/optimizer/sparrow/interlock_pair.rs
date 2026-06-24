@@ -12,7 +12,8 @@
 
 use super::*;
 use crate::optimizer::sparrow::quantify::pair_matrix::{
-    build_pair_compatibility_index, PairCompatibilityCandidate, PairIndexConfig,
+    build_pair_compatibility_index, build_pair_compatibility_index_for_instances,
+    PairCompatibilityCandidate, PairIndexConfig,
 };
 
 const GRID_SAMPLES: usize = 48;
@@ -44,6 +45,9 @@ pub struct InterlockPairSeed {
     pub cde_clear: bool,
     pub boundary_clear: bool,
     pub free_space_score_after: f64,
+    pub relative_dx: f64,
+    pub relative_dy: f64,
+    pub rotation_delta_deg: f64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -84,6 +88,11 @@ impl InterlockPairAdmission {
                 "cde_clear": s.cde_clear,
                 "boundary_clear": s.boundary_clear,
                 "free_space_score_after": round4(s.free_space_score_after),
+                "relative_transform": {
+                    "dx": round4(s.relative_dx),
+                    "dy": round4(s.relative_dy),
+                    "rotation_delta_deg": round4(s.rotation_delta_deg),
+                },
             })
         };
         serde_json::json!({
@@ -121,17 +130,38 @@ pub fn convert_pair_to_interlock_seed(
     anchor: PlacedAnchor,
     candidate: &PairCompatibilityCandidate,
 ) -> Option<(f64, f64, f64)> {
-    let (dx, dy, rot) = if anchor.anchor_is_part_a {
-        (candidate.relative_dx, candidate.relative_dy, candidate.rotation_b_deg)
+    let (x, y, rot, _) = convert_pair_to_interlock_seed_detail(anchor, candidate)?;
+    Some((x, y, rot))
+}
+
+fn convert_pair_to_interlock_seed_detail(
+    anchor: PlacedAnchor,
+    candidate: &PairCompatibilityCandidate,
+) -> Option<(f64, f64, f64, f64)> {
+    let (base_dx, base_dy, anchor_pair_rot, target_rot) = if anchor.anchor_is_part_a {
+        (
+            candidate.relative_dx,
+            candidate.relative_dy,
+            candidate.rotation_a_deg,
+            candidate.rotation_b_deg,
+        )
     } else {
-        (-candidate.relative_dx, -candidate.relative_dy, candidate.rotation_a_deg)
+        (
+            -candidate.relative_dx,
+            -candidate.relative_dy,
+            candidate.rotation_b_deg,
+            candidate.rotation_a_deg,
+        )
     };
+    let rotation_delta_deg = wrap_deg(anchor.rotation_deg - anchor_pair_rot);
+    let (dx, dy) = rotate_vec(base_dx, base_dy, rotation_delta_deg);
+    let rot = wrap_deg(target_rot + rotation_delta_deg);
     let x = anchor.anchor_x + dx;
     let y = anchor.anchor_y + dy;
     if !(x.is_finite() && y.is_finite() && rot.is_finite()) {
         return None;
     }
-    Some((x, y, rot))
+    Some((x, y, rot, rotation_delta_deg))
 }
 
 /// Build a focused Interlock pair-admission for `anchor_part` + `candidate_part` on a sheet. Places the
@@ -148,11 +178,19 @@ pub fn admit_interlock_pair(
 
     // Build the pair index over the two parts (Q57A) and the per-part spacing geometry.
     let parts = unique_parts(anchor_part, candidate_part);
-    let index = build_pair_compatibility_index(&parts, sheet_width, sheet_height, spacing_mm, PairIndexConfig::default())?;
+    let index = build_pair_compatibility_index(
+        &parts,
+        sheet_width,
+        sheet_height,
+        spacing_mm,
+        PairIndexConfig::default(),
+    )?;
     diag.pair_index_queries += 1;
 
-    let (anchor_shape, anchor_frame_at) = part_spacing_shape(anchor_part, sheet_width, sheet_height, spacing_mm)?;
-    let (cand_shape, cand_frame_at) = part_spacing_shape(candidate_part, sheet_width, sheet_height, spacing_mm)?;
+    let (anchor_shape, anchor_frame_at) =
+        part_spacing_shape(anchor_part, sheet_width, sheet_height, spacing_mm)?;
+    let (cand_shape, cand_frame_at) =
+        part_spacing_shape(candidate_part, sheet_width, sheet_height, spacing_mm)?;
 
     // Place the anchor flush bottom-left of the sheet at rotation 0 (deterministic reference anchor).
     let anchor_rot = 0.0;
@@ -167,7 +205,12 @@ pub fn admit_interlock_pair(
     };
 
     let sheet = [0.0, 0.0, sheet_width, sheet_height];
-    let anchor_box = [af[0] + anchor_x, af[1] + anchor_y, af[2] + anchor_x, af[3] + anchor_y];
+    let anchor_box = [
+        af[0] + anchor_x,
+        af[1] + anchor_y,
+        af[2] + anchor_x,
+        af[3] + anchor_y,
+    ];
 
     let mut considered: Vec<InterlockPairSeed> = Vec::new();
     for c in &index.candidates {
@@ -177,7 +220,9 @@ pub fn admit_interlock_pair(
             continue;
         }
         diag.pair_candidates_generated += 1;
-        let Some((cx, cy, crot)) = convert_pair_to_interlock_seed(anchor, c) else {
+        let Some((cx, cy, crot, rotation_delta_deg)) =
+            convert_pair_to_interlock_seed_detail(anchor, c)
+        else {
             diag.rejection_transform_invalid += 1;
             continue;
         };
@@ -200,7 +245,16 @@ pub fn admit_interlock_pair(
         let cde_clear = if !bbox_overlap {
             true
         } else {
-            !contours_overlap(&anchor_shape, anchor_rot, anchor_x, anchor_y, &cand_shape, crot, cx, cy)
+            !contours_overlap(
+                &anchor_shape,
+                anchor_rot,
+                anchor_x,
+                anchor_y,
+                &cand_shape,
+                crot,
+                cx,
+                cy,
+            )
         };
         if !cde_clear {
             diag.rejection_cde_not_clear += 1;
@@ -211,7 +265,11 @@ pub fn admit_interlock_pair(
         // Free space after placing both (proxy).
         let free = crate::optimizer::sparrow::sheet_skeleton::largest_edge_connected_free_area(
             &[anchor_box, cand_box],
-            sheet[0], sheet[1], sheet[2], sheet[3], 50.0,
+            sheet[0],
+            sheet[1],
+            sheet[2],
+            sheet[3],
+            50.0,
         );
         considered.push(InterlockPairSeed {
             anchor_part_id: anchor_part.id.clone(),
@@ -225,6 +283,9 @@ pub fn admit_interlock_pair(
             cde_clear,
             boundary_clear,
             free_space_score_after: free,
+            relative_dx: c.relative_dx,
+            relative_dy: c.relative_dy,
+            rotation_delta_deg,
         });
     }
 
@@ -258,6 +319,143 @@ pub fn admit_interlock_pair(
     })
 }
 
+/// Build and rank live PairCompatibilityIndex seeds against an already-placed anchor in the real
+/// solver coordinate frame.
+pub fn admit_interlock_pair_against_live_anchor(
+    anchor_inst: &SPInstance,
+    anchor_placement: &SparrowPlacement,
+    candidate_inst: &SPInstance,
+    occupied_boxes: &[[f64; 4]],
+    sheet_bbox: [f64; 4],
+) -> Result<InterlockPairAdmission, String> {
+    let mut diag = InterlockPairDiagnostics::default();
+    let index = build_pair_compatibility_index_for_instances(
+        &[anchor_inst, candidate_inst],
+        PairIndexConfig::default(),
+    );
+    diag.pair_index_queries += 1;
+
+    let anchor = PlacedAnchor {
+        anchor_x: anchor_placement.x,
+        anchor_y: anchor_placement.y,
+        rotation_deg: anchor_placement.rotation_deg,
+        anchor_is_part_a: true,
+    };
+    let anchor_shape = anchor_inst.spacing_collision_base_shape.as_ref();
+    let cand_shape = candidate_inst.spacing_collision_base_shape.as_ref();
+    let mut considered: Vec<InterlockPairSeed> = Vec::new();
+    let mut matched_any = false;
+
+    for c in &index.candidates {
+        let anchor_is_part_a =
+            c.part_a_id == anchor_inst.part_id && c.part_b_id == candidate_inst.part_id;
+        let anchor_is_part_b =
+            c.part_b_id == anchor_inst.part_id && c.part_a_id == candidate_inst.part_id;
+        if !anchor_is_part_a && !anchor_is_part_b {
+            continue;
+        }
+        matched_any = true;
+        diag.pair_candidates_generated += 1;
+        let live_anchor = PlacedAnchor {
+            anchor_is_part_a,
+            ..anchor
+        };
+        let Some((cand_ax, cand_ay, crot, rotation_delta_deg)) =
+            convert_pair_to_interlock_seed_detail(live_anchor, c)
+        else {
+            diag.rejection_transform_invalid += 1;
+            continue;
+        };
+        let (rmx, rmy) = rect_min_from_anchor(
+            cand_ax,
+            cand_ay,
+            candidate_inst.part.width,
+            candidate_inst.part.height,
+            crot,
+        );
+        let (rw, rh) =
+            dims_for_rotation(candidate_inst.part.width, candidate_inst.part.height, crot);
+        let boundary_clear = rmx >= sheet_bbox[0] - 0.05
+            && rmy >= sheet_bbox[1] - 0.05
+            && rmx + rw <= sheet_bbox[2] + 0.05
+            && rmy + rh <= sheet_bbox[3] + 0.05;
+        if !boundary_clear {
+            diag.rejection_boundary_violation += 1;
+            continue;
+        }
+        let cde_clear = !contours_overlap(
+            anchor_shape,
+            anchor.rotation_deg,
+            anchor.anchor_x,
+            anchor.anchor_y,
+            cand_shape,
+            crot,
+            cand_ax,
+            cand_ay,
+        );
+        if !cde_clear {
+            diag.rejection_cde_not_clear += 1;
+            diag.rejection_collision += 1;
+            continue;
+        }
+        diag.pair_candidates_valid += 1;
+        let mut occ = occupied_boxes.to_vec();
+        occ.push([rmx, rmy, rmx + rw, rmy + rh]);
+        let free = crate::optimizer::sparrow::sheet_skeleton::largest_edge_connected_free_area(
+            &occ,
+            sheet_bbox[0],
+            sheet_bbox[1],
+            sheet_bbox[2],
+            sheet_bbox[3],
+            crate::optimizer::sparrow::sheet_skeleton::freespace_cell_mm(),
+        );
+        considered.push(InterlockPairSeed {
+            anchor_part_id: anchor_inst.part_id.clone(),
+            candidate_part_id: candidate_inst.part_id.clone(),
+            role: "interlock",
+            accepted_candidate_source: c.candidate_source.as_str().to_string(),
+            accepted_rotation_deg: crot,
+            accepted_x: rmx,
+            accepted_y: rmy,
+            pair_score: c.score,
+            cde_clear,
+            boundary_clear,
+            free_space_score_after: free,
+            relative_dx: c.relative_dx,
+            relative_dy: c.relative_dy,
+            rotation_delta_deg,
+        });
+    }
+
+    if !matched_any {
+        diag.rejection_pair_not_found += 1;
+    }
+    considered.sort_by(|a, b| {
+        b.pair_score
+            .partial_cmp(&a.pair_score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| {
+                b.free_space_score_after
+                    .partial_cmp(&a.free_space_score_after)
+                    .unwrap_or(Ordering::Equal)
+            })
+    });
+    let accepted = considered.first().cloned();
+    if accepted.is_some() {
+        diag.pair_candidates_accepted = 1;
+    } else {
+        diag.fallback_to_feature_candidates = true;
+    }
+
+    Ok(InterlockPairAdmission {
+        anchor_part_id: anchor_inst.part_id.clone(),
+        candidate_part_id: candidate_inst.part_id.clone(),
+        accepted,
+        considered,
+        diagnostics: diag,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -278,7 +476,8 @@ fn part_spacing_shape(
     sheet_height: f64,
     spacing_mm: f64,
 ) -> Result<(Rc<CdeBaseShape>, impl Fn(f64) -> [f64; 4]), String> {
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S_INTERLOCK".to_string(),
         quantity: 1,
@@ -289,8 +488,13 @@ fn part_spacing_shape(
         cost_per_use: None,
     };
     let raw_sheet = crate::sheet::stock_to_shape(&raw_stock)?;
-    let cfg = SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, rotation_context.clone(), 42)
-        .with_spacing_mm(spacing_mm);
+    let cfg = SparrowConfig::from_solver_input(
+        1.0,
+        CollisionBackendKind::Cde,
+        rotation_context.clone(),
+        42,
+    )
+    .with_spacing_mm(spacing_mm);
     let problem = SparrowProblem::from_solver_input(
         std::slice::from_ref(part),
         std::slice::from_ref(&raw_sheet),
@@ -298,7 +502,11 @@ fn part_spacing_shape(
         Vec::new(),
         cfg,
     )?;
-    let inst = problem.instances.into_iter().next().ok_or_else(|| format!("no instance for {}", part.id))?;
+    let inst = problem
+        .instances
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("no instance for {}", part.id))?;
     let shape = inst.spacing_collision_base_shape;
     let shape_for_closure = Rc::clone(&shape);
     let closure = move |rot: f64| frame(&shape_for_closure, rot).unwrap_or([0.0, 0.0, 0.0, 0.0]);
@@ -326,7 +534,11 @@ fn frame(shape: &CdeBaseShape, rot: f64) -> Option<[f64; 4]> {
 fn rotated_translated(shape: &CdeBaseShape, rot: f64, dx: f64, dy: f64) -> Vec<(f64, f64)> {
     let t = rot.to_radians();
     let (c, s) = (t.cos(), t.sin());
-    shape.local_pts.iter().map(|p| (p.x * c - p.y * s + dx, p.x * s + p.y * c + dy)).collect()
+    shape
+        .local_pts
+        .iter()
+        .map(|p| (p.x * c - p.y * s + dx, p.x * s + p.y * c + dy))
+        .collect()
 }
 
 fn contours_overlap(
@@ -391,6 +603,16 @@ fn point_in_poly(x: f64, y: f64, poly: &[(f64, f64)]) -> bool {
     inside
 }
 
+fn rotate_vec(x: f64, y: f64, rotation_deg: f64) -> (f64, f64) {
+    let theta = rotation_deg.to_radians();
+    let (c, s) = (theta.cos(), theta.sin());
+    (x * c - y * s, x * s + y * c)
+}
+
+fn wrap_deg(v: f64) -> f64 {
+    ((v % 360.0) + 360.0) % 360.0
+}
+
 fn round4(v: f64) -> f64 {
     (v * 10_000.0).round() / 10_000.0
 }
@@ -416,7 +638,12 @@ mod tests {
 
     #[test]
     fn converts_pair_transform_to_seed_against_anchor() {
-        let anchor = PlacedAnchor { anchor_x: 100.0, anchor_y: 50.0, rotation_deg: 0.0, anchor_is_part_a: true };
+        let anchor = PlacedAnchor {
+            anchor_x: 100.0,
+            anchor_y: 50.0,
+            rotation_deg: 0.0,
+            anchor_is_part_a: true,
+        };
         let cand = PairCompatibilityCandidate {
             part_a_id: "A".into(),
             part_b_id: "B".into(),
@@ -435,10 +662,16 @@ mod tests {
         };
         let (x, y, rot) = convert_pair_to_interlock_seed(anchor, &cand).expect("seed");
         assert_eq!((x, y, rot), (400.0, 50.0, 90.0));
-        // Inverted relation when the anchor is part B.
-        let anchor_b = PlacedAnchor { anchor_is_part_a: false, ..anchor };
+        // Inverted relation when the anchor is part B; the live anchor rotation is preserved, so the
+        // relative vector is rotated from the pair's stored B-frame back into world space.
+        let anchor_b = PlacedAnchor {
+            anchor_is_part_a: false,
+            ..anchor
+        };
         let (xb, yb, rotb) = convert_pair_to_interlock_seed(anchor_b, &cand).expect("seed b");
-        assert_eq!((xb, yb, rotb), (-200.0, 50.0, 0.0));
+        assert!((xb - 100.0).abs() < 1e-6);
+        assert!((yb - 350.0).abs() < 1e-6);
+        assert!((rotb - 270.0).abs() < 1e-6);
     }
 
     #[test]
@@ -451,7 +684,10 @@ mod tests {
             assert!(s.cde_clear && s.boundary_clear);
             assert_eq!(adm.diagnostics.pair_candidates_accepted, 1);
         } else {
-            assert!(adm.diagnostics.fallback_to_feature_candidates, "no-seed path must report fallback");
+            assert!(
+                adm.diagnostics.fallback_to_feature_candidates,
+                "no-seed path must report fallback"
+            );
         }
     }
 

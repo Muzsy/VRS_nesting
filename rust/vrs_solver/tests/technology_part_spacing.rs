@@ -84,7 +84,11 @@ fn rectangles_spacing_violation() {
     ];
     let v = find_part_spacing_violations(&placements, &parts, 5.0);
     assert_eq!(v.len(), 1);
-    assert!((v[0].distance_mm - 4.9).abs() < 1e-3, "distance {}", v[0].distance_mm);
+    assert!(
+        (v[0].distance_mm - 4.9).abs() < 1e-3,
+        "distance {}",
+        v[0].distance_mm
+    );
     assert_eq!(v[0].required_spacing_mm, 5.0);
 }
 
@@ -138,7 +142,10 @@ fn non_rect_polygon_proves_non_bbox() {
     // A bbox-based validator would flag a violation (bboxes overlap). The polygon
     // validator must NOT, since actual triangle distance >> 5.
     let v = find_part_spacing_violations(&placements, &parts, 5.0);
-    assert!(v.is_empty(), "polygon distance >= 5; expected no violation, got {v:?}");
+    assert!(
+        v.is_empty(),
+        "polygon distance >= 5; expected no violation, got {v:?}"
+    );
 }
 
 #[test]
@@ -146,8 +153,8 @@ fn non_rect_polygon_close_violates() {
     // Triangles placed so their actual polygons are < 5 apart.
     let parts = vec![triangle_part("T")];
     let placements = vec![
-        pl("A", "T", 0, 0.0, 0.0, 0.0),   // hypotenuse near x+y=20
-        pl("B", "T", 0, 22.0, 0.0, 0.0),  // its (0,0)->world (22,0): close to A's edge
+        pl("A", "T", 0, 0.0, 0.0, 0.0),  // hypotenuse near x+y=20
+        pl("B", "T", 0, 22.0, 0.0, 0.0), // its (0,0)->world (22,0): close to A's edge
     ];
     let v = find_part_spacing_violations(&placements, &parts, 5.0);
     assert_eq!(v.len(), 1, "close triangles must violate, got {v:?}");

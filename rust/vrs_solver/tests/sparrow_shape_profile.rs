@@ -66,10 +66,7 @@ fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
 
 #[test]
 fn shape_profiles_emitted_for_bpp_path() {
-    let parts = vec![
-        l_anchor_part("L", 2),
-        rect_part("tiny", 8, 30.0, 30.0),
-    ];
+    let parts = vec![l_anchor_part("L", 2), rect_part("tiny", 8, 30.0, 30.0)];
     let stocks = vec![json!({"id": "S", "quantity": 2, "width": 3000.0, "height": 1500.0})];
     let out = parse_and_solve(&ms_input(parts, stocks, 42, 30));
 
@@ -92,24 +89,31 @@ fn shape_profiles_emitted_for_bpp_path() {
 
     // instance_count == declared, all placed
     for p in profiles {
-        assert_eq!(p.instance_count, p.declared_quantity, "{} instance_count", p.part_id);
+        assert_eq!(
+            p.instance_count, p.declared_quantity,
+            "{} instance_count",
+            p.part_id
+        );
         assert_eq!(p.placed_count, p.instance_count, "{} all placed", p.part_id);
     }
 }
 
 #[test]
 fn anchor_outranks_tiny_filler_end_to_end() {
-    let parts = vec![
-        rect_part("tiny", 8, 30.0, 30.0),
-        l_anchor_part("L", 2),
-    ];
+    let parts = vec![rect_part("tiny", 8, 30.0, 30.0), l_anchor_part("L", 2)];
     let stocks = vec![json!({"id": "S", "quantity": 2, "width": 3000.0, "height": 1500.0})];
     let out = parse_and_solve(&ms_input(parts, stocks, 7, 30));
     let d = od(&out);
     let profiles = d.shape_profiles.as_ref().expect("shape_profiles present");
 
-    let l = profiles.iter().find(|p| p.part_id == "L").expect("L profile");
-    let tiny = profiles.iter().find(|p| p.part_id == "tiny").expect("tiny profile");
+    let l = profiles
+        .iter()
+        .find(|p| p.part_id == "L")
+        .expect("L profile");
+    let tiny = profiles
+        .iter()
+        .find(|p| p.part_id == "tiny")
+        .expect("tiny profile");
 
     assert!(
         l.priority_rank < tiny.priority_rank,
@@ -147,5 +151,9 @@ fn profile_layer_preserves_collision_feasibility() {
     assert_eq!(out.unplaced.len(), 0, "no unplaced");
     let d = od(&out);
     assert_eq!(d.sparrow_ms_final_pairs, Some(0), "no collisions");
-    assert_eq!(d.sparrow_ms_boundary_violations, Some(0), "no boundary violations");
+    assert_eq!(
+        d.sparrow_ms_boundary_violations,
+        Some(0),
+        "no boundary violations"
+    );
 }

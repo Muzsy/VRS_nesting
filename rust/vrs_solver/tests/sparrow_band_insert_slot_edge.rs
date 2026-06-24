@@ -11,7 +11,9 @@ use vrs_solver::rotation_policy::RotationPolicyKind;
 const SHEET: [f64; 4] = [0.0, 0.0, 1500.0, 3000.0];
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn lv8() -> Part {
@@ -40,7 +42,10 @@ fn lv8_band_insert_true_extreme_slot_edge_fits_a_vertical_band() {
     let slot = [20.0, 20.0, 820.0, 2620.0];
     let res = build_band_insert_slot_edge_candidates(&part, slot, SHEET, 8.0, &[]).expect("res");
 
-    assert!(res.valid_count() >= 1, "LV8 must fit the vertical band slot via a true-extreme candidate");
+    assert!(
+        res.valid_count() >= 1,
+        "LV8 must fit the vertical band slot via a true-extreme candidate"
+    );
     let sel = res.selected().expect("selected");
     assert!(sel.boundary_clear && sel.collision_clear);
     assert_eq!(sel.candidate_source, "true_extreme_slot_edge_band_insert");
@@ -57,7 +62,11 @@ fn lv8_band_insert_true_extreme_slot_edge_fits_a_vertical_band() {
         serde_json::to_string_pretty(&res.to_diagnostics_json()).expect("ser"),
     )
     .expect("write json");
-    std::fs::write(dir.join("band_insert_slot_edge_candidates.svg"), render_svg(&res)).expect("write svg");
+    std::fs::write(
+        dir.join("band_insert_slot_edge_candidates.svg"),
+        render_svg(&res),
+    )
+    .expect("write svg");
     assert!(dir.join("band_insert_slot_edge_candidates.svg").exists());
 }
 

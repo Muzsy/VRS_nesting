@@ -162,7 +162,8 @@ pub fn build_sheet_feasibility_hints(
     margin_mm: f64,
     spacing_mm: f64,
 ) -> Result<SheetFeasibilityHints, String> {
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S_FEAS".to_string(),
         quantity: parts.len().max(1) as i64,
@@ -173,8 +174,13 @@ pub fn build_sheet_feasibility_hints(
         cost_per_use: None,
     };
     let raw_sheet = crate::sheet::stock_to_shape(&raw_stock)?;
-    let cfg = SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, rotation_context.clone(), 42)
-        .with_spacing_mm(spacing_mm);
+    let cfg = SparrowConfig::from_solver_input(
+        1.0,
+        CollisionBackendKind::Cde,
+        rotation_context.clone(),
+        42,
+    )
+    .with_spacing_mm(spacing_mm);
     let problem = SparrowProblem::from_solver_input(
         parts,
         std::slice::from_ref(&raw_sheet),
@@ -192,7 +198,8 @@ pub fn build_sheet_feasibility_hints(
     let mut total_part_area = 0.0_f64;
     let mut critical_hints: Vec<CriticalPartTypeSheetHint> = Vec::new();
     let mut danger_parts: Vec<DangerPartHint> = Vec::new();
-    let mut family_acc: std::collections::HashMap<String, (Vec<String>, usize)> = std::collections::HashMap::new();
+    let mut family_acc: std::collections::HashMap<String, (Vec<String>, usize)> =
+        std::collections::HashMap::new();
 
     for inst in &problem.instances {
         let sp = inst.shape_profile.as_ref();
@@ -217,7 +224,11 @@ pub fn build_sheet_feasibility_hints(
                 .iter()
                 .map(|s| (s.width * s.height).max(1.0))
                 .fold(f64::MAX, f64::min);
-            let min_bbox_area = if min_bbox_area.is_finite() { min_bbox_area } else { sp.bbox_area };
+            let min_bbox_area = if min_bbox_area.is_finite() {
+                min_bbox_area
+            } else {
+                sp.bbox_area
+            };
             // Narrowest extent across samples → span-based strip cap.
             let min_extent = inst
                 .orientation_catalog
@@ -225,7 +236,11 @@ pub fn build_sheet_feasibility_hints(
                 .iter()
                 .map(|s| s.width.min(s.height))
                 .fold(f64::MAX, f64::min);
-            let min_extent = if min_extent.is_finite() && min_extent > 0.0 { min_extent } else { sp.min_dim.max(1.0) };
+            let min_extent = if min_extent.is_finite() && min_extent > 0.0 {
+                min_extent
+            } else {
+                sp.min_dim.max(1.0)
+            };
 
             let area_cap = (usable_area / min_bbox_area).floor().max(0.0) as usize;
             let span_cap = (usable_long / min_extent).floor().max(0.0) as usize;
@@ -280,7 +295,10 @@ pub fn build_sheet_feasibility_hints(
                     part_id: inst.part_id.clone(),
                     fit_difficulty_score: pa.fit_difficulty.score,
                     sheet_span_risk_score: pa.sheet_span_risk_score,
-                    orientation_candidate_count: inst.orientation_catalog.diagnostics.candidate_count,
+                    orientation_candidate_count: inst
+                        .orientation_catalog
+                        .diagnostics
+                        .candidate_count,
                     reasons,
                 });
             }
@@ -301,11 +319,19 @@ pub fn build_sheet_feasibility_hints(
                 suggests_grid_or_band: qty >= 4,
             })
             .collect();
-        v.sort_by(|a, b| b.total_quantity.cmp(&a.total_quantity).then_with(|| a.family_key.cmp(&b.family_key)));
+        v.sort_by(|a, b| {
+            b.total_quantity
+                .cmp(&a.total_quantity)
+                .then_with(|| a.family_key.cmp(&b.family_key))
+        });
         v
     };
 
-    critical_hints.sort_by(|a, b| b.quantity.cmp(&a.quantity).then_with(|| a.part_id.cmp(&b.part_id)));
+    critical_hints.sort_by(|a, b| {
+        b.quantity
+            .cmp(&a.quantity)
+            .then_with(|| a.part_id.cmp(&b.part_id))
+    });
     danger_parts.sort_by(|a, b| {
         b.fit_difficulty_score
             .partial_cmp(&a.fit_difficulty_score)
@@ -388,10 +414,16 @@ mod tests {
 
     #[test]
     fn area_lower_bound_is_deterministic_and_at_least_one() {
-        let parts = vec![rect("big", 1200.0, 300.0, 6), rect("filler", 40.0, 40.0, 50)];
+        let parts = vec![
+            rect("big", 1200.0, 300.0, 6),
+            rect("filler", 40.0, 40.0, 50),
+        ];
         let a = hints(&parts);
         let b = hints(&parts);
-        assert_eq!(a.sheet_count_area_lower_bound, b.sheet_count_area_lower_bound);
+        assert_eq!(
+            a.sheet_count_area_lower_bound,
+            b.sheet_count_area_lower_bound
+        );
         assert!(a.sheet_count_area_lower_bound >= 1);
         assert_eq!(a.diagnostics.usable_sheet_area_basis, "margin_shrunk");
     }
@@ -400,7 +432,11 @@ mod tests {
     fn repeated_critical_type_gets_distribution_hint() {
         let parts = vec![rect("big", 1200.0, 300.0, 6)];
         let h = hints(&parts);
-        let c = h.critical_part_type_hints.iter().find(|c| c.part_id == "big").expect("crit hint");
+        let c = h
+            .critical_part_type_hints
+            .iter()
+            .find(|c| c.part_id == "big")
+            .expect("crit hint");
         assert_eq!(c.quantity, 6);
         let sum: usize = c.target_distribution.iter().sum();
         assert_eq!(sum, 6, "distribution must cover the full quantity");

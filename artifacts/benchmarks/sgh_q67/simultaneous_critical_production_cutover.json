@@ -1,0 +1,188 @@
+{
+  "pair_helper": {
+    "arrangements": [
+      {
+        "any_part_moved_in_refinement": true,
+        "arrangement": "side_by_side_min_width",
+        "attempted_count": 2,
+        "boundary_violations": 0,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "q67_rect_pair",
+            "rotation_deg": 90.0,
+            "world_bbox": [
+              5.0,
+              5.0,
+              205.0,
+              305.0
+            ],
+            "x": 205.0,
+            "y": 5.0
+          },
+          {
+            "part_id": "q67_rect_pair",
+            "rotation_deg": 90.0,
+            "world_bbox": [
+              205.1,
+              5.0,
+              405.1,
+              305.0
+            ],
+            "x": 405.1,
+            "y": 5.0
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      },
+      {
+        "any_part_moved_in_refinement": false,
+        "arrangement": "flipped_interlock",
+        "attempted_count": 2,
+        "boundary_violations": 0,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "q67_rect_pair",
+            "rotation_deg": 90.0,
+            "world_bbox": [
+              5.0,
+              5.0,
+              205.0,
+              305.0
+            ],
+            "x": 205.0,
+            "y": 5.0
+          },
+          {
+            "part_id": "q67_rect_pair",
+            "rotation_deg": 270.0,
+            "world_bbox": [
+              205.1,
+              5.0,
+              405.1,
+              305.0
+            ],
+            "x": 205.1,
+            "y": 305.0
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      }
+    ],
+    "best_partial_count": 2,
+    "best_partial_source": "side_by_side_min_width",
+    "full_success": true,
+    "part_id": "q67_rect_pair",
+    "sheet": [
+      0.0,
+      0.0,
+      1500.0,
+      3000.0
+    ],
+    "simultaneous_group_attempts": 2,
+    "spacing_mm": 0.0,
+    "target_count": 2,
+    "time_ms": 0.0062
+  },
+  "summary": {
+    "pair_full_success": true,
+    "triple_best_partial_count": 2,
+    "triple_best_partial_source": "side_by_side_min_width",
+    "triple_full_success": false
+  },
+  "triple_helper": {
+    "arrangements": [
+      {
+        "any_part_moved_in_refinement": true,
+        "arrangement": "side_by_side_min_width",
+        "attempted_count": 3,
+        "boundary_violations": 1,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "q67_rect_triple",
+            "rotation_deg": 0.0,
+            "world_bbox": [
+              5.0,
+              5.0,
+              713.0,
+              2413.0
+            ],
+            "x": 9.0,
+            "y": 9.0
+          },
+          {
+            "part_id": "q67_rect_triple",
+            "rotation_deg": 0.0,
+            "world_bbox": [
+              713.1,
+              5.0,
+              1421.1,
+              2413.0
+            ],
+            "x": 717.1,
+            "y": 9.0
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      },
+      {
+        "any_part_moved_in_refinement": false,
+        "arrangement": "flipped_interlock",
+        "attempted_count": 3,
+        "boundary_violations": 1,
+        "collision_pairs": 0,
+        "placed": [
+          {
+            "part_id": "q67_rect_triple",
+            "rotation_deg": 0.0,
+            "world_bbox": [
+              5.0,
+              5.0,
+              713.0,
+              2413.0
+            ],
+            "x": 9.0,
+            "y": 9.0
+          },
+          {
+            "part_id": "q67_rect_triple",
+            "rotation_deg": 180.0,
+            "world_bbox": [
+              713.1,
+              5.0,
+              1421.1,
+              2413.0
+            ],
+            "x": 1417.1,
+            "y": 2409.0
+          }
+        ],
+        "placed_count": 2,
+        "refined": true,
+        "score": 2.0
+      }
+    ],
+    "best_partial_count": 2,
+    "best_partial_source": "side_by_side_min_width",
+    "full_success": false,
+    "part_id": "q67_rect_triple",
+    "sheet": [
+      0.0,
+      0.0,
+      1500.0,
+      3000.0
+    ],
+    "simultaneous_group_attempts": 2,
+    "spacing_mm": 8.0,
+    "target_count": 3,
+    "time_ms": 0.0066
+  }
+}

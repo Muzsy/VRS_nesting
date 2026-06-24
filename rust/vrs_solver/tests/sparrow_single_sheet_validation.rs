@@ -160,7 +160,10 @@ fn assert_positive_single_sheet_ok(out: &SolverOutput, requested: usize) {
 
 /// Deterministic same-seed equality: identical status, counts, and ordered placements.
 fn assert_same_ordered_output(a: &SolverOutput, b: &SolverOutput) {
-    assert_eq!(a.status, b.status, "status must match across same-seed runs");
+    assert_eq!(
+        a.status, b.status,
+        "status must match across same-seed runs"
+    );
     assert_eq!(
         a.metrics.placed_count, b.metrics.placed_count,
         "placed_count must match"
@@ -242,7 +245,9 @@ fn q26_single_sheet_strict_cde_irregular_l_shape_mix_all_placed() {
         .find(|p| p["id"] == "L")
         .expect("L part present");
     assert!(
-        l_part["outer_points"].as_array().map_or(false, |a| a.len() >= 5),
+        l_part["outer_points"]
+            .as_array()
+            .map_or(false, |a| a.len() >= 5),
         "L part must define a concave outer polygon"
     );
     let requested = requested_count(&v);
@@ -393,8 +398,8 @@ fn q26_single_sheet_negative_overcapacity_reports_partial_with_diagnostics() {
 fn q28_dense_191_incremental_session_speedup() {
     let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/sgh_q28_dense191_benchmark/dense_191_lv8_derived.json");
-    let raw = std::fs::read_to_string(&fixture_path)
-        .unwrap_or_else(|e| panic!("read Q28 fixture: {e}"));
+    let raw =
+        std::fs::read_to_string(&fixture_path).unwrap_or_else(|e| panic!("read Q28 fixture: {e}"));
     let fixture: serde_json::Value =
         serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse Q28 fixture: {e}"));
 
@@ -406,10 +411,8 @@ fn q28_dense_191_incremental_session_speedup() {
         project_name: "q28_dense_191_incremental_session_speedup".to_string(),
         seed: 17,
         time_limit_s: 90,
-        stocks: serde_json::from_value(fixture["stocks"].clone())
-            .expect("deserialize stocks"),
-        parts: serde_json::from_value(fixture["parts"].clone())
-            .expect("deserialize parts"),
+        stocks: serde_json::from_value(fixture["stocks"].clone()).expect("deserialize stocks"),
+        parts: serde_json::from_value(fixture["parts"].clone()).expect("deserialize parts"),
         optimizer_pipeline: Some(vrs_solver::io::OptimizerPipelineKind::SparrowCde),
         collision_backend: Some(vrs_solver::io::CollisionBackendKind::Cde),
         solver_profile: Some("jagua_optimizer_phase1_outer_only".to_string()),
@@ -420,7 +423,10 @@ fn q28_dense_191_incremental_session_speedup() {
     };
 
     let total_instances: usize = input.parts.iter().map(|p| p.quantity as usize).sum();
-    assert_eq!(total_instances, 191, "fixture must have exactly 191 instances");
+    assert_eq!(
+        total_instances, 191,
+        "fixture must have exactly 191 instances"
+    );
 
     let out = solve(input).expect("adapter::solve returns Ok");
 
@@ -430,8 +436,16 @@ fn q28_dense_191_incremental_session_speedup() {
         .expect("optimizer_diagnostics must be present");
 
     assert_eq!(diag.pipeline_used, "sparrow_cde", "pipeline_used");
-    assert_eq!(diag.sparrow_native_model_active, Some(true), "native model active");
-    assert_eq!(diag.sparrow_native_tracker_active, Some(true), "native tracker active");
+    assert_eq!(
+        diag.sparrow_native_model_active,
+        Some(true),
+        "native model active"
+    );
+    assert_eq!(
+        diag.sparrow_native_tracker_active,
+        Some(true),
+        "native tracker active"
+    );
     assert_eq!(diag.sparrow_old_core_used, Some(false), "old core not used");
 
     let dense_real_run = diag.sparrow_dense_real_run;
@@ -448,7 +462,9 @@ fn q28_dense_191_incremental_session_speedup() {
          at least one full separation iteration must complete in 90s"
     );
 
-    let final_pairs = diag.sparrow_collision_graph_final_pairs.unwrap_or(usize::MAX);
+    let final_pairs = diag
+        .sparrow_collision_graph_final_pairs
+        .unwrap_or(usize::MAX);
     assert!(
         final_pairs < 200,
         "sparrow_collision_graph_final_pairs must be < 200 (got {final_pairs}); \

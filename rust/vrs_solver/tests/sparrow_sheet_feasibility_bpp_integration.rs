@@ -16,7 +16,9 @@ use vrs_solver::optimizer::sparrow::sheet_feasibility_bpp::{
 use vrs_solver::rotation_policy::RotationPolicyKind;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn lv8(qty: i64) -> Part {
@@ -46,7 +48,10 @@ fn lv8_hint_integration_preserves_best_partial_and_reports_quota() {
     let quotas = sheet_target_quotas(&hints);
     assert!(!quotas.is_empty(), "must derive at least one target quota");
     let order = hint_aware_critical_order(&hints);
-    assert!(order.iter().any(|id| id.starts_with("Lv8")), "LV8 must be in the hint-aware order");
+    assert!(
+        order.iter().any(|id| id.starts_with("Lv8")),
+        "LV8 must be in the hint-aware order"
+    );
     let diag = build_hint_diagnostics(&hints, true);
     assert!(diag.hints_used);
 
@@ -82,8 +87,15 @@ fn lv8_hint_integration_preserves_best_partial_and_reports_quota() {
         "best_partial_count": tracker.best_critical_count()
     }));
 
-    assert!(!took_b, "valid 1/3 must NOT displace the valid 2/3 incumbent");
-    assert_eq!(tracker.best_critical_count(), 2, "best partial stays at 2/3");
+    assert!(
+        !took_b,
+        "valid 1/3 must NOT displace the valid 2/3 incumbent"
+    );
+    assert_eq!(
+        tracker.best_critical_count(),
+        2,
+        "best partial stays at 2/3"
+    );
 
     let target_quota = quotas
         .iter()

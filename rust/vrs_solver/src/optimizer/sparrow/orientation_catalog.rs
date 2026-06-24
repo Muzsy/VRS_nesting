@@ -81,7 +81,9 @@ pub enum OrientationCandidateSource {
 impl OrientationCandidateSource {
     pub fn as_str(self) -> &'static str {
         match self {
-            OrientationCandidateSource::DominantEdgeToVerticalAxis => "dominant_edge_to_vertical_axis",
+            OrientationCandidateSource::DominantEdgeToVerticalAxis => {
+                "dominant_edge_to_vertical_axis"
+            }
             OrientationCandidateSource::DominantEdgeToHorizontalAxis => {
                 "dominant_edge_to_horizontal_axis"
             }
@@ -168,8 +170,8 @@ impl OrientationCatalog {
                 let nl = edge.normalized_length.clamp(0.0, 1.0);
                 let base = 0.55 + 0.40 * nl;
                 // Prefer the axis the edge is already closer to (matches the contour seed heuristic).
-                let prefers_horizontal =
-                    nearest_axis_dist(norm360(edge.angle_deg)) <= nearest_axis_dist(norm360(edge.angle_deg + 90.0));
+                let prefers_horizontal = nearest_axis_dist(norm360(edge.angle_deg))
+                    <= nearest_axis_dist(norm360(edge.angle_deg + 90.0));
                 raw.push(OrientationCandidate {
                     angle_deg: horiz,
                     kind: OrientationCandidateKind::SheetHorizontalAlignment,
@@ -281,7 +283,8 @@ impl OrientationCatalog {
         let candidates = dedup_by_angle(raw);
 
         // Extrema samples from the REAL spacing-expanded contour (one per unique candidate angle).
-        let mut extrema_samples: Vec<OrientationExtremaSample> = Vec::with_capacity(candidates.len());
+        let mut extrema_samples: Vec<OrientationExtremaSample> =
+            Vec::with_capacity(candidates.len());
         for c in &candidates {
             if let Some(s) = extrema_sample(spacing_collision_shape, c.angle_deg) {
                 extrema_samples.push(s);
@@ -412,7 +415,8 @@ pub fn build_orientation_catalog_for_part(
     sheet_height: f64,
     spacing_mm: f64,
 ) -> Result<OrientationCatalog, String> {
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S_ORIENT".to_string(),
         quantity: 1,
@@ -619,7 +623,11 @@ fn cmp_candidate(a: &OrientationCandidate, b: &OrientationCandidate) -> Ordering
         .partial_cmp(&a.score)
         .unwrap_or(Ordering::Equal)
         .then_with(|| a.kind.ordinal().cmp(&b.kind.ordinal()))
-        .then_with(|| a.angle_deg.partial_cmp(&b.angle_deg).unwrap_or(Ordering::Equal))
+        .then_with(|| {
+            a.angle_deg
+                .partial_cmp(&b.angle_deg)
+                .unwrap_or(Ordering::Equal)
+        })
 }
 
 /// Deduplicate candidates whose angles are within `ANGLE_IDENTITY_TOL_DEG`, keeping the
@@ -658,7 +666,11 @@ mod tests {
             width: w,
             height: h,
             quantity: 1,
-            allowed_rotations_deg: if continuous { vec![] } else { vec![0, 90, 180, 270] },
+            allowed_rotations_deg: if continuous {
+                vec![]
+            } else {
+                vec![0, 90, 180, 270]
+            },
             rotation_policy: Some(if continuous {
                 RotationPolicyKind::Continuous
             } else {
@@ -691,13 +703,7 @@ mod tests {
             .iter()
             .map(|p| [p[0] * c - p[1] * s, p[0] * s + p[1] * c])
             .collect();
-        let p = part(
-            "tilted",
-            420.0,
-            420.0,
-            serde_json::json!(pts),
-            continuous,
-        );
+        let p = part("tilted", 420.0, 420.0, serde_json::json!(pts), continuous);
         let base = prepare_base_shape_native(&p).expect("tilted base");
         (p, base)
     }
@@ -708,12 +714,14 @@ mod tests {
         let base = prepare_base_shape_native(&p).expect("base");
         let features = ContourFeatureSet::extract(&base);
         let cat = OrientationCatalog::compute("c_rect", &base, &features, true, &[]);
-        assert!(!cat.candidates.is_empty(), "continuous catalog must be non-empty");
         assert!(
-            cat.candidates
-                .iter()
-                .any(|c| c.source == OrientationCandidateSource::DominantEdgeToVerticalAxis
-                    || c.source == OrientationCandidateSource::DominantEdgeToHorizontalAxis),
+            !cat.candidates.is_empty(),
+            "continuous catalog must be non-empty"
+        );
+        assert!(
+            cat.candidates.iter().any(|c| c.source
+                == OrientationCandidateSource::DominantEdgeToVerticalAxis
+                || c.source == OrientationCandidateSource::DominantEdgeToHorizontalAxis),
             "continuous part must expose dominant-edge alignment candidates"
         );
         // For a rectangle the min-width orientation coincides with a dominant-edge axis alignment, so

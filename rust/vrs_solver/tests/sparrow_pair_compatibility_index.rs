@@ -18,7 +18,9 @@ const SHEET_H: f64 = 3000.0;
 const SPACING_MM: f64 = 8.0;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn lv8(qty: i64) -> Part {
@@ -50,7 +52,12 @@ fn tiny(id: &str) -> Part {
         rotation_policy: Some(RotationPolicyKind::Continuous),
         holes_points: None,
         prepared_holes_points: None,
-        outer_points: Some(serde_json::json!([[0.0, 0.0], [22.0, 0.0], [22.0, 22.0], [0.0, 22.0]])),
+        outer_points: Some(serde_json::json!([
+            [0.0, 0.0],
+            [22.0, 0.0],
+            [22.0, 22.0],
+            [0.0, 22.0]
+        ])),
         prepared_outer_points: None,
     }
 }
@@ -58,23 +65,38 @@ fn tiny(id: &str) -> Part {
 #[test]
 fn lv8_pair_index_has_same_part_critical_candidate_and_excludes_filler() {
     let parts = vec![lv8(6), tiny("tiny_filler")];
-    let index = build_pair_compatibility_index(&parts, SHEET_W, SHEET_H, SPACING_MM, PairIndexConfig::default())
-        .expect("pair index");
+    let index = build_pair_compatibility_index(
+        &parts,
+        SHEET_W,
+        SHEET_H,
+        SPACING_MM,
+        PairIndexConfig::default(),
+    )
+    .expect("pair index");
 
     // Same-part critical candidate present (no hard-coded part name in the builder).
     assert!(
-        index.candidates.iter().any(|c| c.part_a_id.starts_with("Lv8")
-            && c.part_b_id.starts_with("Lv8")
-            && c.candidate_source == PairCandidateSource::SamePartFlip),
+        index
+            .candidates
+            .iter()
+            .any(|c| c.part_a_id.starts_with("Lv8")
+                && c.part_b_id.starts_with("Lv8")
+                && c.candidate_source == PairCandidateSource::SamePartFlip),
         "LV8 must yield a same-part flip pair candidate"
     );
     // Tiny filler excluded from the critical-only index.
     assert!(
-        index.candidates.iter().all(|c| c.part_a_id != "tiny_filler" && c.part_b_id != "tiny_filler"),
+        index
+            .candidates
+            .iter()
+            .all(|c| c.part_a_id != "tiny_filler" && c.part_b_id != "tiny_filler"),
         "tiny filler must be excluded"
     );
     // At least one valid (cde + spacing clear) candidate.
-    assert!(index.valid_candidates() >= 1, "at least one valid pair candidate required");
+    assert!(
+        index.valid_candidates() >= 1,
+        "at least one valid pair candidate required"
+    );
     // Rotation + transform metadata present.
     for c in &index.candidates {
         assert!(c.rotation_a_deg.is_finite() && c.rotation_b_deg.is_finite());

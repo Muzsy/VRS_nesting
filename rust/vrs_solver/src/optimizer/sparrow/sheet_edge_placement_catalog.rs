@@ -198,12 +198,18 @@ pub fn anchor_catalog_enabled() -> bool {
 /// solver's actual sheet, using the instance's `OrientationCatalog` rotations and its spacing-expanded
 /// collision contour's true extrema. Candidates are flush to the (already margin-adjusted) solver sheet
 /// edges, with corner + center secondary policies. Deterministic; corner variants first.
-pub fn anchor_candidates_for_instance(inst: &SPInstance, sheet: &SheetShape) -> Vec<LiveAnchorCandidate> {
+pub fn anchor_candidates_for_instance(
+    inst: &SPInstance,
+    sheet: &SheetShape,
+) -> Vec<LiveAnchorCandidate> {
     let shape = inst.spacing_collision_base_shape.as_ref();
     // Candidate rotations from the per-part OrientationCatalog (continuous, incl. fractional min-width).
     let mut rotations: Vec<(f64, Option<usize>)> = Vec::new();
     for c in &inst.orientation_catalog.candidates {
-        if !rotations.iter().any(|(a, _)| (a - c.angle_deg).abs() < 0.01) {
+        if !rotations
+            .iter()
+            .any(|(a, _)| (a - c.angle_deg).abs() < 0.01)
+        {
             rotations.push((c.angle_deg, c.source_edge_index));
         }
     }
@@ -221,7 +227,9 @@ pub fn anchor_candidates_for_instance(inst: &SPInstance, sheet: &SheetShape) -> 
         }
     };
     for (rot, edge_idx) in rotations {
-        let Some(f) = frame_extrema(shape, rot) else { continue };
+        let Some(f) = frame_extrema(shape, rot) else {
+            continue;
+        };
         let rw = f[2] - f[0];
         let rh = f[3] - f[1];
         if rw > sheet.width + 1e-6 || rh > sheet.height + 1e-6 {
@@ -297,7 +305,8 @@ pub fn build_sheet_edge_anchor_catalog(
 ) -> Result<SheetEdgeAnchorCatalog, String> {
     let half_spacing = spacing_mm / 2.0;
     let inset = margin_mm - half_spacing;
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S_ANCHOR".to_string(),
         quantity: 1,
@@ -375,8 +384,18 @@ pub fn build_sheet_edge_anchor_catalog(
         for &edge in &edges {
             for &pol in &policies {
                 let cand = build_candidate(
-                    &part.id, edge, pol, rot, edge_idx, edge_ang, target_axis, &off, &phys, &raw,
-                    &shrunk, margin_mm,
+                    &part.id,
+                    edge,
+                    pol,
+                    rot,
+                    edge_idx,
+                    edge_ang,
+                    target_axis,
+                    &off,
+                    &phys,
+                    &raw,
+                    &shrunk,
+                    margin_mm,
                 );
                 candidates.push(cand);
             }
@@ -394,9 +413,11 @@ pub fn build_sheet_edge_anchor_catalog(
                 .unwrap_or(Ordering::Equal)
                 .then_with(|| {
                     // deterministic tie-break: corner over center, then lower edge ordinal
-                    (b.is_corner as u8)
-                        .cmp(&(a.is_corner as u8))
-                        .then_with(|| a.target_sheet_edge.as_str().cmp(b.target_sheet_edge.as_str()))
+                    (b.is_corner as u8).cmp(&(a.is_corner as u8)).then_with(|| {
+                        a.target_sheet_edge
+                            .as_str()
+                            .cmp(b.target_sheet_edge.as_str())
+                    })
                 })
         })
         .map(|(i, _)| i);
@@ -635,7 +656,10 @@ mod tests {
                 "missing boundary-clear candidate on edge {edge}"
             );
         }
-        assert!(cat.corner_count() >= 1, "corner variants must be first-class");
+        assert!(
+            cat.corner_count() >= 1,
+            "corner variants must be first-class"
+        );
     }
 
     #[test]
@@ -647,7 +671,10 @@ mod tests {
             .iter()
             .filter(|c| c.boundary_clear && c.is_corner)
             .count();
-        assert!(clear_corner > 0, "must have boundary-clear corner candidates");
+        assert!(
+            clear_corner > 0,
+            "must have boundary-clear corner candidates"
+        );
     }
 
     #[test]
@@ -655,8 +682,14 @@ mod tests {
         let p = lv8_like_part();
         let cat = build_sheet_edge_anchor_catalog(&p, 1500.0, 3000.0, 5.0, 8.0).expect("catalog");
         let sel = cat.selected().expect("a selected candidate");
-        assert!(sel.boundary_clear, "selected candidate must be boundary-clear");
-        assert!(sel.free_space_score > 0.0, "selected candidate must record a free-space score");
+        assert!(
+            sel.boundary_clear,
+            "selected candidate must be boundary-clear"
+        );
+        assert!(
+            sel.free_space_score > 0.0,
+            "selected candidate must record a free-space score"
+        );
     }
 
     #[test]
@@ -667,7 +700,10 @@ mod tests {
         let cat = build_sheet_edge_anchor_catalog(&p, 1500.0, 3000.0, 5.0, 8.0).expect("catalog");
         let sel = cat.selected().expect("selected");
         // physical extremum sits at ~margin from the raw edge (within a small refine tolerance).
-        assert!(sel.margin_error <= 5.0, "physical extremum must be near the margin line");
+        assert!(
+            sel.margin_error <= 5.0,
+            "physical extremum must be near the margin line"
+        );
     }
 
     #[test]

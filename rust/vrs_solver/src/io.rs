@@ -357,15 +357,44 @@ pub struct BppReductionDiagnostics {
     pub bpp_q61_accepted_anchor_source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bpp_q61_accepted_anchor_secondary_policy: Option<String>,
+    #[serde(default)]
+    pub bpp_q68_anchor_competition_ran: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q68_anchor_feature_score: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q68_anchor_catalog_score: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q68_anchor_selected_path: Option<String>,
+    // Q69 forced-latest result audit
+    #[serde(default)]
+    pub bpp_q69_forced_latest_mode: bool,
+    #[serde(default)]
+    pub bpp_q69_native_seed_fallback_used: bool,
+    #[serde(default)]
+    pub bpp_q69_builder_random_bootstrap_used: bool,
+    #[serde(default)]
+    pub bpp_q69_builder_sheet_slice_hits: usize,
+    #[serde(default)]
+    pub bpp_q69_completion_sweep_inserted: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q69_seed_source: Option<String>,
     // Q57B PairCompatibilityIndex / interlock_pair (Interlock role)
     #[serde(default)]
     pub bpp_q61_pair_index_consulted: bool,
     #[serde(default)]
     pub bpp_q61_pair_candidates_generated: usize,
     #[serde(default)]
+    pub bpp_q65_pair_candidates_valid: usize,
+    #[serde(default)]
     pub bpp_q61_pair_candidates_accepted: usize,
     #[serde(default)]
     pub bpp_q61_interlock_fallback_to_neighbour: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q65_accepted_pair_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q65_accepted_pair_score: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q65_accepted_pair_relative_transform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bpp_q61_pair_rejection_summary: Option<String>,
     // Q59 true-extreme slot-edge BandInsert
@@ -384,6 +413,25 @@ pub struct BppReductionDiagnostics {
     pub bpp_q61_best_partial_max_critical_count: usize,
     #[serde(default)]
     pub bpp_q61_best_partial_downgrades_rejected: usize,
+    // Q58A/Q58B production SheetFeasibilityHints cutover
+    #[serde(default)]
+    pub bpp_sheet_feasibility_hints_used: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bpp_target_critical_distribution: Vec<(String, Vec<usize>)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bpp_sheet_target_quota: Vec<(String, usize)>,
+    #[serde(default)]
+    pub bpp_sheet_target_quota_met: bool,
+    #[serde(default)]
+    pub bpp_sheet_best_partial_critical_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_sheet_best_partial_source: Option<String>,
+    #[serde(default)]
+    pub bpp_hint_queue_reorder_applied: bool,
+    #[serde(default)]
+    pub bpp_hint_frontier_extension_applied: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_hint_quota_abandoned_reason: Option<String>,
     // Q60 simultaneous critical admission
     #[serde(default)]
     pub bpp_q61_simultaneous_critical_consulted: bool,
@@ -391,6 +439,23 @@ pub struct BppReductionDiagnostics {
     pub bpp_q61_simultaneous_group_attempts: usize,
     #[serde(default)]
     pub bpp_q61_previous_group_parts_moved: bool,
+    // Q67 production simultaneous authority cutover
+    #[serde(default)]
+    pub bpp_q67_simultaneous_authority_used: bool,
+    #[serde(default)]
+    pub bpp_q67_simultaneous_candidates_generated: usize,
+    #[serde(default)]
+    pub bpp_q67_simultaneous_full_successes: usize,
+    #[serde(default)]
+    pub bpp_q67_simultaneous_partial_successes: usize,
+    #[serde(default)]
+    pub bpp_q67_simultaneous_best_partial_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q67_simultaneous_best_partial_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q67_simultaneous_rejection_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q67_simultaneous_accepted_group_source: Option<String>,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

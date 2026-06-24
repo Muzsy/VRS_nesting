@@ -112,9 +112,18 @@ fn world_polygon_for_placement(
             }
             vec![
                 Point { x: 0.0, y: 0.0 },
-                Point { x: part.width, y: 0.0 },
-                Point { x: part.width, y: part.height },
-                Point { x: 0.0, y: part.height },
+                Point {
+                    x: part.width,
+                    y: 0.0,
+                },
+                Point {
+                    x: part.width,
+                    y: part.height,
+                },
+                Point {
+                    x: 0.0,
+                    y: part.height,
+                },
             ]
         }
         PolygonExtraction::Invalid { .. } => return None,

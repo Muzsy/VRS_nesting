@@ -1,0 +1,370 @@
+{
+  "task": "sgh_q69_full276_lv8_forced_latest_result_audit",
+  "source_package": "artifacts/benchmarks/sgh_q49/inputs/q49_full276_6x1500x3000_margin5_spacing8_continuous_300.json",
+  "time_limit_s": 600,
+  "stocks": {
+    "quantity": 2,
+    "width": 1500.0,
+    "height": 3000.0
+  },
+  "technology": {
+    "margin_mm": 5.0,
+    "spacing_mm": 5.0,
+    "kerf_mm": 0.0,
+    "rotation_policy": "continuous"
+  },
+  "run": {
+    "status": "partial",
+    "placed_count": 62,
+    "unplaced_count": 214,
+    "used_sheets": 2,
+    "utilization_pct": 48.79324783882088,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "forced_latest_mode": true,
+    "seed_source": "builder_forced_latest",
+    "native_seed_fallback_used": false,
+    "builder_random_bootstrap_used": false,
+    "builder_sheet_slice_hits": 1,
+    "completion_sweep_inserted": 0,
+    "builder_applied": true,
+    "sheets_opened": 2,
+    "critical_admitted": 10,
+    "critical_deferred": 6,
+    "max_critical_per_sheet": 5,
+    "feature_candidates_accepted": 9,
+    "pair_index_consulted": true,
+    "pair_candidates_accepted": 0,
+    "anchor_catalog_accepted": 2,
+    "slot_edge_candidates_accepted": 5,
+    "simultaneous_authority_used": false,
+    "best_partial_max_critical_count": 5,
+    "critical_phase_close_reason": "sheet_phase_exhausted",
+    "non_orthogonal_rotation_count": 42,
+    "rotation_top_counts": [
+      {
+        "rotation_deg": 270.0,
+        "count": 8
+      },
+      {
+        "rotation_deg": 74.0,
+        "count": 7
+      },
+      {
+        "rotation_deg": 180.0,
+        "count": 7
+      },
+      {
+        "rotation_deg": 330.0,
+        "count": 5
+      },
+      {
+        "rotation_deg": 300.0,
+        "count": 4
+      },
+      {
+        "rotation_deg": 90.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 98.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 210.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 240.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 0.0,
+        "count": 2
+      },
+      {
+        "rotation_deg": 60.0,
+        "count": 2
+      },
+      {
+        "rotation_deg": 82.0,
+        "count": 2
+      }
+    ],
+    "forced_latest_locked": true,
+    "role_aware_activity_visible": true,
+    "wall_time_s": 156.1
+  },
+  "comparisons": {
+    "q62_current": {
+      "status": "partial",
+      "placed_count": 259,
+      "unplaced_count": 17,
+      "used_sheets": 2,
+      "utilization_pct": 49.96641349141249,
+      "final_pairs": 0,
+      "boundary_violations": 0,
+      "forced_latest_mode": null,
+      "seed_source": null,
+      "native_seed_fallback_used": null,
+      "builder_random_bootstrap_used": null,
+      "builder_sheet_slice_hits": null,
+      "completion_sweep_inserted": null,
+      "builder_applied": true,
+      "sheets_opened": 1,
+      "critical_admitted": 2,
+      "critical_deferred": 4,
+      "max_critical_per_sheet": 2,
+      "feature_candidates_accepted": 2,
+      "pair_index_consulted": false,
+      "pair_candidates_accepted": 0,
+      "anchor_catalog_accepted": 0,
+      "slot_edge_candidates_accepted": 0,
+      "simultaneous_authority_used": null,
+      "best_partial_max_critical_count": 2,
+      "critical_phase_close_reason": "deadline",
+      "non_orthogonal_rotation_count": 220,
+      "rotation_top_counts": [
+        {
+          "rotation_deg": 90.0,
+          "count": 13
+        },
+        {
+          "rotation_deg": 180.0,
+          "count": 12
+        },
+        {
+          "rotation_deg": 270.0,
+          "count": 9
+        },
+        {
+          "rotation_deg": 337.5,
+          "count": 9
+        },
+        {
+          "rotation_deg": 202.5,
+          "count": 8
+        },
+        {
+          "rotation_deg": 247.5,
+          "count": 7
+        },
+        {
+          "rotation_deg": 315.0,
+          "count": 6
+        },
+        {
+          "rotation_deg": 0.0,
+          "count": 5
+        },
+        {
+          "rotation_deg": 22.5,
+          "count": 5
+        },
+        {
+          "rotation_deg": 112.5,
+          "count": 5
+        },
+        {
+          "rotation_deg": 135.0,
+          "count": 4
+        },
+        {
+          "rotation_deg": 157.5,
+          "count": 4
+        }
+      ],
+      "forced_latest_locked": false,
+      "role_aware_activity_visible": true,
+      "wall_time_s": 0.0,
+      "label": "q62_current"
+    },
+    "q63_strict": {
+      "status": "partial",
+      "placed_count": 39,
+      "unplaced_count": 237,
+      "used_sheets": 1,
+      "utilization_pct": 47.42769561160895,
+      "final_pairs": 0,
+      "boundary_violations": 0,
+      "forced_latest_mode": null,
+      "seed_source": null,
+      "native_seed_fallback_used": null,
+      "builder_random_bootstrap_used": null,
+      "builder_sheet_slice_hits": null,
+      "completion_sweep_inserted": null,
+      "builder_applied": true,
+      "sheets_opened": 1,
+      "critical_admitted": 2,
+      "critical_deferred": 4,
+      "max_critical_per_sheet": 2,
+      "feature_candidates_accepted": 2,
+      "pair_index_consulted": true,
+      "pair_candidates_accepted": 1,
+      "anchor_catalog_accepted": 0,
+      "slot_edge_candidates_accepted": 0,
+      "simultaneous_authority_used": null,
+      "best_partial_max_critical_count": 2,
+      "critical_phase_close_reason": "frontier_fail_limit",
+      "non_orthogonal_rotation_count": 32,
+      "rotation_top_counts": [
+        {
+          "rotation_deg": 74.0,
+          "count": 5
+        },
+        {
+          "rotation_deg": 330.0,
+          "count": 5
+        },
+        {
+          "rotation_deg": 0.0,
+          "count": 4
+        },
+        {
+          "rotation_deg": 30.0,
+          "count": 4
+        },
+        {
+          "rotation_deg": 210.0,
+          "count": 4
+        },
+        {
+          "rotation_deg": 60.0,
+          "count": 3
+        },
+        {
+          "rotation_deg": 88.0,
+          "count": 3
+        },
+        {
+          "rotation_deg": 180.0,
+          "count": 3
+        },
+        {
+          "rotation_deg": 150.0,
+          "count": 2
+        },
+        {
+          "rotation_deg": 82.0,
+          "count": 1
+        },
+        {
+          "rotation_deg": 86.0,
+          "count": 1
+        },
+        {
+          "rotation_deg": 94.0,
+          "count": 1
+        }
+      ],
+      "forced_latest_locked": false,
+      "role_aware_activity_visible": true,
+      "wall_time_s": 0.0,
+      "label": "q63_strict"
+    }
+  },
+  "render_manifest": {
+    "run_id": "q69_A_forced_latest_2sheet_sp5",
+    "task": "SGH-Q69",
+    "input_path": "artifacts/benchmarks/sgh_q69/inputs/q69_full276_2x1500x3000_margin5_spacing5_continuous_600.json",
+    "output_path": "artifacts/benchmarks/sgh_q69/outputs/q69_A_forced_latest_2sheet_sp5_output.json",
+    "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+    "used_sheet_count": 2,
+    "used_sheet_indices": [
+      0,
+      1
+    ],
+    "svg_count": 3,
+    "png_count": 3,
+    "have_cairosvg": true,
+    "per_sheet": [
+      {
+        "sheet_index": 0,
+        "stock_id": "S1500x3000",
+        "stock_width": 1500.0,
+        "stock_height": 3000.0,
+        "placed_count": 5,
+        "placed_part_area": 1577075.75,
+        "physical_utilization_pct": 35.0461,
+        "svg_path": "artifacts/benchmarks/sgh_q69/renders/q69_A_forced_latest_2sheet_sp5/sheet_00.svg",
+        "png_path": "artifacts/benchmarks/sgh_q69/renders/q69_A_forced_latest_2sheet_sp5/sheet_00.png"
+      },
+      {
+        "sheet_index": 1,
+        "stock_id": "S1500x3000",
+        "stock_width": 1500.0,
+        "stock_height": 3000.0,
+        "placed_count": 57,
+        "placed_part_area": 2609804.96,
+        "physical_utilization_pct": 57.9957,
+        "svg_path": "artifacts/benchmarks/sgh_q69/renders/q69_A_forced_latest_2sheet_sp5/sheet_01.svg",
+        "png_path": "artifacts/benchmarks/sgh_q69/renders/q69_A_forced_latest_2sheet_sp5/sheet_01.png"
+      }
+    ],
+    "overview_svg": "artifacts/benchmarks/sgh_q69/renders/q69_A_forced_latest_2sheet_sp5/overview.svg",
+    "overview_png": "artifacts/benchmarks/sgh_q69/renders/q69_A_forced_latest_2sheet_sp5/overview.png"
+  },
+  "visual_proxy": {
+    "non_orthogonal_rotation_count": 42,
+    "rotation_top_counts": [
+      {
+        "rotation_deg": 270.0,
+        "count": 8
+      },
+      {
+        "rotation_deg": 74.0,
+        "count": 7
+      },
+      {
+        "rotation_deg": 180.0,
+        "count": 7
+      },
+      {
+        "rotation_deg": 330.0,
+        "count": 5
+      },
+      {
+        "rotation_deg": 300.0,
+        "count": 4
+      },
+      {
+        "rotation_deg": 90.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 98.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 210.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 240.0,
+        "count": 3
+      },
+      {
+        "rotation_deg": 0.0,
+        "count": 2
+      },
+      {
+        "rotation_deg": 60.0,
+        "count": 2
+      },
+      {
+        "rotation_deg": 82.0,
+        "count": 2
+      }
+    ],
+    "interpretation": "The forced-latest run exposes non-orthogonal placement activity, so the current path is not visually collapsing to a 90-degree-only layout."
+  },
+  "acceptance": {
+    "forced_latest_locked": true,
+    "builder_reached_multiple_sheets": true,
+    "role_aware_activity_visible": true,
+    "non_orth_visible": true,
+    "no_regression_vs_q63_strict_on_placed": true
+  },
+  "verdict": "FAIL",
+  "finding": "The solver stayed on the forced latest-path lock without native seed fallback or random bootstrap, and both diagnostics and renders now make that explicit. That visibility goal passed, but the benchmark result itself failed: 62/276 placed on 2 sheets remains far below the Q62 current run's 259/276."
+}

@@ -159,7 +159,10 @@ pub struct SheetBuilderHintDiagnostics {
     pub frontier_extension_applied: bool,
 }
 
-pub fn build_hint_diagnostics(hints: &SheetFeasibilityHints, gate_on: bool) -> SheetBuilderHintDiagnostics {
+pub fn build_hint_diagnostics(
+    hints: &SheetFeasibilityHints,
+    gate_on: bool,
+) -> SheetBuilderHintDiagnostics {
     SheetBuilderHintDiagnostics {
         hints_used: gate_on,
         target_critical_distribution: hints
@@ -174,7 +177,10 @@ pub fn build_hint_diagnostics(hints: &SheetFeasibilityHints, gate_on: bool) -> S
             .collect(),
         queue_reorder_applied: gate_on,
         frontier_extension_applied: gate_on
-            && hints.critical_part_type_hints.iter().any(|c| c.target_per_sheet >= 2),
+            && hints
+                .critical_part_type_hints
+                .iter()
+                .any(|c| c.target_per_sheet >= 2),
     }
 }
 
@@ -195,10 +201,20 @@ mod tests {
     #[test]
     fn best_partial_never_downgrades_two_to_one() {
         let mut t = BestPartialTracker::new();
-        assert!(t.offer(inc(2, 1000.0, 50.0, false)), "first 2/3 becomes incumbent");
+        assert!(
+            t.offer(inc(2, 1000.0, 50.0, false)),
+            "first 2/3 becomes incumbent"
+        );
         // A valid 1-part result must NOT replace the held 2-part incumbent.
-        assert!(!t.offer(inc(1, 2000.0, 99.0, true)), "1/3 must not displace 2/3");
-        assert_eq!(t.best_critical_count(), 2, "incumbent stays at 2 critical parts");
+        assert!(
+            !t.offer(inc(1, 2000.0, 99.0, true)),
+            "1/3 must not displace 2/3"
+        );
+        assert_eq!(
+            t.best_critical_count(),
+            2,
+            "incumbent stays at 2 critical parts"
+        );
         assert_eq!(t.downgrades_rejected(), 1);
     }
 
@@ -206,7 +222,10 @@ mod tests {
     fn best_partial_upgrades_two_to_three() {
         let mut t = BestPartialTracker::new();
         t.offer(inc(2, 1000.0, 50.0, false));
-        assert!(t.offer(inc(3, 1500.0, 40.0, true)), "3/3 upgrades the incumbent");
+        assert!(
+            t.offer(inc(3, 1500.0, 40.0, true)),
+            "3/3 upgrades the incumbent"
+        );
         assert_eq!(t.best_critical_count(), 3);
     }
 
@@ -214,7 +233,10 @@ mod tests {
     fn equal_count_prefers_hint_target_then_area() {
         let mut t = BestPartialTracker::new();
         t.offer(inc(2, 1000.0, 50.0, false));
-        assert!(t.offer(inc(2, 900.0, 10.0, true)), "same count but hint-target-met wins");
+        assert!(
+            t.offer(inc(2, 900.0, 10.0, true)),
+            "same count but hint-target-met wins"
+        );
         assert!(t.best().unwrap().hint_target_met);
     }
 

@@ -29,6 +29,7 @@ use super::multisheet::{
 };
 use super::*;
 use crate::io::BppReductionDiagnostics;
+use crate::optimizer::sparrow::sheet_skeleton::SkeletonRole;
 use crate::sheet::{expand_sheets, Stock};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Instant;
@@ -80,12 +81,64 @@ fn sheet_placed_area(layout: &SparrowLayout, instances: &[SPInstance], sheet: us
         .sum()
 }
 
+fn unique_parts_from_instances(instances: &[SPInstance]) -> Vec<Part> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut parts: Vec<Part> = Vec::new();
+    for inst in instances {
+        if seen.insert(inst.part_id.clone()) {
+            parts.push(inst.part.clone());
+        }
+    }
+    parts
+}
+
+fn build_live_sheet_feasibility_hints(
+    problem: &SparrowProblem,
+) -> Result<super::sheet_feasibility::SheetFeasibilityHints, String> {
+    let Some(rep_sheet) = problem.container.sheets.iter().max_by(|a, b| {
+        a.area
+            .partial_cmp(&b.area)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }) else {
+        return Err("no solver sheets available for sheet-feasibility hints".to_string());
+    };
+    let parts = unique_parts_from_instances(&problem.instances);
+    // The production builder sees the already inset solver-sheet frame, so the live hint model is
+    // built in that same coordinate frame (margin 0 here, spacing still explicit).
+    super::sheet_feasibility::build_sheet_feasibility_hints(
+        &parts,
+        rep_sheet.width,
+        rep_sheet.height,
+        0.0,
+        problem.config.spacing_mm,
+    )
+}
+
+fn critical_incumbent_source(role: Option<SkeletonRole>) -> String {
+    match role {
+        Some(SkeletonRole::Anchor) => "anchor".to_string(),
+        Some(SkeletonRole::Interlock) => "interlock".to_string(),
+        Some(SkeletonRole::BandInsert) => "band_insert".to_string(),
+        None => "generic".to_string(),
+    }
+}
+
 fn layout_is_full_feasible(
     layout: &SparrowLayout,
     instances: &[SPInstance],
     sheets: &[SheetShape],
 ) -> bool {
     if layout.placements.len() != instances.len() {
+        return false;
+    }
+    let mut seen = vec![false; instances.len()];
+    for p in &layout.placements {
+        if p.instance_idx >= instances.len() || seen[p.instance_idx] {
+            return false;
+        }
+        seen[p.instance_idx] = true;
+    }
+    if seen.iter().any(|&v| !v) {
         return false;
     }
     let t = SparrowCollisionTracker::final_validation_tracker(layout, instances, sheets);
@@ -99,6 +152,46 @@ fn layout_conflict_count(
 ) -> usize {
     let t = SparrowCollisionTracker::final_validation_tracker(layout, instances, sheets);
     t.colliding_pairs() + t.boundary_violations()
+}
+
+fn role_aware_path_should_skip_generic_direct(
+    skeleton_on: bool,
+    role: Option<super::sheet_skeleton::SkeletonRole>,
+) -> bool {
+    skeleton_on && role.is_some()
+}
+
+fn forced_latest_sheet_deadline(now_s: f64, deadline_s: f64, remaining_sheet_count: usize) -> f64 {
+    if remaining_sheet_count <= 1 {
+        return deadline_s;
+    }
+    let remaining_budget = (deadline_s - now_s).max(0.0);
+    (now_s + remaining_budget / remaining_sheet_count as f64).min(deadline_s)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnchorAuthorityWinner {
+    None,
+    Feature,
+    Catalog,
+}
+
+fn choose_anchor_authority_winner(
+    feature_score: Option<f64>,
+    catalog_score: Option<f64>,
+) -> AnchorAuthorityWinner {
+    match (feature_score, catalog_score) {
+        (None, None) => AnchorAuthorityWinner::None,
+        (Some(_), None) => AnchorAuthorityWinner::Feature,
+        (None, Some(_)) => AnchorAuthorityWinner::Catalog,
+        (Some(feature), Some(catalog)) => {
+            if catalog + 1e-9 >= feature {
+                AnchorAuthorityWinner::Catalog
+            } else {
+                AnchorAuthorityWinner::Feature
+            }
+        }
+    }
 }
 
 // ── ADAPTED bp_separator: sub-problem separation over an explicit sheet set ─────
@@ -1467,15 +1560,15 @@ fn density_insert_part(
         && feature_candidate_generation_enabled()
         && inst.shape_profile.is_critical()
     {
-            let seeds = generate_feature_candidate_seeds_for_sheet(
-                inst,
-                cur_rot,
-                sheet,
-                &feature_neighbours,
-                n_uniform + 20,
-            );
-            record_feature_seed_metrics(&seeds, bpp, diag);
-            seeds
+        let seeds = generate_feature_candidate_seeds_for_sheet(
+            inst,
+            cur_rot,
+            sheet,
+            &feature_neighbours,
+            n_uniform + 20,
+        );
+        record_feature_seed_metrics(&seeds, bpp, diag);
+        seeds
     } else {
         Vec::new()
     };
@@ -1840,13 +1933,12 @@ fn try_seeded_critical_separation(
     // rotation-correct) cleans an overlapping seed into interlock with continuous rotation; default
     // weight 2.0 so it is active even without VRS_ADMISSION_DENSITY_BIAS. Off the skeleton path the
     // explicit bias knob decides (0.0 ⇒ the legacy overlap-minimising separator).
-    let w_density = admission_density_bias().max(
-        if super::sheet_skeleton::skeleton_builder_enabled() {
+    let w_density =
+        admission_density_bias().max(if super::sheet_skeleton::skeleton_builder_enabled() {
             2.0
         } else {
             0.0
-        },
-    );
+        });
     let (feasible, remapped) = if w_density > 0.0 {
         density_biased_separate(
             &trial,
@@ -1874,7 +1966,14 @@ fn try_seeded_critical_separation(
     // SGH-Q55D'-2: if the sequential separator failed, try a SIMULTANEOUS simulated-annealing repack
     // of the whole sheet — the lever for the tight 3-way interlock the single-part descent (Q52)
     // cannot reach (it moves all critical parts at once into the deep-interlock configuration).
-    let (feasible, remapped) = if !feasible && super::sheet_skeleton::skeleton_builder_enabled() {
+    //
+    // SGH-Q64/Q61 follow-up: keep this available on the legacy builder path as well once we are
+    // already admitting the 3rd-or-later critical on a sheet. Otherwise the builder-only reference
+    // at spacing 0 silently loses the proven one-sheet 3-way interlock and spills the last part to a
+    // new sheet even though the simultaneous repack is exactly the intended recovery lever.
+    let allow_simultaneous_repack =
+        super::sheet_skeleton::skeleton_builder_enabled() || admitted_count >= 2;
+    let (feasible, remapped) = if !feasible && allow_simultaneous_repack {
         simultaneous_critical_repack(
             &trial,
             target_sheet,
@@ -1902,6 +2001,69 @@ fn try_seeded_critical_separation(
             return Some(out);
         }
     }
+    None
+}
+
+#[allow(clippy::too_many_arguments)]
+fn try_feature_first_direct(
+    working: &SparrowLayout,
+    cand_inst_idx: usize,
+    target_sheet: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    sheet_sh: &Rc<CdePreparedShape>,
+    sheet: &SheetShape,
+    inst: &SPInstance,
+    rot: f64,
+    weights: &DensityWeights,
+    rng: &mut DeterministicRng,
+    diag: &mut SparrowDiagnostics,
+    bpp: &mut BppReductionDiagnostics,
+) -> Option<SparrowLayout> {
+    bpp.bpp_critical_feature_admission_attempts += 1;
+    let mut trial = working.clone();
+    let cand_li = trial.placements.len();
+    let (ax, ay) = placement_anchor_from_rect_min(
+        sheet.min_x,
+        sheet.min_y,
+        inst.part.width,
+        inst.part.height,
+        rot,
+    );
+    trial.placements.push(SparrowPlacement {
+        instance_idx: cand_inst_idx,
+        sheet_index: target_sheet,
+        x: ax,
+        y: ay,
+        rotation_deg: rot,
+    });
+    let mut tracker = SparrowCollisionTracker::build(&trial, instances, solver_sheets);
+    tracker.shapes[cand_li] = None;
+    if let Some(pl) = density_insert_part(
+        cand_li,
+        target_sheet,
+        &trial,
+        instances,
+        solver_sheets,
+        &tracker,
+        sheet_sh,
+        weights,
+        rng,
+        true,
+        false,
+        false,
+        diag,
+        bpp,
+    ) {
+        trial.placements[cand_li] = pl;
+        if SparrowCollisionTracker::final_validation_tracker(&trial, instances, solver_sheets)
+            .is_feasible()
+        {
+            bpp.bpp_critical_feature_admission_successes += 1;
+            return Some(trial);
+        }
+    }
+    bpp.bpp_critical_feature_admission_failures += 1;
     None
 }
 
@@ -1933,7 +2095,11 @@ fn sheet_freespace_score(
 /// bbox, edge-aligned to the slot corners, in the sheet-aware orientations (long/short edge + flip)
 /// that fit the slot. The third reference big part goes into the preserved band, sheet-edge-aligned,
 /// not interlocked to the anchor pair. Returns `(rect_min_x, rect_min_y, rotation_deg)`.
-fn band_insert_seeds(inst: &SPInstance, sheet: &SheetShape, slot: [f64; 4]) -> Vec<(f64, f64, f64)> {
+fn band_insert_seeds(
+    inst: &SPInstance,
+    sheet: &SheetShape,
+    slot: [f64; 4],
+) -> Vec<(f64, f64, f64)> {
     let (sx0, sy0, sx1, sy1) = (slot[0], slot[1], slot[2], slot[3]);
     let (slot_w, slot_h) = (sx1 - sx0, sy1 - sy0);
     let (long_dir, short_dir) = if sheet.width >= sheet.height {
@@ -1956,7 +2122,9 @@ fn band_insert_seeds(inst: &SPInstance, sheet: &SheetShape, slot: [f64; 4]) -> V
         ] {
             let rmx = rmx.clamp(sheet.min_x, (sheet.max_x - rw).max(sheet.min_x));
             let rmy = rmy.clamp(sheet.min_y, (sheet.max_y - rh).max(sheet.min_y));
-            if !out.iter().any(|&(x, y, r)| (x - rmx).abs() < 1.0 && (y - rmy).abs() < 1.0 && (r - rot).abs() < 1e-6) {
+            if !out.iter().any(|&(x, y, r)| {
+                (x - rmx).abs() < 1.0 && (y - rmy).abs() < 1.0 && (r - rot).abs() < 1e-6
+            }) {
                 out.push((rmx, rmy, rot));
             }
         }
@@ -2046,7 +2214,8 @@ fn simultaneous_critical_repack(
             p.x += (rng.next_f64() - 0.5) * 2.0 * tscale;
             p.y += (rng.next_f64() - 0.5) * 2.0 * tscale;
             if inst.continuous_rotation {
-                p.rotation_deg = (p.rotation_deg + (rng.next_f64() - 0.5) * 2.0 * rscale).rem_euclid(360.0);
+                p.rotation_deg =
+                    (p.rotation_deg + (rng.next_f64() - 0.5) * 2.0 * rscale).rem_euclid(360.0);
             }
             // clamp the anchor so the rotated bbox stays on-sheet.
             let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, p.rotation_deg);
@@ -2054,8 +2223,13 @@ fn simultaneous_critical_repack(
                 rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, p.rotation_deg);
             rmx = rmx.clamp(sheet.min_x, (sheet.max_x - rw).max(sheet.min_x));
             rmy = rmy.clamp(sheet.min_y, (sheet.max_y - rh).max(sheet.min_y));
-            let (ax, ay) =
-                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, p.rotation_deg);
+            let (ax, ay) = placement_anchor_from_rect_min(
+                rmx,
+                rmy,
+                inst.part.width,
+                inst.part.height,
+                p.rotation_deg,
+            );
             p.x = ax;
             p.y = ay;
         }
@@ -2092,6 +2266,211 @@ fn commit_feature_admission(
     diag.feature_refine_refined_rotation_deg = Some(seed.rotation_seed_deg);
     diag.feature_refine_iterations = seed.refine_iterations;
     diag.feature_refine_rejection_reason = seed.refine_rejection_reason.clone();
+}
+
+fn try_simultaneous_same_part_group_authority(
+    working: &SparrowLayout,
+    cand_inst_idx: usize,
+    target_sheet: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    bpp: &mut BppReductionDiagnostics,
+) -> Option<SparrowLayout> {
+    let sheet = &solver_sheets[target_sheet];
+    let cand_inst = &instances[cand_inst_idx];
+    let sheet_placements: Vec<&SparrowPlacement> = working
+        .placements
+        .iter()
+        .filter(|p| p.sheet_index == target_sheet)
+        .collect();
+    let same_part_placements: Vec<&SparrowPlacement> = sheet_placements
+        .iter()
+        .copied()
+        .filter(|p| instances[p.instance_idx].part_id == cand_inst.part_id)
+        .collect();
+    if same_part_placements.is_empty() {
+        return None;
+    }
+    let target_count = same_part_placements.len() + 1;
+    if !(2..=3).contains(&target_count) {
+        return None;
+    }
+    let observed_edge_inset = same_part_placements
+        .iter()
+        .map(|p| {
+            let inst = &instances[p.instance_idx];
+            let (rmx, rmy) =
+                rect_min_from_anchor(p.x, p.y, inst.part.width, inst.part.height, p.rotation_deg);
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, p.rotation_deg);
+            [
+                rmx - sheet.min_x,
+                rmy - sheet.min_y,
+                sheet.max_x - (rmx + rw),
+                sheet.max_y - (rmy + rh),
+            ]
+            .into_iter()
+            .fold(f64::INFINITY, f64::min)
+        })
+        .fold(f64::INFINITY, f64::min)
+        .clamp(0.0, f64::INFINITY);
+
+    bpp.bpp_q61_simultaneous_critical_consulted = true;
+    bpp.bpp_q61_simultaneous_group_attempts += 1;
+
+    if target_count >= 3 && super::interlock_pair::interlock_pair_enabled() {
+        bpp.bpp_q61_pair_index_consulted = true;
+        if let Some(anchor_pl) = same_part_placements.first() {
+            let anchor_inst = &instances[anchor_pl.instance_idx];
+            let occupied_boxes: Vec<[f64; 4]> = working
+                .placements
+                .iter()
+                .filter(|p| p.sheet_index == target_sheet)
+                .map(|p| critical_world_bbox(working, p.instance_idx, instances))
+                .collect();
+            let sheet_bbox = [sheet.min_x, sheet.min_y, sheet.max_x, sheet.max_y];
+            match super::interlock_pair::admit_interlock_pair_against_live_anchor(
+                anchor_inst,
+                anchor_pl,
+                cand_inst,
+                &occupied_boxes,
+                sheet_bbox,
+            ) {
+                Ok(adm) => {
+                    bpp.bpp_q61_pair_candidates_generated +=
+                        adm.diagnostics.pair_candidates_generated;
+                    bpp.bpp_q65_pair_candidates_valid += adm.diagnostics.pair_candidates_valid;
+                    if adm.diagnostics.pair_candidates_generated == 0 {
+                        bpp.bpp_q61_pair_rejection_summary = Some(
+                            "same_part_group_authority: pair_index_generated_no_candidates"
+                                .to_string(),
+                        );
+                    }
+                }
+                Err(err) => {
+                    bpp.bpp_q61_pair_rejection_summary =
+                        Some(format!("same_part_group_authority_pair_index_error: {err}"));
+                }
+            }
+        }
+    }
+
+    if sheet_placements.len() != same_part_placements.len() {
+        bpp.bpp_q67_simultaneous_rejection_summary = Some(format!(
+            "mixed_sheet_group_not_supported: sheet={target_sheet} same_part_on_sheet={} total_on_sheet={}",
+            same_part_placements.len(),
+            sheet_placements.len()
+        ));
+        return None;
+    }
+
+    match super::critical_simultaneous::admit_live_same_part_group(
+        cand_inst,
+        target_count,
+        sheet,
+        observed_edge_inset,
+    ) {
+        Ok(adm) => {
+            bpp.bpp_q67_simultaneous_candidates_generated += adm.arrangements.len();
+            bpp.bpp_q67_simultaneous_best_partial_count = bpp
+                .bpp_q67_simultaneous_best_partial_count
+                .max(adm.best_partial_count);
+            if adm.best_partial_source != "none" {
+                bpp.bpp_q67_simultaneous_best_partial_source =
+                    Some(adm.best_partial_source.clone());
+            }
+            if adm
+                .arrangements
+                .iter()
+                .any(|a| a.any_part_moved_in_refinement)
+            {
+                bpp.bpp_q61_previous_group_parts_moved = true;
+            }
+
+            if adm.full_success {
+                let preferred_source = adm.best_partial_source.clone();
+                let mut full_arrangements: Vec<
+                    &super::critical_simultaneous::GroupArrangementResult,
+                > = adm
+                    .arrangements
+                    .iter()
+                    .filter(|a| a.placed_count >= target_count)
+                    .collect();
+                full_arrangements.sort_by(|a, b| {
+                    let a_pref = a.arrangement.as_str() == preferred_source;
+                    let b_pref = b.arrangement.as_str() == preferred_source;
+                    b_pref.cmp(&a_pref).then_with(|| {
+                        b.score
+                            .partial_cmp(&a.score)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                });
+                let mut group_indices: Vec<usize> = same_part_placements
+                    .iter()
+                    .map(|p| p.instance_idx)
+                    .collect();
+                group_indices.push(cand_inst_idx);
+                let mut best_failed_summary: Option<String> = None;
+                for best in full_arrangements {
+                    let mut out_placements: Vec<SparrowPlacement> = working
+                        .placements
+                        .iter()
+                        .filter(|p| p.sheet_index != target_sheet)
+                        .cloned()
+                        .collect();
+                    for (instance_idx, placed) in group_indices.iter().zip(best.placed.iter()) {
+                        out_placements.push(SparrowPlacement {
+                            instance_idx: *instance_idx,
+                            sheet_index: target_sheet,
+                            x: placed.x,
+                            y: placed.y,
+                            rotation_deg: placed.rotation_deg,
+                        });
+                    }
+                    let out = SparrowLayout {
+                        placements: out_placements,
+                    };
+                    let tracker = SparrowCollisionTracker::final_validation_tracker(
+                        &out,
+                        instances,
+                        solver_sheets,
+                    );
+                    if tracker.is_feasible() {
+                        bpp.bpp_q67_simultaneous_authority_used = true;
+                        bpp.bpp_q67_simultaneous_full_successes += 1;
+                        bpp.bpp_q67_simultaneous_accepted_group_source =
+                            Some(best.arrangement.as_str().to_string());
+                        return Some(out);
+                    }
+                    best_failed_summary = Some(format!(
+                        "source={} colliding_pairs={} boundary_violations={} unsupported={}",
+                        best.arrangement.as_str(),
+                        tracker.colliding_pairs(),
+                        tracker.boundary_violations(),
+                        tracker.unsupported
+                    ));
+                }
+                bpp.bpp_q67_simultaneous_rejection_summary = Some(format!(
+                    "full_group_failed_final_validation: target_count={target_count} preferred_source={preferred_source} details={}",
+                    best_failed_summary.unwrap_or_else(|| "none".to_string())
+                ));
+                return None;
+            }
+
+            if adm.best_partial_count > 0 {
+                bpp.bpp_q67_simultaneous_partial_successes += 1;
+            }
+            bpp.bpp_q67_simultaneous_rejection_summary = Some(format!(
+                "target_count={target_count} best_partial={} best_source={} -> fallback",
+                adm.best_partial_count, adm.best_partial_source
+            ));
+            None
+        }
+        Err(err) => {
+            bpp.bpp_q67_simultaneous_rejection_summary =
+                Some(format!("simultaneous_group_error: {err}"));
+            None
+        }
+    }
 }
 
 /// SGH-Q51: try to admit critical `cand_inst_idx` onto `target_sheet`, with the already-admitted
@@ -2132,12 +2511,41 @@ fn try_admit_critical(
         .iter()
         .filter(|p| p.sheet_index == target_sheet)
         .count();
+    if super::critical_simultaneous::simultaneous_critical_enabled() && admitted_count >= 2 {
+        if let Some(out) = try_simultaneous_same_part_group_authority(
+            working,
+            cand_inst_idx,
+            target_sheet,
+            instances,
+            solver_sheets,
+            bpp,
+        ) {
+            return Some(out);
+        }
+    }
     // SGH-Q54C: the skeleton path drives the same feature-first admission (clearance-aware seeds +
     // overlap-tolerant separation), so VRS_SHEET_BUILDER_SKELETON alone enables it (incl. feature
     // candidate generation). Off the skeleton path the Q53D gates decide.
     let skeleton_on = super::sheet_skeleton::skeleton_builder_enabled();
-    let feature_first = (critical_feature_admission_enabled() || skeleton_on)
-        && (feature_candidate_generation_enabled() || skeleton_on);
+    // SGH-Q64 production cutover: the constructive sheet builder itself should exercise the newest
+    // critical admission path instead of silently staying on the legacy direct-only branch unless a
+    // second env flag is also set. The explicit envs still matter outside the builder path.
+    let feature_first = sheet_builder_enabled()
+        || ((critical_feature_admission_enabled() || skeleton_on)
+            && (feature_candidate_generation_enabled() || skeleton_on));
+
+    if skeleton_on && super::interlock_pair::interlock_pair_enabled() && admitted_count >= 1 {
+        bpp.bpp_q61_pair_index_consulted = true;
+        if role != Some(super::sheet_skeleton::SkeletonRole::Interlock)
+            && bpp.bpp_q61_pair_rejection_summary.is_none()
+        {
+            let role_label = role
+                .map(|r| r.as_str().to_string())
+                .unwrap_or_else(|| "none".to_string());
+            bpp.bpp_q61_pair_rejection_summary =
+                Some(format!("pair_index_not_applicable_for_role={role_label}"));
+        }
+    }
 
     if feature_first {
         // ── SGH-Q61: Anchor role consults the Q56C SheetEdgePlacementCatalog (edge+corner) and feeds
@@ -2160,9 +2568,21 @@ fn try_admit_critical(
                 }
                 bpp.bpp_role_anchor_generated += 1;
                 if let Some(out) = try_seeded_critical_separation(
-                    optimizer, working, cand_inst_idx, target_sheet, c.rect_min_x, c.rect_min_y,
-                    c.rotation_deg, admitted_count, instances, solver_sheets, sheet, started,
-                    deadline_s, rng, diag,
+                    optimizer,
+                    working,
+                    cand_inst_idx,
+                    target_sheet,
+                    c.rect_min_x,
+                    c.rect_min_y,
+                    c.rotation_deg,
+                    admitted_count,
+                    instances,
+                    solver_sheets,
+                    sheet,
+                    started,
+                    deadline_s,
+                    rng,
+                    diag,
                 ) {
                     let score = sheet_freespace_score(&out, target_sheet, instances, sheet);
                     if best_anchor_cat.as_ref().is_none_or(|(s, ..)| score > *s) {
@@ -2175,57 +2595,30 @@ fn try_admit_critical(
                 }
             }
         }
-        // SGH-Q55C: the Anchor seats via the sheet-aware sheet-edge candidates (stage 2), not the
-        // corner density-insert — skip the direct stage for the Anchor role on the skeleton path.
-        let anchor_skip_direct =
-            skeleton_on && role == Some(super::sheet_skeleton::SkeletonRole::Anchor);
-        if !anchor_skip_direct {
-        // ── (1) FEATURE-FIRST DIRECT: feature seeds only, admitted anchors fixed ───────────────
-        bpp.bpp_critical_feature_admission_attempts += 1;
-        let mut trial = working.clone();
-        let cand_li = trial.placements.len();
-        let (ax, ay) = placement_anchor_from_rect_min(
-            sheet.min_x,
-            sheet.min_y,
-            inst.part.width,
-            inst.part.height,
-            rot,
-        );
-        trial.placements.push(SparrowPlacement {
-            instance_idx: cand_inst_idx,
-            sheet_index: target_sheet,
-            x: ax,
-            y: ay,
-            rotation_deg: rot,
-        });
-        let mut tracker = SparrowCollisionTracker::build(&trial, instances, solver_sheets);
-        tracker.shapes[cand_li] = None;
-        if let Some(pl) = density_insert_part(
-            cand_li,
-            target_sheet,
-            &trial,
-            instances,
-            solver_sheets,
-            &tracker,
-            &sheet_sh,
-            &weights,
-            rng,
-            true,
-            false,
-            false,
-            diag,
-            bpp,
-        ) {
-            trial.placements[cand_li] = pl;
-            if SparrowCollisionTracker::final_validation_tracker(&trial, instances, solver_sheets)
-                .is_feasible()
-            {
-                bpp.bpp_critical_feature_admission_successes += 1;
-                return Some(trial);
+        // SGH-Q64 production authority cutover: once the skeleton role is known, the role-routed
+        // production path gets first authority. The older generic direct insert remains a fallback,
+        // but it must not short-circuit Anchor / Interlock / BandInsert before their own path runs.
+        let skip_direct_for_role = role_aware_path_should_skip_generic_direct(skeleton_on, role);
+        if !skip_direct_for_role {
+            // ── (1) FEATURE-FIRST DIRECT: feature seeds only, admitted anchors fixed ───────────
+            if let Some(out) = try_feature_first_direct(
+                working,
+                cand_inst_idx,
+                target_sheet,
+                instances,
+                solver_sheets,
+                &sheet_sh,
+                sheet,
+                inst,
+                rot,
+                &weights,
+                rng,
+                diag,
+                bpp,
+            ) {
+                return Some(out);
             }
-        }
-        bpp.bpp_critical_feature_admission_failures += 1;
-        } // end !anchor_skip_direct (SGH-Q55C)
+        } // end generic direct stage when no role-aware authority cutover applies
 
         // ── (2) FEATURE-FIRST CO-MOVABLE: seed from contour features, then separate together ──
         let feature_neighbours: Vec<PlacedFeatureNeighbour<'_>> = working
@@ -2314,9 +2707,21 @@ fn try_admit_critical(
                         }
                         bpp.bpp_role_band_insert_generated += 1;
                         if let Some(out) = try_seeded_critical_separation(
-                            optimizer, working, cand_inst_idx, target_sheet, s.rect_min_x,
-                            s.rect_min_y, s.rotation_deg, admitted_count, instances, solver_sheets,
-                            sheet, started, deadline_s, rng, diag,
+                            optimizer,
+                            working,
+                            cand_inst_idx,
+                            target_sheet,
+                            s.rect_min_x,
+                            s.rect_min_y,
+                            s.rotation_deg,
+                            admitted_count,
+                            instances,
+                            solver_sheets,
+                            sheet,
+                            started,
+                            deadline_s,
+                            rng,
+                            diag,
                         ) {
                             bpp.bpp_critical_feature_admission_successes += 1;
                             bpp.bpp_feature_candidates_accepted += 1;
@@ -2334,8 +2739,20 @@ fn try_admit_critical(
                     }
                     bpp.bpp_role_band_insert_generated += 1;
                     if let Some(out) = try_seeded_critical_separation(
-                        optimizer, working, cand_inst_idx, target_sheet, rmx, rmy, brot,
-                        admitted_count, instances, solver_sheets, sheet, started, deadline_s, rng,
+                        optimizer,
+                        working,
+                        cand_inst_idx,
+                        target_sheet,
+                        rmx,
+                        rmy,
+                        brot,
+                        admitted_count,
+                        instances,
+                        solver_sheets,
+                        sheet,
+                        started,
+                        deadline_s,
+                        rng,
                         diag,
                     ) {
                         bpp.bpp_critical_feature_admission_successes += 1;
@@ -2355,47 +2772,102 @@ fn try_admit_critical(
         {
             bpp.bpp_q61_pair_index_consulted = true;
             // Find a placed critical anchor on the target sheet (the deepest/first admitted).
-            let anchor_bbox = working
+            let anchor_placement = working
                 .placements
                 .iter()
-                .find(|p| p.sheet_index == target_sheet)
-                .map(|p| critical_world_bbox(working, p.instance_idx, instances));
-            if let Some(abbox) = anchor_bbox {
-                let seeds = super::quantify::pair_matrix::interlock_seeds_against_anchor(abbox, inst);
-                bpp.bpp_q61_pair_candidates_generated += seeds.len();
-                bpp.bpp_role_interlock_generated += seeds.len();
-                let mut rej_boundary = 0usize;
-                for s in &seeds {
-                    if started.elapsed().as_secs_f64() >= deadline_s {
-                        break;
+                .find(|p| p.sheet_index == target_sheet);
+            if let Some(anchor_pl) = anchor_placement {
+                let anchor_inst = &instances[anchor_pl.instance_idx];
+                let occupied_boxes: Vec<[f64; 4]> = working
+                    .placements
+                    .iter()
+                    .filter(|p| p.sheet_index == target_sheet)
+                    .map(|p| critical_world_bbox(working, p.instance_idx, instances))
+                    .collect();
+                let sheet_bbox = [sheet.min_x, sheet.min_y, sheet.max_x, sheet.max_y];
+                match super::interlock_pair::admit_interlock_pair_against_live_anchor(
+                    anchor_inst,
+                    anchor_pl,
+                    inst,
+                    &occupied_boxes,
+                    sheet_bbox,
+                ) {
+                    Ok(adm) => {
+                        bpp.bpp_q61_pair_candidates_generated +=
+                            adm.diagnostics.pair_candidates_generated;
+                        bpp.bpp_q65_pair_candidates_valid += adm.diagnostics.pair_candidates_valid;
+                        bpp.bpp_role_interlock_generated +=
+                            adm.diagnostics.pair_candidates_generated;
+                        let mut separation_rejects = 0usize;
+                        for s in &adm.considered {
+                            if started.elapsed().as_secs_f64() >= deadline_s {
+                                break;
+                            }
+                            if let Some(out) = try_seeded_critical_separation(
+                                optimizer,
+                                working,
+                                cand_inst_idx,
+                                target_sheet,
+                                s.accepted_x,
+                                s.accepted_y,
+                                s.accepted_rotation_deg,
+                                admitted_count,
+                                instances,
+                                solver_sheets,
+                                sheet,
+                                started,
+                                deadline_s,
+                                rng,
+                                diag,
+                            ) {
+                                bpp.bpp_critical_feature_admission_successes += 1;
+                                bpp.bpp_feature_candidates_accepted += 1;
+                                bpp.bpp_role_interlock_accepted += 1;
+                                bpp.bpp_q61_pair_candidates_accepted += 1;
+                                bpp.bpp_q65_accepted_pair_source =
+                                    Some(s.accepted_candidate_source.clone());
+                                bpp.bpp_q65_accepted_pair_score = Some(s.pair_score);
+                                bpp.bpp_q65_accepted_pair_relative_transform = Some(format!(
+                                    "dx={:.4}, dy={:.4}, delta_rot={:.4}",
+                                    s.relative_dx, s.relative_dy, s.rotation_delta_deg
+                                ));
+                                return Some(out);
+                            }
+                            separation_rejects += 1;
+                        }
+                        bpp.bpp_q61_interlock_fallback_to_neighbour = true;
+                        bpp.bpp_q61_pair_rejection_summary = Some(format!(
+                            "pair_candidates_generated={} valid_pair_candidates={} rejected_boundary={} rejected_collision={} rejected_transform={} separation_failed={} pair_not_found={} -> neighbour fallback",
+                            adm.diagnostics.pair_candidates_generated,
+                            adm.diagnostics.pair_candidates_valid,
+                            adm.diagnostics.rejection_boundary_violation,
+                            adm.diagnostics.rejection_collision,
+                            adm.diagnostics.rejection_transform_invalid,
+                            separation_rejects,
+                            adm.diagnostics.rejection_pair_not_found
+                        ));
                     }
-                    if let Some(out) = try_seeded_critical_separation(
-                        optimizer, working, cand_inst_idx, target_sheet, s.rect_min_x, s.rect_min_y,
-                        s.rotation_deg, admitted_count, instances, solver_sheets, sheet, started,
-                        deadline_s, rng, diag,
-                    ) {
-                        bpp.bpp_critical_feature_admission_successes += 1;
-                        bpp.bpp_feature_candidates_accepted += 1;
-                        bpp.bpp_role_interlock_accepted += 1;
-                        bpp.bpp_q61_pair_candidates_accepted += 1;
-                        return Some(out);
-                    } else {
-                        rej_boundary += 1;
+                    Err(err) => {
+                        bpp.bpp_q61_interlock_fallback_to_neighbour = true;
+                        bpp.bpp_q61_pair_rejection_summary = Some(format!(
+                            "interlock_pair_error: {} -> neighbour fallback",
+                            err
+                        ));
                     }
                 }
-                bpp.bpp_q61_interlock_fallback_to_neighbour = true;
-                bpp.bpp_q61_pair_rejection_summary = Some(format!(
-                    "pair_seeds_generated={} rejected_separation_failed={} (boundary|collision|candidate_not_clear|refinement_failed) → neighbour fallback",
-                    seeds.len(), rej_boundary
-                ));
             } else {
                 bpp.bpp_q61_interlock_fallback_to_neighbour = true;
-                bpp.bpp_q61_pair_rejection_summary =
-                    Some("role_anchor_missing: no placed anchor on sheet → neighbour fallback".to_string());
+                bpp.bpp_q61_pair_rejection_summary = Some(
+                    "role_anchor_missing: no placed anchor on sheet -> neighbour fallback"
+                        .to_string(),
+                );
             }
         }
-        let mut best_skeleton: Option<(f64, SparrowLayout, &super::feature_candidate_generator::CandidateSeed)> =
-            None;
+        let mut best_skeleton: Option<(
+            f64,
+            SparrowLayout,
+            &super::feature_candidate_generator::CandidateSeed,
+        )> = None;
         let mut feasible_seen = 0usize;
         for seed in feature_seeds
             .iter()
@@ -2436,27 +2908,62 @@ fn try_admit_critical(
                 }
             }
         }
-        // SGH-Q61: commit the best of {existing feature seed, Q56C anchor catalog} by free-space score.
-        // The anchor catalog only wins when it is at least as good as the existing path (non-regressing).
-        // The existing sheet-edge feature path (Q55B) is the proven production anchor mechanism that
-        // reaches the co-movable 3-way interlock; the Q56C catalog is committed ONLY as a fallback when
-        // that path yields no result, so the catalog never regresses the proven seeding.
-        let prefer_catalog = best_skeleton.is_none() && best_anchor_cat.is_some();
-        if prefer_catalog {
-            if let Some((_, out, source, secondary)) = best_anchor_cat {
-                bpp.bpp_critical_feature_admission_successes += 1;
-                bpp.bpp_feature_candidates_accepted += 1;
-                bpp.bpp_role_anchor_accepted += 1;
-                bpp.bpp_q61_anchor_catalog_accepted += 1;
-                bpp.bpp_q61_accepted_anchor_source = Some(source.to_string());
-                bpp.bpp_q61_accepted_anchor_secondary_policy = Some(secondary.to_string());
+        let feature_score = best_skeleton.as_ref().map(|(score, _, _)| *score);
+        let catalog_score = best_anchor_cat.as_ref().map(|(score, ..)| *score);
+        if skeleton_on && role == Some(SkeletonRole::Anchor) && best_anchor_cat.is_some() {
+            bpp.bpp_q68_anchor_competition_ran = true;
+            bpp.bpp_q68_anchor_feature_score = feature_score;
+            bpp.bpp_q68_anchor_catalog_score = catalog_score;
+        }
+        match choose_anchor_authority_winner(feature_score, catalog_score) {
+            AnchorAuthorityWinner::Catalog => {
+                if let Some((_, out, source, secondary)) = best_anchor_cat {
+                    bpp.bpp_q68_anchor_selected_path = Some("catalog".to_string());
+                    bpp.bpp_critical_feature_admission_successes += 1;
+                    bpp.bpp_feature_candidates_accepted += 1;
+                    bpp.bpp_role_anchor_accepted += 1;
+                    bpp.bpp_q61_anchor_catalog_accepted += 1;
+                    bpp.bpp_q61_accepted_anchor_source = Some(source.to_string());
+                    bpp.bpp_q61_accepted_anchor_secondary_policy = Some(secondary.to_string());
+                    return Some(out);
+                }
+            }
+            AnchorAuthorityWinner::Feature => {
+                if let Some((_, out, seed)) = best_skeleton {
+                    if skeleton_on
+                        && role == Some(SkeletonRole::Anchor)
+                        && best_anchor_cat.is_some()
+                    {
+                        bpp.bpp_q68_anchor_selected_path = Some("feature".to_string());
+                    }
+                    commit_feature_admission(bpp, diag, seed);
+                    role_accept(bpp); // SGH-Q55B: per-role accepted count
+                    return Some(out);
+                }
+            }
+            AnchorAuthorityWinner::None => {}
+        }
+        if skip_direct_for_role {
+            // SGH-Q64: role-aware routing gets first shot, but the older direct path still remains a
+            // second-line fallback inside the same admission attempt so proven spacing-0 wins are not
+            // thrown away when the newer path cannot yet finish the job.
+            if let Some(out) = try_feature_first_direct(
+                working,
+                cand_inst_idx,
+                target_sheet,
+                instances,
+                solver_sheets,
+                &sheet_sh,
+                sheet,
+                inst,
+                rot,
+                &weights,
+                rng,
+                diag,
+                bpp,
+            ) {
                 return Some(out);
             }
-        }
-        if let Some((_, out, seed)) = best_skeleton {
-            commit_feature_admission(bpp, diag, seed);
-            role_accept(bpp); // SGH-Q55B: per-role accepted count
-            return Some(out);
         }
         bpp.bpp_critical_feature_admission_failures += 1;
     }
@@ -2600,6 +3107,82 @@ pub(crate) fn sheet_builder_enabled() -> bool {
     std::env::var("VRS_SHEET_BUILDER").ok().as_deref() == Some("1")
 }
 
+/// SGH-Q63: strict latest-behavior observation mode for the critical-aware sheet builder.
+///
+/// When enabled, the solver should show the newest role-aware builder path honestly instead of
+/// silently dropping back to older seed/bootstrap behavior that masks it in the final layout.
+pub(crate) fn sheet_builder_strict_latest_enabled() -> bool {
+    std::env::var("VRS_SHEET_BUILDER_STRICT_LATEST")
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+/// SGH-Q69: forced latest-path solve mode.
+pub(crate) fn sheet_builder_forced_latest_enabled() -> bool {
+    std::env::var("VRS_SHEET_BUILDER_FORCE_LATEST")
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+fn sheet_builder_latest_lock_enabled() -> bool {
+    sheet_builder_strict_latest_enabled() || sheet_builder_forced_latest_enabled()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn forced_latest_completion_sweep(
+    layout: &mut SparrowLayout,
+    placed: &mut [bool],
+    order: impl Iterator<Item = usize>,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    weights: &DensityWeights,
+    rng: &mut DeterministicRng,
+    started: &Instant,
+    deadline_s: f64,
+    diag: &mut SparrowDiagnostics,
+    bpp: &mut BppReductionDiagnostics,
+) {
+    for inst_idx in order {
+        if placed[inst_idx] || started.elapsed().as_secs_f64() >= deadline_s {
+            continue;
+        }
+        let mut best: Option<(f64, SparrowLayout)> = None;
+        for sheet_idx in 0..solver_sheets.len() {
+            if let Some(candidate) = direct_insert_on_sheet(
+                layout,
+                inst_idx,
+                sheet_idx,
+                instances,
+                solver_sheets,
+                weights,
+                rng,
+                diag,
+                bpp,
+            ) {
+                let score = sheet_freespace_score(
+                    &candidate,
+                    sheet_idx,
+                    instances,
+                    &solver_sheets[sheet_idx],
+                );
+                if best
+                    .as_ref()
+                    .is_none_or(|(best_score, _)| score > *best_score)
+                {
+                    best = Some((score, candidate));
+                }
+            }
+        }
+        if let Some((_, candidate)) = best {
+            *layout = candidate;
+            placed[inst_idx] = true;
+            bpp.bpp_q69_completion_sweep_inserted += 1;
+        }
+    }
+}
+
 /// SGH-Q51: critical-aware constructive sheet builder. Builds the seed **anchor-first**: per sheet,
 /// a critical admission phase (co-movable `try_admit_critical`) runs before any filler, then
 /// structural and filler parts fill the remaining space; a new sheet opens only when the current
@@ -2620,40 +3203,143 @@ pub(crate) fn build_critical_aware_seed(
     let sheets = &problem.container.sheets;
     let queues = super::fixed_sheet::build_criticality_queues(instances);
     let weights = DensityWeights::default();
+    let latest_lock = sheet_builder_latest_lock_enabled();
+    let forced_latest = sheet_builder_forced_latest_enabled();
     let mut layout = SparrowLayout {
         placements: Vec::with_capacity(instances.len()),
     };
     let mut placed = vec![false; instances.len()];
     bpp.bpp_sheet_builder_applied = true;
+    bpp.bpp_q69_forced_latest_mode = forced_latest;
 
     // SGH-Q54A: skeleton role state (opt-in VRS_SHEET_BUILDER_SKELETON). When off, never built and
     // placement is byte-identical to Q51/Q52; when on, it only records role/geometry (Q54B+ act on it).
     let skeleton_on = super::sheet_skeleton::skeleton_builder_enabled();
     let mut skeleton = super::sheet_skeleton::SheetSkeletonState::new(sheets.len());
 
+    let hints_gate_on = super::sheet_feasibility_bpp::sheet_feasibility_hints_enabled();
+    let mut critical_queue = queues.critical.clone();
+    let mut sheet_target_quotas: Vec<super::sheet_feasibility_bpp::SheetTargetQuota> = Vec::new();
+    let mut hints_built = false;
+    if hints_gate_on {
+        match build_live_sheet_feasibility_hints(problem) {
+            Ok(hints) => {
+                let hint_diag = super::sheet_feasibility_bpp::build_hint_diagnostics(&hints, true);
+                let hinted_ids = super::sheet_feasibility_bpp::hint_aware_critical_order(&hints);
+                let rank: HashMap<String, usize> = hinted_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(i, id)| (id.clone(), i))
+                    .collect();
+                let legacy_rank: HashMap<usize, usize> = critical_queue
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &ci)| (ci, i))
+                    .collect();
+                let legacy_queue = critical_queue.clone();
+                critical_queue.sort_by(|a, b| {
+                    let ra = rank
+                        .get(&instances[*a].part_id)
+                        .copied()
+                        .unwrap_or(usize::MAX);
+                    let rb = rank
+                        .get(&instances[*b].part_id)
+                        .copied()
+                        .unwrap_or(usize::MAX);
+                    ra.cmp(&rb).then_with(|| {
+                        legacy_rank
+                            .get(a)
+                            .copied()
+                            .unwrap_or(usize::MAX)
+                            .cmp(&legacy_rank.get(b).copied().unwrap_or(usize::MAX))
+                    })
+                });
+                sheet_target_quotas = super::sheet_feasibility_bpp::sheet_target_quotas(&hints);
+                bpp.bpp_sheet_feasibility_hints_used = true;
+                bpp.bpp_q61_best_partial_tracker_enabled = true;
+                bpp.bpp_target_critical_distribution = hint_diag.target_critical_distribution;
+                bpp.bpp_sheet_target_quota = hint_diag.sheet_target_quota;
+                bpp.bpp_hint_queue_reorder_applied = critical_queue != legacy_queue;
+                bpp.bpp_hint_frontier_extension_applied = hint_diag.frontier_extension_applied;
+                hints_built = true;
+            }
+            Err(err) => {
+                bpp.bpp_hint_quota_abandoned_reason = Some(format!("hint_build_failed: {err}"));
+            }
+        }
+    }
+    if hints_built && critical_queue.is_empty() && !sheet_target_quotas.is_empty() {
+        bpp.bpp_hint_quota_abandoned_reason =
+            Some("no_critical_queue_entries_after_priority_filter".to_string());
+    }
+
     // SGH-Q54D sheet-close guard: on the skeleton path keep the critical phase open longer (4 vs 2)
     // so a band-insert third big part still gets attempts after the tighter interlock pair's misses,
     // instead of closing the sheet early and spilling to a new one.
-    let critical_frontier: usize = if skeleton_on { 4 } else { 2 };
+    let base_critical_frontier: usize = if skeleton_on { 4 } else { 2 };
 
     for sheet_idx in 0..sheets.len() {
         if started.elapsed().as_secs_f64() >= deadline_s || placed.iter().all(|&p| p) {
             break;
         }
         bpp.bpp_sheets_opened += 1;
+        let sheet_deadline = if forced_latest {
+            forced_latest_sheet_deadline(
+                started.elapsed().as_secs_f64(),
+                deadline_s,
+                sheets.len().saturating_sub(sheet_idx),
+            )
+        } else {
+            deadline_s
+        };
         let mut critical_here = 0usize;
+        let remaining_quotas: Vec<&super::sheet_feasibility_bpp::SheetTargetQuota> =
+            sheet_target_quotas
+                .iter()
+                .filter(|q| {
+                    critical_queue
+                        .iter()
+                        .any(|&ci| !placed[ci] && instances[ci].part_id == q.part_id)
+                })
+                .collect();
+        let sheet_target_total = remaining_quotas
+            .iter()
+            .map(|q| q.target_per_sheet)
+            .max()
+            .unwrap_or(0);
+        let sheet_target_min_useful = remaining_quotas
+            .iter()
+            .map(|q| q.fallback_min_useful)
+            .max()
+            .unwrap_or(0);
+        let critical_frontier = if hints_built {
+            super::sheet_feasibility_bpp::hint_aware_frontier(
+                base_critical_frontier,
+                sheet_target_total,
+            )
+        } else {
+            base_critical_frontier
+        };
+        if hints_built && critical_frontier > base_critical_frontier {
+            bpp.bpp_hint_frontier_extension_applied = true;
+        }
+        let mut best_partial_tracker = hints_built.then(|| {
+            bpp.bpp_q61_best_partial_tracker_enabled = true;
+            super::sheet_feasibility_bpp::BestPartialTracker::new()
+        });
 
         // ── 1. Critical admission phase (co-movable anchors) ──────────────────────────────────
         let mut consec_fail = 0usize;
-        for &ci in &queues.critical {
+        for &ci in &critical_queue {
             if placed[ci] {
                 continue;
             }
-            if started.elapsed().as_secs_f64() >= deadline_s || consec_fail >= critical_frontier {
+            if started.elapsed().as_secs_f64() >= sheet_deadline || consec_fail >= critical_frontier
+            {
                 break;
             }
             let now = started.elapsed().as_secs_f64();
-            let admit_deadline = (now + (deadline_s - now).max(1.0) * 0.5).min(deadline_s);
+            let admit_deadline = (now + (sheet_deadline - now).max(1.0) * 0.5).min(sheet_deadline);
             // SGH-Q54A: classify the candidate's skeleton role BEFORE admission (from the sheet's
             // current topology + the part's Q47 profile). Decision-support only in Q54A.
             let role = skeleton_on.then(|| {
@@ -2661,10 +3347,6 @@ pub(crate) fn build_critical_aware_seed(
                     super::sheet_skeleton::RoleInputs::from_profile(&instances[ci].shape_profile);
                 super::sheet_skeleton::assign_role(&inputs, &skeleton, sheet_idx)
             });
-            // ── SGH-Q61: best-partial + simultaneous-group instrumentation (gated) ──
-            if super::sheet_feasibility_bpp::sheet_feasibility_hints_enabled() {
-                bpp.bpp_q61_best_partial_tracker_enabled = true;
-            }
             if super::critical_simultaneous::simultaneous_critical_enabled() && critical_here >= 1 {
                 // Admitting onto a sheet that already holds critical parts runs the co-movable
                 // separation, which moves ALL admitted critical parts together — a genuine
@@ -2693,8 +3375,39 @@ pub(crate) fn build_critical_aware_seed(
                     consec_fail = 0;
                     critical_here += 1;
                     bpp.bpp_critical_admitted += 1;
-                    bpp.bpp_q61_best_partial_max_critical_count =
-                        bpp.bpp_q61_best_partial_max_critical_count.max(critical_here);
+                    bpp.bpp_q61_best_partial_max_critical_count = bpp
+                        .bpp_q61_best_partial_max_critical_count
+                        .max(critical_here);
+                    if let Some(tracker) = best_partial_tracker.as_mut() {
+                        let before_rejects = tracker.downgrades_rejected();
+                        let target_met =
+                            sheet_target_total > 0 && critical_here >= sheet_target_total;
+                        let became_incumbent =
+                            tracker.offer(super::sheet_feasibility_bpp::CriticalIncumbent {
+                                critical_count: critical_here,
+                                placed_area: sheet_placed_area(&layout, instances, sheet_idx),
+                                free_space_score: sheet_freespace_score(
+                                    &layout,
+                                    sheet_idx,
+                                    instances,
+                                    &sheets[sheet_idx],
+                                ),
+                                hint_target_met: target_met,
+                                source: critical_incumbent_source(role),
+                            });
+                        bpp.bpp_q61_best_partial_downgrades_rejected +=
+                            tracker.downgrades_rejected() - before_rejects;
+                        bpp.bpp_sheet_best_partial_critical_count = bpp
+                            .bpp_sheet_best_partial_critical_count
+                            .max(tracker.best_critical_count());
+                        if became_incumbent {
+                            bpp.bpp_sheet_best_partial_source =
+                                tracker.best().map(|best| best.source.clone());
+                        }
+                        if target_met {
+                            bpp.bpp_sheet_target_quota_met = true;
+                        }
+                    }
                     if let Some(role) = role {
                         let bbox = critical_world_bbox(&layout, ci, instances);
                         skeleton.record_admission(sheet_idx, ci, role, bbox);
@@ -2712,17 +3425,39 @@ pub(crate) fn build_critical_aware_seed(
                 }
             }
         }
-        bpp.bpp_critical_phase_close_reason = Some(
-            if started.elapsed().as_secs_f64() >= deadline_s {
+        bpp.bpp_critical_phase_close_reason =
+            Some(if started.elapsed().as_secs_f64() >= sheet_deadline {
                 "deadline".to_string()
             } else if consec_fail >= critical_frontier {
                 "frontier_fail_limit".to_string()
-            } else if queues.critical.iter().all(|&ci| placed[ci]) {
+            } else if critical_queue.iter().all(|&ci| placed[ci]) {
                 "critical_exhausted".to_string()
             } else {
                 "sheet_phase_exhausted".to_string()
-            },
-        );
+            });
+        if let Some(tracker) = best_partial_tracker.as_ref() {
+            bpp.bpp_sheet_best_partial_critical_count = bpp
+                .bpp_sheet_best_partial_critical_count
+                .max(tracker.best_critical_count());
+            if bpp.bpp_sheet_best_partial_source.is_none() {
+                bpp.bpp_sheet_best_partial_source = tracker.best().map(|best| best.source.clone());
+            }
+            if hints_built
+                && sheet_target_total > 0
+                && tracker.best_critical_count() < sheet_target_total
+                && bpp.bpp_hint_quota_abandoned_reason.is_none()
+            {
+                let useful_partial = tracker.best_critical_count() >= sheet_target_min_useful;
+                bpp.bpp_hint_quota_abandoned_reason = Some(format!(
+                    "sheet={sheet_idx} target_quota={sheet_target_total} best_partial={} useful_partial={} close_reason={}",
+                    tracker.best_critical_count(),
+                    useful_partial,
+                    bpp.bpp_critical_phase_close_reason
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string())
+                ));
+            }
+        }
         bpp.bpp_max_critical_per_sheet = bpp.bpp_max_critical_per_sheet.max(critical_here);
 
         // ── 2. Structural + 3. Filler phases (direct density insertion on this sheet) ─────────
@@ -2730,7 +3465,7 @@ pub(crate) fn build_critical_aware_seed(
             if placed[pi] {
                 continue;
             }
-            if started.elapsed().as_secs_f64() >= deadline_s {
+            if started.elapsed().as_secs_f64() >= sheet_deadline {
                 break;
             }
             if let Some(new_layout) = direct_insert_on_sheet(
@@ -2740,34 +3475,72 @@ pub(crate) fn build_critical_aware_seed(
                 placed[pi] = true;
             }
         }
+        if forced_latest
+            && started.elapsed().as_secs_f64() >= sheet_deadline
+            && sheet_deadline < deadline_s
+        {
+            bpp.bpp_q69_builder_sheet_slice_hits += 1;
+        }
+    }
+
+    if forced_latest {
+        forced_latest_completion_sweep(
+            &mut layout,
+            &mut placed,
+            queues
+                .structural
+                .iter()
+                .chain(queues.filler.iter())
+                .copied(),
+            instances,
+            sheets,
+            &weights,
+            rng,
+            started,
+            deadline_s,
+            diag,
+            bpp,
+        );
     }
 
     // Bootstrap any still-unplaced part (overlap allowed; the separator resolves it).
-    for i in 0..instances.len() {
-        if placed[i] {
-            continue;
-        }
-        let inst = &instances[i];
-        let rot = super::fixed_sheet::fitting_rotation(inst, sheets);
-        let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
-        if let Some((sheet_idx, sheet)) = sheets
-            .iter()
-            .enumerate()
-            .find(|(_, s)| rw <= s.width + 1e-9 && rh <= s.height + 1e-9)
-        {
-            let max_rmx = (sheet.max_x - rw).max(sheet.min_x);
-            let max_rmy = (sheet.max_y - rh).max(sheet.min_y);
-            let rmx = sheet.min_x + rng.next_f64() * (max_rmx - sheet.min_x).max(0.0);
-            let rmy = sheet.min_y + rng.next_f64() * (max_rmy - sheet.min_y).max(0.0);
-            let (ax, ay) =
-                placement_anchor_from_rect_min(rmx, rmy, inst.part.width, inst.part.height, rot);
-            layout.placements.push(SparrowPlacement {
-                instance_idx: i,
-                sheet_index: sheet_idx,
-                x: ax,
-                y: ay,
-                rotation_deg: rot,
-            });
+    //
+    // SGH-Q63 strict latest-behavior mode deliberately DISABLES this bootstrap: the random rescue
+    // seeds visually mask what the latest builder actually achieved, which makes benchmark renders
+    // misleading when the task is to observe the newest builder path honestly.
+    if !latest_lock {
+        for i in 0..instances.len() {
+            if placed[i] {
+                continue;
+            }
+            let inst = &instances[i];
+            let rot = super::fixed_sheet::fitting_rotation(inst, sheets);
+            let (rw, rh) = dims_for_rotation(inst.part.width, inst.part.height, rot);
+            if let Some((sheet_idx, sheet)) = sheets
+                .iter()
+                .enumerate()
+                .find(|(_, s)| rw <= s.width + 1e-9 && rh <= s.height + 1e-9)
+            {
+                let max_rmx = (sheet.max_x - rw).max(sheet.min_x);
+                let max_rmy = (sheet.max_y - rh).max(sheet.min_y);
+                let rmx = sheet.min_x + rng.next_f64() * (max_rmx - sheet.min_x).max(0.0);
+                let rmy = sheet.min_y + rng.next_f64() * (max_rmy - sheet.min_y).max(0.0);
+                let (ax, ay) = placement_anchor_from_rect_min(
+                    rmx,
+                    rmy,
+                    inst.part.width,
+                    inst.part.height,
+                    rot,
+                );
+                layout.placements.push(SparrowPlacement {
+                    instance_idx: i,
+                    sheet_index: sheet_idx,
+                    x: ax,
+                    y: ay,
+                    rotation_deg: rot,
+                });
+                bpp.bpp_q69_builder_random_bootstrap_used = true;
+            }
         }
     }
     if skeleton_on {
@@ -3323,6 +4096,9 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     // proven cases (e.g. 3 big curved parts on one sheet) without risking partial output where the
     // admission is not yet strong enough (tight spacing).
     let seed = if sheet_builder_enabled() {
+        let strict_latest = sheet_builder_strict_latest_enabled();
+        let forced_latest = sheet_builder_forced_latest_enabled();
+        let latest_lock = strict_latest || forced_latest;
         // Snapshot the RNG so a fallback restores the exact pre-builder stream — the fallback path
         // is then identical (deterministically) to the builder-off path.
         let rng_snapshot = rng.clone();
@@ -3330,9 +4106,21 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
         // BPP reduction enough time at ANY total budget (no time-starvation regression, even at
         // tight budgets). The spacing-0 win completes well within this; tight-spacing failures fall
         // back cheaply.
-        let builder_cap = (total_budget * 0.12).clamp(4.0, 20.0);
-        let builder_deadline =
-            (started.elapsed().as_secs_f64() + builder_cap).min(construct_deadline);
+        let builder_deadline = if latest_lock {
+            // SGH-Q63: in strict latest mode we want to observe the builder itself, not a tiny
+            // builder sample that instantly hands control back to the older seed path.
+            construct_deadline
+        } else if super::sheet_skeleton::skeleton_builder_enabled() {
+            // SGH-Q67/Q61 follow-up: once the role-aware skeleton path is enabled, the production
+            // builder must get enough of the constructive window to actually reach the interlock /
+            // simultaneous critical attempts before the older seed path takes over. Keep the
+            // fallback semantics, but stop time-capping the newest admission path so aggressively
+            // that its diagnostics and authority disappear in practice.
+            construct_deadline
+        } else {
+            let builder_cap = (total_budget * 0.12).clamp(4.0, 20.0);
+            (started.elapsed().as_secs_f64() + builder_cap).min(construct_deadline)
+        };
         let built = build_critical_aware_seed(
             &problem,
             &optimizer,
@@ -3342,13 +4130,24 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             &mut diag,
             &mut bpp,
         );
-        if layout_is_full_feasible(&built, &instances, &solver_sheets) {
+        if latest_lock {
+            bpp.bpp_q69_seed_source = Some(if forced_latest {
+                "builder_forced_latest".to_string()
+            } else {
+                "builder_strict_latest".to_string()
+            });
+            built
+        } else if layout_is_full_feasible(&built, &instances, &solver_sheets) {
+            bpp.bpp_q69_seed_source = Some("builder_complete".to_string());
             built
         } else {
             rng = rng_snapshot;
+            bpp.bpp_q69_native_seed_fallback_used = true;
+            bpp.bpp_q69_seed_source = Some("native_constructive_fallback".to_string());
             build_native_constructive_seed(&problem)
         }
     } else {
+        bpp.bpp_q69_seed_source = Some("native_constructive".to_string());
         build_native_constructive_seed(&problem)
     };
     let mut working = if layout_is_full_feasible(&seed, &instances, &solver_sheets) {
@@ -3608,6 +4407,19 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
         );
         let mut un = pre_unplaced.clone();
         un.append(&mut newly);
+        let mut already_unplaced: HashSet<String> =
+            un.iter().map(|u| u.instance_id.clone()).collect();
+        for inst in &instances {
+            let kept_present = kept.iter().any(|p| p.instance_id == inst.instance_id);
+            if !kept_present && !already_unplaced.contains(&inst.instance_id) {
+                already_unplaced.insert(inst.instance_id.clone());
+                un.push(Unplaced {
+                    instance_id: inst.instance_id.clone(),
+                    part_id: inst.part_id.clone(),
+                    reason: REASON_BPP_STOCK_EXHAUSTED.to_string(),
+                });
+            }
+        }
         (kept, un, 0, 0)
     };
 
@@ -3711,6 +4523,7 @@ fn error_result(
 #[cfg(test)]
 mod q50_tests {
     use super::*;
+    use crate::optimizer::sparrow::sheet_skeleton::SkeletonRole;
     use crate::sheet::{expand_sheets, Stock};
 
     fn poly_part(id: &str, w: f64, h: f64, pts: serde_json::Value) -> Part {
@@ -3754,7 +4567,7 @@ mod q50_tests {
         // `allowed_rotations_deg`. The helper must still refine rotation (fine offsets + a global
         // sweep that includes the 90↔270 flip) — NOT degenerate to `[cur_rot]` (the old bug that
         // froze continuous parts at their seed orientation).
-        let part = poly_part(
+        let part = self::poly_part(
             "sq",
             20.0,
             20.0,
@@ -3864,20 +4677,8 @@ mod q50_tests {
         let mut diag = SparrowDiagnostics::default();
         let mut bpp = BppReductionDiagnostics::default();
         let pl = density_insert_part(
-            1,
-            0,
-            &layout,
-            &instances,
-            &sheets,
-            &tracker,
-            &sheet_sh,
-            &weights,
-            &mut rng,
-            true,
-            true,
-            true,
-            &mut diag,
-            &mut bpp,
+            1, 0, &layout, &instances, &sheets, &tracker, &sheet_sh, &weights, &mut rng, true,
+            true, true, &mut diag, &mut bpp,
         )
         .expect("square must fit on the target sheet");
         assert_eq!(pl.sheet_index, 0);
@@ -4067,11 +4868,75 @@ mod q50_tests {
             "the square should resolve INTO the U's mouth (interlock), not spread"
         );
     }
+
+    #[test]
+    fn role_aware_path_disables_generic_direct_for_known_roles() {
+        assert!(role_aware_path_should_skip_generic_direct(
+            true,
+            Some(SkeletonRole::Anchor)
+        ));
+        assert!(role_aware_path_should_skip_generic_direct(
+            true,
+            Some(SkeletonRole::Interlock)
+        ));
+        assert!(role_aware_path_should_skip_generic_direct(
+            true,
+            Some(SkeletonRole::BandInsert)
+        ));
+        assert!(!role_aware_path_should_skip_generic_direct(true, None));
+        assert!(!role_aware_path_should_skip_generic_direct(
+            false,
+            Some(SkeletonRole::Anchor)
+        ));
+    }
+
+    #[test]
+    fn anchor_catalog_wins_ties_and_better_scores() {
+        assert_eq!(
+            choose_anchor_authority_winner(Some(10.0), Some(10.0)),
+            AnchorAuthorityWinner::Catalog
+        );
+        assert_eq!(
+            choose_anchor_authority_winner(Some(10.0), Some(10.5)),
+            AnchorAuthorityWinner::Catalog
+        );
+        assert_eq!(
+            choose_anchor_authority_winner(None, Some(4.0)),
+            AnchorAuthorityWinner::Catalog
+        );
+    }
+
+    #[test]
+    fn anchor_feature_kept_when_catalog_score_is_worse() {
+        assert_eq!(
+            choose_anchor_authority_winner(Some(10.0), Some(9.5)),
+            AnchorAuthorityWinner::Feature
+        );
+        assert_eq!(
+            choose_anchor_authority_winner(Some(10.0), None),
+            AnchorAuthorityWinner::Feature
+        );
+        assert_eq!(
+            choose_anchor_authority_winner(None, None),
+            AnchorAuthorityWinner::None
+        );
+    }
+
+    #[test]
+    fn forced_latest_sheet_deadline_reserves_budget_for_remaining_sheets() {
+        let d = forced_latest_sheet_deadline(0.0, 120.0, 2);
+        assert!((d - 60.0).abs() < 1e-9);
+        let d = forced_latest_sheet_deadline(30.0, 120.0, 3);
+        assert!((d - 60.0).abs() < 1e-9);
+        let d = forced_latest_sheet_deadline(95.0, 120.0, 1);
+        assert!((d - 120.0).abs() < 1e-9);
+    }
 }
 
 #[cfg(test)]
 mod q51_measure_gate {
     use super::*;
+    use crate::optimizer::sparrow::sheet_skeleton::SkeletonRole;
     use crate::sheet::{expand_sheets, Stock};
 
     fn load_lv8_11612() -> Part {
@@ -4201,5 +5066,296 @@ mod q51_measure_gate {
             assert_eq!(on_sheet, 3, "all 3 big parts on one sheet");
         }
         // The test passes either way; the eprintln reports the gate outcome (run with --nocapture).
+    }
+
+    #[test]
+    fn interlock_role_consults_live_pair_index_in_production_branch() {
+        let part = load_lv8_11612();
+        let instances: Vec<SPInstance> = (0..2)
+            .map(|i| continuous_instance(i, part.clone()))
+            .collect();
+        let sheets = expand_sheets(&[Stock {
+            id: "S".into(),
+            quantity: 1,
+            width: Some(1500.0),
+            height: Some(3000.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }])
+        .expect("sheets");
+        let sheet = &sheets[0];
+        let cfg = SparrowConfig::from_solver_input(
+            30.0,
+            CollisionBackendKind::Cde,
+            RotationResolveContext::legacy_default(),
+            42,
+        );
+        let optimizer = SparrowOptimizer::new(cfg);
+        let mut rng = DeterministicRng::new(7);
+        let mut diag = SparrowDiagnostics::default();
+        let mut bpp = BppReductionDiagnostics::default();
+        let started = std::time::Instant::now();
+
+        let rot =
+            super::super::fixed_sheet::fitting_rotation(&instances[0], std::slice::from_ref(sheet));
+        let (ax, ay) = placement_anchor_from_rect_min(
+            sheet.min_x + 5.0,
+            sheet.min_y + 5.0,
+            part.width,
+            part.height,
+            rot,
+        );
+        let working = SparrowLayout {
+            placements: vec![SparrowPlacement {
+                instance_idx: 0,
+                sheet_index: 0,
+                x: ax,
+                y: ay,
+                rotation_deg: rot,
+            }],
+        };
+
+        std::env::set_var("VRS_SHEET_BUILDER_SKELETON", "1");
+        std::env::set_var("VRS_INTERLOCK_PAIR", "1");
+        std::env::set_var("VRS_PAIR_INDEX", "1");
+        let _ = try_admit_critical(
+            &optimizer,
+            &working,
+            1,
+            0,
+            &instances,
+            &sheets,
+            &started,
+            10.0,
+            &mut rng,
+            &mut diag,
+            &mut bpp,
+            Some(SkeletonRole::Interlock),
+        );
+        std::env::remove_var("VRS_SHEET_BUILDER_SKELETON");
+        std::env::remove_var("VRS_INTERLOCK_PAIR");
+        std::env::remove_var("VRS_PAIR_INDEX");
+
+        assert!(
+            bpp.bpp_q61_pair_index_consulted,
+            "the production Interlock branch must consult the live pair index"
+        );
+        assert!(
+            bpp.bpp_q61_pair_candidates_generated > 0
+                || bpp.bpp_q61_pair_rejection_summary.is_some(),
+            "pair consultation must yield candidates or an explicit rejection summary"
+        );
+        if bpp.bpp_q61_pair_candidates_accepted > 0 {
+            assert!(bpp.bpp_q65_accepted_pair_source.is_some());
+            assert!(bpp.bpp_q65_accepted_pair_score.is_some());
+            assert!(bpp.bpp_q65_accepted_pair_relative_transform.is_some());
+        } else {
+            assert!(bpp.bpp_q61_interlock_fallback_to_neighbour);
+            assert!(bpp.bpp_q61_pair_rejection_summary.is_some());
+        }
+    }
+}
+
+#[cfg(test)]
+mod q67_tests {
+    use super::*;
+    use crate::sheet::{expand_sheets, Stock};
+
+    fn poly_part(id: &str, w: f64, h: f64, pts: serde_json::Value) -> Part {
+        Part {
+            id: id.to_string(),
+            width: w,
+            height: h,
+            quantity: 1,
+            allowed_rotations_deg: vec![0],
+            holes_points: None,
+            prepared_holes_points: None,
+            outer_points: Some(pts),
+            prepared_outer_points: None,
+            rotation_policy: None,
+        }
+    }
+
+    fn make_instance(idx: usize, part: Part) -> SPInstance {
+        let base = std::rc::Rc::new(prepare_base_shape_native(&part).expect("preparable"));
+        let prof = std::rc::Rc::new(PartShapeProfile::compute(&part, &base, 40_000.0, 200.0));
+        let orient = std::rc::Rc::new(OrientationCatalog::placeholder(&part.id));
+        let analysis = std::rc::Rc::new(PartAnalysis::placeholder(&part.id, &prof));
+        SPInstance {
+            idx,
+            instance_id: format!("{}#{idx}", part.id),
+            part_id: part.id.clone(),
+            part,
+            allowed_rotations_deg: vec![0.0],
+            continuous_rotation: false,
+            spacing_collision_base_shape: base.clone(),
+            base_shape: base,
+            shape_profile: prof,
+            orientation_catalog: orient,
+            part_analysis: analysis,
+        }
+    }
+
+    #[test]
+    fn simultaneous_same_part_authority_commits_three_part_group_in_production_branch() {
+        let part = poly_part(
+            "q67_rect",
+            300.0,
+            200.0,
+            serde_json::json!([[0.0, 0.0], [300.0, 0.0], [300.0, 200.0], [0.0, 200.0]]),
+        );
+        let instances = vec![
+            make_instance(0, part.clone()),
+            make_instance(1, part.clone()),
+            make_instance(2, part),
+        ];
+        let sheets = expand_sheets(&[Stock {
+            id: "S".into(),
+            quantity: 1,
+            width: Some(1500.0),
+            height: Some(3000.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }])
+        .expect("sheets");
+        let sheet = &sheets[0];
+        let cfg = SparrowConfig::from_solver_input(
+            30.0,
+            CollisionBackendKind::Cde,
+            RotationResolveContext::legacy_default(),
+            42,
+        );
+        let optimizer = SparrowOptimizer::new(cfg);
+        let mut rng = DeterministicRng::new(11);
+        let mut diag = SparrowDiagnostics::default();
+        let mut bpp = BppReductionDiagnostics::default();
+        let started = std::time::Instant::now();
+
+        let rot =
+            super::super::fixed_sheet::fitting_rotation(&instances[0], std::slice::from_ref(sheet));
+        let (ax, ay) = placement_anchor_from_rect_min(
+            sheet.min_x + 5.0,
+            sheet.min_y + 5.0,
+            instances[0].part.width,
+            instances[0].part.height,
+            rot,
+        );
+        let (rw, _) = dims_for_rotation(instances[0].part.width, instances[0].part.height, rot);
+        let mk = |idx: usize, rmx: f64| {
+            let (px, py) = placement_anchor_from_rect_min(
+                rmx,
+                sheet.min_y + 5.0,
+                instances[idx].part.width,
+                instances[idx].part.height,
+                rot,
+            );
+            SparrowPlacement {
+                instance_idx: idx,
+                sheet_index: 0,
+                x: px,
+                y: py,
+                rotation_deg: rot,
+            }
+        };
+        let working = SparrowLayout {
+            placements: vec![mk(0, sheet.min_x + 5.0), mk(1, sheet.min_x + rw + 20.0)],
+        };
+
+        std::env::set_var("VRS_SIMULTANEOUS_CRITICAL", "1");
+        let result = try_admit_critical(
+            &optimizer, &working, 2, 0, &instances, &sheets, &started, 10.0, &mut rng, &mut diag,
+            &mut bpp, None,
+        );
+        std::env::remove_var("VRS_SIMULTANEOUS_CRITICAL");
+
+        assert!(
+            result.is_some(),
+            "the three-part same-part group should commit"
+        );
+        assert!(bpp.bpp_q61_simultaneous_critical_consulted);
+        assert!(
+            bpp.bpp_q67_simultaneous_authority_used,
+            "authority_used=false full_successes={} partial_successes={} best_partial={} best_source={:?} rejection={:?}",
+            bpp.bpp_q67_simultaneous_full_successes,
+            bpp.bpp_q67_simultaneous_partial_successes,
+            bpp.bpp_q67_simultaneous_best_partial_count,
+            bpp.bpp_q67_simultaneous_best_partial_source,
+            bpp.bpp_q67_simultaneous_rejection_summary
+        );
+        assert!(bpp.bpp_q67_simultaneous_full_successes > 0);
+        assert!(bpp.bpp_q67_simultaneous_accepted_group_source.is_some());
+    }
+
+    #[test]
+    fn simultaneous_same_part_authority_preserves_best_partial_on_three_part_fail() {
+        let part = poly_part(
+            "q67_big",
+            700.0,
+            2400.0,
+            serde_json::json!([[0.0, 0.0], [700.0, 0.0], [700.0, 2400.0], [0.0, 2400.0]]),
+        );
+        let instances = vec![
+            make_instance(0, part.clone()),
+            make_instance(1, part.clone()),
+            make_instance(2, part),
+        ];
+        let sheets = expand_sheets(&[Stock {
+            id: "S".into(),
+            quantity: 1,
+            width: Some(1500.0),
+            height: Some(3000.0),
+            outer_points: None,
+            holes_points: None,
+            cost_per_use: None,
+        }])
+        .expect("sheets");
+        let sheet = &sheets[0];
+        let cfg = SparrowConfig::from_solver_input(
+            30.0,
+            CollisionBackendKind::Cde,
+            RotationResolveContext::legacy_default(),
+            42,
+        );
+        let optimizer = SparrowOptimizer::new(cfg);
+        let mut rng = DeterministicRng::new(17);
+        let mut diag = SparrowDiagnostics::default();
+        let mut bpp = BppReductionDiagnostics::default();
+        let started = std::time::Instant::now();
+
+        let rot =
+            super::super::fixed_sheet::fitting_rotation(&instances[0], std::slice::from_ref(sheet));
+        let (rw, _) = dims_for_rotation(instances[0].part.width, instances[0].part.height, rot);
+        let mk = |idx: usize, rmx: f64| {
+            let (ax, ay) = placement_anchor_from_rect_min(
+                rmx,
+                sheet.min_y + 5.0,
+                instances[idx].part.width,
+                instances[idx].part.height,
+                rot,
+            );
+            SparrowPlacement {
+                instance_idx: idx,
+                sheet_index: 0,
+                x: ax,
+                y: ay,
+                rotation_deg: rot,
+            }
+        };
+        let working = SparrowLayout {
+            placements: vec![mk(0, sheet.min_x + 5.0), mk(1, sheet.min_x + rw + 20.0)],
+        };
+
+        std::env::set_var("VRS_SIMULTANEOUS_CRITICAL", "1");
+        let _ = try_admit_critical(
+            &optimizer, &working, 2, 0, &instances, &sheets, &started, 10.0, &mut rng, &mut diag,
+            &mut bpp, None,
+        );
+        std::env::remove_var("VRS_SIMULTANEOUS_CRITICAL");
+
+        assert!(bpp.bpp_q61_simultaneous_critical_consulted);
+        assert_eq!(bpp.bpp_q67_simultaneous_best_partial_count, 2);
+        assert!(bpp.bpp_q67_simultaneous_rejection_summary.is_some());
     }
 }

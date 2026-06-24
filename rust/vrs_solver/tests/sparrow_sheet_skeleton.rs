@@ -42,7 +42,9 @@ fn solve_json(v: &Value) -> SolverOutput {
 }
 
 fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
-    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+    out.optimizer_diagnostics
+        .as_ref()
+        .expect("optimizer_diagnostics present")
 }
 
 fn used_sheets(out: &SolverOutput) -> usize {
@@ -66,7 +68,11 @@ fn skeleton_admission_is_valid_records_roles_and_runs_feature_path() {
     std::env::set_var("VRS_SHEET_BUILDER", "1");
     std::env::remove_var("VRS_SHEET_BUILDER_SKELETON");
     let off = solve_json(&input);
-    assert_eq!(off.status, "ok", "builder baseline must be valid: {}", off.status);
+    assert_eq!(
+        off.status, "ok",
+        "builder baseline must be valid: {}",
+        off.status
+    );
     let off_sheets = used_sheets(&off);
     let off_bpp = od(&off).bpp_reduction.as_ref().expect("bpp diagnostics");
     assert_eq!(
@@ -84,7 +90,11 @@ fn skeleton_admission_is_valid_records_roles_and_runs_feature_path() {
     let on = solve_json(&input);
     std::env::remove_var("VRS_SHEET_BUILDER_SKELETON");
 
-    assert_eq!(on.status, "ok", "skeleton path must stay valid: {}", on.status);
+    assert_eq!(
+        on.status, "ok",
+        "skeleton path must stay valid: {}",
+        on.status
+    );
     assert_eq!(on.unplaced.len(), 0, "skeleton path fully placed");
     let on_bpp = od(&on).bpp_reduction.as_ref().expect("bpp diagnostics");
     assert_eq!(od(&on).sparrow_ms_final_pairs, Some(0), "no collisions");
@@ -93,8 +103,14 @@ fn skeleton_admission_is_valid_records_roles_and_runs_feature_path() {
     let total = on_bpp.bpp_skeleton_anchor_count
         + on_bpp.bpp_skeleton_interlock_count
         + on_bpp.bpp_skeleton_bandinsert_count;
-    assert!(total > 0, "skeleton on must record at least one critical role");
-    assert!(on_bpp.bpp_skeleton_anchor_count >= 1, "at least one Anchor role recorded");
+    assert!(
+        total > 0,
+        "skeleton on must record at least one critical role"
+    );
+    assert!(
+        on_bpp.bpp_skeleton_anchor_count >= 1,
+        "at least one Anchor role recorded"
+    );
     // Q54C: the feature-first overlap-tolerant admission runs on the skeleton path (no Q53D gates).
     assert!(
         on_bpp.bpp_critical_feature_admission_attempts > 0,

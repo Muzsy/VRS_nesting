@@ -23,7 +23,9 @@ const SHEET_H: f64 = 3000.0;
 const SPACING_MM: f64 = 8.0;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn load_lv8_critical_part() -> Part {
@@ -85,7 +87,10 @@ fn lv8_critical_orientation_catalog_is_feature_derived_and_spacing_aware() {
             )
         })
         .any(|c| c.source_edge_index.is_some());
-    assert!(traced, "at least one alignment candidate must trace to a real contour edge");
+    assert!(
+        traced,
+        "at least one alignment candidate must trace to a real contour edge"
+    );
     // 3) min-width candidate present.
     assert!(
         cat.diagnostics.min_width_candidate_count >= 1,

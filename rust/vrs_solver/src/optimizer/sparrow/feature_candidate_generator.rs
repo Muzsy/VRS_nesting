@@ -309,8 +309,10 @@ fn sheet_aware_anchor_rotations(
 /// proving the rotation derivation is continuous, NOT a 0/90/180/270 snap. Coarse 0.5° scan + 0.01°
 /// refine, returning each minimum and its 180° flip. Deterministic.
 fn min_width_rotations(offset_shape: &CdeBaseShape) -> Vec<f64> {
-    let extent_x = |rot: f64| rotation_frame(offset_shape, rot).map(|f| f.bbox_max_x - f.bbox_min_x);
-    let extent_y = |rot: f64| rotation_frame(offset_shape, rot).map(|f| f.bbox_max_y - f.bbox_min_y);
+    let extent_x =
+        |rot: f64| rotation_frame(offset_shape, rot).map(|f| f.bbox_max_x - f.bbox_min_x);
+    let extent_y =
+        |rot: f64| rotation_frame(offset_shape, rot).map(|f| f.bbox_max_y - f.bbox_min_y);
     let scan_min = |f: &dyn Fn(f64) -> Option<f64>| -> Option<f64> {
         let mut best: Option<(f64, f64)> = None;
         let mut t = 0.0;
@@ -341,7 +343,10 @@ fn min_width_rotations(offset_shape: &CdeBaseShape) -> Vec<f64> {
     let mut out: Vec<f64> = Vec::new();
     let mut push = |r: f64, out: &mut Vec<f64>| {
         for cand in [r, wrap_deg(r + 180.0)] {
-            if !out.iter().any(|&s: &f64| angular_distance_deg(s, cand) < 1e-6) {
+            if !out
+                .iter()
+                .any(|&s: &f64| angular_distance_deg(s, cand) < 1e-6)
+            {
                 out.push(cand);
             }
         }
@@ -404,11 +409,31 @@ fn push_sheet_edge_anchors(
     let bottom_anchor = sheet.min_y - frame.bbox_min_y;
     let top_anchor = sheet.max_y - frame.bbox_max_y;
     if closer_to_horizontal {
-        out.push(mk(center_x, bottom_anchor, "sheet_edge_bottom", alignment_score + 0.20));
-        out.push(mk(center_x, top_anchor, "sheet_edge_top", alignment_score + 0.18));
+        out.push(mk(
+            center_x,
+            bottom_anchor,
+            "sheet_edge_bottom",
+            alignment_score + 0.20,
+        ));
+        out.push(mk(
+            center_x,
+            top_anchor,
+            "sheet_edge_top",
+            alignment_score + 0.18,
+        ));
     } else {
-        out.push(mk(left_anchor, center_y, "sheet_edge_left", alignment_score + 0.20));
-        out.push(mk(right_anchor, center_y, "sheet_edge_right", alignment_score + 0.18));
+        out.push(mk(
+            left_anchor,
+            center_y,
+            "sheet_edge_left",
+            alignment_score + 0.20,
+        ));
+        out.push(mk(
+            right_anchor,
+            center_y,
+            "sheet_edge_right",
+            alignment_score + 0.18,
+        ));
     }
 }
 
@@ -530,7 +555,8 @@ fn neighbour_feature_candidates(
                         - protrusion.outward_angle_deg,
                 );
                 let rot = resolve_seed_rotation(moving, raw_rot, moving_rotation_deg);
-                let target0 = world_point(zone.anchor, n.placement_x, n.placement_y, n.rotation_deg);
+                let target0 =
+                    world_point(zone.anchor, n.placement_x, n.placement_y, n.rotation_deg);
                 // SGH-Q54B: pull the target OUT of the concavity mouth (opposite the inward
                 // direction) by the clearance, so the protrusion seats with a gap rather than
                 // point-on-point (the Q53 root cause of `seed_not_clear`).
@@ -564,9 +590,15 @@ fn neighbour_feature_candidates(
             cnt += 1.0;
         }
         let centroid = if cnt > 0.0 {
-            Point { x: cx / cnt, y: cy / cnt }
+            Point {
+                x: cx / cnt,
+                y: cy / cnt,
+            }
         } else {
-            Point { x: n.placement_x, y: n.placement_y }
+            Point {
+                x: n.placement_x,
+                y: n.placement_y,
+            }
         };
         let pull_out = |t: Point| -> Point {
             let dx = t.x - centroid.x;
@@ -587,7 +619,12 @@ fn neighbour_feature_candidates(
             .iter()
             .step_by(stride_for(n.features.edges.len(), 6))
             .map(|edge| {
-                pull_out(world_point(edge.midpoint, n.placement_x, n.placement_y, n.rotation_deg))
+                pull_out(world_point(
+                    edge.midpoint,
+                    n.placement_x,
+                    n.placement_y,
+                    n.rotation_deg,
+                ))
             })
             .collect();
         let vertices: Vec<Point> = n
@@ -596,7 +633,12 @@ fn neighbour_feature_candidates(
             .iter()
             .step_by(stride_for(n.features.vertices.len(), 8))
             .map(|vertex| {
-                pull_out(world_point(vertex.point, n.placement_x, n.placement_y, n.rotation_deg))
+                pull_out(world_point(
+                    vertex.point,
+                    n.placement_x,
+                    n.placement_y,
+                    n.rotation_deg,
+                ))
             })
             .collect();
 
@@ -822,35 +864,39 @@ fn refine_one_feature_candidate(
     // slides along the edge, and — for continuous parts — a small rotation wiggle) before giving up.
     let mut repair_attempts = 0usize;
     let mut repaired_inward_mm = 0.0_f64;
-    let init = match evaluator.evaluate_sample(seed.x, seed.y, seed.seed_rotation_deg, None, &mut diag)
-    {
-        Some(p) => p,
-        None => {
-            if seed.target_feature_type == "sheet_edge" {
-                let (repaired, attempts, inward) =
-                    bounded_sheet_edge_repair(&mut evaluator, &mut diag, &seed, moving.continuous_rotation);
-                repair_attempts = attempts;
-                match repaired {
-                    Some(p) => {
-                        repaired_inward_mm = inward;
-                        p
+    let init =
+        match evaluator.evaluate_sample(seed.x, seed.y, seed.seed_rotation_deg, None, &mut diag) {
+            Some(p) => p,
+            None => {
+                if seed.target_feature_type == "sheet_edge" {
+                    let (repaired, attempts, inward) = bounded_sheet_edge_repair(
+                        &mut evaluator,
+                        &mut diag,
+                        &seed,
+                        moving.continuous_rotation,
+                    );
+                    repair_attempts = attempts;
+                    match repaired {
+                        Some(p) => {
+                            repaired_inward_mm = inward;
+                            p
+                        }
+                        None => {
+                            return CandidateSeed {
+                                refine_rejection_reason: Some("seed_not_clear".to_string()),
+                                repair_attempts,
+                                ..seed
+                            };
+                        }
                     }
-                    None => {
-                        return CandidateSeed {
-                            refine_rejection_reason: Some("seed_not_clear".to_string()),
-                            repair_attempts,
-                            ..seed
-                        };
-                    }
+                } else {
+                    return CandidateSeed {
+                        refine_rejection_reason: Some("seed_not_clear".to_string()),
+                        ..seed
+                    };
                 }
-            } else {
-                return CandidateSeed {
-                    refine_rejection_reason: Some("seed_not_clear".to_string()),
-                    ..seed
-                };
             }
-        }
-    };
+        };
     let wiggle = moving.continuous_rotation;
     let mut rng = DeterministicRng::new(hash_seed(
         &moving.part.id,
@@ -1260,7 +1306,8 @@ pub fn verify_one_part_sheet_edge_placement(
     let half_spacing_mm = spacing_mm / 2.0;
     let sheet_inset_mm = margin_mm - half_spacing_mm;
 
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S1500x3000".to_string(),
         quantity: 1,
@@ -1298,8 +1345,10 @@ pub fn verify_one_part_sheet_edge_placement(
 
     // Margin-shrunk solver sheet = raw shrunk by (margin − half_spacing). Aligning the OFFSET contour
     // flush to this shrunk edge lands the PHYSICAL contour at exactly `margin` from the raw edge.
-    let shrunk_sheets =
-        crate::sheet::apply_rectangular_sheet_offset(std::slice::from_ref(&raw_sheet), sheet_inset_mm)?;
+    let shrunk_sheets = crate::sheet::apply_rectangular_sheet_offset(
+        std::slice::from_ref(&raw_sheet),
+        sheet_inset_mm,
+    )?;
     let shrunk_sheet = shrunk_sheets
         .into_iter()
         .next()
@@ -1330,8 +1379,7 @@ pub fn verify_one_part_sheet_edge_placement(
     .ok_or_else(|| "failed to build CDE candidate session".to_string())?;
 
     // Drive the REAL production generator against the shrunk sheet.
-    let seeds =
-        generate_feature_candidate_seeds_for_sheet(inst, 0.0, &shrunk_sheet, &[], 64);
+    let seeds = generate_feature_candidate_seeds_for_sheet(inst, 0.0, &shrunk_sheet, &[], 64);
     let generator_seed_count = seeds.len();
 
     // Deduplicate sheet-edge seeds by (target edge, rotation).
@@ -1368,7 +1416,8 @@ pub fn verify_one_part_sheet_edge_placement(
         let mut collision_pairs = 0usize;
         for (k, &inw) in inward_steps.iter().enumerate() {
             let (ax, ay) = apply_inward(edge, base_anchor_x, base_anchor_y, inw);
-            let Some(offset_prepared) = transform_base_to_candidate(offset_base, ax, ay, rot) else {
+            let Some(offset_prepared) = transform_base_to_candidate(offset_base, ax, ay, rot)
+            else {
                 continue;
             };
             let (clear, pairs, _unsupported) = strict_clear(&session, &offset_prepared);
@@ -1441,7 +1490,8 @@ pub fn verify_one_part_sheet_edge_placement(
                     margin_exact: false,
                     aligned_to_target_edge: false,
                     valid_placement: false,
-                    fractional_rotation: angular_distance_deg(rot, nearest_axis_angle_deg(rot)) > 0.25,
+                    fractional_rotation: angular_distance_deg(rot, nearest_axis_angle_deg(rot))
+                        > 0.25,
                     rejection_reason: Some("seed_not_clear_after_bounded_repair".to_string()),
                     repair_attempts,
                     repaired_inward_mm: 0.0,
@@ -1496,8 +1546,7 @@ pub fn verify_one_part_sheet_edge_placement(
         let margin_exact = margin_error <= 0.05;
         let valid_placement =
             boundary_clear && collision_clear && margin_respected && aligned_to_target_edge;
-        let fractional_rotation =
-            angular_distance_deg(rot, nearest_axis_angle_deg(rot)) > 0.25;
+        let fractional_rotation = angular_distance_deg(rot, nearest_axis_angle_deg(rot)) > 0.25;
         let accepted = valid_placement && margin_exact;
         let rejection_reason = if !boundary_clear {
             Some("boundary_not_clear".to_string())
@@ -1645,8 +1694,7 @@ pub fn verify_one_part_sheet_edge_placement(
         generator_seed_count,
         sheet_edge_seed_count,
         continuous_rotation: continuous,
-        accepted_candidate_source: accepted_index
-            .map(|i| candidates[i].candidate_source.clone()),
+        accepted_candidate_source: accepted_index.map(|i| candidates[i].candidate_source.clone()),
         continuous_proof_index,
         continuous_rotation_proven: continuous_proof_index.is_some(),
         candidates,

@@ -232,8 +232,7 @@ impl CdeAdapter {
 
         match self.config.touching_policy {
             CdeTouchingPolicy::SparrowStrict => CdeQueryResult::Collision,
-            CdeTouchingPolicy::VrsTouchAllowed
-            | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+            CdeTouchingPolicy::VrsTouchAllowed | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
                 match polygons_collide(&a.world_pts, &b.world_pts) {
                     Ok(true) => CdeQueryResult::Collision,
                     Ok(false) => CdeQueryResult::NoCollision,
@@ -282,13 +281,14 @@ impl CdeAdapter {
         }
 
         match self.config.touching_policy {
-            CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
-                Ok(true) => CdeQueryResult::NoCollision,
-                Ok(false) => CdeQueryResult::Collision,
-                Err(reason) => CdeQueryResult::Unsupported { reason },
-            },
-            CdeTouchingPolicy::VrsTouchAllowed
-            | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+            CdeTouchingPolicy::SparrowStrict => {
+                match polygon_strictly_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
+                    Ok(true) => CdeQueryResult::NoCollision,
+                    Ok(false) => CdeQueryResult::Collision,
+                    Err(reason) => CdeQueryResult::Unsupported { reason },
+                }
+            }
+            CdeTouchingPolicy::VrsTouchAllowed | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
                 match polygon_within_sheet_pts(&item.world_pts, &sheet.world_pts) {
                     Ok(true) => CdeQueryResult::NoCollision,
                     Ok(false) => CdeQueryResult::Collision,
@@ -396,9 +396,18 @@ fn part_local_polygon(part: &Part) -> Result<Vec<Point>, &'static str> {
             }
             Ok(vec![
                 Point { x: 0.0, y: 0.0 },
-                Point { x: part.width, y: 0.0 },
-                Point { x: part.width, y: part.height },
-                Point { x: 0.0, y: part.height },
+                Point {
+                    x: part.width,
+                    y: 0.0,
+                },
+                Point {
+                    x: part.width,
+                    y: part.height,
+                },
+                Point {
+                    x: 0.0,
+                    y: part.height,
+                },
             ])
         }
         PolygonExtraction::Invalid { reason } => Err(reason),
@@ -427,8 +436,8 @@ impl std::fmt::Debug for CdeBaseShape {
 /// Build the per-instance base shape once (POI + surrogate computed here).
 pub(crate) fn prepare_base_shape_native(part: &Part) -> Result<CdeBaseShape, &'static str> {
     let local_pts = part_local_polygon(part)?;
-    let mut spoly =
-        to_jag_polygon(&local_pts, "cde_base_shape").map_err(|_| "SPolygon build failed for base")?;
+    let mut spoly = to_jag_polygon(&local_pts, "cde_base_shape")
+        .map_err(|_| "SPolygon build failed for base")?;
     let _ = spoly.generate_surrogate(pole_prepass_surrogate_config());
     Ok(CdeBaseShape { spoly, local_pts })
 }
@@ -469,8 +478,10 @@ pub(crate) fn transform_base_to_candidate(
     let (min_x, min_y, max_x, max_y) = polygon_bbox(&world_pts)?;
     // `rotate_translate` applies rotation-about-origin then translation, matching
     // `transform_polygon` exactly.
-    let t = Transformation::empty()
-        .rotate_translate(rotation_deg.to_radians() as f32, (anchor_x as f32, anchor_y as f32));
+    let t = Transformation::empty().rotate_translate(
+        rotation_deg.to_radians() as f32,
+        (anchor_x as f32, anchor_y as f32),
+    );
     let mut spoly = base.spoly.clone();
     spoly.transform_from(&base.spoly, &t);
     Some(CdePreparedShape {
@@ -902,16 +913,32 @@ impl CdeCandidateSession {
         // geometry (the broad-phase bbox-fit gate), so spacing never acts as a margin.
         let hm = margin * 0.5;
         let ext_pts = vec![
-            Point { x: min_x - hm, y: min_y - hm },
-            Point { x: max_x + hm, y: min_y - hm },
-            Point { x: max_x + hm, y: max_y + hm },
-            Point { x: min_x - hm, y: max_y + hm },
+            Point {
+                x: min_x - hm,
+                y: min_y - hm,
+            },
+            Point {
+                x: max_x + hm,
+                y: min_y - hm,
+            },
+            Point {
+                x: max_x + hm,
+                y: max_y + hm,
+            },
+            Point {
+                x: min_x - hm,
+                y: max_y + hm,
+            },
         ];
         let ext_spoly = to_jag_polygon(&ext_pts, "cde_pairs_only_noop_exterior").ok()?;
         let mut hazards = Vec::with_capacity(others.len() + 1);
         hazards.push(Hazard::new(HazardEntity::Exterior, ext_spoly, false));
         for (i, (_, s)) in others.iter().enumerate() {
-            hazards.push(Hazard::new(HazardEntity::Hole { idx: i }, s.spoly.clone(), false));
+            hazards.push(Hazard::new(
+                HazardEntity::Hole { idx: i },
+                s.spoly.clone(),
+                false,
+            ));
         }
         super::cde_observability::inc_batch_engine_build(others.len());
         let cde = CDEngine::new(bbox, hazards, cde_config);
@@ -927,14 +954,19 @@ impl CdeCandidateSession {
 
     /// Find the CDEngine slot (= index into `holes`) for a given layout index.
     fn lookup_hole_slot(&self, layout_idx: usize) -> Option<usize> {
-        self.holes.iter().position(|e| matches!(e, Some((i, _)) if *i == layout_idx))
+        self.holes
+            .iter()
+            .position(|e| matches!(e, Some((i, _)) if *i == layout_idx))
     }
 
     /// Remove `layout_idx` from the CDEngine and mark its slot as vacant.
     /// No-op if the item is not found.
     pub(crate) fn deregister_item(&mut self, layout_idx: usize) {
-        let Some(slot) = self.lookup_hole_slot(layout_idx) else { return };
-        self.cde.deregister_hazard_by_entity(HazardEntity::Hole { idx: slot });
+        let Some(slot) = self.lookup_hole_slot(layout_idx) else {
+            return;
+        };
+        self.cde
+            .deregister_hazard_by_entity(HazardEntity::Hole { idx: slot });
         self.holes[slot] = None;
     }
 
@@ -965,23 +997,25 @@ impl CdeCandidateSession {
         let mut unsupported = false;
         for (_, ent) in collector.iter() {
             match ent {
-                HazardEntity::Exterior => {
-                    match self.touching_policy {
-                        CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(candidate.world_pts.as_slice(), &self.sheet_world_pts) {
+                HazardEntity::Exterior => match self.touching_policy {
+                    CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(
+                        candidate.world_pts.as_slice(),
+                        &self.sheet_world_pts,
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => boundary_collision = true,
+                        Err(_) => unsupported = true,
+                    },
+                    CdeTouchingPolicy::VrsTouchAllowed
+                    | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                        match polygon_within_sheet_pts(&candidate.world_pts, &self.sheet_world_pts)
+                        {
                             Ok(true) => {}
                             Ok(false) => boundary_collision = true,
                             Err(_) => unsupported = true,
-                        },
-                        CdeTouchingPolicy::VrsTouchAllowed
-                        | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
-                            match polygon_within_sheet_pts(&candidate.world_pts, &self.sheet_world_pts) {
-                                Ok(true) => {}
-                                Ok(false) => boundary_collision = true,
-                                Err(_) => unsupported = true,
-                            }
                         }
                     }
-                }
+                },
                 HazardEntity::Hole { idx } => {
                     if let Some(Some((layout_idx, oshape))) = self.holes.get(*idx) {
                         match self.touching_policy {
@@ -1031,7 +1065,10 @@ impl CdeCandidateSession {
     /// (VRS prepared shapes do not persist a surrogate). Returns an empty pole list
     /// only for a genuinely degenerate shape, in which case the edge phase still
     /// detects every hazard.
-    pub(crate) fn candidate_poles_and_area(&self, candidate: &CdePreparedShape) -> (Vec<CandidatePole>, f64) {
+    pub(crate) fn candidate_poles_and_area(
+        &self,
+        candidate: &CdePreparedShape,
+    ) -> (Vec<CandidatePole>, f64) {
         let area = candidate.spoly.area as f64;
         // Reuse the surrogate generated at preparation time; only regenerate (on a
         // clone) for a shape that somehow lacks one.
@@ -1039,7 +1076,10 @@ impl CdeCandidateSession {
             Some(s) => poles_from_surrogate(s),
             None => {
                 let mut spoly = candidate.spoly.clone();
-                if spoly.generate_surrogate(pole_prepass_surrogate_config()).is_err() {
+                if spoly
+                    .generate_surrogate(pole_prepass_surrogate_config())
+                    .is_err()
+                {
                     return (Vec::new(), area);
                 }
                 poles_from_surrogate(spoly.surrogate())
@@ -1063,7 +1103,8 @@ impl CdeCandidateSession {
         candidate: &CdePreparedShape,
         sink: &mut impl SpecializedHazardSink,
     ) {
-        let Ok(circle) = Circle::try_new(JagPoint(pole.cx as f32, pole.cy as f32), pole.radius as f32)
+        let Ok(circle) =
+            Circle::try_new(JagPoint(pole.cx as f32, pole.cy as f32), pole.radius as f32)
         else {
             return;
         };
@@ -1189,10 +1230,14 @@ pub(crate) fn convex_hull_area_and_diameter(shape: &CdePreparedShape) -> (f64, f
         Some(s) => s.convex_hull_area as f64,
         None => {
             let mut spoly = shape.spoly.clone();
-            if spoly.generate_surrogate(pole_prepass_surrogate_config()).is_ok() {
+            if spoly
+                .generate_surrogate(pole_prepass_surrogate_config())
+                .is_ok()
+            {
                 spoly.surrogate().convex_hull_area as f64
             } else {
-                ((shape.max_x - shape.min_x).max(0.0) * (shape.max_y - shape.min_y).max(0.0)).max(1.0)
+                ((shape.max_x - shape.min_x).max(0.0) * (shape.max_y - shape.min_y).max(0.0))
+                    .max(1.0)
             }
         }
     };
@@ -1264,23 +1309,25 @@ impl<'a, S: SpecializedHazardSink> HazardCollector for SinkAdapter<'a, S> {
             return;
         }
         match entity {
-            HazardEntity::Exterior => {
-                match self.touching_policy {
-                    CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
+            HazardEntity::Exterior => match self.touching_policy {
+                CdeTouchingPolicy::SparrowStrict => match polygon_strictly_within_sheet_pts(
+                    &self.candidate.world_pts,
+                    self.sheet_world_pts,
+                ) {
+                    Ok(true) => {}
+                    Ok(false) => self.sink.accept_container(self.candidate),
+                    Err(_) => self.sink.accept_unsupported(),
+                },
+                CdeTouchingPolicy::VrsTouchAllowed
+                | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
+                    match polygon_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts)
+                    {
                         Ok(true) => {}
                         Ok(false) => self.sink.accept_container(self.candidate),
                         Err(_) => self.sink.accept_unsupported(),
-                    },
-                    CdeTouchingPolicy::VrsTouchAllowed
-                    | CdeTouchingPolicy::SpacingExpandedTouchAllowed => {
-                        match polygon_within_sheet_pts(&self.candidate.world_pts, self.sheet_world_pts) {
-                            Ok(true) => {}
-                            Ok(false) => self.sink.accept_container(self.candidate),
-                            Err(_) => self.sink.accept_unsupported(),
-                        }
                     }
                 }
-            }
+            },
             HazardEntity::Hole { idx } => {
                 if let Some(Some((layout_idx, oshape))) = self.holes.get(idx) {
                     match self.touching_policy {
@@ -2194,7 +2241,11 @@ mod tests {
         }
 
         // After 10 deregister/reregister cycles the active hazard count must be 10 again
-        assert_eq!(session.hazard_count(), 10, "hazard_count must be 10 after full round-trip");
+        assert_eq!(
+            session.hazard_count(),
+            10,
+            "hazard_count must be 10 after full round-trip"
+        );
     }
 
     #[test]

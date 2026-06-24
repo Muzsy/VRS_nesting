@@ -18,7 +18,9 @@ const MARGIN_MM: f64 = 5.0;
 const SPACING_MM: f64 = 8.0;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn load_lv8_critical_part() -> Part {
@@ -67,10 +69,20 @@ fn lv8_sheet_edge_anchor_catalog_has_edge_corner_variants_and_scored_selection()
     // A scored, boundary-clear selection.
     let sel = cat.selected().expect("a selected candidate");
     assert!(sel.boundary_clear);
-    assert!(sel.free_space_score > 0.0, "selected candidate must record a free-space score");
+    assert!(
+        sel.free_space_score > 0.0,
+        "selected candidate must record a free-space score"
+    );
     // Center is not the only secondary policy among boundary-clear candidates.
-    let clear_corner = cat.candidates.iter().filter(|c| c.boundary_clear && c.is_corner).count();
-    assert!(clear_corner > 0, "center must not be the only Anchor secondary policy");
+    let clear_corner = cat
+        .candidates
+        .iter()
+        .filter(|c| c.boundary_clear && c.is_corner)
+        .count();
+    assert!(
+        clear_corner > 0,
+        "center must not be the only Anchor secondary policy"
+    );
 
     // Artifacts.
     let json = cat.to_diagnostics_json();
@@ -80,12 +92,17 @@ fn lv8_sheet_edge_anchor_catalog_has_edge_corner_variants_and_scored_selection()
         serde_json::to_string_pretty(&json).expect("ser"),
     )
     .expect("write json");
-    std::fs::write(dir.join("sheet_edge_anchor_candidates.svg"), render_svg(&cat))
-        .expect("write svg");
+    std::fs::write(
+        dir.join("sheet_edge_anchor_candidates.svg"),
+        render_svg(&cat),
+    )
+    .expect("write svg");
     assert!(dir.join("sheet_edge_anchor_candidates.svg").exists());
 }
 
-fn render_svg(cat: &vrs_solver::optimizer::sparrow::sheet_edge_placement_catalog::SheetEdgeAnchorCatalog) -> String {
+fn render_svg(
+    cat: &vrs_solver::optimizer::sparrow::sheet_edge_placement_catalog::SheetEdgeAnchorCatalog,
+) -> String {
     let scale = 0.22_f64;
     let pad = 40.0;
     let w = SHEET_W * scale + 2.0 * pad;

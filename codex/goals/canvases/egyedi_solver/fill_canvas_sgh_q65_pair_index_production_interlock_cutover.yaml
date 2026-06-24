@@ -1,0 +1,59 @@
+steps:
+  - name: "Audit gap konkretizalasa"
+    description: >
+      Ellenorizd a production Interlock admission jelenlegi wiringjet, es rogzitsd a konkret
+      simplified pair-seed gapet a reportban.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a Q65 canvas/YAML/checklist/report vazat a PairCompatibilityIndex production
+      interlock cutover feladathoz.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q65_pair_index_production_interlock_cutover.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+
+  - name: "Live pair index es interlock seed conversion"
+    description: >
+      Epits live PairCompatibilityIndex candidate-eket a cache-elt SPInstance adatokbol, es
+      implementald a live anchor rotation-aware pair transform -> placement seed konverziot.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/pair_matrix.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/interlock_pair.rs"
+
+  - name: "Production Interlock cutover es diagnosztika"
+    description: >
+      A production try_admit_critical Interlock aga eloszor a PairCompatibilityIndex-alapu live
+      candidate-eket probalja, majd explicit fallbackkel megy tovabb a neighbour feature candidate
+      utra. Rogzitsd az accepted source/score/transform diagnozisokat.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "codex/reports/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+
+  - name: "Production teszt es artifact"
+    description: >
+      Adj uj production boundary tesztet es generalj artifactot a live pair-index Interlock
+      cutoverrol.
+    outputs:
+      - "artifacts/benchmarks/sgh_q57b/interlock_pair_admission.json"
+      - "rust/vrs_solver/tests/sparrow_q65_pair_index_cutover.rs"
+      - "artifacts/benchmarks/sgh_q65/interlock_pair_production_cutover.json"
+
+  - name: "Checklist es report lezarasa"
+    description: >
+      Frissitsd a checklistet es a reportot path+line evidence-szel, oszinten rogzitve mit valtott
+      le a Q65 production cutover.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q65_pair_index_production_interlock_cutover.verify.log"

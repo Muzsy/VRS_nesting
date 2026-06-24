@@ -71,7 +71,9 @@ fn rect_part(id: &str, qty: i64, w: f64, h: f64) -> Value {
 }
 
 fn od(out: &SolverOutput) -> &vrs_solver::io::OptimizerDiagnosticsOutput {
-    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+    out.optimizer_diagnostics
+        .as_ref()
+        .expect("optimizer_diagnostics present")
 }
 
 // ── Test 1: rect sheet shrink ─────────────────────────────────────────────────
@@ -143,7 +145,10 @@ fn irregular_stock_with_zero_margin_ok() {
     let sheets = expand_sheets(&[irregular_stock("L")]).expect("expand");
     // Zero margin is a no-op clone even for irregular stock.
     let res = apply_rectangular_sheet_margin(&sheets, 0.0);
-    assert!(res.is_ok(), "irregular stock with zero margin should be a no-op clone");
+    assert!(
+        res.is_ok(),
+        "irregular stock with zero margin should be a no-op clone"
+    );
 }
 
 // ── SGH-Q40: signed sheet offset (unified-model sheet transform) ───────────────
@@ -194,7 +199,8 @@ fn sheet_offset_collapsing_shrink_errors() {
     let res = apply_rectangular_sheet_offset(&sheets, 60.0);
     assert!(res.is_err(), "inset 60 on 100×100 collapses the sheet");
     assert!(
-        res.unwrap_err().contains("SHEET_OFFSET_COLLAPSES_SHEET_Q40"),
+        res.unwrap_err()
+            .contains("SHEET_OFFSET_COLLAPSES_SHEET_Q40"),
         "expected SHEET_OFFSET_COLLAPSES_SHEET_Q40"
     );
 }
@@ -221,7 +227,12 @@ fn sheet_offset_nonfinite_errors() {
 
 #[test]
 fn solver_placement_respects_margin() {
-    let input = ms_input(Some(10.0), vec![rect_part("P1", 2, 20.0, 20.0)], 100.0, 100.0);
+    let input = ms_input(
+        Some(10.0),
+        vec![rect_part("P1", 2, 20.0, 20.0)],
+        100.0,
+        100.0,
+    );
     let out = solve(input).expect("solve");
     assert_eq!(out.status, "ok", "expected ok status");
 
@@ -253,7 +264,12 @@ fn solver_placement_respects_margin() {
 #[test]
 fn part_too_big_with_margin_not_ok() {
     // 95×95 fits in 100×100 but not in the 80×80 margin-inset sheet.
-    let input = ms_input(Some(10.0), vec![rect_part("P_BIG", 1, 95.0, 95.0)], 100.0, 100.0);
+    let input = ms_input(
+        Some(10.0),
+        vec![rect_part("P_BIG", 1, 95.0, 95.0)],
+        100.0,
+        100.0,
+    );
     let out = solve(input).expect("solve");
     assert_ne!(out.status, "ok", "must not report ok for unplaceable part");
     assert_eq!(out.metrics.placed_count, 0, "no placements expected");
@@ -281,7 +297,12 @@ fn no_margin_backwards_compatible() {
 
 #[test]
 fn explicit_zero_margin_backwards_compatible() {
-    let input = ms_input(Some(0.0), vec![rect_part("P1", 2, 20.0, 20.0)], 100.0, 100.0);
+    let input = ms_input(
+        Some(0.0),
+        vec![rect_part("P1", 2, 20.0, 20.0)],
+        100.0,
+        100.0,
+    );
     let out = solve(input).expect("solve");
     assert_eq!(out.status, "ok");
     let d = od(&out);
@@ -341,8 +362,14 @@ fn polygon_inside_declared_bbox_outside_no_violation() {
     let placements = vec![placement("T#0", "T", 65.0, 65.0, 0.0)];
 
     let v = find_sheet_margin_violations(&placements, &parts, &sheets, 10.0);
-    assert!(v.is_empty(), "polygon is inside inset; expected no violation, got {v:?}");
-    assert_eq!(count_sheet_margin_violations(&placements, &parts, &sheets, 10.0), 0);
+    assert!(
+        v.is_empty(),
+        "polygon is inside inset; expected no violation, got {v:?}"
+    );
+    assert_eq!(
+        count_sheet_margin_violations(&placements, &parts, &sheets, 10.0),
+        0
+    );
 }
 
 /// Test 2: polygon actually violates margin. Triangle at (75,75) → world max 95 > 90.
@@ -353,8 +380,15 @@ fn polygon_actually_violates_margin() {
     let placements = vec![placement("T#0", "T", 75.0, 75.0, 0.0)];
 
     let v = find_sheet_margin_violations(&placements, &parts, &sheets, 10.0);
-    assert_eq!(v, vec!["T#0".to_string()], "polygon exceeds inset; expected violation");
-    assert_eq!(count_sheet_margin_violations(&placements, &parts, &sheets, 10.0), 1);
+    assert_eq!(
+        v,
+        vec!["T#0".to_string()],
+        "polygon exceeds inset; expected violation"
+    );
+    assert_eq!(
+        count_sheet_margin_violations(&placements, &parts, &sheets, 10.0),
+        1
+    );
 }
 
 /// Test 3: rotated polygon containment. A triangle rotated 45° — placed so the rotated

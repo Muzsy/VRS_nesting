@@ -1,0 +1,61 @@
+steps:
+  - name: "Felderítés és fallback pontok ellenőrzése"
+    description: >
+      Ellenőrizd a Q62 futásból látszó fallback-viselkedést és a Sparrow BPP builder releváns kódútjait.
+      Rögzítsd, mely pontokon esik vissza a solver a régebbi seed/bootstrap logikára.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md"
+
+  - name: "Task artefaktok és strict benchmark runner létrehozása"
+    description: >
+      Készítsd el a Q63 canvas/YAML/checklist/report vázat és a strict latest-behavior benchmark
+      futtatót az új benchmark könyvtárhoz.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q63_full276_lv8_strict_latest_behavior_rerun.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md"
+      - "codex/reports/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md"
+      - "scripts/bench_sgh_q63_full276_strict_latest_behavior.py"
+
+  - name: "Strict latest-behavior solver wiring"
+    description: >
+      Vezesd be az explicit strict latest-behavior módot a Sparrow BPP builderbe úgy, hogy a builder
+      ne essen vissza csendben a natív seedre, ne bootstrapeljen random unresolved partokat, és a
+      skeleton-role critical admission ne ugorja át a role-specifikus útját a régebbi generic direct
+      branch miatt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Benchmark futtatás és artifact mentés"
+    description: >
+      Futtasd a Full276 LV8 benchmarkot strict latest-behavior módban, és mentsd a Q49-szerű
+      input/output/log/summary artefaktokat az új benchmark könyvtárba.
+    outputs:
+      - "scripts/bench_sgh_q63_full276_strict_latest_behavior.py"
+      - "artifacts/benchmarks/sgh_q63/inputs"
+      - "artifacts/benchmarks/sgh_q63/outputs"
+      - "artifacts/benchmarks/sgh_q63/logs"
+      - "artifacts/benchmarks/sgh_q63/q63_summary.json"
+
+  - name: "Render és benchmark report"
+    description: >
+      Generálj SVG/PNG render artefaktokat, és készíts top-level benchmark reportot a strict latest
+      runról, összevetve a Q62 current runnal.
+    outputs:
+      - "artifacts/benchmarks/sgh_q63/renders"
+      - "artifacts/benchmarks/sgh_q63/q63_report.md"
+
+  - name: "Checklist és Codex report lezárása"
+    description: >
+      Frissítsd a checklistet és a Codex reportot path+line evidence-szel, őszintén rögzítve a strict
+      latest-behavior futás eredményét és a megszüntetett fallback pontokat.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md"
+      - "codex/reports/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.md"
+      - "codex/reports/egyedi_solver/sgh_q63_full276_lv8_strict_latest_behavior_rerun.verify.log"

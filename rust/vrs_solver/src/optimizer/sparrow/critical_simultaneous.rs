@@ -15,6 +15,34 @@ use super::*;
 
 const GRID_SAMPLES: usize = 40;
 const REFINE_ITERS: usize = 24;
+const GROUP_CLEARANCE_GAP: f64 = 0.1;
+
+fn preferred_group_rotation(
+    catalog: Option<&OrientationCatalog>,
+    fallback_allowed_rotations: &[f64],
+) -> f64 {
+    if let Some(rot) = catalog
+        .and_then(|c| {
+            c.extrema_samples
+                .iter()
+                .min_by(|a, b| a.width.partial_cmp(&b.width).unwrap_or(Ordering::Equal))
+                .map(|s| s.angle_deg)
+        })
+        .or_else(|| {
+            catalog.and_then(|c| {
+                c.candidates
+                    .iter()
+                    .find(|cand| matches!(cand.kind, OrientationCandidateKind::MinWidth))
+                    .map(|cand| cand.angle_deg)
+            })
+        })
+        .or_else(|| fallback_allowed_rotations.first().copied())
+    {
+        rot
+    } else {
+        0.0
+    }
+}
 
 pub fn simultaneous_critical_enabled() -> bool {
     std::env::var("VRS_SIMULTANEOUS_CRITICAL").ok().as_deref() == Some("1")
@@ -108,6 +136,14 @@ impl CriticalGroupAdmission {
             "arrangements": arr,
         })
     }
+
+    pub fn best_arrangement(&self) -> Option<&GroupArrangementResult> {
+        self.arrangements.iter().max_by(|a, b| {
+            a.placed_count
+                .cmp(&b.placed_count)
+                .then_with(|| a.score.partial_cmp(&b.score).unwrap_or(Ordering::Equal))
+        })
+    }
 }
 
 /// Admit a bounded same-part critical group of `target_count` (2 or 3) on a sheet, with simultaneous
@@ -120,10 +156,8 @@ pub fn admit_critical_group(
     margin_mm: f64,
     spacing_mm: f64,
 ) -> Result<CriticalGroupAdmission, String> {
-    let started = Instant::now();
-    let target_count = target_count.clamp(2, 3);
-
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S_SIMUL".to_string(),
         quantity: 1,
@@ -134,8 +168,13 @@ pub fn admit_critical_group(
         cost_per_use: None,
     };
     let raw_sheet = crate::sheet::stock_to_shape(&raw_stock)?;
-    let cfg = SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, rotation_context.clone(), 42)
-        .with_spacing_mm(spacing_mm);
+    let cfg = SparrowConfig::from_solver_input(
+        1.0,
+        CollisionBackendKind::Cde,
+        rotation_context.clone(),
+        42,
+    )
+    .with_spacing_mm(spacing_mm);
     let problem = SparrowProblem::from_solver_input(
         std::slice::from_ref(part),
         std::slice::from_ref(&raw_sheet),
@@ -143,33 +182,77 @@ pub fn admit_critical_group(
         Vec::new(),
         cfg,
     )?;
-    let inst = problem.instances.first().ok_or_else(|| format!("no instance for {}", part.id))?;
+    let inst = problem
+        .instances
+        .first()
+        .ok_or_else(|| format!("no instance for {}", part.id))?;
     let shape = inst.spacing_collision_base_shape.clone();
-    let catalog = inst.orientation_catalog.as_ref();
-
-    // Primary orientation: the true min-width orientation taken from the spacing-expanded extrema
-    // samples (smallest width). This is robust even when the MinWidth candidate was deduped into an
-    // alignment candidate of the same angle.
-    let min_width_rot = catalog
-        .extrema_samples
-        .iter()
-        .min_by(|a, b| a.width.partial_cmp(&b.width).unwrap_or(Ordering::Equal))
-        .map(|s| s.angle_deg)
-        .unwrap_or(90.0);
+    let min_width_rot = preferred_group_rotation(
+        Some(inst.orientation_catalog.as_ref()),
+        &inst.allowed_rotations_deg,
+    );
 
     let margin = margin_mm;
     let shrunk = [margin, margin, sheet_width - margin, sheet_height - margin];
+    Ok(admit_group_with_shape(
+        part,
+        shape.as_ref(),
+        min_width_rot,
+        target_count,
+        shrunk,
+        spacing_mm,
+        [0.0, 0.0, sheet_width, sheet_height],
+    ))
+}
 
+pub fn admit_live_same_part_group(
+    inst: &SPInstance,
+    target_count: usize,
+    sheet: &SheetShape,
+    edge_inset_mm: f64,
+) -> Result<CriticalGroupAdmission, String> {
+    let min_width_rot = preferred_group_rotation(
+        Some(inst.orientation_catalog.as_ref()),
+        &inst.allowed_rotations_deg,
+    );
+    let inset = edge_inset_mm.max(0.0);
+    Ok(admit_group_with_shape(
+        &inst.part,
+        inst.spacing_collision_base_shape.as_ref(),
+        min_width_rot,
+        target_count,
+        [
+            sheet.min_x + inset,
+            sheet.min_y + inset,
+            sheet.max_x - inset,
+            sheet.max_y - inset,
+        ],
+        0.0,
+        [sheet.min_x, sheet.min_y, sheet.max_x, sheet.max_y],
+    ))
+}
+
+fn admit_group_with_shape(
+    part: &Part,
+    shape: &CdeBaseShape,
+    min_width_rot: f64,
+    target_count: usize,
+    shrunk: [f64; 4],
+    spacing_mm: f64,
+    sheet: [f64; 4],
+) -> CriticalGroupAdmission {
+    let started = Instant::now();
+    let target_count = target_count.clamp(2, 3);
     let mut tracker = BestPartialTracker::new();
     let mut arrangements: Vec<GroupArrangementResult> = Vec::new();
 
     // Arrangement A: side-by-side at the min-width orientation, with simultaneous compaction.
-    let a = arrange_side_by_side(&shape, part, min_width_rot, target_count, shrunk, true);
+    let a = arrange_side_by_side(shape, part, min_width_rot, target_count, shrunk, true);
     record(&mut tracker, &a);
     arrangements.push(a);
 
     // Arrangement B: flipped-interlock (alternate rot / rot+180), with simultaneous refinement.
-    let b = arrange_flipped_interlock(&shape, part, min_width_rot, target_count, shrunk, true);
+    let b = arrange_flipped_interlock(shape, part, min_width_rot, target_count, shrunk, true);
     record(&mut tracker, &b);
     arrangements.push(b);
 
@@ -180,17 +263,17 @@ pub fn admit_critical_group(
         .unwrap_or_else(|| "none".to_string());
     let full_success = best_partial_count >= target_count;
 
-    Ok(CriticalGroupAdmission {
+    CriticalGroupAdmission {
         part_id: part.id.clone(),
         target_count,
         spacing_mm,
-        sheet: [0.0, 0.0, sheet_width, sheet_height],
+        sheet,
         arrangements,
         best_partial_count,
         best_partial_source,
         full_success,
         time_ms: started.elapsed().as_secs_f64() * 1000.0,
-    })
+    }
 }
 
 fn record(tracker: &mut BestPartialTracker, a: &GroupArrangementResult) {
@@ -225,25 +308,39 @@ fn arrange_side_by_side(
     let w = f[2] - f[0];
     let h = f[3] - f[1];
     let y = shrunk[1] - f[1]; // flush to bottom margin
-    // Naive spread candidate (with deliberate gaps) → the simultaneous refinement compacts every part
-    // flush-left (the optimal side-by-side compaction). ALL parts may move; `any_moved` reflects the
-    // spread→flush relocation.
+                              // Naive spread candidate (with deliberate gaps) → the simultaneous refinement compacts every part
+                              // flush-left (the optimal side-by-side compaction). ALL parts may move; `any_moved` reflects the
+                              // spread→flush relocation.
     let init_gap = w * 0.10;
     let spread: Vec<f64> = (0..target_count)
-        .map(|i| shrunk[0] - f[0] + i as f64 * (w + init_gap))
+        .map(|i| shrunk[0] - f[0] + i as f64 * (w + init_gap + GROUP_CLEARANCE_GAP))
         .collect();
     let flush: Vec<f64> = (0..target_count)
-        .map(|i| shrunk[0] - f[0] + i as f64 * w)
+        .map(|i| shrunk[0] - f[0] + i as f64 * (w + GROUP_CLEARANCE_GAP))
         .collect();
-    let xs = if refine { flush.clone() } else { spread.clone() };
+    let xs = if refine {
+        flush.clone()
+    } else {
+        spread.clone()
+    };
     let any_moved = refine
         && spread
             .iter()
             .zip(flush.iter())
             .any(|(s, fl)| (s - fl).abs() > 1e-6);
 
-    finalize_arrangement(shape, part, GroupArrangement::SideBySideMinWidth, target_count, refine, any_moved,
-        xs.iter().map(|&x| (x, y, rot)).collect(), shrunk, w, h)
+    finalize_arrangement(
+        shape,
+        part,
+        GroupArrangement::SideBySideMinWidth,
+        target_count,
+        refine,
+        any_moved,
+        xs.iter().map(|&x| (x, y, rot)).collect(),
+        shrunk,
+        w,
+        h,
+    )
 }
 
 /// Flipped-interlock: alternate rot / rot+180 and let the simultaneous refinement try to nudge the
@@ -265,7 +362,7 @@ fn arrange_flipped_interlock(
     for i in 0..target_count {
         let r = if i % 2 == 0 { rot } else { rot + 180.0 };
         let fr = frame(shape, r).unwrap_or(f0);
-        let x = shrunk[0] - fr[0] + i as f64 * w;
+        let x = shrunk[0] - fr[0] + i as f64 * (w + GROUP_CLEARANCE_GAP);
         placements.push((x, shrunk[1] - fr[1], r));
     }
     let mut any_moved = false;
@@ -280,7 +377,9 @@ fn arrange_flipped_interlock(
                 let cand_x = x - step;
                 let mut trial = placements.clone();
                 trial[i] = (cand_x, py, pr);
-                if group_valid(shape, part, &trial, shrunk) && cand_x >= shrunk[0] - frame(shape, pr).unwrap_or(f0)[0] - w {
+                if group_valid(shape, part, &trial, shrunk)
+                    && cand_x >= shrunk[0] - frame(shape, pr).unwrap_or(f0)[0] - w
+                {
                     placements[i] = (cand_x, py, pr);
                     moved = true;
                     any_moved = true;
@@ -291,8 +390,18 @@ fn arrange_flipped_interlock(
             }
         }
     }
-    finalize_arrangement(shape, part, GroupArrangement::FlippedInterlock, target_count, refine, any_moved,
-        placements, shrunk, w, h)
+    finalize_arrangement(
+        shape,
+        part,
+        GroupArrangement::FlippedInterlock,
+        target_count,
+        refine,
+        any_moved,
+        placements,
+        shrunk,
+        w,
+        h,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -315,7 +424,10 @@ fn finalize_arrangement(
     for &(x, y, r) in &placements {
         let fr = frame(shape, r).unwrap_or([0.0, 0.0, 0.0, 0.0]);
         let box_w = [fr[0] + x, fr[1] + y, fr[2] + x, fr[3] + y];
-        let within = box_w[0] >= shrunk[0] - 0.05 && box_w[1] >= shrunk[1] - 0.05 && box_w[2] <= shrunk[2] + 0.05 && box_w[3] <= shrunk[3] + 0.05;
+        let within = box_w[0] >= shrunk[0] - 0.05
+            && box_w[1] >= shrunk[1] - 0.05
+            && box_w[2] <= shrunk[2] + 0.05
+            && box_w[3] <= shrunk[3] + 0.05;
         if !within {
             boundary_violations += 1;
             continue;
@@ -325,7 +437,8 @@ fn finalize_arrangement(
         for &(kx, ky, kr) in &kept {
             let kf = frame(shape, kr).unwrap_or([0.0, 0.0, 0.0, 0.0]);
             let kbox = [kf[0] + kx, kf[1] + ky, kf[2] + kx, kf[3] + ky];
-            if bboxes_overlap(&box_w, &kbox) && contours_overlap(shape, r, x, y, shape, kr, kx, ky) {
+            if bboxes_overlap(&box_w, &kbox) && contours_overlap(shape, r, x, y, shape, kr, kx, ky)
+            {
                 clears = false;
                 collision_pairs += 1;
                 break;
@@ -363,11 +476,20 @@ fn finalize_arrangement(
     }
 }
 
-fn group_valid(shape: &CdeBaseShape, _part: &Part, placements: &[(f64, f64, f64)], shrunk: [f64; 4]) -> bool {
+fn group_valid(
+    shape: &CdeBaseShape,
+    _part: &Part,
+    placements: &[(f64, f64, f64)],
+    shrunk: [f64; 4],
+) -> bool {
     for (i, &(x, y, r)) in placements.iter().enumerate() {
         let fr = frame(shape, r).unwrap_or([0.0, 0.0, 0.0, 0.0]);
         let bx = [fr[0] + x, fr[1] + y, fr[2] + x, fr[3] + y];
-        if bx[0] < shrunk[0] - 0.05 || bx[1] < shrunk[1] - 0.05 || bx[2] > shrunk[2] + 0.05 || bx[3] > shrunk[3] + 0.05 {
+        if bx[0] < shrunk[0] - 0.05
+            || bx[1] < shrunk[1] - 0.05
+            || bx[2] > shrunk[2] + 0.05
+            || bx[3] > shrunk[3] + 0.05
+        {
             return false;
         }
         for &(x2, y2, r2) in placements.iter().skip(i + 1) {
@@ -406,10 +528,23 @@ fn bboxes_overlap(a: &[f64; 4], b: &[f64; 4]) -> bool {
 fn rotated_translated(shape: &CdeBaseShape, rot: f64, dx: f64, dy: f64) -> Vec<(f64, f64)> {
     let t = rot.to_radians();
     let (c, s) = (t.cos(), t.sin());
-    shape.local_pts.iter().map(|p| (p.x * c - p.y * s + dx, p.x * s + p.y * c + dy)).collect()
+    shape
+        .local_pts
+        .iter()
+        .map(|p| (p.x * c - p.y * s + dx, p.x * s + p.y * c + dy))
+        .collect()
 }
 
-fn contours_overlap(sa: &CdeBaseShape, ra: f64, ax: f64, ay: f64, sb: &CdeBaseShape, rb: f64, bx: f64, by: f64) -> bool {
+fn contours_overlap(
+    sa: &CdeBaseShape,
+    ra: f64,
+    ax: f64,
+    ay: f64,
+    sb: &CdeBaseShape,
+    rb: f64,
+    bx: f64,
+    by: f64,
+) -> bool {
     let pa = rotated_translated(sa, ra, ax, ay);
     let pb = rotated_translated(sb, rb, bx, by);
     let (amnx, amny, amxx, amxy) = pts_bbox(&pa);
@@ -481,7 +616,12 @@ mod tests {
             rotation_policy: Some(RotationPolicyKind::Continuous),
             holes_points: None,
             prepared_holes_points: None,
-            outer_points: Some(serde_json::json!([[0.0, 0.0], [300.0, 0.0], [300.0, 200.0], [0.0, 200.0]])),
+            outer_points: Some(serde_json::json!([
+                [0.0, 0.0],
+                [300.0, 0.0],
+                [300.0, 200.0],
+                [0.0, 200.0]
+            ])),
             prepared_outer_points: None,
         }
     }
@@ -497,31 +637,47 @@ mod tests {
             rotation_policy: Some(RotationPolicyKind::Continuous),
             holes_points: None,
             prepared_holes_points: None,
-            outer_points: Some(serde_json::json!([[0.0, 0.0], [700.0, 0.0], [700.0, 2400.0], [0.0, 2400.0]])),
+            outer_points: Some(serde_json::json!([
+                [0.0, 0.0],
+                [700.0, 0.0],
+                [700.0, 2400.0],
+                [0.0, 2400.0]
+            ])),
             prepared_outer_points: None,
         }
     }
 
     #[test]
     fn two_part_group_admits_and_validates() {
-        let adm = admit_critical_group(&small_rect("g2"), 2, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
-        assert!(adm.best_partial_count >= 2, "two small parts must both be admitted");
+        let adm =
+            admit_critical_group(&small_rect("g2"), 2, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
+        assert!(
+            adm.best_partial_count >= 2,
+            "two small parts must both be admitted"
+        );
         assert!(adm.full_success);
     }
 
     #[test]
     fn three_part_group_attempts_and_full_when_it_fits() {
-        let adm = admit_critical_group(&small_rect("g3"), 3, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
+        let adm =
+            admit_critical_group(&small_rect("g3"), 3, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
         assert_eq!(adm.target_count, 3);
-        assert!(adm.best_partial_count >= 3, "three small parts fit → full success");
+        assert!(
+            adm.best_partial_count >= 3,
+            "three small parts fit → full success"
+        );
         assert!(adm.full_success);
     }
 
     #[test]
     fn earlier_parts_can_move_during_refinement() {
-        let adm = admit_critical_group(&small_rect("gmove"), 3, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
+        let adm =
+            admit_critical_group(&small_rect("gmove"), 3, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
         assert!(
-            adm.arrangements.iter().any(|a| a.any_part_moved_in_refinement),
+            adm.arrangements
+                .iter()
+                .any(|a| a.any_part_moved_in_refinement),
             "the simultaneous refinement must be able to move group parts"
         );
     }
@@ -530,8 +686,12 @@ mod tests {
     fn full_three_fails_but_best_partial_two_is_preserved() {
         // 3 wide parts cannot all fit on a 1500-wide sheet; the best valid 2-group must be preserved,
         // never regressing to 1. (Honest: full 3 fails, partial 2 kept.)
-        let adm = admit_critical_group(&big_rect("gbig"), 3, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
+        let adm =
+            admit_critical_group(&big_rect("gbig"), 3, 1500.0, 3000.0, 5.0, 8.0).expect("adm");
         assert!(!adm.full_success, "3 wide parts must NOT all fit");
-        assert_eq!(adm.best_partial_count, 2, "best valid partial must be exactly 2 (never regress to 1)");
+        assert_eq!(
+            adm.best_partial_count, 2,
+            "best valid partial must be exactly 2 (never regress to 1)"
+        );
     }
 }

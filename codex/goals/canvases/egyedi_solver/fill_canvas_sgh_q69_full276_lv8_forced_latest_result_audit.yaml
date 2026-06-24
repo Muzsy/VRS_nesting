@@ -1,0 +1,50 @@
+steps:
+  - name: "Felderites es task artefaktok"
+    description: >
+      Ellenorizd a Q62/Q63 Full276 eredmenyeket, azonositd a forced-latest visszaeses pontokat,
+      majd keszitsd el a Q69 canvas/YAML/checklist/report vazat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q69_full276_lv8_forced_latest_result_audit.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.md"
+      - "codex/reports/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.md"
+
+  - name: "Forced-latest solver wiring es diagnosztika"
+    description: >
+      Vezesd be a forced-latest builder modot a BPP solve-ban: ne legyen native seed fallback,
+      ne legyen random bootstrap, es a builder ne ehessen meg minden idot az elso sheeten.
+      Adj explicit diagnostikat a modrol es a fallback-tiltasrol.
+    outputs:
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Benchmark runner es hard post-check"
+    description: >
+      Keszits uj benchmark runnert a Full276 LV8 / 2x1500x3000 / margin5 / spacing5 forced-latest
+      futashoz, Q49-szeru artifactstruktural. A summary/report tartalmazzon diagnostics auditot,
+      rotation/edge-use osszegzest es explicit vizualis ellenorzes rovatot.
+    outputs:
+      - "scripts/bench_sgh_q69_full276_forced_latest_result_audit.py"
+      - "artifacts/benchmarks/sgh_q69/inputs"
+      - "artifacts/benchmarks/sgh_q69/outputs"
+      - "artifacts/benchmarks/sgh_q69/logs"
+      - "artifacts/benchmarks/sgh_q69/renders"
+      - "artifacts/benchmarks/sgh_q69/q69_summary.json"
+      - "artifacts/benchmarks/sgh_q69/q69_report.md"
+
+  - name: "Checklist es Codex report zaras"
+    description: >
+      Frissitsd a checklistet es a Codex reportot path+line evidence-szel. A jelentes legyen
+      eredmeny-kozpontu, pontosan rogzitve, hogy a forced-latest futas mennyire lathato a vegso
+      layouton, es hol maradt meg hianyossag.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.md"
+      - "codex/reports/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.md"
+      - "codex/reports/egyedi_solver/sgh_q69_full276_lv8_forced_latest_result_audit.verify.log"

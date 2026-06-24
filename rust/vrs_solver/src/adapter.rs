@@ -18,7 +18,9 @@ use crate::optimizer::{
     SheetCursor,
 };
 use crate::rotation_policy::{RotationResolveContext, DEFAULT_CONTINUOUS_SAMPLE_COUNT};
-use crate::sheet::{apply_rectangular_sheet_offset, find_sheet_margin_violations, expand_sheets, stock_has_holes};
+use crate::sheet::{
+    apply_rectangular_sheet_offset, expand_sheets, find_sheet_margin_violations, stock_has_holes,
+};
 use crate::technology::TechnologyClearancePolicy;
 
 const PROFILE_PHASE1: &str = "jagua_optimizer_phase1_outer_only";
@@ -469,83 +471,360 @@ fn native_sparrow_diag_to_output(
         },
         sparrow_dense_final_validation_ran: Some(d.dense_final_validation_ran),
         sparrow_profiling_enabled: Some(d.profiling_enabled),
-        sparrow_profile_search_total_ms: if d.profiling_enabled { Some(d.profile_search_total_ms) } else { None },
-        sparrow_profile_session_build_ms: if d.profiling_enabled { Some(d.profile_session_build_ms) } else { None },
-        sparrow_profile_deregister_ms: if d.profiling_enabled { Some(d.profile_deregister_ms) } else { None },
-        sparrow_profile_candidate_transform_ms: if d.profiling_enabled { Some(d.profile_candidate_transform_ms) } else { None },
-        sparrow_profile_cde_query_collect_ms: if d.profiling_enabled { Some(d.profile_cde_query_collect_ms) } else { None },
-        sparrow_profile_hazard_loss_ms: if d.profiling_enabled { Some(d.profile_hazard_loss_ms) } else { None },
-        sparrow_profile_boundary_check_ms: if d.profiling_enabled { Some(d.profile_boundary_check_ms) } else { None },
-        sparrow_profile_broadphase_reject_count: if d.profiling_enabled { Some(d.profile_broadphase_reject_count) } else { None },
-        sparrow_profile_early_termination_count: if d.profiling_enabled { Some(d.profile_early_termination_count) } else { None },
+        sparrow_profile_search_total_ms: if d.profiling_enabled {
+            Some(d.profile_search_total_ms)
+        } else {
+            None
+        },
+        sparrow_profile_session_build_ms: if d.profiling_enabled {
+            Some(d.profile_session_build_ms)
+        } else {
+            None
+        },
+        sparrow_profile_deregister_ms: if d.profiling_enabled {
+            Some(d.profile_deregister_ms)
+        } else {
+            None
+        },
+        sparrow_profile_candidate_transform_ms: if d.profiling_enabled {
+            Some(d.profile_candidate_transform_ms)
+        } else {
+            None
+        },
+        sparrow_profile_cde_query_collect_ms: if d.profiling_enabled {
+            Some(d.profile_cde_query_collect_ms)
+        } else {
+            None
+        },
+        sparrow_profile_hazard_loss_ms: if d.profiling_enabled {
+            Some(d.profile_hazard_loss_ms)
+        } else {
+            None
+        },
+        sparrow_profile_boundary_check_ms: if d.profiling_enabled {
+            Some(d.profile_boundary_check_ms)
+        } else {
+            None
+        },
+        sparrow_profile_broadphase_reject_count: if d.profiling_enabled {
+            Some(d.profile_broadphase_reject_count)
+        } else {
+            None
+        },
+        sparrow_profile_early_termination_count: if d.profiling_enabled {
+            Some(d.profile_early_termination_count)
+        } else {
+            None
+        },
         sparrow_q30_profile_enabled: Some(d.q30_profile.enabled),
-        sparrow_q30_native_search_calls: if d.q30_profile.enabled { Some(d.q30_profile.native_search_calls) } else { None },
-        sparrow_q30_evaluate_sample_calls: if d.q30_profile.enabled { Some(d.q30_profile.evaluate_sample_calls) } else { None },
-        sparrow_q30_candidates_evaluated: if d.q30_profile.enabled { Some(d.q30_profile.candidates_evaluated) } else { None },
-        sparrow_q30_global_samples_generated: if d.q30_profile.enabled { Some(d.q30_profile.global_samples_generated) } else { None },
-        sparrow_q30_focused_samples_generated: if d.q30_profile.enabled { Some(d.q30_profile.focused_samples_generated) } else { None },
-        sparrow_q30_coord_descent_runs: if d.q30_profile.enabled { Some(d.q30_profile.coord_descent_runs) } else { None },
-        sparrow_q30_coord_descent_steps: if d.q30_profile.enabled { Some(d.q30_profile.coord_descent_steps) } else { None },
-        sparrow_q30_best_samples_insert_attempts: if d.q30_profile.enabled { Some(d.q30_profile.best_samples_insert_attempts) } else { None },
-        sparrow_q30_best_samples_inserted: if d.q30_profile.enabled { Some(d.q30_profile.best_samples_inserted) } else { None },
-        sparrow_q30_best_samples_dedup_rejects: if d.q30_profile.enabled { Some(d.q30_profile.best_samples_dedup_rejects) } else { None },
-        sparrow_q30_early_termination_count: if d.q30_profile.enabled { Some(d.q30_profile.early_termination_count) } else { None },
-        sparrow_q30_broadphase_reject_count: if d.q30_profile.enabled { Some(d.q30_profile.broadphase_reject_count) } else { None },
-        sparrow_q30_search_total_ms: if d.q30_profile.enabled { Some(d.q30_profile.search_total_ms) } else { None },
-        sparrow_q30_sample_generation_ms: if d.q30_profile.enabled { Some(d.q30_profile.sample_generation_ms) } else { None },
-        sparrow_q30_best_samples_insert_dedup_ms: if d.q30_profile.enabled { Some(d.q30_profile.best_samples_insert_dedup_ms) } else { None },
-        sparrow_q30_coord_descent_total_ms: if d.q30_profile.enabled { Some(d.q30_profile.coord_descent_total_ms) } else { None },
-        sparrow_q30_evaluate_sample_total_ms: if d.q30_profile.enabled { Some(d.q30_profile.evaluate_sample_total_ms) } else { None },
-        sparrow_q30_candidate_transform_prepare_ms: if d.q30_profile.enabled { Some(d.q30_profile.candidate_transform_prepare_ms) } else { None },
-        sparrow_q30_cde_query_collect_ms: if d.q30_profile.enabled { Some(d.q30_profile.cde_query_collect_ms) } else { None },
-        sparrow_q30_boundary_check_ms: if d.q30_profile.enabled { Some(d.q30_profile.boundary_check_ms) } else { None },
-        sparrow_q30_session_build_ms: if d.q30_profile.enabled { Some(d.q30_profile.session_build_ms) } else { None },
-        sparrow_q30_deregister_reregister_ms: if d.q30_profile.enabled { Some(d.q30_profile.deregister_reregister_ms) } else { None },
+        sparrow_q30_native_search_calls: if d.q30_profile.enabled {
+            Some(d.q30_profile.native_search_calls)
+        } else {
+            None
+        },
+        sparrow_q30_evaluate_sample_calls: if d.q30_profile.enabled {
+            Some(d.q30_profile.evaluate_sample_calls)
+        } else {
+            None
+        },
+        sparrow_q30_candidates_evaluated: if d.q30_profile.enabled {
+            Some(d.q30_profile.candidates_evaluated)
+        } else {
+            None
+        },
+        sparrow_q30_global_samples_generated: if d.q30_profile.enabled {
+            Some(d.q30_profile.global_samples_generated)
+        } else {
+            None
+        },
+        sparrow_q30_focused_samples_generated: if d.q30_profile.enabled {
+            Some(d.q30_profile.focused_samples_generated)
+        } else {
+            None
+        },
+        sparrow_q30_coord_descent_runs: if d.q30_profile.enabled {
+            Some(d.q30_profile.coord_descent_runs)
+        } else {
+            None
+        },
+        sparrow_q30_coord_descent_steps: if d.q30_profile.enabled {
+            Some(d.q30_profile.coord_descent_steps)
+        } else {
+            None
+        },
+        sparrow_q30_best_samples_insert_attempts: if d.q30_profile.enabled {
+            Some(d.q30_profile.best_samples_insert_attempts)
+        } else {
+            None
+        },
+        sparrow_q30_best_samples_inserted: if d.q30_profile.enabled {
+            Some(d.q30_profile.best_samples_inserted)
+        } else {
+            None
+        },
+        sparrow_q30_best_samples_dedup_rejects: if d.q30_profile.enabled {
+            Some(d.q30_profile.best_samples_dedup_rejects)
+        } else {
+            None
+        },
+        sparrow_q30_early_termination_count: if d.q30_profile.enabled {
+            Some(d.q30_profile.early_termination_count)
+        } else {
+            None
+        },
+        sparrow_q30_broadphase_reject_count: if d.q30_profile.enabled {
+            Some(d.q30_profile.broadphase_reject_count)
+        } else {
+            None
+        },
+        sparrow_q30_search_total_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.search_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30_sample_generation_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.sample_generation_ms)
+        } else {
+            None
+        },
+        sparrow_q30_best_samples_insert_dedup_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.best_samples_insert_dedup_ms)
+        } else {
+            None
+        },
+        sparrow_q30_coord_descent_total_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.coord_descent_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30_evaluate_sample_total_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.evaluate_sample_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30_candidate_transform_prepare_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.candidate_transform_prepare_ms)
+        } else {
+            None
+        },
+        sparrow_q30_cde_query_collect_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.cde_query_collect_ms)
+        } else {
+            None
+        },
+        sparrow_q30_boundary_check_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.boundary_check_ms)
+        } else {
+            None
+        },
+        sparrow_q30_session_build_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.session_build_ms)
+        } else {
+            None
+        },
+        sparrow_q30_deregister_reregister_ms: if d.q30_profile.enabled {
+            Some(d.q30_profile.deregister_reregister_ms)
+        } else {
+            None
+        },
         // Q30-R1 exclusive fields
         sparrow_q30r1_exclusive_enabled: Some(d.q30_profile.r1_exclusive_enabled),
-        sparrow_q30r1_prepare_base_shape_native_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.prepare_base_shape_native_ms) } else { None },
-        sparrow_q30r1_fixed_shapes_clone_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.fixed_shapes_clone_ms) } else { None },
-        sparrow_q30r1_sheet_order_build_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.sheet_order_build_ms) } else { None },
-        sparrow_q30r1_best_samples_best_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_best_ms) } else { None },
-        sparrow_q30r1_best_samples_clone_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_clone_ms) } else { None },
-        sparrow_q30r1_coord_descent_ask_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_ask_ms) } else { None },
-        sparrow_q30r1_coord_descent_tell_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_tell_ms) } else { None },
-        sparrow_q30r1_search_accounted_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.search_accounted_ms) } else { None },
-        sparrow_q30r1_search_unaccounted_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.search_unaccounted_ms) } else { None },
-        sparrow_q30r1_search_unaccounted_ratio_pct: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.search_unaccounted_ratio_pct) } else { None },
-        sparrow_q30r1_total_solver_runtime_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.total_solver_runtime_ms) } else { None },
-        sparrow_q30r1_adapter_solve_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.adapter_solve_total_ms) } else { None },
-        sparrow_q30r1_sparrow_optimizer_solve_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.sparrow_optimizer_solve_total_ms) } else { None },
-        sparrow_q30r1_seed_lbf_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.seed_lbf_total_ms) } else { None },
-        sparrow_q30r1_tracker_initial_build_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.tracker_initial_build_ms) } else { None },
-        sparrow_q30r1_exploration_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.exploration_total_ms) } else { None },
-        sparrow_q30r1_separator_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.separator_total_ms) } else { None },
-        sparrow_q30r1_separator_iteration_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.separator_iteration_total_ms) } else { None },
-        sparrow_q30r1_worker_competition_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_competition_total_ms) } else { None },
-        sparrow_q30r1_worker_pass_total_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_pass_total_ms) } else { None },
-        sparrow_q30r1_tracker_final_validation_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.tracker_final_validation_ms) } else { None },
-        sparrow_q30r1_output_mapping_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.output_mapping_ms) } else { None },
-        sparrow_q30r1_other_solver_unaccounted_ms: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.other_solver_unaccounted_ms) } else { None },
-        sparrow_q30r1_other_solver_unaccounted_ratio_pct: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.other_solver_unaccounted_ratio_pct) } else { None },
-        sparrow_q30r1_evaluate_sample_calls_from_focused: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.evaluate_sample_calls_from_focused) } else { None },
-        sparrow_q30r1_evaluate_sample_calls_from_global: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.evaluate_sample_calls_from_global) } else { None },
-        sparrow_q30r1_evaluate_sample_calls_from_coord_descent: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.evaluate_sample_calls_from_coord_descent) } else { None },
-        sparrow_q30r1_best_samples_best_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_best_calls) } else { None },
-        sparrow_q30r1_best_samples_clone_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.best_samples_clone_calls) } else { None },
-        sparrow_q30r1_coord_descent_ask_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_ask_calls) } else { None },
-        sparrow_q30r1_coord_descent_tell_calls: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.coord_descent_tell_calls) } else { None },
-        sparrow_q30r1_sheet_loop_iterations: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.sheet_loop_iterations) } else { None },
-        sparrow_q30r1_worker_passes: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_passes) } else { None },
-        sparrow_q30r1_worker_candidates_evaluated: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_candidates_evaluated) } else { None },
-        sparrow_q30r1_worker_candidates_accepted: if d.q30_profile.r1_exclusive_enabled { Some(d.q30_profile.worker_candidates_accepted) } else { None },
+        sparrow_q30r1_prepare_base_shape_native_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.prepare_base_shape_native_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_fixed_shapes_clone_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.fixed_shapes_clone_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_sheet_order_build_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.sheet_order_build_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_best_samples_best_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.best_samples_best_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_best_samples_clone_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.best_samples_clone_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_coord_descent_ask_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.coord_descent_ask_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_coord_descent_tell_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.coord_descent_tell_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_search_accounted_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.search_accounted_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_search_unaccounted_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.search_unaccounted_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_search_unaccounted_ratio_pct: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.search_unaccounted_ratio_pct)
+        } else {
+            None
+        },
+        sparrow_q30r1_total_solver_runtime_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.total_solver_runtime_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_adapter_solve_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.adapter_solve_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_sparrow_optimizer_solve_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.sparrow_optimizer_solve_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_seed_lbf_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.seed_lbf_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_tracker_initial_build_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.tracker_initial_build_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_exploration_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.exploration_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_separator_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.separator_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_separator_iteration_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.separator_iteration_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_worker_competition_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.worker_competition_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_worker_pass_total_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.worker_pass_total_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_tracker_final_validation_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.tracker_final_validation_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_output_mapping_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.output_mapping_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_other_solver_unaccounted_ms: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.other_solver_unaccounted_ms)
+        } else {
+            None
+        },
+        sparrow_q30r1_other_solver_unaccounted_ratio_pct: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.other_solver_unaccounted_ratio_pct)
+        } else {
+            None
+        },
+        sparrow_q30r1_evaluate_sample_calls_from_focused: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.evaluate_sample_calls_from_focused)
+        } else {
+            None
+        },
+        sparrow_q30r1_evaluate_sample_calls_from_global: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.evaluate_sample_calls_from_global)
+        } else {
+            None
+        },
+        sparrow_q30r1_evaluate_sample_calls_from_coord_descent: if d
+            .q30_profile
+            .r1_exclusive_enabled
+        {
+            Some(d.q30_profile.evaluate_sample_calls_from_coord_descent)
+        } else {
+            None
+        },
+        sparrow_q30r1_best_samples_best_calls: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.best_samples_best_calls)
+        } else {
+            None
+        },
+        sparrow_q30r1_best_samples_clone_calls: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.best_samples_clone_calls)
+        } else {
+            None
+        },
+        sparrow_q30r1_coord_descent_ask_calls: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.coord_descent_ask_calls)
+        } else {
+            None
+        },
+        sparrow_q30r1_coord_descent_tell_calls: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.coord_descent_tell_calls)
+        } else {
+            None
+        },
+        sparrow_q30r1_sheet_loop_iterations: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.sheet_loop_iterations)
+        } else {
+            None
+        },
+        sparrow_q30r1_worker_passes: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.worker_passes)
+        } else {
+            None
+        },
+        sparrow_q30r1_worker_candidates_evaluated: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.worker_candidates_evaluated)
+        } else {
+            None
+        },
+        sparrow_q30r1_worker_candidates_accepted: if d.q30_profile.r1_exclusive_enabled {
+            Some(d.q30_profile.worker_candidates_accepted)
+        } else {
+            None
+        },
         sparrow_q31_base_shape_cache_build_ms: Some(d.q30_profile.base_shape_cache_build_ms),
         sparrow_q31_base_shape_cache_hits: Some(d.q30_profile.base_shape_cache_hits),
         sparrow_q31_base_shape_cache_misses: Some(d.q30_profile.base_shape_cache_misses),
-        sparrow_q31_base_shape_cache_unique_parts: Some(d.q30_profile.base_shape_cache_unique_parts),
-        sparrow_q31_base_shape_cache_reused_instances: Some(d.q30_profile.base_shape_cache_reused_instances),
-        sparrow_q31_prepare_base_shape_native_hotpath_calls: Some(d.q30_profile.prepare_base_shape_native_hotpath_calls),
-        sparrow_q31_prepare_base_shape_native_hotpath_ms: Some(d.q30_profile.prepare_base_shape_native_hotpath_ms),
-        sparrow_q31_tracker_transform_from_base_ms: Some(d.q30_profile.tracker_transform_from_base_ms),
+        sparrow_q31_base_shape_cache_unique_parts: Some(
+            d.q30_profile.base_shape_cache_unique_parts,
+        ),
+        sparrow_q31_base_shape_cache_reused_instances: Some(
+            d.q30_profile.base_shape_cache_reused_instances,
+        ),
+        sparrow_q31_prepare_base_shape_native_hotpath_calls: Some(
+            d.q30_profile.prepare_base_shape_native_hotpath_calls,
+        ),
+        sparrow_q31_prepare_base_shape_native_hotpath_ms: Some(
+            d.q30_profile.prepare_base_shape_native_hotpath_ms,
+        ),
+        sparrow_q31_tracker_transform_from_base_ms: Some(
+            d.q30_profile.tracker_transform_from_base_ms,
+        ),
         sparrow_q31_search_base_shape_cache_hits: Some(d.q30_profile.search_base_shape_cache_hits),
         sparrow_q31_lbf_base_shape_cache_hits: Some(d.q30_profile.lbf_base_shape_cache_hits),
         // Q32 multisheet fields: not populated by the single-sheet sparrow_cde pipeline.
@@ -864,8 +1143,14 @@ fn build_offset_parts(
             PolygonExtraction::Absent => vec![
                 Point { x: 0.0, y: 0.0 },
                 Point { x: p.width, y: 0.0 },
-                Point { x: p.width, y: p.height },
-                Point { x: 0.0, y: p.height },
+                Point {
+                    x: p.width,
+                    y: p.height,
+                },
+                Point {
+                    x: 0.0,
+                    y: p.height,
+                },
             ],
             PolygonExtraction::Invalid { .. } => {
                 failed.insert(p.id.clone());
@@ -885,7 +1170,11 @@ fn build_offset_parts(
                 let maxy = off.iter().map(|q| q.y).fold(f64::NEG_INFINITY, f64::max);
                 let orig_area = polygon_area(&local).abs();
                 let off_area = polygon_area(&off).abs();
-                let ratio = if orig_area > 1e-9 { off_area / orig_area } else { 1.0 };
+                let ratio = if orig_area > 1e-9 {
+                    off_area / orig_area
+                } else {
+                    1.0
+                };
                 metrics.parts_offset += 1;
                 metrics.max_ms_per_part = metrics.max_ms_per_part.max(part_ms);
                 metrics.input_vertex_total += local.len();
@@ -980,13 +1269,17 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         match apply_rectangular_sheet_offset(original_sheets, sheet_inset) {
             Ok(s) => Some(s),
             Err(e) => {
-                let mut all_unplaced: Vec<Unplaced> = input.parts.iter().flat_map(|p| {
-                    (0..p.quantity as usize).map(|i| Unplaced {
-                        instance_id: format!("{}#{i}", p.id),
-                        part_id: p.id.clone(),
-                        reason: e.clone(),
+                let mut all_unplaced: Vec<Unplaced> = input
+                    .parts
+                    .iter()
+                    .flat_map(|p| {
+                        (0..p.quantity as usize).map(|i| Unplaced {
+                            instance_id: format!("{}#{i}", p.id),
+                            part_id: p.id.clone(),
+                            reason: e.clone(),
+                        })
                     })
-                }).collect();
+                    .collect();
                 all_unplaced.extend(pre_unplaced);
                 return (vec![], all_unplaced, None, None);
             }
@@ -1038,12 +1331,7 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     // the top-level SolverOutput.status (computed from unplaced.is_empty()) cannot be `ok`.
     let t_margin_val = Instant::now();
     let margin_violating_ids = if margin_applied {
-        find_sheet_margin_violations(
-            &result.placements,
-            &input.parts,
-            original_sheets,
-            margin_mm,
-        )
+        find_sheet_margin_violations(&result.placements, &input.parts, original_sheets, margin_mm)
     } else {
         Vec::new()
     };
@@ -1137,7 +1425,11 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     let backend_diag = if result.status == "ok" {
         Some(cde_feasible_diag(&snap, "sparrow_cde_multisheet", None))
     } else {
-        Some(cde_unsupported_diag(&snap, "sparrow_cde_multisheet_partial", None))
+        Some(cde_unsupported_diag(
+            &snap,
+            "sparrow_cde_multisheet_partial",
+            None,
+        ))
     };
 
     // Build optimizer diagnostics with Q32 multisheet fields populated.
@@ -1154,17 +1446,27 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         rotation_refinement_rejections: 0,
         rotation_refinement_best_delta: 0.0,
         search_position_calls: best_core.map(|d| d.search_position_calls).unwrap_or(0),
-        search_position_global_samples_evaluated: best_core.map(|d| d.search_global_samples).unwrap_or(0),
-        search_position_focused_samples_evaluated: best_core.map(|d| d.search_focused_samples).unwrap_or(0),
-        search_position_samples_unsupported: best_core.map(|d| d.search_unsupported_samples).unwrap_or(0),
+        search_position_global_samples_evaluated: best_core
+            .map(|d| d.search_global_samples)
+            .unwrap_or(0),
+        search_position_focused_samples_evaluated: best_core
+            .map(|d| d.search_focused_samples)
+            .unwrap_or(0),
+        search_position_samples_unsupported: best_core
+            .map(|d| d.search_unsupported_samples)
+            .unwrap_or(0),
         search_position_refined_samples: best_core.map(|d| d.search_refined_samples).unwrap_or(0),
-        search_position_coord_descent_steps: best_core.map(|d| d.search_coord_descent_steps).unwrap_or(0),
+        search_position_coord_descent_steps: best_core
+            .map(|d| d.search_coord_descent_steps)
+            .unwrap_or(0),
         search_position_lbf_fallback_used: best_core.map(|d| d.lbf_fallback_used).unwrap_or(0),
         search_position_best_eval: 0.0,
         collision_severity_backend: "cde".to_string(),
         collision_severity_enabled: true,
         collision_severity_pair_queries: best_core.map(|d| d.quantified_pair_queries).unwrap_or(0),
-        collision_severity_boundary_queries: best_core.map(|d| d.quantified_boundary_queries).unwrap_or(0),
+        collision_severity_boundary_queries: best_core
+            .map(|d| d.quantified_boundary_queries)
+            .unwrap_or(0),
         collision_severity_probe_queries: 0,
         collision_severity_backend_confirmed_collisions: 0,
         collision_severity_backend_confirmed_no_collisions: 0,
@@ -1248,7 +1550,8 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         sparrow_old_core_used: Some(false),
         sparrow_native_problem_instances: best_core.map(|d| d.native_problem_instances),
         sparrow_native_tracker_full_rebuilds: best_core.map(|d| d.native_tracker_full_rebuilds),
-        sparrow_native_tracker_incremental_updates: best_core.map(|d| d.native_tracker_incremental_updates),
+        sparrow_native_tracker_incremental_updates: best_core
+            .map(|d| d.native_tracker_incremental_updates),
         sparrow_dense_guard_used: Some(false),
         sparrow_dense_real_run: Some(false),
         sparrow_dense_partial_reason: None,
@@ -1325,16 +1628,25 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         sparrow_q30r1_worker_candidates_evaluated: None,
         sparrow_q30r1_worker_candidates_accepted: None,
         // Q31 base-shape cache fields from best core attempt
-        sparrow_q31_base_shape_cache_build_ms: best_core.map(|d| d.q30_profile.base_shape_cache_build_ms),
+        sparrow_q31_base_shape_cache_build_ms: best_core
+            .map(|d| d.q30_profile.base_shape_cache_build_ms),
         sparrow_q31_base_shape_cache_hits: best_core.map(|d| d.q30_profile.base_shape_cache_hits),
-        sparrow_q31_base_shape_cache_misses: best_core.map(|d| d.q30_profile.base_shape_cache_misses),
-        sparrow_q31_base_shape_cache_unique_parts: best_core.map(|d| d.q30_profile.base_shape_cache_unique_parts),
-        sparrow_q31_base_shape_cache_reused_instances: best_core.map(|d| d.q30_profile.base_shape_cache_reused_instances),
-        sparrow_q31_prepare_base_shape_native_hotpath_calls: best_core.map(|d| d.q30_profile.prepare_base_shape_native_hotpath_calls),
-        sparrow_q31_prepare_base_shape_native_hotpath_ms: best_core.map(|d| d.q30_profile.prepare_base_shape_native_hotpath_ms),
-        sparrow_q31_tracker_transform_from_base_ms: best_core.map(|d| d.q30_profile.tracker_transform_from_base_ms),
-        sparrow_q31_search_base_shape_cache_hits: best_core.map(|d| d.q30_profile.search_base_shape_cache_hits),
-        sparrow_q31_lbf_base_shape_cache_hits: best_core.map(|d| d.q30_profile.lbf_base_shape_cache_hits),
+        sparrow_q31_base_shape_cache_misses: best_core
+            .map(|d| d.q30_profile.base_shape_cache_misses),
+        sparrow_q31_base_shape_cache_unique_parts: best_core
+            .map(|d| d.q30_profile.base_shape_cache_unique_parts),
+        sparrow_q31_base_shape_cache_reused_instances: best_core
+            .map(|d| d.q30_profile.base_shape_cache_reused_instances),
+        sparrow_q31_prepare_base_shape_native_hotpath_calls: best_core
+            .map(|d| d.q30_profile.prepare_base_shape_native_hotpath_calls),
+        sparrow_q31_prepare_base_shape_native_hotpath_ms: best_core
+            .map(|d| d.q30_profile.prepare_base_shape_native_hotpath_ms),
+        sparrow_q31_tracker_transform_from_base_ms: best_core
+            .map(|d| d.q30_profile.tracker_transform_from_base_ms),
+        sparrow_q31_search_base_shape_cache_hits: best_core
+            .map(|d| d.q30_profile.search_base_shape_cache_hits),
+        sparrow_q31_lbf_base_shape_cache_hits: best_core
+            .map(|d| d.q30_profile.lbf_base_shape_cache_hits),
         // Q32 multisheet diagnostics
         sparrow_ms_active: Some(true),
         sparrow_ms_status: Some(result.status.clone()),
@@ -1409,7 +1721,9 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         }),
         technology_spacing_offset_max_ms_per_part: Some(offset_metrics.max_ms_per_part),
         technology_spacing_offset_input_vertex_count_total: Some(offset_metrics.input_vertex_total),
-        technology_spacing_offset_output_vertex_count_total: Some(offset_metrics.output_vertex_total),
+        technology_spacing_offset_output_vertex_count_total: Some(
+            offset_metrics.output_vertex_total,
+        ),
         technology_spacing_offset_area_ratio_avg: Some(if offset_metrics.parts_offset > 0 {
             offset_metrics.area_ratio_sum / offset_metrics.parts_offset as f64
         } else {
@@ -1426,7 +1740,12 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
         technology_inner_spacing_mm: Some(0.0),
     };
 
-    (result.placements, result.unplaced, Some(optimizer_diag), backend_diag)
+    (
+        result.placements,
+        result.unplaced,
+        Some(optimizer_diag),
+        backend_diag,
+    )
 }
 
 fn score_breakdown_from_result(
@@ -1520,8 +1839,7 @@ pub fn solve(input: SolverInput) -> Result<SolverOutput, String> {
 
     // SGH-Q33: centralise technology clearance policy. Validation fails early on
     // negative values. Policy is diagnostic-only in Q33 — no geometry offset yet.
-    let technology_policy = TechnologyClearancePolicy::from_solver_input(&input)
-        .map_err(|e| e)?;
+    let technology_policy = TechnologyClearancePolicy::from_solver_input(&input).map_err(|e| e)?;
 
     let rotation_context = RotationResolveContext::new(
         input.rotation_policy.clone(),
@@ -2203,7 +2521,6 @@ mod tests {
         phase_commit_or_unsupported, solve, spacing_safety_net_removed_count,
         REASON_PART_SPACING_VIOLATION, REASON_SHEET_MARGIN_VIOLATION,
     };
-    use crate::technology::spacing::PartSpacingViolation;
     use crate::io::{
         CollisionBackendKind, OptimizerPipelineKind, Placement, SolverInput, SolverOutput,
     };
@@ -2212,6 +2529,7 @@ mod tests {
     use crate::optimizer::working::WorkingLayout;
     use crate::rotation_policy::RotationPolicyKind;
     use crate::sheet::{expand_sheets, Stock};
+    use crate::technology::spacing::PartSpacingViolation;
 
     fn make_part(
         id: &str,
@@ -3455,8 +3773,7 @@ mod tests {
     fn margin_safety_net_moves_violating_to_unplaced() {
         let placements = vec![pl("A#0", "A"), pl("B#0", "B"), pl("C#0", "C")];
         let violating = vec!["B#0".to_string()];
-        let (kept, unplaced) =
-            apply_margin_violation_safety_net(placements, vec![], &violating);
+        let (kept, unplaced) = apply_margin_violation_safety_net(placements, vec![], &violating);
 
         // B#0 removed from placements.
         assert_eq!(kept.len(), 2);
@@ -3465,7 +3782,10 @@ mod tests {
         assert_eq!(unplaced.len(), 1);
         assert_eq!(unplaced[0].instance_id, "B#0");
         assert_eq!(unplaced[0].reason, REASON_SHEET_MARGIN_VIOLATION);
-        assert_eq!(REASON_SHEET_MARGIN_VIOLATION, "SHEET_MARGIN_VIOLATION_Q34R1");
+        assert_eq!(
+            REASON_SHEET_MARGIN_VIOLATION,
+            "SHEET_MARGIN_VIOLATION_Q34R1"
+        );
         // With a non-empty unplaced list, top-level status cannot be "ok".
         assert!(!unplaced.is_empty());
     }
@@ -3473,8 +3793,7 @@ mod tests {
     #[test]
     fn margin_safety_net_noop_when_no_violations() {
         let placements = vec![pl("A#0", "A"), pl("B#0", "B")];
-        let (kept, unplaced) =
-            apply_margin_violation_safety_net(placements, vec![], &[]);
+        let (kept, unplaced) = apply_margin_violation_safety_net(placements, vec![], &[]);
         assert_eq!(kept.len(), 2);
         assert!(unplaced.is_empty());
     }
@@ -3500,15 +3819,16 @@ mod tests {
         let violations = vec![spacing_viol("A#0", "B#0")];
         assert_eq!(spacing_safety_net_removed_count(&violations), 2);
 
-        let (kept, unplaced) =
-            apply_spacing_violation_safety_net(placements, vec![], &violations);
+        let (kept, unplaced) = apply_spacing_violation_safety_net(placements, vec![], &violations);
 
         // Only C#0 remains.
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].instance_id, "C#0");
         // A#0 and B#0 moved to unplaced with the explicit reason.
         assert_eq!(unplaced.len(), 2);
-        assert!(unplaced.iter().all(|u| u.reason == REASON_PART_SPACING_VIOLATION));
+        assert!(unplaced
+            .iter()
+            .all(|u| u.reason == REASON_PART_SPACING_VIOLATION));
         assert_eq!(REASON_PART_SPACING_VIOLATION, "PART_SPACING_VIOLATION_Q35");
         let ids: Vec<&str> = unplaced.iter().map(|u| u.instance_id.as_str()).collect();
         assert!(ids.contains(&"A#0") && ids.contains(&"B#0"));
@@ -3520,9 +3840,11 @@ mod tests {
     fn spacing_safety_net_forces_non_ok_status() {
         let placements = vec![pl("A#0", "A"), pl("B#0", "B")];
         let violations = vec![spacing_viol("A#0", "B#0")];
-        let (_kept, unplaced) =
-            apply_spacing_violation_safety_net(placements, vec![], &violations);
-        assert!(!unplaced.is_empty(), "spacing removal must leave a non-empty unplaced list");
+        let (_kept, unplaced) = apply_spacing_violation_safety_net(placements, vec![], &violations);
+        assert!(
+            !unplaced.is_empty(),
+            "spacing removal must leave a non-empty unplaced list"
+        );
     }
 
     #[test]

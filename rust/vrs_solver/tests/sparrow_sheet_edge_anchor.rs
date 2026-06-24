@@ -64,7 +64,10 @@ fn sheet_edge_anchor_is_sheet_aware_long_and_short_with_flips() {
         .iter()
         .filter(|s| s.target_feature_type == "sheet_edge")
         .collect();
-    assert!(!edge_seeds.is_empty(), "sheet-edge anchor candidates expected");
+    assert!(
+        !edge_seeds.is_empty(),
+        "sheet-edge anchor candidates expected"
+    );
 
     // Sheet-aware: the dominant edge is aligned to BOTH sheet directions → the seed rotations span
     // more than one orientation family (long-edge ≈ 90°-ish AND short-edge ≈ 0°-ish, plus flips).
@@ -97,5 +100,8 @@ fn sheet_edge_anchor_is_sheet_aware_long_and_short_with_flips() {
             (d - 180.0).abs() < 5.0
         })
     });
-    assert!(has_flip, "sheet-aware anchor must include 180° flip variants");
+    assert!(
+        has_flip,
+        "sheet-aware anchor must include 180° flip variants"
+    );
 }

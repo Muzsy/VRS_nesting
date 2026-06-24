@@ -1,0 +1,147 @@
+{
+  "task": "sgh_q63_full276_lv8_strict_latest_behavior_rerun",
+  "source_package": "artifacts/benchmarks/sgh_q49/inputs/q49_full276_6x1500x3000_margin5_spacing8_continuous_300.json",
+  "time_limit_s": 600,
+  "stocks": {
+    "quantity": 2,
+    "width": 1500.0,
+    "height": 3000.0
+  },
+  "technology": {
+    "margin_mm": 5.0,
+    "spacing_mm": 5.0,
+    "kerf_mm": 0.0,
+    "rotation_policy": "continuous"
+  },
+  "run_a_strict_latest": {
+    "status": "partial",
+    "placed_count": 39,
+    "unplaced_count": 237,
+    "used_sheets": 1,
+    "utilization_pct": 47.42769561160895,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "builder_applied": true,
+    "critical_admitted": 2,
+    "critical_deferred": 4,
+    "max_critical_per_sheet": 2,
+    "feature_candidates_generated": 183,
+    "feature_candidates_accepted": 2,
+    "pair_candidates_generated": 32,
+    "pair_candidates_accepted": 1,
+    "anchor_catalog_consulted": true,
+    "anchor_catalog_accepted": 0,
+    "slot_edge_candidates_generated": 0,
+    "slot_edge_candidates_accepted": 0,
+    "pair_index_consulted": true,
+    "interlock_fallback_to_neighbour": false,
+    "fallback_to_bbox_band_insert": true,
+    "critical_phase_close_reason": "frontier_fail_limit",
+    "wall_time_s": 155.2
+  },
+  "run_b_masked_q62style": {
+    "status": "partial",
+    "placed_count": 258,
+    "unplaced_count": 18,
+    "used_sheets": 2,
+    "utilization_pct": 49.7442340176186,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "builder_applied": true,
+    "critical_admitted": 2,
+    "critical_deferred": 4,
+    "max_critical_per_sheet": 2,
+    "feature_candidates_generated": 359,
+    "feature_candidates_accepted": 2,
+    "pair_candidates_generated": 0,
+    "pair_candidates_accepted": 0,
+    "anchor_catalog_consulted": true,
+    "anchor_catalog_accepted": 0,
+    "slot_edge_candidates_generated": 96,
+    "slot_edge_candidates_accepted": 0,
+    "pair_index_consulted": false,
+    "interlock_fallback_to_neighbour": false,
+    "fallback_to_bbox_band_insert": true,
+    "critical_phase_close_reason": "deadline",
+    "wall_time_s": 180.9
+  },
+  "render_manifests": {
+    "run_a": {
+      "run_id": "q63_A_strict_latest_q61_2sheet_sp5",
+      "task": "SGH-Q63",
+      "input_path": "artifacts/benchmarks/sgh_q63/inputs/q63_full276_2x1500x3000_margin5_spacing5_continuous_600.json",
+      "output_path": "artifacts/benchmarks/sgh_q63/outputs/q63_A_strict_latest_q61_2sheet_sp5_output.json",
+      "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+      "used_sheet_count": 1,
+      "used_sheet_indices": [
+        0
+      ],
+      "svg_count": 2,
+      "png_count": 2,
+      "have_cairosvg": true,
+      "per_sheet": [
+        {
+          "sheet_index": 0,
+          "stock_id": "S1500x3000",
+          "stock_width": 1500.0,
+          "stock_height": 3000.0,
+          "placed_count": 39,
+          "placed_part_area": 2018394.28,
+          "physical_utilization_pct": 44.8532,
+          "svg_path": "artifacts/benchmarks/sgh_q63/renders/q63_A_strict_latest_q61_2sheet_sp5/sheet_00.svg",
+          "png_path": "artifacts/benchmarks/sgh_q63/renders/q63_A_strict_latest_q61_2sheet_sp5/sheet_00.png"
+        }
+      ],
+      "overview_svg": "artifacts/benchmarks/sgh_q63/renders/q63_A_strict_latest_q61_2sheet_sp5/overview.svg",
+      "overview_png": "artifacts/benchmarks/sgh_q63/renders/q63_A_strict_latest_q61_2sheet_sp5/overview.png"
+    },
+    "run_b": {
+      "run_id": "q63_B_masked_q62style_2sheet_sp5",
+      "task": "SGH-Q63",
+      "input_path": "artifacts/benchmarks/sgh_q63/inputs/q63_full276_2x1500x3000_margin5_spacing5_continuous_600.json",
+      "output_path": "artifacts/benchmarks/sgh_q63/outputs/q63_B_masked_q62style_2sheet_sp5_output.json",
+      "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+      "used_sheet_count": 2,
+      "used_sheet_indices": [
+        0,
+        1
+      ],
+      "svg_count": 3,
+      "png_count": 3,
+      "have_cairosvg": true,
+      "per_sheet": [
+        {
+          "sheet_index": 0,
+          "stock_id": "S1500x3000",
+          "stock_width": 1500.0,
+          "stock_height": 3000.0,
+          "placed_count": 134,
+          "placed_part_area": 1824597.64,
+          "physical_utilization_pct": 40.5466,
+          "svg_path": "artifacts/benchmarks/sgh_q63/renders/q63_B_masked_q62style_2sheet_sp5/sheet_00.svg",
+          "png_path": "artifacts/benchmarks/sgh_q63/renders/q63_B_masked_q62style_2sheet_sp5/sheet_00.png"
+        },
+        {
+          "sheet_index": 1,
+          "stock_id": "S1500x3000",
+          "stock_width": 1500.0,
+          "stock_height": 3000.0,
+          "placed_count": 124,
+          "placed_part_area": 2328781.03,
+          "physical_utilization_pct": 51.7507,
+          "svg_path": "artifacts/benchmarks/sgh_q63/renders/q63_B_masked_q62style_2sheet_sp5/sheet_01.svg",
+          "png_path": "artifacts/benchmarks/sgh_q63/renders/q63_B_masked_q62style_2sheet_sp5/sheet_01.png"
+        }
+      ],
+      "overview_svg": "artifacts/benchmarks/sgh_q63/renders/q63_B_masked_q62style_2sheet_sp5/overview.svg",
+      "overview_png": "artifacts/benchmarks/sgh_q63/renders/q63_B_masked_q62style_2sheet_sp5/overview.png"
+    }
+  },
+  "acceptance": {
+    "strict_mode_used": true,
+    "strict_no_worse_than_masked": false,
+    "strict_two_sheets": true
+  },
+  "verdict": "PASS_WITH_NOTES",
+  "finding": "The strict latest-behavior run really exposes the newer role-aware builder path instead of the masked Q62 fallback pattern, but on this Full276 package that honest path currently performs much worse than the masked current run. This benchmark should therefore be read as a visibility/diagnostics rerun, not as a packing-quality win."
+}

@@ -46,7 +46,9 @@ fn solve_json(v: &Value) -> SolverOutput {
 }
 
 fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
-    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+    out.optimizer_diagnostics
+        .as_ref()
+        .expect("optimizer_diagnostics present")
 }
 
 fn used_sheets(out: &SolverOutput) -> usize {
@@ -67,9 +69,17 @@ fn density_bias_is_valid_and_no_regression_vs_builder_only() {
     std::env::set_var("VRS_SHEET_BUILDER", "1");
     std::env::remove_var("VRS_ADMISSION_DENSITY_BIAS");
     let off = solve_json(&input);
-    assert_eq!(off.status, "ok", "builder-only baseline must be valid: {}", off.status);
+    assert_eq!(
+        off.status, "ok",
+        "builder-only baseline must be valid: {}",
+        off.status
+    );
     assert_eq!(off.unplaced.len(), 0, "baseline fully placed");
-    assert_eq!(od(&off).sparrow_ms_final_pairs, Some(0), "baseline collision-free");
+    assert_eq!(
+        od(&off).sparrow_ms_final_pairs,
+        Some(0),
+        "baseline collision-free"
+    );
     let off_sheets = used_sheets(&off);
 
     // ── (2) builder ON, density bias ON (w=2.0) ─────────────────────────────────────────────────
@@ -77,11 +87,27 @@ fn density_bias_is_valid_and_no_regression_vs_builder_only() {
     let on = solve_json(&input);
     std::env::remove_var("VRS_ADMISSION_DENSITY_BIAS");
 
-    assert_eq!(on.status, "ok", "density-biased admission must stay valid: {}", on.status);
-    assert_eq!(on.unplaced.len(), 0, "density-biased admission fully placed (fallback guarantees it)");
+    assert_eq!(
+        on.status, "ok",
+        "density-biased admission must stay valid: {}",
+        on.status
+    );
+    assert_eq!(
+        on.unplaced.len(),
+        0,
+        "density-biased admission fully placed (fallback guarantees it)"
+    );
     let d = od(&on);
-    assert_eq!(d.sparrow_ms_final_pairs, Some(0), "no collisions with bias on");
-    assert_eq!(d.sparrow_ms_boundary_violations, Some(0), "no boundary violations with bias on");
+    assert_eq!(
+        d.sparrow_ms_final_pairs,
+        Some(0),
+        "no collisions with bias on"
+    );
+    assert_eq!(
+        d.sparrow_ms_boundary_violations,
+        Some(0),
+        "no boundary violations with bias on"
+    );
     assert!(
         used_sheets(&on) <= off_sheets,
         "density bias must not regress used-sheet count: on={} off={}",

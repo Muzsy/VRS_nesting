@@ -8,14 +8,18 @@
 use std::path::PathBuf;
 
 use vrs_solver::item::Part;
-use vrs_solver::optimizer::sparrow::critical_simultaneous::{admit_critical_group, CriticalGroupAdmission};
+use vrs_solver::optimizer::sparrow::critical_simultaneous::{
+    admit_critical_group, CriticalGroupAdmission,
+};
 use vrs_solver::rotation_policy::RotationPolicyKind;
 
 const SHEET: [f64; 4] = [0.0, 0.0, 1500.0, 3000.0];
 const MARGIN: f64 = 5.0;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn lv8() -> Part {
@@ -40,16 +44,22 @@ fn lv8() -> Part {
 #[test]
 fn lv8_three_critical_group_preserves_best_partial_honestly() {
     let part = lv8();
-    let real = admit_critical_group(&part, 3, SHEET[2], SHEET[3], MARGIN, 8.0).expect("real spacing");
+    let real =
+        admit_critical_group(&part, 3, SHEET[2], SHEET[3], MARGIN, 8.0).expect("real spacing");
     let zero = admit_critical_group(&part, 3, SHEET[2], SHEET[3], MARGIN, 0.0).expect("spacing 0");
 
     // Bounded group admission attempted target 3.
     assert_eq!(real.target_count, 3);
     // Best valid partial preserved and never below 2 (a valid 2-group must not regress to 1).
-    assert!(real.best_partial_count >= 2, "the valid 2-part group must be preserved");
+    assert!(
+        real.best_partial_count >= 2,
+        "the valid 2-part group must be preserved"
+    );
     // Simultaneous refinement can move group parts.
     assert!(
-        real.arrangements.iter().any(|a| a.any_part_moved_in_refinement),
+        real.arrangements
+            .iter()
+            .any(|a| a.any_part_moved_in_refinement),
         "refinement must be able to move group parts"
     );
     // Honest reporting: if full 3 did not fit, full_success is false and best partial is exactly what fit.
@@ -115,7 +125,9 @@ fn render_svg(adm: &CriticalGroupAdmission) -> String {
         ));
         s.push_str(&format!(
             "<text x='{:.0}' y='{:.0}' font-size='10'>#{i} rot={:.2}°</text>\n",
-            tx(e[0]) + 4.0, ty(e[3]) + 16.0, p.rotation_deg
+            tx(e[0]) + 4.0,
+            ty(e[3]) + 16.0,
+            p.rotation_deg
         ));
     }
     s.push_str(&format!(

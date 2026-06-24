@@ -1,0 +1,52 @@
+steps:
+  - name: "Felderítés és benchmark-források ellenőrzése"
+    description: >
+      Ellenőrizd a Q49 full276 benchmark package-et és a Q61 jelenlegi solver működésleírást.
+      Rögzítsd a benchmark célját és a használni kívánt gate-kombinációt.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md"
+
+  - name: "Task artefaktok és benchmark runner létrehozása"
+    description: >
+      Készítsd el a Q62 canvas/YAML/checklist/report vázat és a benchmark futtatót, amely a Q49
+      full276 inputból spacing-5 / 2-sheet inputot épít, majd current-solver és builder-only runokat futtat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q62_full276_lv8_spacing5_two_sheet_rerun.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md"
+      - "codex/reports/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md"
+      - "scripts/bench_sgh_q62_full276_spacing5_two_sheet.py"
+
+  - name: "Benchmark futtatás és artifact mentés"
+    description: >
+      Futtasd a Q62 benchmarkot release solverrel. Mentsd a Q49-szerű input/output/log/summary
+      artefaktokat az új benchmark könyvtárba.
+    outputs:
+      - "scripts/bench_sgh_q62_full276_spacing5_two_sheet.py"
+      - "artifacts/benchmarks/sgh_q62/inputs"
+      - "artifacts/benchmarks/sgh_q62/outputs"
+      - "artifacts/benchmarks/sgh_q62/logs"
+      - "artifacts/benchmarks/sgh_q62/q62_summary.json"
+
+  - name: "Render és benchmark report"
+    description: >
+      Generálj SVG/PNG sheet-plan render artefaktokat a benchmark futásokhoz, és készíts Q49-szerű
+      top-level benchmark reportot az eredményekből.
+    outputs:
+      - "artifacts/benchmarks/sgh_q62/renders"
+      - "artifacts/benchmarks/sgh_q62/q62_report.md"
+
+  - name: "Checklist és Codex report lezárása"
+    description: >
+      Frissítsd a checklistet és a Codex reportot path+line evidence alapján, őszintén rögzítve,
+      hogy a 2-sheet target teljesült-e.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md"
+      - "codex/reports/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.md"
+      - "codex/reports/egyedi_solver/sgh_q62_full276_lv8_spacing5_two_sheet_rerun.verify.log"

@@ -52,12 +52,7 @@ fn with_hole_metadata(mut part: Value) -> Value {
     // The hole must lie INSIDE the solid material. `concave_part` is an L whose filled region is the
     // bottom band (y <= 200) plus the left column (x <= 200); the top-right (x > 200 && y > 200) is
     // the concave cut-out (no material). Place the hole well inside the bottom band.
-    part["holes_points"] = json!([[
-        [400.0, 50.0],
-        [450.0, 50.0],
-        [450.0, 100.0],
-        [400.0, 100.0]
-    ]]);
+    part["holes_points"] = json!([[[400.0, 50.0], [450.0, 50.0], [450.0, 100.0], [400.0, 100.0]]]);
     part
 }
 
@@ -161,7 +156,10 @@ fn hole_metadata_is_rejected_on_outer_only_phase_so_summary_stays_outer_driven()
         plain.contour_vertex_count > 0,
         "the outer contour drives the feature summary"
     );
-    assert!(plain.concave_zone_count >= 1, "the L exposes a concave region");
+    assert!(
+        plain.concave_zone_count >= 1,
+        "the L exposes a concave region"
+    );
 
     // (2) the SAME part WITH hole metadata → intentionally unsupported on the outer-only phase,
     // proving hole geometry never reaches (and so never perturbs) the feature layer here.

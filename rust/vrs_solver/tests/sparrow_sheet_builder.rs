@@ -43,7 +43,9 @@ fn solve_json(v: &Value) -> SolverOutput {
 }
 
 fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
-    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+    out.optimizer_diagnostics
+        .as_ref()
+        .expect("optimizer_diagnostics present")
 }
 
 #[test]
@@ -53,13 +55,24 @@ fn sheet_builder_produces_valid_layout() {
     let stocks = vec![json!({"id": "S", "quantity": 3, "width": 3000.0, "height": 1500.0})];
     let out = solve_json(&ms_input(parts, stocks, 42, 40));
 
-    assert_eq!(out.status, "ok", "builder path must produce a valid layout: {}", out.status);
-    assert_eq!(out.unplaced.len(), 0, "no unplaced (fallback guarantees completeness)");
+    assert_eq!(
+        out.status, "ok",
+        "builder path must produce a valid layout: {}",
+        out.status
+    );
+    assert_eq!(
+        out.unplaced.len(),
+        0,
+        "no unplaced (fallback guarantees completeness)"
+    );
     let d = od(&out);
     assert_eq!(d.sparrow_ms_final_pairs, Some(0), "no collisions");
     assert_eq!(d.sparrow_ms_boundary_violations, Some(0));
     let bpp = d.bpp_reduction.as_ref().expect("bpp diagnostics");
-    assert!(bpp.bpp_sheet_builder_applied, "the builder must run when enabled");
+    assert!(
+        bpp.bpp_sheet_builder_applied,
+        "the builder must run when enabled"
+    );
 }
 
 #[test]
@@ -74,4 +87,32 @@ fn sheet_builder_no_regression_on_fillers() {
     assert_eq!(out.status, "ok");
     assert_eq!(out.unplaced.len(), 0);
     assert_eq!(od(&out).sparrow_ms_final_pairs, Some(0));
+}
+
+#[test]
+fn forced_latest_mode_reports_lock_and_opens_multiple_sheets() {
+    std::env::set_var("VRS_SHEET_BUILDER", "1");
+    std::env::set_var("VRS_SHEET_BUILDER_FORCE_LATEST", "1");
+    let parts = vec![rect_part("f", 80, 400.0, 200.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 3000.0, "height": 1500.0})];
+    let out = solve_json(&ms_input(parts, stocks, 42, 40));
+    std::env::remove_var("VRS_SHEET_BUILDER_FORCE_LATEST");
+    std::env::remove_var("VRS_SHEET_BUILDER");
+
+    assert!(
+        out.status == "ok" || out.status == "partial",
+        "forced-latest run must stay on the solve boundary"
+    );
+    let bpp = od(&out).bpp_reduction.as_ref().expect("bpp diagnostics");
+    assert!(bpp.bpp_q69_forced_latest_mode);
+    assert!(!bpp.bpp_q69_native_seed_fallback_used);
+    assert!(!bpp.bpp_q69_builder_random_bootstrap_used);
+    assert_eq!(
+        bpp.bpp_q69_seed_source.as_deref(),
+        Some("builder_forced_latest")
+    );
+    assert!(
+        bpp.bpp_sheets_opened >= 2,
+        "forced-latest builder should reach multiple sheets on a 2-sheet workload"
+    );
 }

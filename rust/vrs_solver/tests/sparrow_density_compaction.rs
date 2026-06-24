@@ -48,7 +48,9 @@ fn solve_json(v: &Value) -> SolverOutput {
 }
 
 fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
-    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+    out.optimizer_diagnostics
+        .as_ref()
+        .expect("optimizer_diagnostics present")
 }
 
 #[test]
@@ -61,10 +63,17 @@ fn density_compaction_runs_and_preserves_feasibility() {
     assert_eq!(out.status, "ok", "must place all: {}", out.status);
     assert_eq!(out.unplaced.len(), 0);
     let d = od(&out);
-    assert_eq!(d.sparrow_ms_final_pairs, Some(0), "density pass keeps it collision-free");
+    assert_eq!(
+        d.sparrow_ms_final_pairs,
+        Some(0),
+        "density pass keeps it collision-free"
+    );
     assert_eq!(d.sparrow_ms_boundary_violations, Some(0));
     let bpp = d.bpp_reduction.as_ref().expect("bpp diagnostics");
-    assert!(bpp.bpp_density_compaction_applied, "density pass must run when enabled");
+    assert!(
+        bpp.bpp_density_compaction_applied,
+        "density pass must run when enabled"
+    );
 }
 
 #[test]
@@ -78,7 +87,11 @@ fn lns_sheet_drop_runs_and_preserves_feasibility() {
     let out = solve_json(&ms_input(parts, stocks, 5, 40));
     std::env::remove_var("VRS_BPP_LNS");
 
-    assert_eq!(out.status, "ok", "LNS must keep the layout valid: {}", out.status);
+    assert_eq!(
+        out.status, "ok",
+        "LNS must keep the layout valid: {}",
+        out.status
+    );
     assert_eq!(out.unplaced.len(), 0);
     let d = od(&out);
     assert_eq!(d.sparrow_ms_final_pairs, Some(0), "no collisions");
@@ -97,7 +110,11 @@ fn density_multi_sweep_processes_all_parts() {
     let out = solve_json(&ms_input(parts, stocks, 11, 40));
     assert_eq!(out.status, "ok");
     let placed = out.metrics.placed_count;
-    let bpp = od(&out).bpp_reduction.as_ref().expect("bpp diagnostics").clone();
+    let bpp = od(&out)
+        .bpp_reduction
+        .as_ref()
+        .expect("bpp diagnostics")
+        .clone();
     assert!(bpp.bpp_density_sweeps >= 1, "at least one density sweep");
     assert!(
         bpp.bpp_density_parts_processed >= placed,
@@ -119,7 +136,11 @@ fn density_compaction_generates_interlock_candidates() {
     let out = solve_json(&ms_input(parts, stocks, 7, 40));
 
     assert_eq!(out.status, "ok");
-    let bpp = od(&out).bpp_reduction.as_ref().expect("bpp diagnostics").clone();
+    let bpp = od(&out)
+        .bpp_reduction
+        .as_ref()
+        .expect("bpp diagnostics")
+        .clone();
     assert!(bpp.bpp_density_compaction_applied);
     assert!(
         bpp.bpp_interlock_candidates_generated > 0,

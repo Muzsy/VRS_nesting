@@ -14,7 +14,11 @@ use vrs_solver::technology::TechnologyClearancePolicy;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn make_input(margin_mm: Option<f64>, spacing_mm: Option<f64>, kerf_mm: Option<f64>) -> SolverInput {
+fn make_input(
+    margin_mm: Option<f64>,
+    spacing_mm: Option<f64>,
+    kerf_mm: Option<f64>,
+) -> SolverInput {
     let mut v = json!({
         "contract_version": "v1",
         "project_name": "q33_test",
@@ -45,7 +49,11 @@ fn make_input(margin_mm: Option<f64>, spacing_mm: Option<f64>, kerf_mm: Option<f
     serde_json::from_value(v).expect("parse SolverInput")
 }
 
-fn make_policy(margin_mm: Option<f64>, spacing_mm: Option<f64>, kerf_mm: Option<f64>) -> TechnologyClearancePolicy {
+fn make_policy(
+    margin_mm: Option<f64>,
+    spacing_mm: Option<f64>,
+    kerf_mm: Option<f64>,
+) -> TechnologyClearancePolicy {
     let input = make_input(margin_mm, spacing_mm, kerf_mm);
     TechnologyClearancePolicy::from_solver_input(&input).expect("policy should succeed")
 }
@@ -103,7 +111,11 @@ fn negative_margin_mm_errors() {
     let result = TechnologyClearancePolicy::from_solver_input(&input);
     assert!(result.is_err(), "negative margin_mm must return Err");
     let msg = result.unwrap_err();
-    assert!(msg.contains("margin_mm"), "error should mention margin_mm, got: {}", msg);
+    assert!(
+        msg.contains("margin_mm"),
+        "error should mention margin_mm, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -112,7 +124,11 @@ fn negative_spacing_mm_errors() {
     let result = TechnologyClearancePolicy::from_solver_input(&input);
     assert!(result.is_err(), "negative spacing_mm must return Err");
     let msg = result.unwrap_err();
-    assert!(msg.contains("spacing_mm"), "error should mention spacing_mm, got: {}", msg);
+    assert!(
+        msg.contains("spacing_mm"),
+        "error should mention spacing_mm, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -121,7 +137,11 @@ fn negative_kerf_mm_errors() {
     let result = TechnologyClearancePolicy::from_solver_input(&input);
     assert!(result.is_err(), "negative kerf_mm must return Err");
     let msg = result.unwrap_err();
-    assert!(msg.contains("kerf_mm"), "error should mention kerf_mm, got: {}", msg);
+    assert!(
+        msg.contains("kerf_mm"),
+        "error should mention kerf_mm, got: {}",
+        msg
+    );
 }
 
 // ── Test 4: sparrow_cde_multisheet diagnostics contain technology_* fields ────
@@ -200,7 +220,10 @@ fn q32_input_without_spacing_kerf_deserializes_and_runs() {
     assert_eq!(input.kerf_mm, None);
     let output = solve(input).expect("solve must succeed");
     // Run must succeed; technology policy defaults to 0/0/0.
-    let diag = output.optimizer_diagnostics.as_ref().expect("diagnostics present");
+    let diag = output
+        .optimizer_diagnostics
+        .as_ref()
+        .expect("diagnostics present");
     assert_eq!(diag.technology_policy_active, Some(true));
     assert_eq!(diag.technology_margin_mm, Some(0.0));
     // spacing defaults to margin_mm (0.0) when absent

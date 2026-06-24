@@ -29,14 +29,19 @@ fn part_polygon(part_id_contains: &str) -> Vec<Point> {
     for p in doc["parts"].as_array().unwrap() {
         let id = p["id"].as_str().unwrap_or("");
         if id.contains(part_id_contains) {
-            let raw = p.get("prepared_outer_points").and_then(|v| v.as_array())
+            let raw = p
+                .get("prepared_outer_points")
+                .and_then(|v| v.as_array())
                 .or_else(|| p.get("outer_points").and_then(|v| v.as_array()))
                 .expect("part has outer_points");
             return raw
                 .iter()
                 .map(|pr| {
                     let a = pr.as_array().unwrap();
-                    Point { x: a[0].as_f64().unwrap(), y: a[1].as_f64().unwrap() }
+                    Point {
+                        x: a[0].as_f64().unwrap(),
+                        y: a[1].as_f64().unwrap(),
+                    }
                 })
                 .collect();
         }
@@ -138,8 +143,9 @@ fn lv8_large_spacing_stress() {
             match build_spacing_expanded_outer_polygon(&poly, spacing / 2.0) {
                 Ok(out) => {
                     // If accepted, it MUST be valid (never a self-intersecting output).
-                    validate_spacing_offset_outer_contour(&poly, &out)
-                        .unwrap_or_else(|e| panic!("LV8 {pid} spacing {spacing} accepted but invalid: {e}"));
+                    validate_spacing_offset_outer_contour(&poly, &out).unwrap_or_else(|e| {
+                        panic!("LV8 {pid} spacing {spacing} accepted but invalid: {e}")
+                    });
                 }
                 Err(_) => { /* explicit supported failure is acceptable at large spacing */ }
             }
@@ -161,7 +167,10 @@ fn triangle_offset_is_not_bbox() {
     // A bbox-expand would be a rectangle of area ~ (24*24)=576. A true offset of a right
     // triangle (area 200) stays well below the bbox-rectangle area.
     let a = poly_area(&out);
-    assert!(a > 200.0 && a < 560.0, "offset area {a} looks bbox-expanded");
+    assert!(
+        a > 200.0 && a < 560.0,
+        "offset area {a} looks bbox-expanded"
+    );
 }
 
 // ── Test 6: kerf independence (offset config is spacing/2, never +kerf) ─────────
@@ -175,7 +184,16 @@ fn kerf_independent_offset() {
 
 // ── Test 7: solver-path regression (spacing 10, kerf 3) ────────────────────────
 
-fn ms_input(margin: f64, spacing: f64, kerf: f64, qty: i64, w: f64, h: f64, sheet_w: f64, sheet_h: f64) -> SolverInput {
+fn ms_input(
+    margin: f64,
+    spacing: f64,
+    kerf: f64,
+    qty: i64,
+    w: f64,
+    h: f64,
+    sheet_w: f64,
+    sheet_h: f64,
+) -> SolverInput {
     let v = serde_json::json!({
         "contract_version": "v1",
         "project_name": "q38_solver_regression",
@@ -203,7 +221,7 @@ fn solver_spacing10_kerf3_offset_is_half_spacing() {
     let out = solve(input).expect("solve");
     let d = out.optimizer_diagnostics.as_ref().expect("diag");
     assert_eq!(d.technology_spacing_offset_mm, Some(5.0)); // spacing/2, NOT (spacing+kerf)/2
-    assert_eq!(d.technology_kerf_mm, Some(3.0));            // kerf separate
+    assert_eq!(d.technology_kerf_mm, Some(3.0)); // kerf separate
     assert_eq!(d.technology_spacing_offset_failure_count, Some(0));
 }
 
@@ -214,8 +232,14 @@ fn spacing_is_not_sheet_margin() {
     // Single part near the sheet edge, spacing 10, margin 0 → must place ok, boundary 0.
     let input = ms_input(0.0, 10.0, 0.0, 1, 20.0, 20.0, 100.0, 100.0);
     let out = solve(input).expect("solve");
-    assert_eq!(out.status, "ok", "single part with spacing>0 must still place (spacing is not a margin)");
+    assert_eq!(
+        out.status, "ok",
+        "single part with spacing>0 must still place (spacing is not a margin)"
+    );
     let d = out.optimizer_diagnostics.as_ref().expect("diag");
     assert_eq!(d.sparrow_ms_boundary_violations, Some(0));
-    assert_eq!(d.technology_spacing_boundary_uses_original_geometry, Some(true));
+    assert_eq!(
+        d.technology_spacing_boundary_uses_original_geometry,
+        Some(true)
+    );
 }

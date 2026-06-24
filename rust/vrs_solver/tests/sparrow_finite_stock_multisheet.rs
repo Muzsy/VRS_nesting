@@ -31,12 +31,7 @@ fn tiny_rect_part(id: &str, qty: i64, w: f64, h: f64) -> Value {
     })
 }
 
-fn ms_input(
-    parts: Vec<Value>,
-    stocks: Vec<Value>,
-    seed: i64,
-    time_limit_s: i64,
-) -> Value {
+fn ms_input(parts: Vec<Value>, stocks: Vec<Value>, seed: i64, time_limit_s: i64) -> Value {
     json!({
         "contract_version": "v1",
         "project_name": "sgh_q32_test",
@@ -52,8 +47,7 @@ fn ms_input(
 }
 
 fn parse_and_solve(v: &Value) -> SolverOutput {
-    let input: SolverInput =
-        serde_json::from_value(v.clone()).expect("parse SolverInput");
+    let input: SolverInput = serde_json::from_value(v.clone()).expect("parse SolverInput");
     solve(input).expect("solve")
 }
 
@@ -73,7 +67,10 @@ fn multisheet_enum_deserializes_from_snake_case() {
         optimizer_pipeline: OptimizerPipelineKind,
     }
     let w: W = serde_json::from_str(raw).expect("deserialize");
-    assert_eq!(w.optimizer_pipeline, OptimizerPipelineKind::SparrowCdeMultisheet);
+    assert_eq!(
+        w.optimizer_pipeline,
+        OptimizerPipelineKind::SparrowCdeMultisheet
+    );
 }
 
 // ── Test 2: tiny 2-sheet ok ───────────────────────────────────────────────────
@@ -82,9 +79,7 @@ fn multisheet_enum_deserializes_from_snake_case() {
 fn multisheet_tiny_2_sheet_full_feasible() {
     // 8 small squares × 60×60mm on 2×200×200 sheets → should fit
     let parts = vec![tiny_rect_part("sq60", 8, 60.0, 60.0)];
-    let stocks = vec![
-        json!({"id": "S0", "quantity": 2, "width": 200.0, "height": 200.0}),
-    ];
+    let stocks = vec![json!({"id": "S0", "quantity": 2, "width": 200.0, "height": 200.0})];
     let input = ms_input(parts, stocks, 42, 30);
     let out = parse_and_solve(&input);
 
@@ -99,11 +94,18 @@ fn multisheet_tiny_2_sheet_full_feasible() {
     assert_eq!(d.pipeline_used, "sparrow_cde_multisheet");
     assert_eq!(d.sparrow_ms_active, Some(true));
     assert_eq!(d.sparrow_ms_final_pairs, Some(0), "no collisions");
-    assert_eq!(d.sparrow_ms_boundary_violations, Some(0), "no boundary violations");
+    assert_eq!(
+        d.sparrow_ms_boundary_violations,
+        Some(0),
+        "no boundary violations"
+    );
     assert_eq!(d.sparrow_ms_status, Some("ok".to_string()));
     assert!(d.sparrow_ms_utilization_pct.unwrap_or(0.0) > 0.0);
     // Q31 cache invariant: must still be present
-    assert!(d.sparrow_q31_base_shape_cache_build_ms.is_some(), "Q31 cache field must be present");
+    assert!(
+        d.sparrow_q31_base_shape_cache_build_ms.is_some(),
+        "Q31 cache field must be present"
+    );
 }
 
 // ── Test 3: heterogeneous stock mapping ───────────────────────────────────────
@@ -124,7 +126,11 @@ fn multisheet_heterogeneous_stock_index_mapping() {
     let out = parse_and_solve(&input);
 
     // Must place both (2 instances).
-    assert_eq!(out.status, "ok", "both parts must be placed: {}", out.status);
+    assert_eq!(
+        out.status, "ok",
+        "both parts must be placed: {}",
+        out.status
+    );
     assert_eq!(out.metrics.placed_count, 2);
     assert_eq!(out.unplaced.len(), 0);
 
@@ -136,7 +142,10 @@ fn multisheet_heterogeneous_stock_index_mapping() {
     let used = d.sparrow_ms_used_sheet_count.unwrap_or(0);
     assert!(used <= 2, "at most 2 sheets used, got {used}");
     // used_sheet_indices must be a subset of [0, 1]
-    let indices = d.sparrow_ms_used_sheet_indices.as_ref().expect("used_sheet_indices");
+    let indices = d
+        .sparrow_ms_used_sheet_indices
+        .as_ref()
+        .expect("used_sheet_indices");
     for &idx in indices {
         assert!(idx < 2, "sheet index {idx} out of range");
     }
@@ -149,9 +158,7 @@ fn multisheet_unique_used_sheet_count_not_max_plus_one() {
     // 3 sheets available: 0, 1, 2. Place 4 parts that easily fit on 1 sheet.
     // Manager should use only 1 sheet → used_sheet_count == 1, NOT 3.
     let parts = vec![tiny_rect_part("small", 4, 20.0, 20.0)];
-    let stocks = vec![
-        json!({"id": "A", "quantity": 3, "width": 200.0, "height": 200.0}),
-    ];
+    let stocks = vec![json!({"id": "A", "quantity": 3, "width": 200.0, "height": 200.0})];
     let input = ms_input(parts, stocks, 42, 30);
     let out = parse_and_solve(&input);
 
@@ -184,9 +191,7 @@ fn multisheet_prefers_fewer_sheets_with_more_available() {
     // 6 parts × 60×60 on 3×200×200 sheets. All 6 fit on 2 sheets (4 per sheet
     // in 2×2 grid). Manager must not use the 3rd sheet.
     let parts = vec![tiny_rect_part("sq60", 6, 60.0, 60.0)];
-    let stocks = vec![
-        json!({"id": "S", "quantity": 3, "width": 200.0, "height": 200.0}),
-    ];
+    let stocks = vec![json!({"id": "S", "quantity": 3, "width": 200.0, "height": 200.0})];
     let input = ms_input(parts, stocks, 42, 30);
     let out = parse_and_solve(&input);
 
@@ -210,20 +215,28 @@ fn multisheet_partial_with_explicit_unplaced_reason() {
     // Massively overcapacity: 50 parts × 100×100 on 1×150×150 sheet.
     // Only 1 part fits. Must report partial with explicit unplaced reasons.
     let parts = vec![tiny_rect_part("big", 50, 100.0, 100.0)];
-    let stocks = vec![
-        json!({"id": "tiny", "quantity": 1, "width": 150.0, "height": 150.0}),
-    ];
+    let stocks = vec![json!({"id": "tiny", "quantity": 1, "width": 150.0, "height": 150.0})];
     let input = ms_input(parts, stocks, 42, 15);
     let out = parse_and_solve(&input);
 
     // Must be partial (not all fit)
     assert_ne!(out.status, "ok", "50 parts cannot fit on 150×150 sheet");
-    assert!(out.metrics.placed_count >= 1, "at least 1 part should be placed");
-    assert!(out.metrics.unplaced_count >= 1, "some parts must be unplaced");
+    assert!(
+        out.metrics.placed_count >= 1,
+        "at least 1 part should be placed"
+    );
+    assert!(
+        out.metrics.unplaced_count >= 1,
+        "some parts must be unplaced"
+    );
 
     // All unplaced must have explicit reasons.
     for u in &out.unplaced {
-        assert!(!u.reason.is_empty(), "unplaced reason must not be empty: {:?}", u);
+        assert!(
+            !u.reason.is_empty(),
+            "unplaced reason must not be empty: {:?}",
+            u
+        );
         // Acceptable reasons for stock exhaustion
         let ok = u.reason.contains("STOCK_EXHAUSTED_PARTIAL")
             || u.reason.contains("INSUFFICIENT_STOCK_CAPACITY")
@@ -234,8 +247,16 @@ fn multisheet_partial_with_explicit_unplaced_reason() {
 
     let d = od(&out);
     assert_eq!(d.sparrow_ms_active, Some(true));
-    assert_eq!(d.sparrow_ms_final_pairs, Some(0), "partial must be collision-free");
-    assert_eq!(d.sparrow_ms_boundary_violations, Some(0), "partial must be boundary-safe");
+    assert_eq!(
+        d.sparrow_ms_final_pairs,
+        Some(0),
+        "partial must be collision-free"
+    );
+    assert_eq!(
+        d.sparrow_ms_boundary_violations,
+        Some(0),
+        "partial must be boundary-safe"
+    );
 }
 
 // ── Test 7: Q31 cache invariant ───────────────────────────────────────────────
@@ -249,9 +270,7 @@ fn multisheet_q31_base_shape_cache_invariant() {
         tiny_rect_part("A", 3, 80.0, 40.0),
         tiny_rect_part("B", 3, 40.0, 80.0),
     ];
-    let stocks = vec![
-        json!({"id": "S", "quantity": 2, "width": 300.0, "height": 300.0}),
-    ];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 300.0, "height": 300.0})];
     let input = ms_input(parts, stocks, 42, 20);
     let out = parse_and_solve(&input);
 
@@ -263,8 +282,13 @@ fn multisheet_q31_base_shape_cache_invariant() {
     );
     // Hotpath calls (prepare_base_shape_native in search/LBF/tracker) must be 0.
     // This is the Q31 invariant: the cache eliminates all hot-path calls.
-    let hotpath = d.sparrow_q31_prepare_base_shape_native_hotpath_calls.unwrap_or(999);
-    assert_eq!(hotpath, 0, "Q31: no hot-path prepare_base_shape_native calls allowed");
+    let hotpath = d
+        .sparrow_q31_prepare_base_shape_native_hotpath_calls
+        .unwrap_or(999);
+    assert_eq!(
+        hotpath, 0,
+        "Q31: no hot-path prepare_base_shape_native calls allowed"
+    );
 }
 
 // ── Test 8: part-never-fits-stock ────────────────────────────────────────────
@@ -277,20 +301,26 @@ fn multisheet_part_never_fits_any_stock_reported() {
         tiny_rect_part("huge", 2, 500.0, 500.0),
         tiny_rect_part("small", 4, 40.0, 40.0),
     ];
-    let stocks = vec![
-        json!({"id": "S", "quantity": 2, "width": 200.0, "height": 200.0}),
-    ];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 200.0, "height": 200.0})];
     let input = ms_input(parts, stocks, 42, 20);
     let out = parse_and_solve(&input);
 
     // huge parts cannot fit; small parts should be placed.
-    assert_ne!(out.status, "unsupported", "must not be unsupported — huge parts are gracefully excluded");
+    assert_ne!(
+        out.status, "unsupported",
+        "must not be unsupported — huge parts are gracefully excluded"
+    );
 
     // The 2 huge parts must appear in unplaced with PART_NEVER_FITS_STOCK.
-    let never_fit: Vec<_> = out.unplaced.iter()
+    let never_fit: Vec<_> = out
+        .unplaced
+        .iter()
         .filter(|u| u.reason == "PART_NEVER_FITS_STOCK" || u.part_id == "huge")
         .collect();
-    assert!(!never_fit.is_empty(), "huge parts must be reported as unplaceable");
+    assert!(
+        !never_fit.is_empty(),
+        "huge parts must be reported as unplaceable"
+    );
 
     let d = od(&out);
     assert_eq!(d.sparrow_ms_active, Some(true));
@@ -314,7 +344,10 @@ fn bpp_path_is_active_for_sparrow_cde_multisheet() {
     let stocks = vec![json!({"id": "S0", "quantity": 3, "width": 200.0, "height": 200.0})];
     let out = parse_and_solve(&ms_input(parts, stocks, 42, 25));
     assert_eq!(od(&out).sparrow_ms_active, Some(true));
-    assert!(bpp(&out).bpp_reduction_active, "BPP path must be active by default");
+    assert!(
+        bpp(&out).bpp_reduction_active,
+        "BPP path must be active by default"
+    );
     assert!(bpp(&out).bpp_runtime_ms > 0.0);
 }
 
@@ -327,9 +360,16 @@ fn bpp_initial_construction_existing_sheet_first() {
     let stocks = vec![json!({"id": "S0", "quantity": 3, "width": 200.0, "height": 200.0})];
     let out = parse_and_solve(&ms_input(parts, stocks, 42, 25));
     assert_eq!(out.status, "ok");
-    let used = od(&out).sparrow_ms_used_sheet_indices.clone().unwrap_or_default();
+    let used = od(&out)
+        .sparrow_ms_used_sheet_indices
+        .clone()
+        .unwrap_or_default();
     assert!(!used.is_empty());
-    assert_eq!(*used.iter().min().unwrap(), 0, "construction must use sheet 0 first");
+    assert_eq!(
+        *used.iter().min().unwrap(),
+        0,
+        "construction must use sheet 0 first"
+    );
     // existing-sheet-first ⇒ used indices are a low prefix (max < count of available).
     assert!(*used.iter().max().unwrap() < od(&out).sparrow_ms_available_sheet_count.unwrap());
 }
@@ -346,9 +386,15 @@ fn bpp_reduces_from_more_sheets_to_fewer_sheets() {
     let b = bpp(&out);
     assert_eq!(b.bpp_area_lower_bound, 2);
     assert!(b.bpp_final_sheet_count <= b.bpp_initial_sheet_count.max(2));
-    assert!(b.bpp_final_sheet_count <= 2, "final used sheets must reach the 2-sheet bound");
+    assert!(
+        b.bpp_final_sheet_count <= 2,
+        "final used sheets must reach the 2-sheet bound"
+    );
     if b.bpp_initial_sheet_count > b.bpp_final_sheet_count {
-        assert!(b.bpp_elimination_successes >= 1, "a successful elimination must be recorded");
+        assert!(
+            b.bpp_elimination_successes >= 1,
+            "a successful elimination must be recorded"
+        );
     }
 }
 
@@ -362,7 +408,10 @@ fn bpp_transfer_resolves_overpacked_receiving_sheet() {
     assert_eq!(out.status, "ok");
     assert_eq!(od(&out).sparrow_ms_final_pairs, Some(0));
     assert_eq!(od(&out).sparrow_ms_boundary_violations, Some(0));
-    assert!(bpp(&out).bpp_separator_calls >= 1, "the affected-sheet separator must run");
+    assert!(
+        bpp(&out).bpp_separator_calls >= 1,
+        "the affected-sheet separator must run"
+    );
 }
 
 /// Q45-5: `ok` is never reported with residual collisions or boundary violations.
@@ -384,14 +433,24 @@ fn bpp_used_sheet_count_is_unique_not_max_plus_one() {
     let parts = vec![tiny_rect_part("big", 8, 700.0, 1400.0)];
     let stocks = vec![json!({"id": "S", "quantity": 4, "width": 1500.0, "height": 3000.0})];
     let out = parse_and_solve(&ms_input(parts, stocks, 42, 40));
-    let used = od(&out).sparrow_ms_used_sheet_indices.clone().unwrap_or_default();
+    let used = od(&out)
+        .sparrow_ms_used_sheet_indices
+        .clone()
+        .unwrap_or_default();
     let mut sorted = used.clone();
     sorted.sort_unstable();
     sorted.dedup();
-    assert_eq!(sorted.len(), used.len(), "used sheet indices must be unique");
+    assert_eq!(
+        sorted.len(),
+        used.len(),
+        "used sheet indices must be unique"
+    );
     assert_eq!(used.len(), od(&out).sparrow_ms_used_sheet_count.unwrap());
     let avail = od(&out).sparrow_ms_available_sheet_count.unwrap();
-    assert!(used.iter().all(|&i| i < avail), "used indices must be within available stock");
+    assert!(
+        used.iter().all(|&i| i < avail),
+        "used indices must be within available stock"
+    );
 }
 
 /// Q45-7: with surplus stock available the BPP path still minimizes used sheets.
@@ -404,7 +463,10 @@ fn bpp_minimizes_sheet_count_with_extra_stock_available() {
     assert_eq!(out.status, "ok");
     let b = bpp(&out);
     assert_eq!(b.bpp_area_lower_bound, 2);
-    assert!(b.bpp_final_sheet_count <= 2, "must not use more than the 2-sheet minimum");
+    assert!(
+        b.bpp_final_sheet_count <= 2,
+        "must not use more than the 2-sheet minimum"
+    );
     assert_eq!(od(&out).sparrow_ms_available_sheet_count, Some(6));
 }
 
@@ -416,9 +478,16 @@ fn bpp_gravity_compaction_runs_and_preserves_feasibility() {
     let stocks = vec![json!({"id": "S", "quantity": 2, "width": 1500.0, "height": 3000.0})];
     let out = parse_and_solve(&ms_input(parts, stocks, 42, 30));
     assert_eq!(out.status, "ok");
-    assert_eq!(od(&out).sparrow_ms_final_pairs, Some(0), "compaction must stay collision-free");
+    assert_eq!(
+        od(&out).sparrow_ms_final_pairs,
+        Some(0),
+        "compaction must stay collision-free"
+    );
     assert_eq!(od(&out).sparrow_ms_boundary_violations, Some(0));
     let b = bpp(&out);
-    assert!(b.bpp_gravity_compaction_applied, "gravity compaction must run by default");
+    assert!(
+        b.bpp_gravity_compaction_applied,
+        "gravity compaction must run by default"
+    );
     assert!(b.bpp_gravity_compaction_sweeps >= 1);
 }

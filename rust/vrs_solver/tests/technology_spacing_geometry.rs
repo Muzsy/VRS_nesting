@@ -10,7 +10,9 @@ use vrs_solver::adapter::solve;
 use vrs_solver::geometry::Point;
 use vrs_solver::io::{Placement, SolverInput, SolverOutput};
 use vrs_solver::item::Part;
-use vrs_solver::technology::spacing::{count_part_spacing_violations, find_part_spacing_violations};
+use vrs_solver::technology::spacing::{
+    count_part_spacing_violations, find_part_spacing_violations,
+};
 use vrs_solver::technology::spacing_geometry::{
     build_spacing_expanded_outer_polygon, SpacingOffsetConfig,
 };
@@ -60,7 +62,14 @@ fn pl(instance_id: &str, part_id: &str, x: f64, y: f64) -> Placement {
     }
 }
 
-fn ms_input(parts: Vec<Value>, w: f64, h: f64, margin: f64, spacing: f64, kerf: f64) -> SolverInput {
+fn ms_input(
+    parts: Vec<Value>,
+    w: f64,
+    h: f64,
+    margin: f64,
+    spacing: f64,
+    kerf: f64,
+) -> SolverInput {
     serde_json::from_value(json!({
         "contract_version": "v1",
         "project_name": "q36_test",
@@ -87,7 +96,9 @@ fn rect_part_json(id: &str, qty: i64, w: f64, h: f64) -> Value {
 }
 
 fn od(out: &SolverOutput) -> &vrs_solver::io::OptimizerDiagnosticsOutput {
-    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+    out.optimizer_diagnostics
+        .as_ref()
+        .expect("optimizer_diagnostics present")
 }
 
 // ── Test 1: rectangle half-spacing offset exact ───────────────────────────────
@@ -127,7 +138,10 @@ fn expanded_touching_means_original_spacing() {
     let a = build_spacing_expanded_outer_polygon(&rect_pts(20.0, 20.0), 5.0).expect("a");
     let (_, _, a_maxx, _) = bbox(&a);
     // B's expanded min-x when B original is at 30: 30 - 5 = 25.
-    assert!((a_maxx - 25.0).abs() < 1e-6, "A expanded maxx should be 25, got {a_maxx}");
+    assert!(
+        (a_maxx - 25.0).abs() < 1e-6,
+        "A expanded maxx should be 25, got {a_maxx}"
+    );
 
     let parts = vec![rect_part("P", 20.0, 20.0)];
     let placements = vec![pl("A", "P", 0.0, 0.0), pl("B", "P", 30.0, 0.0)];
@@ -156,16 +170,35 @@ fn spacing_must_not_become_sheet_margin() {
     // Single 20×20 part, sheet 100×100, margin 0, spacing 10.
     // The part may sit at the sheet edge (original geometry); the spacing-expanded
     // contour extending outside the sheet must NOT create a boundary violation.
-    let input = ms_input(vec![rect_part_json("P1", 1, 20.0, 20.0)], 100.0, 100.0, 0.0, 10.0, 0.0);
+    let input = ms_input(
+        vec![rect_part_json("P1", 1, 20.0, 20.0)],
+        100.0,
+        100.0,
+        0.0,
+        10.0,
+        0.0,
+    );
     let out = solve(input).expect("solve");
     assert_eq!(out.status, "ok", "single part must place ok");
     let d = od(&out);
     assert_eq!(d.technology_spacing_geometry_applied, Some(true));
-    assert_eq!(d.sparrow_ms_boundary_violations, Some(0), "spacing must not cause boundary violation");
-    assert_eq!(d.technology_spacing_boundary_uses_original_geometry, Some(true));
+    assert_eq!(
+        d.sparrow_ms_boundary_violations,
+        Some(0),
+        "spacing must not cause boundary violation"
+    );
+    assert_eq!(
+        d.technology_spacing_boundary_uses_original_geometry,
+        Some(true)
+    );
     // Part can be placed touching the sheet edge (within EPS): proves no half-spacing inset.
     let p = &out.placements[0];
-    assert!(p.x <= 1.0 && p.y <= 1.0, "part should sit near the sheet edge, got x={} y={}", p.x, p.y);
+    assert!(
+        p.x <= 1.0 && p.y <= 1.0,
+        "part should sit near the sheet edge, got x={} y={}",
+        p.x,
+        p.y
+    );
 }
 
 // ── Test 6: margin and spacing are independent ────────────────────────────────
@@ -173,16 +206,36 @@ fn spacing_must_not_become_sheet_margin() {
 #[test]
 fn margin_and_spacing_are_independent() {
     // sheet 100×100, margin 10, spacing 6 (offset 3), one 20×20 part.
-    let input = ms_input(vec![rect_part_json("P1", 1, 20.0, 20.0)], 100.0, 100.0, 10.0, 6.0, 0.0);
+    let input = ms_input(
+        vec![rect_part_json("P1", 1, 20.0, 20.0)],
+        100.0,
+        100.0,
+        10.0,
+        6.0,
+        0.0,
+    );
     let out = solve(input).expect("solve");
     let d = od(&out);
-    assert_eq!(d.technology_effective_sheet_margin_mm, Some(10.0), "margin stays 10");
-    assert_eq!(d.technology_spacing_offset_mm, Some(3.0), "spacing offset is 6/2=3, not added to margin");
+    assert_eq!(
+        d.technology_effective_sheet_margin_mm,
+        Some(10.0),
+        "margin stays 10"
+    );
+    assert_eq!(
+        d.technology_spacing_offset_mm,
+        Some(3.0),
+        "spacing offset is 6/2=3, not added to margin"
+    );
     assert_eq!(d.technology_margin_violation_count, Some(0));
     // Boundary uses margin 10 on original geometry: part must be inside [10, 90].
     if out.status == "ok" {
         let p = &out.placements[0];
-        assert!(p.x >= 10.0 - 1e-6 && p.y >= 10.0 - 1e-6, "margin-inset placement, got x={} y={}", p.x, p.y);
+        assert!(
+            p.x >= 10.0 - 1e-6 && p.y >= 10.0 - 1e-6,
+            "margin-inset placement, got x={} y={}",
+            p.x,
+            p.y
+        );
     }
 }
 
@@ -197,17 +250,31 @@ fn non_rect_polygon_offset_is_not_bbox() {
     ];
     let out = build_spacing_expanded_outer_polygon(&tri, 2.0).expect("offset");
     // A bbox-expand would yield 4 corners; a true polygon offset keeps 3 vertices.
-    assert_eq!(out.len(), 3, "triangle offset must remain a triangle (not a bbox rect): {out:?}");
+    assert_eq!(
+        out.len(),
+        3,
+        "triangle offset must remain a triangle (not a bbox rect): {out:?}"
+    );
 }
 
 // ── Test 8: output geometry remains original ──────────────────────────────────
 
 #[test]
 fn output_geometry_remains_original() {
-    let input = ms_input(vec![rect_part_json("P1", 2, 20.0, 20.0)], 200.0, 100.0, 0.0, 10.0, 0.0);
+    let input = ms_input(
+        vec![rect_part_json("P1", 2, 20.0, 20.0)],
+        200.0,
+        100.0,
+        0.0,
+        10.0,
+        0.0,
+    );
     let out = solve(input).expect("solve");
     let d = od(&out);
-    assert_eq!(d.technology_spacing_output_uses_original_geometry, Some(true));
+    assert_eq!(
+        d.technology_spacing_output_uses_original_geometry,
+        Some(true)
+    );
     // The output records original part placements (x/y/rotation only); spacing-expanded
     // geometry is never emitted. Two placed parts must be >= spacing apart (original).
     if out.status == "ok" {
@@ -228,11 +295,26 @@ fn kerf_independence() {
     let cfg = SpacingOffsetConfig::from_spacing_mm(5.0);
     assert_eq!(cfg.half_spacing_mm, 2.5);
 
-    let input = ms_input(vec![rect_part_json("P1", 1, 20.0, 20.0)], 100.0, 100.0, 0.0, 5.0, 2.0);
+    let input = ms_input(
+        vec![rect_part_json("P1", 1, 20.0, 20.0)],
+        100.0,
+        100.0,
+        0.0,
+        5.0,
+        2.0,
+    );
     let out = solve(input).expect("solve");
     let d = od(&out);
-    assert_eq!(d.technology_spacing_offset_mm, Some(2.5), "offset must be spacing/2, kerf excluded");
-    assert_eq!(d.technology_kerf_mm, Some(2.0), "kerf stays a separate diagnostic value");
+    assert_eq!(
+        d.technology_spacing_offset_mm,
+        Some(2.5),
+        "offset must be spacing/2, kerf excluded"
+    );
+    assert_eq!(
+        d.technology_kerf_mm,
+        Some(2.0),
+        "kerf stays a separate diagnostic value"
+    );
 }
 
 // ── Test 10: Q35 final validator remains active ───────────────────────────────

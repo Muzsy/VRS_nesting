@@ -1,0 +1,21 @@
+{
+  "accepted": null,
+  "anchor_part_id": "Lv8_11612_6db",
+  "candidate_part_id": "Lv8_11612_6db",
+  "considered": [],
+  "fallback_to_feature_candidates": true,
+  "pair_candidates_accepted": 0,
+  "pair_candidates_considered": 0,
+  "pair_candidates_generated": 4,
+  "pair_candidates_valid": 0,
+  "pair_index_queries": 1,
+  "rejection_summary": {
+    "boundary_violation": 4,
+    "cde_not_clear": 0,
+    "collision": 0,
+    "pair_not_found": 0,
+    "role_anchor_missing": 0,
+    "transform_invalid": 0
+  },
+  "role": "interlock"
+}

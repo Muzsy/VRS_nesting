@@ -1,0 +1,49 @@
+steps:
+  - name: "Felderítés és authority-gap ellenőrzése"
+    description: >
+      Ellenőrizd a production critical admission jelenlegi authority döntéseit, különösen a generic
+      direct short-circuitet és az Anchor catalog fallback-only commit szabályát.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+
+  - name: "Task artefaktok létrehozása"
+    description: >
+      Készítsd el a Q64 canvas/YAML/checklist/report vázat a role-aware admission authority
+      cutover feladathoz.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q64_role_aware_admission_authority_cutover.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+
+  - name: "Production authority wiring javítása"
+    description: >
+      Javítsd a `try_admit_critical()` production authority wiringet úgy, hogy a role-aware
+      Anchor / Interlock / BandInsert utak ne legyenek korán short-circuitolva a régebbi generic
+      direct admission ággal. A generic direct ág maradjon csak másodvonalbeli fallback, miközben
+      az existing anchor feature-vs-catalog commit sorrend stabil marad.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+
+  - name: "Célzott tesztek"
+    description: >
+      Adj hozzá célzott teszteket a role-aware authority döntésekhez és futtasd a releváns Rust
+      teszteket.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "codex/reports/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+
+  - name: "Checklist és report lezárása"
+    description: >
+      Frissítsd a checklistet és a reportot path+line evidence-szel, őszintén rögzítve, hogy mi
+      változott a production authority útban.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q64_role_aware_admission_authority_cutover.verify.log"

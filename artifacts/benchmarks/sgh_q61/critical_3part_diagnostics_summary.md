@@ -12,13 +12,13 @@ REAL solver path (`vrs_solver::adapter::solve`), 3 × Lv8_11612_6db, 1500×3000,
 ## Module consumption (skeleton + all gates, spacing 0)
 | module | consumed | candidates generated | accepted |
 | --- | --- | --- | --- |
-| Q56C anchor catalog | true | 48 | 0 |
-| Q57B pair/interlock | true | 32 | 1 |
+| Q56C anchor catalog | true | 48 | 2 |
+| Q57B pair/interlock | true | 8 | 0 |
 | Q59 band slot-edge | true | 24 | 0 |
-| Q60 simultaneous (parts moved) | true | attempts=2 | moved=true |
+| Q60 simultaneous (parts moved) | true | attempts=3 | moved=true |
 | Q58B best-partial tracker | true | max_critical=2 | downgrades_rejected=1 |
 
-pair_rejection_summary (sp0): (none)
+pair_rejection_summary (sp0): pair_candidates_generated=4 valid_pair_candidates=0 rejected_boundary=4 rejected_collision=0 rejected_transform=0 separation_failed=0 pair_not_found=0 -> neighbour fallback
 
 ## Honest conclusion
 3 large LV8 parts ARE geometrically feasible on one sheet (builder path places 3/3 at spacing 0).

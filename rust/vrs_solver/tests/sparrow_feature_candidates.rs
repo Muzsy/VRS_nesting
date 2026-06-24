@@ -165,17 +165,27 @@ fn q54b_clearance_offsets_neighbour_seeds_off_point_on_point() {
         }]
     };
     let neighbour_seeds = |clearance: f64| -> Vec<(f64, f64, f64, &'static str)> {
-        generate_feature_candidate_seeds_debug(&protrusion_part(), 0.0, &sheet(), &neighbours(), 64, clearance)
-            .expect("feature seeds")
-            .into_iter()
-            .filter(|s| s.target_feature_type != "sheet_edge") // neighbour-driven only
-            .map(|s| (s.x, s.y, s.seed_rotation_deg, s.alignment_kind))
-            .collect()
+        generate_feature_candidate_seeds_debug(
+            &protrusion_part(),
+            0.0,
+            &sheet(),
+            &neighbours(),
+            64,
+            clearance,
+        )
+        .expect("feature seeds")
+        .into_iter()
+        .filter(|s| s.target_feature_type != "sheet_edge") // neighbour-driven only
+        .map(|s| (s.x, s.y, s.seed_rotation_deg, s.alignment_kind))
+        .collect()
     };
 
     let s0 = neighbour_seeds(0.0);
     let s_c = neighbour_seeds(C);
-    assert!(!s0.is_empty() && !s_c.is_empty(), "neighbour-driven feature seeds expected");
+    assert!(
+        !s0.is_empty() && !s_c.is_empty(),
+        "neighbour-driven feature seeds expected"
+    );
 
     // No clearance=C seed coincides with a clearance=0 seed of the same kind+rotation (it moved).
     let key = |x: f64, y: f64| ((x * 100.0).round() as i64, (y * 100.0).round() as i64);
@@ -199,5 +209,8 @@ fn q54b_clearance_offsets_neighbour_seeds_off_point_on_point() {
                 && (((x - cx).powi(2) + (y - cy).powi(2)).sqrt() - C).abs() < 1e-3
         })
     });
-    assert!(any_exact_offset, "at least one seed must be offset by exactly the clearance ({C})");
+    assert!(
+        any_exact_offset,
+        "at least one seed must be offset by exactly the clearance ({C})"
+    );
 }

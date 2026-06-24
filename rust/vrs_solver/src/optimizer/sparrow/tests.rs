@@ -79,7 +79,8 @@ mod tests {
                 3000.0,
             ));
             let orientation_catalog = std::rc::Rc::new(OrientationCatalog::placeholder(&part.id));
-            let part_analysis = std::rc::Rc::new(PartAnalysis::placeholder(&part.id, &shape_profile));
+            let part_analysis =
+                std::rc::Rc::new(PartAnalysis::placeholder(&part.id, &shape_profile));
             SPInstance {
                 idx,
                 instance_id: format!("{}#{idx}", part.id),
@@ -1157,7 +1158,10 @@ mod tests {
                 base_shape: dummy_base.clone(),
                 shape_profile: shape_profile.clone(),
                 orientation_catalog: std::rc::Rc::new(OrientationCatalog::placeholder("INVALID")),
-                part_analysis: std::rc::Rc::new(PartAnalysis::placeholder("INVALID", &shape_profile)),
+                part_analysis: std::rc::Rc::new(PartAnalysis::placeholder(
+                    "INVALID",
+                    &shape_profile,
+                )),
             };
             let optimizer = SparrowOptimizer::new(cfg(CollisionBackendKind::Cde));
             assert!(prepare_shape_native(&inst.part, 0.0, 0.0, 0.0).is_err());

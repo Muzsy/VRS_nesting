@@ -15,7 +15,10 @@ const BOUNDARY_TOL_MM: f64 = 0.05;
 const GRID_SAMPLES: usize = 40;
 
 pub fn band_insert_true_extreme_enabled() -> bool {
-    std::env::var("VRS_BAND_INSERT_TRUE_EXTREME").ok().as_deref() == Some("1")
+    std::env::var("VRS_BAND_INSERT_TRUE_EXTREME")
+        .ok()
+        .as_deref()
+        == Some("1")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,7 +96,10 @@ impl BandInsertSlotEdgeResult {
         self.selected_index.map(|i| &self.candidates[i])
     }
     pub fn valid_count(&self) -> usize {
-        self.candidates.iter().filter(|c| c.boundary_clear && c.collision_clear).count()
+        self.candidates
+            .iter()
+            .filter(|c| c.boundary_clear && c.collision_clear)
+            .count()
     }
     pub fn to_diagnostics_json(&self) -> serde_json::Value {
         let cands: Vec<serde_json::Value> = self
@@ -190,15 +196,24 @@ pub fn slot_edge_seeds_for_instance(
         let y_low = slot_bbox[1];
         let y_high = slot_bbox[3] - rh;
         let y_center = slot_bbox[1] + (slot_h - rh) / 2.0;
-        let mut add = |rmx: f64, rmy: f64, edge: &'static str, pol: &'static str, corner: bool, out: &mut Vec<LiveSlotEdgeSeed>| {
+        let mut add = |rmx: f64,
+                       rmy: f64,
+                       edge: &'static str,
+                       pol: &'static str,
+                       corner: bool,
+                       out: &mut Vec<LiveSlotEdgeSeed>| {
             // Keep within the full sheet (the real boundary truth).
-            if rmx < sheet_bbox[0] - 0.05 || rmy < sheet_bbox[1] - 0.05
-                || rmx + rw > sheet_bbox[2] + 0.05 || rmy + rh > sheet_bbox[3] + 0.05
+            if rmx < sheet_bbox[0] - 0.05
+                || rmy < sheet_bbox[1] - 0.05
+                || rmx + rw > sheet_bbox[2] + 0.05
+                || rmy + rh > sheet_bbox[3] + 0.05
             {
                 return;
             }
             if !out.iter().any(|o: &LiveSlotEdgeSeed| {
-                (o.rect_min_x - rmx).abs() < 1.0 && (o.rect_min_y - rmy).abs() < 1.0 && (o.rotation_deg - rot).abs() < 1e-6
+                (o.rect_min_x - rmx).abs() < 1.0
+                    && (o.rect_min_y - rmy).abs() < 1.0
+                    && (o.rotation_deg - rot).abs() < 1e-6
             }) {
                 out.push(LiveSlotEdgeSeed {
                     rect_min_x: rmx,
@@ -236,7 +251,8 @@ pub fn build_band_insert_slot_edge_candidates(
     spacing_mm: f64,
     placed_neighbours: &[[f64; 4]],
 ) -> Result<BandInsertSlotEdgeResult, String> {
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S_BAND".to_string(),
         quantity: 1,
@@ -247,8 +263,13 @@ pub fn build_band_insert_slot_edge_candidates(
         cost_per_use: None,
     };
     let raw_sheet = crate::sheet::stock_to_shape(&raw_stock)?;
-    let cfg = SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, rotation_context.clone(), 42)
-        .with_spacing_mm(spacing_mm);
+    let cfg = SparrowConfig::from_solver_input(
+        1.0,
+        CollisionBackendKind::Cde,
+        rotation_context.clone(),
+        42,
+    )
+    .with_spacing_mm(spacing_mm);
     let problem = SparrowProblem::from_solver_input(
         std::slice::from_ref(part),
         std::slice::from_ref(&raw_sheet),
@@ -256,28 +277,53 @@ pub fn build_band_insert_slot_edge_candidates(
         Vec::new(),
         cfg,
     )?;
-    let inst = problem.instances.first().ok_or_else(|| format!("no instance for {}", part.id))?;
+    let inst = problem
+        .instances
+        .first()
+        .ok_or_else(|| format!("no instance for {}", part.id))?;
     let offset_shape = inst.spacing_collision_base_shape.clone();
     let catalog = inst.orientation_catalog.as_ref();
 
     // Candidate rotations from the orientation catalog (continuous, includes fractional min-width).
     let mut rotations: Vec<(f64, Option<usize>, Option<f64>)> = Vec::new();
     for c in &catalog.candidates {
-        if !rotations.iter().any(|(a, ..)| (a - c.angle_deg).abs() < 0.01) {
+        if !rotations
+            .iter()
+            .any(|(a, ..)| (a - c.angle_deg).abs() < 0.01)
+        {
             rotations.push((c.angle_deg, c.source_edge_index, c.source_edge_angle_deg));
         }
     }
 
-    let edges = [SlotEdge::Left, SlotEdge::Right, SlotEdge::Bottom, SlotEdge::Top];
-    let pols = [SlotSecondaryPolicy::CornerLow, SlotSecondaryPolicy::CornerHigh, SlotSecondaryPolicy::Center];
+    let edges = [
+        SlotEdge::Left,
+        SlotEdge::Right,
+        SlotEdge::Bottom,
+        SlotEdge::Top,
+    ];
+    let pols = [
+        SlotSecondaryPolicy::CornerLow,
+        SlotSecondaryPolicy::CornerHigh,
+        SlotSecondaryPolicy::Center,
+    ];
 
     let mut candidates: Vec<SlotEdgePlacementCandidate> = Vec::new();
     for &(rot, edge_idx, edge_ang) in &rotations {
-        let Some(off) = frame(&offset_shape, rot) else { continue };
+        let Some(off) = frame(&offset_shape, rot) else {
+            continue;
+        };
         for &edge in &edges {
             for &pol in &pols {
                 candidates.push(build_candidate(
-                    &offset_shape, rot, edge_idx, edge_ang, &off, edge, pol, slot_bbox, sheet_bbox,
+                    &offset_shape,
+                    rot,
+                    edge_idx,
+                    edge_ang,
+                    &off,
+                    edge,
+                    pol,
+                    slot_bbox,
+                    sheet_bbox,
                     placed_neighbours,
                 ));
             }
@@ -370,8 +416,8 @@ fn build_candidate(
 
     // Clearance vs placed neighbours (bbox prefilter; the placed neighbours are spacing-expanded boxes).
     let cand_box = [fx0, fy0, fx1, fy1];
-    let collision_clear = boundary_clear
-        && !neighbours.iter().any(|n| bboxes_overlap(&cand_box, n));
+    let collision_clear =
+        boundary_clear && !neighbours.iter().any(|n| bboxes_overlap(&cand_box, n));
 
     let edge_extremum = match edge {
         SlotEdge::Left => fx0,
@@ -387,7 +433,8 @@ fn build_candidate(
     let part_area = (off_w * off_h).max(1.0);
     let utilisation = (part_area / slot_area).clamp(0.0, 1.0);
     let corner_bonus = if pol.is_corner() { 0.10 } else { 0.0 };
-    let drift_penalty = (slot_edge_margin_error / slot_w.max(slot_h).max(1.0)).clamp(0.0, 1.0) * 0.10;
+    let drift_penalty =
+        (slot_edge_margin_error / slot_w.max(slot_h).max(1.0)).clamp(0.0, 1.0) * 0.10;
     let score = if boundary_clear && collision_clear {
         (0.6 * utilisation + corner_bonus - drift_penalty).max(0.0)
     } else {
@@ -425,7 +472,13 @@ fn build_candidate(
     }
 }
 
-fn secondary(pol: SlotSecondaryPolicy, off_min: f64, off_extent: f64, slot_min: f64, slot_extent: f64) -> f64 {
+fn secondary(
+    pol: SlotSecondaryPolicy,
+    off_min: f64,
+    off_extent: f64,
+    slot_min: f64,
+    slot_extent: f64,
+) -> f64 {
     match pol {
         SlotSecondaryPolicy::CornerLow => slot_min - off_min,
         SlotSecondaryPolicy::CornerHigh => (slot_min + slot_extent) - (off_min + off_extent),
@@ -476,7 +529,10 @@ mod tests {
         let ang = 4.0_f64.to_radians();
         let (c, s) = (ang.cos(), ang.sin());
         let raw = [[0.0, 0.0], [900.0, 0.0], [900.0, 180.0], [0.0, 180.0]];
-        let pts: Vec<[f64; 2]> = raw.iter().map(|p| [p[0] * c - p[1] * s, p[0] * s + p[1] * c]).collect();
+        let pts: Vec<[f64; 2]> = raw
+            .iter()
+            .map(|p| [p[0] * c - p[1] * s, p[0] * s + p[1] * c])
+            .collect();
         Part {
             id: id.to_string(),
             width: 950.0,
@@ -497,7 +553,10 @@ mod tests {
         let sheet = [0.0, 0.0, 1500.0, 3000.0];
         let slot = [50.0, 50.0, 450.0, 1450.0]; // a tall narrow band slot
         let res = build_band_insert_slot_edge_candidates(&p, slot, sheet, 8.0, &[]).expect("res");
-        assert!(res.valid_count() >= 1, "must produce at least one valid slot-edge candidate");
+        assert!(
+            res.valid_count() >= 1,
+            "must produce at least one valid slot-edge candidate"
+        );
         let sel = res.selected().expect("selected");
         assert!(sel.boundary_clear && sel.collision_clear);
         assert_eq!(sel.candidate_source, "true_extreme_slot_edge_band_insert");
@@ -522,10 +581,23 @@ mod tests {
         let sheet = [0.0, 0.0, 1500.0, 3000.0];
         let slot = [50.0, 50.0, 450.0, 1450.0];
         // A neighbour occupying the whole slot must block all candidates (collision_clear=false).
-        let res = build_band_insert_slot_edge_candidates(&p, slot, sheet, 8.0, &[[40.0, 40.0, 460.0, 1460.0]])
-            .expect("res");
-        assert_eq!(res.valid_count(), 0, "a slot fully covered by a neighbour admits no valid candidate");
-        assert!(res.fallback_to_bbox_path, "no valid slot-edge candidate → fallback reported");
+        let res = build_band_insert_slot_edge_candidates(
+            &p,
+            slot,
+            sheet,
+            8.0,
+            &[[40.0, 40.0, 460.0, 1460.0]],
+        )
+        .expect("res");
+        assert_eq!(
+            res.valid_count(),
+            0,
+            "a slot fully covered by a neighbour admits no valid candidate"
+        );
+        assert!(
+            res.fallback_to_bbox_path,
+            "no valid slot-edge candidate → fallback reported"
+        );
     }
 
     #[test]

@@ -1,0 +1,41 @@
+steps:
+  - name: "Q68 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a production Anchor catalog authority cutover canvas/YAML/checklist/report vazat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q68_anchor_catalog_production_authority_cutover.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md"
+
+  - name: "Production Anchor authority wiring"
+    description: >
+      Javitsd a production try_admit_critical Anchor agat ugy, hogy a SheetEdgePlacementCatalog ne
+      fallback-only legyen, hanem a legjobb skeleton feature winnerrel kozos score-versenyben
+      induljon, es a winnerrol explicit diagnostika keszuljon.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "codex/reports/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md"
+
+  - name: "Boundary teszt es artifact"
+    description: >
+      Adj solve-boundary tesztet a Q68 Anchor catalog authority cutoverhoz, es generalj live
+      artifactot gate-off/gate-on comparisonnel.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_q68_anchor_catalog_cutover.rs"
+      - "artifacts/benchmarks/sgh_q68/anchor_catalog_production_cutover.json"
+
+  - name: "Checklist es report lezarasa"
+    description: >
+      Frissitsd a checklistet es a reportot konkret path+line evidence-szel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q68_anchor_catalog_production_authority_cutover.verify.log"

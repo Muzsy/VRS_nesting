@@ -44,7 +44,9 @@ fn solve_json(v: &Value) -> SolverOutput {
 }
 
 fn od(out: &SolverOutput) -> &OptimizerDiagnosticsOutput {
-    out.optimizer_diagnostics.as_ref().expect("optimizer_diagnostics present")
+    out.optimizer_diagnostics
+        .as_ref()
+        .expect("optimizer_diagnostics present")
 }
 
 fn enable_feature_builder() {

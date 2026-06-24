@@ -379,10 +379,22 @@ pub fn apply_rectangular_sheet_offset(
             ));
         }
         let solver_corners = vec![
-            Point { x: new_min_x, y: new_min_y },
-            Point { x: new_max_x, y: new_min_y },
-            Point { x: new_max_x, y: new_max_y },
-            Point { x: new_min_x, y: new_max_y },
+            Point {
+                x: new_min_x,
+                y: new_min_y,
+            },
+            Point {
+                x: new_max_x,
+                y: new_min_y,
+            },
+            Point {
+                x: new_max_x,
+                y: new_max_y,
+            },
+            Point {
+                x: new_min_x,
+                y: new_max_y,
+            },
         ];
         let outer_poly = to_jag_polygon(&solver_corners, &format!("offset_sheet[{i}]"))?;
         result.push(SheetShape {
@@ -448,10 +460,22 @@ pub fn apply_rectangular_sheet_margin(
             ));
         }
         let solver_corners = vec![
-            Point { x: new_min_x, y: new_min_y },
-            Point { x: new_max_x, y: new_min_y },
-            Point { x: new_max_x, y: new_max_y },
-            Point { x: new_min_x, y: new_max_y },
+            Point {
+                x: new_min_x,
+                y: new_min_y,
+            },
+            Point {
+                x: new_max_x,
+                y: new_min_y,
+            },
+            Point {
+                x: new_max_x,
+                y: new_max_y,
+            },
+            Point {
+                x: new_min_x,
+                y: new_max_y,
+            },
         ];
         let outer_poly = to_jag_polygon(&solver_corners, &format!("margin_sheet[{i}]"))?;
         result.push(SheetShape {
@@ -515,9 +539,18 @@ pub fn find_sheet_margin_violations(
                 // Rectangle fallback ONLY when the part truly has no polygon.
                 vec![
                     Point { x: 0.0, y: 0.0 },
-                    Point { x: part.width, y: 0.0 },
-                    Point { x: part.width, y: part.height },
-                    Point { x: 0.0, y: part.height },
+                    Point {
+                        x: part.width,
+                        y: 0.0,
+                    },
+                    Point {
+                        x: part.width,
+                        y: part.height,
+                    },
+                    Point {
+                        x: 0.0,
+                        y: part.height,
+                    },
                 ]
             }
             PolygonExtraction::Invalid { .. } => {

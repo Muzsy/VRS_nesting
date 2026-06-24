@@ -3,11 +3,15 @@
 use std::path::PathBuf;
 
 use vrs_solver::item::Part;
-use vrs_solver::optimizer::sparrow::sheet_feasibility::{build_sheet_feasibility_hints, CapacityStatus};
+use vrs_solver::optimizer::sparrow::sheet_feasibility::{
+    build_sheet_feasibility_hints, CapacityStatus,
+};
 use vrs_solver::rotation_policy::RotationPolicyKind;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn lv8(qty: i64) -> Part {
@@ -49,7 +53,10 @@ fn lv8_sheet_feasibility_hints_are_sound_and_labelled() {
     let parts = vec![lv8(6), rect("filler", 40.0, 40.0, 60)];
     let h = build_sheet_feasibility_hints(&parts, 1500.0, 3000.0, 5.0, 8.0).expect("hints");
 
-    assert!(h.sheet_count_area_lower_bound >= 1, "area lower bound must be >= 1");
+    assert!(
+        h.sheet_count_area_lower_bound >= 1,
+        "area lower bound must be >= 1"
+    );
     assert_eq!(h.diagnostics.usable_sheet_area_basis, "margin_shrunk");
 
     let lv8h = h
@@ -60,7 +67,10 @@ fn lv8_sheet_feasibility_hints_are_sound_and_labelled() {
     assert_eq!(lv8h.quantity, 6);
     let sum: usize = lv8h.target_distribution.iter().sum();
     assert_eq!(sum, 6, "distribution covers full quantity");
-    assert!(!matches!(lv8h.status, CapacityStatus::ProvenByFocusedTest), "no proof claims in Q58A");
+    assert!(
+        !matches!(lv8h.status, CapacityStatus::ProvenByFocusedTest),
+        "no proof claims in Q58A"
+    );
 
     assert!(
         h.danger_parts.iter().any(|d| d.part_id.starts_with("Lv8")),

@@ -34,7 +34,9 @@ const ALL_GATES: &[&str] = &[
 const BUILDER_PATH: &[&str] = &["VRS_SHEET_BUILDER"];
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn clear_gates() {
@@ -88,11 +90,25 @@ const SP8: &str = "artifacts/benchmarks/sgh_q51/inputs/q51_6big_sp8.json";
 fn spacing0_three_critical_uses_real_solver_path_and_places_3() {
     // The constructive builder (real production path) reaches the co-movable 3-way interlock at sp0.
     let out = solve_with(BUILDER_PATH, 3, 2, SP0);
-    assert!(out.optimizer_diagnostics.is_some(), "must run the real optimizer path");
-    assert_eq!(out.placements.len(), 3, "all 3 critical parts must be placed at spacing 0");
-    assert_eq!(max_per_sheet(&out), 3, "all 3 must be on ONE sheet (3-way interlock, feasible)");
+    assert!(
+        out.optimizer_diagnostics.is_some(),
+        "must run the real optimizer path"
+    );
+    assert_eq!(
+        out.placements.len(),
+        3,
+        "all 3 critical parts must be placed at spacing 0"
+    );
+    assert_eq!(
+        max_per_sheet(&out),
+        3,
+        "all 3 must be on ONE sheet (3-way interlock, feasible)"
+    );
     assert_eq!(by_sheet(&out).len(), 1, "exactly one sheet used");
-    assert_eq!(out.status, "ok", "feasible: CDE-valid, no collisions/boundary among placed");
+    assert_eq!(
+        out.status, "ok",
+        "feasible: CDE-valid, no collisions/boundary among placed"
+    );
 }
 
 // ── 2. real spacing never downgrades a valid 2-critical partial to 1 ──────────────────────────────
@@ -111,7 +127,10 @@ fn real_spacing_does_not_downgrade_valid_2_partial_to_1() {
     }
     // No silent downgrade path exists in the build loop (a failed admission never removes admitted
     // criticals), so any placed critical implies the output carries the best partial it reached.
-    assert!(out.placements.len() >= 1, "at least one critical part must be placed");
+    assert!(
+        out.placements.len() >= 1,
+        "at least one critical part must be placed"
+    );
     assert!(out.status == "ok" || out.status == "partial");
 }
 
@@ -120,7 +139,10 @@ fn real_spacing_does_not_downgrade_valid_2_partial_to_1() {
 fn anchor_catalog_is_consumed_in_real_critical_path() {
     let out = solve_with(ALL_GATES, 3, 2, SP0);
     let d = bpp(&out).expect("bpp diagnostics");
-    assert!(d.bpp_q61_anchor_catalog_consulted, "anchor catalog must be consulted in the real path");
+    assert!(
+        d.bpp_q61_anchor_catalog_consulted,
+        "anchor catalog must be consulted in the real path"
+    );
 }
 
 // ── 4. the pair index is consulted before the neighbour-feature fallback ──────────────────────────
@@ -128,7 +150,10 @@ fn anchor_catalog_is_consumed_in_real_critical_path() {
 fn pair_index_is_consulted_before_neighbour_fallback() {
     let out = solve_with(ALL_GATES, 3, 3, SP0);
     let d = bpp(&out).expect("bpp diagnostics");
-    assert!(d.bpp_q61_pair_index_consulted, "pair index must be consulted for the Interlock role");
+    assert!(
+        d.bpp_q61_pair_index_consulted,
+        "pair index must be consulted for the Interlock role"
+    );
     // Either pair candidates were generated, or the explicit no-anchor/fallback reason is recorded.
     assert!(
         d.bpp_q61_pair_candidates_generated > 0 || d.bpp_q61_pair_rejection_summary.is_some(),
@@ -160,12 +185,18 @@ fn band_insert_true_extreme_is_attempted_before_bbox_fallback() {
 fn simultaneous_group_admission_moves_existing_group_parts() {
     let out = solve_with(ALL_GATES, 3, 2, SP0);
     let d = bpp(&out).expect("bpp diagnostics");
-    assert!(d.bpp_q61_simultaneous_critical_consulted, "simultaneous critical admission must be consulted");
+    assert!(
+        d.bpp_q61_simultaneous_critical_consulted,
+        "simultaneous critical admission must be consulted"
+    );
     assert!(
         d.bpp_q61_previous_group_parts_moved,
         "the co-movable separation must move previously-admitted group parts (not sequential-only)"
     );
-    assert!(d.bpp_q61_simultaneous_group_attempts > 0, "at least one simultaneous group attempt");
+    assert!(
+        d.bpp_q61_simultaneous_group_attempts > 0,
+        "at least one simultaneous group attempt"
+    );
 }
 
 // ── 7. diagnostics expose all candidate sources and rejection reasons ─────────────────────────────
@@ -200,7 +231,13 @@ fn q61_focused_runner_writes_artifacts() {
     // Scenario B (real spacing 8): skeleton + all modules.
     let sp8_modules = solve_with(ALL_GATES, 3, 2, SP8);
 
-    write_scenario(&dir, "critical_3part_spacing0", &sp0_modules, Some(&sp0_builder), 0.0);
+    write_scenario(
+        &dir,
+        "critical_3part_spacing0",
+        &sp0_modules,
+        Some(&sp0_builder),
+        0.0,
+    );
     write_scenario(&dir, "critical_3part_real_spacing", &sp8_modules, None, 8.0);
     write_summary(&dir, &sp0_builder, &sp0_modules, &sp8_modules);
 
@@ -211,12 +248,18 @@ fn q61_focused_runner_writes_artifacts() {
     assert!(dir.join("critical_3part_diagnostics_summary.md").exists());
 }
 
-fn q61_block(out: &SolverOutput, builder: Option<&SolverOutput>, spacing: f64) -> serde_json::Value {
+fn q61_block(
+    out: &SolverOutput,
+    builder: Option<&SolverOutput>,
+    spacing: f64,
+) -> serde_json::Value {
     let d = bpp(out).unwrap_or_default();
     let placed = out.placements.len();
     let maxp = max_per_sheet(out);
     let builder_max = builder.map(max_per_sheet).unwrap_or(maxp);
-    let builder_one_sheet = builder.map(|b| by_sheet(b).len() == 1 && b.placements.len() == 3).unwrap_or(false);
+    let builder_one_sheet = builder
+        .map(|b| by_sheet(b).len() == 1 && b.placements.len() == 3)
+        .unwrap_or(false);
     let conclusion = if builder_one_sheet || maxp >= 3 {
         "FEASIBLE: 3 critical parts placed on one sheet by the real solver (builder path). The skeleton+module path currently reaches fewer per sheet → algorithmic gap, not geometric infeasibility."
     } else {
@@ -258,16 +301,33 @@ fn q61_block(out: &SolverOutput, builder: Option<&SolverOutput>, spacing: f64) -
     }})
 }
 
-fn write_scenario(dir: &std::path::Path, name: &str, out: &SolverOutput, builder: Option<&SolverOutput>, spacing: f64) {
+fn write_scenario(
+    dir: &std::path::Path,
+    name: &str,
+    out: &SolverOutput,
+    builder: Option<&SolverOutput>,
+    spacing: f64,
+) {
     let block = q61_block(out, builder, spacing);
-    std::fs::write(dir.join(format!("{name}.json")), serde_json::to_string_pretty(&block).unwrap()).unwrap();
+    std::fs::write(
+        dir.join(format!("{name}.json")),
+        serde_json::to_string_pretty(&block).unwrap(),
+    )
+    .unwrap();
     // SVG: prefer the builder result for spacing0 (shows 3 on one sheet); else the module-path result.
-    let svg_out = if builder.map(|b| by_sheet(b).len() == 1 && b.placements.len() == 3).unwrap_or(false) {
+    let svg_out = if builder
+        .map(|b| by_sheet(b).len() == 1 && b.placements.len() == 3)
+        .unwrap_or(false)
+    {
         builder.unwrap()
     } else {
         out
     };
-    std::fs::write(dir.join(format!("{name}.svg")), render_svg(svg_out, spacing)).unwrap();
+    std::fs::write(
+        dir.join(format!("{name}.svg")),
+        render_svg(svg_out, spacing),
+    )
+    .unwrap();
 }
 
 fn render_svg(out: &SolverOutput, spacing: f64) -> String {
@@ -317,7 +377,10 @@ fn render_svg(out: &SolverOutput, spacing: f64) -> String {
         ));
         s.push_str(&format!(
             "<text x='{:.0}' y='{:.0}' font-size='10'>{} rot={:.2}°</text>\n",
-            cx - bw / 2.0 + 4.0, cy, role_label(*k), pl.rotation_deg
+            cx - bw / 2.0 + 4.0,
+            cy,
+            role_label(*k),
+            pl.rotation_deg
         ));
         *k += 1;
     }
@@ -329,7 +392,12 @@ fn render_svg(out: &SolverOutput, spacing: f64) -> String {
     s
 }
 
-fn write_summary(dir: &std::path::Path, sp0_builder: &SolverOutput, sp0_modules: &SolverOutput, sp8_modules: &SolverOutput) {
+fn write_summary(
+    dir: &std::path::Path,
+    sp0_builder: &SolverOutput,
+    sp0_modules: &SolverOutput,
+    sp8_modules: &SolverOutput,
+) {
     let d0 = bpp(sp0_modules).unwrap_or_default();
     let d8 = bpp(sp8_modules).unwrap_or_default();
     let md = format!(

@@ -84,12 +84,13 @@ pub fn largest_edge_connected_free_area(
                 if i == 0 || j == 0 || i == nx - 1 || j == ny - 1 {
                     touches_border = true;
                 }
-                let mut push = |ni: usize, nj: usize, st: &mut Vec<(usize, usize)>, seen: &mut [bool]| {
-                    if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
-                        seen[nj * nx + ni] = true;
-                        st.push((ni, nj));
-                    }
-                };
+                let mut push =
+                    |ni: usize, nj: usize, st: &mut Vec<(usize, usize)>, seen: &mut [bool]| {
+                        if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
+                            seen[nj * nx + ni] = true;
+                            st.push((ni, nj));
+                        }
+                    };
                 if i > 0 {
                     push(i - 1, j, &mut stack, &mut seen);
                 }
@@ -136,7 +137,10 @@ pub fn largest_edge_connected_free_slot(
         let cy = sheet_min_y + (j as f64 + 0.5) * ch;
         for i in 0..nx {
             let cx = sheet_min_x + (i as f64 + 0.5) * cw;
-            if occupied.iter().any(|b| cx >= b[0] && cx <= b[2] && cy >= b[1] && cy <= b[3]) {
+            if occupied
+                .iter()
+                .any(|b| cx >= b[0] && cx <= b[2] && cy >= b[1] && cy <= b[3])
+            {
                 occ[j * nx + i] = true;
             }
         }
@@ -165,12 +169,13 @@ pub fn largest_edge_connected_free_slot(
                 if i == 0 || j == 0 || i == nx - 1 || j == ny - 1 {
                     touches_border = true;
                 }
-                let mut push = |ni: usize, nj: usize, st: &mut Vec<(usize, usize)>, seen: &mut [bool]| {
-                    if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
-                        seen[nj * nx + ni] = true;
-                        st.push((ni, nj));
-                    }
-                };
+                let mut push =
+                    |ni: usize, nj: usize, st: &mut Vec<(usize, usize)>, seen: &mut [bool]| {
+                        if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
+                            seen[nj * nx + ni] = true;
+                            st.push((ni, nj));
+                        }
+                    };
                 if i > 0 {
                     push(i - 1, j, &mut stack, &mut seen);
                 }
@@ -270,7 +275,10 @@ impl SheetSkeletonState {
             return false;
         };
         let anchors = s.iter().filter(|a| a.role == SkeletonRole::Anchor).count();
-        let interlocks = s.iter().filter(|a| a.role == SkeletonRole::Interlock).count();
+        let interlocks = s
+            .iter()
+            .filter(|a| a.role == SkeletonRole::Interlock)
+            .count();
         anchors > interlocks
     }
 
@@ -317,7 +325,11 @@ impl RoleInputs {
 /// - `Anchor`    — the sheet has no critical part yet (the edge-anchored first big part).
 /// - `Interlock` — there is an open anchor and the candidate can interlock into it (second big part).
 /// - `BandInsert`— otherwise (the anchor/interlock pair is closed): a separate edge-connected band.
-pub fn assign_role(inputs: &RoleInputs, state: &SheetSkeletonState, sheet_idx: usize) -> SkeletonRole {
+pub fn assign_role(
+    inputs: &RoleInputs,
+    state: &SheetSkeletonState,
+    sheet_idx: usize,
+) -> SkeletonRole {
     if state.critical_count(sheet_idx) == 0 {
         SkeletonRole::Anchor
     } else if state.has_open_anchor(sheet_idx) && inputs.interlock_capable {
@@ -336,13 +348,18 @@ mod skeleton_tests {
         [0.0, 0.0, 100.0, 100.0]
     }
     fn interlocky() -> RoleInputs {
-        RoleInputs { interlock_capable: true }
+        RoleInputs {
+            interlock_capable: true,
+        }
     }
 
     #[test]
     fn empty_sheet_first_critical_is_anchor() {
         let state = SheetSkeletonState::new(2);
-        assert_eq!(assign_role(&interlocky(), &state, SHEET), SkeletonRole::Anchor);
+        assert_eq!(
+            assign_role(&interlocky(), &state, SHEET),
+            SkeletonRole::Anchor
+        );
     }
 
     #[test]
@@ -371,8 +388,13 @@ mod skeleton_tests {
         let mut state = SheetSkeletonState::new(1);
         let r0 = assign_role(&interlocky(), &state, SHEET);
         state.record_admission(SHEET, 0, r0, bbox());
-        let blocky = RoleInputs { interlock_capable: false };
-        assert_eq!(assign_role(&blocky, &state, SHEET), SkeletonRole::BandInsert);
+        let blocky = RoleInputs {
+            interlock_capable: false,
+        };
+        assert_eq!(
+            assign_role(&blocky, &state, SHEET),
+            SkeletonRole::BandInsert
+        );
     }
 
     #[test]

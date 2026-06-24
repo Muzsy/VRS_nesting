@@ -1,0 +1,40 @@
+steps:
+  - name: "Q67 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a production simultaneous critical cutover canvas/YAML/checklist/report vazat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q67_simultaneous_critical_production_cutover.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md"
+
+  - name: "Production simultaneous authority wiring"
+    description: >
+      Kotesd be a critical_simultaneous bounded same-part group admission logikajat a production
+      try_admit_critical utba explicit authority probakent.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/critical_simultaneous.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "codex/reports/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md"
+
+  - name: "Boundary teszt es artifact"
+    description: >
+      Adj uj solve-boundary tesztet a simultaneous production cutoverhoz, es generalj live artifactot.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_q67_simultaneous_cutover.rs"
+      - "artifacts/benchmarks/sgh_q67/simultaneous_critical_production_cutover.json"
+
+  - name: "Checklist es report lezarasa"
+    description: >
+      Frissitsd a checklistet es a reportot konkret path+line evidence-szel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q67_simultaneous_critical_production_cutover.verify.log"

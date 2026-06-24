@@ -91,12 +91,18 @@ pub struct PairCompatibilityIndex {
 
 impl PairCompatibilityIndex {
     pub fn valid_candidates(&self) -> usize {
-        self.candidates.iter().filter(|c| c.cde_clear && c.spacing_clear).count()
+        self.candidates
+            .iter()
+            .filter(|c| c.cde_clear && c.spacing_clear)
+            .count()
     }
 
     pub fn to_diagnostics_json(&self) -> serde_json::Value {
         let by_source = |src: PairCandidateSource| {
-            self.candidates.iter().filter(|c| c.candidate_source == src).count()
+            self.candidates
+                .iter()
+                .filter(|c| c.candidate_source == src)
+                .count()
         };
         let top: Vec<serde_json::Value> = self
             .candidates
@@ -123,7 +129,10 @@ impl PairCompatibilityIndex {
         let lv8_same_part: Vec<serde_json::Value> = self
             .candidates
             .iter()
-            .filter(|c| c.candidate_source == PairCandidateSource::SamePartFlip && c.part_a_id == c.part_b_id)
+            .filter(|c| {
+                c.candidate_source == PairCandidateSource::SamePartFlip
+                    && c.part_a_id == c.part_b_id
+            })
             .map(|c| {
                 serde_json::json!({
                     "part_id": c.part_a_id,
@@ -172,7 +181,12 @@ pub fn interlock_seeds_against_anchor(
     cand_inst: &SPInstance,
 ) -> Vec<LivePairInterlockSeed> {
     let shape = cand_inst.spacing_collision_base_shape.as_ref();
-    let (amnx, amny, amxx, amxy) = (anchor_bbox[0], anchor_bbox[1], anchor_bbox[2], anchor_bbox[3]);
+    let (amnx, amny, amxx, amxy) = (
+        anchor_bbox[0],
+        anchor_bbox[1],
+        anchor_bbox[2],
+        anchor_bbox[3],
+    );
     let anchor_h = amxy - amny;
     let anchor_w = amxx - amnx;
     // Candidate rotations: vertical-alignment + min-width + their 180° flips (deduped).
@@ -189,13 +203,21 @@ pub fn interlock_seeds_against_anchor(
         rots.push(90.0);
     }
     let mut out: Vec<LivePairInterlockSeed> = Vec::new();
-    let mut push = |rmx: f64, rmy: f64, rot: f64, src: &'static str, out: &mut Vec<LivePairInterlockSeed>| {
-        if !out.iter().any(|o: &LivePairInterlockSeed| {
-            (o.rect_min_x - rmx).abs() < 1.0 && (o.rect_min_y - rmy).abs() < 1.0 && (o.rotation_deg - rot).abs() < 1e-6
-        }) {
-            out.push(LivePairInterlockSeed { rect_min_x: rmx, rect_min_y: rmy, rotation_deg: rot, source: src });
-        }
-    };
+    let mut push =
+        |rmx: f64, rmy: f64, rot: f64, src: &'static str, out: &mut Vec<LivePairInterlockSeed>| {
+            if !out.iter().any(|o: &LivePairInterlockSeed| {
+                (o.rect_min_x - rmx).abs() < 1.0
+                    && (o.rect_min_y - rmy).abs() < 1.0
+                    && (o.rotation_deg - rot).abs() < 1e-6
+            }) {
+                out.push(LivePairInterlockSeed {
+                    rect_min_x: rmx,
+                    rect_min_y: rmy,
+                    rotation_deg: rot,
+                    source: src,
+                });
+            }
+        };
     for rot in rots {
         let Some(f) = frame(shape, rot) else { continue };
         let rw = f[2] - f[0];
@@ -207,9 +229,21 @@ pub fn interlock_seeds_against_anchor(
         // (3) overlapping flip-interlock: nudge the candidate into the anchor's long span so the
         //     co-movable separation can resolve it into a nested interlock.
         let overlap_y = amny + anchor_h * 0.5 - rh * 0.5;
-        push(amxx - rw * 0.5, overlap_y, rot, "pair_flip_interlock_x", &mut out);
+        push(
+            amxx - rw * 0.5,
+            overlap_y,
+            rot,
+            "pair_flip_interlock_x",
+            &mut out,
+        );
         let overlap_x = amnx + anchor_w * 0.5 - rw * 0.5;
-        push(overlap_x, amxy - rh * 0.5, rot, "pair_flip_interlock_y", &mut out);
+        push(
+            overlap_x,
+            amxy - rh * 0.5,
+            rot,
+            "pair_flip_interlock_y",
+            &mut out,
+        );
     }
     out
 }
@@ -226,74 +260,44 @@ struct PairPartCtx {
     spacing_shape: Rc<CdeBaseShape>,
 }
 
-/// Build the critical-only pair compatibility index for `parts` on a representative sheet.
-pub fn build_pair_compatibility_index(
-    parts: &[Part],
-    sheet_width: f64,
-    sheet_height: f64,
-    spacing_mm: f64,
-    config: PairIndexConfig,
-) -> Result<PairCompatibilityIndex, String> {
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
-    let raw_stock = crate::sheet::Stock {
-        id: "S_PAIR".to_string(),
-        quantity: parts.len().max(1) as i64,
-        width: Some(sheet_width),
-        height: Some(sheet_height),
-        outer_points: None,
-        holes_points: None,
-        cost_per_use: None,
-    };
-    let raw_sheet = crate::sheet::stock_to_shape(&raw_stock)?;
-    let cfg = SparrowConfig::from_solver_input(1.0, CollisionBackendKind::Cde, rotation_context.clone(), 42)
-        .with_spacing_mm(spacing_mm);
-    let problem = SparrowProblem::from_solver_input(
-        parts,
-        std::slice::from_ref(&raw_sheet),
-        &rotation_context,
-        Vec::new(),
-        cfg,
-    )?;
-
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut ctxs: Vec<PairPartCtx> = Vec::new();
-    for inst in &problem.instances {
-        if !seen.insert(inst.part_id.clone()) {
-            continue;
-        }
-        let pa = inst.part_analysis.as_ref();
-        let sp = inst.shape_profile.as_ref();
-        let mut rots: Vec<f64> = inst
-            .orientation_catalog
-            .candidates
-            .iter()
-            .filter(|c| {
-                matches!(
-                    c.kind,
-                    OrientationCandidateKind::SheetVerticalAlignment
-                        | OrientationCandidateKind::MinWidth
-                        | OrientationCandidateKind::SheetHorizontalAlignment
-                )
-            })
-            .map(|c| c.angle_deg)
-            .collect();
-        rots.dedup_by(|a, b| (*a - *b).abs() < 0.01);
-        if rots.is_empty() {
-            rots.push(0.0);
-        }
-        ctxs.push(PairPartCtx {
-            part_id: inst.part_id.clone(),
-            family_key: pa.family_key.clone(),
-            is_critical: sp.is_critical(),
-            is_large_anchor: sp.is_large_anchor,
-            is_high_interlock: sp.is_high_interlock_potential,
-            interlock_potential: pa.interlock_potential_score,
-            primary_rotations: rots,
-            spacing_shape: Rc::clone(&inst.spacing_collision_base_shape),
-        });
+fn build_pair_part_ctx(inst: &SPInstance) -> PairPartCtx {
+    let pa = inst.part_analysis.as_ref();
+    let sp = inst.shape_profile.as_ref();
+    let mut rots: Vec<f64> = inst
+        .orientation_catalog
+        .candidates
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.kind,
+                OrientationCandidateKind::SheetVerticalAlignment
+                    | OrientationCandidateKind::MinWidth
+                    | OrientationCandidateKind::SheetHorizontalAlignment
+            )
+        })
+        .map(|c| c.angle_deg)
+        .collect();
+    rots.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+    if rots.is_empty() {
+        rots.push(0.0);
     }
+    PairPartCtx {
+        part_id: inst.part_id.clone(),
+        family_key: pa.family_key.clone(),
+        is_critical: sp.is_critical(),
+        is_large_anchor: sp.is_large_anchor,
+        is_high_interlock: sp.is_high_interlock_potential,
+        interlock_potential: pa.interlock_potential_score,
+        primary_rotations: rots,
+        spacing_shape: Rc::clone(&inst.spacing_collision_base_shape),
+    }
+}
+
+fn build_pair_index_from_contexts(
+    ctxs: Vec<PairPartCtx>,
+    config: PairIndexConfig,
+) -> PairCompatibilityIndex {
     let unique_part_count = ctxs.len();
-    // Critical-only, bounded.
     let critical: Vec<&PairPartCtx> = ctxs
         .iter()
         .filter(|c| c.is_critical)
@@ -305,7 +309,6 @@ pub fn build_pair_compatibility_index(
     for (i, a) in critical.iter().enumerate() {
         let mut per_part = 0usize;
         for b in critical.iter().skip(i) {
-            // Stage-1 cheap filter: skip pairs that aren't structurally interesting.
             let same_part = a.part_id == b.part_id;
             let same_family = a.family_key == b.family_key && !a.family_key.is_empty();
             let cheap_ok = same_part
@@ -316,7 +319,6 @@ pub fn build_pair_compatibility_index(
             if !cheap_ok {
                 continue;
             }
-            // Stage-2 bounded geometric candidates.
             let mut local = generate_pair_candidates(a, b, same_part, same_family);
             local.sort_by(|x, y| y.score.partial_cmp(&x.score).unwrap_or(Ordering::Equal));
             local.truncate(config.topk_per_part);
@@ -344,11 +346,75 @@ pub fn build_pair_compatibility_index(
     });
     candidates.truncate(config.max_candidates);
 
-    Ok(PairCompatibilityIndex {
+    PairCompatibilityIndex {
         unique_part_count,
         critical_part_type_count,
         candidates,
-    })
+    }
+}
+
+/// Build the pair index directly from the already-expanded live solver instances.
+///
+/// This is the production cutover entry point: it reuses the same shared per-part caches the solver
+/// already built (`shape_profile`, `orientation_catalog`, `part_analysis`, spacing-expanded contour),
+/// so the production Interlock role consumes the real Q57 knowledge instead of a parallel demo path.
+pub fn build_pair_compatibility_index_for_instances(
+    instances: &[&SPInstance],
+    config: PairIndexConfig,
+) -> PairCompatibilityIndex {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut ctxs: Vec<PairPartCtx> = Vec::new();
+    for inst in instances {
+        if seen.insert(inst.part_id.clone()) {
+            ctxs.push(build_pair_part_ctx(inst));
+        }
+    }
+    build_pair_index_from_contexts(ctxs, config)
+}
+
+/// Build the critical-only pair compatibility index for `parts` on a representative sheet.
+pub fn build_pair_compatibility_index(
+    parts: &[Part],
+    sheet_width: f64,
+    sheet_height: f64,
+    spacing_mm: f64,
+    config: PairIndexConfig,
+) -> Result<PairCompatibilityIndex, String> {
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let raw_stock = crate::sheet::Stock {
+        id: "S_PAIR".to_string(),
+        quantity: parts.len().max(1) as i64,
+        width: Some(sheet_width),
+        height: Some(sheet_height),
+        outer_points: None,
+        holes_points: None,
+        cost_per_use: None,
+    };
+    let raw_sheet = crate::sheet::stock_to_shape(&raw_stock)?;
+    let cfg = SparrowConfig::from_solver_input(
+        1.0,
+        CollisionBackendKind::Cde,
+        rotation_context.clone(),
+        42,
+    )
+    .with_spacing_mm(spacing_mm);
+    let problem = SparrowProblem::from_solver_input(
+        parts,
+        std::slice::from_ref(&raw_sheet),
+        &rotation_context,
+        Vec::new(),
+        cfg,
+    )?;
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut ctxs: Vec<PairPartCtx> = Vec::new();
+    for inst in &problem.instances {
+        if seen.insert(inst.part_id.clone()) {
+            ctxs.push(build_pair_part_ctx(inst));
+        }
+    }
+    Ok(build_pair_index_from_contexts(ctxs, config))
 }
 
 fn generate_pair_candidates(
@@ -362,7 +428,10 @@ fn generate_pair_candidates(
     let rot_b = b.primary_rotations[0];
 
     // (1) Dominant-edge-parallel side-by-side along X (B placed to the right of A, contours adjacent).
-    if let (Some(fa), Some(fb)) = (frame(&a.spacing_shape, rot_a), frame(&b.spacing_shape, rot_b)) {
+    if let (Some(fa), Some(fb)) = (
+        frame(&a.spacing_shape, rot_a),
+        frame(&b.spacing_shape, rot_b),
+    ) {
         let dx = (fa[2] - fa[0]) + SIDE_GAP_MM; // shift B right by A's width
         let dy = 0.0;
         let src = if same_part {
@@ -378,14 +447,37 @@ fn generate_pair_candidates(
     // (2) Same-part / same-family flip: B = partner at rot+180, nudged into A's long span (interlock).
     if same_part || same_family {
         let rot_b_flip = rot_a + 180.0;
-        if let (Some(fa), Some(fb)) = (frame(&a.spacing_shape, rot_a), frame(&b.spacing_shape, rot_b_flip)) {
+        if let (Some(fa), Some(fb)) = (
+            frame(&a.spacing_shape, rot_a),
+            frame(&b.spacing_shape, rot_b_flip),
+        ) {
             let a_h = fa[3] - fa[1];
             // Stack vertically but nudge down so the flipped partner interlocks into A's long span.
             let dy = a_h - INTERLOCK_OVERLAP_FRAC * a_h;
-            out.push(assess_pair(a, b, rot_a, rot_b_flip, 0.0, dy, &fa, &fb, PairCandidateSource::SamePartFlip));
+            out.push(assess_pair(
+                a,
+                b,
+                rot_a,
+                rot_b_flip,
+                0.0,
+                dy,
+                &fa,
+                &fb,
+                PairCandidateSource::SamePartFlip,
+            ));
             // Also a guaranteed-clear stacked variant (no interlock overlap) as a valid baseline.
             let dy_clear = a_h + SIDE_GAP_MM;
-            out.push(assess_pair(a, b, rot_a, rot_b_flip, 0.0, dy_clear, &fa, &fb, PairCandidateSource::SamePartFlip));
+            out.push(assess_pair(
+                a,
+                b,
+                rot_a,
+                rot_b_flip,
+                0.0,
+                dy_clear,
+                &fa,
+                &fb,
+                PairCandidateSource::SamePartFlip,
+            ));
         }
     }
 
@@ -395,7 +487,17 @@ fn generate_pair_candidates(
         let rb = *b.primary_rotations.last().unwrap();
         if let (Some(fa), Some(fb)) = (frame(&a.spacing_shape, ra), frame(&b.spacing_shape, rb)) {
             let dx = (fa[2] - fa[0]) + SIDE_GAP_MM;
-            out.push(assess_pair(a, b, ra, rb, dx, 0.0, &fa, &fb, PairCandidateSource::OrientationCatalogPair));
+            out.push(assess_pair(
+                a,
+                b,
+                ra,
+                rb,
+                dx,
+                0.0,
+                &fa,
+                &fb,
+                PairCandidateSource::OrientationCatalogPair,
+            ));
         }
     }
     out
@@ -426,7 +528,16 @@ fn assess_pair(
     let cde_clear = if !bbox_overlap {
         true
     } else {
-        !contours_overlap(&a.spacing_shape, rot_a, 0.0, 0.0, &b.spacing_shape, rot_b, dx, dy)
+        !contours_overlap(
+            &a.spacing_shape,
+            rot_a,
+            0.0,
+            0.0,
+            &b.spacing_shape,
+            rot_b,
+            dx,
+            dy,
+        )
     };
 
     // Combined bbox vs two separate bboxes → compactness.
@@ -573,7 +684,10 @@ fn point_in_poly(x: f64, y: f64, poly: &[(f64, f64)]) -> bool {
 }
 
 fn env_usize(key: &str, default: usize) -> usize {
-    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 fn round4(v: f64) -> f64 {
@@ -618,7 +732,10 @@ mod tests {
         let parts = vec![rect("big", 1200.0, 300.0, 6), rect("tiny", 20.0, 20.0, 40)];
         let index = idx(&parts);
         assert!(
-            index.candidates.iter().all(|c| c.part_a_id != "tiny" && c.part_b_id != "tiny"),
+            index
+                .candidates
+                .iter()
+                .all(|c| c.part_a_id != "tiny" && c.part_b_id != "tiny"),
             "tiny filler must not appear in the critical-only index"
         );
     }
@@ -640,7 +757,10 @@ mod tests {
         let parts = vec![rect("big", 1200.0, 300.0, 6)];
         let index = idx(&parts);
         assert!(!index.candidates.is_empty());
-        assert!(index.valid_candidates() >= 1, "must have at least one valid (clear) pair candidate");
+        assert!(
+            index.valid_candidates() >= 1,
+            "must have at least one valid (clear) pair candidate"
+        );
         for c in &index.candidates {
             assert!(c.rotation_a_deg.is_finite() && c.rotation_b_deg.is_finite());
         }

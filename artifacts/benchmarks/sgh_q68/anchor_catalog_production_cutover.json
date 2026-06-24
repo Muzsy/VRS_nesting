@@ -1,0 +1,240 @@
+{
+  "anchor_catalog": {
+    "candidates_generated": 24,
+    "preview": [
+      {
+        "is_corner": true,
+        "is_fractional": false,
+        "rect_min_x": 0.0,
+        "rect_min_y": 0.0,
+        "rotation_deg": 90.0,
+        "secondary_axis_policy": "corner_low",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": 257,
+        "target_sheet_edge": "left"
+      },
+      {
+        "is_corner": true,
+        "is_fractional": false,
+        "rect_min_x": 0.0,
+        "rect_min_y": 478.0064000000002,
+        "rotation_deg": 90.0,
+        "secondary_axis_policy": "corner_high",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": 257,
+        "target_sheet_edge": "left"
+      },
+      {
+        "is_corner": true,
+        "is_fractional": false,
+        "rect_min_x": 767.2,
+        "rect_min_y": 0.0,
+        "rotation_deg": 90.0,
+        "secondary_axis_policy": "corner_low",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": 257,
+        "target_sheet_edge": "right"
+      },
+      {
+        "is_corner": true,
+        "is_fractional": false,
+        "rect_min_x": 767.2,
+        "rect_min_y": 478.0064000000002,
+        "rotation_deg": 90.0,
+        "secondary_axis_policy": "corner_high",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": 257,
+        "target_sheet_edge": "right"
+      },
+      {
+        "is_corner": true,
+        "is_fractional": true,
+        "rect_min_x": 0.0,
+        "rect_min_y": 0.0,
+        "rotation_deg": 92.75,
+        "secondary_axis_policy": "corner_low",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": null,
+        "target_sheet_edge": "left"
+      },
+      {
+        "is_corner": true,
+        "is_fractional": true,
+        "rect_min_x": 0.0,
+        "rect_min_y": 456.3267688602914,
+        "rotation_deg": 92.75,
+        "secondary_axis_policy": "corner_high",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": null,
+        "target_sheet_edge": "left"
+      },
+      {
+        "is_corner": true,
+        "is_fractional": true,
+        "rect_min_x": 767.7858136370733,
+        "rect_min_y": 0.0,
+        "rotation_deg": 92.75,
+        "secondary_axis_policy": "corner_low",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": null,
+        "target_sheet_edge": "right"
+      },
+      {
+        "is_corner": true,
+        "is_fractional": true,
+        "rect_min_x": 767.7858136370733,
+        "rect_min_y": 456.3267688602914,
+        "rotation_deg": 92.75,
+        "secondary_axis_policy": "corner_high",
+        "source": "sheet_edge_placement_catalog",
+        "source_edge_index": null,
+        "target_sheet_edge": "right"
+      }
+    ]
+  },
+  "authority_policy_examples": {
+    "feature_10_catalog_10": "catalog",
+    "feature_10_catalog_10_5": "catalog",
+    "feature_10_catalog_9_5": "feature"
+  },
+  "feature_path": {
+    "preview": [
+      {
+        "alignment_kind": "sheet_edge_left",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": true,
+        "rotation_seed_deg": 99.98046875,
+        "seed_rotation_deg": 90.0,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.2,
+        "target_axis_angle_deg": 90.0,
+        "target_feature_type": "sheet_edge",
+        "x": 0.02,
+        "y": 18.934200000000057
+      },
+      {
+        "alignment_kind": "sheet_edge_left",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": true,
+        "rotation_seed_deg": 102.125,
+        "seed_rotation_deg": 92.75,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.2,
+        "target_axis_angle_deg": 90.0,
+        "target_feature_type": "sheet_edge",
+        "x": 0.0,
+        "y": 13.771436801509182
+      },
+      {
+        "alignment_kind": "sheet_edge_left",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": true,
+        "rotation_seed_deg": 268.75,
+        "seed_rotation_deg": 270.0,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.2,
+        "target_axis_angle_deg": 270.0,
+        "target_feature_type": "sheet_edge",
+        "x": 0.0,
+        "y": 6.324660363821836
+      },
+      {
+        "alignment_kind": "sheet_edge_left",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": true,
+        "rotation_seed_deg": 282.125,
+        "seed_rotation_deg": 272.75,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.2,
+        "target_axis_angle_deg": 270.0,
+        "target_feature_type": "sheet_edge",
+        "x": 0.02,
+        "y": 16.210162630247833
+      },
+      {
+        "alignment_kind": "sheet_edge_right",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": true,
+        "rotation_seed_deg": 94.375,
+        "seed_rotation_deg": 90.0,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.18,
+        "target_axis_angle_deg": 90.0,
+        "target_feature_type": "sheet_edge",
+        "x": 11.981027771395944,
+        "y": 4.858415982007621
+      },
+      {
+        "alignment_kind": "sheet_edge_right",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": false,
+        "rotation_seed_deg": 92.75,
+        "seed_rotation_deg": 92.75,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.18,
+        "target_axis_angle_deg": 90.0,
+        "target_feature_type": "sheet_edge",
+        "x": 767.7858136370733,
+        "y": 228.1633844301457
+      },
+      {
+        "alignment_kind": "sheet_edge_right",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": true,
+        "rotation_seed_deg": 274.9609375,
+        "seed_rotation_deg": 270.0,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.18,
+        "target_axis_angle_deg": 270.0,
+        "target_feature_type": "sheet_edge",
+        "x": 1.4550774908642683,
+        "y": 0.8895834124581725
+      },
+      {
+        "alignment_kind": "sheet_edge_right",
+        "moving_feature_type": "dominant_edge",
+        "refine_success": false,
+        "rotation_seed_deg": 272.75,
+        "seed_rotation_deg": 272.75,
+        "selected_edge_angle_deg": 0.0,
+        "selected_edge_index": 257,
+        "source": "ContourFeature",
+        "source_score": 1.18,
+        "target_axis_angle_deg": 270.0,
+        "target_feature_type": "sheet_edge",
+        "x": 767.7858136370733,
+        "y": 228.16338443014592
+      }
+    ],
+    "seeds_generated": 8,
+    "sheet_edge_seeds_generated": 8
+  },
+  "fixture": "artifacts/benchmarks/sgh_q51/inputs/q51_6big_sp0.json",
+  "orientation_catalog_angles_deg": [
+    0.0,
+    90.0,
+    92.75,
+    2.7500000000000004,
+    180.0,
+    270.0
+  ],
+  "part_id": "Lv8_11612_6db",
+  "sheet_size": {
+    "height": 3000.0,
+    "width": 1500.0
+  }
+}

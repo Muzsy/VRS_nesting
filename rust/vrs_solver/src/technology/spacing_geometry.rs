@@ -214,7 +214,11 @@ pub fn validate_spacing_offset_outer_contour(
     // Outward offset bbox must not be smaller than the original bbox.
     let (omin_x, omin_y, omax_x, omax_y) = bbox(original);
     let (fmin_x, fmin_y, fmax_x, fmax_y) = bbox(offset);
-    if fmin_x > omin_x + EPS || fmin_y > omin_y + EPS || fmax_x < omax_x - EPS || fmax_y < omax_y - EPS {
+    if fmin_x > omin_x + EPS
+        || fmin_y > omin_y + EPS
+        || fmax_x < omax_x - EPS
+        || fmax_y < omax_y - EPS
+    {
         return Err(SpacingGeometryError::SelfIntersecting(
             "offset bbox is smaller than original bbox (not outward)".to_string(),
         ));
@@ -399,7 +403,10 @@ mod tests {
         // A bbox-expand would yield a rectangle of area ~ (24*24)=576. A true (robust)
         // offset of a right triangle (area 200) stays well below that bbox-rectangle area.
         let area = polygon_area(&out).abs();
-        assert!(area > 200.0 && area < 560.0, "offset area {area} should be a true offset, not bbox");
+        assert!(
+            area > 200.0 && area < 560.0,
+            "offset area {area} should be a true offset, not bbox"
+        );
     }
 
     #[test]

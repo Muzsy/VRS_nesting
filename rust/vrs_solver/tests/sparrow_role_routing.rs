@@ -43,10 +43,18 @@ fn role_routing_fills_per_role_counts_and_no_regression() {
     std::env::remove_var("VRS_SHEET_BUILDER_SKELETON");
     let off = solve_json(&input);
     assert_eq!(off.status, "ok");
-    let off_sheets = off.placements.iter().map(|p| p.sheet_index).collect::<std::collections::BTreeSet<_>>().len();
+    let off_sheets = off
+        .placements
+        .iter()
+        .map(|p| p.sheet_index)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
     let ob = od(&off).bpp_reduction.as_ref().expect("bpp");
     assert_eq!(
-        (ob.bpp_role_interlock_generated, ob.bpp_role_band_insert_generated),
+        (
+            ob.bpp_role_interlock_generated,
+            ob.bpp_role_band_insert_generated
+        ),
         (0, 0),
         "skeleton off must not route by role"
     );
@@ -65,6 +73,14 @@ fn role_routing_fills_per_role_counts_and_no_regression() {
         "role-routed candidate generation must be live on the skeleton path"
     );
     // No regression on used-sheet count.
-    let on_sheets = on.placements.iter().map(|p| p.sheet_index).collect::<std::collections::BTreeSet<_>>().len();
-    assert!(on_sheets <= off_sheets, "skeleton must not regress used sheets: on={on_sheets} off={off_sheets}");
+    let on_sheets = on
+        .placements
+        .iter()
+        .map(|p| p.sheet_index)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    assert!(
+        on_sheets <= off_sheets,
+        "skeleton must not regress used sheets: on={on_sheets} off={off_sheets}"
+    );
 }

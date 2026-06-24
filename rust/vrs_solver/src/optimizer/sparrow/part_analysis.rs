@@ -191,18 +191,20 @@ impl PartAnalysis {
             (0.55 * anisotropy + 0.35 * slender_norm + fractional_bump).clamp(0.0, 1.0);
 
         // Symmetry proxy: regular, well-filled, convex, low-aspect parts read as near-symmetric.
-        let symmetry_score = (sp.fill_ratio * sp.convexity_ratio
-            * (1.0 - slender_norm))
-            .clamp(0.0, 1.0);
+        let symmetry_score =
+            (sp.fill_ratio * sp.convexity_ratio * (1.0 - slender_norm)).clamp(0.0, 1.0);
 
         // Interlock potential: concavity depth + concave/protrusion feature richness.
-        let concavity_richness = ((summary.concave_vertex_count + summary.protrusion_candidate_count)
-            as f64
-            / 8.0)
-            .clamp(0.0, 1.0);
+        let concavity_richness =
+            ((summary.concave_vertex_count + summary.protrusion_candidate_count) as f64 / 8.0)
+                .clamp(0.0, 1.0);
         let interlock_potential_score = (0.5 * (1.0 - sp.convexity_ratio)
             + 0.3 * concavity_richness
-            + if sp.is_high_interlock_potential { 0.2 } else { 0.0 })
+            + if sp.is_high_interlock_potential {
+                0.2
+            } else {
+                0.0
+            })
         .clamp(0.0, 1.0);
 
         let critical_anchor_score = (0.5 * sp.bbox_sheet_span_ratio
@@ -276,11 +278,17 @@ impl PartAnalysis {
             protrusion_count: summary.protrusion_candidate_count,
             outer_contour_complexity: summary.contour_vertex_count,
             orientation_candidate_count: cand_count,
-            orientation_fractional_count: orientation_catalog.diagnostics.fractional_candidate_count,
+            orientation_fractional_count: orientation_catalog
+                .diagnostics
+                .fractional_candidate_count,
             hole_count_in_solver_input: if hole_free { 0 } else { 1 },
             // Q56B only records the observed hole-free state of the solver input; the full worker
             // bridge contract is Q56B2's responsibility.
-            cavity_prepack_bridge_status: if hole_free { "hole_free_observed" } else { "holes_present" },
+            cavity_prepack_bridge_status: if hole_free {
+                "hole_free_observed"
+            } else {
+                "holes_present"
+            },
         };
 
         PartAnalysis {
@@ -369,7 +377,8 @@ impl PartAnalysis {
 /// Build per-unique-part analyses for a set of parts on a single sheet (real solver path), and emit a
 /// run-level summary JSON (per-part records + sorted top-lists). Mirrors the Q56A builder pattern.
 pub fn summarize_part_analyses(analyses: &[PartAnalysis]) -> serde_json::Value {
-    let records: Vec<serde_json::Value> = analyses.iter().map(|a| a.to_diagnostics_json()).collect();
+    let records: Vec<serde_json::Value> =
+        analyses.iter().map(|a| a.to_diagnostics_json()).collect();
 
     let critical: Vec<&PartAnalysis> = analyses
         .iter()
@@ -400,7 +409,8 @@ pub fn summarize_part_analyses(analyses: &[PartAnalysis]) -> serde_json::Value {
             .then_with(|| a.part_id.cmp(&b.part_id))
     });
 
-    let ids = |v: &[&PartAnalysis]| -> Vec<String> { v.iter().map(|a| a.part_id.clone()).collect() };
+    let ids =
+        |v: &[&PartAnalysis]| -> Vec<String> { v.iter().map(|a| a.part_id.clone()).collect() };
     let tiny: Vec<String> = analyses
         .iter()
         .filter(|a| a.has_tag(ShapeTag::TinyFiller))
@@ -433,7 +443,8 @@ pub fn build_part_analyses_for_parts(
     sheet_height: f64,
     spacing_mm: f64,
 ) -> Result<Vec<PartAnalysis>, String> {
-    let rotation_context = RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
+    let rotation_context =
+        RotationResolveContext::new(Some(RotationPolicyKind::Continuous), 42, 24);
     let raw_stock = crate::sheet::Stock {
         id: "S_ANALYSIS".to_string(),
         quantity: parts.len().max(1) as i64,
@@ -549,8 +560,14 @@ mod tests {
         // not clear the dominant-edge threshold, by design of the Q53A extractor).
         let p = rect("big", 1400.0, 300.0, 1);
         let a = analysis(&p, 1500.0);
-        assert!(a.has_tag(ShapeTag::LargeAnchor), "large part must be large_anchor");
-        assert!(a.has_tag(ShapeTag::EdgeAlignable), "elongated rect has dominant edges → edge_alignable");
+        assert!(
+            a.has_tag(ShapeTag::LargeAnchor),
+            "large part must be large_anchor"
+        );
+        assert!(
+            a.has_tag(ShapeTag::EdgeAlignable),
+            "elongated rect has dominant edges → edge_alignable"
+        );
         assert!(a.diagnostics.criticality_tier == "critical");
     }
 
@@ -558,8 +575,14 @@ mod tests {
     fn tiny_filler_is_not_an_anchor() {
         let p = rect("tiny", 20.0, 20.0, 1);
         let a = analysis(&p, 1500.0);
-        assert!(a.has_tag(ShapeTag::TinyFiller), "small part must be tiny_filler");
-        assert!(!a.has_tag(ShapeTag::LargeAnchor), "tiny filler must not be large_anchor");
+        assert!(
+            a.has_tag(ShapeTag::TinyFiller),
+            "small part must be tiny_filler"
+        );
+        assert!(
+            !a.has_tag(ShapeTag::LargeAnchor),
+            "tiny filler must not be large_anchor"
+        );
         assert!(!a.has_tag(ShapeTag::CriticalLarge));
     }
 
@@ -570,7 +593,10 @@ mod tests {
         // The reused profile is shared, not duplicated: its fields are still available verbatim.
         assert_eq!(a.shape_profile.quantity, 3);
         assert!(a.shape_profile.aspect_ratio > 1.0);
-        assert!(a.hole_free_solver_input, "no holes → hole-free solver input");
+        assert!(
+            a.hole_free_solver_input,
+            "no holes → hole-free solver input"
+        );
     }
 
     #[test]

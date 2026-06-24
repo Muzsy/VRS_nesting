@@ -1,0 +1,46 @@
+steps:
+  - name: "Audit gap konkretizalasa"
+    description: >
+      Rogzitsd, hogy a Q58 helper-modulok meglevo implementacioja a production builderben jelenleg
+      nem vezerli a critical queue/quota/frontier donteseket.
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+
+  - name: "Task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a Q66 canvas/YAML/checklist/report vazat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q66_sheet_feasibility_hints_production_cutover.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+
+  - name: "Production hint wiring"
+    description: >
+      Kotesd be a SheetFeasibilityHints fogyasztast a production build_critical_aware_seed()
+      builderbe: queue reorder, per-sheet kvota, frontier extension, best-partial diagnozis.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "codex/reports/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+
+  - name: "Production boundary teszt es artifact"
+    description: >
+      Adj uj solve-boundary tesztet es generalj artifactot a live sheet-feasibility hint cutoverrol.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_q66_sheet_feasibility_cutover.rs"
+      - "artifacts/benchmarks/sgh_q66/sheet_feasibility_production_cutover.json"
+
+  - name: "Checklist es report lezarasa"
+    description: >
+      Frissitsd a checklistet es a reportot konkret path+line evidence-szel.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q66_sheet_feasibility_hints_production_cutover.verify.log"

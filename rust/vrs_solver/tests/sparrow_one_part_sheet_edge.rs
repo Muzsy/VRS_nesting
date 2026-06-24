@@ -113,8 +113,14 @@ fn render_svg(report: &SheetEdgeVerificationReport, cand: &SheetEdgeCandidateRep
             )
         }
         "right" => {
-            let (a, b) = (tx(SHEET_W, 0.0, scale, pad), tx(SHEET_W, SHEET_H, scale, pad));
-            let (c, d) = (tx(SHEET_W - m, 0.0, scale, pad), tx(SHEET_W - m, SHEET_H, scale, pad));
+            let (a, b) = (
+                tx(SHEET_W, 0.0, scale, pad),
+                tx(SHEET_W, SHEET_H, scale, pad),
+            );
+            let (c, d) = (
+                tx(SHEET_W - m, 0.0, scale, pad),
+                tx(SHEET_W - m, SHEET_H, scale, pad),
+            );
             format!(
                 "<line x1='{:.2}' y1='{:.2}' x2='{:.2}' y2='{:.2}' stroke='red' stroke-width='4'/>\
                  <line x1='{:.2}' y1='{:.2}' x2='{:.2}' y2='{:.2}' stroke='green' stroke-width='2'/>",
@@ -131,8 +137,14 @@ fn render_svg(report: &SheetEdgeVerificationReport, cand: &SheetEdgeCandidateRep
             )
         }
         _ => {
-            let (a, b) = (tx(0.0, SHEET_H, scale, pad), tx(SHEET_W, SHEET_H, scale, pad));
-            let (c, d) = (tx(0.0, SHEET_H - m, scale, pad), tx(SHEET_W, SHEET_H - m, scale, pad));
+            let (a, b) = (
+                tx(0.0, SHEET_H, scale, pad),
+                tx(SHEET_W, SHEET_H, scale, pad),
+            );
+            let (c, d) = (
+                tx(0.0, SHEET_H - m, scale, pad),
+                tx(SHEET_W, SHEET_H - m, scale, pad),
+            );
             format!(
                 "<line x1='{:.2}' y1='{:.2}' x2='{:.2}' y2='{:.2}' stroke='red' stroke-width='4'/>\
                  <line x1='{:.2}' y1='{:.2}' x2='{:.2}' y2='{:.2}' stroke='green' stroke-width='2'/>",
@@ -205,8 +217,9 @@ fn lv8_critical_part_true_extreme_sheet_edge_placement() {
     let part = load_lv8_critical_part();
     let part_id = part.id.clone();
 
-    let report = verify_one_part_sheet_edge_placement(&part, SHEET_W, SHEET_H, MARGIN_MM, SPACING_MM)
-        .expect("verification runs");
+    let report =
+        verify_one_part_sheet_edge_placement(&part, SHEET_W, SHEET_H, MARGIN_MM, SPACING_MM)
+            .expect("verification runs");
 
     let dir = out_dir();
 
@@ -265,8 +278,14 @@ fn lv8_critical_part_true_extreme_sheet_edge_placement() {
     assert_eq!(report.placed_count, 1);
     assert_eq!(report.unplaced_count, 0);
     assert!(cand.continuous_rotation, "rotation must be continuous");
-    assert!(cand.boundary_clear, "accepted candidate must be boundary clear");
-    assert_eq!(cand.collision_pairs, 0, "single part => zero collision pairs");
+    assert!(
+        cand.boundary_clear,
+        "accepted candidate must be boundary clear"
+    );
+    assert_eq!(
+        cand.collision_pairs, 0,
+        "single part => zero collision pairs"
+    );
     assert!(
         cand.margin_error_mm <= 0.05,
         "physical contour must land on the margin line within 0.05 mm (got {:.5})",
@@ -300,8 +319,11 @@ fn lv8_critical_part_true_extreme_sheet_edge_placement() {
     let svg_path = dir.join("one_part_sheet_edge.svg");
     std::fs::write(&svg_path, &svg).expect("write svg");
     let proof_svg = render_svg(&report, proof);
-    std::fs::write(dir.join("one_part_sheet_edge_minwidth_proof.svg"), &proof_svg)
-        .expect("write proof svg");
+    std::fs::write(
+        dir.join("one_part_sheet_edge_minwidth_proof.svg"),
+        &proof_svg,
+    )
+    .expect("write proof svg");
 
     // Compact accepted summary for the renderer.
     let accepted_json = serde_json::json!({

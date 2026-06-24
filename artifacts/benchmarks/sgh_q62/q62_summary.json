@@ -1,0 +1,68 @@
+{
+  "task": "sgh_q62_full276_lv8_spacing5_two_sheet_rerun",
+  "source_package": "artifacts/benchmarks/sgh_q49/inputs/q49_full276_6x1500x3000_margin5_spacing8_continuous_300.json",
+  "time_limit_s": 600,
+  "stocks": {
+    "quantity": 2,
+    "width": 1500.0,
+    "height": 3000.0
+  },
+  "technology": {
+    "margin_mm": 5.0,
+    "spacing_mm": 5.0,
+    "kerf_mm": 0.0,
+    "rotation_policy": "continuous"
+  },
+  "run_a_current_q61": {
+    "status": "partial",
+    "placed_count": 259,
+    "unplaced_count": 17,
+    "used_sheets": 2,
+    "utilization_pct": 49.96641349141249,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "builder_applied": true,
+    "critical_admitted": 2,
+    "max_critical_per_sheet": 2,
+    "feature_candidates_generated": 359,
+    "feature_candidates_accepted": 2,
+    "pair_candidates_generated": 0,
+    "pair_candidates_accepted": 0,
+    "anchor_catalog_consulted": true,
+    "best_partial_max_critical_count": 2,
+    "simultaneous_group_attempts": 5,
+    "pair_rejection_summary": null,
+    "critical_phase_close_reason": "deadline",
+    "wall_time_s": 181.3
+  },
+  "run_b_builder_only": {
+    "status": "partial",
+    "placed_count": 252,
+    "unplaced_count": 24,
+    "used_sheets": 2,
+    "utilization_pct": 40.48378391770911,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "builder_applied": true,
+    "critical_admitted": 2,
+    "max_critical_per_sheet": 2,
+    "feature_candidates_generated": 0,
+    "feature_candidates_accepted": 0,
+    "pair_candidates_generated": 0,
+    "pair_candidates_accepted": 0,
+    "anchor_catalog_consulted": false,
+    "best_partial_max_critical_count": 2,
+    "simultaneous_group_attempts": 0,
+    "pair_rejection_summary": null,
+    "critical_phase_close_reason": "frontier_fail_limit",
+    "wall_time_s": 179.9
+  },
+  "acceptance": {
+    "current_solver_valid_276": false,
+    "current_solver_two_sheets": false,
+    "baseline_valid": false,
+    "no_worse_than_baseline_on_placed": true
+  },
+  "verdict": "FAIL",
+  "finding": "The current Q61-wired solver did not reach the requested 2-sheet full-valid target on the Q49 full276 LV8 package at spacing 5 / margin 5. The saved diagnostics capture the actual placed-count, used-sheet count, and Q61 critical-admission counters."
+}

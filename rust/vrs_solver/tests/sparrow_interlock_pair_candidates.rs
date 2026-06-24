@@ -12,7 +12,9 @@ use vrs_solver::optimizer::sparrow::interlock_pair::admit_interlock_pair;
 use vrs_solver::rotation_policy::RotationPolicyKind;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 fn lv8() -> Part {

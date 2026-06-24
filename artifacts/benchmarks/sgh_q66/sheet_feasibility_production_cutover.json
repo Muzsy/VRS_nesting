@@ -1,0 +1,36 @@
+{
+  "gate_off": {
+    "max_per_sheet": 1,
+    "placed": 4,
+    "sheet_feasibility_hints_used": false,
+    "status": "partial"
+  },
+  "gate_on": {
+    "hint_frontier_extension_applied": true,
+    "hint_queue_reorder_applied": false,
+    "hint_quota_abandoned_reason": "sheet=0 target_quota=2 best_partial=1 useful_partial=true close_reason=deadline",
+    "max_per_sheet": 1,
+    "placed": 4,
+    "sheet_best_partial_critical_count": 1,
+    "sheet_best_partial_source": "generic",
+    "sheet_feasibility_hints_used": true,
+    "sheet_target_quota": [
+      [
+        "Lv8_11612_6db",
+        2
+      ]
+    ],
+    "sheet_target_quota_met": false,
+    "status": "partial",
+    "target_critical_distribution": [
+      [
+        "Lv8_11612_6db",
+        [
+          2,
+          2,
+          2
+        ]
+      ]
+    ]
+  }
+}

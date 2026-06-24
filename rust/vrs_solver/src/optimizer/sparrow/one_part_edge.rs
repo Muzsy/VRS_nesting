@@ -40,7 +40,7 @@ impl SheetEdge {
     fn target_axis_deg(self) -> f64 {
         match self {
             SheetEdge::Left | SheetEdge::Right => 90.0, // vertical edge → dominant edge vertical
-            SheetEdge::Bottom | SheetEdge::Top => 0.0,  // horizontal edge → dominant edge horizontal
+            SheetEdge::Bottom | SheetEdge::Top => 0.0, // horizontal edge → dominant edge horizontal
         }
     }
 }
@@ -99,7 +99,10 @@ pub(crate) enum RotationStrategy {
 /// SGH-Q56: continuous rotation minimising the offset contour's extent perpendicular to `edge`.
 /// Coarse 0.25° scan + 0.01° refine over the real rotated offset geometry (no bbox of the part —
 /// the extent is measured on the actual rotated world points). Never snapped.
-fn min_perpendicular_width_rotation(offset: &crate::optimizer::cde_adapter::CdeBaseShape, edge: SheetEdge) -> f64 {
+fn min_perpendicular_width_rotation(
+    offset: &crate::optimizer::cde_adapter::CdeBaseShape,
+    edge: SheetEdge,
+) -> f64 {
     let perp_extent = |rot: f64| -> f64 {
         match transform_base_to_candidate(offset, 0.0, 0.0, rot) {
             Some(s) => match edge {
@@ -157,7 +160,11 @@ pub(crate) fn place_critical_on_sheet_edge(
     let dom = feats
         .dominant_edges
         .iter()
-        .max_by(|a, b| a.length.partial_cmp(&b.length).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| {
+            a.length
+                .partial_cmp(&b.length)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .ok_or("no dominant edge on contour")?;
     let edge_angle = dom.angle_deg;
     let target = edge.target_axis_deg();
@@ -174,9 +181,15 @@ pub(crate) fn place_critical_on_sheet_edge(
     // Translate: land the correct true extremum exactly on the margin line; centre the free axis.
     let (tx, ty) = match edge {
         SheetEdge::Left => (margin_mm - min_x0, sheet_h * 0.5 - (min_y0 + max_y0) * 0.5),
-        SheetEdge::Right => (sheet_w - margin_mm - max_x0, sheet_h * 0.5 - (min_y0 + max_y0) * 0.5),
+        SheetEdge::Right => (
+            sheet_w - margin_mm - max_x0,
+            sheet_h * 0.5 - (min_y0 + max_y0) * 0.5,
+        ),
         SheetEdge::Bottom => (sheet_w * 0.5 - (min_x0 + max_x0) * 0.5, margin_mm - min_y0),
-        SheetEdge::Top => (sheet_w * 0.5 - (min_x0 + max_x0) * 0.5, sheet_h - margin_mm - max_y0),
+        SheetEdge::Top => (
+            sheet_w * 0.5 - (min_x0 + max_x0) * 0.5,
+            sheet_h - margin_mm - max_y0,
+        ),
     };
 
     let placed = transform_base_to_candidate(&offset, tx, ty, rot)
@@ -309,13 +322,30 @@ mod tests {
     fn lv8_critical_part_sheet_edge_placement_all_edges() {
         let part = lv8_part();
         let (spacing, margin, sw, sh) = (5.0, 5.0, 1500.0, 3000.0);
-        let out_dir = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../artifacts/benchmarks/sgh_q56"));
+        let out_dir = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../artifacts/benchmarks/sgh_q56"
+        ));
 
         let mut any_ok = false;
         // (a) dominant-edge strategy for all four edges (left/right valid; bottom/top correctly
         // rejected — the 2522 mm long part cannot lie horizontally on a 1500 mm-wide sheet).
-        for edge in [SheetEdge::Left, SheetEdge::Right, SheetEdge::Bottom, SheetEdge::Top] {
-            let pl = place_critical_on_sheet_edge(&part, spacing, margin, sw, sh, edge, RotationStrategy::DominantEdge).unwrap();
+        for edge in [
+            SheetEdge::Left,
+            SheetEdge::Right,
+            SheetEdge::Bottom,
+            SheetEdge::Top,
+        ] {
+            let pl = place_critical_on_sheet_edge(
+                &part,
+                spacing,
+                margin,
+                sw,
+                sh,
+                edge,
+                RotationStrategy::DominantEdge,
+            )
+            .unwrap();
             dump(&pl, &out_dir, "dominant");
             eprintln!(
                 "[Q56][dominant] {} | edge_angle={:.4} rot={:.4} margin_dist={:.6} boundary_clear={}",
@@ -329,7 +359,16 @@ mod tests {
         // (b) min-width continuous strategy on the left edge — proves the rotation is genuinely
         // computed (≈92°, NOT a 90° snap) and gives the tight against-edge fit.
         for edge in [SheetEdge::Left, SheetEdge::Right] {
-            let pl = place_critical_on_sheet_edge(&part, spacing, margin, sw, sh, edge, RotationStrategy::MinWidthAgainstEdge).unwrap();
+            let pl = place_critical_on_sheet_edge(
+                &part,
+                spacing,
+                margin,
+                sw,
+                sh,
+                edge,
+                RotationStrategy::MinWidthAgainstEdge,
+            )
+            .unwrap();
             dump(&pl, &out_dir, "minwidth");
             eprintln!(
                 "[Q56][minwidth] {} | rot={:.4} (continuous) margin_dist={:.6} boundary_clear={} x_extent={:.2}",
@@ -337,7 +376,8 @@ mod tests {
                 pl.boundary_clear, pl.rotated_offset_max_x - pl.rotated_offset_min_x
             );
             assert!(
-                (pl.rotation_after_deg - 90.0).abs() > 0.1 && (pl.rotation_after_deg - 0.0).abs() > 0.1,
+                (pl.rotation_after_deg - 90.0).abs() > 0.1
+                    && (pl.rotation_after_deg - 0.0).abs() > 0.1,
                 "min-width rotation must be genuinely continuous (not snapped to 0/90): got {}",
                 pl.rotation_after_deg
             );
@@ -345,6 +385,9 @@ mod tests {
                 any_ok = true;
             }
         }
-        assert!(any_ok, "at least one valid sheet-edge placement (boundary-clear + margin-exact)");
+        assert!(
+            any_ok,
+            "at least one valid sheet-edge placement (boundary-clear + margin-exact)"
+        );
     }
 }
