@@ -1,0 +1,67 @@
+steps:
+  - name: "Q72 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a full-instance seed + fixed-bin global repack task canvas/YAML/checklist/report
+      vazat. A canvas rogzitse a gyokeroka diagnozist (no-drop seed hiany + kihagyott globalis
+      kereso) path+line bizonyitekkal, es az egyetlen elfogadasi merot: placed_count 2 tablan, a
+      baseline 259 meghaladasa, a 276 cel fele. Edge-lock/corner/residual csak diagnosztika.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q72_full_instance_seed_fixed_bin_repack.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.md"
+      - "codex/reports/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.md"
+
+  - name: "No-drop seed + globalis repack wiring"
+    description: >
+      Modositsd a forced/strict latest-path seedeloest ugy, hogy a builder kritikus/anchor
+      placementjeit megtartva a layout a pipeline elott mind a 276 instance-t tartalmazza (native
+      LBF kitoltessel es/vagy kontrollalt atfedessel), majd a teljes seed atmenjen a valodi
+      exploration SA + redistribute uton a rogzitett 2 tablan. Szuntesd meg azt az utat, ahol a
+      hianyzo darabok kihagyjak a globalis keresot (bpp_reduction.rs:4882 / :4902 / :4923 / :5147).
+      A nagy anchorok el-/sarok-flush igazitasa a gravity/compaction post-passbol jojjon ki, ne
+      pre-forced pozicionalasbol.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "No-drop regresszios teszt"
+    description: >
+      Adj celzott tesztet, ami forced-latest alatt ellenorzi, hogy a seed a pipeline elott minden
+      instance-t tartalmaz (no-drop garancia), es hogy a placed_count nem esik a native+full
+      pipeline baseline ala. A teszt determinisztikus es single-threaded futasra is helyes legyen.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Q72 benchmark runner es teljeskoru artifactcsomag"
+    description: >
+      Keszits Full276 (2x1500x3000, margin5, spacing5, continuous) Q72 benchmark runnert, ami a
+      forced-latest gatekkel fut, es teljeskoruen rogziti a futast: input, output, log, render
+      (SVG+PNG), q72_summary.json es q72_report.md a artifacts/benchmarks/sgh_q72/ ala. A
+      summary/report eredmeny-kozpontu: placed_count vs Q62(259)/Q70(237)/Q71(215), sheetenkenti
+      kihasznaltsag, no-drop / global-repack diagnosztika, es vizualis audit blokk.
+    outputs:
+      - "scripts/bench_sgh_q72_full_instance_seed_fixed_bin_repack.py"
+      - "artifacts/benchmarks/sgh_q72/inputs"
+      - "artifacts/benchmarks/sgh_q72/outputs"
+      - "artifacts/benchmarks/sgh_q72/logs"
+      - "artifacts/benchmarks/sgh_q72/renders"
+      - "artifacts/benchmarks/sgh_q72/q72_summary.json"
+      - "artifacts/benchmarks/sgh_q72/q72_report.md"
+
+  - name: "Vizualis audit, checklist es report lezarasa"
+    description: >
+      Ellenorizd vizualisan a renderelt tablakepeket (sheet_00, sheet_01, overview), es rogzitsd
+      eredmeny-kozpontuan, hogy a maradekter es a nagy anchorok el-igazitasa mit mutat. Toltsd ki a
+      checklistet es a reportot konkret path+line evidence-szel, oszinten: ha a placed_count nem
+      haladta meg a 259-et, a verdict FAIL.
+    outputs:
+      - "artifacts/benchmarks/sgh_q72/q72_report.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.md"
+      - "codex/reports/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.md"
+      - "codex/reports/egyedi_solver/sgh_q72_full_instance_seed_fixed_bin_repack.verify.log"

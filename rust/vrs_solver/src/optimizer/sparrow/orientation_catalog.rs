@@ -7,7 +7,7 @@
 //!
 //! Hard rules (mirroring the Q56A canvas / Q55B proof):
 //! - Extrema samples are computed from the **spacing-expanded collision contour**
-//!   (`SPInstance.spacing_collision_base_shape`) by rotating the REAL local contour points — never
+//!   (`SPInstance.base_shape`) by rotating the REAL local contour points — never
 //!   from `part.width` / `part.height` or a non-rotated bbox.
 //! - Continuous parts keep continuous, feature-derived angles; candidates are NOT snapped to
 //!   0/90/180/270 unless the computed continuous result is actually that angle.
@@ -758,14 +758,15 @@ mod tests {
     }
 
     #[test]
-    fn extrema_use_spacing_expanded_contour_not_bbox() {
-        // Build the part through the solver with real spacing so the catalog's extrema come from the
-        // genuine spacing-expanded contour (wider than part.width/height).
+    fn extrema_trace_true_solver_contour() {
+        // SGH-Q74: spacing is baked into the part contour app-side (SGH-Q40), so the solver — and the
+        // OrientationCatalog — see ONE solver shape and run at spacing 0. The catalog's extrema must
+        // trace that true solver contour (never the part.width/height bbox shortcut). With no app-side
+        // offset in this fixture, the solver contour is the raw 400x60 rect.
         let p = rect("sp_rect", 400.0, 60.0, true);
-        let cat = build_orientation_catalog_for_part(&p, 2000.0, 2000.0, 8.0).expect("catalog");
-        assert!(cat.diagnostics.extrema_from_spacing_expanded);
+        let cat = build_orientation_catalog_for_part(&p, 2000.0, 2000.0, 0.0).expect("catalog");
         assert!(!cat.extrema_samples.is_empty(), "must emit extrema samples");
-        // A 0°/180° sample must be wider than the raw part width because of the spacing offset.
+        // A 0°/180° sample traces the true contour: its extent equals the real 400mm width.
         let axis_aligned = cat
             .extrema_samples
             .iter()
@@ -773,8 +774,8 @@ mod tests {
         if let Some(s) = axis_aligned {
             let span = s.width.max(s.height);
             assert!(
-                span > 400.0 + 1.0,
-                "spacing-expanded extent ({span:.3}) must exceed the raw 400mm width"
+                (span - 400.0).abs() < 1.0,
+                "axis-aligned extent ({span:.3}) must trace the true 400mm contour"
             );
         }
     }

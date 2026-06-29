@@ -9,7 +9,8 @@
 //! Hard rules: spacing-expanded TRUE extrema (never `part.width/height`), continuous rotations from the
 //! catalog (no 0/90/180/270 snap unless that is the computed result), alignment to the margin-shrunk
 //! sheet (never the raw boundary while margin is active), corner variants are first-class and center is
-//! a fallback. The grid free-space score is a ranking proxy only — the CDE remains clearance truth.
+//! a fallback. The grid free-space score is a ranking proxy only — the CDE remains clearance truth, and
+//! the production builder may still apply an even stricter corner-first authority on top of it.
 
 use super::*;
 
@@ -202,7 +203,7 @@ pub fn anchor_candidates_for_instance(
     inst: &SPInstance,
     sheet: &SheetShape,
 ) -> Vec<LiveAnchorCandidate> {
-    let shape = inst.spacing_collision_base_shape.as_ref();
+    let shape = inst.base_shape.as_ref();
     // Candidate rotations from the per-part OrientationCatalog (continuous, incl. fractional min-width).
     let mut rotations: Vec<(f64, Option<usize>)> = Vec::new();
     for c in &inst.orientation_catalog.candidates {
@@ -336,7 +337,7 @@ pub fn build_sheet_edge_anchor_catalog(
         .first()
         .ok_or_else(|| format!("part {} produced no instance", part.id))?;
 
-    let offset_shape = inst.spacing_collision_base_shape.as_ref();
+    let offset_shape = inst.base_shape.as_ref();
     let phys_shape = inst.base_shape.as_ref();
     let catalog = inst.orientation_catalog.as_ref();
 
@@ -526,15 +527,15 @@ fn build_candidate(
         Some("offset_contour_exceeds_shrunk_sheet".to_string())
     };
 
-    let corner_bonus = if pol.is_corner() { 0.10 } else { 0.0 };
+    let corner_bonus = if pol.is_corner() { 0.18 } else { 0.0 };
     let center_penalty = if matches!(pol, SecondaryAxisPolicy::Center) {
-        0.08
+        0.18
     } else {
         0.0
     };
     let margin_penalty = (margin_error / margin_mm.max(1.0)).clamp(0.0, 1.0) * 0.10;
     let candidate_score = if boundary_clear {
-        (0.70 * free_norm + corner_bonus - center_penalty - margin_penalty).max(0.0)
+        (0.65 * free_norm + corner_bonus - center_penalty - margin_penalty).max(0.0)
     } else {
         0.0
     };

@@ -117,7 +117,7 @@ impl<'a> LBFBuilder<'a> {
         // (same Rc as the original when spacing is off). Boundary is the bbox-fit gate
         // on the original dims inside LBFEvaluator.
         let spacing_applied = self.problem.config.spacing_mm > 0.0;
-        let base = inst.spacing_collision_base_shape.clone();
+        let base = inst.base_shape.clone();
 
         for sheet_idx in 0..sheets.len() {
             if self.started.elapsed().as_secs_f64() >= self.deadline_s {
@@ -137,7 +137,7 @@ impl<'a> LBFBuilder<'a> {
                     // SGH-Q36: spacing-expanded for part-part collision (same Rc when off).
                     let other = &self.problem.instances[p.instance_idx];
                     transform_base_to_candidate(
-                        &other.spacing_collision_base_shape,
+                        &other.base_shape,
                         p.x,
                         p.y,
                         p.rotation_deg,

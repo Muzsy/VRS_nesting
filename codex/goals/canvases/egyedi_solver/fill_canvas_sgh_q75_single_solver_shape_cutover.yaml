@@ -1,0 +1,52 @@
+steps:
+  - name: "Q75 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a single solver-shape cutover takaritas task canvas/YAML/checklist/report vazat a
+      modositott architektura-leiras alapjan, byte-azonos production celkitűzéssel.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q75_single_solver_shape_cutover.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q75_single_solver_shape_cutover.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q75_single_solver_shape_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q75_single_solver_shape_cutover.md"
+
+  - name: "Fazis 1 — dual-geometry kivezetese"
+    description: >
+      Toröld a SPInstance.spacing_collision_base_shape mezot; minden collision/boundary olvasas a
+      base_shape (egy alak) ellen; a model.rs spacing-shape epitese torolve; a tracker spacing_applied
+      always-false. Byte-azonos spacing=0-ra. A dual-geometryt tesztelo unit teszteket a single-shape
+      modellre frissitsd (orientation_catalog extrema; one_part_sheet_edge harness offset-bake).
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/model.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/orientation_catalog.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/feature_candidate_generator.rs"
+
+  - name: "Fazis 2 — SolverInputGuard"
+    description: >
+      A sparrow finite-stock multisheet pipeline elejen hard-fail, ha barmely part top-level hole-t
+      hoz (CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN). Production hole-free -> sosem aktivalodik.
+    outputs:
+      - "rust/vrs_solver/src/adapter.rs"
+
+  - name: "Fazis 3/4 — hole-jel dokumentacio + terminologia"
+    description: >
+      Igazold es dokumentald, hogy a PartAnalysis furat-mezoi diagnosztika-only (sehol nem dontesi
+      input). Tisztitsd a tracker / catalog dual-geometry terminologiat.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/part_analysis.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+
+  - name: "Checklist es report lezarasa"
+    description: >
+      Toltsd ki a checklistet es a reportot path+line evidence-szel; rogzitsd a byte-azonos production
+      igazolast (lib+integracios tesztek, Q72/Q74 600s ujraigazolas wall-time-zaj megjegyzessel).
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q75_single_solver_shape_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q75_single_solver_shape_cutover.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q75_single_solver_shape_cutover.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q75_single_solver_shape_cutover.md"
+      - "codex/reports/egyedi_solver/sgh_q75_single_solver_shape_cutover.verify.log"

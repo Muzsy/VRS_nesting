@@ -180,7 +180,7 @@ pub fn interlock_seeds_against_anchor(
     anchor_bbox: [f64; 4],
     cand_inst: &SPInstance,
 ) -> Vec<LivePairInterlockSeed> {
-    let shape = cand_inst.spacing_collision_base_shape.as_ref();
+    let shape = cand_inst.base_shape.as_ref();
     let (amnx, amny, amxx, amxy) = (
         anchor_bbox[0],
         anchor_bbox[1],
@@ -289,7 +289,7 @@ fn build_pair_part_ctx(inst: &SPInstance) -> PairPartCtx {
         is_high_interlock: sp.is_high_interlock_potential,
         interlock_potential: pa.interlock_potential_score,
         primary_rotations: rots,
-        spacing_shape: Rc::clone(&inst.spacing_collision_base_shape),
+        spacing_shape: Rc::clone(&inst.base_shape),
     }
 }
 

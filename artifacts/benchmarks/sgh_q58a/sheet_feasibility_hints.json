@@ -5,7 +5,7 @@
       "basis": [
         "area_cap=2",
         "span_cap=4",
-        "min_bbox_area=1874219",
+        "min_bbox_area=1848117",
         "fit_difficulty=0.627"
       ],
       "confidence": 0.549,

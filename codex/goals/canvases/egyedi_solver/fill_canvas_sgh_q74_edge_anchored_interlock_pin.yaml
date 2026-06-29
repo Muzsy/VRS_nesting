@@ -1,0 +1,73 @@
+steps:
+  - name: "Q74 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el az edge-anchored interlock + item-pinning task canvas/YAML/checklist/report vazat.
+      A canvas rogzitse a referencia receptet (ellentetes-el horgonyzas + bbox-atfedo mely interlock +
+      kozepso nest) es a Q73 pinning-hiany tanulsagat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q74_edge_anchored_interlock_pin.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.md"
+      - "codex/reports/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.md"
+
+  - name: "Item-pinning infrastruktura"
+    description: >
+      Vezesd be a SparrowState.locked_items mezot; a separator worker hagyja ki a locked elemeket a
+      move-celokbol (fix akadaly); a gravity_compact_layout ne csusztassa a locked elemeket; a
+      sanitize_partial a locked elemeket elsobbseggel tartsa (a kolliziozo fillert dobja). A locked
+      set instance-idx alapu, ures eseten byte-azonos a regi viselkedessel.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/quantify/tracker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/worker.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/multisheet.rs"
+
+  - name: "Edge-anchored slide-nest seeder + wiring + diagnosztika"
+    description: >
+      Implementald az edge_anchored_interlock_big_seed fuggvenyt (orientacio-sweep slide-nest lanc
+      bbox-atfedessel + ellentetes-el horgonyzas + bounded 2D kozepso-nest), kosd be a latest-lock
+      seedbe gate mogott (VRS_EDGE_INTERLOCK_SEED, default OFF), allitsd be a q74_locked pin-setet a
+      run_subsolve + gravity + sanitize fele, es a be nem fero nagy darabokat zard ki a no-drop
+      completionbol. Vedd fel a Q74 diagnosztikai mezoket.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Q74 regresszios teszt"
+    description: >
+      Adj celzott tesztet, ami forced-latest + VRS_EDGE_INTERLOCK_SEED alatt ellenorzi, hogy a nagy
+      tipus pinnelve van es TULELI a pipeline-t (a seedelt big parts a vegso kimenetben is jelen
+      vannak, nem dobja ki a sanitize).
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Q74 benchmark + teljeskoru artifactcsomag"
+    description: >
+      Keszits Full276 (2x1500x3000, margin5, spacing5, continuous) Q74 benchmark runnert, ami a
+      forced-latest + edge-interlock gatekkel fut, teljeskoruen rogziti a futast (input/output/log/
+      render SVG+PNG + summary + report a artifacts/benchmarks/sgh_q74/ ala), es eredmeny-kozpontuan
+      elemzi a nagy tipus tablankenti eloszlasat/forgatasat, Q72 osszehasonlitassal.
+    outputs:
+      - "scripts/bench_sgh_q74_edge_anchored_interlock_pin.py"
+      - "artifacts/benchmarks/sgh_q74/inputs"
+      - "artifacts/benchmarks/sgh_q74/outputs"
+      - "artifacts/benchmarks/sgh_q74/logs"
+      - "artifacts/benchmarks/sgh_q74/renders"
+      - "artifacts/benchmarks/sgh_q74/q74_summary.json"
+      - "artifacts/benchmarks/sgh_q74/q74_report.md"
+
+  - name: "Vizualis audit, checklist es report lezarasa"
+    description: >
+      Ellenorizd vizualisan a renderelt tablakat, es rogzitsd eredmeny-kozpontuan a nagy darabok
+      eloszlasat/forgatasat (megmaradtak-e a szeleken, nem-ortogonalisan) es a maradekteret. Toltsd ki
+      a checklistet es a reportot path+line evidence-szel; a 3/tabla allapotat oszinten rogzitsd.
+    outputs:
+      - "artifacts/benchmarks/sgh_q74/q74_report.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.md"
+      - "codex/reports/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.md"
+      - "codex/reports/egyedi_solver/sgh_q74_edge_anchored_interlock_pin.verify.log"

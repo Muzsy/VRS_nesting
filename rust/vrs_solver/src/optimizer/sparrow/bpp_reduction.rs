@@ -194,11 +194,569 @@ fn choose_anchor_authority_winner(
     }
 }
 
+#[derive(Debug, Clone)]
+struct AnchorCatalogChoice {
+    score: f64,
+    layout: SparrowLayout,
+    source: &'static str,
+    secondary: &'static str,
+    target_edge: &'static str,
+    seed_rotation_deg: f64,
+}
+
+fn anchor_secondary_is_center(secondary: &str) -> bool {
+    secondary.contains("center")
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AnchorAlignmentMetrics {
+    primary_gap_mm: f64,
+    secondary_gap_mm: f64,
+    min_edge_gap_mm: f64,
+    rotation_drift_deg: f64,
+}
+
+const FORCED_LATEST_ANCHOR_PRIMARY_MAX_GAP_MM: f64 = 40.0;
+const FORCED_LATEST_ANCHOR_CORNER_MAX_GAP_MM: f64 = 120.0;
+const FORCED_LATEST_ANCHOR_ROTATION_DRIFT_MAX_DEG: f64 = 22.5;
+const FORCED_LATEST_STRICT_ANCHOR_PRIMARY_MAX_GAP_MM: f64 = 15.0;
+const FORCED_LATEST_STRICT_ANCHOR_CORNER_MAX_GAP_MM: f64 = 40.0;
+const FORCED_LATEST_STRICT_ANCHOR_ROTATION_DRIFT_MAX_DEG: f64 = 12.0;
+
+fn angular_drift_deg(a: f64, b: f64) -> f64 {
+    let mut d = (a - b).rem_euclid(360.0).abs();
+    if d > 180.0 {
+        d = 360.0 - d;
+    }
+    d
+}
+
+fn forced_latest_strict_edge_lock(inst: &SPInstance) -> bool {
+    inst.shape_profile.is_large_anchor
+}
+
+fn placed_bbox(layout: &SparrowLayout, ci: usize, instances: &[SPInstance]) -> Option<[f64; 4]> {
+    let placement = layout.placements.iter().find(|p| p.instance_idx == ci)?;
+    let inst = &instances[ci];
+    let prepared = transform_base_to_candidate(
+        inst.base_shape.as_ref(),
+        placement.x,
+        placement.y,
+        placement.rotation_deg,
+    )?;
+    Some([
+        prepared.min_x,
+        prepared.min_y,
+        prepared.max_x,
+        prepared.max_y,
+    ])
+}
+
+fn placed_rotation_deg(layout: &SparrowLayout, ci: usize) -> Option<f64> {
+    layout
+        .placements
+        .iter()
+        .find(|p| p.instance_idx == ci)
+        .map(|p| p.rotation_deg)
+}
+
+fn edge_gap_mm(bbox: [f64; 4], sheet: &SheetShape, edge: &str) -> f64 {
+    match edge {
+        "left" => (bbox[0] - sheet.min_x).abs(),
+        "right" => (sheet.max_x - bbox[2]).abs(),
+        "bottom" => (bbox[1] - sheet.min_y).abs(),
+        "top" => (sheet.max_y - bbox[3]).abs(),
+        _ => f64::INFINITY,
+    }
+}
+
+fn sheet_edge_alignment_kind_to_edge(kind: &str) -> Option<&'static str> {
+    match kind {
+        "sheet_edge_left" => Some("left"),
+        "sheet_edge_right" => Some("right"),
+        "sheet_edge_bottom" => Some("bottom"),
+        "sheet_edge_top" => Some("top"),
+        _ => None,
+    }
+}
+
+fn anchor_secondary_target_edge(target_edge: &str, secondary: &str) -> Option<&'static str> {
+    match (target_edge, secondary) {
+        ("left" | "right", "corner_low") => Some("bottom"),
+        ("left" | "right", "corner_high") => Some("top"),
+        ("bottom" | "top", "corner_low") => Some("left"),
+        ("bottom" | "top", "corner_high") => Some("right"),
+        _ => None,
+    }
+}
+
+fn secondary_gap_mm(bbox: [f64; 4], sheet: &SheetShape, target_edge: &str, secondary: &str) -> f64 {
+    match (target_edge, secondary) {
+        ("left" | "right", "corner_low") => (bbox[1] - sheet.min_y).abs(),
+        ("left" | "right", "corner_high") => (sheet.max_y - bbox[3]).abs(),
+        ("bottom" | "top", "corner_low") => (bbox[0] - sheet.min_x).abs(),
+        ("bottom" | "top", "corner_high") => (sheet.max_x - bbox[2]).abs(),
+        ("left" | "right", "center") => {
+            let cy = (bbox[1] + bbox[3]) * 0.5;
+            let sy = (sheet.min_y + sheet.max_y) * 0.5;
+            (cy - sy).abs()
+        }
+        ("bottom" | "top", "center") => {
+            let cx = (bbox[0] + bbox[2]) * 0.5;
+            let sx = (sheet.min_x + sheet.max_x) * 0.5;
+            (cx - sx).abs()
+        }
+        _ => 0.0,
+    }
+}
+
+fn min_edge_gap_mm(bbox: [f64; 4], sheet: &SheetShape) -> f64 {
+    [
+        (bbox[0] - sheet.min_x).abs(),
+        (sheet.max_x - bbox[2]).abs(),
+        (bbox[1] - sheet.min_y).abs(),
+        (sheet.max_y - bbox[3]).abs(),
+    ]
+    .into_iter()
+    .fold(f64::INFINITY, f64::min)
+}
+
+fn anchor_alignment_metrics(
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    instances: &[SPInstance],
+    sheet: &SheetShape,
+    target_edge: &str,
+    secondary: &str,
+    seed_rotation_deg: f64,
+) -> Option<AnchorAlignmentMetrics> {
+    let bbox = placed_bbox(layout, cand_inst_idx, instances)?;
+    let final_rot = placed_rotation_deg(layout, cand_inst_idx)?;
+    Some(AnchorAlignmentMetrics {
+        primary_gap_mm: edge_gap_mm(bbox, sheet, target_edge),
+        secondary_gap_mm: secondary_gap_mm(bbox, sheet, target_edge, secondary),
+        min_edge_gap_mm: min_edge_gap_mm(bbox, sheet),
+        rotation_drift_deg: angular_drift_deg(final_rot, seed_rotation_deg),
+    })
+}
+
+fn record_anchor_alignment_diag(
+    bpp: &mut BppReductionDiagnostics,
+    metrics: AnchorAlignmentMetrics,
+) {
+    bpp.bpp_q71_anchor_final_primary_gap_mm = Some(metrics.primary_gap_mm);
+    bpp.bpp_q71_anchor_final_secondary_gap_mm = Some(metrics.secondary_gap_mm);
+    bpp.bpp_q71_anchor_final_min_edge_gap_mm = Some(metrics.min_edge_gap_mm);
+    bpp.bpp_q71_anchor_final_rotation_drift_deg = Some(metrics.rotation_drift_deg);
+}
+
+fn record_anchor_min_edge_diag(
+    bpp: &mut BppReductionDiagnostics,
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    instances: &[SPInstance],
+    sheet: &SheetShape,
+) {
+    if let Some(bbox) = placed_bbox(layout, cand_inst_idx, instances) {
+        bpp.bpp_q71_anchor_final_min_edge_gap_mm = Some(min_edge_gap_mm(bbox, sheet));
+    }
+}
+
+fn translated_candidate_layout(
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    dx: f64,
+    dy: f64,
+) -> Option<SparrowLayout> {
+    let mut moved = layout.clone();
+    let placement = moved
+        .placements
+        .iter_mut()
+        .find(|p| p.instance_idx == cand_inst_idx)?;
+    placement.x += dx;
+    placement.y += dy;
+    Some(moved)
+}
+
+fn flush_delta_to_edge(
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    instances: &[SPInstance],
+    sheet: &SheetShape,
+    edge: &str,
+) -> Option<(f64, f64)> {
+    let bbox = placed_bbox(layout, cand_inst_idx, instances)?;
+    Some(match edge {
+        "left" => (sheet.min_x - bbox[0], 0.0),
+        "right" => (sheet.max_x - bbox[2], 0.0),
+        "bottom" => (0.0, sheet.min_y - bbox[1]),
+        "top" => (0.0, sheet.max_y - bbox[3]),
+        _ => return None,
+    })
+}
+
+fn push_candidate_toward_edge(
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    sheet: &SheetShape,
+    edge: &str,
+) -> SparrowLayout {
+    let Some((dx, dy)) = flush_delta_to_edge(layout, cand_inst_idx, instances, sheet, edge) else {
+        return layout.clone();
+    };
+    if dx.abs() <= 1e-6 && dy.abs() <= 1e-6 {
+        return layout.clone();
+    }
+
+    let feasible_at = |t: f64| -> Option<SparrowLayout> {
+        let moved = translated_candidate_layout(layout, cand_inst_idx, dx * t, dy * t)?;
+        SparrowCollisionTracker::final_validation_tracker(&moved, instances, solver_sheets)
+            .is_feasible()
+            .then_some(moved)
+    };
+
+    if let Some(flush) = feasible_at(1.0) {
+        return flush;
+    }
+
+    let mut lo = 0.0_f64;
+    let mut hi = 1.0_f64;
+    let mut best = layout.clone();
+    for _ in 0..12 {
+        let mid = (lo + hi) * 0.5;
+        if let Some(moved) = feasible_at(mid) {
+            lo = mid;
+            best = moved;
+        } else {
+            hi = mid;
+        }
+    }
+    best
+}
+
+fn nearest_edge_for_bbox(bbox: [f64; 4], sheet: &SheetShape) -> &'static str {
+    let mut best = ("left", edge_gap_mm(bbox, sheet, "left"));
+    for edge in ["right", "bottom", "top"] {
+        let gap = edge_gap_mm(bbox, sheet, edge);
+        if gap < best.1 {
+            best = (edge, gap);
+        }
+    }
+    best.0
+}
+
+fn repair_strict_edge_lock_placements_on_sheet(
+    layout: &SparrowLayout,
+    target_sheet: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    sheet: &SheetShape,
+) -> SparrowLayout {
+    let mut repaired = layout.clone();
+    let mut locked: Vec<usize> = repaired
+        .placements
+        .iter()
+        .filter(|p| {
+            p.sheet_index == target_sheet
+                && forced_latest_strict_edge_lock(&instances[p.instance_idx])
+        })
+        .map(|p| p.instance_idx)
+        .collect();
+    locked.sort_by(|a, b| {
+        instances[*b]
+            .shape_profile
+            .sheet_area_ratio
+            .partial_cmp(&instances[*a].shape_profile.sheet_area_ratio)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for cand_inst_idx in locked {
+        let Some(bbox) = placed_bbox(&repaired, cand_inst_idx, instances) else {
+            continue;
+        };
+        let edge = nearest_edge_for_bbox(bbox, sheet);
+        repaired = push_candidate_toward_edge(
+            &repaired,
+            cand_inst_idx,
+            instances,
+            solver_sheets,
+            sheet,
+            edge,
+        );
+    }
+    repaired
+}
+
+fn repair_anchor_flush_alignment(
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    sheet: &SheetShape,
+    target_edge: &str,
+    secondary: Option<&str>,
+) -> SparrowLayout {
+    let mut repaired = push_candidate_toward_edge(
+        layout,
+        cand_inst_idx,
+        instances,
+        solver_sheets,
+        sheet,
+        target_edge,
+    );
+    if let Some(secondary_edge) =
+        secondary.and_then(|secondary| anchor_secondary_target_edge(target_edge, secondary))
+    {
+        repaired = push_candidate_toward_edge(
+            &repaired,
+            cand_inst_idx,
+            instances,
+            solver_sheets,
+            sheet,
+            secondary_edge,
+        );
+    }
+    repaired
+}
+
+fn forced_latest_anchor_catalog_score(
+    forced_latest: bool,
+    strict_edge_lock: bool,
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    target_sheet: usize,
+    instances: &[SPInstance],
+    sheet: &SheetShape,
+    target_edge: &str,
+    secondary: &str,
+    seed_rotation_deg: f64,
+) -> Option<(f64, AnchorAlignmentMetrics)> {
+    let free = sheet_freespace_score(layout, target_sheet, instances, sheet);
+    let metrics = anchor_alignment_metrics(
+        layout,
+        cand_inst_idx,
+        instances,
+        sheet,
+        target_edge,
+        secondary,
+        seed_rotation_deg,
+    )?;
+    if !forced_latest {
+        return Some((free, metrics));
+    }
+    let primary_limit = if strict_edge_lock {
+        FORCED_LATEST_STRICT_ANCHOR_PRIMARY_MAX_GAP_MM
+    } else {
+        FORCED_LATEST_ANCHOR_PRIMARY_MAX_GAP_MM
+    };
+    let corner_limit = if strict_edge_lock {
+        FORCED_LATEST_STRICT_ANCHOR_CORNER_MAX_GAP_MM
+    } else {
+        FORCED_LATEST_ANCHOR_CORNER_MAX_GAP_MM
+    };
+    let rotation_limit = if strict_edge_lock {
+        FORCED_LATEST_STRICT_ANCHOR_ROTATION_DRIFT_MAX_DEG
+    } else {
+        FORCED_LATEST_ANCHOR_ROTATION_DRIFT_MAX_DEG
+    };
+    if strict_edge_lock && anchor_secondary_is_center(secondary) {
+        return None;
+    }
+    let gross_primary_drift = metrics.primary_gap_mm > primary_limit;
+    let gross_corner_drift =
+        !anchor_secondary_is_center(secondary) && metrics.secondary_gap_mm > corner_limit;
+    let gross_rotation_drift = metrics.rotation_drift_deg > rotation_limit;
+    if gross_primary_drift || gross_corner_drift || gross_rotation_drift {
+        return None;
+    }
+    let span = sheet.width.max(sheet.height);
+    let primary_bonus = (primary_limit - metrics.primary_gap_mm).max(0.0) * span * 45.0;
+    let secondary_bonus = if anchor_secondary_is_center(secondary) {
+        0.0
+    } else {
+        (corner_limit - metrics.secondary_gap_mm).max(0.0) * span * 8.0
+    };
+    let rotation_penalty = metrics.rotation_drift_deg * sheet.area * 0.0008;
+    Some((
+        free + primary_bonus + secondary_bonus - rotation_penalty,
+        metrics,
+    ))
+}
+
+fn forced_latest_anchor_feature_score(
+    forced_latest: bool,
+    strict_edge_lock: bool,
+    layout: &SparrowLayout,
+    cand_inst_idx: usize,
+    target_sheet: usize,
+    instances: &[SPInstance],
+    sheet: &SheetShape,
+    target_edge: Option<&str>,
+    seed_rotation_deg: f64,
+) -> Option<f64> {
+    let free = sheet_freespace_score(layout, target_sheet, instances, sheet);
+    if !forced_latest {
+        return Some(free);
+    }
+    let bbox = placed_bbox(layout, cand_inst_idx, instances)?;
+    let edge_gap = target_edge.map_or_else(
+        || min_edge_gap_mm(bbox, sheet),
+        |target_edge| edge_gap_mm(bbox, sheet, target_edge),
+    );
+    let rotation_drift = placed_rotation_deg(layout, cand_inst_idx)
+        .map(|rot| angular_drift_deg(rot, seed_rotation_deg))
+        .unwrap_or(0.0);
+    let primary_limit = if strict_edge_lock {
+        FORCED_LATEST_STRICT_ANCHOR_PRIMARY_MAX_GAP_MM
+    } else {
+        FORCED_LATEST_ANCHOR_PRIMARY_MAX_GAP_MM
+    };
+    let rotation_limit = if strict_edge_lock {
+        FORCED_LATEST_STRICT_ANCHOR_ROTATION_DRIFT_MAX_DEG
+    } else {
+        FORCED_LATEST_ANCHOR_ROTATION_DRIFT_MAX_DEG
+    };
+    if edge_gap > primary_limit || rotation_drift > rotation_limit {
+        return None;
+    }
+    let span = sheet.width.max(sheet.height);
+    let edge_bonus = (primary_limit - edge_gap).max(0.0) * span * 35.0;
+    let rotation_penalty = rotation_drift * sheet.area * 0.0008;
+    Some(free + edge_bonus - rotation_penalty)
+}
+
+fn forced_latest_center_material_gain(corner_score: f64, center_score: f64) -> bool {
+    const ABS_GAIN_MM2: f64 = 250_000.0;
+    const REL_GAIN: f64 = 0.10;
+    center_score >= corner_score + ABS_GAIN_MM2 || center_score >= corner_score * (1.0 + REL_GAIN)
+}
+
+fn choose_anchor_catalog_candidate(
+    forced_latest: bool,
+    strict_edge_lock: bool,
+    best_corner: Option<AnchorCatalogChoice>,
+    best_center: Option<AnchorCatalogChoice>,
+    bpp: &mut BppReductionDiagnostics,
+) -> Option<AnchorCatalogChoice> {
+    if let Some(score) = best_corner.as_ref().map(|c| c.score) {
+        bpp.bpp_q70_anchor_best_corner_score = Some(
+            bpp.bpp_q70_anchor_best_corner_score
+                .map_or(score, |prev| prev.max(score)),
+        );
+    }
+    if let Some(score) = best_center.as_ref().map(|c| c.score) {
+        bpp.bpp_q70_anchor_best_center_score = Some(
+            bpp.bpp_q70_anchor_best_center_score
+                .map_or(score, |prev| prev.max(score)),
+        );
+    }
+
+    match (best_corner, best_center) {
+        (None, None) => None,
+        (Some(corner), None) => Some(corner),
+        (None, Some(center)) => {
+            bpp.bpp_q70_anchor_center_only_path = true;
+            if strict_edge_lock {
+                bpp.bpp_q70_anchor_center_blocked_by_policy = true;
+                None
+            } else {
+                Some(center)
+            }
+        }
+        (Some(corner), Some(center)) => {
+            if strict_edge_lock {
+                bpp.bpp_q70_anchor_center_blocked_by_policy = true;
+                Some(corner)
+            } else if !forced_latest {
+                if center.score + 1e-9 >= corner.score {
+                    Some(center)
+                } else {
+                    Some(corner)
+                }
+            } else if forced_latest_center_material_gain(corner.score, center.score) {
+                bpp.bpp_q70_anchor_center_override_used = true;
+                Some(center)
+            } else {
+                bpp.bpp_q70_anchor_center_blocked_by_policy = true;
+                Some(corner)
+            }
+        }
+    }
+}
+
+fn sheet_physical_utilization_ratio(
+    layout: &SparrowLayout,
+    instances: &[SPInstance],
+    sheet_idx: usize,
+    sheet: &SheetShape,
+) -> f64 {
+    if sheet.area <= 1e-9 {
+        return 0.0;
+    }
+    sheet_placed_area(layout, instances, sheet_idx) / sheet.area
+}
+
+fn forced_latest_recovery_deadline(
+    now_s: f64,
+    deadline_s: f64,
+    remaining_sheet_count: usize,
+) -> f64 {
+    let remaining_budget = (deadline_s - now_s).max(0.0);
+    if remaining_budget <= 0.0 {
+        return now_s;
+    }
+    let extra_budget = if remaining_sheet_count == 0 {
+        remaining_budget
+    } else {
+        (remaining_budget / (remaining_sheet_count as f64 + 1.0)).min(20.0)
+    };
+    (now_s + extra_budget).min(deadline_s)
+}
+
+fn completion_recovery_score(
+    before: &SparrowLayout,
+    after: &SparrowLayout,
+    sheet_idx: usize,
+    instances: &[SPInstance],
+    sheet: &SheetShape,
+) -> f64 {
+    let before_free = sheet_freespace_score(before, sheet_idx, instances, sheet);
+    let after_free = sheet_freespace_score(after, sheet_idx, instances, sheet);
+    let before_util = sheet_physical_utilization_ratio(before, instances, sheet_idx, sheet);
+    let after_util = sheet_physical_utilization_ratio(after, instances, sheet_idx, sheet);
+    let free_reduction = (before_free - after_free).max(0.0);
+    let util_gain = ((after_util - before_util).max(0.0)) * sheet.area;
+    let underfill_bonus = ((0.60 - before_util).max(0.0)) * sheet.area * 0.35;
+    free_reduction + util_gain + underfill_bonus
+}
+
+fn filler_first_completion_order(
+    queues: &super::fixed_sheet::CriticalityQueues,
+    instances: &[SPInstance],
+) -> Vec<usize> {
+    let by_small_first = |a: &usize, b: &usize| {
+        instances[*a]
+            .shape_profile
+            .sheet_area_ratio
+            .partial_cmp(&instances[*b].shape_profile.sheet_area_ratio)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| instances[*a].instance_id.cmp(&instances[*b].instance_id))
+    };
+    let mut filler = queues.filler.clone();
+    filler.sort_by(by_small_first);
+    let mut structural = queues.structural.clone();
+    structural.sort_by(by_small_first);
+    filler.extend(structural);
+    filler
+}
+
 // ── ADAPTED bp_separator: sub-problem separation over an explicit sheet set ─────
 
 /// Run the native exploration/separation over `local_sheets` only, seeded with
 /// `seed_layout` (placements indexed into `local_sheets`). Returns
 /// `(full_feasible, solved_local_layout)`.
+#[allow(clippy::too_many_arguments)]
 fn run_subsolve(
     optimizer: &SparrowOptimizer,
     seed_layout: SparrowLayout,
@@ -208,8 +766,10 @@ fn run_subsolve(
     deadline_s: f64,
     rng: &mut DeterministicRng,
     diag: &mut SparrowDiagnostics,
+    locked: &HashSet<usize>,
 ) -> (bool, SparrowLayout) {
     let mut state = SparrowState::new_with_diag(seed_layout, instances, local_sheets, diag);
+    state.locked_items = locked.clone();
     let _ = optimizer.exploration_phase(
         &mut state,
         instances,
@@ -282,6 +842,7 @@ fn separate_affected_sheets(
         deadline_s,
         rng,
         diag,
+        &HashSet::new(),
     );
     let remapped = SparrowLayout {
         placements: solved
@@ -1404,7 +1965,7 @@ fn density_place_part(
     // SGH-Q49: use the spacing-collision base shape for the candidate (matching the obstacles in
     // `tracker.shapes` and the upstream LBF), so the clear-check is spacing-correct — fewer
     // propose-then-revert moves than the Q48 original-geometry candidate.
-    let cand_base = inst.spacing_collision_base_shape.as_ref();
+    let cand_base = inst.base_shape.as_ref();
     let session = build_sheet_session(li, sheet_idx, working, tracker, sheet_prepared)?;
     let ev = LBFEvaluator {
         inst,
@@ -1513,7 +2074,7 @@ fn density_insert_part(
     let inst_idx = working.placements[li].instance_idx;
     let inst = &instances[inst_idx];
     let sheet = &solver_sheets[target_sheet];
-    let cand_base = inst.spacing_collision_base_shape.as_ref();
+    let cand_base = inst.base_shape.as_ref();
 
     // Neighbours = parts currently living on `target_sheet` with a live (non-ruined) shape.
     let mut neighbours: Vec<&CdePreparedShape> = Vec::new();
@@ -1771,7 +2332,7 @@ fn density_biased_separate(
                 break;
             }
             let inst = &instances[local[i].instance_idx];
-            let cand_base = inst.spacing_collision_base_shape.as_ref();
+            let cand_base = inst.base_shape.as_ref();
             // Session + neighbour shapes over the OTHER parts on the sheet (current positions).
             let local_layout = SparrowLayout {
                 placements: local.clone(),
@@ -1796,7 +2357,7 @@ fn density_biased_separate(
                     let p = &local[j];
                     let ji = &instances[p.instance_idx];
                     transform_base_to_candidate(
-                        ji.spacing_collision_base_shape.as_ref(),
+                        ji.base_shape.as_ref(),
                         p.x,
                         p.y,
                         p.rotation_deg,
@@ -2167,7 +2728,7 @@ fn simultaneous_critical_repack(
             .map(|p| {
                 let inst = &instances[p.instance_idx];
                 transform_base_to_candidate(
-                    inst.spacing_collision_base_shape.as_ref(),
+                    inst.base_shape.as_ref(),
                     p.x,
                     p.y,
                     p.rotation_deg,
@@ -2552,9 +3113,14 @@ fn try_admit_critical(
         // its candidates into the SAME free-space ranking as the existing sheet-edge feature seeds —
         // NON-pre-empting: a catalog candidate only wins if its free-space score is at least as good as
         // the existing path's best, so the proven co-movable interlock seeding is never regressed. ──
-        let mut best_anchor_cat: Option<(f64, SparrowLayout, &'static str, &'static str)> = None;
+        let forced_latest = sheet_builder_forced_latest_enabled();
+        let strict_edge_lock = forced_latest && forced_latest_strict_edge_lock(inst);
+        let anchor_like_role =
+            role == Some(super::sheet_skeleton::SkeletonRole::Anchor) || strict_edge_lock;
+        let mut best_anchor_corner: Option<AnchorCatalogChoice> = None;
+        let mut best_anchor_center: Option<AnchorCatalogChoice> = None;
         if skeleton_on
-            && role == Some(super::sheet_skeleton::SkeletonRole::Anchor)
+            && anchor_like_role
             && super::sheet_edge_placement_catalog::anchor_catalog_enabled()
         {
             let cands =
@@ -2562,6 +3128,7 @@ fn try_admit_critical(
             bpp.bpp_q61_anchor_catalog_consulted = true;
             bpp.bpp_q61_anchor_catalog_candidates_generated += cands.len();
             let mut cat_feasible = 0usize;
+            let cat_feasible_limit = if strict_edge_lock { cands.len() } else { 6 };
             for c in &cands {
                 if started.elapsed().as_secs_f64() >= deadline_s {
                     break;
@@ -2584,17 +3151,63 @@ fn try_admit_critical(
                     rng,
                     diag,
                 ) {
-                    let score = sheet_freespace_score(&out, target_sheet, instances, sheet);
-                    if best_anchor_cat.as_ref().is_none_or(|(s, ..)| score > *s) {
-                        best_anchor_cat = Some((score, out, c.source, c.secondary_axis_policy));
+                    let out = if forced_latest {
+                        repair_anchor_flush_alignment(
+                            &out,
+                            cand_inst_idx,
+                            instances,
+                            solver_sheets,
+                            sheet,
+                            c.target_sheet_edge,
+                            Some(c.secondary_axis_policy),
+                        )
+                    } else {
+                        out
+                    };
+                    let Some((score, _metrics)) = forced_latest_anchor_catalog_score(
+                        forced_latest,
+                        strict_edge_lock,
+                        &out,
+                        cand_inst_idx,
+                        target_sheet,
+                        instances,
+                        sheet,
+                        c.target_sheet_edge,
+                        c.secondary_axis_policy,
+                        c.rotation_deg,
+                    ) else {
+                        continue;
+                    };
+                    let choice = AnchorCatalogChoice {
+                        score,
+                        layout: out,
+                        source: c.source,
+                        secondary: c.secondary_axis_policy,
+                        target_edge: c.target_sheet_edge,
+                        seed_rotation_deg: c.rotation_deg,
+                    };
+                    let slot = if anchor_secondary_is_center(c.secondary_axis_policy) {
+                        &mut best_anchor_center
+                    } else {
+                        &mut best_anchor_corner
+                    };
+                    if slot.as_ref().is_none_or(|best| choice.score > best.score) {
+                        *slot = Some(choice);
                     }
                     cat_feasible += 1;
-                    if cat_feasible >= 4 {
+                    if cat_feasible >= cat_feasible_limit {
                         break; // bounded: rank only a few feasible catalog candidates
                     }
                 }
             }
         }
+        let best_anchor_cat = choose_anchor_catalog_candidate(
+            forced_latest,
+            strict_edge_lock,
+            best_anchor_corner,
+            best_anchor_center,
+            bpp,
+        );
         // SGH-Q64 production authority cutover: once the skeleton role is known, the role-routed
         // production path gets first authority. The older generic direct insert remains a fallback,
         // but it must not short-circuit Anchor / Interlock / BandInsert before their own path runs.
@@ -2653,15 +3266,23 @@ fn try_admit_critical(
         // Interlock → neighbour feature pairs, BandInsert → all (Q55C plugs the band generator here).
         use super::sheet_skeleton::SkeletonRole;
         let role_match = |seed: &super::feature_candidate_generator::CandidateSeed| -> bool {
-            match role {
-                Some(SkeletonRole::Anchor) => seed.target_feature_type == "sheet_edge",
-                Some(SkeletonRole::Interlock) => seed.target_feature_type != "sheet_edge",
-                _ => true,
+            if anchor_like_role {
+                seed.target_feature_type == "sheet_edge"
+            } else {
+                match role {
+                    Some(SkeletonRole::Anchor) => seed.target_feature_type == "sheet_edge",
+                    Some(SkeletonRole::Interlock) => seed.target_feature_type != "sheet_edge",
+                    _ => true,
+                }
             }
         };
         if skeleton_on {
             let gen = feature_seeds.iter().filter(|s| role_match(s)).count();
-            match role {
+            match if anchor_like_role {
+                Some(SkeletonRole::Anchor)
+            } else {
+                role
+            } {
                 Some(SkeletonRole::Anchor) => bpp.bpp_role_anchor_generated += gen,
                 Some(SkeletonRole::Interlock) => bpp.bpp_role_interlock_generated += gen,
                 Some(SkeletonRole::BandInsert) => bpp.bpp_role_band_insert_generated += gen,
@@ -2676,7 +3297,7 @@ fn try_admit_critical(
         };
         // SGH-Q55C: BandInsert role → place the third big part INTO the preserved free-space slot
         // (edge-aligned to the slot, sheet-edge-parallel), not interlocked to the anchor pair.
-        if skeleton_on && role == Some(SkeletonRole::BandInsert) {
+        if skeleton_on && role == Some(SkeletonRole::BandInsert) && !strict_edge_lock {
             let occ: Vec<[f64; 4]> = working
                 .placements
                 .iter()
@@ -2768,6 +3389,7 @@ fn try_admit_critical(
         // Anchor and resolved by the co-movable separation; the neighbour path remains the fallback. ──
         if skeleton_on
             && role == Some(SkeletonRole::Interlock)
+            && !strict_edge_lock
             && super::interlock_pair::interlock_pair_enabled()
         {
             bpp.bpp_q61_pair_index_consulted = true;
@@ -2892,15 +3514,47 @@ fn try_admit_critical(
                 diag,
             ) {
                 if skeleton_on {
-                    let score = sheet_freespace_score(&out, target_sheet, instances, sheet);
-                    if best_skeleton.as_ref().is_none_or(|(s, _, _)| score > *s) {
-                        best_skeleton = Some((score, out, seed));
-                    }
-                    feasible_seen += 1;
-                    // SGH-Q54D: rank a BOUNDED number of feasible candidates by free-space (the
-                    // separation budget is precious — don't separate all 24 seeds).
-                    if feasible_seen >= 4 || started.elapsed().as_secs_f64() >= deadline_s {
-                        break;
+                    let target_edge = sheet_edge_alignment_kind_to_edge(seed.alignment_kind);
+                    let out = if forced_latest && anchor_like_role {
+                        target_edge.map_or(out.clone(), |edge| {
+                            repair_anchor_flush_alignment(
+                                &out,
+                                cand_inst_idx,
+                                instances,
+                                solver_sheets,
+                                sheet,
+                                edge,
+                                None,
+                            )
+                        })
+                    } else {
+                        out
+                    };
+                    let score = if anchor_like_role {
+                        forced_latest_anchor_feature_score(
+                            forced_latest,
+                            strict_edge_lock,
+                            &out,
+                            cand_inst_idx,
+                            target_sheet,
+                            instances,
+                            sheet,
+                            target_edge,
+                            seed.rotation_seed_deg,
+                        )
+                    } else {
+                        Some(sheet_freespace_score(&out, target_sheet, instances, sheet))
+                    };
+                    if let Some(score) = score {
+                        if best_skeleton.as_ref().is_none_or(|(s, _, _)| score > *s) {
+                            best_skeleton = Some((score, out, seed));
+                        }
+                        feasible_seen += 1;
+                        // SGH-Q54D: rank a BOUNDED number of feasible candidates by free-space (the
+                        // separation budget is precious — don't separate all 24 seeds).
+                        if feasible_seen >= 4 || started.elapsed().as_secs_f64() >= deadline_s {
+                            break;
+                        }
                     }
                 } else {
                     commit_feature_admission(bpp, diag, seed);
@@ -2909,66 +3563,91 @@ fn try_admit_critical(
             }
         }
         let feature_score = best_skeleton.as_ref().map(|(score, _, _)| *score);
-        let catalog_score = best_anchor_cat.as_ref().map(|(score, ..)| *score);
-        if skeleton_on && role == Some(SkeletonRole::Anchor) && best_anchor_cat.is_some() {
+        let catalog_score = best_anchor_cat.as_ref().map(|choice| choice.score);
+        if skeleton_on && anchor_like_role && best_anchor_cat.is_some() {
             bpp.bpp_q68_anchor_competition_ran = true;
             bpp.bpp_q68_anchor_feature_score = feature_score;
             bpp.bpp_q68_anchor_catalog_score = catalog_score;
         }
         match choose_anchor_authority_winner(feature_score, catalog_score) {
             AnchorAuthorityWinner::Catalog => {
-                if let Some((_, out, source, secondary)) = best_anchor_cat {
+                if let Some(choice) = best_anchor_cat {
                     bpp.bpp_q68_anchor_selected_path = Some("catalog".to_string());
                     bpp.bpp_critical_feature_admission_successes += 1;
                     bpp.bpp_feature_candidates_accepted += 1;
-                    bpp.bpp_role_anchor_accepted += 1;
+                    if anchor_like_role {
+                        bpp.bpp_role_anchor_accepted += 1;
+                    }
                     bpp.bpp_q61_anchor_catalog_accepted += 1;
-                    bpp.bpp_q61_accepted_anchor_source = Some(source.to_string());
-                    bpp.bpp_q61_accepted_anchor_secondary_policy = Some(secondary.to_string());
-                    return Some(out);
+                    bpp.bpp_q61_accepted_anchor_source = Some(choice.source.to_string());
+                    bpp.bpp_q61_accepted_anchor_secondary_policy =
+                        Some(choice.secondary.to_string());
+                    if let Some(metrics) = anchor_alignment_metrics(
+                        &choice.layout,
+                        cand_inst_idx,
+                        instances,
+                        sheet,
+                        choice.target_edge,
+                        choice.secondary,
+                        choice.seed_rotation_deg,
+                    ) {
+                        record_anchor_alignment_diag(bpp, metrics);
+                    }
+                    return Some(choice.layout);
                 }
             }
             AnchorAuthorityWinner::Feature => {
                 if let Some((_, out, seed)) = best_skeleton {
-                    if skeleton_on
-                        && role == Some(SkeletonRole::Anchor)
-                        && best_anchor_cat.is_some()
-                    {
+                    if skeleton_on && anchor_like_role && best_anchor_cat.is_some() {
                         bpp.bpp_q68_anchor_selected_path = Some("feature".to_string());
                     }
                     commit_feature_admission(bpp, diag, seed);
                     role_accept(bpp); // SGH-Q55B: per-role accepted count
+                    if anchor_like_role {
+                        record_anchor_min_edge_diag(bpp, &out, cand_inst_idx, instances, sheet);
+                    }
                     return Some(out);
                 }
             }
             AnchorAuthorityWinner::None => {}
         }
         if skip_direct_for_role {
-            // SGH-Q64: role-aware routing gets first shot, but the older direct path still remains a
-            // second-line fallback inside the same admission attempt so proven spacing-0 wins are not
-            // thrown away when the newer path cannot yet finish the job.
-            if let Some(out) = try_feature_first_direct(
-                working,
-                cand_inst_idx,
-                target_sheet,
-                instances,
-                solver_sheets,
-                &sheet_sh,
-                sheet,
-                inst,
-                rot,
-                &weights,
-                rng,
-                diag,
-                bpp,
-            ) {
-                return Some(out);
+            if forced_latest && anchor_like_role {
+                bpp.bpp_q71_anchor_direct_fallback_blocked = true;
+            } else {
+                // SGH-Q64: role-aware routing gets first shot, but the older direct path still remains a
+                // second-line fallback inside the same admission attempt so proven spacing-0 wins are not
+                // thrown away when the newer path cannot yet finish the job.
+                if let Some(out) = try_feature_first_direct(
+                    working,
+                    cand_inst_idx,
+                    target_sheet,
+                    instances,
+                    solver_sheets,
+                    &sheet_sh,
+                    sheet,
+                    inst,
+                    rot,
+                    &weights,
+                    rng,
+                    diag,
+                    bpp,
+                ) {
+                    return Some(out);
+                }
             }
         }
         bpp.bpp_critical_feature_admission_failures += 1;
     }
 
     // ── (3) EXPLICIT FALLBACK: bbox/uniform direct insertion, then centroid-seeded co-movable ──
+    if sheet_builder_forced_latest_enabled()
+        && (role == Some(super::sheet_skeleton::SkeletonRole::Anchor)
+            || forced_latest_strict_edge_lock(inst))
+    {
+        bpp.bpp_q71_anchor_direct_fallback_blocked = true;
+        return None;
+    }
     {
         let mut trial = working.clone();
         let cand_li = trial.placements.len();
@@ -3130,6 +3809,15 @@ fn sheet_builder_latest_lock_enabled() -> bool {
     sheet_builder_strict_latest_enabled() || sheet_builder_forced_latest_enabled()
 }
 
+/// SGH-Q73: opt-in big-part pitch-minimizing row seed. Default OFF: on the Full276 LV8 benchmark the
+/// seed is valid and non-orthogonal at seed time (2 per sheet @ ~81.5°), but the unpinned exploration
+/// SA resolves the overlaps with the surrounding fillers by moving the big parts back toward 90° and
+/// ejecting one — regressing the total placed-count (252 vs the Q72 262). Kept as a tested building
+/// block; turning it into a net win needs item-pinning / obstacle-aware filling (see report).
+fn big_row_seed_enabled() -> bool {
+    std::env::var("VRS_BIG_ROW_SEED").ok().as_deref() == Some("1")
+}
+
 #[allow(clippy::too_many_arguments)]
 fn forced_latest_completion_sweep(
     layout: &mut SparrowLayout,
@@ -3161,7 +3849,8 @@ fn forced_latest_completion_sweep(
                 diag,
                 bpp,
             ) {
-                let score = sheet_freespace_score(
+                let score = completion_recovery_score(
+                    layout,
                     &candidate,
                     sheet_idx,
                     instances,
@@ -3180,6 +3869,56 @@ fn forced_latest_completion_sweep(
             placed[inst_idx] = true;
             bpp.bpp_q69_completion_sweep_inserted += 1;
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn forced_latest_sheet_fill_recovery(
+    layout: &mut SparrowLayout,
+    placed: &mut [bool],
+    sheet_idx: usize,
+    order: &[usize],
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    weights: &DensityWeights,
+    rng: &mut DeterministicRng,
+    started: &Instant,
+    deadline_s: f64,
+    diag: &mut SparrowDiagnostics,
+    bpp: &mut BppReductionDiagnostics,
+) {
+    if started.elapsed().as_secs_f64() >= deadline_s {
+        return;
+    }
+    bpp.bpp_q70_completion_fill_first_applied = true;
+    let mut sweeps = 0usize;
+    while sweeps < 2 && started.elapsed().as_secs_f64() < deadline_s {
+        let mut progress = false;
+        for &inst_idx in order {
+            if placed[inst_idx] || started.elapsed().as_secs_f64() >= deadline_s {
+                continue;
+            }
+            if let Some(candidate) = direct_insert_on_sheet(
+                layout,
+                inst_idx,
+                sheet_idx,
+                instances,
+                solver_sheets,
+                weights,
+                rng,
+                diag,
+                bpp,
+            ) {
+                *layout = candidate;
+                placed[inst_idx] = true;
+                progress = true;
+                bpp.bpp_q70_sheet_fill_recovery_inserted += 1;
+            }
+        }
+        if !progress {
+            break;
+        }
+        sweeps += 1;
     }
 }
 
@@ -3475,6 +4214,33 @@ pub(crate) fn build_critical_aware_seed(
                 placed[pi] = true;
             }
         }
+        let sheet_util =
+            sheet_physical_utilization_ratio(&layout, instances, sheet_idx, &sheets[sheet_idx]);
+        if forced_latest && sheet_util < 0.55 {
+            let recovery_deadline = forced_latest_recovery_deadline(
+                started.elapsed().as_secs_f64().max(sheet_deadline),
+                deadline_s,
+                sheets.len().saturating_sub(sheet_idx + 1),
+            );
+            if recovery_deadline > started.elapsed().as_secs_f64() {
+                bpp.bpp_q70_underfilled_sheet_recovery_used = true;
+                let filler_first = filler_first_completion_order(&queues, instances);
+                forced_latest_sheet_fill_recovery(
+                    &mut layout,
+                    &mut placed,
+                    sheet_idx,
+                    &filler_first,
+                    instances,
+                    sheets,
+                    &weights,
+                    rng,
+                    started,
+                    recovery_deadline,
+                    diag,
+                    bpp,
+                );
+            }
+        }
         if forced_latest
             && started.elapsed().as_secs_f64() >= sheet_deadline
             && sheet_deadline < deadline_s
@@ -3487,11 +4253,7 @@ pub(crate) fn build_critical_aware_seed(
         forced_latest_completion_sweep(
             &mut layout,
             &mut placed,
-            queues
-                .structural
-                .iter()
-                .chain(queues.filler.iter())
-                .copied(),
+            filler_first_completion_order(&queues, instances).into_iter(),
             instances,
             sheets,
             &weights,
@@ -3868,6 +4630,7 @@ fn gravity_compact_layout(
     working: &mut SparrowLayout,
     instances: &[SPInstance],
     solver_sheets: &[SheetShape],
+    locked: &HashSet<usize>,
     bpp: &mut BppReductionDiagnostics,
 ) {
     if working.placements.is_empty() {
@@ -3899,6 +4662,10 @@ fn gravity_compact_layout(
         });
         let mut sweep_moved = 0.0;
         for li in order {
+            // SGH-Q74: never gravity-slide a locked (edge-anchored interlock) part off its anchor.
+            if locked.contains(&working.placements[li].instance_idx) {
+                continue;
+            }
             let p = working.placements[li].clone();
             let sheet_idx = p.sheet_index;
             let Some(sheet_sh) = sheet_prepared.get(sheet_idx).and_then(|o| o.clone()) else {
@@ -3977,6 +4744,526 @@ fn compact_sheet_indices(layout: &mut SparrowLayout, solver_sheets: &[SheetShape
             p.sheet_index = t;
         }
     }
+}
+
+/// SGH-Q72: complete a (possibly incomplete) latest-path builder seed to a *full-instance* seed so
+/// no part is dropped before the optimizer runs. The builder's smart critical/anchor placements are
+/// kept verbatim; every instance the builder did not place is re-inserted from the native LBF /
+/// bootstrap seed (deliberately allowed to overlap — the exploration separator resolves it on the
+/// fixed sheets, exactly like the native seed path that reaches the higher baseline placed-count).
+/// Returns the merged layout, the builder's pre-completion placement count, and how many instances
+/// were re-inserted.
+fn complete_seed_to_full_instance(
+    built: SparrowLayout,
+    problem: &SparrowProblem,
+    exclude: &HashSet<usize>,
+) -> (SparrowLayout, usize, usize) {
+    let n = problem.instances.len();
+    let builder_placed = built.placements.len();
+    let mut present = vec![false; n];
+    for p in &built.placements {
+        if p.instance_idx < n {
+            present[p.instance_idx] = true;
+        }
+    }
+    // SGH-Q74: instances the seeder deliberately left out (e.g. big copies that do not fit) are NOT
+    // re-inserted overlapping — that only churns the pinned interlock and gets the seeded big parts
+    // ejected at sanitize. They become honest unplaced parts instead.
+    for &ix in exclude {
+        if ix < n {
+            present[ix] = true;
+        }
+    }
+    if (0..n).all(|i| present[i]) {
+        return (built, builder_placed, 0);
+    }
+    let native = build_native_constructive_seed(problem);
+    let mut merged = built;
+    let mut reinserted = 0usize;
+    for p in native.placements {
+        if p.instance_idx < n && !present[p.instance_idx] {
+            present[p.instance_idx] = true;
+            merged.placements.push(p);
+            reinserted += 1;
+        }
+    }
+    merged.placements.sort_by_key(|p| p.instance_idx);
+    (merged, builder_placed, reinserted)
+}
+
+/// SGH-Q73: pitch-minimizing row seed for the dominant repeated BIG critical type.
+struct BigRowSeed {
+    part_id: String,
+    rotation_deg: f64,
+    pitch_mm: f64,
+    copies_per_sheet: usize,
+    placements: Vec<SparrowPlacement>,
+}
+
+/// SGH-Q73: choose the orientation that packs the dominant repeated BIG part type with the smallest
+/// CDE-clear translational pitch (a row with the long axis along the sheet's longer side), then seed
+/// as many copies per sheet as actually fit — filling each sheet before opening the next. The
+/// orientation sweep is continuous, so a non-orthogonal interlock angle wins whenever it packs the
+/// concave parts tighter than the min-bbox-width 90° the builder defaults to. `solver_sheets` are the
+/// margin-shrunk sheets, and `sheet_local_feasible` is the CDE truth (boundary + spacing-expanded
+/// clearance), so every seeded placement is a real, valid placement.
+fn repeated_big_critical_row_seed(
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+) -> Option<BigRowSeed> {
+    let sheet = solver_sheets.first()?;
+    let max_sheet_area = solver_sheets.iter().map(|s| s.area).fold(0.0_f64, f64::max);
+    if max_sheet_area <= 0.0 {
+        return None;
+    }
+    // Dominant big repeated type: count >= 2, piece area >= 4% of the sheet, largest area.
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, inst) in instances.iter().enumerate() {
+        groups.entry(inst.part_id.clone()).or_default().push(i);
+    }
+    let mut chosen: Option<(String, f64, Vec<usize>)> = None;
+    for (pid, idxs) in &groups {
+        if idxs.len() < 2 {
+            continue;
+        }
+        let area = part_polygon_area(&instances[idxs[0]].part);
+        if area < 0.04 * max_sheet_area {
+            continue;
+        }
+        if chosen.as_ref().is_none_or(|(_, a, _)| area > *a) {
+            chosen = Some((pid.clone(), area, idxs.clone()));
+        }
+    }
+    let (part_id, _area, mut idxs) = chosen?;
+    idxs.sort_unstable();
+    let proto_part = instances[idxs[0]].part.clone();
+    // Inset off the (margin-shrunk) corner so the CDE boundary check / spacing geometry clears.
+    const INSET: f64 = 2.0;
+    let sx = sheet.min_x + INSET;
+    let sy = sheet.min_y + INSET;
+    let usable_w = (sheet.max_x - INSET) - sx;
+    let usable_h = (sheet.max_y - INSET) - sy;
+    if usable_w <= 0.0 || usable_h <= 0.0 {
+        return None;
+    }
+    // Exact transformed-polygon bbox per orientation. The part's local polygon is the
+    // spacing-expanded contour and does NOT start at the origin, so the corner-origin anchor helper
+    // would misplace it (and fail the boundary check). Probe the CDE shape at anchor (0,0): then the
+    // anchor that lands the world-bbox min at a target rect-min `(tx,ty)` is `(tx - smin_x, ty - smin_y)`.
+    let probe = |theta: f64| -> Option<(f64, f64, f64, f64)> {
+        let s = crate::optimizer::cde_adapter::prepare_shape_native(&proto_part, 0.0, 0.0, theta)
+            .ok()?;
+        Some((s.min_x, s.min_y, s.max_x - s.min_x, s.max_y - s.min_y))
+    };
+    // CDE feasibility of `n` copies in a row at orientation `theta`, rect-min pitch `d`, starting at
+    // the inset corner (`ox`/`oy` are the probed world-bbox min offsets for this orientation).
+    let row_feasible = |theta: f64, ox: f64, oy: f64, d: f64, n: usize| -> bool {
+        let local: Vec<SparrowPlacement> = (0..n)
+            .map(|k| SparrowPlacement {
+                instance_idx: idxs[k],
+                sheet_index: 0,
+                x: sx + (k as f64) * d - ox,
+                y: sy - oy,
+                rotation_deg: theta,
+            })
+            .collect();
+        sheet_local_feasible(&local, instances, solver_sheets)
+    };
+    // Evaluate an orientation → (min clear pitch, how many copies fit in one row).
+    let eval = |theta: f64| -> Option<(f64, usize)> {
+        let (ox, oy, ew, eh) = probe(theta)?;
+        if ew > usable_w + 1e-6 || eh > usable_h + 1e-6 {
+            return None;
+        }
+        if !row_feasible(theta, ox, oy, 0.0, 1) {
+            return None;
+        }
+        let max_d = usable_w - ew;
+        if max_d <= 1.0 || !row_feasible(theta, ox, oy, max_d, 2) {
+            return Some((ew.max(1.0), 1));
+        }
+        let (mut lo, mut hi) = (0.0_f64, max_d);
+        for _ in 0..24 {
+            let mid = 0.5 * (lo + hi);
+            if row_feasible(theta, ox, oy, mid, 2) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        let pitch = hi.max(1.0);
+        let count = (((usable_w - ew) / pitch).floor() as usize + 1).min(idxs.len());
+        Some((pitch, count))
+    };
+
+    // Coarse sweep 0..180° (step 3°), then refine ±3° (step 0.5°). Prefer max count, then min pitch.
+    let mut best: Option<(f64, f64, usize)> = None;
+    let mut consider = |theta: f64, best: &mut Option<(f64, f64, usize)>| {
+        if let Some((pitch, count)) = eval(theta) {
+            let better = best
+                .as_ref()
+                .is_none_or(|(_, bp, bc)| count > *bc || (count == *bc && pitch < *bp - 1e-6));
+            if better {
+                *best = Some((theta, pitch, count));
+            }
+        }
+    };
+    let mut theta = 0.0_f64;
+    while theta < 180.0 {
+        consider(theta, &mut best);
+        theta += 3.0;
+    }
+    let (bt0, _, _) = best?;
+    let mut t = (bt0 - 3.0).max(0.0);
+    let end = (bt0 + 3.0).min(179.9);
+    while t <= end {
+        consider(t, &mut best);
+        t += 0.5;
+    }
+    let (bt, bp, bc) = best?;
+    if bc == 0 {
+        return None;
+    }
+
+    let (ox, oy, ew, _eh) = probe(bt)?;
+    let mut placements: Vec<SparrowPlacement> = Vec::new();
+    let mut next = 0usize;
+    'outer: for (s, sh) in solver_sheets.iter().enumerate() {
+        for k in 0..bc {
+            if next >= idxs.len() {
+                break 'outer;
+            }
+            let rmx = sh.min_x + INSET + (k as f64) * bp;
+            if rmx + ew > sh.max_x - INSET + 1e-6 {
+                break;
+            }
+            placements.push(SparrowPlacement {
+                instance_idx: idxs[next],
+                sheet_index: s,
+                x: rmx - ox,
+                y: sh.min_y + INSET - oy,
+                rotation_deg: bt,
+            });
+            next += 1;
+        }
+    }
+    if placements.is_empty() {
+        return None;
+    }
+    Some(BigRowSeed {
+        part_id,
+        rotation_deg: bt,
+        pitch_mm: bp,
+        copies_per_sheet: bc,
+        placements,
+    })
+}
+
+/// SGH-Q74: opt-in edge-anchored, slide-nest interlock seed for the dominant repeated BIG critical
+/// type — the reference (nestandcut) recipe. Unlike the Q73 fixed-pitch row (which forbids bbox
+/// overlap and so caps at 2/sheet), this slides each next copy in until it is polygon-touching
+/// (CDE-clear) against the already-placed chain, allowing bbox OVERLAP — exactly the deep crescent
+/// interlock that fits 3/sheet. The seeded big parts are then PINNED (fixed obstacles) so the
+/// exploration separator and gravity do not disturb them; the fillers pack around them.
+fn edge_interlock_seed_enabled() -> bool {
+    std::env::var("VRS_EDGE_INTERLOCK_SEED").ok().as_deref() == Some("1")
+}
+
+struct EdgeInterlockSeed {
+    part_id: String,
+    rotation_deg: f64,
+    copies_per_sheet: usize,
+    placements: Vec<SparrowPlacement>,
+    locked: HashSet<usize>,
+}
+
+fn edge_anchored_interlock_big_seed(
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+) -> Option<EdgeInterlockSeed> {
+    let sheet = solver_sheets.first()?;
+    let max_sheet_area = solver_sheets.iter().map(|s| s.area).fold(0.0_f64, f64::max);
+    if max_sheet_area <= 0.0 {
+        return None;
+    }
+    // Dominant big repeated type: count >= 2, piece area >= 4% of the sheet, largest area.
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, inst) in instances.iter().enumerate() {
+        groups.entry(inst.part_id.clone()).or_default().push(i);
+    }
+    let mut chosen: Option<(String, f64, Vec<usize>)> = None;
+    for (pid, idxs) in &groups {
+        if idxs.len() < 2 {
+            continue;
+        }
+        let area = part_polygon_area(&instances[idxs[0]].part);
+        if area < 0.04 * max_sheet_area {
+            continue;
+        }
+        if chosen.as_ref().is_none_or(|(_, a, _)| area > *a) {
+            chosen = Some((pid.clone(), area, idxs.clone()));
+        }
+    }
+    let (part_id, _area, mut idxs) = chosen?;
+    idxs.sort_unstable();
+    let proto_part = instances[idxs[0]].part.clone();
+    const INSET: f64 = 2.0;
+    let sx = sheet.min_x + INSET;
+    let sy = sheet.min_y + INSET;
+    let usable_w = (sheet.max_x - INSET) - sx;
+    let usable_h = (sheet.max_y - INSET) - sy;
+    if usable_w <= 0.0 || usable_h <= 0.0 {
+        return None;
+    }
+    // Exact transformed-polygon bbox-min offset + extent for an orientation (anchor at 0,0).
+    let probe = |theta: f64| -> Option<(f64, f64, f64, f64)> {
+        let s = crate::optimizer::cde_adapter::prepare_shape_native(&proto_part, 0.0, 0.0, theta)
+            .ok()?;
+        Some((s.min_x, s.min_y, s.max_x - s.min_x, s.max_y - s.min_y))
+    };
+    // Build the slide-nest chain for one sheet at base orientation `theta` (optionally alternating
+    // a 180° flip). Each next copy is slid left until it is CDE-touching the chain (bbox overlap
+    // allowed). Returns per-copy (rect_min_x, rotation_deg, off_x, off_y, extent_w).
+    let build_chain = |theta: f64, flip: bool| -> Vec<(f64, f64, f64, f64, f64)> {
+        let mut chain: Vec<(f64, f64, f64, f64, f64)> = Vec::new();
+        let mut rightmost = sx;
+        for k in 0..idxs.len() {
+            let thetak = if flip && k % 2 == 1 {
+                (theta + 180.0) % 360.0
+            } else {
+                theta
+            };
+            let Some((ox, oy, ew, eh)) = probe(thetak) else {
+                break;
+            };
+            if eh > usable_h + 1e-6 || ew > usable_w + 1e-6 {
+                break;
+            }
+            let start_x = if chain.is_empty() { sx } else { rightmost + 1.0 };
+            if start_x + ew > sx + usable_w + 1e-6 {
+                break;
+            }
+            let feas = |x: f64| -> bool {
+                let mut locals: Vec<SparrowPlacement> = chain
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &(cx, ct, cox, coy, _))| SparrowPlacement {
+                        instance_idx: idxs[j],
+                        sheet_index: 0,
+                        x: cx - cox,
+                        y: sy - coy,
+                        rotation_deg: ct,
+                    })
+                    .collect();
+                locals.push(SparrowPlacement {
+                    instance_idx: idxs[chain.len()],
+                    sheet_index: 0,
+                    x: x - ox,
+                    y: sy - oy,
+                    rotation_deg: thetak,
+                });
+                sheet_local_feasible(&locals, instances, solver_sheets)
+            };
+            if !feas(start_x) {
+                break;
+            }
+            // Slide left to the deepest CDE-clear nest position.
+            let (mut lo, mut hi) = (sx, start_x);
+            if feas(lo) {
+                hi = lo;
+            } else {
+                for _ in 0..18 {
+                    let mid = 0.5 * (lo + hi);
+                    if feas(mid) {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+            }
+            let x = hi;
+            if x + ew > sx + usable_w + 1e-6 {
+                break;
+            }
+            chain.push((x, thetak, ox, oy, ew));
+            rightmost = rightmost.max(x + ew);
+        }
+        chain
+    };
+
+    // Orientation sweep: max copies/sheet, then tightest span (smallest rightmost). Continuous, so a
+    // non-orthogonal nest angle wins where it packs the crescents deepest.
+    let span = |chain: &[(f64, f64, f64, f64, f64)]| -> f64 {
+        chain
+            .iter()
+            .map(|&(x, _, _, _, ew)| x + ew)
+            .fold(0.0_f64, f64::max)
+    };
+    let mut best: Option<Vec<(f64, f64, f64, f64, f64)>> = None;
+    let mut consider = |chain: Vec<(f64, f64, f64, f64, f64)>,
+                        best: &mut Option<Vec<(f64, f64, f64, f64, f64)>>| {
+        if chain.is_empty() {
+            return;
+        }
+        let better = match best {
+            None => true,
+            Some(b) => chain.len() > b.len() || (chain.len() == b.len() && span(&chain) < span(b) - 1e-6),
+        };
+        if better {
+            *best = Some(chain);
+        }
+    };
+    let mut theta = 0.0_f64;
+    while theta < 180.0 {
+        consider(build_chain(theta, false), &mut best);
+        consider(build_chain(theta, true), &mut best);
+        theta += 4.0;
+    }
+    // refine ±4° around the best base orientation
+    if let Some(b) = best.clone() {
+        let bt = b.first().map(|&(_, t, _, _, _)| t % 180.0).unwrap_or(0.0);
+        let mut t = (bt - 4.0).max(0.0);
+        let end = (bt + 4.0).min(179.9);
+        while t <= end {
+            consider(build_chain(t, false), &mut best);
+            consider(build_chain(t, true), &mut best);
+            t += 1.0;
+        }
+    }
+    let chain = best?;
+    // θ* = the orientation the slide-nest found best (where the crescents interlock deepest).
+    let rotation_deg = chain.first().map(|&(_, t, _, _, _)| t).unwrap_or(0.0);
+
+    // Unified per-sheet seats: (rect_min_x, rect_min_y, rotation, off_x, off_y).
+    // Reference recipe: anchor the first two big parts to OPPOSITE edges (left-flush + right-flush) at
+    // θ*, leaving a middle channel; Phase B then nests the 3rd into the middle. If the right-edge
+    // anchor is not CDE-clear, fall back to the Phase-A left-nest chain (≥2 deep-nested at one side).
+    let chain_seats: Vec<(f64, f64, f64, f64, f64)> = chain
+        .iter()
+        .map(|&(rmx, t, ox, oy, _ew)| (rmx, sy, t, ox, oy))
+        .collect();
+    let mut seats: Vec<(f64, f64, f64, f64, f64)> = Vec::new();
+    if let Some((ox, oy, ew, _eh)) = probe(rotation_deg) {
+        seats.push((sx, sy, rotation_deg, ox, oy)); // #1 left-flush
+        for &t2 in &[rotation_deg, (rotation_deg + 180.0) % 360.0] {
+            let Some((ox2, oy2, ew2, _)) = probe(t2) else {
+                continue;
+            };
+            let rmx2 = sx + usable_w - ew2;
+            if rmx2 - sx <= ew * 0.25 {
+                continue; // not enough separation from #1 to leave a middle channel
+            }
+            let locals = vec![
+                SparrowPlacement {
+                    instance_idx: idxs[0],
+                    sheet_index: 0,
+                    x: sx - ox,
+                    y: sy - oy,
+                    rotation_deg,
+                },
+                SparrowPlacement {
+                    instance_idx: idxs[1],
+                    sheet_index: 0,
+                    x: rmx2 - ox2,
+                    y: sy - oy2,
+                    rotation_deg: t2,
+                },
+            ];
+            if sheet_local_feasible(&locals, instances, solver_sheets) {
+                seats.push((rmx2, sy, t2, ox2, oy2)); // #2 right-flush
+                break;
+            }
+        }
+    }
+    // Keep whichever Phase-A arrangement seats more big parts (edge-anchored pair vs left-nest chain).
+    if seats.len() < chain_seats.len() {
+        seats = chain_seats;
+    }
+
+    // SGH-Q74 Phase B: try to nest ADDITIONAL copies (the reference's 3rd crescent — anchored toward
+    // the OPPOSITE edge / staggered in y) via a bounded 2D scan against the chosen seats. Allows bbox
+    // overlap; the CDE decides. Runs once on the chosen orientation (cheap), not inside the θ sweep.
+    {
+        let base = rotation_deg;
+        while seats.len() < idxs.len() {
+            let mut placed_one = false;
+            'scan: for &thetak in &[base, (base + 180.0) % 360.0] {
+                let Some((ox, oy, ew, eh)) = probe(thetak) else {
+                    continue;
+                };
+                if ew > usable_w + 1e-6 || eh > usable_h + 1e-6 {
+                    continue;
+                }
+                let (nx, ny) = (28usize, 28usize);
+                for iy in 0..=ny {
+                    let rmy = sy + (usable_h - eh) * (iy as f64 / ny as f64);
+                    for ix in 0..=nx {
+                        // scan right→left so the new copy prefers the opposite (far) edge first
+                        let rmx = sx + (usable_w - ew) * (1.0 - ix as f64 / nx as f64);
+                        let mut locals: Vec<SparrowPlacement> = seats
+                            .iter()
+                            .enumerate()
+                            .map(|(j, &(cx, cy, ct, cox, coy))| SparrowPlacement {
+                                instance_idx: idxs[j],
+                                sheet_index: 0,
+                                x: cx - cox,
+                                y: cy - coy,
+                                rotation_deg: ct,
+                            })
+                            .collect();
+                        locals.push(SparrowPlacement {
+                            instance_idx: idxs[seats.len()],
+                            sheet_index: 0,
+                            x: rmx - ox,
+                            y: rmy - oy,
+                            rotation_deg: thetak,
+                        });
+                        if sheet_local_feasible(&locals, instances, solver_sheets) {
+                            seats.push((rmx, rmy, thetak, ox, oy));
+                            placed_one = true;
+                            break 'scan;
+                        }
+                    }
+                }
+            }
+            if !placed_one {
+                break;
+            }
+        }
+    }
+    let copies_per_sheet = seats.len();
+
+    // Distribute across sheets, filling each before opening the next (coords identical per stock).
+    let mut placements: Vec<SparrowPlacement> = Vec::new();
+    let mut locked: HashSet<usize> = HashSet::new();
+    let mut next = 0usize;
+    'outer: for (s, _sh) in solver_sheets.iter().enumerate() {
+        for &(rmx, rmy, thetak, ox, oy) in &seats {
+            if next >= idxs.len() {
+                break 'outer;
+            }
+            let ix = idxs[next];
+            placements.push(SparrowPlacement {
+                instance_idx: ix,
+                sheet_index: s,
+                x: rmx - ox,
+                y: rmy - oy,
+                rotation_deg: thetak,
+            });
+            locked.insert(ix);
+            next += 1;
+        }
+    }
+    if placements.is_empty() {
+        return None;
+    }
+    Some(EdgeInterlockSeed {
+        part_id,
+        rotation_deg,
+        copies_per_sheet,
+        placements,
+        locked,
+    })
 }
 
 // ── main entry point ───────────────────────────────────────────────────────────
@@ -4095,6 +5382,9 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     // falls back to the LBF seed — so the builder can never regress the result. This banks the
     // proven cases (e.g. 3 big curved parts on one sheet) without risking partial output where the
     // admission is not yet strong enough (tight spacing).
+    // SGH-Q74: instance indices of the edge-anchored interlock big criticals to pin (fixed obstacles)
+    // through the exploration separator and the gravity compaction. Empty unless the Q74 seeder runs.
+    let mut q74_locked: HashSet<usize> = HashSet::new();
     let seed = if sheet_builder_enabled() {
         let strict_latest = sheet_builder_strict_latest_enabled();
         let forced_latest = sheet_builder_forced_latest_enabled();
@@ -4136,7 +5426,63 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             } else {
                 "builder_strict_latest".to_string()
             });
-            built
+            // SGH-Q73: replace the dominant repeated BIG critical type's placements with a
+            // pitch-minimizing row seed — distributed to FILL a sheet before opening the next, at the
+            // tightest (often non-orthogonal) CDE-clear orientation — so the big parts no longer sit
+            // one-per-sheet at the min-bbox-width 90° default. The remaining big copies (if more than
+            // fit) and all other parts are restored by the Q72 no-drop completion below.
+            let mut built = built;
+            let mut q74_exclude: HashSet<usize> = HashSet::new();
+            // SGH-Q74: edge-anchored slide-nest interlock seed (the reference recipe). Replaces the
+            // dominant big type's placements with a deep-interlock chain (bbox overlap allowed), and
+            // PINS those placements (q74_locked) so the exploration separator + gravity treat them as
+            // fixed obstacles while the fillers pack around them. Preferred over the Q73 row seed.
+            if edge_interlock_seed_enabled() {
+                if let Some(es) = edge_anchored_interlock_big_seed(&instances, &solver_sheets) {
+                    built
+                        .placements
+                        .retain(|p| instances[p.instance_idx].part_id != es.part_id);
+                    built.placements.extend(es.placements.iter().cloned());
+                    // Big copies that did not fit the interlock are left UNPLACED (not re-inserted
+                    // overlapping) so they cannot churn / eject the pinned seed.
+                    for (i, inst) in instances.iter().enumerate() {
+                        if inst.part_id == es.part_id && !es.locked.contains(&i) {
+                            q74_exclude.insert(i);
+                        }
+                    }
+                    q74_locked = es.locked.clone();
+                    bpp.bpp_q74_edge_interlock_seed_used = true;
+                    bpp.bpp_q74_edge_interlock_part_id = Some(es.part_id.clone());
+                    bpp.bpp_q74_edge_interlock_rotation_deg = Some(es.rotation_deg);
+                    bpp.bpp_q74_edge_interlock_copies_per_sheet = es.copies_per_sheet;
+                    bpp.bpp_q74_edge_interlock_seeded_count = es.placements.len();
+                    bpp.bpp_q74_edge_interlock_locked_count = es.locked.len();
+                }
+            } else if big_row_seed_enabled() {
+                if let Some(row) = repeated_big_critical_row_seed(&instances, &solver_sheets) {
+                    built
+                        .placements
+                        .retain(|p| instances[p.instance_idx].part_id != row.part_id);
+                    built.placements.extend(row.placements.iter().cloned());
+                    bpp.bpp_q73_big_row_seed_used = true;
+                    bpp.bpp_q73_big_row_part_id = Some(row.part_id.clone());
+                    bpp.bpp_q73_big_row_rotation_deg = Some(row.rotation_deg);
+                    bpp.bpp_q73_big_row_pitch_mm = Some(row.pitch_mm);
+                    bpp.bpp_q73_big_row_copies_per_sheet = row.copies_per_sheet;
+                    bpp.bpp_q73_big_row_seeded_count = row.placements.len();
+                }
+            }
+            // SGH-Q72: no-drop completion. The builder's smart critical/anchor placements are kept,
+            // but every instance it did not place is retained in the seed (native LBF/bootstrap)
+            // so the real exploration SA + redistribute/reduction pipeline can pack ALL parts on the
+            // fixed sheets — instead of the builder silently dropping parts before the optimizer.
+            let (full_seed, builder_placed, reinserted) =
+                complete_seed_to_full_instance(built, &problem, &q74_exclude);
+            bpp.bpp_q72_no_drop_seed_used = true;
+            bpp.bpp_q72_seed_builder_placed_before_completion = builder_placed;
+            bpp.bpp_q72_global_repack_reinserted_count = reinserted;
+            bpp.bpp_q72_seed_instance_count_before_pipeline = full_seed.placements.len();
+            full_seed
         } else if layout_is_full_feasible(&built, &instances, &solver_sheets) {
             bpp.bpp_q69_seed_source = Some("builder_complete".to_string());
             built
@@ -4153,15 +5499,27 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     let mut working = if layout_is_full_feasible(&seed, &instances, &solver_sheets) {
         seed
     } else {
+        // SGH-Q72: in latest-lock mode the seed retains ALL instances (no-drop), so the exploration
+        // separator must get a real budget to actually pack them on the fixed sheets — not just the
+        // leftover construction window. Otherwise (with the construction-full reduction loop skipped
+        // for a partial seed) most of the time budget goes unused and the overlapping re-inserted
+        // parts get ejected for lack of separation time. Reserve the same window the reduction loop
+        // would have used; compress/density/gravity still run on the remaining tail.
+        let subsolve_deadline = if sheet_builder_latest_lock_enabled() {
+            reduction_deadline.max(construct_deadline)
+        } else {
+            construct_deadline
+        };
         let (_cf, solved) = run_subsolve(
             &optimizer,
             seed,
             &instances,
             &solver_sheets,
             &started,
-            construct_deadline,
+            subsolve_deadline,
             &mut rng,
             &mut diag,
+            &q74_locked,
         );
         bpp.bpp_separator_calls += 1;
         solved
@@ -4367,7 +5725,7 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
     );
 
     // SGH-Q46 M2: gravity / bottom-left compaction post-pass (density + edge alignment).
-    gravity_compact_layout(&mut working, &instances, &solver_sheets, &mut bpp);
+    gravity_compact_layout(&mut working, &instances, &solver_sheets, &q74_locked, &mut bpp);
 
     // Relabel surviving sheets to the lowest matching slots (existing-sheet-first output).
     compact_sheet_indices(&mut working, &solver_sheets);
@@ -4404,6 +5762,7 @@ pub(crate) fn run_bpp_sheet_reduction_multisheet(
             &solver_sheets,
             &raw,
             REASON_BPP_STOCK_EXHAUSTED,
+            &q74_locked,
         );
         let mut un = pre_unplaced.clone();
         un.append(&mut newly);
@@ -4553,7 +5912,6 @@ mod q50_tests {
             part,
             allowed_rotations_deg: vec![0.0],
             continuous_rotation: false,
-            spacing_collision_base_shape: base.clone(),
             base_shape: base,
             shape_profile: prof,
             orientation_catalog: orient,
@@ -4686,7 +6044,7 @@ mod q50_tests {
         // The chosen placement should interlock with the U (bbox-overlap, polygon-clear): the
         // densest spot is tucked into the concave mouth.
         let placed = transform_base_to_candidate(
-            instances[1].spacing_collision_base_shape.as_ref(),
+            instances[1].base_shape.as_ref(),
             pl.x,
             pl.y,
             pl.rotation_deg,
@@ -4923,6 +6281,104 @@ mod q50_tests {
     }
 
     #[test]
+    fn forced_latest_catalog_prefers_corner_without_material_center_gain() {
+        let corner = AnchorCatalogChoice {
+            score: 1_000_000.0,
+            layout: SparrowLayout { placements: vec![] },
+            source: "catalog",
+            secondary: "left-top",
+            target_edge: "left",
+            seed_rotation_deg: 0.0,
+        };
+        let center = AnchorCatalogChoice {
+            score: 1_050_000.0,
+            layout: SparrowLayout { placements: vec![] },
+            source: "catalog",
+            secondary: "left-center",
+            target_edge: "left",
+            seed_rotation_deg: 0.0,
+        };
+        let mut bpp = BppReductionDiagnostics::default();
+        let chosen =
+            choose_anchor_catalog_candidate(true, false, Some(corner), Some(center), &mut bpp)
+                .unwrap();
+        assert_eq!(chosen.secondary, "left-top");
+        assert!(bpp.bpp_q70_anchor_center_blocked_by_policy);
+        assert!(!bpp.bpp_q70_anchor_center_override_used);
+    }
+
+    #[test]
+    fn forced_latest_catalog_allows_center_when_materially_better() {
+        let corner = AnchorCatalogChoice {
+            score: 1_000_000.0,
+            layout: SparrowLayout { placements: vec![] },
+            source: "catalog",
+            secondary: "left-top",
+            target_edge: "left",
+            seed_rotation_deg: 0.0,
+        };
+        let center = AnchorCatalogChoice {
+            score: 1_300_000.0,
+            layout: SparrowLayout { placements: vec![] },
+            source: "catalog",
+            secondary: "left-center",
+            target_edge: "left",
+            seed_rotation_deg: 0.0,
+        };
+        let mut bpp = BppReductionDiagnostics::default();
+        let chosen =
+            choose_anchor_catalog_candidate(true, false, Some(corner), Some(center), &mut bpp)
+                .unwrap();
+        assert_eq!(chosen.secondary, "left-center");
+        assert!(bpp.bpp_q70_anchor_center_override_used);
+        assert!(!bpp.bpp_q70_anchor_center_blocked_by_policy);
+    }
+
+    #[test]
+    fn strict_edge_lock_blocks_center_even_without_corner_gain_check() {
+        let corner = AnchorCatalogChoice {
+            score: 1_000_000.0,
+            layout: SparrowLayout { placements: vec![] },
+            source: "catalog",
+            secondary: "corner_high",
+            target_edge: "left",
+            seed_rotation_deg: 0.0,
+        };
+        let center = AnchorCatalogChoice {
+            score: 5_000_000.0,
+            layout: SparrowLayout { placements: vec![] },
+            source: "catalog",
+            secondary: "center",
+            target_edge: "left",
+            seed_rotation_deg: 0.0,
+        };
+        let mut bpp = BppReductionDiagnostics::default();
+        let chosen =
+            choose_anchor_catalog_candidate(true, true, Some(corner), Some(center), &mut bpp)
+                .unwrap();
+        assert_eq!(chosen.secondary, "corner_high");
+        assert!(bpp.bpp_q70_anchor_center_blocked_by_policy);
+        assert!(!bpp.bpp_q70_anchor_center_override_used);
+    }
+
+    #[test]
+    fn strict_edge_lock_rejects_center_only_catalog_path() {
+        let center = AnchorCatalogChoice {
+            score: 5_000_000.0,
+            layout: SparrowLayout { placements: vec![] },
+            source: "catalog",
+            secondary: "center",
+            target_edge: "left",
+            seed_rotation_deg: 0.0,
+        };
+        let mut bpp = BppReductionDiagnostics::default();
+        let chosen = choose_anchor_catalog_candidate(true, true, None, Some(center), &mut bpp);
+        assert!(chosen.is_none());
+        assert!(bpp.bpp_q70_anchor_center_only_path);
+        assert!(bpp.bpp_q70_anchor_center_blocked_by_policy);
+    }
+
+    #[test]
     fn forced_latest_sheet_deadline_reserves_budget_for_remaining_sheets() {
         let d = forced_latest_sheet_deadline(0.0, 120.0, 2);
         assert!((d - 60.0).abs() < 1e-9);
@@ -4980,7 +6436,6 @@ mod q51_measure_gate {
             part,
             allowed_rotations_deg: rots,
             continuous_rotation: true,
-            spacing_collision_base_shape: base.clone(),
             base_shape: base,
             shape_profile: prof,
             orientation_catalog: orient,
@@ -5189,7 +6644,6 @@ mod q67_tests {
             part,
             allowed_rotations_deg: vec![0.0],
             continuous_rotation: false,
-            spacing_collision_base_shape: base.clone(),
             base_shape: base,
             shape_profile: prof,
             orientation_catalog: orient,

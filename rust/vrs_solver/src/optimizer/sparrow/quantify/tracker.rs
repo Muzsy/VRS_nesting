@@ -75,7 +75,7 @@ impl SparrowCollisionTracker {
         // SGH-Q36: use the spacing-expanded collision base shape for pairs/sessions.
         // When spacing is off this is the SAME Rc as the original base shape, so the
         // result is byte-identical to the pre-Q36 path.
-        transform_base_to_candidate(&inst.spacing_collision_base_shape, p.x, p.y, p.rotation_deg)
+        transform_base_to_candidate(&inst.base_shape, p.x, p.y, p.rotation_deg)
             .map(Rc::new)
     }
 
@@ -97,11 +97,11 @@ impl SparrowCollisionTracker {
         diag: &mut SparrowDiagnostics,
     ) -> Self {
         let n = layout.placements.len();
-        // SGH-Q36: spacing is active when any instance carries a distinct spacing-expanded
-        // base shape (when spacing is off, the two base-shape Rc handles are identical).
-        let spacing_applied = instances
-            .iter()
-            .any(|i| !Rc::ptr_eq(&i.base_shape, &i.spacing_collision_base_shape));
+        // SGH-Q74: spacing is baked into the single hole-free offset solver contour BEFORE the solver
+        // (SGH-Q40 app-side offset), so the tracker runs on ONE shape (`base_shape`) at spacing 0. The
+        // former per-instance spacing-expanded collision geometry (Q36 dual-geometry) is retired; this
+        // flag stays for struct/Clone stability but is always false now.
+        let spacing_applied = false;
         let mut t = Self {
             n,
             shapes: vec![None; n],
@@ -553,6 +553,11 @@ pub struct SparrowState {
     pub best_infeasible: Option<SparrowLayout>,
     pub best_infeasible_raw_loss: f64,
     pub best_infeasible_pair_count: usize,
+    /// SGH-Q74: instance indices the separator must treat as fixed obstacles (edge-anchored,
+    /// interlocked big criticals). They stay in the tracker as collision neighbours but are never
+    /// selected as move targets, so the separator pushes the colliding fillers off them instead of
+    /// disturbing the seeded interlock. Empty ⇒ unchanged behaviour.
+    pub locked_items: std::collections::HashSet<usize>,
 }
 
 impl SparrowState {
@@ -581,6 +586,7 @@ impl SparrowState {
             best_infeasible_pair_count: tracker.colliding_pairs(),
             layout,
             tracker,
+            locked_items: std::collections::HashSet::new(),
         }
     }
     pub fn refresh_incumbents(&mut self) {

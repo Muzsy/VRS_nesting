@@ -1,0 +1,394 @@
+{
+  "task": "sgh_q72_full_instance_seed_fixed_bin_repack",
+  "source_package": "artifacts/benchmarks/sgh_q49/inputs/q49_full276_6x1500x3000_margin5_spacing8_continuous_300.json",
+  "time_limit_s": 600,
+  "baseline_placed": 259,
+  "target_placed": 276,
+  "stocks": {
+    "quantity": 2,
+    "width": 1500.0,
+    "height": 3000.0
+  },
+  "technology": {
+    "margin_mm": 5.0,
+    "spacing_mm": 5.0,
+    "kerf_mm": 0.0,
+    "rotation_policy": "continuous"
+  },
+  "run": {
+    "status": "partial",
+    "placed_count": 254,
+    "unplaced_count": 22,
+    "used_sheets": 2,
+    "utilization_pct": 35.77834156291516,
+    "final_pairs": 0,
+    "boundary_violations": 0,
+    "forced_latest_mode": true,
+    "seed_source": "builder_forced_latest",
+    "native_seed_fallback_used": false,
+    "builder_random_bootstrap_used": false,
+    "no_drop_seed_used": true,
+    "seed_instance_count_before_pipeline": 276,
+    "seed_builder_placed_before_completion": 219,
+    "global_repack_reinserted_count": 57,
+    "sheets_opened": 2,
+    "critical_admitted": 10,
+    "critical_deferred": 6,
+    "accepted_anchor_secondary_policy": "corner_low",
+    "non_orthogonal_rotation_count": 192,
+    "rotation_top_counts": [
+      {
+        "rotation_deg": 90.0,
+        "count": 18
+      },
+      {
+        "rotation_deg": 270.0,
+        "count": 17
+      },
+      {
+        "rotation_deg": 180.0,
+        "count": 14
+      },
+      {
+        "rotation_deg": 0.0,
+        "count": 13
+      },
+      {
+        "rotation_deg": 292.5,
+        "count": 11
+      },
+      {
+        "rotation_deg": 112.5,
+        "count": 9
+      },
+      {
+        "rotation_deg": 157.5,
+        "count": 9
+      },
+      {
+        "rotation_deg": 315.0,
+        "count": 9
+      },
+      {
+        "rotation_deg": 202.5,
+        "count": 8
+      },
+      {
+        "rotation_deg": 67.5,
+        "count": 7
+      },
+      {
+        "rotation_deg": 225.0,
+        "count": 6
+      },
+      {
+        "rotation_deg": 247.5,
+        "count": 6
+      }
+    ],
+    "forced_latest_locked": true,
+    "wall_time_s": 579.4
+  },
+  "comparisons": {
+    "q62_current": {
+      "status": "partial",
+      "placed_count": 259,
+      "unplaced_count": 17,
+      "used_sheets": 2,
+      "utilization_pct": 49.96641349141249,
+      "final_pairs": 0,
+      "boundary_violations": 0,
+      "forced_latest_mode": null,
+      "seed_source": null,
+      "native_seed_fallback_used": null,
+      "builder_random_bootstrap_used": null,
+      "no_drop_seed_used": null,
+      "seed_instance_count_before_pipeline": null,
+      "seed_builder_placed_before_completion": null,
+      "global_repack_reinserted_count": null,
+      "sheets_opened": 1,
+      "critical_admitted": 2,
+      "critical_deferred": 4,
+      "accepted_anchor_secondary_policy": null,
+      "non_orthogonal_rotation_count": 220,
+      "rotation_top_counts": [
+        {
+          "rotation_deg": 90.0,
+          "count": 13
+        },
+        {
+          "rotation_deg": 180.0,
+          "count": 12
+        },
+        {
+          "rotation_deg": 270.0,
+          "count": 9
+        },
+        {
+          "rotation_deg": 337.5,
+          "count": 9
+        },
+        {
+          "rotation_deg": 202.5,
+          "count": 8
+        },
+        {
+          "rotation_deg": 247.5,
+          "count": 7
+        },
+        {
+          "rotation_deg": 315.0,
+          "count": 6
+        },
+        {
+          "rotation_deg": 0.0,
+          "count": 5
+        },
+        {
+          "rotation_deg": 22.5,
+          "count": 5
+        },
+        {
+          "rotation_deg": 112.5,
+          "count": 5
+        },
+        {
+          "rotation_deg": 135.0,
+          "count": 4
+        },
+        {
+          "rotation_deg": 157.5,
+          "count": 4
+        }
+      ],
+      "forced_latest_locked": false,
+      "wall_time_s": 0.0,
+      "label": "q62_current"
+    },
+    "q70_corner_first": {
+      "status": "partial",
+      "placed_count": 237,
+      "unplaced_count": 39,
+      "used_sheets": 2,
+      "utilization_pct": 58.695127362605085,
+      "final_pairs": 0,
+      "boundary_violations": 0,
+      "forced_latest_mode": true,
+      "seed_source": "builder_forced_latest",
+      "native_seed_fallback_used": false,
+      "builder_random_bootstrap_used": false,
+      "no_drop_seed_used": null,
+      "seed_instance_count_before_pipeline": null,
+      "seed_builder_placed_before_completion": null,
+      "global_repack_reinserted_count": null,
+      "sheets_opened": 2,
+      "critical_admitted": 10,
+      "critical_deferred": 6,
+      "accepted_anchor_secondary_policy": "corner_high",
+      "non_orthogonal_rotation_count": 198,
+      "rotation_top_counts": [
+        {
+          "rotation_deg": 270.0,
+          "count": 20
+        },
+        {
+          "rotation_deg": 330.0,
+          "count": 20
+        },
+        {
+          "rotation_deg": 60.0,
+          "count": 19
+        },
+        {
+          "rotation_deg": 210.0,
+          "count": 19
+        },
+        {
+          "rotation_deg": 30.0,
+          "count": 17
+        },
+        {
+          "rotation_deg": 300.0,
+          "count": 17
+        },
+        {
+          "rotation_deg": 240.0,
+          "count": 15
+        },
+        {
+          "rotation_deg": 120.0,
+          "count": 13
+        },
+        {
+          "rotation_deg": 82.0,
+          "count": 10
+        },
+        {
+          "rotation_deg": 90.0,
+          "count": 10
+        },
+        {
+          "rotation_deg": 150.0,
+          "count": 10
+        },
+        {
+          "rotation_deg": 86.0,
+          "count": 7
+        }
+      ],
+      "forced_latest_locked": true,
+      "wall_time_s": 0.0,
+      "label": "q70_corner_first"
+    },
+    "q71_edge_lock": {
+      "status": "partial",
+      "placed_count": 215,
+      "unplaced_count": 61,
+      "used_sheets": 2,
+      "utilization_pct": 53.81611027571408,
+      "final_pairs": 0,
+      "boundary_violations": 0,
+      "forced_latest_mode": true,
+      "seed_source": "builder_forced_latest",
+      "native_seed_fallback_used": false,
+      "builder_random_bootstrap_used": false,
+      "no_drop_seed_used": null,
+      "seed_instance_count_before_pipeline": null,
+      "seed_builder_placed_before_completion": null,
+      "global_repack_reinserted_count": null,
+      "sheets_opened": 2,
+      "critical_admitted": 10,
+      "critical_deferred": 6,
+      "accepted_anchor_secondary_policy": "corner_low",
+      "non_orthogonal_rotation_count": 186,
+      "rotation_top_counts": [
+        {
+          "rotation_deg": 60.0,
+          "count": 29
+        },
+        {
+          "rotation_deg": 210.0,
+          "count": 21
+        },
+        {
+          "rotation_deg": 30.0,
+          "count": 20
+        },
+        {
+          "rotation_deg": 150.0,
+          "count": 18
+        },
+        {
+          "rotation_deg": 330.0,
+          "count": 17
+        },
+        {
+          "rotation_deg": 0.0,
+          "count": 14
+        },
+        {
+          "rotation_deg": 120.0,
+          "count": 14
+        },
+        {
+          "rotation_deg": 240.0,
+          "count": 12
+        },
+        {
+          "rotation_deg": 300.0,
+          "count": 9
+        },
+        {
+          "rotation_deg": 74.0,
+          "count": 8
+        },
+        {
+          "rotation_deg": -16.0,
+          "count": 7
+        },
+        {
+          "rotation_deg": 180.0,
+          "count": 7
+        }
+      ],
+      "forced_latest_locked": true,
+      "wall_time_s": 0.0,
+      "label": "q71_edge_lock"
+    }
+  },
+  "render_manifest": {
+    "run_id": "q72_A_no_drop_repack_2sheet_sp5",
+    "task": "SGH-Q72",
+    "input_path": "artifacts/benchmarks/sgh_q72/inputs/q72_full276_2x1500x3000_margin5_spacing5_continuous_600.json",
+    "output_path": "artifacts/benchmarks/sgh_q72/outputs/q72_A_no_drop_repack_2sheet_sp5_output.json",
+    "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+    "used_sheet_count": 2,
+    "used_sheet_indices": [
+      0,
+      1
+    ],
+    "svg_count": 3,
+    "png_count": 3,
+    "have_cairosvg": true,
+    "per_sheet": [
+      {
+        "sheet_index": 0,
+        "stock_id": "S1500x3000",
+        "stock_width": 1500.0,
+        "stock_height": 3000.0,
+        "placed_count": 153,
+        "placed_part_area": 1160192.6,
+        "physical_utilization_pct": 25.7821,
+        "svg_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_00.svg",
+        "png_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_00.png"
+      },
+      {
+        "sheet_index": 1,
+        "stock_id": "S1500x3000",
+        "stock_width": 1500.0,
+        "stock_height": 3000.0,
+        "placed_count": 101,
+        "placed_part_area": 1776386.86,
+        "physical_utilization_pct": 39.4753,
+        "svg_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_01.svg",
+        "png_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_01.png"
+      }
+    ],
+    "overview_svg": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/overview.svg",
+    "overview_png": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/overview.png"
+  },
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 153,
+      "placed_part_area": 1160192.6,
+      "physical_utilization_pct": 25.7821,
+      "svg_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_00.svg",
+      "png_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_00.png"
+    },
+    {
+      "sheet_index": 1,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 101,
+      "placed_part_area": 1776386.86,
+      "physical_utilization_pct": 39.4753,
+      "svg_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_01.svg",
+      "png_path": "artifacts/benchmarks/sgh_q72/renders/q72_A_no_drop_repack_2sheet_sp5/sheet_01.png"
+    }
+  ],
+  "acceptance": {
+    "forced_latest_locked": true,
+    "no_drop_seed_used": true,
+    "seed_retains_all_instances": true,
+    "beats_q62_baseline": false,
+    "beats_q70": true,
+    "beats_q71": true
+  },
+  "verdict": "FAIL",
+  "finding": "Q72 completes the forced-latest seed to a no-drop full-instance seed (builder critical/anchor placements kept, remainder re-inserted) and hands it to the real exploration SA + redistribute pipeline on the fixed 2 sheets. The only acceptance metric is placed_count vs the Q62 baseline (259); edge-lock/corner/residual are diagnostics only."
+}

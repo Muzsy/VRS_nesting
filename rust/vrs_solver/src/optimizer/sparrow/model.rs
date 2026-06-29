@@ -21,10 +21,6 @@ pub struct SPInstance {
     /// Eliminates repeated `prepare_base_shape_native` calls in search/LBF/tracker.
     /// ORIGINAL geometry — used for boundary/container checks and output.
     pub base_shape: Rc<CdeBaseShape>,
-    /// SGH-Q36: part-level cached SPACING-EXPANDED base shape (original offset
-    /// outward by `spacing_mm / 2`). Used ONLY for part-part collision/search.
-    /// When `spacing_mm == 0` this is the SAME `Rc` as `base_shape`.
-    pub spacing_collision_base_shape: Rc<CdeBaseShape>,
     /// SGH-Q47: per-part-type shape profile (decision-support metadata only — ordering,
     /// BPP redistribution, placement budget, diagnostics). Never a collision or rotation input.
     /// Shared across all instances of the same part via `Rc`.
@@ -154,9 +150,6 @@ impl SparrowProblem {
         let mut spacing_offset_area_ratio_sum: f64 = 0.0;
         let mut spacing_offset_area_ratio_max: f64 = 0.0;
         let mut spacing_offset_max_ms_per_part: f64 = 0.0;
-        // Parts whose spacing offset cannot be built safely (no raw fallback).
-        let mut spacing_unsupported_parts: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
 
         for inst in expanded {
             let part = parts.iter().find(|p| p.id == inst.part_id).ok_or_else(|| {
@@ -206,70 +199,11 @@ impl SparrowProblem {
                     }
                 }
             };
-            // SGH-Q36: resolve the spacing-expanded collision base shape.
-            // When spacing is off, reuse the SAME Rc as the original (zero overhead /
-            // identical behaviour). On offset failure the instance is unplaced with
-            // UNSUPPORTED_SPACING_OFFSET_Q36 — never a silent raw fallback.
-            let spacing_collision_base_shape = if !spacing_applied {
-                base_shape.clone()
-            } else if spacing_unsupported_parts.contains(&inst.part_id) {
-                spacing_failure_count += 1;
-                pre_unplaced.push(Unplaced {
-                    instance_id: inst.instance_id.clone(),
-                    part_id: inst.part_id.clone(),
-                    reason: "UNSUPPORTED_SPACING_OFFSET_Q36".to_string(),
-                });
-                continue;
-            } else {
-                match spacing_shape_cache.entry(inst.part_id.clone()) {
-                    std::collections::hash_map::Entry::Occupied(e) => {
-                        spacing_cache_hits += 1;
-                        e.get().clone()
-                    }
-                    std::collections::hash_map::Entry::Vacant(e) => {
-                        let t0 = Instant::now();
-                        let built = prepare_spacing_base_shape_native(part, half_spacing_mm);
-                        let dt_ms = t0.elapsed().as_secs_f64() * 1000.0;
-                        match built {
-                            Ok(bs) => {
-                                spacing_cache_misses += 1;
-                                // SGH-Q37: record offset build stats for this unique part.
-                                spacing_offset_build_ms += dt_ms;
-                                if dt_ms > spacing_offset_max_ms_per_part {
-                                    spacing_offset_max_ms_per_part = dt_ms;
-                                }
-                                let in_vtx = base_shape.local_pts.len();
-                                let out_vtx = bs.local_pts.len();
-                                spacing_offset_input_vertex_total += in_vtx;
-                                spacing_offset_output_vertex_total += out_vtx;
-                                let orig_area =
-                                    crate::geometry::polygon_area(&base_shape.local_pts).abs();
-                                let exp_area = crate::geometry::polygon_area(&bs.local_pts).abs();
-                                let ratio = if orig_area > 0.0 {
-                                    exp_area / orig_area
-                                } else {
-                                    1.0
-                                };
-                                spacing_offset_area_ratio_sum += ratio;
-                                if ratio > spacing_offset_area_ratio_max {
-                                    spacing_offset_area_ratio_max = ratio;
-                                }
-                                e.insert(Rc::new(bs)).clone()
-                            }
-                            Err(_) => {
-                                spacing_unsupported_parts.insert(inst.part_id.clone());
-                                spacing_failure_count += 1;
-                                pre_unplaced.push(Unplaced {
-                                    instance_id: inst.instance_id.clone(),
-                                    part_id: inst.part_id.clone(),
-                                    reason: "UNSUPPORTED_SPACING_OFFSET_Q36".to_string(),
-                                });
-                                continue;
-                            }
-                        }
-                    }
-                }
-            };
+            // SGH-Q74: single solver geometry. Spacing is baked into the part contour BEFORE the
+            // solver (SGH-Q40 app-side offset), so the solver runs at spacing 0 and the collision /
+            // boundary geometry is the one `base_shape`. The former per-instance spacing-expanded
+            // collision shape (Q36 dual-geometry) is retired; the spacing_offset_* diagnostics below
+            // stay (zero) for output-schema stability.
             let continuous_rotation = match part.rotation_policy {
                 Some(RotationPolicyKind::Continuous) => true,
                 Some(_) => false,
@@ -299,7 +233,7 @@ impl SparrowProblem {
                 std::collections::hash_map::Entry::Vacant(e) => {
                     let cat = OrientationCatalog::compute(
                         &inst.part_id,
-                        spacing_collision_base_shape.as_ref(),
+                        base_shape.as_ref(),
                         &shape_profile.contour_features,
                         continuous_rotation,
                         &inst.allowed_rotations_deg,
@@ -325,7 +259,6 @@ impl SparrowProblem {
                 allowed_rotations_deg: inst.allowed_rotations_deg,
                 continuous_rotation,
                 base_shape,
-                spacing_collision_base_shape,
                 shape_profile,
                 orientation_catalog,
                 part_analysis,

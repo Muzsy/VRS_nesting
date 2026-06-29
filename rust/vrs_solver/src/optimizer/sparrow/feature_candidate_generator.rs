@@ -211,7 +211,7 @@ fn bbox_span(shape: &CdeBaseShape) -> (f64, f64) {
 /// shape vs the original base shape (their bbox-span difference). 0 when spacing is 0 (same shape).
 fn clearance_from_instance(inst: &SPInstance) -> f64 {
     let (bw, bh) = bbox_span(&inst.base_shape);
-    let (sw, sh) = bbox_span(&inst.spacing_collision_base_shape);
+    let (sw, sh) = bbox_span(&inst.base_shape);
     ((sw - bw).max(sh - bh)).max(0.0)
 }
 
@@ -227,7 +227,7 @@ pub(crate) fn generate_feature_candidate_seeds_for_sheet(
         allowed_rotations_deg: &moving.allowed_rotations_deg,
         continuous_rotation: moving.continuous_rotation,
         feature_base_shape: &moving.base_shape,
-        collision_base_shape: &moving.spacing_collision_base_shape,
+        collision_base_shape: &moving.base_shape,
         features: moving.contour_features(),
         clearance: clearance_from_instance(moving),
     };
@@ -238,7 +238,7 @@ pub(crate) fn generate_feature_candidate_seeds_for_sheet(
             placement_y: n.placement.y,
             rotation_deg: n.placement.rotation_deg,
             features: n.instance.contour_features(),
-            collision_base_shape: &n.instance.spacing_collision_base_shape,
+            collision_base_shape: &n.instance.base_shape,
         })
         .collect();
     generate_feature_candidate_seeds_impl(
@@ -1318,15 +1318,44 @@ pub fn verify_one_part_sheet_edge_placement(
         cost_per_use: None,
     };
     let raw_sheet = crate::sheet::stock_to_shape(&raw_stock)?;
+    // SGH-Q74: spacing is baked into the part contour app-side (production model), so the solver runs
+    // at spacing 0 on the OFFSET contour. Build the offset part here and feed it to the solver; the
+    // ORIGINAL contour (`true_base`) is recovered separately for the physical-margin verification.
+    let offset_part = {
+        let local = match crate::optimizer::collision_backend::extract_polygon_from_part(part) {
+            crate::optimizer::collision_backend::PolygonExtraction::Valid(v) => v,
+            _ => return Err(format!("part {} geometry unsupported for offset", part.id)),
+        };
+        let off = crate::technology::spacing_geometry::build_spacing_expanded_outer_polygon(
+            &local,
+            half_spacing_mm,
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        let pts: Vec<serde_json::Value> =
+            off.iter().map(|q| serde_json::json!([q.x, q.y])).collect();
+        let minx = off.iter().map(|q| q.x).fold(f64::INFINITY, f64::min);
+        let maxx = off.iter().map(|q| q.x).fold(f64::NEG_INFINITY, f64::max);
+        let miny = off.iter().map(|q| q.y).fold(f64::INFINITY, f64::min);
+        let maxy = off.iter().map(|q| q.y).fold(f64::NEG_INFINITY, f64::max);
+        let mut np = part.clone();
+        let arr = serde_json::Value::Array(pts);
+        np.outer_points = Some(arr.clone());
+        np.prepared_outer_points = Some(arr);
+        np.holes_points = None;
+        np.prepared_holes_points = None;
+        np.width = maxx - minx;
+        np.height = maxy - miny;
+        np
+    };
     let config = SparrowConfig::from_solver_input(
         1.0,
         CollisionBackendKind::Cde,
         rotation_context.clone(),
         42,
     )
-    .with_spacing_mm(spacing_mm);
+    .with_spacing_mm(0.0);
     let problem = SparrowProblem::from_solver_input(
-        std::slice::from_ref(part),
+        std::slice::from_ref(&offset_part),
         std::slice::from_ref(&raw_sheet),
         &rotation_context,
         Vec::new(),
@@ -1340,8 +1369,12 @@ pub fn verify_one_part_sheet_edge_placement(
         )
     })?;
     let continuous = inst.continuous_rotation;
-    let offset_base = inst.spacing_collision_base_shape.as_ref();
-    let true_base = inst.base_shape.as_ref();
+    // The solver instance now carries the OFFSET contour as its single base shape (placement geometry).
+    let offset_base = inst.base_shape.as_ref();
+    // The ORIGINAL contour, recovered for the physical-margin verification (app-side responsibility).
+    let true_base_owned =
+        crate::optimizer::cde_adapter::prepare_base_shape_native(part).map_err(|e| e.to_string())?;
+    let true_base = &true_base_owned;
 
     // Margin-shrunk solver sheet = raw shrunk by (margin − half_spacing). Aligning the OFFSET contour
     // flush to this shrunk edge lands the PHYSICAL contour at exactly `margin` from the raw edge.

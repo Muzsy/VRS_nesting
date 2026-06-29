@@ -378,6 +378,75 @@ pub struct BppReductionDiagnostics {
     pub bpp_q69_completion_sweep_inserted: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bpp_q69_seed_source: Option<String>,
+    // Q70 corner-first residual-space recovery
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q70_anchor_best_corner_score: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q70_anchor_best_center_score: Option<f64>,
+    #[serde(default)]
+    pub bpp_q70_anchor_center_blocked_by_policy: bool,
+    #[serde(default)]
+    pub bpp_q70_anchor_center_override_used: bool,
+    #[serde(default)]
+    pub bpp_q70_anchor_center_only_path: bool,
+    #[serde(default)]
+    pub bpp_q70_sheet_fill_recovery_inserted: usize,
+    #[serde(default)]
+    pub bpp_q70_underfilled_sheet_recovery_used: bool,
+    #[serde(default)]
+    pub bpp_q70_completion_fill_first_applied: bool,
+    // Q71 anchor edge-lock and flush alignment
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q71_anchor_final_primary_gap_mm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q71_anchor_final_secondary_gap_mm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q71_anchor_final_min_edge_gap_mm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q71_anchor_final_rotation_drift_deg: Option<f64>,
+    #[serde(default)]
+    pub bpp_q71_anchor_direct_fallback_blocked: bool,
+    // Q72 full-instance seed + fixed-bin global repack: the latest-path seed must retain ALL
+    // instances before the optimizer runs, so the real exploration SA + redistribute pipeline can
+    // pack them on the fixed sheets instead of the builder silently dropping parts.
+    #[serde(default)]
+    pub bpp_q72_no_drop_seed_used: bool,
+    #[serde(default)]
+    pub bpp_q72_seed_instance_count_before_pipeline: usize,
+    #[serde(default)]
+    pub bpp_q72_seed_builder_placed_before_completion: usize,
+    #[serde(default)]
+    pub bpp_q72_global_repack_reinserted_count: usize,
+    // Q73 pitch-minimizing row seed for the dominant repeated BIG critical type: the big parts are
+    // distributed (fill a sheet before opening the next) at the orientation that packs them with the
+    // smallest CDE-clear pitch — non-orthogonal allowed — instead of the min-bbox-width 90° default.
+    #[serde(default)]
+    pub bpp_q73_big_row_seed_used: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q73_big_row_part_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q73_big_row_rotation_deg: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q73_big_row_pitch_mm: Option<f64>,
+    #[serde(default)]
+    pub bpp_q73_big_row_copies_per_sheet: usize,
+    #[serde(default)]
+    pub bpp_q73_big_row_seeded_count: usize,
+    // Q74 edge-anchored slide-nest interlock seed (bbox-overlap deep interlock) + pinning. The seeded
+    // big criticals are fixed obstacles through the exploration separator and gravity, so the seed
+    // survives and the fillers pack around it.
+    #[serde(default)]
+    pub bpp_q74_edge_interlock_seed_used: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q74_edge_interlock_part_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpp_q74_edge_interlock_rotation_deg: Option<f64>,
+    #[serde(default)]
+    pub bpp_q74_edge_interlock_copies_per_sheet: usize,
+    #[serde(default)]
+    pub bpp_q74_edge_interlock_seeded_count: usize,
+    #[serde(default)]
+    pub bpp_q74_edge_interlock_locked_count: usize,
     // Q57B PairCompatibilityIndex / interlock_pair (Interlock role)
     #[serde(default)]
     pub bpp_q61_pair_index_consulted: bool,

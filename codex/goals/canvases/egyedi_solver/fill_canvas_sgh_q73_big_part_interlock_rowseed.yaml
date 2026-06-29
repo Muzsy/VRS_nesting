@@ -1,0 +1,63 @@
+steps:
+  - name: "Q73 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a big-part pitch-minimalizalo interlock row-seed task canvas/YAML/checklist/report
+      vazat. A canvas rogzitse az adatvezerelt diagnozist (dominans nagy tipus 90 fokon, 1/tabla,
+      3 elhelyezetlen) es az oszinte geometriai limitet (3/tabla nem all ossze ennel az alaknal).
+    outputs:
+      - "canvases/egyedi_solver/sgh_q73_big_part_interlock_rowseed.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q73_big_part_interlock_rowseed.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q73_big_part_interlock_rowseed.md"
+      - "codex/reports/egyedi_solver/sgh_q73_big_part_interlock_rowseed.md"
+
+  - name: "Pitch-minimalizalo big-part row-seed + diagnosztika"
+    description: >
+      Implementald a `repeated_big_critical_row_seed` fuggvenyt: dominans ismetlodo nagy tipus
+      kivalasztasa, folyamatos orientacio-sweep + CDE-validalt (sheet_local_feasible) minimalis clear
+      pitch, tablankenti eloszlas (egy tablat feltoltve mielott uj tablat nyitna). A geometria a
+      tenyleges transzformalt polygon-bboxbol szamitodik (prepare_shape_native). Kosd be a
+      latest-lock seedbe (a nagy tipus placementjeit lecserelve), majd Q72 no-drop kiegeszites. Vedd
+      fel a Q73 diagnosztikai mezoket.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Q73 regresszios teszt"
+    description: >
+      Adj celzott tesztet, ami forced-latest alatt ellenorzi, hogy a dominans ismetlodo nagy tipus
+      sor-seedet kap (2/tabla), rogzitett orientacioval. Determinisztikus, single-threaded futasra is.
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Q73 benchmark runner es teljeskoru artifactcsomag"
+    description: >
+      Keszits Full276 (2x1500x3000, margin5, spacing5, continuous) Q73 benchmark runnert, ami a
+      forced-latest gatekkel fut, teljeskoruen rogziti a futast (input/output/log/render SVG+PNG +
+      q73_summary.json + q73_report.md a artifacts/benchmarks/sgh_q73/ ala), es eredmeny-kozpontuan
+      elemzi a dominans nagy tipus tablankenti eloszlasat es forgatasat, Q72 osszehasonlitassal.
+    outputs:
+      - "scripts/bench_sgh_q73_big_part_interlock_rowseed.py"
+      - "artifacts/benchmarks/sgh_q73/inputs"
+      - "artifacts/benchmarks/sgh_q73/outputs"
+      - "artifacts/benchmarks/sgh_q73/logs"
+      - "artifacts/benchmarks/sgh_q73/renders"
+      - "artifacts/benchmarks/sgh_q73/q73_summary.json"
+      - "artifacts/benchmarks/sgh_q73/q73_report.md"
+
+  - name: "Vizualis audit, checklist es report lezarasa"
+    description: >
+      Ellenorizd vizualisan a renderelt tablakat (sheet_00, sheet_01, overview), es rogzitsd
+      eredmeny-kozpontuan a nagy darabok eloszlasat/forgatasat es a maradekteret. Toltsd ki a
+      checklistet es a reportot path+line evidence-szel; ha 6/6 nem all ossze, geometriai limitkent
+      rogzitsd (nem spacing/margin csokkentessel).
+    outputs:
+      - "artifacts/benchmarks/sgh_q73/q73_report.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q73_big_part_interlock_rowseed.md"
+      - "codex/reports/egyedi_solver/sgh_q73_big_part_interlock_rowseed.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q73_big_part_interlock_rowseed.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q73_big_part_interlock_rowseed.md"
+      - "codex/reports/egyedi_solver/sgh_q73_big_part_interlock_rowseed.verify.log"

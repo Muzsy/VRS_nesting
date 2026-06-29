@@ -373,6 +373,7 @@ pub(crate) fn sanitize_partial(
     sheets: &[SheetShape],
     placements: &[Placement],
     reason: &str,
+    locked: &std::collections::HashSet<usize>,
 ) -> (Vec<Placement>, Vec<Unplaced>) {
     if placements.is_empty() {
         return (vec![], vec![]);
@@ -407,13 +408,21 @@ pub(crate) fn sanitize_partial(
         }
     }
 
-    // Sort non-excluded items by raw_loss ascending: least conflicting = keep first.
+    // Sort: SGH-Q74 locked (edge-anchored interlock) items FIRST so they are kept and their colliding
+    // fillers are excluded instead — then the rest by raw_loss ascending (least conflicting first).
+    let is_locked = |i: usize| -> bool {
+        !locked.is_empty() && locked.contains(&layout.placements[i].instance_idx)
+    };
     let mut order: Vec<usize> = (0..n).filter(|&i| !excluded[i]).collect();
     order.sort_by(|&a, &b| {
-        tracker
-            .item_raw_loss(a)
-            .partial_cmp(&tracker.item_raw_loss(b))
-            .unwrap_or(Ordering::Equal)
+        is_locked(b)
+            .cmp(&is_locked(a))
+            .then(
+                tracker
+                    .item_raw_loss(a)
+                    .partial_cmp(&tracker.item_raw_loss(b))
+                    .unwrap_or(Ordering::Equal),
+            )
     });
 
     let mut included = vec![false; n];
@@ -758,6 +767,7 @@ pub fn run_finite_stock_multisheet(
                             &subset_sheets,
                             &result.placements,
                             sanitize_reason,
+                            &std::collections::HashSet::new(),
                         );
                         // Remap sanitized placements
                         sanitize_placements = sp

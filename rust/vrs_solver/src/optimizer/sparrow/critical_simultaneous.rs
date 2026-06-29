@@ -186,7 +186,7 @@ pub fn admit_critical_group(
         .instances
         .first()
         .ok_or_else(|| format!("no instance for {}", part.id))?;
-    let shape = inst.spacing_collision_base_shape.clone();
+    let shape = inst.base_shape.clone();
     let min_width_rot = preferred_group_rotation(
         Some(inst.orientation_catalog.as_ref()),
         &inst.allowed_rotations_deg,
@@ -218,7 +218,7 @@ pub fn admit_live_same_part_group(
     let inset = edge_inset_mm.max(0.0);
     Ok(admit_group_with_shape(
         &inst.part,
-        inst.spacing_collision_base_shape.as_ref(),
+        inst.base_shape.as_ref(),
         min_width_rot,
         target_count,
         [

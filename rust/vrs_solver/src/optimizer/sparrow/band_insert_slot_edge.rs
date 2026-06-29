@@ -169,7 +169,7 @@ pub fn slot_edge_seeds_for_instance(
     slot_bbox: [f64; 4],
     sheet_bbox: [f64; 4],
 ) -> Vec<LiveSlotEdgeSeed> {
-    let shape = inst.spacing_collision_base_shape.as_ref();
+    let shape = inst.base_shape.as_ref();
     let mut rotations: Vec<f64> = Vec::new();
     for c in &inst.orientation_catalog.candidates {
         if !rotations.iter().any(|a| (a - c.angle_deg).abs() < 0.01) {
@@ -281,7 +281,7 @@ pub fn build_band_insert_slot_edge_candidates(
         .instances
         .first()
         .ok_or_else(|| format!("no instance for {}", part.id))?;
-    let offset_shape = inst.spacing_collision_base_shape.clone();
+    let offset_shape = inst.base_shape.clone();
     let catalog = inst.orientation_catalog.as_ref();
 
     // Candidate rotations from the orientation catalog (continuous, includes fractional min-width).

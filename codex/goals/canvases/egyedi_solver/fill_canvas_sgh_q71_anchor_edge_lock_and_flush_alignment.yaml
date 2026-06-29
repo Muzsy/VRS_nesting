@@ -1,0 +1,48 @@
+steps:
+  - name: "Q71 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el az anchor edge-lock and flush alignment task canvas/YAML/checklist/report vazat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q71_anchor_edge_lock_and_flush_alignment.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.md"
+      - "codex/reports/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.md"
+
+  - name: "Anchor edge-lock production authority"
+    description: >
+      Erositsd meg a forced-latest Anchor admission logikat ugy, hogy a seedelt edge/corner
+      candidate vegso layoutja is szamonkerhetoen tabla-szel kozelben maradjon. A generic direct
+      fallback Anchor role alatt ne tudjon gyenge, nem edge-aligned placementre visszacsuszni.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_edge_placement_catalog.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Q71 benchmark runner es artifactcsomag"
+    description: >
+      Keszits uj Full276 benchmark runnert es artifactcsomagot, amely a vizualis audit mellett
+      edge-gap / anchor drift summaryt is rögzit.
+    outputs:
+      - "scripts/bench_sgh_q71_anchor_edge_lock_and_flush_alignment.py"
+      - "artifacts/benchmarks/sgh_q71/inputs"
+      - "artifacts/benchmarks/sgh_q71/outputs"
+      - "artifacts/benchmarks/sgh_q71/logs"
+      - "artifacts/benchmarks/sgh_q71/renders"
+      - "artifacts/benchmarks/sgh_q71/q71_summary.json"
+      - "artifacts/benchmarks/sgh_q71/q71_report.md"
+
+  - name: "Checklist es report lezarasa"
+    description: >
+      Frissitsd a checklistet es a reportot konkret evidence-szel, beleertve a render altal
+      megerositett vagy megcafolt edge-lock minoseget.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.md"
+      - "codex/reports/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.md"
+      - "codex/reports/egyedi_solver/sgh_q71_anchor_edge_lock_and_flush_alignment.verify.log"

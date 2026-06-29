@@ -40,6 +40,16 @@ pub(super) fn run_worker_pass(
     let mut rng = DeterministicRng::new(worker_seed);
 
     let colliding = ordered_colliding_items_for_worker(&tracker, cfg, worker_idx, &mut rng);
+    // SGH-Q74: never move a locked (edge-anchored interlock) item — keep it as a fixed obstacle so the
+    // separator resolves overlaps by pushing the colliding fillers off it instead of disturbing it.
+    let colliding: Vec<usize> = if master.locked_items.is_empty() {
+        colliding
+    } else {
+        colliding
+            .into_iter()
+            .filter(|&li| !master.locked_items.contains(&layout.placements[li].instance_idx))
+            .collect()
+    };
 
     // Build one CDE session per pass for the primary sheet (the sheet of the first
     // colliding target). Each target is deregistered before search and reregistered

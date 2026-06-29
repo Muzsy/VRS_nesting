@@ -198,7 +198,6 @@ mod q51_tests {
             part,
             allowed_rotations_deg: vec![0.0],
             continuous_rotation: false,
-            spacing_collision_base_shape: base.clone(),
             base_shape: base,
             shape_profile: prof,
             orientation_catalog: orient,

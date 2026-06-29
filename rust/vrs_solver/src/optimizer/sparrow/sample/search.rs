@@ -314,7 +314,7 @@ pub(crate) fn native_search_placement(
     // Every candidate is produced by transform_base_to_candidate (called in SeparationEvaluator).
     // SGH-Q36: the separator candidate uses the spacing-expanded collision base shape for
     // part-part hazards (same Rc as the original when spacing is off — byte-identical).
-    let base = inst.spacing_collision_base_shape.clone();
+    let base = inst.base_shape.clone();
     if r1 {
         diag.q30_profile.search_base_shape_cache_hits += 1;
     }

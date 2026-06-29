@@ -8,21 +8,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        2526.9936,
-        737.8
+        1.0,
+        1.0,
+        2522.9936,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-bottom",
@@ -30,8 +30,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "left",
-      "translation_x": 5.0,
-      "translation_y": 5.0
+      "translation_x": 1.0,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -39,21 +39,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        5.0,
-        2262.2,
-        2526.9936,
-        2995.0
+        1.0,
+        2266.2,
+        2522.9936,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-top",
@@ -61,8 +61,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "left",
-      "translation_x": 5.0,
-      "translation_y": 2262.2
+      "translation_x": 1.0,
+      "translation_y": 2266.2
     },
     {
       "boundary_clear": false,
@@ -70,21 +70,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        5.0,
+        1.0,
         1133.6,
-        2526.9936,
+        2522.9936,
         1866.4
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-center",
@@ -92,7 +92,7 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "left",
-      "translation_x": 5.0,
+      "translation_x": 1.0,
       "translation_y": 1133.6
     },
     {
@@ -101,21 +101,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        -1026.9936,
-        5.0,
-        1495.0,
-        737.8
+        -1022.9936,
+        1.0,
+        1499.0,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-bottom",
@@ -123,8 +123,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "right",
-      "translation_x": -1026.9936,
-      "translation_y": 5.0
+      "translation_x": -1022.9936,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -132,21 +132,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        -1026.9936,
-        2262.2,
-        1495.0,
-        2995.0
+        -1022.9936,
+        2266.2,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-top",
@@ -154,8 +154,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "right",
-      "translation_x": -1026.9936,
-      "translation_y": 2262.2
+      "translation_x": -1022.9936,
+      "translation_y": 2266.2
     },
     {
       "boundary_clear": false,
@@ -163,21 +163,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        -1026.9936,
+        -1022.9936,
         1133.6,
-        1495.0,
+        1499.0,
         1866.4
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-center",
@@ -185,7 +185,7 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "right",
-      "translation_x": -1026.9936,
+      "translation_x": -1022.9936,
       "translation_y": 1133.6
     },
     {
@@ -194,21 +194,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        2526.9936,
-        737.8
+        1.0,
+        1.0,
+        2522.9936,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-left",
@@ -216,8 +216,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "bottom",
-      "translation_x": 5.0,
-      "translation_y": 5.0
+      "translation_x": 1.0,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -225,21 +225,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        -1026.9936,
-        5.0,
-        1495.0,
-        737.8
+        -1022.9936,
+        1.0,
+        1499.0,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-right",
@@ -247,8 +247,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "bottom",
-      "translation_x": -1026.9936,
-      "translation_y": 5.0
+      "translation_x": -1022.9936,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -257,20 +257,20 @@
       "computed_rotation_deg": 0.0,
       "final_extrema": [
         -510.9968,
-        5.0,
+        1.0,
         2010.9968,
-        737.8
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-center",
@@ -279,7 +279,7 @@
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "bottom",
       "translation_x": -510.9968,
-      "translation_y": 5.0
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -287,21 +287,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        5.0,
-        2262.2,
-        2526.9936,
-        2995.0
+        1.0,
+        2266.2,
+        2522.9936,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-left",
@@ -309,8 +309,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "top",
-      "translation_x": 5.0,
-      "translation_y": 2262.2
+      "translation_x": 1.0,
+      "translation_y": 2266.2
     },
     {
       "boundary_clear": false,
@@ -318,21 +318,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 0.0,
       "final_extrema": [
-        -1026.9936,
-        2262.2,
-        1495.0,
-        2995.0
+        -1022.9936,
+        2266.2,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-right",
@@ -340,8 +340,8 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "top",
-      "translation_x": -1026.9936,
-      "translation_y": 2262.2
+      "translation_x": -1022.9936,
+      "translation_y": 2266.2
     },
     {
       "boundary_clear": false,
@@ -350,20 +350,20 @@
       "computed_rotation_deg": 0.0,
       "final_extrema": [
         -510.9968,
-        2262.2,
+        2266.2,
         2010.9968,
-        2995.0
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -4.0,
-        2525.9936,
-        736.8
+        0.0,
+        0.0,
+        2521.9936,
+        732.8
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-center",
@@ -372,29 +372,29 @@
       "target_axis_angle_deg": 0.0,
       "target_sheet_edge": "top",
       "translation_x": -510.9968,
-      "translation_y": 2262.2
+      "translation_y": 2266.2
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        737.8,
-        2526.9936
+        1.0,
+        1.0,
+        733.8,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-bottom",
@@ -402,30 +402,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "left",
-      "translation_x": 737.8,
-      "translation_y": 5.0
+      "translation_x": 733.8,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        5.0,
-        473.0064,
-        737.8,
-        2995.0
+        1.0,
+        477.0064,
+        733.8,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-top",
@@ -433,30 +433,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "left",
-      "translation_x": 737.8,
-      "translation_y": 473.0064
+      "translation_x": 733.8,
+      "translation_y": 477.0064
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3283,
+      "candidate_score": 0.1192,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        5.0,
+        1.0,
         239.0032,
-        737.8,
+        733.8,
         2760.9968
       ],
       "free_space_score": 2619752.3333,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-center",
@@ -464,30 +464,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "left",
-      "translation_x": 737.8,
+      "translation_x": 733.8,
       "translation_y": 239.0032
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        762.2,
-        5.0,
-        1495.0,
-        2526.9936
+        766.2,
+        1.0,
+        1499.0,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-bottom",
@@ -495,30 +495,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "right",
-      "translation_x": 1495.0,
-      "translation_y": 5.0
+      "translation_x": 1499.0,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        762.2,
-        473.0064,
-        1495.0,
-        2995.0
+        766.2,
+        477.0064,
+        1499.0,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-top",
@@ -526,30 +526,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "right",
-      "translation_x": 1495.0,
-      "translation_y": 473.0064
+      "translation_x": 1499.0,
+      "translation_y": 477.0064
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3283,
+      "candidate_score": 0.1192,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        762.2,
+        766.2,
         239.0032,
-        1495.0,
+        1499.0,
         2760.9968
       ],
       "free_space_score": 2619752.3333,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-center",
@@ -557,30 +557,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "right",
-      "translation_x": 1495.0,
+      "translation_x": 1499.0,
       "translation_y": 239.0032
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        737.8,
-        2526.9936
+        1.0,
+        1.0,
+        733.8,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-left",
@@ -588,30 +588,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "bottom",
-      "translation_x": 737.8,
-      "translation_y": 5.0
+      "translation_x": 733.8,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        762.2,
-        5.0,
-        1495.0,
-        2526.9936
+        766.2,
+        1.0,
+        1499.0,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-right",
@@ -619,30 +619,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "bottom",
-      "translation_x": 1495.0,
-      "translation_y": 5.0
+      "translation_x": 1499.0,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3423,
+      "candidate_score": 0.1372,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
         383.6,
-        5.0,
+        1.0,
         1116.4,
-        2526.9936
+        2522.9936
       ],
-      "free_space_score": 2709572.4133,
+      "free_space_score": 2744502.4444,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-center",
@@ -651,29 +651,29 @@
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "bottom",
       "translation_x": 1116.4,
-      "translation_y": 5.0
+      "translation_y": 1.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        5.0,
-        473.0064,
-        737.8,
-        2995.0
+        1.0,
+        477.0064,
+        733.8,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-left",
@@ -681,30 +681,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "top",
-      "translation_x": 737.8,
-      "translation_y": 473.0064
+      "translation_x": 733.8,
+      "translation_y": 477.0064
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
-        762.2,
-        473.0064,
-        1495.0,
-        2995.0
+        766.2,
+        477.0064,
+        1499.0,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-right",
@@ -712,30 +712,30 @@
       "selected_edge_index": 257,
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "top",
-      "translation_x": 1495.0,
-      "translation_y": 473.0064
+      "translation_x": 1499.0,
+      "translation_y": 477.0064
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3423,
+      "candidate_score": 0.1372,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 90.0,
       "final_extrema": [
         383.6,
-        473.0064,
+        477.0064,
         1116.4,
-        2995.0
+        2999.0
       ],
-      "free_space_score": 2709572.4133,
+      "free_space_score": 2744502.4444,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -736.8,
-        -4.0,
-        4.0,
-        2525.9936
+        -732.8,
+        0.0,
+        0.0,
+        2521.9936
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-center",
@@ -744,29 +744,29 @@
       "target_axis_angle_deg": 90.0,
       "target_sheet_edge": "top",
       "translation_x": 1116.4,
-      "translation_y": 473.0064
+      "translation_y": 477.0064
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4995,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        5.1507,
-        5.1873,
-        737.3649,
-        2548.8605
+        1.0,
+        1.0,
+        733.2142,
+        2544.6732
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1507,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-bottom",
@@ -774,30 +774,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 737.3649,
-      "translation_y": 40.3457
+      "translation_x": 733.2142,
+      "translation_y": 36.1584
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4995,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        5.1507,
-        451.1395,
-        737.3649,
-        2994.8127
+        1.0,
+        455.3268,
+        733.2142,
+        2999.0
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1507,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-top",
@@ -805,30 +805,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 737.3649,
-      "translation_y": 486.2978
+      "translation_x": 733.2142,
+      "translation_y": 490.4851
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3137,
+      "candidate_score": 0.1192,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        5.1507,
+        1.0,
         228.1634,
-        737.3649,
+        733.2142,
         2771.8366
       ],
-      "free_space_score": 2544902.2667,
+      "free_space_score": 2619752.3333,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1507,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-center",
@@ -836,30 +836,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 737.3649,
+      "translation_x": 733.2142,
       "translation_y": 263.3218
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4988,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        762.5985,
-        5.1873,
-        1494.8127,
-        2548.8605
+        766.7858,
+        1.0,
+        1499.0,
+        2544.6732
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-bottom",
@@ -867,30 +867,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 1494.8127,
-      "translation_y": 40.3457
+      "translation_x": 1499.0,
+      "translation_y": 36.1584
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4988,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        762.5985,
-        451.1395,
-        1494.8127,
-        2994.8127
+        766.7858,
+        455.3268,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-top",
@@ -898,30 +898,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 1494.8127,
-      "translation_y": 486.2978
+      "translation_x": 1499.0,
+      "translation_y": 490.4851
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3129,
+      "candidate_score": 0.1192,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        762.5985,
+        766.7858,
         228.1634,
-        1494.8127,
+        1499.0,
         2771.8366
       ],
-      "free_space_score": 2544902.2667,
+      "free_space_score": 2619752.3333,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-center",
@@ -929,30 +929,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 1494.8127,
+      "translation_x": 1499.0,
       "translation_y": 263.3218
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4988,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        5.1507,
-        5.1873,
-        737.3649,
-        2548.8605
+        1.0,
+        1.0,
+        733.2142,
+        2544.6732
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-left",
@@ -960,30 +960,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 737.3649,
-      "translation_y": 40.3457
+      "translation_x": 733.2142,
+      "translation_y": 36.1584
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4988,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        762.5985,
-        5.1873,
-        1494.8127,
-        2548.8605
+        766.7858,
+        1.0,
+        1499.0,
+        2544.6732
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-right",
@@ -991,30 +991,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 1494.8127,
-      "translation_y": 40.3457
+      "translation_x": 1499.0,
+      "translation_y": 36.1584
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3386,
+      "candidate_score": 0.1322,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        383.8746,
-        5.1873,
-        1116.0888,
-        2548.8605
+        383.8929,
+        1.0,
+        1116.1071,
+        2544.6732
       ],
       "free_space_score": 2709572.4133,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-center",
@@ -1022,30 +1022,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 1116.0888,
-      "translation_y": 40.3457
+      "translation_x": 1116.1071,
+      "translation_y": 36.1584
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4988,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        5.1507,
-        451.1395,
-        737.3649,
-        2994.8127
+        1.0,
+        455.3268,
+        733.2142,
+        2999.0
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-left",
@@ -1053,30 +1053,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 737.3649,
-      "translation_y": 486.2978
+      "translation_x": 733.2142,
+      "translation_y": 490.4851
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.4988,
+      "candidate_score": 0.4738,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        762.5985,
-        451.1395,
-        1494.8127,
-        2994.8127
+        766.7858,
+        455.3268,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 2582327.3,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-right",
@@ -1084,30 +1084,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 1494.8127,
-      "translation_y": 486.2978
+      "translation_x": 1499.0,
+      "translation_y": 490.4851
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3386,
+      "candidate_score": 0.1322,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 92.75,
       "final_extrema": [
-        383.8746,
-        451.1395,
-        1116.0888,
-        2994.8127
+        383.8929,
+        455.3268,
+        1116.1071,
+        2999.0
       ],
       "free_space_score": 2709572.4133,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -736.3649,
-        -39.3457,
-        4.1873,
-        2512.7022
+        -732.2142,
+        -35.1584,
+        -0.0,
+        2508.5149
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-center",
@@ -1115,8 +1115,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 1116.0888,
-      "translation_y": 486.2978
+      "translation_x": 1116.1071,
+      "translation_y": 490.4851
     },
     {
       "boundary_clear": false,
@@ -1124,21 +1124,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        5.1873,
-        5.1873,
-        2548.8605,
-        737.4015
+        1.0,
+        1.0,
+        2544.6732,
+        733.2142
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-bottom",
@@ -1146,8 +1146,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 40.3457,
-      "translation_y": 5.1873
+      "translation_x": 36.1584,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -1155,21 +1155,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        5.1873,
-        2262.6351,
-        2548.8605,
-        2994.8493
+        1.0,
+        2266.7858,
+        2544.6732,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-top",
@@ -1177,8 +1177,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 40.3457,
-      "translation_y": 2262.6351
+      "translation_x": 36.1584,
+      "translation_y": 2266.7858
     },
     {
       "boundary_clear": false,
@@ -1186,21 +1186,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        5.1873,
-        1133.9112,
-        2548.8605,
-        1866.1254
+        1.0,
+        1133.8929,
+        2544.6732,
+        1866.1071
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-center",
@@ -1208,8 +1208,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 40.3457,
-      "translation_y": 1133.9112
+      "translation_x": 36.1584,
+      "translation_y": 1133.8929
     },
     {
       "boundary_clear": false,
@@ -1217,21 +1217,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        -1048.8605,
-        5.1873,
-        1494.8127,
-        737.4015
+        -1044.6732,
+        1.0,
+        1499.0,
+        733.2142
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-bottom",
@@ -1239,8 +1239,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": -1013.7022,
-      "translation_y": 5.1873
+      "translation_x": -1009.5149,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -1248,21 +1248,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        -1048.8605,
-        2262.6351,
-        1494.8127,
-        2994.8493
+        -1044.6732,
+        2266.7858,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-top",
@@ -1270,8 +1270,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": -1013.7022,
-      "translation_y": 2262.6351
+      "translation_x": -1009.5149,
+      "translation_y": 2266.7858
     },
     {
       "boundary_clear": false,
@@ -1279,21 +1279,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        -1048.8605,
-        1133.9112,
-        1494.8127,
-        1866.1254
+        -1044.6732,
+        1133.8929,
+        1499.0,
+        1866.1071
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-center",
@@ -1301,8 +1301,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": -1013.7022,
-      "translation_y": 1133.9112
+      "translation_x": -1009.5149,
+      "translation_y": 1133.8929
     },
     {
       "boundary_clear": false,
@@ -1310,21 +1310,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        5.1873,
-        5.1873,
-        2548.8605,
-        737.4015
+        1.0,
+        1.0,
+        2544.6732,
+        733.2142
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-left",
@@ -1332,8 +1332,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 40.3457,
-      "translation_y": 5.1873
+      "translation_x": 36.1584,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -1341,21 +1341,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        -1048.8605,
-        5.1873,
-        1494.8127,
-        737.4015
+        -1044.6732,
+        1.0,
+        1499.0,
+        733.2142
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-right",
@@ -1363,8 +1363,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": -1013.7022,
-      "translation_y": 5.1873
+      "translation_x": -1009.5149,
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -1373,20 +1373,20 @@
       "computed_rotation_deg": 2.75,
       "final_extrema": [
         -521.8366,
-        5.1873,
+        1.0,
         2021.8366,
-        737.4015
+        733.2142
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1873,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-center",
@@ -1395,7 +1395,7 @@
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
       "translation_x": -486.6782,
-      "translation_y": 5.1873
+      "translation_y": 1.0
     },
     {
       "boundary_clear": false,
@@ -1403,21 +1403,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        5.1873,
-        2262.6351,
-        2548.8605,
-        2994.8493
+        1.0,
+        2266.7858,
+        2544.6732,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1507,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-left",
@@ -1425,8 +1425,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 40.3457,
-      "translation_y": 2262.6351
+      "translation_x": 36.1584,
+      "translation_y": 2266.7858
     },
     {
       "boundary_clear": false,
@@ -1434,21 +1434,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 2.75,
       "final_extrema": [
-        -1048.8605,
-        2262.6351,
-        1494.8127,
-        2994.8493
+        -1044.6732,
+        2266.7858,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": true,
-      "margin_error": 0.1507,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-right",
@@ -1456,8 +1456,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": -1013.7022,
-      "translation_y": 2262.6351
+      "translation_x": -1009.5149,
+      "translation_y": 2266.7858
     },
     {
       "boundary_clear": false,
@@ -1466,20 +1466,20 @@
       "computed_rotation_deg": 2.75,
       "final_extrema": [
         -521.8366,
-        2262.6351,
+        2266.7858,
         2021.8366,
-        2994.8493
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": true,
-      "margin_error": 0.1507,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -39.3457,
-        -4.1873,
-        2512.7022,
-        736.3649
+        -35.1584,
+        0.0,
+        2508.5149,
+        732.2142
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-center",
@@ -1488,7 +1488,7 @@
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
       "translation_x": -486.6782,
-      "translation_y": 2262.6351
+      "translation_y": 2266.7858
     },
     {
       "boundary_clear": false,
@@ -1496,21 +1496,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        2526.9936,
-        737.8
+        1.0,
+        1.0,
+        2522.9936,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-bottom",
@@ -1518,8 +1518,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 2526.9936,
-      "translation_y": 737.8
+      "translation_x": 2522.9936,
+      "translation_y": 733.8
     },
     {
       "boundary_clear": false,
@@ -1527,21 +1527,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        5.0,
-        2262.2,
-        2526.9936,
-        2995.0
+        1.0,
+        2266.2,
+        2522.9936,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-top",
@@ -1549,8 +1549,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 2526.9936,
-      "translation_y": 2995.0
+      "translation_x": 2522.9936,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": false,
@@ -1558,21 +1558,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        5.0,
+        1.0,
         1133.6,
-        2526.9936,
+        2522.9936,
         1866.4
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "left-center",
@@ -1580,7 +1580,7 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 2526.9936,
+      "translation_x": 2522.9936,
       "translation_y": 1866.4
     },
     {
@@ -1589,21 +1589,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        -1026.9936,
-        5.0,
-        1495.0,
-        737.8
+        -1022.9936,
+        1.0,
+        1499.0,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-bottom",
@@ -1611,8 +1611,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 1495.0,
-      "translation_y": 737.8
+      "translation_x": 1499.0,
+      "translation_y": 733.8
     },
     {
       "boundary_clear": false,
@@ -1620,21 +1620,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        -1026.9936,
-        2262.2,
-        1495.0,
-        2995.0
+        -1022.9936,
+        2266.2,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-top",
@@ -1642,8 +1642,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 1495.0,
-      "translation_y": 2995.0
+      "translation_x": 1499.0,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": false,
@@ -1651,21 +1651,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        -1026.9936,
+        -1022.9936,
         1133.6,
-        1495.0,
+        1499.0,
         1866.4
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "right-center",
@@ -1673,7 +1673,7 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 1495.0,
+      "translation_x": 1499.0,
       "translation_y": 1866.4
     },
     {
@@ -1682,21 +1682,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        2526.9936,
-        737.8
+        1.0,
+        1.0,
+        2522.9936,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-left",
@@ -1704,8 +1704,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 2526.9936,
-      "translation_y": 737.8
+      "translation_x": 2522.9936,
+      "translation_y": 733.8
     },
     {
       "boundary_clear": false,
@@ -1713,21 +1713,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        -1026.9936,
-        5.0,
-        1495.0,
-        737.8
+        -1022.9936,
+        1.0,
+        1499.0,
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-right",
@@ -1735,8 +1735,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 1495.0,
-      "translation_y": 737.8
+      "translation_x": 1499.0,
+      "translation_y": 733.8
     },
     {
       "boundary_clear": false,
@@ -1745,20 +1745,20 @@
       "computed_rotation_deg": 180.0,
       "final_extrema": [
         -510.9968,
-        5.0,
+        1.0,
         2010.9968,
-        737.8
+        733.8
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "bottom-center",
@@ -1767,7 +1767,7 @@
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
       "translation_x": 2010.9968,
-      "translation_y": 737.8
+      "translation_y": 733.8
     },
     {
       "boundary_clear": false,
@@ -1775,21 +1775,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        5.0,
-        2262.2,
-        2526.9936,
-        2995.0
+        1.0,
+        2266.2,
+        2522.9936,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-left",
@@ -1797,8 +1797,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 2526.9936,
-      "translation_y": 2995.0
+      "translation_x": 2522.9936,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": false,
@@ -1806,21 +1806,21 @@
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 180.0,
       "final_extrema": [
-        -1026.9936,
-        2262.2,
-        1495.0,
-        2995.0
+        -1022.9936,
+        2266.2,
+        1499.0,
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-right",
@@ -1828,8 +1828,8 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 1495.0,
-      "translation_y": 2995.0
+      "translation_x": 1499.0,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": false,
@@ -1838,20 +1838,20 @@
       "computed_rotation_deg": 180.0,
       "final_extrema": [
         -510.9968,
-        2262.2,
+        2266.2,
         2010.9968,
-        2995.0
+        2999.0
       ],
       "free_space_score": 0.0,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -2525.9936,
-        -736.8,
-        4.0,
-        4.0
+        -2521.9936,
+        -732.8,
+        -0.0,
+        0.0
       ],
       "rejection_reason": "offset_contour_exceeds_shrunk_sheet",
       "secondary_axis_policy": "top-center",
@@ -1860,29 +1860,29 @@
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
       "translation_x": 2010.9968,
-      "translation_y": 2995.0
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        737.8,
-        2526.9936
+        1.0,
+        1.0,
+        733.8,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-bottom",
@@ -1890,30 +1890,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 5.0,
-      "translation_y": 2526.9936
+      "translation_x": 1.0,
+      "translation_y": 2522.9936
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        5.0,
-        473.0064,
-        737.8,
-        2995.0
+        1.0,
+        477.0064,
+        733.8,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-top",
@@ -1921,30 +1921,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 5.0,
-      "translation_y": 2995.0
+      "translation_x": 1.0,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3283,
+      "candidate_score": 0.1192,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        5.0,
+        1.0,
         239.0032,
-        737.8,
+        733.8,
         2760.9968
       ],
       "free_space_score": 2619752.3333,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "left-center",
@@ -1952,30 +1952,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "left",
-      "translation_x": 5.0,
+      "translation_x": 1.0,
       "translation_y": 2760.9968
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        762.2,
-        5.0,
-        1495.0,
-        2526.9936
+        766.2,
+        1.0,
+        1499.0,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-bottom",
@@ -1983,30 +1983,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 762.2,
-      "translation_y": 2526.9936
+      "translation_x": 766.2,
+      "translation_y": 2522.9936
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        762.2,
-        473.0064,
-        1495.0,
-        2995.0
+        766.2,
+        477.0064,
+        1499.0,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-top",
@@ -2014,30 +2014,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 762.2,
-      "translation_y": 2995.0
+      "translation_x": 766.2,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3283,
+      "candidate_score": 0.1192,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        762.2,
+        766.2,
         239.0032,
-        1495.0,
+        1499.0,
         2760.9968
       ],
       "free_space_score": 2619752.3333,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 1495.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "right-center",
@@ -2045,30 +2045,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "right",
-      "translation_x": 762.2,
+      "translation_x": 766.2,
       "translation_y": 2760.9968
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        5.0,
-        5.0,
-        737.8,
-        2526.9936
+        1.0,
+        1.0,
+        733.8,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-left",
@@ -2076,30 +2076,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 5.0,
-      "translation_y": 2526.9936
+      "translation_x": 1.0,
+      "translation_y": 2522.9936
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        762.2,
-        5.0,
-        1495.0,
-        2526.9936
+        766.2,
+        1.0,
+        1499.0,
+        2522.9936
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-right",
@@ -2107,30 +2107,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
-      "translation_x": 762.2,
-      "translation_y": 2526.9936
+      "translation_x": 766.2,
+      "translation_y": 2522.9936
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3423,
+      "candidate_score": 0.1372,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
         383.6,
-        5.0,
+        1.0,
         1116.4,
-        2526.9936
+        2522.9936
       ],
-      "free_space_score": 2709572.4133,
+      "free_space_score": 2744502.4444,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 5.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "bottom-center",
@@ -2139,29 +2139,29 @@
       "target_axis_angle_deg": null,
       "target_sheet_edge": "bottom",
       "translation_x": 383.6,
-      "translation_y": 2526.9936
+      "translation_y": 2522.9936
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        5.0,
-        473.0064,
-        737.8,
-        2995.0
+        1.0,
+        477.0064,
+        733.8,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-left",
@@ -2169,30 +2169,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 5.0,
-      "translation_y": 2995.0
+      "translation_x": 1.0,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.5025,
+      "candidate_score": 0.4792,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
-        762.2,
-        473.0064,
-        1495.0,
-        2995.0
+        766.2,
+        477.0064,
+        1499.0,
+        2999.0
       ],
-      "free_space_score": 2582327.3,
+      "free_space_score": 2619752.3333,
       "is_corner": true,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-right",
@@ -2200,30 +2200,30 @@
       "selected_edge_index": null,
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
-      "translation_x": 762.2,
-      "translation_y": 2995.0
+      "translation_x": 766.2,
+      "translation_y": 2999.0
     },
     {
       "boundary_clear": true,
-      "candidate_score": 0.3423,
+      "candidate_score": 0.1372,
       "candidate_source": "true_extreme_sheet_edge_anchor",
       "computed_rotation_deg": 270.0,
       "final_extrema": [
         383.6,
-        473.0064,
+        477.0064,
         1116.4,
-        2995.0
+        2999.0
       ],
-      "free_space_score": 2709572.4133,
+      "free_space_score": 2744502.4444,
       "is_corner": false,
       "is_fractional": false,
-      "margin_error": 0.0,
+      "margin_error": 4.0,
       "margin_line": 2995.0,
       "offset_extrema_before_translation": [
-        -4.0,
-        -2525.9936,
-        736.8,
-        4.0
+        -0.0,
+        -2521.9936,
+        732.8,
+        -0.0
       ],
       "rejection_reason": null,
       "secondary_axis_policy": "top-center",
@@ -2232,17 +2232,17 @@
       "target_axis_angle_deg": null,
       "target_sheet_edge": "top",
       "translation_x": 383.6,
-      "translation_y": 2995.0
+      "translation_y": 2999.0
     }
   ],
   "corner_count": 24,
   "margin_mm": 5.0,
   "part_id": "Lv8_11612_6db",
   "selected": {
-    "candidate_score": 0.5025,
+    "candidate_score": 0.4792,
     "computed_rotation_deg": 270.0,
-    "free_space_score": 2582327.3,
-    "margin_error": 0.0,
+    "free_space_score": 2619752.3333,
+    "margin_error": 4.0,
     "secondary_axis_policy": "top-right",
     "target_sheet_edge": "top"
   },

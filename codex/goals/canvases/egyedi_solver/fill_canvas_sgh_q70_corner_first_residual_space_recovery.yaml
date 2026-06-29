@@ -1,0 +1,50 @@
+steps:
+  - name: "Q70 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a corner-first residual-space recovery task canvas/YAML/checklist/report vazat.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q70_corner_first_residual_space_recovery.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.md"
+      - "codex/reports/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.md"
+
+  - name: "Corner-first residual-space authority wiring"
+    description: >
+      Erositsd meg a SheetEdgePlacementCatalog es a production BPP critical admission
+      dontesrendszeret ugy, hogy forced-latest alatt a nagy critical alkatreszeknel a corner-first /
+      edge-first residual-space authority tenylegesen elnyomja a center-seat preferenciat, es a
+      completion pass is probalja jobban kitolteni a nagy trivialis ures regiokat.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_edge_placement_catalog.rs"
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Q70 benchmark runner es artifactcsomag"
+    description: >
+      Keszits uj Full276 Q70 benchmark runnert es artifactcsomagot. A report/summary legyen
+      eredmeny-kozpontu, center-vs-corner authority, sheetenkenti kihasznaltsag es manualis
+      vizualis audit blokkal.
+    outputs:
+      - "scripts/bench_sgh_q70_corner_first_residual_space_recovery.py"
+      - "artifacts/benchmarks/sgh_q70/inputs"
+      - "artifacts/benchmarks/sgh_q70/outputs"
+      - "artifacts/benchmarks/sgh_q70/logs"
+      - "artifacts/benchmarks/sgh_q70/renders"
+      - "artifacts/benchmarks/sgh_q70/q70_summary.json"
+      - "artifacts/benchmarks/sgh_q70/q70_report.md"
+
+  - name: "Checklist es report lezarasa"
+    description: >
+      Frissitsd a checklistet es a reportot konkret path+line evidence-szel, oszinten rogzitve,
+      hogy a corner-first / residual-space recovery mennyit javitott a valos benchmark viselkedesen.
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.md"
+      - "codex/reports/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.md"
+      - "codex/reports/egyedi_solver/sgh_q70_corner_first_residual_space_recovery.verify.log"

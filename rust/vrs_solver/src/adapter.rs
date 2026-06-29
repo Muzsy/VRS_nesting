@@ -1223,6 +1223,29 @@ fn run_sparrow_finite_stock_multisheet_pipeline(
     cde_observability::reset();
     crate::optimizer::cde_adapter::reset_query_cache();
 
+    // ── SGH-Q74 SolverInputGuard ─────────────────────────────────────────────────
+    // The solver must NEVER see a top-level hole: cavity prepack is an app-side step (SGH-Q40 /
+    // worker/cavity_prepack.py) that turns hole parts into hole-free virtual composites BEFORE the
+    // solver. If any part still carries holes here, fail hard with an explicit reason rather than
+    // silently nesting only the outer contour and losing the cavity plan.
+    if let Some(bad) = input.parts.iter().find(|p| part_has_holes(p)) {
+        let reason = format!("CAVITY_PREPACK_TOP_LEVEL_HOLES_REMAIN:{}", bad.id);
+        let mut all_unplaced: Vec<Unplaced> = input
+            .parts
+            .iter()
+            .flat_map(|p| {
+                let reason = reason.clone();
+                (0..p.quantity as usize).map(move |i| Unplaced {
+                    instance_id: format!("{}#{i}", p.id),
+                    part_id: p.id.clone(),
+                    reason: reason.clone(),
+                })
+            })
+            .collect();
+        all_unplaced.extend(pre_unplaced);
+        return (vec![], all_unplaced, None, None);
+    }
+
     // ── SGH-Q40 unified technology pre-processing ────────────────────────────────
     // Both technology constraints are moved OUT of the solver's inner logic into two
     // geometry transforms around a plain nester (Q39 control proof: the old dual-geometry

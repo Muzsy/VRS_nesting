@@ -105,6 +105,10 @@ pub struct PartAnalysis {
     pub fit_difficulty: FitDifficultySignals,
     /// Cheap deterministic family / near-duplicate key (area/perimeter/vertex/shape buckets).
     pub family_key: String,
+    /// SGH-Q74: DIAGNOSTIC ONLY — never a placement / priority / criticality decision input. The
+    /// solver runs on a single hole-free offset contour (cavity prepack is app-side, SGH-Q40, and the
+    /// SolverInputGuard hard-fails on any top-level hole), so this is structurally always `true`. Kept
+    /// for diagnostic-JSON stability; no solver decision branches on hole count / cavity topology.
     pub hole_free_solver_input: bool,
     // Soft decision-support scores (each in [0, 1]).
     pub orientation_sensitivity_score: f64,

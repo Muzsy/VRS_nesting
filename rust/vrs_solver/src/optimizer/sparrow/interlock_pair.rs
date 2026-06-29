@@ -341,8 +341,8 @@ pub fn admit_interlock_pair_against_live_anchor(
         rotation_deg: anchor_placement.rotation_deg,
         anchor_is_part_a: true,
     };
-    let anchor_shape = anchor_inst.spacing_collision_base_shape.as_ref();
-    let cand_shape = candidate_inst.spacing_collision_base_shape.as_ref();
+    let anchor_shape = anchor_inst.base_shape.as_ref();
+    let cand_shape = candidate_inst.base_shape.as_ref();
     let mut considered: Vec<InterlockPairSeed> = Vec::new();
     let mut matched_any = false;
 
@@ -507,7 +507,7 @@ fn part_spacing_shape(
         .into_iter()
         .next()
         .ok_or_else(|| format!("no instance for {}", part.id))?;
-    let shape = inst.spacing_collision_base_shape;
+    let shape = inst.base_shape;
     let shape_for_closure = Rc::clone(&shape);
     let closure = move |rot: f64| frame(&shape_for_closure, rot).unwrap_or([0.0, 0.0, 0.0, 0.0]);
     Ok((shape, closure))

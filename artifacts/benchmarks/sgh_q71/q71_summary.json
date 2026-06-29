@@ -1,0 +1,380 @@
+{
+  "task": "sgh_q71_anchor_edge_lock_and_flush_alignment",
+  "source_package": "artifacts/benchmarks/sgh_q49/inputs/q49_full276_6x1500x3000_margin5_spacing8_continuous_300.json",
+  "time_limit_s": 600,
+  "stocks": {
+    "quantity": 2,
+    "width": 1500.0,
+    "height": 3000.0
+  },
+  "technology": {
+    "margin_mm": 5.0,
+    "spacing_mm": 5.0,
+    "kerf_mm": 0.0,
+    "rotation_policy": "continuous"
+  },
+  "run": {
+    "status": "partial",
+    "placed_count": 215,
+    "unplaced_count": 61,
+    "used_sheets": 2,
+    "utilization_pct": 53.81611027571408,
+    "forced_latest_mode": true,
+    "seed_source": "builder_forced_latest",
+    "accepted_anchor_secondary_policy": "corner_low",
+    "anchor_selected_path": "catalog",
+    "anchor_final_primary_gap_mm": 0.011901920409854938,
+    "anchor_final_secondary_gap_mm": 0.005401936627491555,
+    "anchor_final_min_edge_gap_mm": 0.005401936627491555,
+    "anchor_final_rotation_drift_deg": 1.0,
+    "anchor_direct_fallback_blocked": true,
+    "non_orthogonal_rotation_count": 186,
+    "forced_latest_locked": true,
+    "wall_time_s": 158.5,
+    "anchor_edge_gaps": {
+      "focus_parts": [
+        {
+          "part_id": "Lv8_11612_6db",
+          "area_mm2": 597467.949,
+          "placement_count": 4,
+          "avg_min_edge_gap_mm": 66.294,
+          "worst_min_edge_gap_mm": 160.036,
+          "placements": [
+            {
+              "sheet_index": 0,
+              "rotation_deg": 280.5,
+              "nearest_edge": "left",
+              "min_edge_gap_mm": 17.942,
+              "edge_gaps_mm": {
+                "left": 17.942,
+                "right": 301.932,
+                "bottom": 336.57,
+                "top": 50.126
+              }
+            },
+            {
+              "sheet_index": 0,
+              "rotation_deg": 90.0,
+              "nearest_edge": "bottom",
+              "min_edge_gap_mm": 5.005,
+              "edge_gaps_mm": {
+                "left": 761.231,
+                "right": 5.969,
+                "bottom": 5.005,
+                "top": 473.001
+              }
+            },
+            {
+              "sheet_index": 1,
+              "rotation_deg": 268.0,
+              "nearest_edge": "left",
+              "min_edge_gap_mm": 160.036,
+              "edge_gaps_mm": {
+                "left": 160.036,
+                "right": 519.594,
+                "bottom": 287.074,
+                "top": 166.895
+              }
+            },
+            {
+              "sheet_index": 1,
+              "rotation_deg": 88.5,
+              "nearest_edge": "bottom",
+              "min_edge_gap_mm": 82.195,
+              "edge_gaps_mm": {
+                "left": 500.984,
+                "right": 200.449,
+                "bottom": 82.195,
+                "top": 377.493
+              }
+            }
+          ]
+        },
+        {
+          "part_id": "Lv8_15348_6db_GRAVIR",
+          "area_mm2": 127379.951,
+          "placement_count": 6,
+          "avg_min_edge_gap_mm": 65.151,
+          "worst_min_edge_gap_mm": 337.831,
+          "placements": [
+            {
+              "sheet_index": 0,
+              "rotation_deg": 240.0,
+              "nearest_edge": "right",
+              "min_edge_gap_mm": 337.831,
+              "edge_gaps_mm": {
+                "left": 611.022,
+                "right": 337.831,
+                "bottom": 1065.107,
+                "top": 1270.278
+              }
+            },
+            {
+              "sheet_index": 0,
+              "rotation_deg": 180.0,
+              "nearest_edge": "bottom",
+              "min_edge_gap_mm": 7.5,
+              "edge_gaps_mm": {
+                "left": 23.153,
+                "right": 876.847,
+                "bottom": 7.5,
+                "top": 2702.5
+              }
+            },
+            {
+              "sheet_index": 0,
+              "rotation_deg": 180.0,
+              "nearest_edge": "left",
+              "min_edge_gap_mm": 23.153,
+              "edge_gaps_mm": {
+                "left": 23.153,
+                "right": 876.847,
+                "bottom": 307.0,
+                "top": 2403.0
+              }
+            },
+            {
+              "sheet_index": 1,
+              "rotation_deg": 80.0,
+              "nearest_edge": "left",
+              "min_edge_gap_mm": 7.424,
+              "edge_gaps_mm": {
+                "left": 7.424,
+                "right": 1102.793,
+                "bottom": 1510.009,
+                "top": 848.748
+              }
+            },
+            {
+              "sheet_index": 1,
+              "rotation_deg": 90.0,
+              "nearest_edge": "left",
+              "min_edge_gap_mm": 7.5,
+              "edge_gaps_mm": {
+                "left": 7.5,
+                "right": 1202.5,
+                "bottom": 2036.44,
+                "top": 363.56
+              }
+            },
+            {
+              "sheet_index": 1,
+              "rotation_deg": 179.5,
+              "nearest_edge": "bottom",
+              "min_edge_gap_mm": 7.5,
+              "edge_gaps_mm": {
+                "left": 23.196,
+                "right": 874.296,
+                "bottom": 7.5,
+                "top": 2697.275
+              }
+            }
+          ]
+        }
+      ],
+      "avg_min_edge_gap_mm": 65.609,
+      "worst_min_edge_gap_mm": 337.831,
+      "edge_locked_count": 7,
+      "edge_locked_ratio": 0.7
+    }
+  },
+  "comparisons": {
+    "q70_baseline": {
+      "status": "partial",
+      "placed_count": 237,
+      "unplaced_count": 39,
+      "used_sheets": 2,
+      "utilization_pct": 58.695127362605085,
+      "forced_latest_mode": true,
+      "seed_source": "builder_forced_latest",
+      "accepted_anchor_secondary_policy": "corner_high",
+      "anchor_selected_path": "catalog",
+      "anchor_final_primary_gap_mm": null,
+      "anchor_final_secondary_gap_mm": null,
+      "anchor_final_min_edge_gap_mm": null,
+      "anchor_final_rotation_drift_deg": null,
+      "anchor_direct_fallback_blocked": null,
+      "non_orthogonal_rotation_count": 198,
+      "forced_latest_locked": true,
+      "wall_time_s": 0.0,
+      "anchor_edge_gaps": {
+        "focus_parts": [
+          {
+            "part_id": "Lv8_11612_6db",
+            "area_mm2": 597467.949,
+            "placement_count": 4,
+            "avg_min_edge_gap_mm": 103.38,
+            "worst_min_edge_gap_mm": 174.495,
+            "placements": [
+              {
+                "sheet_index": 0,
+                "rotation_deg": 88.5,
+                "nearest_edge": "top",
+                "min_edge_gap_mm": 174.495,
+                "edge_gaps_mm": {
+                  "left": 480.145,
+                  "right": 221.288,
+                  "bottom": 285.193,
+                  "top": 174.495
+                }
+              },
+              {
+                "sheet_index": 0,
+                "rotation_deg": 266.0,
+                "nearest_edge": "left",
+                "min_edge_gap_mm": 11.714,
+                "edge_gaps_mm": {
+                  "left": 11.714,
+                  "right": 581.345,
+                  "bottom": 328.708,
+                  "top": 104.325
+                }
+              },
+              {
+                "sheet_index": 1,
+                "rotation_deg": 86.5,
+                "nearest_edge": "top",
+                "min_edge_gap_mm": 159.647,
+                "edge_gaps_mm": {
+                  "left": 434.218,
+                  "right": 180.385,
+                  "bottom": 278.327,
+                  "top": 159.647
+                }
+              },
+              {
+                "sheet_index": 1,
+                "rotation_deg": 267.0,
+                "nearest_edge": "left",
+                "min_edge_gap_mm": 67.662,
+                "edge_gaps_mm": {
+                  "left": 67.662,
+                  "right": 568.551,
+                  "bottom": 373.376,
+                  "top": 69.735
+                }
+              }
+            ]
+          },
+          {
+            "part_id": "Lv8_15348_6db_GRAVIR",
+            "area_mm2": 127379.951,
+            "placement_count": 6,
+            "avg_min_edge_gap_mm": 307.919,
+            "worst_min_edge_gap_mm": 553.177,
+            "placements": [
+              {
+                "sheet_index": 0,
+                "rotation_deg": 180.0,
+                "nearest_edge": "bottom",
+                "min_edge_gap_mm": 7.5,
+                "edge_gaps_mm": {
+                  "left": 23.153,
+                  "right": 876.847,
+                  "bottom": 7.5,
+                  "top": 2702.5
+                }
+              },
+              {
+                "sheet_index": 0,
+                "rotation_deg": 77.325,
+                "nearest_edge": "left",
+                "min_edge_gap_mm": 345.383,
+                "edge_gaps_mm": {
+                  "left": 345.383,
+                  "right": 740.029,
+                  "bottom": 1002.516,
+                  "top": 1348.473
+                }
+              },
+              {
+                "sheet_index": 0,
+                "rotation_deg": 94.0,
+                "nearest_edge": "right",
+                "min_edge_gap_mm": 552.303,
+                "edge_gaps_mm": {
+                  "left": 616.55,
+                  "right": 552.303,
+                  "bottom": 1620.09,
+                  "top": 761.142
+                }
+              },
+              {
+                "sheet_index": 1,
+                "rotation_deg": 266.0,
+                "nearest_edge": "left",
+                "min_edge_gap_mm": 381.653,
+                "edge_gaps_mm": {
+                  "left": 381.653,
+                  "right": 787.2,
+                  "bottom": 964.744,
+                  "top": 1416.488
+                }
+              },
+              {
+                "sheet_index": 1,
+                "rotation_deg": 90.0,
+                "nearest_edge": "right",
+                "min_edge_gap_mm": 553.177,
+                "edge_gaps_mm": {
+                  "left": 656.823,
+                  "right": 553.177,
+                  "bottom": 1617.321,
+                  "top": 782.679
+                }
+              },
+              {
+                "sheet_index": 1,
+                "rotation_deg": 90.0,
+                "nearest_edge": "left",
+                "min_edge_gap_mm": 7.5,
+                "edge_gaps_mm": {
+                  "left": 7.5,
+                  "right": 1202.5,
+                  "bottom": 2020.804,
+                  "top": 379.196
+                }
+              }
+            ]
+          }
+        ],
+        "avg_min_edge_gap_mm": 226.103,
+        "worst_min_edge_gap_mm": 553.177,
+        "edge_locked_count": 3,
+        "edge_locked_ratio": 0.3
+      }
+    }
+  },
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 184,
+      "placed_part_area": 2402096.19,
+      "physical_utilization_pct": 53.3799,
+      "svg_path": "artifacts/benchmarks/sgh_q71/renders/q71_A_edge_lock_2sheet_sp5/sheet_00.svg",
+      "png_path": "artifacts/benchmarks/sgh_q71/renders/q71_A_edge_lock_2sheet_sp5/sheet_00.png"
+    },
+    {
+      "sheet_index": 1,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 31,
+      "placed_part_area": 2155722.18,
+      "physical_utilization_pct": 47.9049,
+      "svg_path": "artifacts/benchmarks/sgh_q71/renders/q71_A_edge_lock_2sheet_sp5/sheet_01.svg",
+      "png_path": "artifacts/benchmarks/sgh_q71/renders/q71_A_edge_lock_2sheet_sp5/sheet_01.png"
+    }
+  ],
+  "acceptance": {
+    "forced_latest_locked": true,
+    "improves_q70_anchor_avg_gap": true,
+    "keeps_or_improves_q70_edge_locked_count": true,
+    "direct_fallback_blocked_or_unused": true
+  },
+  "verdict": "PASS",
+  "finding": "Q71 mar explicit edge-lock kriterium alapjan tartja bent a forced-latest Anchor placementeket, es az explicit fallback nem tudja csendben lerontani oket. A lenyegi meroszam itt az, hogy a legnagyobb darabok atlagos min-edge-gapje javuljon a Q70-hez kepest."
+}
