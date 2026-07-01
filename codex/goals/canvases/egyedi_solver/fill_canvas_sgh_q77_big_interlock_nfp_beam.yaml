@@ -1,0 +1,73 @@
+steps:
+  - name: "Q77 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a nagy-darab 3/tabla interlock (NFP-jelolt CDE-probing + beam) task
+      canvas/YAML/checklist/report vazat, az adatvezerelt indokkal (Q76.1 274/65, A interlock_nested=0,
+      B' 2-test 503k atfedes de 3/tabla nem; geometriai kulcs: >=50% atfedes kell a 3-lanchoz) es a
+      szamitasi koltseg-analizissel (leszukitett, decimalt, cache-elt NFP + beam = sub-second).
+    outputs:
+      - "canvases/egyedi_solver/sgh_q77_big_interlock_nfp_beam.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q77_big_interlock_nfp_beam.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q77_big_interlock_nfp_beam.md"
+      - "codex/reports/egyedi_solver/sgh_q77_big_interlock_nfp_beam.md"
+
+  - name: "Phase 0 - feasibility lock-in (offline 3-body)"
+    description: >
+      Igazold offline (shapely es/vagy kis Rust-CDE harness) hogy letezik ervenyes 3-nagy elrendezes
+      1500x3000-on ehhez a darabhoz (szelesseg <=1495, magassag <=2990, paronkent polygon-tiszta
+      spacing-gel). Legalabb egy konkret 3-pose (szogek + offszetek) mint a beam celpontja. Ha offline
+      sem all elo, merd ki a referencia (nestandcut LV8) tenyleges 3-nagy elrendezeset es reprodukald celkent.
+    outputs:
+      - "scripts/bench_sgh_q77_big_interlock_nfp_beam.py"
+      - "artifacts/benchmarks/sgh_q77/phase0_feasibility.json"
+
+  - name: "Phase 1 - NFP-jelolt motor (CDE-probing, decimalt, cache)"
+    description: >
+      Implementald a `nfp_touch_candidates`-et: A koral iranyonkent B-t becsusztatva a legmelyebb
+      CDE-tiszta pozicioig (deepest-clear) az erinto-poziciokat adja NFP-poligon nelkul; decimalt (~40
+      csucs) probing-geometria, teljes-kontur CDE-validalas; relativ-szog cache. Unit teszt: ket crescent
+      a Phase 0 melysegig (>=50% x-atfedes kompaktan) nesteltetheto, polygon-tiszta.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/nfp_probe.rs"
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Phase 2 - beam-lanc kereses"
+    description: >
+      Implementald az `interlock_beam`-et: allapot = k nagy reszleges elhelyezese + kontur; bovites =
+      NFP-jeloltek a mar lerakott nagyokhoz, bbox szeless.+mag. szures, CDE-validalas; pontszam =
+      largest_contiguous_useful + "fer-e meg egy nagy" lookahead; beam K~10-20, melyseg 3; graceful
+      fallback. Unit teszt: szintetikus crescenten a beam 3-lancot talal, ahol a paros greedy csak 2-t.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Phase 3 - integracio + pin + refine + diagnosztika"
+    description: >
+      Kosd be a beam-eredmenyt a build_skeleton_first_seed-be (a nagy tipusra, gate mogott); pin
+      (q74_locked); residual-fill + no-drop + Sparrow exploration refine (meglevo). Vedd fel a Q77
+      diagnosztikakat (io.rs): beam_big_per_sheet, nfp_candidates, beam_nodes, interlock_depth_mm2.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Phase 4 - A/B benchmark + teljeskoru artifact"
+    description: >
+      Full276 (2x1500x3000, m5/sp5) default vs skeleton+NFP-beam: placed (cel 276 / >274), util (~78%+),
+      final_pairs=0, big/tabla=3. 2. csomag (generikussag): nincs regresszio. Rogzitsd teljeskoruen
+      (input/output/log/render + summary + report) az artifacts/benchmarks/sgh_q77/ ala; vizualis audit.
+    outputs:
+      - "artifacts/benchmarks/sgh_q77/inputs"
+      - "artifacts/benchmarks/sgh_q77/outputs"
+      - "artifacts/benchmarks/sgh_q77/renders"
+      - "artifacts/benchmarks/sgh_q77/q77_summary.json"
+      - "artifacts/benchmarks/sgh_q77/q77_report.md"
+
+  - name: "Phase 5 - report lezaras + repo gate"
+    description: >
+      Toltsd ki a checklistet es a reportot path+line evidence-szel es eredmeny-kozpontuan (3/tabla +
+      darabszam-emeles vs 274/65, vagy oszinte EXIT a Phase 0 celponttal + gap-elemzessel). Futtasd:
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q77_big_interlock_nfp_beam.md
+    outputs:
+      - "codex/codex_checklist/egyedi_solver/sgh_q77_big_interlock_nfp_beam.md"
+      - "codex/reports/egyedi_solver/sgh_q77_big_interlock_nfp_beam.md"
+      - "codex/reports/egyedi_solver/sgh_q77_big_interlock_nfp_beam.verify.log"
