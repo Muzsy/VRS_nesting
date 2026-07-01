@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="695" viewBox="0 0 720 695">
+  <rect width="720" height="695" fill="#f8fafc"/>
+  <text x="12" y="30" font-family="Arial, sans-serif" font-size="22" fill="#111827">q76_full276_A_default status=partial placed=252/276 sheets=2</text>
+  <rect x="40.0" y="55" width="300.0" height="600.0" fill="#e5edf6" stroke="#111827" stroke-width="1.5"/>
+  <text x="48.0" y="82" font-family="Arial, sans-serif" font-size="18" fill="#111827">sheet 0</text>
+  <rect x="380.0" y="55" width="300.0" height="600.0" fill="#e5edf6" stroke="#111827" stroke-width="1.5"/>
+  <text x="388.0" y="82" font-family="Arial, sans-serif" font-size="18" fill="#111827">sheet 1</text>
+</svg>

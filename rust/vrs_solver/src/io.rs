@@ -525,6 +525,27 @@ pub struct BppReductionDiagnostics {
     pub bpp_q67_simultaneous_rejection_summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bpp_q67_simultaneous_accepted_group_source: Option<String>,
+    // SGH-Q76 skeleton-first seed + residual-fill (contour residual-space objective). The
+    // structure-determining critical parts are edge-anchored to maximize the contiguous (real
+    // contour) residual space and pinned; the remaining parts are then residual-filled into it.
+    #[serde(default)]
+    pub bpp_q76_skeleton_first_used: bool,
+    #[serde(default)]
+    pub bpp_q76_skeleton_count: usize,
+    #[serde(default)]
+    pub bpp_q76_skeleton_area_frac: f64,
+    #[serde(default)]
+    pub bpp_q76_largest_free_after_skeleton: f64,
+    #[serde(default)]
+    pub bpp_q76_fill_placed: usize,
+    #[serde(default)]
+    pub bpp_q76_fill_unplaced: usize,
+    #[serde(default)]
+    pub bpp_q76_final_largest_free: f64,
+    /// SGH-Q77 (F1 "A"): number of additional skeleton parts nested via the overlap-minimization
+    /// interlock pass (VRS_SKELETON_COMPACT) — the 3rd-big-per-sheet deep interlock.
+    #[serde(default)]
+    pub bpp_q76_interlock_nested: usize,
 }
 
 /// SGH-Q47: per-part-type shape-profile decision diagnostics. One record per unique `part_id`,

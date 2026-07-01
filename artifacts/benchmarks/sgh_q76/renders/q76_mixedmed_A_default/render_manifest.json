@@ -1,0 +1,41 @@
+{
+  "run_id": "q76_mixedmed_A_default",
+  "task": "SGH-Q76",
+  "input_path": "artifacts/benchmarks/sgh_q76/inputs/q76_mixedmed_2x1500x3000_margin5_spacing5_continuous_240.json",
+  "output_path": "artifacts/benchmarks/sgh_q76/outputs/q76_mixedmed_A_default_output.json",
+  "render_source": "input_outer_points_plus_solver_output_anchor_placements",
+  "used_sheet_count": 2,
+  "used_sheet_indices": [
+    0,
+    1
+  ],
+  "svg_count": 3,
+  "png_count": 3,
+  "have_cairosvg": true,
+  "per_sheet": [
+    {
+      "sheet_index": 0,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 61,
+      "placed_part_area": 3433420.0,
+      "physical_utilization_pct": 76.2982,
+      "svg_path": "artifacts/benchmarks/sgh_q76/renders/q76_mixedmed_A_default/sheet_00.svg",
+      "png_path": "artifacts/benchmarks/sgh_q76/renders/q76_mixedmed_A_default/sheet_00.png"
+    },
+    {
+      "sheet_index": 1,
+      "stock_id": "S1500x3000",
+      "stock_width": 1500.0,
+      "stock_height": 3000.0,
+      "placed_count": 59,
+      "placed_part_area": 3363620.0,
+      "physical_utilization_pct": 74.7471,
+      "svg_path": "artifacts/benchmarks/sgh_q76/renders/q76_mixedmed_A_default/sheet_01.svg",
+      "png_path": "artifacts/benchmarks/sgh_q76/renders/q76_mixedmed_A_default/sheet_01.png"
+    }
+  ],
+  "overview_svg": "artifacts/benchmarks/sgh_q76/renders/q76_mixedmed_A_default/overview.svg",
+  "overview_png": "artifacts/benchmarks/sgh_q76/renders/q76_mixedmed_A_default/overview.png"
+}

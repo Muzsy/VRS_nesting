@@ -327,3 +327,73 @@ fn forced_latest_edge_interlock_seed_pins_big_parts_through_pipeline() {
         bpp.bpp_q74_edge_interlock_locked_count
     );
 }
+
+#[test]
+fn skeleton_first_pins_skeleton_and_residual_fills_valid() {
+    let _env = env_guard();
+    // SGH-Q76: the skeleton-first seed must (a) partition the structure-determining critical parts,
+    // edge-anchor + PIN them maximizing contiguous contour residual, (b) residual-fill the rest, and
+    // (c) stay valid (collision-free). The pinned skeleton must survive the downstream pipeline.
+    std::env::set_var("VRS_SKELETON_FIRST", "1");
+    // Big concave L parts (critical: large + high-interlock) + small fillers to residual-fill around.
+    let parts = vec![l_part("L", 4), rect_part("f", 16, 150.0, 150.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 1500.0, "height": 3000.0})];
+    let out = solve_json(&ms_input(parts, stocks, 42, 12));
+    std::env::remove_var("VRS_SKELETON_FIRST");
+
+    assert!(
+        out.status == "ok" || out.status == "partial",
+        "skeleton-first run must stay on the solve boundary: {}",
+        out.status
+    );
+    let d = od(&out);
+    assert_eq!(
+        d.sparrow_ms_final_pairs,
+        Some(0),
+        "skeleton-first must be collision-free"
+    );
+    assert_eq!(d.sparrow_ms_boundary_violations, Some(0));
+    let bpp = d.bpp_reduction.as_ref().expect("bpp diagnostics");
+    assert!(
+        bpp.bpp_q76_skeleton_first_used,
+        "the skeleton-first seed must run when enabled"
+    );
+    assert_eq!(bpp.bpp_q69_seed_source.as_deref(), Some("skeleton_first"));
+    assert!(
+        bpp.bpp_q76_skeleton_count >= 1,
+        "must partition at least one skeleton part, got {}",
+        bpp.bpp_q76_skeleton_count
+    );
+    assert!(
+        bpp.bpp_q76_fill_placed >= 1,
+        "residual-fill must place at least one part, got {}",
+        bpp.bpp_q76_fill_placed
+    );
+    // The skeleton (the L parts) must survive into the final layout (pinned + sanitize-protected).
+    let l_placed = out.placements.iter().filter(|p| p.part_id == "L").count();
+    assert!(
+        l_placed >= 1,
+        "pinned skeleton parts must survive the pipeline; l_placed={l_placed}"
+    );
+}
+
+#[test]
+fn skeleton_first_default_off_is_inactive() {
+    let _env = env_guard();
+    // Gate OFF (default): the skeleton-first seed must not run — production path is unchanged.
+    std::env::remove_var("VRS_SKELETON_FIRST");
+    let parts = vec![l_part("L", 2), rect_part("f", 10, 150.0, 150.0)];
+    let stocks = vec![json!({"id": "S", "quantity": 2, "width": 1500.0, "height": 3000.0})];
+    let out = solve_json(&ms_input(parts, stocks, 42, 10));
+
+    let bpp = od(&out).bpp_reduction.as_ref().expect("bpp diagnostics");
+    assert!(
+        !bpp.bpp_q76_skeleton_first_used,
+        "skeleton-first must be inactive when the gate is off"
+    );
+    assert_ne!(
+        bpp.bpp_q69_seed_source.as_deref(),
+        Some("skeleton_first"),
+        "default seed source must not be skeleton_first"
+    );
+}

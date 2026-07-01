@@ -1,0 +1,73 @@
+steps:
+  - name: "Q76 task artefaktok letrehozasa"
+    description: >
+      Keszitsd el a skeleton-first + residual-fill (kontur maradekter-objektiv) task
+      canvas/YAML/checklist/report vazat, az adatvezerelt indokkal (A/B: default 244/42.6%, compaction
+      no-op, seed+re-inszercio a lever) es a default-byte-azonossag celkitűzéssel.
+    outputs:
+      - "canvases/egyedi_solver/sgh_q76_skeleton_first_residual_fill.md"
+      - "codex/goals/canvases/egyedi_solver/fill_canvas_sgh_q76_skeleton_first_residual_fill.yaml"
+      - "codex/codex_checklist/egyedi_solver/sgh_q76_skeleton_first_residual_fill.md"
+      - "codex/reports/egyedi_solver/sgh_q76_skeleton_first_residual_fill.md"
+
+  - name: "Kontur-alapu maradekter-objektiv (additiv)"
+    description: >
+      A sheet_skeleton.rs-ben emeld ki a flood-fill kozos helperbe, es add hozza a scanline
+      poligon-raszteres `largest_edge_connected_free_area_contour` + `_slot_contour` fuggvenyeket (a
+      darab valodi kontúrja, magas-csucsuaknal a 50mm-gridhez egyszerusitve). A bbox-verziok maradnak
+      valtozatlanul (meglevo hivok erintetlenek). Unit teszt: konkav darab obleje a kontur-verzioban
+      SZABAD, a bbox-verzioban foglalt.
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/sheet_skeleton.rs"
+
+  - name: "Skeleton-first seed + residual-fill + diagnosztika"
+    description: >
+      Implementald a `build_skeleton_first_seed`-et (gate `VRS_SKELETON_FIRST`, default OFF): particio
+      (`criticality_tier==Critical` + `VRS_SKELETON_FRAC` kapacitas-sapka), greedy el-horgonyzott
+      elhelyezes a KONTUR-free-area maximalizalasaval (anchor_candidates_for_instance + altalanositott
+      edge-seeder, per-tabla), pin (locked_items), majd residual-fill `direct_insert_on_sheet`-tel
+      (csokkeno, free-room-first, a kieso darabokat is visszateve). Kosd be a seed-blokkba; vedd fel az
+      F1 diagnosztikakat (io.rs).
+    outputs:
+      - "rust/vrs_solver/src/optimizer/sparrow/bpp_reduction.rs"
+      - "rust/vrs_solver/src/io.rs"
+
+  - name: "Regresszios tesztek"
+    description: >
+      F1 regresszios teszt (sparrow_sheet_builder): forced/default skeleton-first alatt a skeleton
+      pinnelt + a residual-fill a kieso darabokat is visszateszi, valid (final_pairs=0). A sheet_skeleton
+      kontur unit teszt zold. Determinisztikus, parhuzamos futasra is helyes (env-guard).
+    outputs:
+      - "rust/vrs_solver/tests/sparrow_sheet_builder.rs"
+
+  - name: "Q76 A/B benchmark + teljeskoru artifactcsomag"
+    description: >
+      Keszits A/B runnert: Full276 (2x1500x3000, m5/sp5) ES egy kis/kozepes-darabos csomag (dominans
+      nagy nelkul), default vs `VRS_SKELETON_FIRST=1`. Rogzitsd teljeskoruen (input/output/log/render +
+      summary + report) a artifacts/benchmarks/sgh_q76/ ala; eredmeny-kozpontu: placed_count + util +
+      kontur-free-area + validitas, a 244/42.6% default baseline ellen.
+    outputs:
+      - "scripts/bench_sgh_q76_skeleton_first_residual_fill.py"
+      - "artifacts/benchmarks/sgh_q76/inputs"
+      - "artifacts/benchmarks/sgh_q76/outputs"
+      - "artifacts/benchmarks/sgh_q76/logs"
+      - "artifacts/benchmarks/sgh_q76/renders"
+      - "artifacts/benchmarks/sgh_q76/q76_summary.json"
+      - "artifacts/benchmarks/sgh_q76/q76_report.md"
+
+  - name: "Vizualis audit, checklist es report lezarasa"
+    description: >
+      Ellenorizd vizualisan a renderelt tablakat (skeleton elhelyezese + residual-fill), es rogzitsd
+      eredmeny-kozpontuan. Toltsd ki a checklistet es a reportot path+line evidence-szel; ha az F1 nem
+      veri a defaultot, oszinten rogzitsd (EXIT -> F3/ujragondolas).
+    outputs:
+      - "artifacts/benchmarks/sgh_q76/q76_report.md"
+      - "codex/codex_checklist/egyedi_solver/sgh_q76_skeleton_first_residual_fill.md"
+      - "codex/reports/egyedi_solver/sgh_q76_skeleton_first_residual_fill.md"
+
+  - name: "Repo gate (automatikus verify)"
+    description: >
+      ./scripts/verify.sh --report codex/reports/egyedi_solver/sgh_q76_skeleton_first_residual_fill.md
+    outputs:
+      - "codex/reports/egyedi_solver/sgh_q76_skeleton_first_residual_fill.md"
+      - "codex/reports/egyedi_solver/sgh_q76_skeleton_first_residual_fill.verify.log"

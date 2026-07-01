@@ -41,16 +41,175 @@ pub fn largest_edge_connected_free_area(
     sheet_max_y: f64,
     cell_mm: f64,
 ) -> f64 {
+    let Some((nx, ny, cw, ch)) =
+        grid_dims(sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)
+    else {
+        return 0.0;
+    };
+    let occ = build_occ_from_bboxes(occupied, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
+    largest_border_free_area_from_occ(&occ, nx, ny, cw * ch)
+}
+
+/// SGH-Q76: contour-aware variant of [`largest_edge_connected_free_area`]. Occupancy is marked from
+/// the parts' **real world contours** (even-odd scanline polygon raster) instead of their bounding
+/// boxes, so a concave part's bay or a tight interlock gap is correctly counted as *free* useful
+/// residual space — exactly what the skeleton-first seed objective must reward. `polys` are
+/// world-space rings of `[x, y]` points (implicit last→first edge). Additive: the bbox version above
+/// is byte-identical. Coarse ranking proxy; the CDE remains the clearance truth.
+pub fn largest_edge_connected_free_area_contour(
+    polys: &[Vec<[f64; 2]>],
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+) -> f64 {
+    let Some((nx, ny, cw, ch)) =
+        grid_dims(sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)
+    else {
+        return 0.0;
+    };
+    let occ = build_occ_from_contours(polys, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
+    largest_border_free_area_from_occ(&occ, nx, ny, cw * ch)
+}
+
+/// SGH-Q55C: world bbox `[min_x, min_y, max_x, max_y]` of the **largest edge-connected free**
+/// component — the band the next BandInsert big part is placed into. `None` if there is no
+/// border-touching free band. Same coarse occupancy grid as `largest_edge_connected_free_area`.
+pub fn largest_edge_connected_free_slot(
+    occupied: &[[f64; 4]],
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+) -> Option<[f64; 4]> {
+    let (nx, ny, cw, ch) =
+        grid_dims(sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)?;
+    let occ = build_occ_from_bboxes(occupied, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
+    largest_border_free_slot_from_occ(&occ, nx, ny, sheet_min_x, sheet_min_y, cw, ch)
+}
+
+/// SGH-Q76: contour-aware variant of [`largest_edge_connected_free_slot`]. The largest
+/// border-touching free band measured from real contours (scanline raster), so the residual-fill
+/// targeting sees the true open space (concave bays included). Additive; bbox version unchanged.
+pub fn largest_edge_connected_free_slot_contour(
+    polys: &[Vec<[f64; 2]>],
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+) -> Option<[f64; 4]> {
+    let (nx, ny, cw, ch) =
+        grid_dims(sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)?;
+    let occ = build_occ_from_contours(polys, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
+    largest_border_free_slot_from_occ(&occ, nx, ny, sheet_min_x, sheet_min_y, cw, ch)
+}
+
+/// SGH-Q76.1: **useful** (thickness-weighted) free area (mm²) from real contours. The plain
+/// "largest edge-connected free area" is near-blind when one big part sits on a large sheet (every
+/// valid placement leaves ~the same single big region), so it cannot steer the alignment. This
+/// instead weights each free cell by its (capped) chamfer distance to the nearest *occupied* cell
+/// (a coarse distance transform): thick, fill-able open space counts more than thin slivers wedged
+/// between a part and a wall. The sheet border is NOT an obstacle (edge-adjacent open space is still
+/// fillable), so a part's concave bay opening *into* the sheet scores higher than one trapped against
+/// a wall. `cap_cells` saturates the reward beyond a useful thickness (≈ the fillers' half-size).
+/// Additive — the area/slot functions above are unchanged. Coarse proxy; CDE stays the truth.
+pub fn useful_free_area_contour(
+    polys: &[Vec<[f64; 2]>],
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+    cap_cells: u32,
+) -> f64 {
+    let Some((nx, ny, cw, ch)) =
+        grid_dims(sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)
+    else {
+        return 0.0;
+    };
+    let occ = build_occ_from_contours(polys, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
+    let cell_area = cw * ch;
+    let cap = cap_cells.max(1);
+    // Multi-source BFS (4-neighbour) seeded from every occupied cell → each free cell's distance
+    // (in cells) to the nearest occupied cell. No occupied cell ⇒ every free cell is "fully thick".
+    let mut dist = vec![u32::MAX; nx * ny];
+    let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    for idx in 0..nx * ny {
+        if occ[idx] {
+            dist[idx] = 0;
+            queue.push_back(idx);
+        }
+    }
+    if queue.is_empty() {
+        // Empty sheet: maximal useful area (all cells saturated at the cap).
+        return nx as f64 * ny as f64 * cap as f64 * cell_area;
+    }
+    while let Some(idx) = queue.pop_front() {
+        let (i, j) = (idx % nx, idx / nx);
+        let d = dist[idx];
+        let mut relax = |ni: usize, nj: usize, dist: &mut [u32], q: &mut std::collections::VecDeque<usize>| {
+            let nidx = nj * nx + ni;
+            if dist[nidx] == u32::MAX {
+                dist[nidx] = d + 1;
+                q.push_back(nidx);
+            }
+        };
+        if i > 0 {
+            relax(i - 1, j, &mut dist, &mut queue);
+        }
+        if i + 1 < nx {
+            relax(i + 1, j, &mut dist, &mut queue);
+        }
+        if j > 0 {
+            relax(i, j - 1, &mut dist, &mut queue);
+        }
+        if j + 1 < ny {
+            relax(i, j + 1, &mut dist, &mut queue);
+        }
+    }
+    let mut useful = 0.0_f64;
+    for idx in 0..nx * ny {
+        if !occ[idx] {
+            useful += dist[idx].min(cap) as f64 * cell_area;
+        }
+    }
+    useful
+}
+
+// ---- shared occupancy-grid helpers (SGH-Q54D / Q55C / Q76) ----
+
+/// Coarse occupancy-grid dimensions for a sheet: `(nx, ny, cell_w, cell_h)`, clamped to [1, 400]
+/// cells per axis. `None` when the sheet or cell size is degenerate.
+fn grid_dims(
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+) -> Option<(usize, usize, f64, f64)> {
     let w = sheet_max_x - sheet_min_x;
     let h = sheet_max_y - sheet_min_y;
     if w <= 0.0 || h <= 0.0 || cell_mm <= 0.0 {
-        return 0.0;
+        return None;
     }
     let nx = ((w / cell_mm).ceil() as usize).clamp(1, 400);
     let ny = ((h / cell_mm).ceil() as usize).clamp(1, 400);
-    let cw = w / nx as f64;
-    let ch = h / ny as f64;
-    // occupancy: a cell is occupied if its centre falls inside any occupied bbox.
+    Some((nx, ny, w / nx as f64, h / ny as f64))
+}
+
+/// Occupancy grid where a cell is occupied iff its centre falls inside any bbox (the Q54D rule).
+fn build_occ_from_bboxes(
+    occupied: &[[f64; 4]],
+    nx: usize,
+    ny: usize,
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    cw: f64,
+    ch: f64,
+) -> Vec<bool> {
     let mut occ = vec![false; nx * ny];
     for j in 0..ny {
         let cy = sheet_min_y + (j as f64 + 0.5) * ch;
@@ -64,8 +223,102 @@ pub fn largest_edge_connected_free_area(
             }
         }
     }
-    // connected components of free cells (4-neighbour); track area + whether it touches the border.
-    let cell_area = cw * ch;
+    occ
+}
+
+/// SGH-Q76: occupancy grid where a cell is occupied iff its centre falls inside any real contour,
+/// via even-odd scanline polygon rasterisation. High-vertex contours are decimated to ~half a cell
+/// (the grid is a coarse proxy), bounding cost without changing the discretised result.
+fn build_occ_from_contours(
+    polys: &[Vec<[f64; 2]>],
+    nx: usize,
+    ny: usize,
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    cw: f64,
+    ch: f64,
+) -> Vec<bool> {
+    let mut occ = vec![false; nx * ny];
+    let min_seg = 0.5 * cw.min(ch);
+    for poly in polys {
+        let simplified = decimate_poly(poly, min_seg);
+        rasterize_polygon_into_occ(&simplified, &mut occ, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
+    }
+    occ
+}
+
+/// Drop consecutive contour points closer than `min_seg` (coarse-grid simplification). Keeps the
+/// ring's shape at the grid scale; falls back to the original on a near-degenerate result.
+fn decimate_poly(poly: &[[f64; 2]], min_seg: f64) -> Vec<[f64; 2]> {
+    if poly.len() <= 4 || min_seg <= 0.0 {
+        return poly.to_vec();
+    }
+    let min_sq = min_seg * min_seg;
+    let mut out: Vec<[f64; 2]> = Vec::with_capacity(poly.len());
+    out.push(poly[0]);
+    for p in &poly[1..] {
+        let last = *out.last().unwrap();
+        let (dx, dy) = (p[0] - last[0], p[1] - last[1]);
+        if dx * dx + dy * dy >= min_sq {
+            out.push(*p);
+        }
+    }
+    if out.len() < 3 {
+        return poly.to_vec();
+    }
+    out
+}
+
+/// Mark every cell whose centre lies inside `poly` (even-odd rule) on the occupancy grid. Classic
+/// scanline fill: per grid row, intersect the polygon edges with the row-centre line, sort the
+/// crossings, and fill the spans between consecutive pairs. A half-open vertical edge interval
+/// counts each crossing once at shared vertices.
+fn rasterize_polygon_into_occ(
+    poly: &[[f64; 2]],
+    occ: &mut [bool],
+    nx: usize,
+    ny: usize,
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    cw: f64,
+    ch: f64,
+) {
+    let n = poly.len();
+    if n < 3 {
+        return;
+    }
+    let mut xs: Vec<f64> = Vec::new();
+    for j in 0..ny {
+        let cy = sheet_min_y + (j as f64 + 0.5) * ch;
+        xs.clear();
+        for k in 0..n {
+            let (x0, y0) = (poly[k][0], poly[k][1]);
+            let (x1, y1) = (poly[(k + 1) % n][0], poly[(k + 1) % n][1]);
+            if (cy >= y0 && cy < y1) || (cy >= y1 && cy < y0) {
+                let t = (cy - y0) / (y1 - y0);
+                xs.push(x0 + t * (x1 - x0));
+            }
+        }
+        if xs.len() < 2 {
+            continue;
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let mut p = 0;
+        while p + 1 < xs.len() {
+            let (xstart, xend) = (xs[p], xs[p + 1]);
+            for i in 0..nx {
+                let cx = sheet_min_x + (i as f64 + 0.5) * cw;
+                if cx >= xstart && cx <= xend {
+                    occ[j * nx + i] = true;
+                }
+            }
+            p += 2;
+        }
+    }
+}
+
+/// Largest border-touching free-component area (mm²) on an occupancy grid (4-neighbour flood-fill).
+fn largest_border_free_area_from_occ(occ: &[bool], nx: usize, ny: usize, cell_area: f64) -> f64 {
     let mut seen = vec![false; nx * ny];
     let mut best = 0.0_f64;
     let mut stack: Vec<(usize, usize)> = Vec::new();
@@ -84,25 +337,7 @@ pub fn largest_edge_connected_free_area(
                 if i == 0 || j == 0 || i == nx - 1 || j == ny - 1 {
                     touches_border = true;
                 }
-                let mut push =
-                    |ni: usize, nj: usize, st: &mut Vec<(usize, usize)>, seen: &mut [bool]| {
-                        if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
-                            seen[nj * nx + ni] = true;
-                            st.push((ni, nj));
-                        }
-                    };
-                if i > 0 {
-                    push(i - 1, j, &mut stack, &mut seen);
-                }
-                if i + 1 < nx {
-                    push(i + 1, j, &mut stack, &mut seen);
-                }
-                if j > 0 {
-                    push(i, j - 1, &mut stack, &mut seen);
-                }
-                if j + 1 < ny {
-                    push(i, j + 1, &mut stack, &mut seen);
-                }
+                flood_push_neighbours(i, j, nx, ny, occ, &mut seen, &mut stack);
             }
             if touches_border {
                 best = best.max(cells as f64 * cell_area);
@@ -112,39 +347,16 @@ pub fn largest_edge_connected_free_area(
     best
 }
 
-/// SGH-Q55C: world bbox `[min_x, min_y, max_x, max_y]` of the **largest edge-connected free**
-/// component — the band the next BandInsert big part is placed into. `None` if there is no
-/// border-touching free band. Same coarse occupancy grid as `largest_edge_connected_free_area`.
-pub fn largest_edge_connected_free_slot(
-    occupied: &[[f64; 4]],
+/// Bbox `[min_x, min_y, max_x, max_y]` of the largest border-touching free component, or `None`.
+fn largest_border_free_slot_from_occ(
+    occ: &[bool],
+    nx: usize,
+    ny: usize,
     sheet_min_x: f64,
     sheet_min_y: f64,
-    sheet_max_x: f64,
-    sheet_max_y: f64,
-    cell_mm: f64,
+    cw: f64,
+    ch: f64,
 ) -> Option<[f64; 4]> {
-    let w = sheet_max_x - sheet_min_x;
-    let h = sheet_max_y - sheet_min_y;
-    if w <= 0.0 || h <= 0.0 || cell_mm <= 0.0 {
-        return None;
-    }
-    let nx = ((w / cell_mm).ceil() as usize).clamp(1, 400);
-    let ny = ((h / cell_mm).ceil() as usize).clamp(1, 400);
-    let cw = w / nx as f64;
-    let ch = h / ny as f64;
-    let mut occ = vec![false; nx * ny];
-    for j in 0..ny {
-        let cy = sheet_min_y + (j as f64 + 0.5) * ch;
-        for i in 0..nx {
-            let cx = sheet_min_x + (i as f64 + 0.5) * cw;
-            if occupied
-                .iter()
-                .any(|b| cx >= b[0] && cx <= b[2] && cy >= b[1] && cy <= b[3])
-            {
-                occ[j * nx + i] = true;
-            }
-        }
-    }
     let mut seen = vec![false; nx * ny];
     let mut best_cells = 0usize;
     let mut best_bbox: Option<[f64; 4]> = None;
@@ -169,25 +381,7 @@ pub fn largest_edge_connected_free_slot(
                 if i == 0 || j == 0 || i == nx - 1 || j == ny - 1 {
                     touches_border = true;
                 }
-                let mut push =
-                    |ni: usize, nj: usize, st: &mut Vec<(usize, usize)>, seen: &mut [bool]| {
-                        if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
-                            seen[nj * nx + ni] = true;
-                            st.push((ni, nj));
-                        }
-                    };
-                if i > 0 {
-                    push(i - 1, j, &mut stack, &mut seen);
-                }
-                if i + 1 < nx {
-                    push(i + 1, j, &mut stack, &mut seen);
-                }
-                if j > 0 {
-                    push(i, j - 1, &mut stack, &mut seen);
-                }
-                if j + 1 < ny {
-                    push(i, j + 1, &mut stack, &mut seen);
-                }
+                flood_push_neighbours(i, j, nx, ny, occ, &mut seen, &mut stack);
             }
             if touches_border && cells > best_cells {
                 best_cells = cells;
@@ -201,6 +395,36 @@ pub fn largest_edge_connected_free_slot(
         }
     }
     best_bbox
+}
+
+/// Push the 4-neighbour free, unseen cells of `(i, j)` onto the flood-fill stack.
+fn flood_push_neighbours(
+    i: usize,
+    j: usize,
+    nx: usize,
+    ny: usize,
+    occ: &[bool],
+    seen: &mut [bool],
+    stack: &mut Vec<(usize, usize)>,
+) {
+    let mut push = |ni: usize, nj: usize| {
+        if !occ[nj * nx + ni] && !seen[nj * nx + ni] {
+            seen[nj * nx + ni] = true;
+            stack.push((ni, nj));
+        }
+    };
+    if i > 0 {
+        push(i - 1, j);
+    }
+    if i + 1 < nx {
+        push(i + 1, j);
+    }
+    if j > 0 {
+        push(i, j - 1);
+    }
+    if j + 1 < ny {
+        push(i, j + 1);
+    }
 }
 
 /// The skeleton role of a critical part on a sheet. Roles mirror the reference LV8 layout: an
@@ -453,6 +677,99 @@ mod skeleton_tests {
         assert!(
             with_ring < full - 150_000.0,
             "enclosed centre must be excluded, got {with_ring} (full {full})"
+        );
+    }
+
+    #[test]
+    fn contour_objective_counts_concave_bay_as_free_unlike_bbox() {
+        // 1000×1000 sheet. A C-shaped part: the rectangle [200,200]-[800,800] with a notch cut from
+        // the right side. The bay (x∈[500,800], y∈[350,650], ~90k mm²) opens to the part's right
+        // edge, so its free cells are edge-connected to the sheet's right border through the gap.
+        let (x0, y0, x1, y1) = (0.0, 0.0, 1000.0, 1000.0);
+        let c_shape: Vec<[f64; 2]> = vec![
+            [200.0, 200.0],
+            [800.0, 200.0],
+            [800.0, 350.0],
+            [500.0, 350.0],
+            [500.0, 650.0],
+            [800.0, 650.0],
+            [800.0, 800.0],
+            [200.0, 800.0],
+        ];
+        // The bbox proxy sees the whole [200,200]-[800,800] block as occupied (bay included).
+        let bbox = [[200.0, 200.0, 800.0, 800.0]];
+        let area_bbox = largest_edge_connected_free_area(&bbox, x0, y0, x1, y1, 50.0);
+        let area_contour = largest_edge_connected_free_area_contour(
+            std::slice::from_ref(&c_shape),
+            x0,
+            y0,
+            x1,
+            y1,
+            50.0,
+        );
+        // The contour proxy frees the bay → materially larger edge-connected residual space.
+        assert!(
+            area_contour > area_bbox + 50_000.0,
+            "contour must count the concave bay as free: contour {area_contour} vs bbox {area_bbox}"
+        );
+
+        // The slot variant must also return a (larger or equal) border-touching band.
+        let slot_contour = largest_edge_connected_free_slot_contour(
+            std::slice::from_ref(&c_shape),
+            x0,
+            y0,
+            x1,
+            y1,
+            50.0,
+        );
+        assert!(
+            slot_contour.is_some(),
+            "contour slot must find a border-touching free band"
+        );
+
+        // Sanity: an empty contour set ≈ the full sheet, same as the bbox version with no occupancy.
+        let empty: [Vec<[f64; 2]>; 0] = [];
+        let full_contour =
+            largest_edge_connected_free_area_contour(&empty, x0, y0, x1, y1, 50.0);
+        let full_bbox = largest_edge_connected_free_area(&[], x0, y0, x1, y1, 50.0);
+        assert!(
+            (full_contour - full_bbox).abs() < 1.0,
+            "empty contour set must match empty bbox set: {full_contour} vs {full_bbox}"
+        );
+    }
+
+    #[test]
+    fn useful_area_discriminates_anchored_vs_floating_where_plain_area_is_blind() {
+        // 1000×1000 sheet, a tall-thin 100×600 part. Anchored to the bottom-left corner vs floating
+        // in the middle leaves the SAME plain edge-connected free area (one big wrap-around region),
+        // so the plain objective cannot choose between them — exactly the Full276 blindness. The
+        // useful (thickness-weighted) objective must prefer the anchored placement: floating puts the
+        // obstacle in the interior so its low-distance "shadow" radiates in all directions, thinning
+        // the residual; anchoring confines that shadow to one corner, keeping the open space thick.
+        let (x0, y0, x1, y1) = (0.0, 0.0, 1000.0, 1000.0);
+        let corner: Vec<[f64; 2]> =
+            vec![[0.0, 0.0], [100.0, 0.0], [100.0, 600.0], [0.0, 600.0]];
+        let floating: Vec<[f64; 2]> =
+            vec![[450.0, 200.0], [550.0, 200.0], [550.0, 800.0], [450.0, 800.0]];
+
+        let area_corner =
+            largest_edge_connected_free_area_contour(std::slice::from_ref(&corner), x0, y0, x1, y1, 50.0);
+        let area_floating =
+            largest_edge_connected_free_area_contour(std::slice::from_ref(&floating), x0, y0, x1, y1, 50.0);
+        // Plain area is (near) blind: both leave one connected ~940k region.
+        assert!(
+            (area_corner - area_floating).abs() < 20_000.0,
+            "plain area must be ~equal (blind): corner {area_corner} vs floating {area_floating}"
+        );
+
+        let useful_corner =
+            useful_free_area_contour(std::slice::from_ref(&corner), x0, y0, x1, y1, 50.0, 6);
+        let useful_floating =
+            useful_free_area_contour(std::slice::from_ref(&floating), x0, y0, x1, y1, 50.0, 6);
+        // Useful discriminates: anchoring to the corner keeps the residual thicker.
+        assert!(
+            useful_corner > useful_floating + 50_000.0,
+            "useful must prefer anchored: corner {useful_corner} vs floating {useful_floating}"
         );
     }
 }
