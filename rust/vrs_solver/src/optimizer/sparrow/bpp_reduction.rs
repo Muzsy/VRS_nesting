@@ -5340,9 +5340,16 @@ fn skeleton_sheet_free_area(polys: &[Vec<[f64; 2]>], sheet: &SheetShape) -> f64 
 /// useful residual + an edge-contact bonus (anti-floating + bay-inward), which actually steers the
 /// alignment. `VRS_SKELETON_OBJECTIVE`.
 fn skeleton_objective() -> String {
-    std::env::var("VRS_SKELETON_OBJECTIVE")
-        .ok()
-        .unwrap_or_else(|| "useful".to_string())
+    std::env::var("VRS_SKELETON_OBJECTIVE").ok().unwrap_or_else(|| {
+        // With the interlock pass on, the pure "largest contiguous useful residual" objective is the
+        // default: edge-alignment AND interlock emerge from it (a fragmenting 2nd-edge placement
+        // scores lower than nesting), rather than being rewarded by the edge-contact term.
+        if skeleton_compact_enabled() {
+            "contiguous".to_string()
+        } else {
+            "useful".to_string()
+        }
+    })
 }
 
 /// SGH-Q76.1: useful-area thickness cap in cells (≈ the fillers' half-size; saturates the reward of
@@ -5394,21 +5401,164 @@ fn contour_edge_contact_len(poly: &[[f64; 2]], sheet: &SheetShape, tol: f64) -> 
 /// reproduces the original objective; `"useful"` (default) = thickness-weighted useful residual +
 /// edge-contact bonus.
 fn skeleton_placement_score(polys: &[Vec<[f64; 2]>], new_poly: &[[f64; 2]], sheet: &SheetShape) -> f64 {
-    if skeleton_objective() == "free_area" {
-        return skeleton_sheet_free_area(polys, sheet);
-    }
     let cell = super::sheet_skeleton::freespace_cell_mm();
-    let useful = super::sheet_skeleton::useful_free_area_contour(
-        polys,
-        sheet.min_x,
-        sheet.min_y,
-        sheet.max_x,
-        sheet.max_y,
-        cell,
-        skeleton_useful_cap_cells(),
-    );
-    let contact = contour_edge_contact_len(new_poly, sheet, 0.5 * cell);
-    useful + skeleton_contact_w() * contact
+    match skeleton_objective().as_str() {
+        "free_area" => skeleton_sheet_free_area(polys, sheet),
+        // SGH-Q77: pure "largest contiguous useful residual" — edge-alignment / interlock emerge.
+        "contiguous" => super::sheet_skeleton::largest_contiguous_useful_contour(
+            polys,
+            sheet.min_x,
+            sheet.min_y,
+            sheet.max_x,
+            sheet.max_y,
+            cell,
+            skeleton_useful_cap_cells(),
+        ),
+        // "useful" (default without the interlock pass): thickness-weighted sum + edge-contact bonus.
+        _ => {
+            let useful = super::sheet_skeleton::useful_free_area_contour(
+                polys,
+                sheet.min_x,
+                sheet.min_y,
+                sheet.max_x,
+                sheet.max_y,
+                cell,
+                skeleton_useful_cap_cells(),
+            );
+            let contact = contour_edge_contact_len(new_poly, sheet, 0.5 * cell);
+            useful + skeleton_contact_w() * contact
+        }
+    }
+}
+
+/// Axis-aligned bbox `[min_x, min_y, max_x, max_y]` of an `[x, y]` polygon.
+fn poly_xy_bbox(poly: &[[f64; 2]]) -> [f64; 4] {
+    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    for p in poly {
+        b[0] = b[0].min(p[0]);
+        b[1] = b[1].min(p[1]);
+        b[2] = b[2].max(p[0]);
+        b[3] = b[3].max(p[1]);
+    }
+    b
+}
+
+/// True when two `[min_x, min_y, max_x, max_y]` bboxes overlap with positive area.
+fn bbox_xy_overlap(a: &[f64; 4], b: &[f64; 4]) -> bool {
+    a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+}
+
+/// SGH-Q77 (F1 "B′"): DEEP interlock candidate placements for `inst` on `sheet_idx`, nesting into the
+/// parts already placed on the sheet (bbox overlap allowed, polygons CDE-clear). A 1D axis-slide
+/// cannot reach the crescent mesh (proven: the deep pose needs a 2D offset — a large y-stagger PLUS
+/// x-overlap — at a specific relative rotation), so for each placed part and each catalog rotation of
+/// `inst` this scans a bounded 2D grid of rect-min offsets (x over the overlap band, y over the full
+/// usable height for the stagger) and returns the CDE-clear position with the deepest bbox
+/// intersection (the tightest mesh). The largest-contiguous-useful objective then chooses among these
+/// + the edge anchors. Deterministic; bounded by `deadline_s`. CDE is the collision truth.
+fn slide_nest_candidates(
+    inst: &SPInstance,
+    sheet_idx: usize,
+    placed_local: &[SparrowPlacement],
+    instances: &[SPInstance],
+    solver_sheets: &[SheetShape],
+    started: &Instant,
+    deadline_s: f64,
+) -> Vec<SparrowPlacement> {
+    let sheet = &solver_sheets[sheet_idx];
+    let inset = skeleton_inset();
+    let mut out: Vec<SparrowPlacement> = Vec::new();
+    if placed_local.is_empty() {
+        return out;
+    }
+    let mut rots: Vec<f64> = Vec::new();
+    for c in super::sheet_edge_placement_catalog::anchor_candidates_for_instance(inst, sheet) {
+        if !rots.iter().any(|r| (r - c.rotation_deg).abs() < 0.01) {
+            rots.push(c.rotation_deg);
+        }
+    }
+    rots.truncate(4);
+    let (umnx, umny) = (sheet.min_x + inset, sheet.min_y + inset);
+    let (umxx, umxy) = (sheet.max_x - inset, sheet.max_y - inset);
+    let feas = |ax: f64, ay: f64, theta: f64| -> bool {
+        let mut locals: Vec<SparrowPlacement> = placed_local.to_vec();
+        locals.push(SparrowPlacement {
+            instance_idx: inst.idx,
+            sheet_index: sheet_idx,
+            x: ax,
+            y: ay,
+            rotation_deg: theta,
+        });
+        sheet_local_feasible(&locals, instances, solver_sheets)
+    };
+    const NX: usize = 14;
+    const NY: usize = 44;
+    for tp in placed_local {
+        if started.elapsed().as_secs_f64() >= deadline_s {
+            break;
+        }
+        let Some(ts) = crate::optimizer::cde_adapter::prepare_shape_native(
+            &instances[tp.instance_idx].part,
+            tp.x,
+            tp.y,
+            tp.rotation_deg,
+        )
+        .ok() else {
+            continue;
+        };
+        let (tminx, tmaxx) = (ts.min_x, ts.max_x);
+        for &theta in &rots {
+            if started.elapsed().as_secs_f64() >= deadline_s {
+                break;
+            }
+            let Some((mnx, mny, mxx, mxy)) = skeleton_anchor_frame(inst, theta) else {
+                continue;
+            };
+            let (ew, eh) = (mxx - mnx, mxy - mny);
+            if ew > (umxx - umnx) || eh > (umxy - umny) {
+                continue;
+            }
+            // x band: from just-left-of-target (rmx = tminx - ew, no overlap) to right-flush-in-target
+            // (rmx = tmaxx - ew, deepest overlap) — spans the interlock overlap range. y: full height.
+            let xlo = (tminx - ew).max(umnx);
+            let xhi = (tmaxx - ew).min(umxx - ew).max(xlo);
+            let ylo = umny;
+            let yhi = (umxy - eh).max(ylo);
+            let mut best: Option<(f64, f64, f64)> = None; // (overlap_area, ax, ay)
+            for iy in 0..=NY {
+                if started.elapsed().as_secs_f64() >= deadline_s {
+                    break;
+                }
+                let rmy = ylo + (yhi - ylo) * (iy as f64 / NY as f64);
+                for ix in 0..=NX {
+                    let rmx = xlo + (xhi - xlo) * (ix as f64 / NX as f64);
+                    let (ax, ay) = (rmx - mnx, rmy - mny);
+                    if !feas(ax, ay, theta) {
+                        continue;
+                    }
+                    // Deepest mesh = largest bbox intersection with the target.
+                    let ox = (rmx + ew).min(tmaxx) - rmx.max(tminx);
+                    let oy = (rmy + eh).min(ts.max_y) - rmy.max(ts.min_y);
+                    let overlap = ox.max(0.0) * oy.max(0.0);
+                    if best.as_ref().is_none_or(|(b, _, _)| overlap > *b) {
+                        best = Some((overlap, ax, ay));
+                    }
+                }
+            }
+            if let Some((overlap, ax, ay)) = best {
+                if overlap > 1.0 {
+                    out.push(SparrowPlacement {
+                        instance_idx: inst.idx,
+                        sheet_index: sheet_idx,
+                        x: ax,
+                        y: ay,
+                        rotation_deg: theta,
+                    });
+                }
+            }
+        }
+    }
+    out
 }
 
 /// SGH-Q76: build the skeleton-first seed. Returns the seed layout (no-drop: every instance present)
@@ -5471,6 +5621,7 @@ fn build_skeleton_first_seed(
     let mut sheet_used_area: Vec<f64> = vec![0.0; n_sheets];
     let mut locked: HashSet<usize> = HashSet::new();
     let mut placed: HashSet<usize> = HashSet::new();
+    let mut interlocked = 0usize;
 
     for s in 0..n_sheets {
         // Fill the current sheet's skeleton before opening the next (reference recipe): repeatedly
@@ -5485,50 +5636,54 @@ fn build_skeleton_first_seed(
                 let mut best: Option<(SparrowPlacement, Vec<[f64; 2]>, f64)> = None;
                 let inset = skeleton_inset();
                 let sh = &solver_sheets[s];
-                for cand in
-                    super::sheet_edge_placement_catalog::anchor_candidates_for_instance(inst, sh)
-                {
+                let placed_on_s: Vec<SparrowPlacement> = placements
+                    .iter()
+                    .filter(|p| p.sheet_index == s)
+                    .cloned()
+                    .collect();
+                // Candidate anchors as (ax, ay, theta): sheet-edge anchors (inset-clamped strictly
+                // inside so the CDE accepts them) PLUS — when the interlock pass is on — deep
+                // slide-nest interlock positions against the parts already on the sheet. The
+                // largest-contiguous-useful objective then picks whichever leaves the biggest single
+                // contiguous residual (edge-hug for the 1st part, interlock for the next).
+                let mut cand_xyt: Vec<(f64, f64, f64)> = Vec::new();
+                for cand in super::sheet_edge_placement_catalog::anchor_candidates_for_instance(inst, sh) {
                     let Some((mnx, mny, mxx, mxy)) = skeleton_anchor_frame(inst, cand.rotation_deg)
                     else {
                         continue;
                     };
-                    let (ox, oy) = (mnx, mny);
                     let (ew, eh) = (mxx - mnx, mxy - mny);
-                    // Pull a flush rect-min strictly inside the usable sheet so the CDE accepts it
-                    // (a part edge exactly on the boundary fails strict containment). Clamp keeps the
-                    // whole extent within [min+inset, max-inset]; interior anchors are unchanged.
                     let lo_x = sh.min_x + inset;
                     let lo_y = sh.min_y + inset;
-                    let rmx = cand
-                        .rect_min_x
-                        .clamp(lo_x, (sh.max_x - inset - ew).max(lo_x));
-                    let rmy = cand
-                        .rect_min_y
-                        .clamp(lo_y, (sh.max_y - inset - eh).max(lo_y));
-                    let ax = rmx - ox;
-                    let ay = rmy - oy;
+                    let rmx = cand.rect_min_x.clamp(lo_x, (sh.max_x - inset - ew).max(lo_x));
+                    let rmy = cand.rect_min_y.clamp(lo_y, (sh.max_y - inset - eh).max(lo_y));
+                    cand_xyt.push((rmx - mnx, rmy - mny, cand.rotation_deg));
+                }
+                if skeleton_compact_enabled() {
+                    let sd = (started.elapsed().as_secs_f64() + 8.0).min(deadline_s);
+                    for p in slide_nest_candidates(inst, s, &placed_on_s, instances, solver_sheets, started, sd) {
+                        cand_xyt.push((p.x, p.y, p.rotation_deg));
+                    }
+                }
+                for (ax, ay, theta) in cand_xyt {
                     let placement = SparrowPlacement {
                         instance_idx: si,
                         sheet_index: s,
                         x: ax,
                         y: ay,
-                        rotation_deg: cand.rotation_deg,
+                        rotation_deg: theta,
                     };
-                    let mut local: Vec<SparrowPlacement> = placements
-                        .iter()
-                        .filter(|p| p.sheet_index == s)
-                        .cloned()
-                        .collect();
+                    let mut local = placed_on_s.clone();
                     local.push(placement.clone());
                     if !sheet_local_feasible(&local, instances, solver_sheets) {
                         continue;
                     }
-                    let Some(cpoly) = skeleton_world_contour(inst, ax, ay, cand.rotation_deg) else {
+                    let Some(cpoly) = skeleton_world_contour(inst, ax, ay, theta) else {
                         continue;
                     };
                     let mut polys = sheet_polys[s].clone();
                     polys.push(cpoly.clone());
-                    let score = skeleton_placement_score(&polys, &cpoly, &solver_sheets[s]);
+                    let score = skeleton_placement_score(&polys, &cpoly, sh);
                     if best.as_ref().is_none_or(|(_, _, a)| score > *a + 1e-6) {
                         best = Some((placement, cpoly, score));
                     }
@@ -5540,6 +5695,15 @@ fn build_skeleton_first_seed(
             }
             match chosen {
                 Some((si, pl, cp)) => {
+                    // Count a deep interlock: the newly placed skeleton part's bbox overlaps an
+                    // already-placed skeleton part on this sheet (a nest the edge anchors can't reach).
+                    let cb = poly_xy_bbox(&cp);
+                    if sheet_polys[s]
+                        .iter()
+                        .any(|q| bbox_xy_overlap(&cb, &poly_xy_bbox(q)))
+                    {
+                        interlocked += 1;
+                    }
                     sheet_used_area[s] += part_polygon_area(&instances[si].part);
                     placements.push(pl);
                     sheet_polys[s].push(cp);
@@ -5550,98 +5714,10 @@ fn build_skeleton_first_seed(
             }
         }
     }
-    // ── (2b) SGH-Q77 (F1 "A"): overlap-minimization interlock pass. While the sheet is still
-    // filler-free, re-insert each still-unplaced skeleton part overlapping and resolve it via the
-    // density-biased (overlap→interlock) separation, so a further big part nests DEEP into the bays
-    // of the already-placed ones (bbox overlap, polygons clear — the interlock the edge-anchor could
-    // not reach). Keep-if-feasible: a sheet is replaced only when the whole set separates
-    // collision-free, so this can only add placements, never regress. Default OFF (VRS_SKELETON_COMPACT).
-    if skeleton_compact_enabled() {
-        let mut interlocked = 0usize;
-        for s in 0..n_sheets {
-            loop {
-                if started.elapsed().as_secs_f64() >= deadline_s {
-                    break;
-                }
-                let Some(&si) = skeleton.iter().find(|&&si| !placed.contains(&si)) else {
-                    break;
-                };
-                let inst = &instances[si];
-                let sh = &solver_sheets[s];
-                // Orientation: first sheet-fitting anchor-catalog rotation (min-width family).
-                let cands = super::sheet_edge_placement_catalog::anchor_candidates_for_instance(inst, sh);
-                let Some(theta) = cands.first().map(|c| c.rotation_deg) else {
-                    break;
-                };
-                let Some((mnx, mny, mxx, mxy)) = skeleton_anchor_frame(inst, theta) else {
-                    break;
-                };
-                let (ew, eh) = (mxx - mnx, mxy - mny);
-                if ew > (sh.max_x - sh.min_x) || eh > (sh.max_y - sh.min_y) {
-                    break; // does not fit this sheet in any case
-                }
-                // Recreate overlapping: drop the part at the largest free slot's centre (or sheet
-                // centre) — the separation nests it; exact seed position is not critical.
-                let inset = skeleton_inset();
-                let (cx, cy) = super::sheet_skeleton::largest_edge_connected_free_slot_contour(
-                    &sheet_polys[s],
-                    sh.min_x,
-                    sh.min_y,
-                    sh.max_x,
-                    sh.max_y,
-                    super::sheet_skeleton::freespace_cell_mm(),
-                )
-                .map(|b| (0.5 * (b[0] + b[2]), 0.5 * (b[1] + b[3])))
-                .unwrap_or((0.5 * (sh.min_x + sh.max_x), 0.5 * (sh.min_y + sh.max_y)));
-                let rmx = (cx - 0.5 * ew).clamp(sh.min_x + inset, (sh.max_x - inset - ew).max(sh.min_x + inset));
-                let rmy = (cy - 0.5 * eh).clamp(sh.min_y + inset, (sh.max_y - inset - eh).max(sh.min_y + inset));
-                let mut trial = SparrowLayout {
-                    placements: placements.clone(),
-                };
-                trial.placements.push(SparrowPlacement {
-                    instance_idx: si,
-                    sheet_index: s,
-                    x: rmx - mnx,
-                    y: rmy - mny,
-                    rotation_deg: theta,
-                });
-                let step_deadline = (started.elapsed().as_secs_f64() + 4.0).min(deadline_s);
-                let (feasible, remapped) = density_biased_separate(
-                    &trial,
-                    s,
-                    instances,
-                    solver_sheets,
-                    1.0,
-                    rng,
-                    started,
-                    step_deadline,
-                );
-                if feasible && remapped.len() == trial.placements.iter().filter(|p| p.sheet_index == s).count() {
-                    // Commit: replace sheet s's skeleton with the interlocked arrangement, pin all.
-                    placements.retain(|p| p.sheet_index != s);
-                    placements.extend(remapped.iter().cloned());
-                    sheet_polys[s].clear();
-                    for p in &remapped {
-                        if let Some(cp) = skeleton_world_contour(
-                            &instances[p.instance_idx],
-                            p.x,
-                            p.y,
-                            p.rotation_deg,
-                        ) {
-                            sheet_polys[s].push(cp);
-                        }
-                        locked.insert(p.instance_idx);
-                        placed.insert(p.instance_idx);
-                    }
-                    sheet_used_area[s] += part_polygon_area(&instances[si].part);
-                    interlocked += 1;
-                } else {
-                    break; // cannot nest another skeleton part on this sheet
-                }
-            }
-        }
-        bpp.bpp_q76_interlock_nested = interlocked;
-    }
+    // SGH-Q77 (F1 "B′"): the interlock now happens INSIDE the greedy above (slide-nest candidates
+    // scored by the largest-contiguous-useful objective), so a nested part is chosen only when it
+    // genuinely leaves the biggest single contiguous residual. Record how many were deep-interlocked.
+    bpp.bpp_q76_interlock_nested = interlocked;
 
     let largest_free_after_skeleton: f64 = (0..n_sheets)
         .map(|s| skeleton_sheet_free_area(&sheet_polys[s], &solver_sheets[s]))

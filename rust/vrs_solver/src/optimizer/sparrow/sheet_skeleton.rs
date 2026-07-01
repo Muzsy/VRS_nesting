@@ -125,16 +125,102 @@ pub fn useful_free_area_contour(
     cell_mm: f64,
     cap_cells: u32,
 ) -> f64 {
-    let Some((nx, ny, cw, ch)) =
-        grid_dims(sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)
+    let Some((occ, dist, nx, ny, cw, ch)) =
+        thickness_field(polys, sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)
     else {
         return 0.0;
     };
-    let occ = build_occ_from_contours(polys, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
     let cell_area = cw * ch;
     let cap = cap_cells.max(1);
-    // Multi-source BFS (4-neighbour) seeded from every occupied cell → each free cell's distance
-    // (in cells) to the nearest occupied cell. No occupied cell ⇒ every free cell is "fully thick".
+    let mut useful = 0.0_f64;
+    for idx in 0..nx * ny {
+        if !occ[idx] {
+            useful += dist[idx].min(cap) as f64 * cell_area;
+        }
+    }
+    useful
+}
+
+/// SGH-Q77 (F1 "A/B′"): the **largest single CONTIGUOUS** thickness-weighted free region (mm²·cells)
+/// from real contours. This is the residual-space currency that best captures the user's principle —
+/// "the largest contiguous useful leftover" — so edge-alignment and interlock EMERGE from it rather
+/// than being rewarded as ends: a part hugging the long edge (or nested into another part's bay)
+/// leaves ONE big thick region and scores high, while a part sent to a second edge fragments the
+/// residual into two smaller regions and scores lower. Free cells are 4-connected into components;
+/// each cell contributes its (capped) chamfer thickness; the best component's total is returned.
+/// Additive; coarse proxy; the CDE stays the truth.
+pub fn largest_contiguous_useful_contour(
+    polys: &[Vec<[f64; 2]>],
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+    cap_cells: u32,
+) -> f64 {
+    let Some((occ, dist, nx, ny, cw, ch)) =
+        thickness_field(polys, sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)
+    else {
+        return 0.0;
+    };
+    let cell_area = cw * ch;
+    let cap = cap_cells.max(1);
+    let mut seen = vec![false; nx * ny];
+    let mut best = 0.0_f64;
+    let mut stack: Vec<usize> = Vec::new();
+    for start in 0..nx * ny {
+        if occ[start] || seen[start] {
+            continue;
+        }
+        stack.clear();
+        stack.push(start);
+        seen[start] = true;
+        let mut sum = 0.0_f64;
+        while let Some(idx) = stack.pop() {
+            sum += dist[idx].min(cap) as f64 * cell_area;
+            let (i, j) = (idx % nx, idx / nx);
+            let mut push = |ni: usize, nj: usize, seen: &mut [bool], st: &mut Vec<usize>| {
+                let nidx = nj * nx + ni;
+                if !occ[nidx] && !seen[nidx] {
+                    seen[nidx] = true;
+                    st.push(nidx);
+                }
+            };
+            if i > 0 {
+                push(i - 1, j, &mut seen, &mut stack);
+            }
+            if i + 1 < nx {
+                push(i + 1, j, &mut seen, &mut stack);
+            }
+            if j > 0 {
+                push(i, j - 1, &mut seen, &mut stack);
+            }
+            if j + 1 < ny {
+                push(i, j + 1, &mut seen, &mut stack);
+            }
+        }
+        best = best.max(sum);
+    }
+    best
+}
+
+/// SGH-Q76.1/Q77: chamfer "thickness" field of a sheet's free space from real contours. Returns
+/// `(occ, dist, nx, ny, cw, ch)` where `dist[i]` is the 4-neighbour cell distance from free cell `i`
+/// to the nearest occupied cell (a coarse distance transform); occupied cells have `dist = 0`, and
+/// when the sheet is empty every cell is `u32::MAX` (→ saturates to the cap in callers). `None` on a
+/// degenerate sheet. Shared by the useful-area and largest-contiguous-useful objectives.
+fn thickness_field(
+    polys: &[Vec<[f64; 2]>],
+    sheet_min_x: f64,
+    sheet_min_y: f64,
+    sheet_max_x: f64,
+    sheet_max_y: f64,
+    cell_mm: f64,
+) -> Option<(Vec<bool>, Vec<u32>, usize, usize, f64, f64)> {
+    let (nx, ny, cw, ch) =
+        grid_dims(sheet_min_x, sheet_min_y, sheet_max_x, sheet_max_y, cell_mm)?;
+    let occ = build_occ_from_contours(polys, nx, ny, sheet_min_x, sheet_min_y, cw, ch);
+    // Multi-source BFS (4-neighbour) seeded from every occupied cell.
     let mut dist = vec![u32::MAX; nx * ny];
     let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
     for idx in 0..nx * ny {
@@ -143,20 +229,17 @@ pub fn useful_free_area_contour(
             queue.push_back(idx);
         }
     }
-    if queue.is_empty() {
-        // Empty sheet: maximal useful area (all cells saturated at the cap).
-        return nx as f64 * ny as f64 * cap as f64 * cell_area;
-    }
     while let Some(idx) = queue.pop_front() {
         let (i, j) = (idx % nx, idx / nx);
         let d = dist[idx];
-        let mut relax = |ni: usize, nj: usize, dist: &mut [u32], q: &mut std::collections::VecDeque<usize>| {
-            let nidx = nj * nx + ni;
-            if dist[nidx] == u32::MAX {
-                dist[nidx] = d + 1;
-                q.push_back(nidx);
-            }
-        };
+        let mut relax =
+            |ni: usize, nj: usize, dist: &mut [u32], q: &mut std::collections::VecDeque<usize>| {
+                let nidx = nj * nx + ni;
+                if dist[nidx] == u32::MAX {
+                    dist[nidx] = d + 1;
+                    q.push_back(nidx);
+                }
+            };
         if i > 0 {
             relax(i - 1, j, &mut dist, &mut queue);
         }
@@ -170,13 +253,7 @@ pub fn useful_free_area_contour(
             relax(i, j + 1, &mut dist, &mut queue);
         }
     }
-    let mut useful = 0.0_f64;
-    for idx in 0..nx * ny {
-        if !occ[idx] {
-            useful += dist[idx].min(cap) as f64 * cell_area;
-        }
-    }
-    useful
+    Some((occ, dist, nx, ny, cw, ch))
 }
 
 // ---- shared occupancy-grid helpers (SGH-Q54D / Q55C / Q76) ----
@@ -770,6 +847,28 @@ mod skeleton_tests {
         assert!(
             useful_corner > useful_floating + 50_000.0,
             "useful must prefer anchored: corner {useful_corner} vs floating {useful_floating}"
+        );
+    }
+
+    #[test]
+    fn largest_contiguous_useful_penalizes_fragmentation() {
+        // A 100-wide vertical strip. Hugging the left edge (x∈[0,100]) leaves ONE big ~900-wide
+        // contiguous region; splitting down the centre (x∈[450,550]) fragments the residual into two
+        // ~450-wide regions. The largest-contiguous-useful objective must strongly prefer the
+        // edge-hugging placement — this is what makes edge-alignment / interlock emerge from a pure
+        // "largest contiguous useful leftover" objective (rather than a hard edge-contact reward).
+        let (x0, y0, x1, y1) = (0.0, 0.0, 1000.0, 1000.0);
+        let edge: Vec<[f64; 2]> =
+            vec![[0.0, 0.0], [100.0, 0.0], [100.0, 1000.0], [0.0, 1000.0]];
+        let center: Vec<[f64; 2]> =
+            vec![[450.0, 0.0], [550.0, 0.0], [550.0, 1000.0], [450.0, 1000.0]];
+        let lc_edge =
+            largest_contiguous_useful_contour(std::slice::from_ref(&edge), x0, y0, x1, y1, 50.0, 6);
+        let lc_center =
+            largest_contiguous_useful_contour(std::slice::from_ref(&center), x0, y0, x1, y1, 50.0, 6);
+        assert!(
+            lc_edge > lc_center * 1.5,
+            "contiguous objective must penalize the fragmenting centre split: edge {lc_edge} vs center {lc_center}"
         );
     }
 }
